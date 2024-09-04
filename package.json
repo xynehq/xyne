@@ -1,0 +1,47 @@
+{
+  "name": "qdrant-langchain",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "dev": "bunx --bun vite",
+    "build": "bunx --bun vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "github:xenova/transformers.js#v3",
+    "@inkjs/ui": "^2.0.0",
+    "@mozilla/readability": "^0.5.0",
+    "@notionhq/client": "^2.2.15",
+    "@qdrant/js-client-rest": "^1.11.0",
+    "@xenova/transformers": "^2.17.2",
+    "async-mutex": "^0.5.0",
+    "body-parser": "^1.20.2",
+    "chalk": "^5.3.0",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "google-auth-library": "^9.14.0",
+    "googleapis": "^140.0.1",
+    "happy-dom": "^14.12.3",
+    "hono": "^4.5.10",
+    "i": "^0.3.7",
+    "jsdom": "^24.1.1",
+    "langchain": "^0.2.11",
+    "llamaindex": "^0.5.13",
+    "marked": "^13.0.3",
+    "marked-terminal": "^7.1.0",
+    "openai": "^4.53.2",
+    "ora": "^8.0.1",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.45.3",
+    "turndown": "^7.2.0",
+    "weaviate-client": "^3.1.4"
+  }
+}
