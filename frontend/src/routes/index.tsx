@@ -181,7 +181,7 @@ function Index() {
             <div className="flex items-center justify-start space-x-2">
               <a 
               href={result.properties.url} 
-              target="_blank" 
+              target="_blank"
               rel="noopener noreferrer"
               className="flex items-center text-blue-800 space-x-2"
             >
@@ -221,7 +221,7 @@ function Index() {
             }} className={`${filter && filter.app === app && filter.entity === entity ? 'bg-white' : ''} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}>
               <div className="flex items-center">
           {getIcon(app, entity)}
-          <p>{app} {entity}</p>
+          <p>{entity}</p>
         </div>
 
              {/* {getIcon('google', group)}
