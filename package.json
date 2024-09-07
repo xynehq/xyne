@@ -37,6 +37,7 @@
     "llamaindex": "^0.5.13",
     "marked": "^13.0.3",
     "marked-terminal": "^7.1.0",
+    "ollama": "^0.5.8",
     "openai": "^4.53.2",
     "ora": "^8.0.1",
     "pdf-parse": "^1.1.1",

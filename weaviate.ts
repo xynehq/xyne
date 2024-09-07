@@ -42,14 +42,14 @@ const jwtClient = new JWT({
 });
 
 
-async function listFiles(email: string): Promise<drive_v3.Schema$File[]> {
+async function listFiles(email: string, onlyDocs: boolean = false): Promise<drive_v3.Schema$File[]> {
     const drive = google.drive({ version: "v3", auth: jwtClient });
     let nextPageToken = null;
     let files = [];
     do {
         const res = await drive.files.list({
             pageSize: 100,
-            // q: "mimeType='application/vnd.google-apps.document'",
+            ...(onlyDocs ? { q: "mimeType='application/vnd.google-apps.document'" } : {}),
             fields:
                 "nextPageToken, files(id, webViewLink, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
             ...(nextPageToken ? { pageToken: nextPageToken } : {}),
@@ -142,15 +142,15 @@ const googleDocs = async (docsMetadata: drive_v3.Schema$File[]): Promise<any[]> 
 
 }
 
-const client = await weaviate.connectToLocal(
-    {
-        host: "127.0.0.1",   // URL only, no http prefix
-        port: 8080,
-        grpcPort: 50051,     // Default is 50051, WCD uses 443
-    })
+// const client = await weaviate.connectToLocal(
+//     {
+//         host: "127.0.0.1",   // URL only, no http prefix
+//         port: 8080,
+//         grpcPort: 50051,     // Default is 50051, WCD uses 443
+//     })
 
 
-const collection = client.collections.get('DriveFiles');
+// const collection = client.collections.get('DriveFiles');
 
 export const searchGroupByCount = async (query: string, permissions: string[], app?: string, entity?: string): Promise<any> => {
     const qEmbedding = await extractor(query, { pooling: 'mean', normalize: true });
@@ -292,6 +292,50 @@ async function checkAndReadFile(path: string) {
         } else {
             throw err
         }
+    }
+}
+
+import ollama from 'ollama'
+import { getPrompt } from './prompts';
+const kgCache = './fullDocs.json'
+export const initKG = async () => {
+    let fullDocs = await checkAndReadFile(kgCache)
+    if (!fullDocs) {
+        fullDocs = []
+        const fileMetadata = (await listFiles(userEmail, true)).map(v => {
+            v.permissions = toPermissionsList(v.permissions)
+            return v
+        })
+        const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
+        const docs = google.docs({ version: "v1", auth: jwtClient });
+        let count = 0
+
+        for (const doc of googleDocsMetadata) {
+            const documentContent = await docs.documents.get({
+                documentId: doc.id,
+            });
+            const rawTextContent = documentContent?.data?.body?.content
+                .map((e) => extractText(e))
+                .join("");
+            const footnotes = extractFootnotes(documentContent.data);
+            const headerFooter = extractHeadersAndFooters(documentContent.data);
+            const cleanedTextContent = postProcessText(
+                rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
+            );
+            fullDocs.push(cleanedTextContent)
+        }
+
+        await fs.writeFile('./fullDocs.json', JSON.stringify(fullDocs))
+    }
+    console.log('doc\n', fullDocs[5])
+    const response = await ollama.chat({
+        model: 'phi3.5',
+        messages: [{ role: 'user', content: getPrompt(fullDocs[5]) }],
+        stream: true,
+        format: 'json'
+    })
+    for await (const part of response) {
+        process.stdout.write(part.message.content)
     }
 }
 

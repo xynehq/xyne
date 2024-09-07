@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { logger } from 'hono/logger'
 // import { Apps, defaultMetrics, MsgType, type Metrics } from './frontend/src/lib/types';
 import fs from 'node:fs'
-import { initI, search, searchGroupByCount } from './weaviate'
+import { initI, initKG, search, searchGroupByCount } from './weaviate'
 import { initNotion } from './notion'
 
 const app = new Hono()
@@ -50,8 +50,9 @@ app.get('/api/search', async (c) => {
 })
 
 const init = async () => {
-    await initI()
-    await initNotion()
+    // await initKG()
+    // await initI()
+    // await initNotion()
 }
 init().catch(e => {
     console.error(e)
