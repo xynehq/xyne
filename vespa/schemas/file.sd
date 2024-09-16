@@ -1,0 +1,211 @@
+schema file {
+  document file {
+    field docId type string {
+      indexing: attribute | summary
+    }
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    field title type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+    }
+
+    field url type string {
+      indexing: summary
+    }
+    field chunk type string {
+      indexing: index | attribute
+      index {
+        enable-bm25
+      }
+    }
+    field chunkIndex type int {
+      indexing: attribute | summary
+    }
+    field owner type string {
+      indexing: attribute | summary
+    }
+    field ownerEmail type string {
+      indexing: attribute | summary
+    }
+    field photoLink type string {
+      indexing: attribute | summary
+    }
+    field permissions type array<string> {
+      indexing: attribute | summary
+    }
+    field mimeType type string {
+      indexing: attribute | summary
+    }
+
+    # Use tensors for vector embeddings
+    field title_embedding type tensor<bfloat16>(v[768]) {
+      indexing: attribute | index
+      attribute {
+        distance-metric: angular
+      }
+    }
+
+    field chunk_embedding type tensor<bfloat16>(v[768]) {
+      indexing: attribute | index
+      attribute {
+        distance-metric: angular
+      }
+    }
+  }
+  field title_fuzzy type string {
+    indexing: input title | index
+    index {
+      enable-bm25
+    }
+    match {
+      gram
+      gram-size: 3
+    }
+  }
+
+  fieldset default {
+    fields: title, app, entity, chunk
+  }
+
+  fieldset autocomplete {
+    fields: title
+  }
+
+  # Hybrid search rank profile combining BM25 and vector search
+  rank-profile default {
+    constants {
+      title_multiplier: 1.2
+    }
+    function title_vector_score() {
+      expression: closeness(field, title_embedding)
+    }
+
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embedding)
+    }
+    inputs {
+      query(e) tensor<bfloat16>(v[768])
+    }
+
+    first-phase {
+      expression: (query(alpha) * (title_vector_score + chunk_vector_score)) + ((1 - query(alpha)) + ((bm25(title) * title_multiplier) + bm25(chunk)))
+    }
+
+    # Global phase reranks results using hybrid approach (vector + BM25)
+    global-phase {
+      expression {
+        (
+          (query(alpha) * (normalize_linear(title_vector_score) + normalize_linear(chunk_vector_score)))
+          +
+          ((1 - query(alpha)) * ((bm25(title) * title_multiplier) + bm25(chunk)))
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      bm25(title)
+      bm25(chunk)
+      closeness(field, title_embedding)
+      closeness(field, chunk_embedding)
+    }
+  }
+
+  document-summary matched-fields {
+    summary chunk_summary {
+      bolding: on
+      source: chunk
+    }
+    summary docId {}
+  }
+
+  # Autocomplete rank profile for fuzzy prefix search
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(title_fuzzy)
+    }
+    match-features {
+      bm25(title_fuzzy)
+    }
+  }
+}
+
+
+# schema file {
+#   document file {
+#     field docId type string {
+#       indexing: attribute | summary
+#     }
+
+#     field title type string {
+#       indexing: summary | attribute | index
+#       index: enable-bm25 
+#       bolding: on
+#     }
+#     field title_embedding type tensor<bfloat16>(v[768]) {
+#       indexing: attribute | index
+#       attribute {
+#         distance-metric: angular
+#       }
+#     }
+#   }
+
+#   fieldset default {
+#     fields: title
+#   }
+#   rank-profile semantic {
+#     inputs {
+#         query(e) tensor<bfloat16>(v[768])
+#     }
+#     first-phase {
+#         expression: closeness(field, title_embedding)
+#     }
+#   }
+
+#   rank-profile hybrid {
+#         inputs {
+#           query(e) tensor<bfloat16>(v[768])
+#         }
+#         first-phase {
+#             expression: closeness(field, title_embedding) * (1 + (bm25(title)))
+#         }
+#         match-features: bm25(title) closeness(field, title_embedding)
+#     }
+
+
+#     rank-profile hybrid-normalize-bm25-with-atan inherits hybrid {
+        
+#         function scale(val) {
+#             expression: 2*atan(val/8)/(3.14159)
+#         }
+#         function normalized_bm25() {
+#             expression: scale(bm25(title))# + bm25(text)) 
+#         }
+#         function cosine() {
+#             expression: cos(distance(field, title_embedding))
+#         }
+#         first-phase {
+#             expression: normalized_bm25 + cosine
+#         }
+#         match-features {
+#             normalized_bm25 
+#             cosine 
+#             bm25(title)
+#             # bm25(text)
+#         }
+#     }
+
+# }
+

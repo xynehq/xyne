@@ -1,0 +1,35 @@
+schema user_query {
+  document user_query {
+    field user_id type string {
+      indexing: attribute | summary
+    }
+    field query_text type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+      match {
+        gram
+        gram-size: 3
+      }
+    }
+    field timestamp type string {
+      indexing: summary | attribute
+    }
+  }
+
+  # Fieldset for default search
+  fieldset default {
+    fields: query_text
+  }
+
+  # Rank profile for fuzzy search on query_text
+  rank-profile default {
+    first-phase {
+      expression: bm25(query_text)
+    }
+    match-features {
+      bm25(query_text)
+    }
+  }
+}

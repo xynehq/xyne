@@ -4,50 +4,22 @@ import { logger } from 'hono/logger'
 import fs from 'node:fs'
 import { initI, initKG, search, searchGroupByCount } from './weaviate'
 import { initNotion } from './notion'
+import { autocomplete } from './vespa'
+import { AutocompleteApi, autocompleteSchema, SearchApi } from './search'
+import { z } from 'zod'
+import { zValidator } from '@hono/zod-validator'
+import { searchSchema } from './types'
 
 const app = new Hono()
 
 app.use('*', logger())
 
-app.get('/api/search', async (c) => {
-    const query = c.req.query('query'); // Retrieve client ID from query params
-    if (!query) {
-        return c.json({ cause: 'query is mandatory' }, 400)
-    }
-    const offsetStr: string = c.req.query('offset') || ""
-    let offset = 0
-    if (offsetStr) {
-        offset = parseInt(offsetStr)
-    }
-    const pageStr: string = c.req.query('page') || ""
-    let page = 8
-    if (pageStr) {
-        page = parseInt(pageStr)
-    }
+const AppRoutes = app.basePath('/api')
+    .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
+    .get('/search', zValidator('query', searchSchema), SearchApi)
 
-    const gcStr = c.req.query('groupCount')
-    let gc = 0
-    if (gcStr) {
-        gc = parseInt(gcStr)
-    }
-    const app = c.req.query('app')
-    const entity = c.req.query('entity')
+export type AppType = typeof AppRoutes
 
-    let groupCount = {}
-    let results = {}
-    if (gc) {
-        groupCount = await searchGroupByCount(query, ['saheb@xynehq.com'], app, entity)
-        results = await search(query, page, offset, ['saheb@xynehq.com'], app, entity)
-
-    } else {
-        results = await search(query, page, offset, ['saheb@xynehq.com'], app, entity)
-    }
-    results.objects = results.objects.filter(o => {
-        return o?.metadata?.score > 0.01
-    })
-    results.groupCount = groupCount
-    return c.json(results)
-})
 
 const init = async () => {
     // await initKG()

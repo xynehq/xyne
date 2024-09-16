@@ -1,0 +1,16 @@
+<services version="1.0">
+    <container id="my_container" version="1.0">
+        <search />
+        <document-api />
+    </container>
+    <content id="my_content" version="1.0">
+        <redundancy reply-after="1">1</redundancy>
+        <documents>
+            <document type="file" mode="index" />
+            <document type="user_query" mode="index" />
+        </documents>
+        <nodes>
+            <node distribution-key="0" hostalias="node1" />
+        </nodes>
+    </content>
+</services>

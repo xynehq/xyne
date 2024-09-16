@@ -1,30 +1,29 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/')({
-  component: Index,
-})
 
-const page = 7
+const page = 8
 
 import { Folder, ChevronRight, ChevronLeft } from 'lucide-react';
 
-import { useEffect, useState } from 'react'
-import DocsSvg from '../assets/docs.svg'
-import SlidesSvg from '../assets/slides.svg'
-import SheetsSvg from '../assets/sheets.svg'
-import DriveSvg from '../assets/drive.svg'
-import FolderSvg from '../assets/folder.svg'
+import { forwardRef, MutableRefObject, useEffect, useRef, useState } from 'react'
+import DocsSvg from '@/assets/docs.svg'
+import SlidesSvg from '@/assets/slides.svg'
+import SheetsSvg from '@/assets/sheets.svg'
+import DriveSvg from '@/assets/drive.svg'
+import FolderSvg from '@/assets/folder.svg'
 import NotionPageSvg from '../assets/notionPage.svg'
 
 
-import { Input } from '../components/ui/input'
-import { Button } from '../components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../components/ui/tooltip";
+} from "@/components/ui/tooltip";
+import { api } from '@/api';
+import HighlightedText from '@/components/Highlight';
 
 export function SearchInfo({info}) {
   return (
@@ -73,51 +72,137 @@ const flattenGroups = (groups) => {
 );
 }
 
-function Index() {
+const Autocomplete = forwardRef(({ result, onClick}: { result:any, onClick: any }, ref: MutableRefObject<HTMLDivElement>) => {
+  return (
+    <div  ref={ref} onClick={onClick} className='cursor-pointer hover:bg-gray-100 px-4 py-2'>
+      <div className='flex'>
+        {getIcon(result.app, result.entity)}
+        <p>
+          {result.title}
+        </p>
+      </div>
+    </div>
+  )
+})
+
+const Index = () => {
   const [query, setQuery] = useState(''); // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState([]); // State to hold the search results
   const [groups, setGroups] = useState(null)
   const [filter, setFilter] = useState(null)
 
+  // close autocomplete if clicked outside
+  const autocompleteRef = useRef<HTMLDivElement | null>(null); 
+  const [autocompleteQuery, setAutocompleteQuery] = useState('')
+
+
+  // for autocomplete
+  const debounceTimeout = useRef<number | null>(null); // Debounce timer
+  const [autocompleteResults, setAutocompleteResults] = useState([])
+
+  // Click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // If click is outside the autocomplete box, hide the autocomplete results
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setAutocompleteResults([]); // Hide autocomplete by clearing results
+      }
+    }
+
+    // Attach the event listener to detect clicks outside
+    document.addEventListener('mousedown', handleClickOutside);
+
+    // Cleanup listener on component unmount
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [autocompleteRef]);
+
+  useEffect(() => {
+    if(query.length < 2) {
+      setAutocompleteResults([]);
+      return
+    }
+    // Debounce logic
+    if (debounceTimeout.current) {
+      clearTimeout(debounceTimeout.current);
+    }
+    debounceTimeout.current = window.setTimeout(() => {
+      (async () => {
+        try {
+          const response = await api.api.autocomplete.$post({
+            json: {
+              query: autocompleteQuery
+            }
+
+          })
+          const data = await response.json();
+          if(data.children && data.children.length) {
+            // Assuming data has a structure like: { children: [{ fields: { title: '...' } }] }
+            // const titles = data.children.map((v: any) => v.fields.title);
+            setAutocompleteResults(data.children);
+          }
+
+        } catch (error) {
+          console.error('Error fetching autocomplete results:', error);
+        }
+      })();
+    }, 300); // 300ms debounce
+
+    // Cleanup function to clear the timeout when component unmounts or new call starts
+    return () => {
+      if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+      }
+    };
+  }, [autocompleteQuery])
+
   const handleSearch = async (newOffset = offset, newFilter = filter) => {
     if (!query) return; // If the query is empty, do nothing
     // setGroups(null)
 
+    setAutocompleteResults([])
     try {
       let params;
       let groupCount;
+      let paramsObj = {}
       if(newFilter) {
-        groupCount = 0
-        params = new URLSearchParams({
+        groupCount = false
+        paramsObj = {
           page: page > groups[newFilter.app][newFilter.entity] ? groups[newFilter.app][newFilter.entity] : page,
           offset: newOffset,
           query: encodeURIComponent(query),
           groupCount,
           app: newFilter.app,
           entity: newFilter.entity
-        });
+
+        }
       } else {
-        groupCount = 1
-        params = new URLSearchParams({
+        groupCount = true
+        paramsObj = {
           page: page,
           offset: newOffset,
           query: encodeURIComponent(query),
           groupCount,
-        });
+        }
       }
 
       // Send a GET request to the backend with the search query
-      const response = await fetch(`/api/search?${params?.toString()}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch search results');
+      const response = await api.api.search.$get({
+        query: paramsObj
+      })
+      if(response.ok) {
+        const data = await response.json()
+        console.log(data)
+        setResults(data.root.children.map(v => v.fields))
+        if(groupCount) {
+          setGroups(data.groupCount)
+        }
+      } else {
+        const errorText = await response.text();
+        throw new Error(`Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`);
       }
-
-      const data = await response.json();
-      if(groupCount) {
-        setGroups(data.groupCount)
-      }
-      setResults(data?.objects); // Update the results state with the response data
     } catch (error) {
       console.error('Error fetching search results:', error);
       setResults([]); // Clear results on error
@@ -137,7 +222,14 @@ function Index() {
     handleSearch(newOffset); // Trigger search with the updated offset
   };
 
-  const handleFilterChange = ({app, entity}) => {
+  const handleFilterChange = (appEntity) => {
+    if(!appEntity) {
+      setFilter(null)
+      setOffset(0)
+      handleSearch(0, null)
+      return
+    }
+    const {app, entity} = appEntity
     if(filter && filter.app === app && filter.entity === entity) {
       setFilter(null)
       setOffset(0)
@@ -152,11 +244,13 @@ function Index() {
   return (
     <div className="p-4 flex flex-col h-full w-full">
       <div className="flex space-x-2 max-w-4xl">
+      <div className="relative w-full">
         <Input
           placeholder="Search workspace"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
+            setAutocompleteQuery(e.target.value)
             setOffset(0)
           }}
           className="px-4 py-2 border border-gray-300 rounded-md focus-visible:ring-offset-0 focus-visible:ring-0"
@@ -166,6 +260,18 @@ function Index() {
             }
           }}
         />
+        {!!autocompleteResults.length && 
+    <div ref={autocompleteRef} className='absolute top-full left-0 w-full bg-white rounded-md border font-mono text-sm shadow-sm z-10'>
+      {autocompleteResults.map((result, index) => (
+        <Autocomplete key={index} onClick={() => {
+          setQuery(result.fields.title);
+          setAutocompleteResults([]);
+        }} result={result.fields} />
+      ))}
+
+      </div>
+      }
+      </div>
         <Button 
           onClick={(e) => handleSearch()} 
           className="px-4 py-2 text-white rounded-md"
@@ -173,6 +279,7 @@ function Index() {
           Search
         </Button>
       </div>
+
       <div className='flex flex-row'>
       <div className="mt-4 w-full pr-10 space-y-3">
         {results.length > 0 ? (
@@ -180,22 +287,22 @@ function Index() {
             <div className='flex flex-col mt-2' key={index}>
             <div className="flex items-center justify-start space-x-2">
               <a 
-              href={result.properties.url} 
+              href={result.url} 
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center text-blue-800 space-x-2"
             >
-              {getIcon(result.properties.app, result.properties.entity)}
-              {result.properties.title}
+              {getIcon(result.app, result.entity)}
+              {result.title}
             </a> 
             </div>
             <div className='flex flex-row items-center mt-1'>
-              <img  referrerPolicy="no-referrer" className='mr-2 w-[16px] h-[16px] rounded-full' src={result.properties.photoLink}></img>
-              <a target='_blank' rel="noopener noreferrer" href={`https://contacts.google.com/${result.properties.ownerEmail}`}>
-              <p className='text-left text-sm pt-1 text-gray-500'>{result.properties.owner}</p>
+              <img  referrerPolicy="no-referrer" className='mr-2 w-[16px] h-[16px] rounded-full' src={result.photoLink}></img>
+              <a target='_blank' rel="noopener noreferrer" href={`https://contacts.google.com/${result.ownerEmail}`}>
+              <p className='text-left text-sm pt-1 text-gray-500'>{result.owner}</p>
               </a>
             </div>
-            <p className='text-left text-sm mt-1 line-clamp-[2.5] text-ellipsis overflow-hidden ...'>{result.properties.chunk ? result.properties.chunk : '...'}</p>
+            <HighlightedText chunk_summary={result.chunk_summary} />
             </div>
           ))
         ) : (
@@ -214,6 +321,7 @@ function Index() {
         </div>
         </div>
         {
+          
         flattenGroups(groups).map(({app, entity, count}, index) => {
           return (
             <div key={index} onClick={(e) => {
@@ -229,7 +337,9 @@ function Index() {
               <p className='text-blue-500 ml-7'>{groups[app][entity]}</p>
             </div>
           )
-        })}
+        })
+        }
+        
       </div>)
       }
 
@@ -248,3 +358,7 @@ function Index() {
     </div>
   )
 }
+
+export const Route = createFileRoute('/')({
+  component: Index,
+})

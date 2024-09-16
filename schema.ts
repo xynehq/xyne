@@ -1,5 +1,32 @@
 import weaviate, { dataType, Filters, type WeaviateReturn } from 'weaviate-client'
 
+import { z, ZodString, ZodNumber, ZodArray, ZodTypeAny } from 'zod';
+
+// Define the Zod schema manually
+const fileSchema = z.object({
+    docId: z.string(),
+    app: z.string(),
+    entity: z.string(),
+    title: z.string(),
+    url: z.string(),
+    chunk: z.string(),
+    chunkIndex: z.number(),
+    owner: z.string(),
+    ownerEmail: z.string(),
+    photoLink: z.string(),
+    permissions: z.array(z.string()),
+    mimeType: z.string(),
+});
+
+export const FileCollectionName = 'Files'
+
+export const fileVectorDBSchema = {
+
+}
+
+
+
+
 export const weaviateSchema = {
     name: 'DriveFiles',
     vectorizers: weaviate.configure.vectorizer.none(),
