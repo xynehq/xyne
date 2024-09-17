@@ -91,6 +91,7 @@ const Index = () => {
   const [results, setResults] = useState([]); // State to hold the search results
   const [groups, setGroups] = useState(null)
   const [filter, setFilter] = useState(null)
+  const [searchMeta, setSearchMeta] = useState(null)
 
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null); 
@@ -195,6 +196,7 @@ const Index = () => {
       if(response.ok) {
         const data = await response.json()
         console.log(data)
+        setSearchMeta({coverage: data.root.coverage, fields: data.root.fields})
         setResults(data.root.children.map(v => v.fields))
         if(groupCount) {
           setGroups(data.groupCount)
@@ -319,21 +321,19 @@ const Index = () => {
               <div className="flex items-center">
           <p>All</p>
         </div>
+              {searchMeta && <p className='text-blue-500 ml-7'>{searchMeta.fields.totalCount}</p>}
         </div>
         {
           
         flattenGroups(groups).map(({app, entity, count}, index) => {
           return (
             <div key={index} onClick={(e) => {
-              handleFilterChange({app, entity})
-            }} className={`${filter && filter.app === app && filter.entity === entity ? 'bg-white' : ''} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}>
+                handleFilterChange({app, entity})
+              }} className={`${filter && filter.app === app && filter.entity === entity ? 'bg-white' : ''} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}>
               <div className="flex items-center">
-          {getIcon(app, entity)}
-          <p>{entity}</p>
-        </div>
-
-             {/* {getIcon('google', group)}
-              <p>{group}</p> */}
+              {getIcon(app, entity)}
+                <p>{entity}</p>
+              </div>
               <p className='text-blue-500 ml-7'>{groups[app][entity]}</p>
             </div>
           )

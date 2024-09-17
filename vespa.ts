@@ -412,8 +412,8 @@ const getDocumentCount = async () => {
 const query = 'xyne';
 // const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
-await deleteAllDocuments()
-await initVespa(email)
+// await deleteAllDocuments()
+// await initVespa(email)
 // console.log(JSON.stringify(await searchVespa('welcome my friend, let me provide you with a prompt', 'saheb@xynehq.com')))
 // const output = (await searchVespa(query, email))
 // console.log(JSON.stringify(output, null, 2))
@@ -431,31 +431,3 @@ interface EntityCounts {
 interface AppEntityCounts {
     [app: string]: EntityCounts;
 }
-
-// const handleVespaResponse = (response: VespaResponse): AppEntityCounts => {
-//     const appEntityCounts: AppEntityCounts = {};
-
-//     // Iterate through the root children
-//     for (const item of response.root.children) {
-//         if ('label' in item && item.label === "app") {
-//             const app = item.value as string;  // Get the app name
-//             appEntityCounts[app] = {};         // Initialize the app entry
-
-//             // Iterate through the entity groups inside the app group
-//             for (const entity of item.children) {
-//                 const entityName = entity.value as string;  // Get the entity name
-//                 const count = entity.fields?.["count()"] || 0;  // Get the count or default to 0
-//                 appEntityCounts[app][entityName] = count;  // Assign the count to the app-entity pair
-//             }
-//         }
-//     }
-
-//     return appEntityCounts;  // Return the final map
-// }
-
-
-
-
-
-
-// console.log(JSON.stringify(await searchVespa("xyne", "saheb@xynehq.com", "google", "docs", 8, 0), null, 2))

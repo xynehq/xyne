@@ -21,10 +21,10 @@ export const AutocompleteApi = async (c: Context) => {
 
 export const SearchApi = async (c: Context) => {
     const email = 'saheb@xynehq.com'
-    const { query, groupCount: gc, offset, page, app, entity } = c.req.valid('query');
-    console.log(gc)
+    let { query, groupCount: gc, offset, page, app, entity } = c.req.valid('query');
     let groupCount = {}
     let results = {}
+    query = decodeURIComponent(query)
     if (gc) {
         // groupCount = await searchGroupByCount(query, ['saheb@xynehq.com'], app, entity)
         groupCount = await groupVespaSearch(query, email)
