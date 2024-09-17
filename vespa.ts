@@ -183,14 +183,54 @@ export const ingestAll = async (userEmail: string) => {
 
 export const initVespa = async (email: string) => {
     let data = await checkAndReadFile(vespaCacheDir)
-    if (!data) {
-        data = await ingestAll(email)
-    }
+    // let docMap = {}
 
-    for (const doc of data) {
-        doc.docId = `${doc.docId}-${doc.chunkIndex}`
+    // for (const doc of data) {
+    //     const docId = doc.docId;
+
+    //     if (docMap[docId] != null) {
+    //         // Add chunks and their embeddings to existing doc
+    //         docMap[docId].chunks.push(doc.chunk);
+    //         docMap[docId].chunk_embeddings[doc.chunkIndex + ""] = doc.chunk_embedding;  // Use the chunk index as string for key
+    //         let tempDoc = docMap[docId]
+    //         delete tempDoc["chunk"]
+    //         delete tempDoc["chunk_embedding"]
+    //         delete tempDoc.chunkIndex
+    //         docMap[docId] = tempDoc
+    //     } else {
+    //         // Create a new doc object with chunks and embeddings
+    //         doc.chunks = [];
+    //         doc.chunk_embeddings = {};
+    //         doc.url = decodeURI(doc.url);
+
+    //         // Check if chunk exists before pushing to chunks array and embedding
+    //         if (doc.chunk) {
+    //             doc.chunks.push(doc.chunk);  // Push the chunk into chunks array
+    //             doc.chunk_embeddings[doc.chunkIndex + ""] = doc.chunk_embedding;  // Add embedding with string key
+    //         }
+    //         // Remove unnecessary fields
+    //         delete doc["title_embedding"];
+    //         delete doc["chunk"];
+    //         delete doc["chunk_embedding"];
+    //         delete doc.chunkIndex
+    //         // Assign the doc to the map
+    //         docMap[docId] = doc;
+    //     }
+    // }
+    // fs.writeFile(vespaCacheDir, JSON.stringify(docMap))
+
+    for (const [docId, doc] of Object.entries(data)) {
         await insertDocument(doc)
     }
+
+    // if (!data) {
+    //     data = await ingestAll(email)
+    // }
+
+    // for (const doc of data) {
+    //     doc.docId = `${doc.docId}-${doc.chunkIndex}`
+    //     await insertDocument(doc)
+    // }
 }
 
 
@@ -212,7 +252,9 @@ const HybridProfile: YqlProfile = {
 }
 const HybridDefaultProfile: YqlProfile = {
     profile: "default",
-    yql: `select * from file where (({targetHits:10}userInput(@query)) or ({targetHits:10}nearestNeighbor(title_embedding,e)))`
+    yql: `select * from file 
+        where (({targetHits:10}userInput(@query)) 
+        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e)))`
 }
 
 // select * from file where (({targetHits:10}userInput(@query)) or ({targetHits:10}nearestNeighbor(title_embedding, e))) and app == @app and entity == @entity
@@ -220,8 +262,8 @@ const HybridDefaultProfile: YqlProfile = {
 const HybridDefaultProfileAppEntityCounts: YqlProfile = {
     profile: "default",
     yql: `select * from file 
-        where ({targetHits:10}userInput(@query)) 
-        or ({targetHits:10}nearestNeighbor(title_embedding, e)) 
+        where (({targetHits:10}userInput(@query)) 
+        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e)))
         limit 0 
         | all(
             group(app) each(
@@ -275,7 +317,6 @@ export const searchVespa = async (query: string, email: string, app?: string, en
 
 
 
-    // let yqlQuery = HybridDefaultProfile.yql
     let yqlQuery = HybridDefaultProfile.yql
 
     if (app && entity) {

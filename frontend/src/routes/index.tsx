@@ -196,9 +196,12 @@ const Index = () => {
       if(response.ok) {
         const data = await response.json()
         console.log(data)
-        setSearchMeta({coverage: data.root.coverage, fields: data.root.fields})
-        setResults(data.root.children.map(v => v.fields))
+
+        if(data.root.children && data.root.children.length) {
+          setResults(data.root.children.map(v => v.fields))
+        }
         if(groupCount) {
+          setSearchMeta({coverage: data.root.coverage, fields: data.root.fields})
           setGroups(data.groupCount)
         }
       } else {
@@ -304,7 +307,9 @@ const Index = () => {
               <p className='text-left text-sm pt-1 text-gray-500'>{result.owner}</p>
               </a>
             </div>
-            <HighlightedText chunk_summary={result.chunk_summary} />
+            {result.chunks_summary && result.chunks_summary.length && (
+              result.chunks_summary.slice(0, 2).map(summary => ((<HighlightedText chunk_summary={summary} />)))
+            )}
             </div>
           ))
         ) : (
