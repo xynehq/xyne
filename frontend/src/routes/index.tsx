@@ -92,6 +92,7 @@ const Index = () => {
   const [groups, setGroups] = useState(null)
   const [filter, setFilter] = useState(null)
   const [searchMeta, setSearchMeta] = useState(null)
+  const [pageNumber, setPageNumber] = useState(0)
 
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null); 
@@ -201,6 +202,7 @@ const Index = () => {
           setResults(data.root.children.map(v => v.fields))
         }
         if(groupCount) {
+          console.log(searchMeta, data.root)
           setSearchMeta({coverage: data.root.coverage, fields: data.root.fields})
           setGroups(data.groupCount)
         }
@@ -221,6 +223,12 @@ const Index = () => {
     handleSearch(newOffset); // Trigger search with the updated offset
   };
 
+  const goToPage = (pageNumber: number) => {
+    const newOffset = pageNumber * page;
+    setOffset(newOffset);
+    handleSearch(newOffset); // Trigger search with the updated offset
+  }
+
   const handlePrev = () => {
     const newOffset = Math.max(0, offset - page);
     setOffset(newOffset);
@@ -228,6 +236,7 @@ const Index = () => {
   };
 
   const handleFilterChange = (appEntity) => {
+      setPageNumber(0)
     if(!appEntity) {
       setFilter(null)
       setOffset(0)
@@ -351,13 +360,31 @@ const Index = () => {
       </div>
       <div className='mt-auto flex space-x-2 items-center justify-center w-full'>
         {offset > 0 && 
-<Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
-        handlePrev()
-      }}><ChevronLeft /></Button>
+          <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
+            handlePrev()
+          }}>
+            <ChevronLeft />
+          </Button>
         }
-      {results.length > 0 && results.length === page && <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
-        handleNext()
-      }}><ChevronRight /></Button>}
+
+      {searchMeta &&
+        (
+          <div className='flex space-x-2 items-center'>
+            {Array(Math.round( (filter? groups[filter.app][filter.entity] : searchMeta.fields.totalCount) / page) || 1).fill(0).map((count, index) => {
+              return (<p key={index} className={`cursor-pointer hover:text-sky-700 ${index === pageNumber ? "text-blue-500" : "text-gray-700"}`} onClick={(e) => {
+                goToPage(index)
+                setPageNumber(index)
+              }}>{index + 1}</p>)
+            })}
+            </div>
+        )
+
+      }
+      {results.length > 0 && results.length === page && (
+          <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
+          handleNext()
+        }}><ChevronRight /></Button>
+      )}
 
       </div>
     </div>
