@@ -1,7 +1,7 @@
 import type { Context } from "hono";
-import { autocomplete, groupVespaSearch, searchVespa } from "./vespa";
+import { autocomplete, groupVespaSearch, searchVespa } from "@/search/vespa";
 import { z } from 'zod'
-import type { AutocompleteResults } from "./types";
+import type { AutocompleteResults } from "@/types";
 
 export const autocompleteSchema = z.object({
     query: z.string().min(2)

@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  vespa:
+    image: vespaengine/vespa
+    container_name: vespa
+    hostname: vespa-container
+    ports:
+      - "8080:8080"
+      - "19071:19071"
+    volumes:
+      - ./vespa-data:/opt/vespa/var
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  xyne-db:
+    image: postgres
+    container_name: xyne-db
+    environment:
+      POSTGRES_USER: xyne
+      POSTGRES_PASSWORD: xyne
+      POSTGRES_DB: xyne
+    ports:
+      - "${XYNE_DB_PORT:-5433}:5432"
+    volumes:
+      - ./xyne-data:/var/lib/postgresql/data
+    networks:
+      - xyne
+networks:
+  xyne:

@@ -1,4 +1,4 @@
-import weaviate, { dataType, Filters, type WeaviateReturn } from 'weaviate-client'
+// import weaviate, { dataType, Filters, type WeaviateReturn } from 'weaviate-client'
 import { env, pipeline } from '@xenova/transformers';
 import fs from "node:fs/promises";
 import { JWT } from "google-auth-library";

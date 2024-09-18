@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useMatch, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
 
 
 const page = 8
@@ -85,7 +85,21 @@ const Autocomplete = forwardRef(({ result, onClick}: { result:any, onClick: any 
   )
 })
 
-const Index = () => {
+export const Index = () => {
+  const routerState = useRouterState()
+  const currentPath = routerState.location.pathname
+  if(currentPath === '/search') {
+    const {
+      query: queryParam,
+      groupCount,
+      offset: offsetParam,
+      page: pageParam,
+      app: appParam,
+      entity: entityParam,
+    } = useSearch({ from: '/search' });
+  }
+
+
   const [query, setQuery] = useState(''); // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState([]); // State to hold the search results
@@ -93,6 +107,9 @@ const Index = () => {
   const [filter, setFilter] = useState(null)
   const [searchMeta, setSearchMeta] = useState(null)
   const [pageNumber, setPageNumber] = useState(0)
+
+  const navigate = useNavigate({ from: '/search' });
+
 
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null); 
@@ -140,7 +157,7 @@ const Index = () => {
 
           })
           const data = await response.json();
-          if(data.children && data.children.length) {
+          if(data.children && data.children?.length) {
             // Assuming data has a structure like: { children: [{ fields: { title: '...' } }] }
             // const titles = data.children.map((v: any) => v.fields.title);
             setAutocompleteResults(data.children);
@@ -162,48 +179,69 @@ const Index = () => {
 
   const handleSearch = async (newOffset = offset, newFilter = filter) => {
     if (!query) return; // If the query is empty, do nothing
-    // setGroups(null)
+
 
     setAutocompleteResults([])
     try {
-      let params;
+      let params = {};
       let groupCount;
-      let paramsObj = {}
       if(newFilter) {
         groupCount = false
-        paramsObj = {
-          page: page > groups[newFilter.app][newFilter.entity] ? groups[newFilter.app][newFilter.entity] : page,
+        let pageSize = page > groups[newFilter.app][newFilter.entity] ? groups[newFilter.app][newFilter.entity] : page
+        params = {
+          page: pageSize,
           offset: newOffset,
           query: encodeURIComponent(query),
           groupCount,
           app: newFilter.app,
           entity: newFilter.entity
-
         }
+        navigate({
+          to: '/search',
+          search: (prev) => ({
+            ...prev,
+            query: encodeURIComponent(query),
+            page: pageSize,
+            offset: newOffset,
+            app: newFilter.app,
+            entity: newFilter.entity
+          }),
+          replace: true,
+        });
       } else {
         groupCount = true
-        paramsObj = {
+        params = {
           page: page,
           offset: newOffset,
           query: encodeURIComponent(query),
           groupCount,
         }
+        navigate({
+          to: '/search',
+          search: (prev) => ({
+            ...prev,
+            query: query,
+            page: page,
+            offset: newOffset,
+          }),
+          replace: true,
+        });
       }
 
       // Send a GET request to the backend with the search query
       const response = await api.api.search.$get({
-        query: paramsObj
+        query: params
       })
       if(response.ok) {
         const data = await response.json()
         console.log(data)
 
-        if(data.root.children && data.root.children.length) {
+        if(data.root?.children && data.root.children?.length) {
           setResults(data.root.children.map(v => v.fields))
         }
         if(groupCount) {
           console.log(searchMeta, data.root)
-          setSearchMeta({coverage: data.root.coverage, fields: data.root.fields})
+          setSearchMeta({coverage: data.root?.coverage, fields: data.root?.fields})
           setGroups(data.groupCount)
         }
       } else {
@@ -274,7 +312,7 @@ const Index = () => {
             }
           }}
         />
-        {!!autocompleteResults.length && 
+        {!!autocompleteResults?.length && 
     <div ref={autocompleteRef} className='absolute top-full left-0 w-full bg-white rounded-md border font-mono text-sm shadow-sm z-10'>
       {autocompleteResults.map((result, index) => (
         <Autocomplete key={index} onClick={() => {
@@ -296,7 +334,7 @@ const Index = () => {
 
       <div className='flex flex-row'>
       <div className="mt-4 w-full pr-10 space-y-3">
-        {results.length > 0 ? (
+        {results?.length > 0 ? (
           results.map((result, index) => (
             <div className='flex flex-col mt-2' key={index}>
             <div className="flex items-center justify-start space-x-2">
@@ -316,7 +354,7 @@ const Index = () => {
               <p className='text-left text-sm pt-1 text-gray-500'>{result.owner}</p>
               </a>
             </div>
-            {result.chunks_summary && result.chunks_summary.length && (
+            {result.chunks_summary && result.chunks_summary?.length && (
               result.chunks_summary.slice(0, 2).map(summary => ((<HighlightedText chunk_summary={summary} />)))
             )}
             </div>
@@ -335,7 +373,7 @@ const Index = () => {
               <div className="flex items-center">
           <p>All</p>
         </div>
-              {searchMeta && <p className='text-blue-500 ml-7'>{searchMeta.fields.totalCount}</p>}
+              {searchMeta && <p className='text-blue-500 ml-7'>{searchMeta.fields?.totalCount}</p>}
         </div>
         {
           
@@ -370,7 +408,7 @@ const Index = () => {
       {searchMeta &&
         (
           <div className='flex space-x-2 items-center'>
-            {Array(Math.round( (filter? groups[filter.app][filter.entity] : searchMeta.fields.totalCount) / page) || 1).fill(0).map((count, index) => {
+            {Array(Math.round( (filter? groups[filter.app][filter.entity] : searchMeta.fields?.totalCount) / page) || 1).fill(0).map((count, index) => {
               return (<p key={index} className={`cursor-pointer hover:text-sky-700 ${index === pageNumber ? "text-blue-500" : "text-gray-700"}`} onClick={(e) => {
                 goToPage(index)
                 setPageNumber(index)
@@ -380,7 +418,7 @@ const Index = () => {
         )
 
       }
-      {results.length > 0 && results.length === page && (
+      {results?.length > 0 && results?.length === page && (
           <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
           handleNext()
         }}><ChevronRight /></Button>

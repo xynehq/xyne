@@ -13,6 +13,7 @@
 import { Route as rootRoute } from './routes/__root'
 import { Route as SearchImport } from './routes/search'
 import { Route as IndexImport } from './routes/index'
+import { Route as AdminIntegrationsImport } from './routes/admin/integrations'
 
 // Create/Update Routes
 
@@ -23,6 +24,11 @@ const SearchRoute = SearchImport.update({
 
 const IndexRoute = IndexImport.update({
   path: '/',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AdminIntegrationsRoute = AdminIntegrationsImport.update({
+  path: '/admin/integrations',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -44,12 +50,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchImport
       parentRoute: typeof rootRoute
     }
+    '/admin/integrations': {
+      id: '/admin/integrations'
+      path: '/admin/integrations'
+      fullPath: '/admin/integrations'
+      preLoaderRoute: typeof AdminIntegrationsImport
+      parentRoute: typeof rootRoute
+    }
   }
 }
 
 // Create and export the route tree
 
-export const routeTree = rootRoute.addChildren({ IndexRoute, SearchRoute })
+export const routeTree = rootRoute.addChildren({
+  IndexRoute,
+  SearchRoute,
+  AdminIntegrationsRoute,
+})
 
 /* prettier-ignore-end */
 
@@ -60,7 +77,8 @@ export const routeTree = rootRoute.addChildren({ IndexRoute, SearchRoute })
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/search"
+        "/search",
+        "/admin/integrations"
       ]
     },
     "/": {
@@ -68,6 +86,9 @@ export const routeTree = rootRoute.addChildren({ IndexRoute, SearchRoute })
     },
     "/search": {
       "filePath": "search.tsx"
+    },
+    "/admin/integrations": {
+      "filePath": "admin/integrations.tsx"
     }
   }
 }

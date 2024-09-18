@@ -101,3 +101,41 @@ export const searchQuerySchema = searchSchema.extend({
 })
 
 export type SearchQuery = z.infer<typeof searchQuerySchema>
+
+
+
+export enum Apps {
+    GoogleDrive = "google-drive"
+}
+
+export const addServiceConnectionSchema = z.object({
+    'service-key': z.any(),
+    app: z.nativeEnum(Apps),
+    email: z.string(),
+})
+
+
+// Define an enum for connection types
+export enum ConnectorType {
+    SaaS = 'saas',
+    Database = 'database',
+    API = 'api',
+    File = 'file',
+}
+
+export enum AuthType {
+    OAuth = 'oauth',
+    ServiceAccount = 'service_account',
+    // where there is a custom JSON
+    // we store all the key information
+    // needed for end to end encryption
+    Custom = 'custom'
+}
+
+
+export type SaaSJob = {
+    connectionId: number,
+    workspaceId: number,
+    userId: number,
+    app: string,
+}

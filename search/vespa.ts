@@ -4,11 +4,11 @@
 import fs from "node:fs/promises";
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import type { VespaResponse, File } from "./types";
-import { checkAndReadFile } from "./utils";
-import { progress_callback } from './utils';
-import config from "./config";
-import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "./integrations/google";
+import type { VespaResponse, File } from "@/types";
+import { checkAndReadFile } from "@/utils";
+import { progress_callback } from '@/utils';
+import config from "@/config";
+import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
 
 // Define your Vespa endpoint and schema name
 const VESPA_ENDPOINT = 'http://localhost:8080';
@@ -75,7 +75,7 @@ async function deleteAllDocuments() {
     }
 }
 
-const insertDocument = async (document: File) => {
+export const insertDocument = async (document: File) => {
     try {
         const response = await fetch(
             `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${document.docId}`,
@@ -136,49 +136,49 @@ export const autocomplete = async (query: string, email: string, limit: number =
 };
 
 const vespaCacheDir = './data/vespa-data.json'
-export const ingestAll = async (userEmail: string) => {
-    const fileMetadata = (await listFiles(userEmail)).map(v => {
-        v.permissions = toPermissionsList(v.permissions)
-        return v
-    })
-    const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
-    const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
-    const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
-    const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
+// export const ingestAll = async (userEmail: string) => {
+//     const fileMetadata = (await listFiles(userEmail)).map(v => {
+//         v.permissions = toPermissionsList(v.permissions)
+//         return v
+//     })
+//     const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
+//     const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
+//     const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
+//     const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
 
-    const documents: File[] = await googleDocs(googleDocsMetadata)
-    const driveFiles: File[] = driveFilesToDoc(rest)
-    console.log(documents.length, driveFiles.length)
+//     const documents: File[] = await googleDocs(googleDocsMetadata)
+//     const driveFiles: File[] = driveFilesToDoc(rest)
+//     console.log(documents.length, driveFiles.length)
 
-    console.log('generating embeddings')
-    let allFiles: File[] = [...driveFiles, ...documents]
-    let vespaData = []
-    for (const v of allFiles) {
-        let title_embedding = (await extractor(v.title, { pooling: 'mean', normalize: true })).tolist()[0]
-        let chunk_embedding = (await extractor(v.chunk, { pooling: 'mean', normalize: true })).tolist()[0]
-        vespaData.push({
-            docId: v.docId,
-            title: v.title,
-            chunk: v.chunk,
-            chunkIndex: v.chunkIndex,
-            url: v.url,
-            app: v.app,
-            owner: v.owner,
-            photoLink: v.photoLink,
-            ownerEmail: v.ownerEmail,
-            entity: v.entity,
-            permissions: v.permissions,
-            mimeType: v.mimeType,
-            title_embedding,
-            chunk_embedding
-        })
-        console.clear()
-        process.stdout.write(`${(vespaData.length / allFiles.length) * 100}`)
-    }
+//     console.log('generating embeddings')
+//     let allFiles: File[] = [...driveFiles, ...documents]
+//     let vespaData = []
+//     for (const v of allFiles) {
+//         let title_embedding = (await extractor(v.title, { pooling: 'mean', normalize: true })).tolist()[0]
+//         let chunk_embedding = (await extractor(v.chunk, { pooling: 'mean', normalize: true })).tolist()[0]
+//         vespaData.push({
+//             docId: v.docId,
+//             title: v.title,
+//             chunk: v.chunk,
+//             chunkIndex: v.chunkIndex,
+//             url: v.url,
+//             app: v.app,
+//             owner: v.owner,
+//             photoLink: v.photoLink,
+//             ownerEmail: v.ownerEmail,
+//             entity: v.entity,
+//             permissions: v.permissions,
+//             mimeType: v.mimeType,
+//             title_embedding,
+//             chunk_embedding
+//         })
+//         console.clear()
+//         process.stdout.write(`${(vespaData.length / allFiles.length) * 100}`)
+//     }
 
-    await fs.writeFile(vespaCacheDir, JSON.stringify(vespaData))
-    return vespaData
-}
+//     await fs.writeFile(vespaCacheDir, JSON.stringify(vespaData))
+//     return vespaData
+// }
 
 
 export const initVespa = async (email: string) => {
@@ -233,8 +233,6 @@ export const initVespa = async (email: string) => {
     // }
 }
 
-
-const email = 'saheb@xynehq.com'
 
 type YqlProfile = {
     profile: string,
@@ -450,10 +448,8 @@ const getDocumentCount = async () => {
 }
 
 // Example usage:
-const query = 'xyne';
-// const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
-
-// await deleteAllDocuments()
+await deleteAllDocuments()
+console.log('deleted all docs')
 // await initVespa(email)
 // console.log(JSON.stringify(await searchVespa('welcome my friend, let me provide you with a prompt', 'saheb@xynehq.com')))
 // const output = (await searchVespa(query, email))
