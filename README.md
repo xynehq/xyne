@@ -1,15 +1,8 @@
-# qdrant-langchain
+# Xyne
 
-To install dependencies:
+## Search
+starts postgres and vespa
+`docker-compose up -d`
 
-```bash
-bun install
-```
-
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.1.20. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+`bun run server.ts`
+this will install the xenova embedding model first
