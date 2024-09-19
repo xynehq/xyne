@@ -9,7 +9,7 @@ services:
       - "8080:8080"
       - "19071:19071"
     volumes:
-      - ./vespa-data:/opt/vespa/var
+      - vespa-data:/opt/vespa/var
     restart: always
     logging:
       driver: json-file
@@ -25,10 +25,13 @@ services:
       POSTGRES_PASSWORD: xyne
       POSTGRES_DB: xyne
     ports:
-      - "${XYNE_DB_PORT:-5433}:5432"
+      - "${XYNE_DB_PORT:-5432}:5432"
     volumes:
       - ./xyne-data:/var/lib/postgresql/data
     networks:
       - xyne
 networks:
   xyne:
+volumes:
+  vespa-data:
+    driver: local

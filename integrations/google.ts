@@ -131,7 +131,7 @@ export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Sch
         );
 
         const chunks = chunkDocument(cleanedTextContent)
-        let title_embedding = (await extractor(doc.name, { pooling: 'mean', normalize: true })).tolist()[0]
+        // let title_embedding = (await extractor(doc.name, { pooling: 'mean', normalize: true })).tolist()[0]
         let chunkMap: Record<string, number[]> = {}
         for (const c of chunks) {
             const { chunk, chunkIndex } = c
@@ -139,7 +139,7 @@ export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Sch
         }
         docsList.push({
             title: doc.name,
-            title_embedding,
+            // title_embedding,
             url: doc.webViewLink,
             app: 'google',
             docId: doc.id,
@@ -224,19 +224,21 @@ export const driveFilesToDoc = async (rest: drive_v3.Schema$File[]): Promise<Fil
             entity = 'driveFile'
         }
 
-        let title_embedding = (await extractor(doc.name, { pooling: 'mean', normalize: true })).tolist()[0]
+        // let title_embedding = (await extractor(doc.name, { pooling: 'mean', normalize: true })).tolist()[0]
         results.push({
             title: doc.name,
-            title_embedding,
+            // title_embedding,
             url: doc.webViewLink,
             app: 'google',
             docId: doc.id,
             entity,
-            chunk: '',
+            chunks: [],
+            // chunk: '',
             owner: doc?.owners[0]?.displayName,
             photoLink: doc?.owners[0]?.photoLink,
             ownerEmail: doc?.owners[0]?.emailAddress,
-            chunkIndex: 0,
+            // chunkIndex: 0,
+            chunk_embeddings: {},
             permissions: doc.permissions,
             mimeType: doc.mimeType
         })
