@@ -448,8 +448,8 @@ const getDocumentCount = async () => {
 }
 
 // Example usage:
-await deleteAllDocuments()
-console.log('deleted all docs')
+// await deleteAllDocuments()
+// console.log('deleted all docs')
 // await insertDocument({
 //     title: 'saheb',
 //     url: '',

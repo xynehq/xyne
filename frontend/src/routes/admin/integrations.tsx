@@ -1,12 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Apps } from '@server/types';
-import { api } from '@/api';
+import { api, wsClient } from '@/api';
 // import { useToast } from "@/components/hooks/use-toast"
 import { useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
@@ -14,8 +14,25 @@ import { useForm } from '@tanstack/react-form';
 
 import { ToastAction } from "@/components/ui/toast"
 import { cn } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
 
-export const InputFile = ({setLoadingServiceAccount}) => {
+const submitServiceAccountForm = async (value) => {
+    const response = await api.api.admin.service_account.$post({
+      form: {
+        'service-key': value.file,
+        'app': Apps.GoogleDrive,
+        'email': value.email,  // Pass email along with the file
+      }
+    });
+    if(!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    return response.json()
+  
+}
+
+export const InputFile = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
 
@@ -33,7 +50,6 @@ export const InputFile = ({setLoadingServiceAccount}) => {
       file: null
     },
     onSubmit: async ({ value }) => {
-      // If no file, stop submission
       if (!value.file) {
         toast({
           title: "No file selected",
@@ -42,75 +58,52 @@ export const InputFile = ({setLoadingServiceAccount}) => {
         });
         return;
       }
-      console.log(value)
-
+    
       try {
-        const response = await api.api.admin.service_account.$post({
-          form: {
-            'service-key': value.file,
-            'app': Apps.GoogleDrive,
-            'email': value.email,  // Pass email along with the file
-          }
+        const response = await submitServiceAccountForm(value);  // Call the async function
+        console.log(response)
+        toast({
+          title: "File uploaded successfully",
+          description: "Integration in progress",
         });
-
-        if (response.ok) {
-          toast({
-            title: "File uploaded successfully",
-            description: "Integration in progress",
-          });
-          setLoadingServiceAccount(true);
-        } else {
-          const errorText = await response.text();
-          toast({
-            title: "Could not upload the service key",
-            description: `Error: ${errorText}`,
-            variant: 'destructive',
-          });
-          throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
-        }
       } catch (error) {
-        console.error('Error uploading file:', error);
+        toast({
+          title: "Could not upload the service account key",
+          description: `Error: ${error.message}`,
+          variant: 'destructive',
+        });
       }
     },
+    // onSubmit: async ({ value }) => {
+    //   // If no file, stop submission
+    //   if (!value.file) {
+    //     toast({
+    //       title: "No file selected",
+    //       description: "Please upload a file before submitting.",
+    //       variant: 'destructive',
+    //     });
+    //     return;
+    //   }
+
+    //   try {
+    //     // const { data, isPending, error } = useQuery({queryKey: [], queryFn: submitServiceAccountForm(value) })
+    //     if (data && !isPending) {
+    //       toast({
+    //         title: "File uploaded successfully",
+    //         description: "Integration in progress",
+    //       });
+    //     } else if(error) {
+    //       toast({
+    //         title: "Could not upload the service account key",
+    //         // description: `Error: ${errorText}`,
+    //         variant: 'destructive',
+    //       });
+    //     }
+    //   } catch (error) {
+    //     console.error('Error uploading file:', error);
+    //   }
+    // },
   });
-  // const handleSubmit = async (event: React.FormEvent) => {
-  //   event.preventDefault();
-  //   if (!selectedFile) return;
-
-  //   try {
-  //     const response = await api.api.admin.service_account.$post({
-  //       form: {
-  //         'service-key': selectedFile,
-  //         'app': Apps.GoogleDrive,
-  //         'email': email,  // Pass email along with the file
-
-  //       }
-  //     });
-  //     if (response.ok) {
-  //       toast({
-  //         title: "File uploaded successfully",
-  //         description: "integration in progress",
-  //         // action: (
-  //         //   <ToastAction altText="Goto schedule to undo">Undo</ToastAction>
-  //         // ),
-  //       })
-  //       setLoadingServiceAccount(true)
-  //     } else {
-  //       const errorText = await response.text();
-  //       toast({
-  //         title: "Could not upload the service key",
-  //         description: `error: ${errorText}`,
-  //         variant: 'destructive'
-  //         // action: (
-  //         //   <ToastAction altText="Goto schedule to undo">Undo</ToastAction>
-  //         // ),
-  //       })
-  //       throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
-  //     }
-  //   } catch (error) {
-  //     console.error('Error uploading file:', error);
-  //   }
-  // };
 
   return (
     <form
@@ -199,8 +192,81 @@ export const LoadingSpinner = ({className}: {className: string}) => {
 }
 const minHeight = 320
 
+const getConnectors = async () => {
+  const res = await api.api.admin.connectors.all.$get()
+  if(!res.ok) {
+    throw new Error('Could not get connectors')
+  }
+  return res.json()
+}
+
+const ServiceAccountTab = ({connectors}) => {
+  if(connectors.length === 0) {
+        return (<Card>
+          <CardHeader>
+            <CardTitle>File Upload</CardTitle>
+            <CardDescription>Upload your Google Service Account Key here.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <InputFile />
+          </CardContent>
+        </Card>)
+  } else {
+    return (<CardHeader>
+      <CardTitle>{connectors[0].app}</CardTitle>
+      <CardDescription>Connecting App</CardDescription>
+      <CardContent>
+        updates:
+      </CardContent>
+    </CardHeader>)
+  }
+}
+
+const LoaderContent = () => {
+return (
+          <div className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}>
+            <div className='items-center justify-center'>
+              <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
+            </div>
+          </div>
+        )
+}
+
+// const ws1 = new WebSocket('ws://localhost:3000/ws')
+
 const AdminLayout = () => {
-  const [loadingServiceAccount, setLoadingServiceAccount] = useState(false);
+  const {isPending, error, data } = useQuery({ queryKey: ['all-connectors'], queryFn: getConnectors})
+  const [ws, setWs] = useState(null);
+  const [updateStatus, setUpateStatus] = useState('')
+  useEffect(() => {
+    let socket = null
+    if(!isPending && data && data.length > 0) {
+      const socket = wsClient.ws.$ws({
+      query: {
+        id: data[0]?.id,
+      }
+    })
+      setWs(socket)
+      socket.addEventListener('open', () => {
+        console.log('open')
+        // socket.send(new Date().toString())
+      })
+      socket.addEventListener('close', () => {
+        console.log('close')
+      })
+      socket.addEventListener('message', (e) => {
+        // const message = JSON.parse(e.data);
+        console.log('e', e.data);
+      })
+    }
+    return () => {
+      socket?.close();
+      setWs(null)
+    };
+  }, [data, isPending])
+
+  if (isPending) return 'Loading...'
+  if (error) return 'An error has occurred: ' + error.message
   return (
     <div className='w-full h-full flex items-center justify-center'>
     <Tabs defaultValue="upload" className={`w-[400px] min-h-[${minHeight}px]`}>
@@ -209,24 +275,9 @@ const AdminLayout = () => {
         <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
       </TabsList>
       <TabsContent value="upload">
-        {!loadingServiceAccount ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>File Upload</CardTitle>
-            <CardDescription>Upload your Google Service Account Key here.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <InputFile setLoadingServiceAccount={setLoadingServiceAccount} />
-          </CardContent>
-        </Card>
-
-        ) : (
-          <div className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}>
-            <div className='items-center justify-center'>
-              <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
-            </div>
-          </div>
-        )}
+        {isPending ? <LoaderContent/> : 
+          <ServiceAccountTab connectors={data} />
+          }
       </TabsContent>
       <TabsContent value="oauth">
         <Card>

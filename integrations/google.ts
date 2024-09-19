@@ -9,12 +9,22 @@ import type PgBoss from "pg-boss";
 import { getConnector } from "@/db/connector";
 import { getExtractor } from "@/embedding";
 import { insertDocument } from "@/search/vespa";
+import { ProgressEvent, SaaSQueue } from "@/queue";
+import {
+    useQuery,
+    useMutation,
+    useQueryClient,
+    QueryClient,
+    QueryClientProvider,
+} from '@tanstack/react-query'
+import { wsConnections } from "@/server";
+import type { WSContext } from "hono/ws";
 
 export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any) => {
-    console.log('handleGoogleServiceAccountIngestion')
+    console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSJob = job.data as SaaSJob
     try {
-        const connector = await getConnector(data.connectionId)
+        const connector = await getConnector(data.connectorId)
         const serviceAccountKey = JSON.parse(connector.credentials as string)
         const subject: string = connector.subject as string
         const jwtClient = new JWT({
@@ -24,10 +34,16 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any
             subject
         });
 
+        // boss.publish(ProgressEvent, {''})
         const fileMetadata = (await listFiles(jwtClient, subject)).map(v => {
             v.permissions = toPermissionsList(v.permissions, subject)
             return v
         })
+        const totalFiles = fileMetadata.length
+        const ws: WSContext = wsConnections.get(connector.externalId)
+        if (ws) {
+            ws.send(JSON.stringify({ totalFiles }))
+        }
         const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
         const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
         const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
@@ -35,6 +51,7 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any
 
         const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata)
         const driveFiles: File[] = await driveFilesToDoc(rest)
+
 
         console.log('generating embeddings')
         let allFiles: File[] = [...driveFiles, ...documents]
@@ -48,9 +65,6 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any
     }
 }
 
-// const serviceAccountKey = JSON.parse(
-//     await fs.readFile(path.join(__dirname, '../service-account.json'), "utf-8"),
-// );
 const scopes = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/admin.directory.user.readonly",

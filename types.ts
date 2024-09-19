@@ -134,8 +134,16 @@ export enum AuthType {
 
 
 export type SaaSJob = {
-    connectionId: number,
+    connectorId: number,
     workspaceId: number,
     userId: number,
     app: string,
+    externalId: string
+}
+
+export enum ConnectorStatus {
+    Connected = 'connected',
+    // Pending = 'pending',
+    Connecting = 'connecting',
+    Failed = 'failed'
 }

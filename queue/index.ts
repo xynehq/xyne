@@ -14,3 +14,5 @@ export const init = async () => {
 await boss.work(SaaSQueue, async ([job]) => {
     await handleGoogleServiceAccountIngestion(boss, job)
 })
+
+export const ProgressEvent = 'progress-event'

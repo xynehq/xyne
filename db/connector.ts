@@ -35,12 +35,25 @@ export const insertConnector = async (
             // updatedAt: new Date(),     // Set update date
         }).returning();
         console.log("Connection inserted successfully");
-        return inserted[0]?.id
+        return inserted[0]
     } catch (error) {
         console.error("Error inserting connection:", error);
         throw new Error('Could not insert connection');
     }
 };
+
+// for the admin we can get all the connectors
+export const getConnectors = async (workspaceId: number) => {
+    const res = await db.select({
+        id: connectors.externalId,
+        app: connectors.app,
+        authType: connectors.authType,
+        type: connectors.type,
+        status: connectors.status,
+        createdAt: connectors.createdAt
+    }).from(connectors).where(eq(connectors.workspaceId, workspaceId))
+    return res
+}
 
 export const getConnector = async (connectionId: number) => {
     const res = await db.select().from(connectors).where(eq(connectors.id, connectionId)).limit(1)

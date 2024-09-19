@@ -29,6 +29,13 @@
       "when": 1726696850370,
       "tag": "0003_high_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1726756431222,
+      "tag": "0004_useful_cassandra_nova",
+      "breakpoints": true
     }
   ]
 }

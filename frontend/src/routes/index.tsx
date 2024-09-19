@@ -240,7 +240,6 @@ export const Index = () => {
           setResults(data.root.children.map(v => v.fields))
         }
         if(groupCount) {
-          console.log(searchMeta, data.root)
           setSearchMeta({coverage: data.root?.coverage, fields: data.root?.fields})
           setGroups(data.groupCount)
         }
