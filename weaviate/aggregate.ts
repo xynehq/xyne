@@ -1,4 +1,4 @@
-import weaviate, { dataType, Filters, type WeaviateReturn } from 'weaviate-client'
+// import weaviate, { dataType, Filters, type WeaviateReturn } from 'weaviate-client'
 import { env, pipeline } from '@xenova/transformers';
 import { Client } from '@notionhq/client';
 env.backends.onnx.wasm.numThreads = 1;

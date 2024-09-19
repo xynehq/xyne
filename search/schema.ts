@@ -1,4 +1,4 @@
-import weaviate, { dataType, Filters, type WeaviateReturn } from 'weaviate-client'
+// import weaviate, { dataType, Filters, type WeaviateReturn } from 'weaviate-client'
 
 import { z, ZodString, ZodNumber, ZodArray, ZodTypeAny } from 'zod';
 

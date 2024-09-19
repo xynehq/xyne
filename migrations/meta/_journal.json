@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1726656318995,
+      "tag": "0000_panoramic_maria_hill",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1726686361077,
+      "tag": "0001_messy_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1726686433117,
+      "tag": "0002_amazing_crystal",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1726696850370,
+      "tag": "0003_high_cannonball",
+      "breakpoints": true
+    }
+  ]
+}
