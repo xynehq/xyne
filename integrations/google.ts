@@ -2,19 +2,25 @@ import { drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
 import fs from "node:fs/promises";
-import type { File, SaaSJob } from "@/types";
+import { ConnectorStatus, type File, type SaaSJob } from "@/types";
 import { JWT } from "google-auth-library";
 import path from 'node:path'
 import type PgBoss from "pg-boss";
 import { getConnector } from "@/db/connector";
 import { getExtractor } from "@/embedding";
 import { insertDocument } from "@/search/vespa";
+import { ProgressEvent, SaaSQueue } from "@/queue";
+import { wsConnections } from "@/server";
+import type { WSContext } from "hono/ws";
+import { db } from "@/db/client";
+import { connectors } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
-export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any) => {
-    console.log('handleGoogleServiceAccountIngestion')
+export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
+    console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSJob = job.data as SaaSJob
     try {
-        const connector = await getConnector(data.connectionId)
+        const connector = await getConnector(data.connectorId)
         const serviceAccountKey = JSON.parse(connector.credentials as string)
         const subject: string = connector.subject as string
         const jwtClient = new JWT({
@@ -24,33 +30,50 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any
             subject
         });
 
+        // boss.publish(ProgressEvent, {''})
         const fileMetadata = (await listFiles(jwtClient, subject)).map(v => {
             v.permissions = toPermissionsList(v.permissions, subject)
             return v
         })
+        const totalFiles = fileMetadata.length
+        const ws: WSContext = wsConnections.get(connector.externalId)
+        if (ws) {
+            ws.send(JSON.stringify({ totalFiles, message: `${totalFiles} metadata files ingested` }))
+        }
         const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
         const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
         const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
         const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
 
-        const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata)
+        const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata, connector.externalId)
         const driveFiles: File[] = await driveFilesToDoc(rest)
 
-        console.log('generating embeddings')
+
+        sendWebsocketMessage('generating embeddings', connector.externalId)
         let allFiles: File[] = [...driveFiles, ...documents]
 
         for (const doc of allFiles) {
             await insertDocument(doc)
         }
+        await db.transaction(async (trx) => {
+            await trx.update(connectors).set({
+                status: ConnectorStatus.Connected
+            }).where(eq(connectors.id, connector.id))
+            console.log('status updated')
+            await boss.complete(SaaSQueue, job.id)
+            console.log('job completed')
+        })
     } catch (e) {
         console.error('could not finish job successfully', e)
-        await boss.fail(job.name, job.id)
+        await db.transaction(async (trx) => {
+            trx.update(connectors).set({
+                status: ConnectorStatus.Connected
+            }).where(eq(connectors.id, data.connectorId))
+            await boss.fail(job.name, job.id)
+        })
     }
 }
 
-// const serviceAccountKey = JSON.parse(
-//     await fs.readFile(path.join(__dirname, '../service-account.json'), "utf-8"),
-// );
 const scopes = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/admin.directory.user.readonly",
@@ -111,8 +134,16 @@ export enum DriveMime {
     Slides = "application/vnd.google-apps.presentation",
 }
 
+const sendWebsocketMessage = (message: string, connectorId: string) => {
+    const ws: WSContext = wsConnections.get(connectorId)
+    if (ws) {
+        ws.send(JSON.stringify({ message }))
+    }
+}
+
 const extractor = await getExtractor()
-export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Schema$File[]): Promise<any[]> => {
+export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Schema$File[], connectorId: string): Promise<any[]> => {
+    sendWebsocketMessage(`Scanning ${docsMetadata.length} Google Docs`, connectorId)
     const docsList: File[] = []
     const docs = google.docs({ version: "v1", auth: jwtClient });
     const total = docsMetadata.length
@@ -154,59 +185,15 @@ export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Sch
         })
         count += 1
 
+        if (count % 5 === 0) {
+            sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
+        }
         console.clear()
         process.stdout.write(`${Math.floor((count / total) * 100)}`)
     }
     process.stdout.write('\n')
     return docsList
-
 }
-
-// export const googleDocs = async (jwtClient: JWT, docsMetadata: drive_v3.Schema$File[]): Promise<any[]> => {
-//     const docsList: File[] = []
-//     const docs = google.docs({ version: "v1", auth: jwtClient });
-//     const total = docsMetadata.length
-//     let count = 0
-//     for (const doc of docsMetadata) {
-//         const documentContent = await docs.documents.get({
-//             documentId: doc.id,
-//         });
-//         const rawTextContent = documentContent?.data?.body?.content
-//             .map((e) => extractText(e))
-//             .join("");
-//         const footnotes = extractFootnotes(documentContent.data);
-//         const headerFooter = extractHeadersAndFooters(documentContent.data);
-//         const cleanedTextContent = postProcessText(
-//             rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
-//         );
-
-//         const chunks = chunkDocument(cleanedTextContent)
-//         for (const { chunk, chunkIndex } of chunks) {
-//             docsList.push({
-//                 title: doc.name,
-//                 url: doc.webViewLink,
-//                 app: 'google',
-//                 docId: doc.id,
-//                 owner: doc?.owners[0]?.displayName,
-//                 photoLink: doc?.owners[0]?.photoLink,
-//                 ownerEmail: doc?.owners[0]?.emailAddress,
-//                 entity: 'docs',
-//                 chunk,
-//                 chunkIndex,
-//                 permissions: doc.permissions,
-//                 mimeType: doc.mimeType
-//             })
-//         }
-
-//         count += 1
-
-//         console.clear()
-//         process.stdout.write(`${Math.floor((count / total) * 100)}`)
-//     }
-//     process.stdout.write('\n')
-//     return docsList
-
-// }
 
 export const driveFilesToDoc = async (rest: drive_v3.Schema$File[]): Promise<File[]> => {
     const mimeTypeMap = {

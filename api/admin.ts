@@ -5,9 +5,15 @@ import { HTTPException } from 'hono/http-exception'
 import { db } from '@/db/client'
 import { users, workspaces } from "@/db/schema"
 import { getUserWithWorkspaceByEmail } from "@/db/user"
-import { insertConnector } from "@/db/connector"
+import { getConnector, getConnectors, insertConnector } from "@/db/connector"
 import { AuthType, ConnectorType, type SaaSJob } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
+
+export const GetConnectors = async (c: Context) => {
+    const workspaceId = 10
+    const connectors = await getConnectors(workspaceId)
+    return c.json(connectors)
+}
 
 export const AddServiceConnection = async (c: Context) => {
     const email = 'saheb@xynehq.com';
@@ -29,7 +35,7 @@ export const AddServiceConnection = async (c: Context) => {
             const app = form['app']
 
             // Insert the connection within the transaction
-            const connectionId = await insertConnector(
+            const connector = await insertConnector(
                 trx,  // Pass the transaction object
                 workspaceId,
                 user.id,
@@ -43,18 +49,19 @@ export const AddServiceConnection = async (c: Context) => {
             )
 
             const SaasJobPayload: SaaSJob = {
-                connectionId,
+                connectorId: connector.id,
                 workspaceId,
                 userId: user.id,
                 app,
+                externalId: connector.externalId
             }
             // Enqueue the background job within the same transaction
             const jobId = await boss.send(SaaSQueue, SaasJobPayload)
 
-            console.log(`Job ${jobId} enqueued for connection ${connectionId}`)
+            console.log(`Job ${jobId} enqueued for connection ${connector.id}`)
 
             // Commit the transaction if everything is successful
-            return c.json({ success: true, message: 'Connection created, job enqueued', connectionId })
+            return c.json({ success: true, message: 'Connection created, job enqueued', id: connector.externalId })
 
         } catch (error) {
             console.error("Error:", error)

@@ -14,7 +14,7 @@ import {
 import { createId } from "@paralleldrive/cuid2";
 import { encryptedText } from "./customType";
 import { Encryption } from "@/utils/encryption";
-import { Apps, AuthType, ConnectorType } from "@/types";
+import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/types";
 
 // Workspaces Table
 export const workspaces = pgTable("workspaces", {
@@ -86,6 +86,7 @@ export const users = pgTable(
 export const connectorTypeEnum = pgEnum('connector_type', Object.values(ConnectorType) as [string, ...string[]]);
 export const authTypeEnum = pgEnum('auth_type', Object.values(AuthType) as [string, ...string[]]);
 export const appTypeEnum = pgEnum('app_type', Object.values(Apps) as [string, ...string[]]);
+export const statusEnum = pgEnum('status', Object.values(ConnectorStatus) as [string, ...string[]]);
 
 
 // Connectors Table
@@ -107,6 +108,8 @@ export const connectors = pgTable("connectors", {
     config: jsonb("config").notNull(),
     credentials: encryptedText(serviceAccountEncryption)("credentials"),
     subject: encryptedText(accesskeyEncryption)("subject"),
+    // by default when created will be in the connecting status
+    status: statusEnum('status').notNull().default(ConnectorStatus.Connecting),
     createdAt: timestamp("created_at", { withTimezone: true })
         .notNull()
         .default(sql`NOW()`),

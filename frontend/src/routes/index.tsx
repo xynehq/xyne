@@ -88,16 +88,16 @@ const Autocomplete = forwardRef(({ result, onClick}: { result:any, onClick: any 
 export const Index = () => {
   const routerState = useRouterState()
   const currentPath = routerState.location.pathname
-  if(currentPath === '/search') {
-    const {
-      query: queryParam,
-      groupCount,
-      offset: offsetParam,
-      page: pageParam,
-      app: appParam,
-      entity: entityParam,
-    } = useSearch({ from: '/search' });
-  }
+  // if(currentPath === '/search') {
+  //   const {
+  //     query: queryParam,
+  //     groupCount,
+  //     offset: offsetParam,
+  //     page: pageParam,
+  //     app: appParam,
+  //     entity: entityParam,
+  //   } = useSearch({ from: '/search' });
+  // }
 
 
   const [query, setQuery] = useState(''); // State to hold the search query
@@ -240,7 +240,6 @@ export const Index = () => {
           setResults(data.root.children.map(v => v.fields))
         }
         if(groupCount) {
-          console.log(searchMeta, data.root)
           setSearchMeta({coverage: data.root?.coverage, fields: data.root?.fields})
           setGroups(data.groupCount)
         }
