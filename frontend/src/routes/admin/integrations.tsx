@@ -29,7 +29,6 @@ const submitServiceAccountForm = async (value) => {
         throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
     return response.json()
-  
 }
 
 export const InputFile = ({onSuccess}) => {
@@ -171,8 +170,8 @@ const getConnectors = async () => {
   return res.json()
 }
 
-const ServiceAccountTab = ({connectors, updateStatus, onSuccess }) => {
-  if(connectors.length === 0) {
+const ServiceAccountTab = ({connectors, updateStatus, onSuccess, isIntegrating}) => {
+  if(!isIntegrating) {
         return (<Card>
           <CardHeader>
             <CardTitle>File Upload</CardTitle>
@@ -184,10 +183,11 @@ const ServiceAccountTab = ({connectors, updateStatus, onSuccess }) => {
         </Card>)
   } else {
     return (<CardHeader>
-      <CardTitle>{connectors[0].app}</CardTitle>
+      <CardTitle>{connectors[0]?.app}</CardTitle>
       <CardDescription>Connecting App</CardDescription>
       <CardContent className='pt-0'>
-        updates: {updateStatus}
+        <p>updates: {updateStatus}</p>
+        <p>status: {connectors[0]?.status}</p>
       </CardContent>
     </CardHeader>)
   }
@@ -203,13 +203,19 @@ return (
         )
 }
 
-// const ws1 = new WebSocket('ws://localhost:3000/ws')
-
 const AdminLayout = () => {
   const {isPending, error, data } = useQuery({ queryKey: ['all-connectors'], queryFn: getConnectors})
   const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState('')
-  const [isIntegrating, setIsIntegrating] = useState(!!data?.connectors?.length)
+  const [isIntegrating, setIsIntegrating] = useState(data?.length > 0)
+
+  useEffect(() => {
+    if (!isPending && data && data.length > 0) {
+      setIsIntegrating(true);
+    } else {
+      setIsIntegrating(false);
+    }
+  }, [data, isPending]);
 
   useEffect(() => {
     let socket = null
@@ -222,7 +228,6 @@ const AdminLayout = () => {
       setWs(socket)
       socket.addEventListener('open', () => {
         console.log('open')
-        // socket.send(new Date().toString())
       })
       socket.addEventListener('close', () => {
         console.log('close')
@@ -239,7 +244,7 @@ const AdminLayout = () => {
     };
   }, [data, isPending])
 
-  if (isPending) return 'Loading...'
+  // if (isPending) return <LoaderContent />
   if (error) return 'An error has occurred: ' + error.message
   return (
     <div className='w-full h-full flex items-center justify-center'>
@@ -250,7 +255,11 @@ const AdminLayout = () => {
       </TabsList>
       <TabsContent value="upload">
         {isPending ? <LoaderContent/> : 
-          <ServiceAccountTab connectors={data} updateStatus={updateStatus} onSuccess={() => setIsIntegrating(true)}/>
+          <ServiceAccountTab
+            connectors={data}
+            updateStatus={updateStatus}
+            isIntegrating={isIntegrating}
+            onSuccess={() => setIsIntegrating(true)} />
           }
       </TabsContent>
       <TabsContent value="oauth">

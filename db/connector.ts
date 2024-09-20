@@ -55,8 +55,8 @@ export const getConnectors = async (workspaceId: number) => {
     return res
 }
 
-export const getConnector = async (connectionId: number) => {
-    const res = await db.select().from(connectors).where(eq(connectors.id, connectionId)).limit(1)
+export const getConnector = async (connectorId: number) => {
+    const res = await db.select().from(connectors).where(eq(connectors.id, connectorId)).limit(1)
     if (res.length) {
         return res[0]
     } else {

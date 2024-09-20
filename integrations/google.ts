@@ -2,7 +2,7 @@ import { drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
 import fs from "node:fs/promises";
-import type { File, SaaSJob } from "@/types";
+import { ConnectorStatus, type File, type SaaSJob } from "@/types";
 import { JWT } from "google-auth-library";
 import path from 'node:path'
 import type PgBoss from "pg-boss";
@@ -10,17 +10,13 @@ import { getConnector } from "@/db/connector";
 import { getExtractor } from "@/embedding";
 import { insertDocument } from "@/search/vespa";
 import { ProgressEvent, SaaSQueue } from "@/queue";
-import {
-    useQuery,
-    useMutation,
-    useQueryClient,
-    QueryClient,
-    QueryClientProvider,
-} from '@tanstack/react-query'
 import { wsConnections } from "@/server";
 import type { WSContext } from "hono/ws";
+import { db } from "@/db/client";
+import { connectors } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
-export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any) => {
+export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
     console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSJob = job.data as SaaSJob
     try {
@@ -53,15 +49,28 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any
         const driveFiles: File[] = await driveFilesToDoc(rest)
 
 
-        console.log('generating embeddings')
+        sendWebsocketMessage('generating embeddings', connector.externalId)
         let allFiles: File[] = [...driveFiles, ...documents]
 
         for (const doc of allFiles) {
             await insertDocument(doc)
         }
+        await db.transaction(async (trx) => {
+            await trx.update(connectors).set({
+                status: ConnectorStatus.Connected
+            }).where(eq(connectors.id, connector.id))
+            console.log('status updated')
+            await boss.complete(SaaSQueue, job.id)
+            console.log('job completed')
+        })
     } catch (e) {
         console.error('could not finish job successfully', e)
-        await boss.fail(job.name, job.id)
+        await db.transaction(async (trx) => {
+            trx.update(connectors).set({
+                status: ConnectorStatus.Connected
+            }).where(eq(connectors.id, data.connectorId))
+            await boss.fail(job.name, job.id)
+        })
     }
 }
 
