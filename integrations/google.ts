@@ -42,14 +42,14 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: any
         const totalFiles = fileMetadata.length
         const ws: WSContext = wsConnections.get(connector.externalId)
         if (ws) {
-            ws.send(JSON.stringify({ totalFiles }))
+            ws.send(JSON.stringify({ totalFiles, message: `${totalFiles} metadata files ingested` }))
         }
         const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
         const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
         const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
         const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
 
-        const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata)
+        const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata, connector.externalId)
         const driveFiles: File[] = await driveFilesToDoc(rest)
 
 
@@ -125,8 +125,16 @@ export enum DriveMime {
     Slides = "application/vnd.google-apps.presentation",
 }
 
+const sendWebsocketMessage = (message: string, connectorId: string) => {
+    const ws: WSContext = wsConnections.get(connectorId)
+    if (ws) {
+        ws.send(JSON.stringify({ message }))
+    }
+}
+
 const extractor = await getExtractor()
-export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Schema$File[]): Promise<any[]> => {
+export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Schema$File[], connectorId: string): Promise<any[]> => {
+    sendWebsocketMessage(`Scanning ${docsMetadata.length} Google Docs`, connectorId)
     const docsList: File[] = []
     const docs = google.docs({ version: "v1", auth: jwtClient });
     const total = docsMetadata.length
@@ -168,59 +176,15 @@ export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Sch
         })
         count += 1
 
+        if (count % 5 === 0) {
+            sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
+        }
         console.clear()
         process.stdout.write(`${Math.floor((count / total) * 100)}`)
     }
     process.stdout.write('\n')
     return docsList
-
 }
-
-// export const googleDocs = async (jwtClient: JWT, docsMetadata: drive_v3.Schema$File[]): Promise<any[]> => {
-//     const docsList: File[] = []
-//     const docs = google.docs({ version: "v1", auth: jwtClient });
-//     const total = docsMetadata.length
-//     let count = 0
-//     for (const doc of docsMetadata) {
-//         const documentContent = await docs.documents.get({
-//             documentId: doc.id,
-//         });
-//         const rawTextContent = documentContent?.data?.body?.content
-//             .map((e) => extractText(e))
-//             .join("");
-//         const footnotes = extractFootnotes(documentContent.data);
-//         const headerFooter = extractHeadersAndFooters(documentContent.data);
-//         const cleanedTextContent = postProcessText(
-//             rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
-//         );
-
-//         const chunks = chunkDocument(cleanedTextContent)
-//         for (const { chunk, chunkIndex } of chunks) {
-//             docsList.push({
-//                 title: doc.name,
-//                 url: doc.webViewLink,
-//                 app: 'google',
-//                 docId: doc.id,
-//                 owner: doc?.owners[0]?.displayName,
-//                 photoLink: doc?.owners[0]?.photoLink,
-//                 ownerEmail: doc?.owners[0]?.emailAddress,
-//                 entity: 'docs',
-//                 chunk,
-//                 chunkIndex,
-//                 permissions: doc.permissions,
-//                 mimeType: doc.mimeType
-//             })
-//         }
-
-//         count += 1
-
-//         console.clear()
-//         process.stdout.write(`${Math.floor((count / total) * 100)}`)
-//     }
-//     process.stdout.write('\n')
-//     return docsList
-
-// }
 
 export const driveFilesToDoc = async (rest: drive_v3.Schema$File[]): Promise<File[]> => {
     const mimeTypeMap = {

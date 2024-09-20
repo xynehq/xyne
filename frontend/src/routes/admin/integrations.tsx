@@ -32,7 +32,7 @@ const submitServiceAccountForm = async (value) => {
   
 }
 
-export const InputFile = () => {
+export const InputFile = ({onSuccess}) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
 
@@ -61,11 +61,11 @@ export const InputFile = () => {
     
       try {
         const response = await submitServiceAccountForm(value);  // Call the async function
-        console.log(response)
         toast({
           title: "File uploaded successfully",
           description: "Integration in progress",
         });
+        onSuccess()
       } catch (error) {
         toast({
           title: "Could not upload the service account key",
@@ -74,35 +74,6 @@ export const InputFile = () => {
         });
       }
     },
-    // onSubmit: async ({ value }) => {
-    //   // If no file, stop submission
-    //   if (!value.file) {
-    //     toast({
-    //       title: "No file selected",
-    //       description: "Please upload a file before submitting.",
-    //       variant: 'destructive',
-    //     });
-    //     return;
-    //   }
-
-    //   try {
-    //     // const { data, isPending, error } = useQuery({queryKey: [], queryFn: submitServiceAccountForm(value) })
-    //     if (data && !isPending) {
-    //       toast({
-    //         title: "File uploaded successfully",
-    //         description: "Integration in progress",
-    //       });
-    //     } else if(error) {
-    //       toast({
-    //         title: "Could not upload the service account key",
-    //         // description: `Error: ${errorText}`,
-    //         variant: 'destructive',
-    //       });
-    //     }
-    //   } catch (error) {
-    //     console.error('Error uploading file:', error);
-    //   }
-    // },
   });
 
   return (
@@ -200,7 +171,7 @@ const getConnectors = async () => {
   return res.json()
 }
 
-const ServiceAccountTab = ({connectors}) => {
+const ServiceAccountTab = ({connectors, updateStatus, onSuccess }) => {
   if(connectors.length === 0) {
         return (<Card>
           <CardHeader>
@@ -208,15 +179,15 @@ const ServiceAccountTab = ({connectors}) => {
             <CardDescription>Upload your Google Service Account Key here.</CardDescription>
           </CardHeader>
           <CardContent>
-            <InputFile />
+            <InputFile onSuccess={onSuccess} />
           </CardContent>
         </Card>)
   } else {
     return (<CardHeader>
       <CardTitle>{connectors[0].app}</CardTitle>
       <CardDescription>Connecting App</CardDescription>
-      <CardContent>
-        updates:
+      <CardContent className='pt-0'>
+        updates: {updateStatus}
       </CardContent>
     </CardHeader>)
   }
@@ -238,6 +209,8 @@ const AdminLayout = () => {
   const {isPending, error, data } = useQuery({ queryKey: ['all-connectors'], queryFn: getConnectors})
   const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState('')
+  const [isIntegrating, setIsIntegrating] = useState(!!data?.connectors?.length)
+
   useEffect(() => {
     let socket = null
     if(!isPending && data && data.length > 0) {
@@ -256,7 +229,8 @@ const AdminLayout = () => {
       })
       socket.addEventListener('message', (e) => {
         // const message = JSON.parse(e.data);
-        console.log('e', e.data);
+        const data = JSON.parse(e.data)
+        setUpateStatus(data.message)
       })
     }
     return () => {
@@ -276,7 +250,7 @@ const AdminLayout = () => {
       </TabsList>
       <TabsContent value="upload">
         {isPending ? <LoaderContent/> : 
-          <ServiceAccountTab connectors={data} />
+          <ServiceAccountTab connectors={data} updateStatus={updateStatus} onSuccess={() => setIsIntegrating(true)}/>
           }
       </TabsContent>
       <TabsContent value="oauth">

@@ -88,16 +88,16 @@ const Autocomplete = forwardRef(({ result, onClick}: { result:any, onClick: any 
 export const Index = () => {
   const routerState = useRouterState()
   const currentPath = routerState.location.pathname
-  if(currentPath === '/search') {
-    const {
-      query: queryParam,
-      groupCount,
-      offset: offsetParam,
-      page: pageParam,
-      app: appParam,
-      entity: entityParam,
-    } = useSearch({ from: '/search' });
-  }
+  // if(currentPath === '/search') {
+  //   const {
+  //     query: queryParam,
+  //     groupCount,
+  //     offset: offsetParam,
+  //     page: pageParam,
+  //     app: appParam,
+  //     entity: entityParam,
+  //   } = useSearch({ from: '/search' });
+  // }
 
 
   const [query, setQuery] = useState(''); // State to hold the search query
