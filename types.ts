@@ -1,5 +1,6 @@
-import config from './config'
+import config from '@/config'
 import { z } from 'zod'
+import { Apps } from '@/shared/types'
 // export interface File {
 //     docId: string,
 //     title: string,
@@ -103,10 +104,6 @@ export const searchQuerySchema = searchSchema.extend({
 export type SearchQuery = z.infer<typeof searchQuerySchema>
 
 
-
-export enum Apps {
-    GoogleDrive = "google-drive"
-}
 
 export const addServiceConnectionSchema = z.object({
     'service-key': z.any(),

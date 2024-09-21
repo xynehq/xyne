@@ -1,4 +1,4 @@
-import { createFileRoute, useMatch, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 
 
 const page = 8
@@ -10,7 +10,6 @@ import DocsSvg from '@/assets/docs.svg'
 import SlidesSvg from '@/assets/slides.svg'
 import SheetsSvg from '@/assets/sheets.svg'
 import DriveSvg from '@/assets/drive.svg'
-import FolderSvg from '@/assets/folder.svg'
 import NotionPageSvg from '../assets/notionPage.svg'
 
 
@@ -86,8 +85,8 @@ const Autocomplete = forwardRef(({ result, onClick}: { result:any, onClick: any 
 })
 
 export const Index = () => {
-  const routerState = useRouterState()
-  const currentPath = routerState.location.pathname
+  // const routerState = useRouterState()
+  // const currentPath = routerState.location.pathname
   // if(currentPath === '/search') {
   //   const {
   //     query: queryParam,
@@ -233,7 +232,7 @@ export const Index = () => {
         query: params
       })
       if(response.ok) {
-        const data = await response.json()
+        const data: any = await response.json()
         console.log(data)
 
         if(data.root?.children && data.root.children?.length) {

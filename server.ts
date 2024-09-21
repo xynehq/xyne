@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { logger } from 'hono/logger'
-import fs from 'node:fs'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
 import { addServiceConnectionSchema, searchSchema, UserRole } from '@/types'
@@ -44,7 +43,7 @@ app.use('*', logger())
 
 export const wsConnections = new Map();
 
-const wsApp = app.get(
+export const wsApp = app.get(
     '/ws',
     upgradeWebSocket((c) => {
         let connectorId: string | undefined
@@ -69,7 +68,7 @@ const wsApp = app.get(
 
 export type WebSocketApp = typeof wsApp
 
-const AppRoutes = app.basePath('/api')
+export const AppRoutes = app.basePath('/api')
     .use('*', AuthMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)

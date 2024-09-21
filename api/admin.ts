@@ -3,9 +3,8 @@ import { HTTPException } from 'hono/http-exception'
 
 
 import { db } from '@/db/client'
-import { users, workspaces } from "@/db/schema"
-import { getUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
-import { getConnector, getConnectors, insertConnector } from "@/db/connector"
+import { getUserByEmail } from "@/db/user"
+import { getConnectors, insertConnector } from "@/db/connector"
 import { AuthType, ConnectorType, type SaaSJob } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"

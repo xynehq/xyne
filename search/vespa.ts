@@ -448,7 +448,7 @@ const getDocumentCount = async () => {
 }
 
 // Example usage:
-await deleteAllDocuments()
+// await deleteAllDocuments()
 // console.log('deleted all docs')
 // await initVespa(email)
 // console.log(JSON.stringify(await searchVespa('welcome my friend, let me provide you with a prompt', 'saheb@xynehq.com')))
