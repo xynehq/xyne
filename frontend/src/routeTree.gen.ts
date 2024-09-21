@@ -12,6 +12,7 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as SearchImport } from './routes/search'
+import { Route as AuthImport } from './routes/auth'
 import { Route as IndexImport } from './routes/index'
 import { Route as AdminIntegrationsImport } from './routes/admin/integrations'
 
@@ -19,6 +20,11 @@ import { Route as AdminIntegrationsImport } from './routes/admin/integrations'
 
 const SearchRoute = SearchImport.update({
   path: '/search',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AuthRoute = AuthImport.update({
+  path: '/auth',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -43,6 +49,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthImport
+      parentRoute: typeof rootRoute
+    }
     '/search': {
       id: '/search'
       path: '/search'
@@ -64,6 +77,7 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
+  AuthRoute,
   SearchRoute,
   AdminIntegrationsRoute,
 })
@@ -77,12 +91,16 @@ export const routeTree = rootRoute.addChildren({
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/auth",
         "/search",
         "/admin/integrations"
       ]
     },
     "/": {
       "filePath": "index.tsx"
+    },
+    "/auth": {
+      "filePath": "auth.tsx"
     },
     "/search": {
       "filePath": "search.tsx"

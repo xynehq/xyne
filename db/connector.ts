@@ -10,6 +10,7 @@ export const insertConnector = async (
     trx: PgTransaction<any>,
     workspaceId: number,
     userId: number,
+    workspaceExternalId: string,
     name: string,
     type: ConnectorType,        // Use TypeScript enum for type safety
     authType: AuthType,          // Use TypeScript enum for authType
@@ -23,6 +24,7 @@ export const insertConnector = async (
         const inserted = await trx.insert(connectors).values({
             workspaceId,
             userId,
+            workspaceExternalId,
             externalId: externalId,    // Unique external ID for the connection
             name: name,                // Name of the connection
             type: type,                // Type of connection from the enum
@@ -43,7 +45,7 @@ export const insertConnector = async (
 };
 
 // for the admin we can get all the connectors
-export const getConnectors = async (workspaceId: number) => {
+export const getConnectors = async (workspaceId: string) => {
     const res = await db.select({
         id: connectors.externalId,
         app: connectors.app,
@@ -51,7 +53,7 @@ export const getConnectors = async (workspaceId: number) => {
         type: connectors.type,
         status: connectors.status,
         createdAt: connectors.createdAt
-    }).from(connectors).where(eq(connectors.workspaceId, workspaceId))
+    }).from(connectors).where(eq(connectors.workspaceExternalId, workspaceId))
     return res
 }
 

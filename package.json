@@ -18,6 +18,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hono/oauth-providers": "^0.6.1",
     "@hono/zod-validator": "^0.2.2",
     "@notionhq/client": "^2.2.15",
     "@paralleldrive/cuid2": "^2.2.2",

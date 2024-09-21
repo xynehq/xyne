@@ -147,3 +147,11 @@ export enum ConnectorStatus {
     Connecting = 'connecting',
     Failed = 'failed'
 }
+
+// very rudimentary
+// temporary roles
+export enum UserRole {
+    User = "user",
+    Admin = "admin",
+    SuperAdmin = "super_admin"
+}

@@ -1,0 +1,2 @@
+ALTER TABLE "connectors" ADD COLUMN "workspace_external_id" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "connectors" ADD CONSTRAINT "connectors_workspace_external_id_unique" UNIQUE("workspace_external_id");

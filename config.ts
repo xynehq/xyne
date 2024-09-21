@@ -1,3 +1,4 @@
 export default {
-    page: 8
+    page: 8,
+    JwtPayloadKey: 'jwtPayload'
 }
