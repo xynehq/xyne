@@ -21,6 +21,8 @@ export const workspaces = pgTable("workspaces", {
     id: serial("id").notNull().primaryKey(),
     name: text("name").notNull(),
     domain: text("domain").notNull().unique(),
+    // email
+    createdBy: text('created_by').notNull().unique(),
     externalId: text("external_id")
         .unique()
         .notNull(),
@@ -34,7 +36,7 @@ export const workspaces = pgTable("workspaces", {
         .notNull()
         .default(sql`'1970-01-01T00:00:00Z'`),
 });
-const encryptionKey = process.env.ENCRYPTION_KEY;
+const encryptionKey = process.env.ENCRYPTION_KEY!;
 if (!encryptionKey) {
     throw new Error('ENCRYPTION_KEY environment variable is not set.');
 }
@@ -63,6 +65,10 @@ export const users = pgTable(
         externalId: text("external_id")
             .unique()
             .notNull(),
+        // this will come handy for jwt token
+        workspaceExternalId: text("workspace_external_id")
+            .unique()
+            .notNull(),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
             .default(sql`NOW()`),
@@ -73,6 +79,7 @@ export const users = pgTable(
             .notNull()
             .default(sql`'1970-01-01T00:00:00Z'`),
         lastLogin: timestamp("last_login", { withTimezone: true }),
+        // TODO: turn user role to actual enum type
         role: text("role", { enum: ["user", "admin", "superadmin"] })
             .notNull()
             .default("user"),
@@ -99,6 +106,9 @@ export const connectors = pgTable("connectors", {
         .notNull()
         .references(() => users.id),
     externalId: text("external_id")
+        .unique()
+        .notNull(),
+    workspaceExternalId: text("workspace_external_id")
         .unique()
         .notNull(),
     name: text("name").notNull(),

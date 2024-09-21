@@ -2,6 +2,8 @@ import type { Context } from "hono";
 import { autocomplete, groupVespaSearch, searchVespa } from "@/search/vespa";
 import { z } from 'zod'
 import type { AutocompleteResults } from "@/types";
+import config from "@/config"
+const { JwtPayloadKey } = config
 
 export const autocompleteSchema = z.object({
     query: z.string().min(2)
@@ -10,9 +12,11 @@ export const autocompleteSchema = z.object({
 
 
 export const AutocompleteApi = async (c: Context) => {
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
     const body = c.req.valid("json")
     const { query } = body;
-    const results: AutocompleteResults = (await autocomplete(query, 'saheb@xynehq.com', 5))?.root
+    const results: AutocompleteResults = (await autocomplete(query, email, 5))?.root
     if (!results) {
         return c.json({ children: [] })
     }
@@ -20,25 +24,19 @@ export const AutocompleteApi = async (c: Context) => {
 }
 
 export const SearchApi = async (c: Context) => {
-    const email = 'saheb@xynehq.com'
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
     let { query, groupCount: gc, offset, page, app, entity } = c.req.valid('query');
     let groupCount = {}
     let results = {}
     query = decodeURIComponent(query)
     if (gc) {
-        // groupCount = await searchGroupByCount(query, ['saheb@xynehq.com'], app, entity)
         groupCount = await groupVespaSearch(query, email)
-        // results = await search(query, page, offset, ['saheb@xynehq.com'], app, entity)
         results = await searchVespa(query, email, app, entity, page, offset)
 
     } else {
-        //     // results = await search(query, page, offset, ['saheb@xynehq.com'], app, entity)
         results = await searchVespa(query, email, app, entity, page, offset)
     }
-    // results.objects = results.objects.filter(o => {
-    //     return o?.metadata?.score > 0.01
-    // })
     results.groupCount = groupCount
-    // return c.json(results)
     return c.json(results)
 }

@@ -4,31 +4,31 @@ import { HTTPException } from 'hono/http-exception'
 
 import { db } from '@/db/client'
 import { users, workspaces } from "@/db/schema"
-import { getUserWithWorkspaceByEmail } from "@/db/user"
+import { getUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { getConnector, getConnectors, insertConnector } from "@/db/connector"
 import { AuthType, ConnectorType, type SaaSJob } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
+import config from "@/config"
+const { JwtPayloadKey } = config
 
 export const GetConnectors = async (c: Context) => {
-    const workspaceId = 10
+    const { workspaceId } = c.get(JwtPayloadKey)
     const connectors = await getConnectors(workspaceId)
     return c.json(connectors)
 }
 
 export const AddServiceConnection = async (c: Context) => {
-    const email = 'saheb@xynehq.com';
-    const workspaceId = 10;
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    const email = sub
+    const userRes = await getUserByEmail(db, email)
+    if (!userRes || !userRes.length) {
+        throw new Error('Could not get user')
+    }
+    const [user] = userRes
 
     // Start a transaction
     return await db.transaction(async (trx) => {
         try {
-            // Fetch user with workspace
-            const userWithWorkspace = await getUserWithWorkspaceByEmail(workspaceId, email);
-            if (!userWithWorkspace || userWithWorkspace.length === 0) {
-                throw new HTTPException(403, { message: 'user not found' })
-            }
-
-            const { user, workspace } = userWithWorkspace[0]
             const form = c.req.valid('form')
             const data = await form['service-key'].text()
             const subject = form['email']
@@ -37,8 +37,9 @@ export const AddServiceConnection = async (c: Context) => {
             // Insert the connection within the transaction
             const connector = await insertConnector(
                 trx,  // Pass the transaction object
-                workspaceId,
+                user.workspaceId,
                 user.id,
+                user.workspaceExternalId,
                 `${app}-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`,
                 ConnectorType.SaaS,
                 AuthType.ServiceAccount,
@@ -50,7 +51,7 @@ export const AddServiceConnection = async (c: Context) => {
 
             const SaasJobPayload: SaaSJob = {
                 connectorId: connector.id,
-                workspaceId,
+                workspaceId: user.workspaceId,
                 userId: user.id,
                 app,
                 externalId: connector.externalId

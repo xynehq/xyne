@@ -36,6 +36,27 @@
       "when": 1726756431222,
       "tag": "0004_useful_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1726906173133,
+      "tag": "0005_sad_shriek",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1726911116712,
+      "tag": "0006_nervous_brother_voodoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1726913726163,
+      "tag": "0007_early_sprite",
+      "breakpoints": true
     }
   ]
 }

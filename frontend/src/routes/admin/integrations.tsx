@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -165,6 +165,9 @@ const minHeight = 320
 const getConnectors = async () => {
   const res = await api.api.admin.connectors.all.$get()
   if(!res.ok) {
+    if(res.status === 401) {
+      throw new Error('Unauthorized')
+    }
     throw new Error('Could not get connectors')
   }
   return res.json()
@@ -204,7 +207,18 @@ return (
 }
 
 const AdminLayout = () => {
-  const {isPending, error, data } = useQuery({ queryKey: ['all-connectors'], queryFn: getConnectors})
+  const navigator = useNavigate()
+  const {isPending, error, data } = useQuery({ queryKey: ['all-connectors'], queryFn: async () => {
+    try {
+      return await getConnectors()
+    } catch(e) {
+      if(e.message === 'Unauthorized') {
+        navigator({to: '/auth'})
+        return []
+      }
+      throw e
+    }
+  }})
   const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState('')
   const [isIntegrating, setIsIntegrating] = useState(data?.length > 0)

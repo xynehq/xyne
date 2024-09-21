@@ -450,20 +450,6 @@ const getDocumentCount = async () => {
 // Example usage:
 await deleteAllDocuments()
 // console.log('deleted all docs')
-// await insertDocument({
-//     title: 'saheb',
-//     url: '',
-//     app: 'google',
-//     docId: '123',
-//     entity: 'docs',
-//     chunks: [],
-//     owner: 'saheb',
-//     photoLink: '',
-//     ownerEmail: 'saheb',
-//     chunk_embeddings: {},
-//     permissions: ['saheb@xynehq.com'],
-//     mimeType: 'pdf'
-// })
 // await initVespa(email)
 // console.log(JSON.stringify(await searchVespa('welcome my friend, let me provide you with a prompt', 'saheb@xynehq.com')))
 // const output = (await searchVespa(query, email))

@@ -11,7 +11,7 @@ import { Toaster } from '@/components/ui/toaster'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({})
 
 
 // Create a new router instance
