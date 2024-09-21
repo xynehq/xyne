@@ -9,9 +9,10 @@ import { checkAndReadFile } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
 import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
+import config from "@/config";
 
 // Define your Vespa endpoint and schema name
-const VESPA_ENDPOINT = 'http://localhost:8080';
+const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
 const SCHEMA = 'file'; // Replace with your actual schema name
 const NAMESPACE = 'namespace'; // Replace with your actual namespace
 const CLUSTER = 'my_content';

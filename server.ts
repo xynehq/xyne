@@ -172,7 +172,7 @@ app.get(
 // export type AppType = typeof AppRoutes
 
 app.get('*', serveStatic({ root: './frontend/dist' }))
-app.get('*', serveStatic({ root: './frontend/dist/index.html' }))
+app.get('*', serveStatic({ path: './frontend/dist/index.html' }))
 
 export const init = async () => {
     await initQueue()
