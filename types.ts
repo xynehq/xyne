@@ -1,17 +1,6 @@
 import config from '@/config'
 import { z } from 'zod'
 import { Apps } from '@/shared/types'
-// export interface File {
-//     docId: string,
-//     title: string,
-//     chunk: string,
-//     chunkIndex: number,
-//     url: string,
-//     app: string,
-//     entity: string,
-//     permissions: string[],
-//     mimeType: string
-// }
 
 export interface File {
     docId: string,

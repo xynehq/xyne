@@ -17,6 +17,9 @@ import { HTTPException } from 'hono/http-exception'
 import { createWorkspace, getWorkspaceByDomain } from '@/db/workspace'
 import { createUser, getUserByEmail } from '@/db/user'
 import { setCookie } from 'hono/cookie'
+import { serveStatic } from 'hono/bun'
+
+
 
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -43,7 +46,7 @@ app.use('*', logger())
 
 export const wsConnections = new Map();
 
-export const wsApp = app.get(
+export const WsApp = app.get(
     '/ws',
     upgradeWebSocket((c) => {
         let connectorId: string | undefined
@@ -66,7 +69,7 @@ export const wsApp = app.get(
     })
 )
 
-export type WebSocketApp = typeof wsApp
+// export type WebSocketApp = typeof WsApp
 
 export const AppRoutes = app.basePath('/api')
     .use('*', AuthMiddleware)
@@ -166,7 +169,10 @@ app.get(
         return c.redirect(postOauthRedirect)
     }
 )
-export type AppType = typeof AppRoutes
+// export type AppType = typeof AppRoutes
+
+app.get('*', serveStatic({ root: './frontend/dist' }))
+app.get('*', serveStatic({ root: './frontend/dist/index.html' }))
 
 export const init = async () => {
     await initQueue()

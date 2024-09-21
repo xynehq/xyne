@@ -4,6 +4,9 @@
       "@/*": [
         "./*"
       ],
+      "@/shared/*": [
+        "./shared/*"
+      ],
     },
     // Enable latest features
     "lib": ["ESNext", "DOM"],

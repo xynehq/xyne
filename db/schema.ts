@@ -14,7 +14,8 @@ import {
 import { createId } from "@paralleldrive/cuid2";
 import { encryptedText } from "./customType";
 import { Encryption } from "@/utils/encryption";
-import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/types";
+import { AuthType, ConnectorStatus, ConnectorType } from "@/types";
+import { Apps } from "@/shared/types";
 
 // Workspaces Table
 export const workspaces = pgTable("workspaces", {
