@@ -398,6 +398,7 @@ export const Index = () => {
         {offset > 0 && 
           <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
             handlePrev()
+            setPageNumber(prev => prev-1)
           }}>
             <ChevronLeft />
           </Button>
@@ -419,6 +420,7 @@ export const Index = () => {
       {results?.length > 0 && results?.length === page && (
           <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
           handleNext()
+          setPageNumber(prev => prev+1)
         }}><ChevronRight /></Button>
       )}
 
