@@ -1,6 +1,21 @@
 version: "3.9"
 
 services:
+  app:
+    image: xyne
+    container_name: xyne-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - xyne-db
+      - vespa
+    env_file:
+      - .env
+    networks:
+      - xyne
   vespa:
     image: vespaengine/vespa
     container_name: vespa
@@ -10,6 +25,8 @@ services:
       - "19071:19071"
     volumes:
       - vespa-data:/opt/vespa/var
+    networks:
+      - xyne
     restart: always
     logging:
       driver: json-file

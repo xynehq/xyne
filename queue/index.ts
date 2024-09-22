@@ -1,8 +1,10 @@
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google";
 import { ConnectorType } from "@/types";
 import PgBoss from "pg-boss";
+import config from "@/config"
 
-export const boss = new PgBoss(process.env.DATABASE_URL!);
+const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
+export const boss = new PgBoss(url);
 
 export const SaaSQueue = `ingestion-${ConnectorType.SaaS}`
 

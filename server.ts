@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { logger } from 'hono/logger'
-import fs from 'node:fs'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
 import { addServiceConnectionSchema, searchSchema, UserRole } from '@/types'
@@ -18,6 +17,9 @@ import { HTTPException } from 'hono/http-exception'
 import { createWorkspace, getWorkspaceByDomain } from '@/db/workspace'
 import { createUser, getUserByEmail } from '@/db/user'
 import { setCookie } from 'hono/cookie'
+import { serveStatic } from 'hono/bun'
+
+
 
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -44,7 +46,7 @@ app.use('*', logger())
 
 export const wsConnections = new Map();
 
-const wsApp = app.get(
+export const WsApp = app.get(
     '/ws',
     upgradeWebSocket((c) => {
         let connectorId: string | undefined
@@ -67,9 +69,9 @@ const wsApp = app.get(
     })
 )
 
-export type WebSocketApp = typeof wsApp
+// export type WebSocketApp = typeof WsApp
 
-const AppRoutes = app.basePath('/api')
+export const AppRoutes = app.basePath('/api')
     .use('*', AuthMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
@@ -167,7 +169,10 @@ app.get(
         return c.redirect(postOauthRedirect)
     }
 )
-export type AppType = typeof AppRoutes
+// export type AppType = typeof AppRoutes
+
+app.get('*', serveStatic({ root: './frontend/dist' }))
+app.get('*', serveStatic({ path: './frontend/dist/index.html' }))
 
 export const init = async () => {
     await initQueue()

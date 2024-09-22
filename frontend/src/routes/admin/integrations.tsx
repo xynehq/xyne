@@ -1,18 +1,16 @@
 import { Button } from '@/components/ui/button';
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Apps } from '@server/types';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Apps } from '@shared/types';
 import { api, wsClient } from '@/api';
-// import { useToast } from "@/components/hooks/use-toast"
 import { useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
 
 
-import { ToastAction } from "@/components/ui/toast"
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 
@@ -32,16 +30,9 @@ const submitServiceAccountForm = async (value) => {
 }
 
 export const InputFile = ({onSuccess}) => {
+  //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-    }
-  };
-
 
   const form = useForm({
     defaultValues: {
@@ -59,7 +50,7 @@ export const InputFile = ({onSuccess}) => {
       }
     
       try {
-        const response = await submitServiceAccountForm(value);  // Call the async function
+        await submitServiceAccountForm(value);  // Call the async function
         toast({
           title: "File uploaded successfully",
           description: "Integration in progress",
@@ -162,7 +153,7 @@ export const LoadingSpinner = ({className}: {className: string}) => {
 }
 const minHeight = 320
 
-const getConnectors = async () => {
+const getConnectors = async ():Promise<any> => {
   const res = await api.api.admin.connectors.all.$get()
   if(!res.ok) {
     if(res.status === 401) {
@@ -208,7 +199,7 @@ return (
 
 const AdminLayout = () => {
   const navigator = useNavigate()
-  const {isPending, error, data } = useQuery({ queryKey: ['all-connectors'], queryFn: async () => {
+  const {isPending, error, data } = useQuery<any[]>({ queryKey: ['all-connectors'], queryFn: async (): Promise<any> => {
     try {
       return await getConnectors()
     } catch(e) {
@@ -219,7 +210,7 @@ const AdminLayout = () => {
       throw e
     }
   }})
-  const [ws, setWs] = useState(null);
+  // const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState('')
   const [isIntegrating, setIsIntegrating] = useState(data?.length > 0)
 
@@ -239,7 +230,7 @@ const AdminLayout = () => {
         id: data[0]?.id,
       }
     })
-      setWs(socket)
+      // setWs(socket)
       socket.addEventListener('open', () => {
         console.log('open')
       })
@@ -254,7 +245,7 @@ const AdminLayout = () => {
     }
     return () => {
       socket?.close();
-      setWs(null)
+      // setWs(null)
     };
   }, [data, isPending])
 

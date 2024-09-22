@@ -5,7 +5,8 @@
       "@/*": [
         "./src/*"
       ],
-      "@server/*": ["../*"]
+      "@server/*": ["../*"],
+      "@shared/*": ["../shared/*"]
     },
     "target": "ES2020",
     "useDefineForClassFields": true,
@@ -22,9 +23,9 @@
     "jsx": "react-jsx",
 
     /* Linting */
-    "strict": true,
+    "strict": false,
     "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]

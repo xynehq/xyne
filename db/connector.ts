@@ -1,9 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { connectors } from "./schema";
-import type { Apps, AuthType, ConnectorType } from "@/types";
+import type { AuthType, ConnectorType } from "@/types";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { eq } from "drizzle-orm";
+import { Apps } from "@/shared/types";
 
 
 export const insertConnector = async (
