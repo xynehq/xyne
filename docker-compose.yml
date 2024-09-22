@@ -25,6 +25,8 @@ services:
       - "19071:19071"
     volumes:
       - vespa-data:/opt/vespa/var
+    networks:
+      - xyne
     restart: always
     logging:
       driver: json-file

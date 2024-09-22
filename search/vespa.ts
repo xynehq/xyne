@@ -273,7 +273,7 @@ const HybridDefaultProfileAppEntityCounts: YqlProfile = {
 
 // TODO: extract out the fetch and make an api client
 export const groupVespaSearch = async (query: string, email: string, app?: string, entity?: string): Promise<AppEntityCounts | {}> => {
-    const url = 'http://localhost:8080/search/';
+    const url = `${VESPA_ENDPOINT}/search/`;
     const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
     let yqlQuery = HybridDefaultProfileAppEntityCounts.yql
 
@@ -306,7 +306,7 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
 }
 
 export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number): Promise<VespaResponse | {}> => {
-    const url = 'http://localhost:8080/search/';
+    const url = `${VESPA_ENDPOINT}/search/`;
     const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
     // let yqlQuery = `select * from sources * where userInput(@query) and permissions contains @email`
