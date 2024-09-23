@@ -5,7 +5,7 @@ const page = 8
 
 import { Folder, ChevronRight, ChevronLeft } from 'lucide-react';
 
-import { forwardRef, MutableRefObject, useEffect, useRef, useState } from 'react'
+import { forwardRef, ForwardedRef, useEffect, useRef, useState } from 'react'
 import DocsSvg from '@/assets/docs.svg'
 import SlidesSvg from '@/assets/slides.svg'
 import SheetsSvg from '@/assets/sheets.svg'
@@ -23,8 +23,10 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from '@/api';
 import HighlightedText from '@/components/Highlight';
+import { FileResponse } from '@shared/types';
+import { Autocomplete, Groups } from '@/types';
 
-export function SearchInfo({info}) {
+export function SearchInfo({info}: {info: string}) {
   return (
     <TooltipProvider>
       <Tooltip>
@@ -60,8 +62,7 @@ const getIcon = (app: string, entity: string) => {
   }
 }
 
-
-const flattenGroups = (groups) => {
+const flattenGroups = (groups: Groups) => {
   return Object.keys(groups || {}).flatMap((app) => 
   Object.keys(groups[app] || {}).map((entity) => ({
     app,
@@ -71,7 +72,10 @@ const flattenGroups = (groups) => {
 );
 }
 
-const Autocomplete = forwardRef(({ result, onClick}: { result:any, onClick: any }, ref: MutableRefObject<HTMLDivElement>) => {
+const AutocompleteElement = forwardRef(
+  (
+    { result, onClick}: { result:Autocomplete, onClick: any }, ref: ForwardedRef<HTMLDivElement>
+  ) => {
   return (
     <div  ref={ref} onClick={onClick} className='cursor-pointer hover:bg-gray-100 px-4 py-2'>
       <div className='flex'>
@@ -83,6 +87,16 @@ const Autocomplete = forwardRef(({ result, onClick}: { result:any, onClick: any 
     </div>
   )
 })
+
+type Filter = {
+  app: string,
+  entity: string
+}
+
+type SearchMeta = {
+  coverage: any,
+  fields: any
+}
 
 export const Index = () => {
   // const routerState = useRouterState()
@@ -101,10 +115,10 @@ export const Index = () => {
 
   const [query, setQuery] = useState(''); // State to hold the search query
   const [offset, setOffset] = useState(0)
-  const [results, setResults] = useState([]); // State to hold the search results
-  const [groups, setGroups] = useState(null)
-  const [filter, setFilter] = useState(null)
-  const [searchMeta, setSearchMeta] = useState(null)
+  const [results, setResults] = useState<FileResponse[]>([]); // State to hold the search results
+  const [groups, setGroups] = useState<Groups | null>(null)
+  const [filter, setFilter] = useState<Filter | null>(null)
+  const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [pageNumber, setPageNumber] = useState(0)
 
   const navigate = useNavigate({ from: '/search' });
@@ -117,7 +131,7 @@ export const Index = () => {
 
   // for autocomplete
   const debounceTimeout = useRef<number | null>(null); // Debounce timer
-  const [autocompleteResults, setAutocompleteResults] = useState([])
+  const [autocompleteResults, setAutocompleteResults] = useState<Autocomplete[]>([])
 
   // Click outside handler
   useEffect(() => {
@@ -159,7 +173,7 @@ export const Index = () => {
           if(data.children && data.children?.length) {
             // Assuming data has a structure like: { children: [{ fields: { title: '...' } }] }
             // const titles = data.children.map((v: any) => v.fields.title);
-            setAutocompleteResults(data.children);
+            setAutocompleteResults(data.children.map((v: {fields: Autocomplete}) => v.fields));
           }
 
         } catch (error) {
@@ -184,7 +198,7 @@ export const Index = () => {
     try {
       let params = {};
       let groupCount;
-      if(newFilter) {
+      if(newFilter && groups) {
         groupCount = false
         let pageSize = page > groups[newFilter.app][newFilter.entity] ? groups[newFilter.app][newFilter.entity] : page
         params = {
@@ -236,7 +250,7 @@ export const Index = () => {
         console.log(data)
 
         if(data.root?.children && data.root.children?.length) {
-          setResults(data.root.children.map(v => v.fields))
+          setResults(data.root.children.map((v: {fields:any}) => v.fields))
         }
         if(groupCount) {
           setSearchMeta({coverage: data.root?.coverage, fields: data.root?.fields})
@@ -271,7 +285,7 @@ export const Index = () => {
     handleSearch(newOffset); // Trigger search with the updated offset
   };
 
-  const handleFilterChange = (appEntity) => {
+  const handleFilterChange = (appEntity: Filter | null) => {
       setPageNumber(0)
     if(!appEntity) {
       setFilter(null)
@@ -313,10 +327,10 @@ export const Index = () => {
         {!!autocompleteResults?.length && 
     <div ref={autocompleteRef} className='absolute top-full left-0 w-full bg-white rounded-md border font-mono text-sm shadow-sm z-10'>
       {autocompleteResults.map((result, index) => (
-        <Autocomplete key={index} onClick={() => {
-          setQuery(result.fields.title);
+        <AutocompleteElement key={index} onClick={() => {
+          setQuery(result.title);
           setAutocompleteResults([]);
-        }} result={result.fields} />
+        }} result={result} />
       ))}
 
       </div>
@@ -407,7 +421,7 @@ export const Index = () => {
       {searchMeta &&
         (
           <div className='flex space-x-2 items-center'>
-            {Array(Math.round( (filter? groups[filter.app][filter.entity] : searchMeta.fields?.totalCount) / page) || 1).fill(0).map((count, index) => {
+            {Array(Math.round( (filter && groups ? groups[filter.app][filter.entity] : searchMeta.fields?.totalCount) / page) || 1).fill(0).map((count, index) => {
               return (<p key={index} className={`cursor-pointer hover:text-sky-700 ${index === pageNumber ? "text-blue-500" : "text-gray-700"}`} onClick={(e) => {
                 goToPage(index)
                 setPageNumber(index)

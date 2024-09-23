@@ -11,10 +11,11 @@ import { useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
 
 
-import { cn } from '@/lib/utils';
+import { cn, getErrorMessage } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
+import { Connectors } from '@/types';
 
-const submitServiceAccountForm = async (value) => {
+const submitServiceAccountForm = async (value: FormData) => {
     const response = await api.api.admin.service_account.$post({
       form: {
         'service-key': value.file,
@@ -28,13 +29,18 @@ const submitServiceAccountForm = async (value) => {
     }
     return response.json()
 }
+type FormData = {
+  email: string,
+  file: any
+}
 
-export const InputFile = ({onSuccess}) => {
+
+export const InputFile = ({onSuccess}: {onSuccess: ()=>{}}) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
 
-  const form = useForm({
+  const form = useForm<FormData>({
     defaultValues: {
       email: '',
       file: null
@@ -59,7 +65,7 @@ export const InputFile = ({onSuccess}) => {
       } catch (error) {
         toast({
           title: "Could not upload the service account key",
-          description: `Error: ${error.message}`,
+          description: `Error: ${getErrorMessage(error)}`,
           variant: 'destructive',
         });
       }
@@ -164,7 +170,7 @@ const getConnectors = async ():Promise<any> => {
   return res.json()
 }
 
-const ServiceAccountTab = ({connectors, updateStatus, onSuccess, isIntegrating}) => {
+const ServiceAccountTab = ({connectors, updateStatus, onSuccess, isIntegrating}: {connectors: Connectors[], updateStatus: string, onSuccess: any, isIntegrating: boolean}) => {
   if(!isIntegrating) {
         return (<Card>
           <CardHeader>
@@ -202,17 +208,18 @@ const AdminLayout = () => {
   const {isPending, error, data } = useQuery<any[]>({ queryKey: ['all-connectors'], queryFn: async (): Promise<any> => {
     try {
       return await getConnectors()
-    } catch(e) {
-      if(e.message === 'Unauthorized') {
+    } catch(error) {
+      const message = getErrorMessage(error)
+      if(message === 'Unauthorized') {
         navigator({to: '/auth'})
         return []
       }
-      throw e
+      throw error
     }
   }})
   // const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState('')
-  const [isIntegrating, setIsIntegrating] = useState(data?.length > 0)
+  const [isIntegrating, setIsIntegrating] = useState<boolean>((data as any[]).length > 0)
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
@@ -223,21 +230,21 @@ const AdminLayout = () => {
   }, [data, isPending]);
 
   useEffect(() => {
-    let socket = null
+    let socket: WebSocket | null = null
     if(!isPending && data && data.length > 0) {
-      const socket = wsClient.ws.$ws({
+      socket = wsClient.ws.$ws({
       query: {
         id: data[0]?.id,
       }
     })
       // setWs(socket)
-      socket.addEventListener('open', () => {
+      socket?.addEventListener('open', () => {
         console.log('open')
       })
-      socket.addEventListener('close', () => {
+      socket?.addEventListener('close', () => {
         console.log('close')
       })
-      socket.addEventListener('message', (e) => {
+      socket?.addEventListener('message', (e) => {
         // const message = JSON.parse(e.data);
         const data = JSON.parse(e.data)
         setUpateStatus(data.message)

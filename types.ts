@@ -11,6 +11,9 @@ export interface File {
     app: string,
     entity: string,
     permissions: string[],
+    owner: string,
+    ownerEmail: string,
+    photoLink: string,
     mimeType: string,
     title_embedding: number[],
     chunk_embedding: number[]
