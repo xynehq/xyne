@@ -1,13 +1,13 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 
-const parseHighlight = (text) => {
-    if (!text) return null;
-  
+type HighlightText = { text: string, highlight: boolean }
+
+const parseHighlight = (text: string): ReactNode[] => {
     // Split the text on <hi> and </hi>, including the tags in the result
-    const parts = text.split(/(<hi>|<\/hi>)/);
+    const parts: string[] = text.split(/(<hi>|<\/hi>)/);
   
     let isHighlight = false;
-    const segments = [];
+    const segments: HighlightText[] = [];
   
     parts.forEach((part) => {
       if (part === '<hi>') {
@@ -15,7 +15,7 @@ const parseHighlight = (text) => {
       } else if (part === '</hi>') {
         isHighlight = false;
       } else if (part) {
-        segments.push({ text: part, highlight: isHighlight });
+        segments.push({ text: part, highlight: isHighlight } as HighlightText);
       }
     });
   
@@ -31,7 +31,7 @@ const parseHighlight = (text) => {
   };
   
   // Component that renders chunk summary with parsing
-  const HighlightedText = ({ chunk_summary }) => (
+  const HighlightedText = ({ chunk_summary }: {chunk_summary: string}) => (
     <p className="text-left text-sm mt-1 line-clamp-[2.5] text-ellipsis overflow-hidden">
       {chunk_summary ? parseHighlight(chunk_summary) : ' '}
     </p>

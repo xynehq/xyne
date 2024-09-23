@@ -9,3 +9,17 @@ export const searchSchema = z.object({
     app: z.string().min(1).optional(),
     entity: z.string().min(1).optional()
 })
+
+export type Connectors = {
+    app: string,
+    status: string
+}
+
+export type Groups = Record<string, Record<string, number>>
+
+
+export type Autocomplete = {
+    app: string
+    entity: string
+    title: string
+}
