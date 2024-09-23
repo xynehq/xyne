@@ -21,7 +21,7 @@ ENV NODE_ENV=production
 # RUN bun run build
 
 # Expose the application port
-EXPOSE 3000/tcp
+EXPOSE 80/tcp
 
 # Run the backend app
 USER bun

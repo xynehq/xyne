@@ -219,7 +219,7 @@ const AdminLayout = () => {
   }})
   // const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState('')
-  const [isIntegrating, setIsIntegrating] = useState<boolean>((data as any[]).length > 0)
+  const [isIntegrating, setIsIntegrating] = useState<boolean>(data? data.length > 0 : false)
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {

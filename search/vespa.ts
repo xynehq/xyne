@@ -253,7 +253,7 @@ const HybridDefaultProfile: YqlProfile = {
     profile: "default",
     yql: `select * from file 
         where (({targetHits:10}userInput(@query)) 
-        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e)))`
+        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email`
 }
 
 // select * from file where (({targetHits:10}userInput(@query)) or ({targetHits:10}nearestNeighbor(title_embedding, e))) and app == @app and entity == @entity
@@ -262,7 +262,7 @@ const HybridDefaultProfileAppEntityCounts: YqlProfile = {
     profile: "default",
     yql: `select * from file 
         where (({targetHits:10}userInput(@query)) 
-        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e)))
+        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email
         limit 0 
         | all(
             group(app) each(
@@ -309,65 +309,17 @@ export const searchVespa = async (query: string, email: string, app?: string, en
     const url = `${VESPA_ENDPOINT}/search/`;
     const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
-    // let yqlQuery = `select * from sources * where userInput(@query) and permissions contains @email`
-    // let yqlQuery = `select * from file where userInput(@query) and permissions contains @email`
-    // let yqlQuery = "select * from sources * where ({targetHits:100}userInput(@query)) OR ({targetHits:10}nearestNeighbor(embedding, e))";
-
-
-
-
     let yqlQuery = HybridDefaultProfile.yql
 
     if (app && entity) {
         yqlQuery += ` and app contains @app and entity contains @entity`;
     }
-
-    // const searchPayload = {
-    //     yql: yqlQuery,
-    //     query,
-    //     email,
-    //     app, entity,
-    //     'ranking.profile': 'vector-only',
-    //     'ranking.listFeatures': false,
-    //     'ranking.features.query(query_embedding)': {
-    //         "type": "tensor<float>(x[768])",
-    //         "values": qEmbedding,
-    //     },
-    //     'ranking.features.query(alpha)': 0.25,
-    //     'presentation.summary': 'default',
-    // };
     const semanticPayload = {
         yql: SemanticProfile.yql,
         email,
         'ranking.profile': 'semantic',
         'input.query(e)': qEmbedding,
     };
-
-    // let yqlQuery = `select * from file where userInput(@query)`;
-
-    const searchPayload = {
-        yql: yqlQuery,
-        email, // For the permissions filtering
-        query, // For BM25 scoring
-        'ranking.profile': 'hybrid_with_filtering',
-        'input.query(e)': qEmbedding, // Pass the query embedding
-    };
-
-    const hybridPayload = {
-        yql: HybridProfile.yql,
-        query,
-        email,
-        'ranking.profile': HybridProfile.profile,
-        'input.query(e)': qEmbedding,
-    }
-
-    const hybridNormalizePayload = {
-        yql: HybridProfile.yql,
-        query,
-        email,
-        'ranking.profile': HybridProfile.profile,
-        'input.query(e)': qEmbedding,
-    }
 
     const hybridDefaultPayload = {
         yql: yqlQuery,

@@ -4,14 +4,14 @@ import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
 import { addServiceConnectionSchema, searchSchema, UserRole } from '@/types'
 import { AddServiceConnection, GetConnectors } from '@/api/admin'
-import { boss, init as initQueue, SaaSQueue } from '@/queue'
+import { init as initQueue } from '@/queue'
 import { createBunWebSocket } from 'hono/bun'
 import type { ServerWebSocket } from 'bun'
 import { googleAuth } from '@hono/oauth-providers/google'
 import { jwt } from 'hono/jwt'
 import type { JwtVariables } from 'hono/jwt'
 type Variables = JwtVariables
-import { decode, sign, verify } from 'hono/jwt'
+import { sign } from 'hono/jwt'
 import { db } from '@/db/client'
 import { HTTPException } from 'hono/http-exception'
 import { createWorkspace, getWorkspaceByDomain } from '@/db/workspace'
@@ -19,8 +19,6 @@ import { createUser, getUserByEmail } from '@/db/user'
 import { setCookie } from 'hono/cookie'
 import { serveStatic } from 'hono/bun'
 import config from '@/config'
-
-
 
 
 const clientId = process.env.GOOGLE_CLIENT_ID!

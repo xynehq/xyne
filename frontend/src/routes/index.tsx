@@ -118,7 +118,7 @@ export const Index = () => {
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter | null>(null)
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
-  const [pageNumber, setPageNumber] = useState(0)
+  const [pageNumber, setPageNumber] = useState(1)
 
   const navigate = useNavigate({ from: '/search' });
 
@@ -193,7 +193,7 @@ export const Index = () => {
     if (!query) return; // If the query is empty, do nothing
 
 
-    setAutocompleteResults([])
+    // setAutocompleteResults([])
     try {
       let params = {};
       let groupCount;
@@ -246,10 +246,20 @@ export const Index = () => {
       })
       if(response.ok) {
         const data: any = await response.json()
-        console.log(data)
 
         if(data.root?.children && data.root.children?.length) {
           setResults(data.root.children.map((v: {fields:any}) => v.fields))
+          setAutocompleteResults([])
+          // ensure even if autocomplete results came a little later we don't show right after we show
+          // first set of results after a search
+          // one short
+          setTimeout(() => {
+            setAutocompleteResults([])
+          }, 300)
+          // one long
+          setTimeout(() => {
+            setAutocompleteResults([])
+          }, 1000)
         }
         if(groupCount) {
           setSearchMeta({coverage: data.root?.coverage, fields: data.root?.fields})
@@ -421,16 +431,16 @@ export const Index = () => {
         (
           <div className='flex space-x-2 items-center'>
             {Array(Math.round( (filter && groups ? groups[filter.app][filter.entity] : searchMeta.fields?.totalCount) / page) || 1).fill(0).map((count, index) => {
-              return (<p key={index} className={`cursor-pointer hover:text-sky-700 ${index === pageNumber ? "text-blue-500" : "text-gray-700"}`} onClick={(e) => {
+              return (<p key={index} className={`cursor-pointer hover:text-sky-700 ${index+1 === pageNumber ? "text-blue-500" : "text-gray-700"}`} onClick={(e) => {
                 goToPage(index)
-                setPageNumber(index)
+                setPageNumber(index+1)
               }}>{index + 1}</p>)
             })}
             </div>
         )
 
       }
-      {results?.length > 0 && results?.length === page && (
+      {results?.length > 0 && pageNumber * page < searchMeta?.fields?.totalCount && (
           <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
           handleNext()
           setPageNumber(prev => prev+1)
