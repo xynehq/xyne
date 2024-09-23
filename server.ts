@@ -18,6 +18,7 @@ import { createWorkspace, getWorkspaceByDomain } from '@/db/workspace'
 import { createUser, getUserByEmail } from '@/db/user'
 import { setCookie } from 'hono/cookie'
 import { serveStatic } from 'hono/bun'
+import config from '@/config'
 
 
 
@@ -183,6 +184,7 @@ init().catch(e => {
 
 const server = Bun.serve({
     fetch: app.fetch,
+    port: config.port,
     websocket
 })
 console.log('listening on port: 3000')

@@ -29,7 +29,8 @@ export default function LoginForm() {
             <CardContent>
                 <div className="grid gap-4">
                 <Button variant="outline" className="w-full" onClick={(e) => {
-                    window.location.href = 'http://localhost:3000/v1/auth/callback'
+                  const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`;
+                    window.location.href = redirectUrl
                 }}>
                     Login with Google
                 </Button>
