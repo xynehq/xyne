@@ -1,8 +1,9 @@
 # Xyne
 
 ## Search
-starts postgres and vespa
-`docker-compose up -d`
+once you have a .env setup, inside root run
+`$ docker build -t xyne .`
+`$ docker-compose up -d`
+This will start `Vespa`, `Postgres` and our App Server
 
-`bun run server.ts`
-this will install the xenova embedding model first
+Initially server will need to download the embedding model
