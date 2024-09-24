@@ -1,6 +1,8 @@
 import config from '@/config'
 import { z } from 'zod'
 import { Apps } from '@/shared/types'
+import type { PgTransaction } from 'drizzle-orm/pg-core'
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
 export interface File {
     docId: string,
@@ -144,3 +146,5 @@ export enum UserRole {
     Admin = "admin",
     SuperAdmin = "super_admin"
 }
+
+export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase

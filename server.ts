@@ -185,4 +185,4 @@ const server = Bun.serve({
     port: config.port,
     websocket
 })
-console.log('listening on port: 3000')
+console.log(`listening on port: ${config.port}`)

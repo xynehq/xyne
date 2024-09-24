@@ -2,21 +2,21 @@ version: "3.9"
 
 services:
   app:
-  image: xyne
-  container_name: xyne-app
-  build:
-    context: .
-    dockerfile: Dockerfile
-  ports:
-    - "80:80"
-  depends_on:
-    - xyne-db
-    - vespa
-  env_file:
-    - .env
-  networks:
-    - xyne
-  restart: always
+    image: xyne
+    container_name: xyne-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - xyne-db
+      - vespa
+    env_file:
+      - .env
+    networks:
+      - xyne
+    restart: always
   vespa:
     image: vespaengine/vespa
     container_name: vespa

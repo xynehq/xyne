@@ -3,6 +3,8 @@ import { db } from "./client";
 import { users, workspaces } from "./schema";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { TxnOrClient } from "@/types";
 
 export const getUserAndWorkspaceByEmail = async (trx: PgTransaction<any>, workspaceId: number, email: string) => {
     return await db
@@ -41,7 +43,7 @@ const onlyOne = (res, errorMsg: string) => {
 }
 
 // since email is unique across the users we don't need workspaceId
-export const getUserByEmail = async (trx: PgTransaction<any>, email: string) => {
+export const getUserByEmail = async (trx: TxnOrClient, email: string) => {
     return await db
         .select().from(users)
         .where(and(
