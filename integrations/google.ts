@@ -1,4 +1,4 @@
-import { drive_v3, google } from "googleapis";
+import { admin_directory_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
 import fs from "node:fs/promises";
@@ -15,45 +15,64 @@ import type { WSContext } from "hono/ws";
 import { db } from "@/db/client";
 import { connectors } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getWorkspaceByEmail } from "@/db/workspace";
+
+
+const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
+    return new JWT({
+        email: serviceAccountKey.client_email,
+        key: serviceAccountKey.private_key,
+        scopes,
+        subject
+    });
+}
+
+type GoogleServiceAccount = {
+    client_email: string,
+    private_key: string,
+}
+
+const listUsers = async (admin: admin_directory_v1.Admin, domain: string) => {
+    let users: admin_directory_v1.Schema$User[] = [];
+    let nextPageToken = null;
+
+    try {
+        do {
+            const res = await admin.users.list({
+                domain: domain,
+                maxResults: 500,
+                orderBy: "email",
+                pageToken: nextPageToken,
+            });
+            users = users.concat(res.data.users);
+
+            nextPageToken = res.data.nextPageToken;
+        } while (nextPageToken);
+        return users;
+    } catch (error) {
+        console.error("Error listing users:", error);
+        throw error
+        // return [];
+    }
+};
 
 export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
     console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSJob = job.data as SaaSJob
     try {
         const connector = await getConnector(data.connectorId)
-        const serviceAccountKey = JSON.parse(connector.credentials as string)
+        const serviceAccountKey: GoogleServiceAccount = JSON.parse(connector.credentials as string)
         const subject: string = connector.subject as string
-        const jwtClient = new JWT({
-            email: serviceAccountKey.client_email,
-            key: serviceAccountKey.private_key,
-            scopes,
-            subject
-        });
+        let jwtClient = createJwtClient(serviceAccountKey, subject)
+        const admin = google.admin({ version: "directory_v1", auth: jwtClient });
 
-        // boss.publish(ProgressEvent, {''})
-        const fileMetadata = (await listFiles(jwtClient, subject)).map(v => {
-            v.permissions = toPermissionsList(v.permissions, subject)
-            return v
-        })
-        const totalFiles = fileMetadata.length
-        const ws: WSContext = wsConnections.get(connector.externalId)
-        if (ws) {
-            ws.send(JSON.stringify({ totalFiles, message: `${totalFiles} metadata files ingested` }))
-        }
-        const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
-        const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
-        const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
-        const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
-
-        const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata, connector.externalId)
-        const driveFiles: File[] = await driveFilesToDoc(rest)
-
-
-        sendWebsocketMessage('generating embeddings', connector.externalId)
-        let allFiles: File[] = [...driveFiles, ...documents]
-
-        for (const doc of allFiles) {
-            await insertDocument(doc)
+        const workspace = await getWorkspaceByEmail(db, subject)
+        const users = await listUsers(admin, workspace.domain)
+        for (const [index, user] of users.entries()) {
+            sendWebsocketMessage(`${((index + 1) / users.length) * 100}% user's data is connected`, connector.externalId)
+            const userEmail = user.primaryEmail || user.emails[0]
+            jwtClient = createJwtClient(serviceAccountKey, userEmail)
+            await insertDriveForAUser(jwtClient, userEmail, connector)
         }
         await db.transaction(async (trx) => {
             await trx.update(connectors).set({
@@ -71,6 +90,33 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
+    }
+}
+
+const insertDriveForAUser = async (jwtClient: JWT, userEmail: string, connector) => {
+    const fileMetadata = (await listFiles(jwtClient, userEmail)).map(v => {
+        v.permissions = toPermissionsList(v.permissions, userEmail)
+        return v
+    })
+    const totalFiles = fileMetadata.length
+    const ws: WSContext = wsConnections.get(connector.externalId)
+    if (ws) {
+        ws.send(JSON.stringify({ totalFiles, message: `${totalFiles} metadata files ingested` }))
+    }
+    const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
+    const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
+    const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
+    const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
+
+    const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata, connector.externalId)
+    const driveFiles: File[] = await driveFilesToDoc(rest)
+
+
+    sendWebsocketMessage('generating embeddings', connector.externalId)
+    let allFiles: File[] = [...driveFiles, ...documents]
+
+    for (const doc of allFiles) {
+        await insertDocument(doc)
     }
 }
 
