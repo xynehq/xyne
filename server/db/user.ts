@@ -51,7 +51,7 @@ export const getUserByEmail = async (trx: TxnOrClient, email: string) => {
         )).limit(1)
 }
 
-export const createUser = async (trx: PgTransaction<any>,
+export const createUser = async (trx: TxnOrClient,
     workspaceId: number,
     email: string,
     name: string,

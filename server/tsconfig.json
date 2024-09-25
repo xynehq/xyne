@@ -5,7 +5,7 @@
         "./*"
       ],
       "@/shared/*": [
-        "./shared/*"
+        "../shared/*"
       ],
     },
     // Enable latest features

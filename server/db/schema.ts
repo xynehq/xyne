@@ -68,7 +68,6 @@ export const users = pgTable(
             .notNull(),
         // this will come handy for jwt token
         workspaceExternalId: text("workspace_external_id")
-            .unique()
             .notNull(),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
@@ -110,7 +109,6 @@ export const connectors = pgTable("connectors", {
         .unique()
         .notNull(),
     workspaceExternalId: text("workspace_external_id")
-        .unique()
         .notNull(),
     name: text("name").notNull(),
     type: connectorTypeEnum('type').notNull(),
