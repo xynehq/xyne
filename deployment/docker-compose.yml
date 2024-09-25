@@ -13,7 +13,7 @@ services:
       - xyne-db
       - vespa
     env_file:
-      - .env
+      - ../server/.env
     networks:
       - xyne
     restart: always
@@ -25,7 +25,7 @@ services:
       - "8080:8080"
       - "19071:19071"
     volumes:
-      - vespa-data:/opt/vespa/var
+      - ../server/vespa-data:/opt/vespa/var
     networks:
       - xyne
     restart: always
@@ -45,7 +45,7 @@ services:
     ports:
       - "${XYNE_DB_PORT:-5432}:5432"
     volumes:
-      - ./xyne-data:/var/lib/postgresql/data
+      - ../server/xyne-data:/var/lib/postgresql/data
     networks:
       - xyne
     restart: always

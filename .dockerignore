@@ -1,7 +1,6 @@
 node_modules
 frontend/node_modules
 .env.development
-vespa-data
-xyne-data
-data
-pdf-data
+server/vespa-data
+server/xyne-data
+server/data

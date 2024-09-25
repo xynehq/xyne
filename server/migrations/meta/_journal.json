@@ -57,6 +57,13 @@
       "when": 1726913726163,
       "tag": "0007_early_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1727254347360,
+      "tag": "0008_empty_junta",
+      "breakpoints": true
     }
   ]
 }
