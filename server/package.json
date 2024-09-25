@@ -12,7 +12,7 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
-    "dev": "bunx --bun vite",
+    "dev": "bun run --watch server.ts",
     "build": "bunx --bun vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -32,7 +32,7 @@
     "express": "^4.19.2",
     "google-auth-library": "^9.14.0",
     "googleapis": "^140.0.1",
-    "hono": "^4.5.10",
+    "hono": "^4.6.3",
     "i": "^0.3.7",
     "ollama": "^0.5.8",
     "openai": "^4.53.2",
