@@ -21,11 +21,14 @@ services:
     image: vespaengine/vespa
     container_name: vespa
     hostname: vespa-container
+    # sudo chown -R 1000:1000 ./server/vespa-data
+    user: "1000:1000" # Run as vespa user
     ports:
       - "8080:8080"
       - "19071:19071"
     volumes:
-      - ../server/vespa-data:/opt/vespa/var
+      - ../server/vespa-data:/opt/vespa/var # Ensure this directory has correct permissions
+      - ../server/vespa-logs:/opt/vespa/logs # Ensure correct permissions
     networks:
       - xyne
     restart: always

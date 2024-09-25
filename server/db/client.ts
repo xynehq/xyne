@@ -5,6 +5,8 @@ import config from "@/config"
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 console.log(url)
 
-const queryClient = postgres(url)
+const queryClient = postgres(url, {
+    idle_timeout: 0
+})
 // We will use the exported variable to query our db:
 export const db = drizzle(queryClient)

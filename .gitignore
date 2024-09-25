@@ -180,6 +180,7 @@ data
 # docker volumne mounts
 xyne-data
 vespa-data
+vespa-logs
 
 .env.production
 
