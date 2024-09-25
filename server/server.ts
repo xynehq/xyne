@@ -147,7 +147,7 @@ app.get(
         if (existingWorkspaceRes && existingWorkspaceRes.length) {
             console.log('Workspace found, creating user')
             const existingWorkspace = existingWorkspaceRes[0]
-            const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, existingWorkspace.externalId)
+            const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, token?.token, "", UserRole.SuperAdmin, existingWorkspace.externalId)
             const jwtToken = await generateToken(user.email, user.role, user.workspaceExternalId)
             setCookie(c, CookieName, jwtToken)
             return c.redirect(postOauthRedirect)

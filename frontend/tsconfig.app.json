@@ -5,7 +5,7 @@
       "@/*": [
         "./src/*"
       ],
-      "@server/*": ["../*"],
+      "@server/*": ["../server/*"],
       "@shared/*": ["../shared/*"]
     },
     "target": "ES2020",

@@ -176,3 +176,12 @@ dist
 
 service-account.json
 data
+
+# docker volumne mounts
+xyne-data
+vespa-data
+
+.env.production
+
+# models
+server/Xenova
