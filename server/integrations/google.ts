@@ -111,7 +111,6 @@ const insertDriveForAUser = async (jwtClient: JWT, userEmail: string, connector)
     const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata, connector.externalId)
     const driveFiles: File[] = await driveFilesToDoc(rest)
 
-
     sendWebsocketMessage('generating embeddings', connector.externalId)
     let allFiles: File[] = [...driveFiles, ...documents]
 
@@ -151,6 +150,7 @@ export const listFiles = async (jwtClient: JWT, email: string, onlyDocs: boolean
     return files;
 }
 
+// we need to support alias?
 export const toPermissionsList = (drivePermissions: drive_v3.Schema$Permission[], ownerEmail: string): string[] => {
     let permissions = []
     if (drivePermissions && drivePermissions.length) {
