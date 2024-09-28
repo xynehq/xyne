@@ -64,5 +64,5 @@ export const OAuthCallback = async (c: Context) => {
     console.log(`Job ${jobId} enqueued for connection ${connector.id}`)
 
     // Commit the transaction if everything is successful
-    return c.redirect(`${config.host}/oauth?success=true`)
+    return c.redirect(`${config.host}/oauth/success`)
 }
