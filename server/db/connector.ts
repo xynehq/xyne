@@ -1,10 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
-import { connectors } from "./schema";
-import type { AuthType, ConnectorType, TxnOrClient } from "@/types";
+import { connectors, type SelectConnector } from "./schema";
+import type { ConnectorType, TxnOrClient } from "@/types";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { eq } from "drizzle-orm";
-import { Apps } from "@/shared/types";
+import { Apps, AuthType, type ConnectorStatus } from "@/shared/types";
 
 
 export const insertConnector = async (
@@ -17,8 +17,10 @@ export const insertConnector = async (
     authType: AuthType,          // Use TypeScript enum for authType
     app: Apps,                   // Use TypeScript enum for app
     config: Record<string, any>,
-    credentials: string,
-    subject?: string
+    credentials: string | null,
+    subject: string | null,
+    oauthCredentials?: string | null,
+    status?: ConnectorStatus | null,
 ) => {
     const externalId = createId();  // Generate unique external ID
     try {
@@ -32,10 +34,10 @@ export const insertConnector = async (
             authType: authType,        // Authentication type from the enum
             app: app,                  // App type from the enum
             config: config,            // JSON configuration for the connection
-            credentials: credentials,  // Encrypted credentials
+            credentials,  // Encrypted credentials
             subject,
-            // createdAt: new Date(),     // Set creation date
-            // updatedAt: new Date(),     // Set update date
+            oauthCredentials,
+            ...(status ? { status } : {}),
         }).returning();
         console.log("Connection inserted successfully");
         return inserted[0]
@@ -65,4 +67,20 @@ export const getConnector = async (connectorId: number) => {
     } else {
         throw new Error('Could not get the connector')
     }
+}
+
+export const getConnectorByExternalId = async (connectorId: string) => {
+    const res = await db.select().from(connectors).where(eq(connectors.externalId, connectorId)).limit(1)
+    if (res.length) {
+        return res[0]
+    } else {
+        throw new Error('Could not get the connector')
+    }
+}
+
+export const updateConnector = async (connectorId: number, updateData: Partial<SelectConnector>): Promise<SelectConnector[]> => {
+    const updateConnectors = db.update(connectors).set(updateData)
+        .where(eq(connectors.id, connectorId))
+        .returning()
+    return updateConnectors
 }

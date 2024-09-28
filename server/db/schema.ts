@@ -11,11 +11,12 @@ import {
     pgEnum,
     unique,
 } from "drizzle-orm/pg-core";
-import { createId } from "@paralleldrive/cuid2";
 import { encryptedText } from "./customType";
 import { Encryption } from "@/utils/encryption";
-import { AuthType, ConnectorStatus, ConnectorType } from "@/types";
-import { Apps } from "@/shared/types";
+import { ConnectorType } from "@/types";
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import { z } from "zod";
 
 // Workspaces Table
 export const workspaces = pgTable("workspaces", {
@@ -95,8 +96,11 @@ export const authTypeEnum = pgEnum('auth_type', Object.values(AuthType) as [stri
 export const appTypeEnum = pgEnum('app_type', Object.values(Apps) as [string, ...string[]]);
 export const statusEnum = pgEnum('status', Object.values(ConnectorStatus) as [string, ...string[]]);
 
-
 // Connectors Table
+// data source + credentails(if needed) + status of ingestion job
+// for OAuth the setup data is in the OAuth Provider
+// table and Connectors contains the credentails as well
+// as the data fetching status.
 export const connectors = pgTable("connectors", {
     id: serial("id").notNull().primaryKey(),
     workspaceId: integer("workspace_id")
@@ -116,8 +120,11 @@ export const connectors = pgTable("connectors", {
     app: appTypeEnum('app_type').notNull(),
     config: jsonb("config").notNull(),
     credentials: encryptedText(serviceAccountEncryption)("credentials"),
+    // for oauth this can be used as created by
     subject: encryptedText(accesskeyEncryption)("subject"),
+    oauthCredentials: encryptedText(accesskeyEncryption)("oauth_credentials"),
     // by default when created will be in the connecting status
+    // for oauth we must send not connected when first created
     status: statusEnum('status').notNull().default(ConnectorStatus.Connecting),
     createdAt: timestamp("created_at", { withTimezone: true })
         .notNull()
@@ -128,3 +135,56 @@ export const connectors = pgTable("connectors", {
 }, (t) => ({
     uniqueConnector: unique().on(t.workspaceId, t.userId, t.app, t.authType)
 }));
+
+// anytime we make a oauth provider we make a corresponding
+// connector with not connected status.
+export const oauthProviders = pgTable("oauth_providers", {
+    id: serial("id").notNull().primaryKey(),
+    workspaceId: integer("workspace_id")
+        .notNull()
+        .references(() => workspaces.id),
+    userId: integer("user_id")
+        .notNull()
+        .references(() => users.id),
+    externalId: text("external_id")
+        .unique()
+        .notNull(),
+    workspaceExternalId: text("workspace_external_id")
+        .notNull(),
+    clientId: text('client_id'),
+    clientSecret: encryptedText(accesskeyEncryption)('client_secret'),
+    oauthScopes: text('oauth_scopes').array().notNull().default(sql`ARRAY[]::text[]`),
+    app: appTypeEnum('app_type').notNull(),
+    connectorId: integer("container_id")
+        .notNull()
+        .references(() => connectors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+        .notNull()
+        .default(sql`NOW()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+        .notNull()
+        .default(sql`NOW()`),
+})
+
+export const insertProviderSchema = createInsertSchema(oauthProviders, {
+    // added to prevent type error
+    oauthScopes: z.array(z.string())
+}).omit({
+    createdAt: true,
+    updatedAt: true,
+    id: true
+})
+export type InsertOAuthProvider = z.infer<typeof insertProviderSchema>
+
+export const selectProviderSchema = createSelectSchema(oauthProviders, {
+    // added to prevent type error
+    oauthScopes: z.array(z.string())
+})
+
+export type SelectOAuthProvider = z.infer<typeof selectProviderSchema>
+
+export const selectConnectorSchema = createSelectSchema(connectors, {
+    config: z.any()
+})
+
+export type SelectConnector = z.infer<typeof selectConnectorSchema>

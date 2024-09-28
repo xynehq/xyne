@@ -1,3 +1,4 @@
+import { AuthType } from '@shared/types'
 import { z } from 'zod'
 
 export const searchSchema = z.object({
@@ -13,6 +14,7 @@ export const searchSchema = z.object({
 export type Connectors = {
     app: string,
     status: string
+    authType: AuthType
 }
 
 export type Groups = Record<string, Record<string, number>>

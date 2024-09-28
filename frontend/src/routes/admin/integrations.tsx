@@ -5,17 +5,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Apps } from '@shared/types';
+import { Apps, AuthType, ConnectorStatus } from '@shared/types';
 import { api, wsClient } from '@/api';
-import { useToast } from "@/hooks/use-toast"
+import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
 
 
 import { cn, getErrorMessage } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Connectors } from '@/types';
+import { OAuthModal } from '@/oauth';
 
-const submitServiceAccountForm = async (value: FormData) => {
+const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
     const response = await api.api.admin.service_account.$post({
       form: {
         'service-key': value.file,
@@ -29,18 +30,144 @@ const submitServiceAccountForm = async (value: FormData) => {
     }
     return response.json()
 }
-type FormData = {
+
+const submitOAuthForm = async (value: OAuthFormData) => {
+    const response = await api.api.admin.oauth.create.$post({
+      form: {
+        'clientId': value.clientId,
+        'clientSecret': value.clientSecret,
+        'scopes': value.scopes,
+        'app': Apps.GoogleDrive
+      }
+    });
+    if(!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    return response.json()
+}
+
+type ServiceAccountFormData = {
   email: string,
   file: any
 }
 
+type OAuthFormData = {
+  clientId: string,
+  clientSecret: string,
+  scopes: string[]
+}
 
-export const InputFile = ({onSuccess}: {onSuccess: ()=>{}}) => {
+
+export const OAuthForm = ({onSuccess}: {onSuccess:any}) => {
+
+  const { toast } = useToast();
+  const form = useForm<OAuthFormData>({
+    defaultValues: {
+      clientId: '',
+      clientSecret: '',
+      scopes: []
+    },
+    onSubmit: async ({ value }) => {
+      try {
+        await submitOAuthForm(value);  // Call the async function
+        toast({
+          title: "OAuth integration added",
+          description: "Perform OAuth to add the data",
+        });
+        onSuccess()
+      } catch (error) {
+        toast({
+          title: "Could not create integration",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: 'destructive',
+        });
+      }
+    },
+  });
+  return (
+    <form
+    onSubmit={(e) => {
+      e.preventDefault();
+      form.handleSubmit();
+    }}
+    className="grid w-full max-w-sm items-center gap-1.5"
+  >
+    <Label htmlFor="clientId">client id</Label>
+    <form.Field
+      name="clientId"
+      validators={{
+        onChange: ({ value }) => (!value ? "Client ID is required" : undefined),
+      }}
+      children={(field) => (
+        <>
+          <Input
+            id="clientId"
+            type="text"
+            value={field.state.value}
+            onChange={(e) => field.handleChange(e.target.value)}
+            placeholder="Enter client id"
+          />
+          {field.state.meta.isTouched && field.state.meta.errors.length ? (
+            <p className="text-red-600 text-sm">{field.state.meta.errors.join(", ")}</p>
+          ) : null}
+        </>
+      )}
+    />
+    <Label htmlFor="clientSecret">client secret</Label>
+    <form.Field
+      name="clientSecret"
+      validators={{
+        onChange: ({ value }) => (!value ? "Client Secret is required" : undefined),
+      }}
+      children={(field) => (
+        <>
+          <Input
+            id="clientSecret"
+            type="password"
+            value={field.state.value}
+            onChange={(e) => field.handleChange(e.target.value)}
+            placeholder="Enter client secret"
+          />
+          {field.state.meta.isTouched && field.state.meta.errors.length ? (
+            <p className="text-red-600 text-sm">{field.state.meta.errors.join(", ")}</p>
+          ) : null}
+        </>
+      )}
+    />
+    <Label htmlFor="scopes">scopes</Label>
+    <form.Field
+      name="scopes"
+      validators={{
+        onChange: ({ value }) => (!value ? "scopes are required" : undefined),
+      }}
+      children={(field) => (
+        <>
+          <Input
+            id="scopes"
+            type="text"
+            value={field.state.value}
+            onChange={(e) => field.handleChange(e.target.value.split(','))}
+            placeholder="Enter OAuth scopes"
+          />
+          {field.state.meta.isTouched && field.state.meta.errors.length ? (
+            <p className="text-red-600 text-sm">{field.state.meta.errors.join(", ")}</p>
+          ) : null}
+        </>
+      )}
+    />
+
+    <Button type="submit">Create Integration</Button>
+    </form>
+  )
+}
+
+export const ServiceAccountForm = ({onSuccess}: {onSuccess:any}) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
 
-  const form = useForm<FormData>({
+  const form = useForm<ServiceAccountFormData>({
     defaultValues: {
       email: '',
       file: null
@@ -128,17 +255,27 @@ export const InputFile = ({onSuccess}: {onSuccess: ()=>{}}) => {
   );
 }
 
-function GoogleOAuthButton() {
+const OAuthButton = ({app, text, setOAuthIntegrationStatus}: {app: Apps, text: string, setOAuthIntegrationStatus: any}) => {
   const handleOAuth = async () => {
-    // Add OAuth handling code here
-    alert('Google OAuth triggered');
-  };
+    const oauth = new OAuthModal()
+    try {
+      await oauth.startAuth(app)
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
+    } catch(error) {
+      toast({
+        title: "Could not finish oauth",
+        description: `Error: ${getErrorMessage(error)}`,
+        variant: 'destructive',
+      });
+    }
+
+  }
 
   return (
     <Button onClick={handleOAuth}>
-      Connect with Google OAuth
+      {text}
     </Button>
-  );
+  )
 }
 
 export const LoadingSpinner = ({className}: {className: string}) => {
@@ -171,23 +308,24 @@ const getConnectors = async ():Promise<any> => {
 }
 
 const ServiceAccountTab = ({connectors, updateStatus, onSuccess, isIntegrating}: {connectors: Connectors[], updateStatus: string, onSuccess: any, isIntegrating: boolean}) => {
-  if(!isIntegrating) {
+  const googleSAConnector = connectors.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount)
+  if(!isIntegrating && !googleSAConnector) {
         return (<Card>
           <CardHeader>
             <CardTitle>File Upload</CardTitle>
             <CardDescription>Upload your Google Service Account Key here.</CardDescription>
           </CardHeader>
           <CardContent>
-            <InputFile onSuccess={onSuccess} />
+            <ServiceAccountForm onSuccess={onSuccess} />
           </CardContent>
         </Card>)
-  } else {
+  } else if(googleSAConnector) {
     return (<CardHeader>
-      <CardTitle>{connectors[0]?.app}</CardTitle>
+      <CardTitle>{googleSAConnector?.app}</CardTitle>
       <CardDescription>Connecting App</CardDescription>
       <CardContent className='pt-0'>
         <p>updates: {updateStatus}</p>
-        <p>status: {connectors[0]?.status}</p>
+        <p>status: {googleSAConnector?.status}</p>
       </CardContent>
     </CardHeader>)
   }
@@ -201,6 +339,13 @@ return (
             </div>
           </div>
         )
+}
+
+enum OAuthIntegrationStatus {
+  Provider = "Provider", // yet to create provider
+  OAuth = "OAuth", // provider created but OAuth not yet connected
+  OAuthConnecting = "OAuthConnecting",
+  OAuthConnected = "OAuthConnected"
 }
 
 const AdminLayout = () => {
@@ -219,13 +364,30 @@ const AdminLayout = () => {
   }})
   // const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState('')
-  const [isIntegrating, setIsIntegrating] = useState<boolean>(data? data.length > 0 : false)
+  const [isIntegratingSA, setIsIntegratingSA] = useState<boolean>(data? !!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount) : false)
+  const [oauthIntegrationStatus, setOAuthIntegrationStatus] = useState<OAuthIntegrationStatus>(data?
+    !!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth)  ? OAuthIntegrationStatus.OAuth : OAuthIntegrationStatus.Provider
+    : OAuthIntegrationStatus.Provider)
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
-      setIsIntegrating(true);
+      setIsIntegratingSA(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount))
+      const connector = data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth)
+      console.log(connector)
+      if(connector?.status === ConnectorStatus.Connecting) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
+      } else if(connector?.status === ConnectorStatus.Connected) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+      } else if(connector?.status === ConnectorStatus.NotConnected) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+      } else {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+      }
+      // setIsIntegratingProvider(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth))
     } else {
-      setIsIntegrating(false);
+      setIsIntegratingSA(false)
+      // setIsIntegratingProvider(false)
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
     }
   }, [data, isPending]);
 
@@ -270,20 +432,32 @@ const AdminLayout = () => {
           <ServiceAccountTab
             connectors={data}
             updateStatus={updateStatus}
-            isIntegrating={isIntegrating}
-            onSuccess={() => setIsIntegrating(true)} />
+            isIntegrating={isIntegratingSA}
+            onSuccess={() => setIsIntegratingSA(true)} />
           }
       </TabsContent>
       <TabsContent value="oauth">
-        <Card>
-          <CardHeader>
-            <CardTitle>Google OAuth</CardTitle>
-            <CardDescription>Connect using Google OAuth here.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <GoogleOAuthButton />
-          </CardContent>
-        </Card>
+        {oauthIntegrationStatus === OAuthIntegrationStatus.Provider? (<OAuthForm onSuccess={() => setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)} />) : 
+          oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (<Card>
+            <CardHeader>
+              <CardTitle>Google OAuth</CardTitle>
+              <CardDescription>Connect using Google OAuth here.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OAuthButton app={Apps.GoogleDrive} setOAuthIntegrationStatus={setOAuthIntegrationStatus} text="Connect with Google OAuth" />
+            </CardContent>
+          </Card>) : (
+            <Card>
+            <CardHeader>
+              <CardTitle>Google OAuth</CardTitle>
+              {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting && <CardDescription>status: {updateStatus} </CardDescription>}
+            </CardHeader>
+            <CardContent>
+              {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ? "Connected" : "Connecting"}
+            </CardContent>
+          </Card>
+          )
+        }
       </TabsContent>
     </Tabs>
     </div>

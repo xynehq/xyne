@@ -22,3 +22,22 @@ export interface FileResponse {
     ownerEmail: string,
     chunks_summary: string[]
 }
+
+export enum AuthType {
+    OAuth = 'oauth',
+    ServiceAccount = 'service_account',
+    // where there is a custom JSON
+    // we store all the key information
+    // needed for end to end encryption
+    Custom = 'custom',
+    ApiKey = 'api_key'
+}
+
+export enum ConnectorStatus {
+    Connected = 'connected',
+    // Pending = 'pending',
+    Connecting = 'connecting',
+    Failed = 'failed',
+    // for oauth we will default to this
+    NotConnected = 'not-connected'
+}
