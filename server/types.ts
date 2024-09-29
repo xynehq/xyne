@@ -1,6 +1,6 @@
 import config from '@/config'
 import { z } from 'zod'
-import { Apps } from '@/shared/types'
+import { Apps, AuthType } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
@@ -97,13 +97,28 @@ export const searchQuerySchema = searchSchema.extend({
 
 export type SearchQuery = z.infer<typeof searchQuerySchema>
 
-
+export const oauthStartQuerySchema = z.object({
+    app: z.nativeEnum(Apps)
+})
+export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
     'service-key': z.any(),
     app: z.nativeEnum(Apps),
     email: z.string(),
 })
+
+export type ServiceAccountConnection = z.infer<typeof addServiceConnectionSchema>
+
+export const createOAuthProvider = z.object({
+    clientId: z.string(),
+    clientSecret: z.string(),
+    scopes: z.array(z.string()),
+    app: z.nativeEnum(Apps),
+})
+
+
+export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 
 // Define an enum for connection types
@@ -114,30 +129,17 @@ export enum ConnectorType {
     File = 'file',
 }
 
-export enum AuthType {
-    OAuth = 'oauth',
-    ServiceAccount = 'service_account',
-    // where there is a custom JSON
-    // we store all the key information
-    // needed for end to end encryption
-    Custom = 'custom'
-}
-
-
 export type SaaSJob = {
     connectorId: number,
     workspaceId: number,
     userId: number,
-    app: string,
-    externalId: string
+    app: Apps,
+    externalId: string,
+    authType: AuthType,
+    email: string
 }
 
-export enum ConnectorStatus {
-    Connected = 'connected',
-    // Pending = 'pending',
-    Connecting = 'connecting',
-    Failed = 'failed'
-}
+export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
 // very rudimentary
 // temporary roles

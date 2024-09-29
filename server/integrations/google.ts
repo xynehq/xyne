@@ -2,8 +2,8 @@ import { admin_directory_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
 import fs from "node:fs/promises";
-import { ConnectorStatus, type File, type SaaSJob } from "@/types";
-import { JWT } from "google-auth-library";
+import { type File, type SaaSJob, type SaaSOAuthJob } from "@/types";
+import { JWT, OAuth2Client } from "google-auth-library";
 import path from 'node:path'
 import type PgBoss from "pg-boss";
 import { getConnector } from "@/db/connector";
@@ -16,6 +16,8 @@ import { db } from "@/db/client";
 import { connectors } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
+import { ConnectorStatus } from "@/shared/types";
+import type { GoogleTokens } from "arctic";
 
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
@@ -56,6 +58,38 @@ const listUsers = async (admin: admin_directory_v1.Admin, domain: string) => {
     }
 };
 
+export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
+    console.log('handleGoogleServiceAccountIngestion', job.data)
+    const data: SaaSOAuthJob = job.data as SaaSOAuthJob
+    try {
+        const connector = await getConnector(data.connectorId)
+        const userEmail = job.data.email
+        const oauthTokens: GoogleTokens = JSON.parse(connector.oauthCredentials as string)
+        const oauth2Client = new google.auth.OAuth2();
+        // TODO: ensure access token is refreshed
+        // also what happens if oauth token is gonna be expired during the
+        // time it takes to finish the job?
+        oauth2Client.setCredentials({ access_token: oauthTokens.accessToken });
+        await insertDriveForAUser(oauth2Client, userEmail, connector)
+        await db.transaction(async (trx) => {
+            await trx.update(connectors).set({
+                status: ConnectorStatus.Connected
+            }).where(eq(connectors.id, connector.id))
+            console.log('status updated')
+            await boss.complete(SaaSQueue, job.id)
+            console.log('job completed')
+        })
+    } catch (e) {
+        console.error('could not finish job successfully', e)
+        await db.transaction(async (trx) => {
+            trx.update(connectors).set({
+                status: ConnectorStatus.Failed
+            }).where(eq(connectors.id, data.connectorId))
+            await boss.fail(job.name, job.id)
+        })
+    }
+}
+
 export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
     console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSJob = job.data as SaaSJob
@@ -86,15 +120,16 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
         console.error('could not finish job successfully', e)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
-                status: ConnectorStatus.Connected
+                status: ConnectorStatus.Failed
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
     }
 }
 
-const insertDriveForAUser = async (jwtClient: JWT, userEmail: string, connector) => {
-    const fileMetadata = (await listFiles(jwtClient, userEmail)).map(v => {
+type GoogleClient = JWT | OAuth2Client
+const insertDriveForAUser = async (googleClient: GoogleClient, userEmail: string, connector: any) => {
+    const fileMetadata = (await listFiles(googleClient)).map(v => {
         v.permissions = toPermissionsList(v.permissions, userEmail)
         return v
     })
@@ -108,7 +143,7 @@ const insertDriveForAUser = async (jwtClient: JWT, userEmail: string, connector)
     const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
     const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
 
-    const documents: File[] = await googleDocsVespa(jwtClient, googleDocsMetadata, connector.externalId)
+    const documents: File[] = await googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId)
     const driveFiles: File[] = await driveFilesToDoc(rest)
 
     sendWebsocketMessage('generating embeddings', connector.externalId)
@@ -119,6 +154,14 @@ const insertDriveForAUser = async (jwtClient: JWT, userEmail: string, connector)
     }
 }
 
+// export const oauthScopes = [
+//     "https://www.googleapis.com/auth/drive.readonly",
+//     "https://www.googleapis.com/auth/documents.readonly",
+//     "https://www.googleapis.com/auth/spreadsheets.readonly",
+//     "https://www.googleapis.com/auth/presentations.readonly",
+// ]
+
+// for service account
 const scopes = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/admin.directory.user.readonly",
@@ -131,7 +174,7 @@ const scopes = [
     // "https://www.googleapis.com/auth/gmail.readonly"
 ];
 
-export const listFiles = async (jwtClient: JWT, email: string, onlyDocs: boolean = false): Promise<drive_v3.Schema$File[]> => {
+export const listFiles = async (jwtClient: GoogleClient, onlyDocs: boolean = false): Promise<drive_v3.Schema$File[]> => {
     const drive = google.drive({ version: "v3", auth: jwtClient });
     let nextPageToken = null;
     let files = [];
@@ -151,7 +194,10 @@ export const listFiles = async (jwtClient: JWT, email: string, onlyDocs: boolean
 }
 
 // we need to support alias?
-export const toPermissionsList = (drivePermissions: drive_v3.Schema$Permission[], ownerEmail: string): string[] => {
+export const toPermissionsList = (drivePermissions: drive_v3.Schema$Permission[] | undefined, ownerEmail: string): string[] => {
+    if (!drivePermissions) {
+        return [ownerEmail]
+    }
     let permissions = []
     if (drivePermissions && drivePermissions.length) {
         permissions = drivePermissions
@@ -171,7 +217,7 @@ export const toPermissionsList = (drivePermissions: drive_v3.Schema$Permission[]
         // the metadata, can read it
         permissions = [ownerEmail];
     }
-    return permissions
+    return permissions as string[]
 }
 
 export enum DriveMime {
@@ -188,7 +234,7 @@ const sendWebsocketMessage = (message: string, connectorId: string) => {
 }
 
 const extractor = await getExtractor()
-export const googleDocsVespa = async (jwtClient: JWT, docsMetadata: drive_v3.Schema$File[], connectorId: string): Promise<any[]> => {
+export const googleDocsVespa = async (jwtClient: GoogleClient, docsMetadata: drive_v3.Schema$File[], connectorId: string): Promise<any[]> => {
     sendWebsocketMessage(`Scanning ${docsMetadata.length} Google Docs`, connectorId)
     const docsList: File[] = []
     const docs = google.docs({ version: "v1", auth: jwtClient });

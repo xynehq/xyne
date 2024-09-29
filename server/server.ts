@@ -1,9 +1,9 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { logger } from 'hono/logger'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
-import { addServiceConnectionSchema, searchSchema, UserRole } from '@/types'
-import { AddServiceConnection, GetConnectors } from '@/api/admin'
+import { addServiceConnectionSchema, createOAuthProvider, oauthStartQuerySchema, searchSchema, UserRole } from '@/types'
+import { AddServiceConnection, CreateOAuthProvider, GetConnectors, StartOAuth } from '@/api/admin'
 import { init as initQueue } from '@/queue'
 import { createBunWebSocket } from 'hono/bun'
 import type { ServerWebSocket } from 'bun'
@@ -19,6 +19,10 @@ import { createUser, getUserByEmail } from '@/db/user'
 import { setCookie } from 'hono/cookie'
 import { serveStatic } from 'hono/bun'
 import config from '@/config'
+import { OAuthCallback } from './api/oauth'
+import { setCookieByEnv } from './utils'
+import { html, raw } from 'hono/html'
+
 
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -79,10 +83,19 @@ export const AppRoutes = app.basePath('/api')
     // for some reason the validation schema
     // is not making the keys mandatory
     .post('/service_account', zValidator('form', addServiceConnectionSchema), AddServiceConnection)
+    // create the provider + connector
+    .post('/oauth/create', zValidator('form', createOAuthProvider), CreateOAuthProvider)
     .get('/connectors/all', GetConnectors)
 
 
+app.get('/oauth/callback', AuthMiddleware, OAuthCallback)
 
+// temporarily removing the AuthMiddleware for dev environment
+// if (process.env.NODE_ENV === "production") {
+app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchema), StartOAuth)
+// } else {
+//     app.get('/oauth/start', zValidator('query', oauthStartQuerySchema), StartOAuth)
+// }
 const generateToken = async (email: string, role: string, workspaceId: string) => {
     console.log('generating token')
     const payload = {
@@ -110,7 +123,7 @@ app.get(
         client_secret: clientSecret,
         scope: ['openid', 'email', 'profile'],
     }),
-    async (c) => {
+    async (c: Context) => {
         const token = c.get('token')
         const grantedScopes = c.get('granted-scopes')
         const user = c.get('user-google')
@@ -128,8 +141,8 @@ app.get(
         if (!domain && email) {
             domain = email.split('@')[1]
         }
-        const name = user?.name || user?.given_name || user?.family_name
-        const photoLink = user?.picture
+        const name = user?.name || user?.given_name || user?.family_name || ""
+        const photoLink = user?.picture || ""
 
         const existingUserRes = await getUserByEmail(db, email)
         // if user exists then workspace exists too
@@ -137,7 +150,7 @@ app.get(
             console.log('User found')
             const existingUser = existingUserRes[0]
             const jwtToken = await generateToken(existingUser.email, existingUser.role, existingUser.workspaceExternalId)
-            setCookie(c, CookieName, jwtToken)
+            setCookieByEnv(c, CookieName, jwtToken)
             return c.redirect(postOauthRedirect)
         }
 
@@ -149,7 +162,7 @@ app.get(
             const existingWorkspace = existingWorkspaceRes[0]
             const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, existingWorkspace.externalId)
             const jwtToken = await generateToken(user.email, user.role, user.workspaceExternalId)
-            setCookie(c, CookieName, jwtToken)
+            setCookieByEnv(c, CookieName, jwtToken)
             return c.redirect(postOauthRedirect)
         }
 
@@ -164,11 +177,28 @@ app.get(
         })
 
         const jwtToken = await generateToken(userAcc.email, userAcc.role, userAcc.workspaceExternalId)
-        setCookie(c, CookieName, jwtToken)
+        setCookieByEnv(c, CookieName, jwtToken)
         return c.redirect(postOauthRedirect)
     }
 )
 
+// app.get('/oauth/success', async (c: Context) => {
+//     return c.html(
+//         <html>
+//         <head>
+//         <title>Test Site </title>
+//             { html`
+//         <script>
+//             window.onload = function () {
+//             window.opener.postMessage({ success: true }, "*"); // Send a success message to the parent window
+//             window.close(); // Close the popup window
+//             </script>
+//         };
+//     `}
+//           </head>
+//     < body > Hello! </body>
+//     </html>)
+// })
 app.get('*', serveStatic({ root: './dist' }));
 app.get('*', serveStatic({ path: './dist/index.html' }));
 

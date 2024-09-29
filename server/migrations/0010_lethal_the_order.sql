@@ -1,0 +1,1 @@
+ALTER TABLE "oauth_providers" ADD COLUMN "app_type" "app_type" NOT NULL;

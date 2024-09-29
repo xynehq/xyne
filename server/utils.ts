@@ -1,3 +1,6 @@
+import type { Context } from "hono";
+import { setCookie } from "hono/cookie";
+import type { CookieOptions } from "hono/utils/cookie";
 import fs from "node:fs/promises";
 
 export const checkAndReadFile = async (path: string) => {
@@ -23,4 +26,21 @@ export const progress_callback = (args) => {
     let n = Math.floor(args.progress / 5);
     let str = '\r[' + '#'.repeat(n) + '.'.repeat(20 - n) + '] ' + args.file + (n == 20 ? '\n' : '');
     process.stdout.write(str);
+}
+
+// to improve the dev experience we allow the cookie to be present
+// in localhost:5173 which is frontend dev url
+export const setCookieByEnv = (c: Context, CookieName: string, jwtToken: string, opts?: CookieOptions) => {
+    const env = process.env.NODE_ENV
+    if (env === "production") {
+        setCookie(c, CookieName, jwtToken, opts)
+    } else {
+        console.log('here')
+        setCookie(c, CookieName, jwtToken, {
+            ...opts,
+            secure: false,
+            sameSite: 'Lax',
+            httpOnly: true,
+        })
+    }
 }

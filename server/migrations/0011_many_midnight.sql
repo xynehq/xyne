@@ -1,0 +1,1 @@
+ALTER TYPE "auth_type" ADD VALUE 'api_key';

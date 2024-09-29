@@ -7,7 +7,7 @@ import { Encryption } from '@/utils/encryption'; // Adjust the path as necessary
  * Stores all encrypted components in a single field separated by a delimiter.
  */
 export const encryptedText = (encryption: Encryption) => {
-    return customType<{ data: string, notNull: false }>({
+    return customType<{ data: string | null, notNull: false }>({
         dataType() {
             return 'text';
         },
@@ -16,18 +16,21 @@ export const encryptedText = (encryption: Encryption) => {
          * @param value - The concatenated encrypted string from the database.
          * @returns The decrypted plain text.
          */
-        fromDriver(value: unknown): string {
-            if (typeof value !== 'string') {
-                throw new TypeError('Encrypted value must be a string.');
+        fromDriver(value: unknown): string | null {
+            if (!value) {
+                return value as null
             }
-            return encryption.decrypt(value);
+            return encryption.decrypt(value as string);
         },
         /**
          * Transforms the value before storing it in the database.
          * @param value - The plain text to encrypt.
          * @returns The concatenated encrypted string.
          */
-        toDriver(value: string): string {
+        toDriver(value: string | null): string | null {
+            if (!value) {
+                return value
+            }
             return encryption.encrypt(value);
         },
     });

@@ -64,6 +64,27 @@
       "when": 1727254347360,
       "tag": "0008_empty_junta",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1727436745534,
+      "tag": "0009_gifted_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1727474797868,
+      "tag": "0010_lethal_the_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1727512499168,
+      "tag": "0011_many_midnight",
+      "breakpoints": true
     }
   ]
 }

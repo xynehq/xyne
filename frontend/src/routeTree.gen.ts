@@ -14,6 +14,7 @@ import { Route as rootRoute } from './routes/__root'
 import { Route as SearchImport } from './routes/search'
 import { Route as AuthImport } from './routes/auth'
 import { Route as IndexImport } from './routes/index'
+import { Route as OauthSuccessImport } from './routes/oauth/success'
 import { Route as AdminIntegrationsImport } from './routes/admin/integrations'
 
 // Create/Update Routes
@@ -30,6 +31,11 @@ const AuthRoute = AuthImport.update({
 
 const IndexRoute = IndexImport.update({
   path: '/',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const OauthSuccessRoute = OauthSuccessImport.update({
+  path: '/oauth/success',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -70,6 +76,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIntegrationsImport
       parentRoute: typeof rootRoute
     }
+    '/oauth/success': {
+      id: '/oauth/success'
+      path: '/oauth/success'
+      fullPath: '/oauth/success'
+      preLoaderRoute: typeof OauthSuccessImport
+      parentRoute: typeof rootRoute
+    }
   }
 }
 
@@ -80,6 +93,7 @@ export const routeTree = rootRoute.addChildren({
   AuthRoute,
   SearchRoute,
   AdminIntegrationsRoute,
+  OauthSuccessRoute,
 })
 
 /* prettier-ignore-end */
@@ -93,7 +107,8 @@ export const routeTree = rootRoute.addChildren({
         "/",
         "/auth",
         "/search",
-        "/admin/integrations"
+        "/admin/integrations",
+        "/oauth/success"
       ]
     },
     "/": {
@@ -107,6 +122,9 @@ export const routeTree = rootRoute.addChildren({
     },
     "/admin/integrations": {
       "filePath": "admin/integrations.tsx"
+    },
+    "/oauth/success": {
+      "filePath": "oauth/success.tsx"
     }
   }
 }
