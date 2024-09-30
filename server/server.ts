@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'hono'
+import { Hono, type Context, type Next } from 'hono'
 import { logger } from 'hono/logger'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
@@ -16,7 +16,7 @@ import { db } from '@/db/client'
 import { HTTPException } from 'hono/http-exception'
 import { createWorkspace, getWorkspaceByDomain } from '@/db/workspace'
 import { createUser, getUserByEmail } from '@/db/user'
-import { setCookie } from 'hono/cookie'
+import { getCookie, setCookie } from 'hono/cookie'
 import { serveStatic } from 'hono/bun'
 import config from '@/config'
 import { OAuthCallback } from './api/oauth'
@@ -44,6 +44,20 @@ const AuthMiddleware = jwt({
     secret: jwtSecret,
     cookie: CookieName
 })
+
+const CheckCookieMiddleware = async (c: Context, next: Next) => {
+    const authToken = getCookie(c, CookieName);
+    if (!authToken) {
+       return c.json({ message: "Unauthorized" }, 401)
+    }
+
+    try {
+        await AuthMiddleware(c, next);
+    } catch (err) {
+        console.error(err)
+        return c.json({ message: "Unauthorized" }, 401)
+    }
+}
 
 app.use('*', logger())
 
@@ -75,7 +89,7 @@ export const WsApp = app.get(
 // export type WebSocketApp = typeof WsApp
 
 export const AppRoutes = app.basePath('/api')
-    .use('*', AuthMiddleware)
+    .use('*', CheckCookieMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
     .basePath('/admin')

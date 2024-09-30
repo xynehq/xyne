@@ -168,6 +168,15 @@ export const Index = () => {
             }
 
           })
+          
+          if (!response.ok) {
+            // If unauthorized or status code is 401, navigate to '/auth'
+            if (response.status === 401) {
+              navigate({to: '/auth'})
+              throw new Error('Unauthorized')
+            }
+          }
+
           const data = await response.json();
           if(data.children && data.children?.length) {
             // Assuming data has a structure like: { children: [{ fields: { title: '...' } }] }
@@ -267,6 +276,13 @@ export const Index = () => {
         }
       } else {
         const errorText = await response.text();
+        if (!response.ok) {
+          // If unauthorized or status code is 401, navigate to '/auth'
+          if (response.status === 401) {
+            navigate({ to: '/auth' })
+            throw new Error('Unauthorized');
+          }
+        }
         throw new Error(`Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`);
       }
     } catch (error) {
