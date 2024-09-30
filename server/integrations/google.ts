@@ -6,7 +6,7 @@ import { type File, type SaaSJob, type SaaSOAuthJob } from "@/types";
 import { JWT, OAuth2Client } from "google-auth-library";
 import path from 'node:path'
 import type PgBoss from "pg-boss";
-import { getConnector } from "@/db/connector";
+import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector";
 import { getExtractor } from "@/embedding";
 import { insertDocument } from "@/search/vespa";
 import { ProgressEvent, SaaSQueue } from "@/queue";
@@ -62,9 +62,11 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
     console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSOAuthJob = job.data as SaaSOAuthJob
     try {
-        const connector = await getConnector(data.connectorId)
+        // we will first fetch the change token
+        // and poll the changes in a new Cron Job
+        const connector = await getOAuthConnectorWithCredentials(db, data.connectorId)
         const userEmail = job.data.email
-        const oauthTokens: GoogleTokens = JSON.parse(connector.oauthCredentials as string)
+        const oauthTokens: GoogleTokens = connector.oauthCredentials
         const oauth2Client = new google.auth.OAuth2();
         // TODO: ensure access token is refreshed
         // also what happens if oauth token is gonna be expired during the

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { Apps, AuthType } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
+import type { GoogleTokens } from 'arctic'
 
 export interface File {
     docId: string,
@@ -150,3 +151,6 @@ export enum UserRole {
 }
 
 export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
+
+
+export type OAuthCredentials = GoogleTokens | any

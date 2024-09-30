@@ -62,8 +62,8 @@ export const users = pgTable(
         email: text("email").notNull(),
         name: text('name').notNull(),
         photoLink: text('photoLink'),
-        googleAccessToken: encryptedText(accesskeyEncryption)("google_access_token"),
-        googleRefreshToken: encryptedText(accesskeyEncryption)("google_refresh_token"),
+        // googleAccessToken: encryptedText(accesskeyEncryption)("google_access_token"),
+        // googleRefreshToken: encryptedText(accesskeyEncryption)("google_refresh_token"),
         externalId: text("external_id")
             .unique()
             .notNull(),
@@ -126,6 +126,9 @@ export const connectors = pgTable("connectors", {
     // by default when created will be in the connecting status
     // for oauth we must send not connected when first created
     status: statusEnum('status').notNull().default(ConnectorStatus.Connecting),
+    // TODO: add these fields
+    // accessTokenExpiresAt: 
+    // refreshTokenExpiresAt:
     createdAt: timestamp("created_at", { withTimezone: true })
         .notNull()
         .default(sql`NOW()`),
@@ -184,6 +187,7 @@ export const selectProviderSchema = createSelectSchema(oauthProviders, {
 export type SelectOAuthProvider = z.infer<typeof selectProviderSchema>
 
 export const selectConnectorSchema = createSelectSchema(connectors, {
+    app: z.nativeEnum(Apps),
     config: z.any()
 })
 
