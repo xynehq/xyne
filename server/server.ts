@@ -45,19 +45,44 @@ const AuthMiddleware = jwt({
     cookie: CookieName
 })
 
+const isBrowserGETRequest = (c: Context) => {
+    if (c.req.method === 'GET') {
+        const acceptHeader = c.req.header('Accept');
+        if (acceptHeader?.includes('text/html')) {
+            return true;
+        } else {
+            return false;
+        }
+    } else {
+        false;
+    }
+}
+
 const CheckCookieMiddleware = async (c: Context, next: Next) => {
     const authToken = getCookie(c, CookieName);
+
+    // If no auth token is found
     if (!authToken) {
-       return c.json({ message: "Unauthorized" }, 401)
+        if (isBrowserGETRequest(c)) {
+            console.log("Redirected by server - No AuthToken")
+            return c.redirect('http://localhost:5173/auth') 
+        } else {
+            return c.json({ message: "Unauthorized" }, 401);
+        }
     }
 
     try {
         await AuthMiddleware(c, next);
     } catch (err) {
-        console.error(err)
-        return c.json({ message: "Unauthorized" }, 401)
+        console.error(err);
+        if (isBrowserGETRequest(c)) {
+            console.log("Redirected by server - Error in AuthMW")
+            return c.redirect('http://localhost:5173/auth') 
+        } else {
+            return c.json({ message: "Unauthorized" }, 401);
+        }
     }
-}
+};
 
 app.use('*', logger())
 
