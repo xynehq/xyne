@@ -127,11 +127,11 @@ export const AppRoutes = app.basePath('/api')
     .get('/connectors/all', GetConnectors)
 
 
-app.get('/oauth/callback', AuthMiddleware, OAuthCallback)
+app.get('/oauth/callback', CheckCookieMiddleware, OAuthCallback)
 
 // temporarily removing the AuthMiddleware for dev environment
 // if (process.env.NODE_ENV === "production") {
-app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchema), StartOAuth)
+app.get('/oauth/start', CheckCookieMiddleware, zValidator('query', oauthStartQuerySchema), StartOAuth)
 // } else {
 //     app.get('/oauth/start', zValidator('query', oauthStartQuerySchema), StartOAuth)
 // }
