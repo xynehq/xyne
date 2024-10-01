@@ -45,6 +45,7 @@ export default function LoginForm() {
 
 export const Route = createFileRoute('/auth')({
   beforeLoad: async () => {
+      // User can't visit '/auth' if already logged in, redirect them to '/'
       const response = await api.api.check_auth.$get();
       if (response.ok) {
         const data = await response.json()

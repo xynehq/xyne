@@ -31,6 +31,7 @@ const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = process.env.GOOGLE_REDIRECT_URI!
 
 const postOauthRedirect = process.env.POST_OAUTH_REDIRECT!
+const frontendBaseURL = process.env.FRONTEND_BASE_URL!
 const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = 'auth-token'
@@ -66,7 +67,7 @@ const CheckCookieMiddleware = async (c: Context, next: Next) => {
     if (!authToken) {
         if (isBrowserGETRequest(c)) {
             console.log("Redirected by server - No AuthToken")
-            return c.redirect('http://localhost:5173/auth') 
+            return c.redirect(`${frontendBaseURL}/auth`) 
         } else {
             return c.json({ message: "Unauthorized" }, 401);
         }
@@ -78,7 +79,7 @@ const CheckCookieMiddleware = async (c: Context, next: Next) => {
         console.error(err);
         if (isBrowserGETRequest(c)) {
             console.log("Redirected by server - Error in AuthMW")
-            return c.redirect('http://localhost:5173/auth') 
+            return c.redirect(`${frontendBaseURL}/auth`) 
         } else {
             return c.json({ message: "Unauthorized" }, 401);
         }
