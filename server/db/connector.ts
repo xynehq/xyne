@@ -117,8 +117,9 @@ export const getOAuthConnectorWithCredentials = async (trx: TxnOrClient, connect
     // parse the string
     oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials)
 
-    // check if token is about to expire within the next hour
-    if (IsTokenExpired(oauthRes.app, oauthRes.oauthCredentials, 60 * 60)) {
+    // google tokens have expiry of 1 hour
+    // 5 minutes before expiry we refresh them
+    if (IsTokenExpired(oauthRes.app, oauthRes.oauthCredentials, 5 * 60)) {
         // token is expired. We should get new tokens
         // update it in place
         if (oauthRes.app === Apps.GoogleDrive) {

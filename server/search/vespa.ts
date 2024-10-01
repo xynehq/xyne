@@ -10,6 +10,7 @@ import { progress_callback } from '@/utils';
 import config from "@/config";
 import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
 import config from "@/config";
+import { z } from "zod";
 
 // Define your Vespa endpoint and schema name
 const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
@@ -399,6 +400,99 @@ const getDocumentCount = async () => {
         console.error('Error retrieving document count:', error);
     }
 }
+
+export const DocSchema = z.object({
+    pathId: z.string(),
+    id: z.string(),
+    fields: z.object({
+        title: z.string(),
+        chunks: z.array(z.string()),
+        permissions: z.array(z.string()),
+        photoLink: z.string(),
+        owner: z.string(),
+        ownerEmail: z.string(),
+        chunk_embeddings: z.object({
+            type: z.string(),
+            blocks: z.any()
+        }),
+        entity: z.string(),
+        app: z.string(),
+        mimeType: z.string(),
+        docId: z.string()
+    })
+})
+
+type Doc = z.infer<typeof DocSchema>
+
+export const GetDocument = async (docId: string): Promise<Doc> => {
+    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`;
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch document: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const document = await response.json();
+        return document;
+    } catch (error) {
+        console.error(`Error fetching document ${docId}:`, error.message);
+        throw error;
+    }
+}
+
+export const UpdateDocumentPermissions = async (docId: string, updatedPermissions: string[]) => {
+    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`
+    try {
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fields: {
+                    permissions: updatedPermissions
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to update document: ${response.status} ${response.statusText} - ${errorText}`)
+        }
+
+        console.log(`Successfully updated permissions for document ${docId}.`)
+    } catch (error) {
+        console.error(`Error updating permissions for document ${docId}:`, error.message)
+        throw error
+    }
+}
+
+export const DeleteDocument = async (docId: string) => {
+    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`
+    try {
+        const response = await fetch(url, {
+            method: 'DELETE'
+        })
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Failed to delete document: ${response.status} ${response.statusText} - ${errorText}`)
+        }
+
+        console.log(`Document ${docId} deleted successfully.`)
+    } catch (error) {
+        console.error(`Error deleting document ${docId}:`, error.message)
+        throw error
+    }
+}
+
 
 // Example usage:
 // await deleteAllDocuments()

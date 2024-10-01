@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "./client";
-import { users, workspaces } from "./schema";
+import { selectUserSchema, users, users, workspaces, type SelectUser } from "./schema";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -74,4 +74,16 @@ export const createUser = async (trx: TxnOrClient,
         lastLogin: new Date(),
         role,
     }).returning()
+}
+
+export const getUserById = async (trx: TxnOrClient, userId: number): Promise<SelectUser> => {
+    const resp = await trx.select().from(users).where(eq(users.id, userId))
+    if (!resp || !resp.length) {
+        throw new Error('Could not get User by Id')
+    }
+    const parsedRes = selectUserSchema.safeParse(resp[0])
+    if (!parsedRes.success) {
+        throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
+    }
+    return parsedRes.data
 }

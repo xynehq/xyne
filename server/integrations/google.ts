@@ -2,22 +2,24 @@ import { admin_directory_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
 import fs from "node:fs/promises";
-import { type File, type SaaSJob, type SaaSOAuthJob } from "@/types";
+import { SyncCron, type ChangeToken, type File, type SaaSJob, type SaaSOAuthJob, type SyncConfig } from "@/types";
 import { JWT, OAuth2Client } from "google-auth-library";
 import path from 'node:path'
 import type PgBoss from "pg-boss";
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector";
 import { getExtractor } from "@/embedding";
-import { insertDocument } from "@/search/vespa";
+import { DeleteDocument, GetDocument, insertDocument, UpdateDocumentPermissions } from "@/search/vespa";
 import { ProgressEvent, SaaSQueue } from "@/queue";
 import { wsConnections } from "@/server";
 import type { WSContext } from "hono/ws";
 import { db } from "@/db/client";
-import { connectors } from "@/db/schema";
+import { connectors, oauthProviders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
-import { ConnectorStatus } from "@/shared/types";
+import { Apps, ConnectorStatus, SyncJobStatus } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
+import { getAppSyncJobs, insertSyncJob } from "@/db/syncJob";
+import { getUserById } from "@/db/user";
 
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
@@ -58,6 +60,68 @@ const listUsers = async (admin: admin_directory_v1.Admin, domain: string) => {
     }
 };
 
+const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, email: string) => {
+    console.log(change)
+    const docId = change.fileId
+    // if (!docId) {
+    //     throw new Error('Invalid change, empty fileId')
+    // }
+    // remove item
+    if (change.removed) {
+        if (docId) {
+            const doc = await GetDocument(docId)
+            const permissions = doc.fields.permissions
+            if (permissions.length === 1) {
+                // remove it
+                await DeleteDocument(docId)
+            } else {
+                const newPermissions = permissions.filter(v => v !== email)
+                await UpdateDocumentPermissions(docId, newPermissions)
+            }
+        }
+    } else if (docId && change.file) {
+        console.log(change.file)
+        // TODO: respond based on the mime type
+    } else if (change.driveId) {
+        // TODO: handle this once we support multiple drives
+    } else {
+        console.error('Could not handle change: ', change)
+    }
+}
+
+export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any>) => {
+    console.log('handleGoogleOAuthChanges')
+    const data = job.data
+    const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive)
+    for (const syncJob of syncJobs) {
+        const connector = await getOAuthConnectorWithCredentials(db, syncJob.connectorId)
+        const user = await getUserById(db, connector.userId)
+        const oauthTokens: GoogleTokens = connector.oauthCredentials
+        const oauth2Client = new google.auth.OAuth2();
+        const config: ChangeToken = syncJob.config as ChangeToken
+        // we have guarantee that when we started this job access Token at least
+        // hand one hour, we should increase this time
+        oauth2Client.setCredentials({ access_token: oauthTokens.accessToken });
+        const driveClient = google.drive({ version: "v3", auth: oauth2Client })
+        // TODO: add pagination for all the possible changes
+        const { changes, newStartPageToken, nextPageToken } = (await driveClient.changes.list({ pageToken: config.token })).data
+        // there are changes
+        // Potential issues:
+        // we remove the doc but don't update the syncJob
+        // leading to us trying to remove the doc again which throws error
+        // as it is already removed
+        // we should still update it in that case?
+        if (changes?.length && newStartPageToken !== config.token) {
+            console.log(`total changes:  ${changes.length}`)
+            for (const change of changes) {
+                // remove the file
+                await handleGoogleDriveChange(change, user.email)
+            }
+        }
+        console.log(changes)
+    }
+}
+
 export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
     console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSOAuthJob = job.data as SaaSOAuthJob
@@ -68,16 +132,32 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
         const userEmail = job.data.email
         const oauthTokens: GoogleTokens = connector.oauthCredentials
         const oauth2Client = new google.auth.OAuth2();
-        // TODO: ensure access token is refreshed
-        // also what happens if oauth token is gonna be expired during the
-        // time it takes to finish the job?
+        // we have guarantee that when we started this job access Token at least
+        // hand one hour, we should increase this time
         oauth2Client.setCredentials({ access_token: oauthTokens.accessToken });
+        const driveClient = google.drive({ version: "v3", auth: oauth2Client })
+        // get change token for any changes during drive integration
+        const { startPageToken }: drive_v3.Schema$StartPageToken = (await driveClient.changes.getStartPageToken()).data
+        if (!startPageToken) {
+            throw new Error('Could not get start page token')
+        }
         await insertDriveForAUser(oauth2Client, userEmail, connector)
+        const changeToken = { token: startPageToken, lastSyncedAt: new Date().toISOString() }
         await db.transaction(async (trx) => {
             await trx.update(connectors).set({
                 status: ConnectorStatus.Connected
             }).where(eq(connectors.id, connector.id))
             console.log('status updated')
+            // create the SyncJob
+            await insertSyncJob(trx, {
+                workspaceId: connector.workspaceId,
+                workspaceExternalId: connector.workspaceExternalId,
+                app: Apps.GoogleDrive,
+                connectorId: connector.id,
+                config: changeToken,
+                type: SyncCron.ChangeToken,
+                status: SyncJobStatus.NotStarted
+            })
             await boss.complete(SaaSQueue, job.id)
             console.log('job completed')
         })
