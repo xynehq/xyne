@@ -22,6 +22,7 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
+import { checkAuthApi } from './api/auth'
 
 
 
@@ -115,6 +116,7 @@ export const WsApp = app.get(
 
 export const AppRoutes = app.basePath('/api')
     .use('*', CheckCookieMiddleware)
+    .get('/check_auth', checkAuthApi)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
     .basePath('/admin')
