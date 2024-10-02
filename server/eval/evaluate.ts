@@ -15,7 +15,7 @@ const processedResultsData: string[] = []
 let counts = 0
 const evaluate = async (queriesListPath: string) => {
     const k = 10;
-    const queue = new PQueue({ concurrency: 10 });
+    const queue = new PQueue({ concurrency: 100 });
 
     const processQuery = async ({ query, query_id }: { query: string, query_id: number }) => {
         console.log(query)
