@@ -54,7 +54,6 @@ const process_data = async (filePath: string) => {
     });
 
     for await (const line of rl) {
-        if(count >= 10) break;
         // Add line processing to the queue
         queue.add(async () => {
             const document = await processLine(line);
