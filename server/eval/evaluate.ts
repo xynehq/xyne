@@ -28,7 +28,7 @@ const evaluate = async (queriesListPath: string) => {
                     processedResultsData.push(`${query_id}\t${hits[idx].fields.docId}\t${idx + 1}`)
                 }
             }
-            // counts++
+            counts++
             console.log(query, "---->", counts);
         } catch (error) {
             console.log("error searcing vespa", error)
@@ -41,11 +41,6 @@ const evaluate = async (queriesListPath: string) => {
         crlfDelay: Infinity // Handle different newline characters
     });
     for await (const line of rl) {
-        console.log(line,"rl")
-        counts++
-        if (counts >= 10) {
-            break; // Stop processing after 10 lines
-        }
         const columns = line.split('\t')
         queue.add(() => processQuery({ query_id: columns[0], query: columns[1] }));
     }

@@ -6,7 +6,8 @@ import { getExtractor } from "@/embedding";
 import { chunkDocument } from "@/chunks";
 
 env.backends.onnx.wasm.numThreads = 1;
-
+const SCHEMA = 'file'; // Replace with your actual schema name
+const NAMESPACE = 'namespace'; 
 
 const extractor = await getExtractor()
 
@@ -22,17 +23,13 @@ const process_data = async (filePath: string) => {
     });
 
     for await (const line of rl) {
-        
-        if (count >= 10) {
-            break; // Stop processing after 10 lines
-        }
         count++;
         
         const columns = line.split('\t'); // Split the line by tab characters
         let chunks = chunkDocument(columns[1]);
         
         const document = {
-            "put": `id:file:file::${columns[0]}`,
+            "put": `id:${NAMESPACE}:${SCHEMA}::${columns[0]}`,
             "fields": {
                 "docId": columns[0],
                 "title": columns[1].slice(0, 20),
