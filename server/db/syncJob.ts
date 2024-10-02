@@ -1,5 +1,5 @@
 import type { TxnOrClient } from "@/types";
-import { selectSyncJob, syncJobs, type InsertSyncJob, type SelectSyncJob } from "./schema";
+import { selectSyncJobSchema, syncJobs, type InsertSyncJob, type SelectSyncJob } from "./schema";
 import { createId } from "@paralleldrive/cuid2";
 import type { Apps } from "@/shared/types";
 import { eq } from "drizzle-orm";
@@ -12,7 +12,7 @@ export const insertSyncJob = async (trx: TxnOrClient, job: Omit<InsertSyncJob, "
     if (!jobArr || !jobArr.length) {
         throw new Error('Error in insert of sync job "returning"')
     }
-    const parsedData = selectSyncJob.safeParse(jobArr[0])
+    const parsedData = selectSyncJobSchema.safeParse(jobArr[0])
     if (!parsedData.success) {
         throw new Error(`Could not get sync job after inserting: ${parsedData.error.toString()}`)
     }
@@ -21,9 +21,25 @@ export const insertSyncJob = async (trx: TxnOrClient, job: Omit<InsertSyncJob, "
 
 export const getAppSyncJobs = async (trx: TxnOrClient, app: Apps): Promise<SelectSyncJob[]> => {
     const jobs = await trx.select().from(syncJobs).where(eq(syncJobs.app, app))
-    const parsedData = z.array(selectSyncJob).safeParse(jobs);
+    const parsedData = z.array(selectSyncJobSchema).safeParse(jobs);
     if (!parsedData.success) {
         throw new Error(`Could not get Sync Jobs for app: ${app} ${parsedData.error.toString()}`)
     }
     return parsedData.data
+}
+
+export const updateSyncJob = async (trx: TxnOrClient, jobId: number, updateData: Partial<SelectSyncJob>): Promise<SelectSyncJob> => {
+    const updatedSyncJobs = await trx.update(syncJobs).set(updateData)
+        .where(eq(syncJobs.id, jobId))
+        .returning()
+
+    if (!updatedSyncJobs || !updatedSyncJobs.length) {
+        throw new Error('Could not update the connector')
+    }
+    const [connectorVal] = updatedSyncJobs
+    const parsedRes = selectSyncJobSchema.safeParse(connectorVal)
+    if (!parsedRes.success) {
+        throw new Error(`zod error: Invalid connector: ${parsedRes.error.toString()}`)
+    }
+    return parsedRes.data
 }

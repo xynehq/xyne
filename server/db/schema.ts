@@ -189,7 +189,7 @@ export const syncJobs = pgTable("sync_jobs", {
         .notNull()
         .references(() => connectors.id),
     type: syncJobEnum('type').notNull(),
-    status: syncJobStatusEnum('status'),
+    status: syncJobStatusEnum('status').notNull().default(SyncJobStatus.NotStarted),
     app: appTypeEnum(AppEnumField).notNull(),
     config: jsonb("config").notNull(),
     lastRanOn: timestamp("last_ran_on", { withTimezone: true })
@@ -227,7 +227,7 @@ export const syncHistory = pgTable("sync_history", {
     errorMessage: text("error_message")
         .default(""),  // Error message in case the sync fails
     type: syncJobEnum('type').notNull(),
-    status: syncJobStatusEnum('status'),
+    status: syncJobStatusEnum('status').notNull(),
     app: appTypeEnum(AppEnumField).notNull(),
     config: jsonb("config").notNull(),
     lastRanOn: timestamp("last_ran_on", { withTimezone: true })
@@ -274,10 +274,23 @@ export const insertSyncJob = createInsertSchema(syncJobs).omit({
 })
 export type InsertSyncJob = z.infer<typeof insertSyncJob>
 
-export const selectSyncJob = createSelectSchema(syncJobs, {
+export const selectSyncJobSchema = createSelectSchema(syncJobs, {
     config: SyncConfigSchema
 })
-export type SelectSyncJob = z.infer<typeof selectSyncJob>
+export type SelectSyncJob = z.infer<typeof selectSyncJobSchema>
+
+export const insertSyncHistorySchema = createInsertSchema(syncHistory).omit({
+    createdAt: true,
+    updatedAt: true,
+    deletedAt: true,
+    id: true,
+})
+export type InsertSyncHistory = z.infer<typeof insertSyncHistorySchema>
+
+export const selectSyncHistorySchema = createSelectSchema(syncHistory, {
+    config: SyncConfigSchema
+})
+export type SelectSyncHistory = z.infer<typeof selectSyncHistorySchema>
 
 export const selectUserSchema = createSelectSchema(users)
 export type SelectUser = z.infer<typeof selectUserSchema>

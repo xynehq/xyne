@@ -457,7 +457,7 @@ export const UpdateDocumentPermissions = async (docId: string, updatedPermission
             },
             body: JSON.stringify({
                 fields: {
-                    permissions: updatedPermissions
+                    permissions: { "assign": updatedPermissions }
                 }
             })
         });

@@ -192,3 +192,9 @@ export const SyncConfigSchema = z.union([ChangeTokenSchema, UpdatedAtValSchema])
 export type SyncConfig = z.infer<typeof SyncConfigSchema>;
 
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>
+
+export enum DriveMime {
+    Docs = "application/vnd.google-apps.document",
+    Sheets = "application/vnd.google-apps.spreadsheet",
+    Slides = "application/vnd.google-apps.presentation",
+}
