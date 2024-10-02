@@ -68,7 +68,7 @@ const CheckCookieMiddleware = async (c: Context, next: Next) => {
             console.log("Redirected by server - No AuthToken")
             return c.redirect(`${frontendBaseURL}/auth`) 
         } else {
-            return c.json({ message: "Unauthorized" }, 401);
+            return c.json({ error: "Unauthorized" }, 401);
         }
     }
 
@@ -80,7 +80,7 @@ const CheckCookieMiddleware = async (c: Context, next: Next) => {
             console.log("Redirected by server - Error in AuthMW")
             return c.redirect(`${frontendBaseURL}/auth`) 
         } else {
-            return c.json({ message: "Unauthorized" }, 401);
+            return c.json({ error: "Unauthorized" }, 401);
         }
     }
 };
