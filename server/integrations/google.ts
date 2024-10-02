@@ -20,6 +20,7 @@ import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob";
 import { getUserById } from "@/db/user";
 import type { GaxiosResponse } from "gaxios";
 import { insertSyncHistory } from "@/db/syncHistory";
+import { getErrorMessage } from "@/utils";
 
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
@@ -203,10 +204,11 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                         lastRanOn: new Date(),
                     })
                 })
-                console.log(`Changes successfully synced: ${stats}`)
+                console.log(`Changes successfully synced: ${JSON.stringify(stats)}`)
             }
-        } catch (e) {
-            console.error(`Could not successfully complete sync job: ${syncJob.id} due to ${e}`)
+        } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            console.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
             const config: ChangeToken = syncJob.config as ChangeToken
             const newConfig = { token: config.token as string, lastSyncedAt: config.lastSyncedAt.toISOString() }
             await insertSyncHistory(db, {
@@ -216,7 +218,7 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                 dataDeleted: stats.removed,
                 dataUpdated: stats.updated,
                 summary: { description: stats.summary },
-                errorMessage: "",
+                errorMessage,
                 app: Apps.GoogleDrive,
                 status: SyncJobStatus.Failed,
                 config: newConfig,
