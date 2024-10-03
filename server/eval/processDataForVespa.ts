@@ -14,7 +14,7 @@ import readline from 'readline'
 // const readline = require('readline');
 
 // Create a PQueue instance with a defined concurrency limit
-const queue = new PQueue({ concurrency: 100 }); // Adjust concurrency based on your system
+const queue = new PQueue({ concurrency: 500 }); // Adjust concurrency based on your system
 
 const processLine = async (line: string) => {
     const columns = line.split('\t'); // Split the line by tab characters
@@ -54,6 +54,8 @@ const processLine = async (line: string) => {
 const process_data = async (filePath: string) => {
     let processedData: any = [];
     let count = 0;
+    let batchSize = 100000;
+    let fileIndex = 0;
     const fileStream = fs.createReadStream(filePath);
     const rl = readline.createInterface({
         input: fileStream,
@@ -67,21 +69,35 @@ const process_data = async (filePath: string) => {
             let t1 = performance.now()
             const document = await processLine(line);
             processedData.push(document);
+            count++;
             let t2 = performance.now()
             total += (t2 - t1)
             console.log(total)
             console.log(`Processed ${count} lines.`);
-            count++;
+
+            if ((count % batchSize) === 0) {
+                fileIndex++;
+                await saveToFile(`./process_data_${fileIndex}.json`, processedData);
+                processedData = []; // Clear memory
+            }
         });
     }
 
+    if (processedData.length > 0) {
+        console.log("processed length inside")
+        fileIndex++;
+        await saveToFile(`./process_data_${fileIndex}.json`, processedData);
+    }
     // Wait for all tasks in the queue to complete
     await queue.onIdle();
 
-    // Once all lines are processed, save the result to the file
+};
+
+
+const saveToFile = async (fileName: string, data: any) => {
     try {
-        await fs.promises.writeFile('./process_data.json', JSON.stringify(processedData, null, 2), 'utf8');
-        console.log("Processed data saved.");
+        await fs.promises.writeFile(fileName, JSON.stringify(data, null, 2), 'utf8');
+        console.log(`${fileName} saved.`);
     } catch (error) {
         console.error("Error saving processed data:", error);
     }
@@ -89,7 +105,7 @@ const process_data = async (filePath: string) => {
 
 // Example usage
 await process_data(path.resolve(import.meta.dirname, 'data/collectionandqueries/collection.tsv'))
-
+process.exit(0)
 // function writeJSONLLine(obj: any, filePath: string) {
 //     const jsonLine = JSON.stringify(obj) + '\n';
 //     fs.appendFile(filePath, jsonLine);
