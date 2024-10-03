@@ -515,3 +515,70 @@ interface EntityCounts {
 interface AppEntityCounts {
     [app: string]: EntityCounts;
 }
+
+export const ifDocumentsExist = async (docIds: string[]) => {
+    // Construct the YQL query
+    const yqlIds = docIds.map(id => `"${id}"`).join(', ');
+    const yqlQuery = `select docId from sources * where docId in (${yqlIds})`;
+
+
+    const url = `${VESPA_ENDPOINT}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Search query failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const result = await response.json();
+
+        // Extract the document IDs of the found documents
+        const foundIds = result.root.children?.map(hit => hit.fields.docId) || [];
+
+        // Determine which IDs exist and which do not
+        const existenceMap = docIds.reduce((acc, id) => {
+            acc[id] = foundIds.includes(id);
+            return acc;
+        }, {});
+
+        return existenceMap; // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
+    } catch (error) {
+        console.error(`Error checking documents existence:`, error.message);
+        throw error;
+    }
+};
+
+const getNDocuments = async (n: number) => {
+    // Encode the YQL query to ensure it's URL-safe
+    const yql = encodeURIComponent(`select * from sources ${SCHEMA} where true`);
+
+    // Construct the search URL with necessary query parameters
+    const url = `${VESPA_ENDPOINT}/search/?yql=${yql}&hits=${n}&cluster=${CLUSTER}`;
+
+    try {
+        const response: Response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch document count: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const data = await response.json();
+
+        return data
+    } catch (error) {
+        console.error('Error retrieving document count:', error);
+    }
+}

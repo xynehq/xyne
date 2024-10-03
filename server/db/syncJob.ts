@@ -1,8 +1,8 @@
 import type { TxnOrClient } from "@/types";
 import { selectSyncJobSchema, syncJobs, type InsertSyncJob, type SelectSyncJob } from "./schema";
 import { createId } from "@paralleldrive/cuid2";
-import type { Apps } from "@/shared/types";
-import { eq } from "drizzle-orm";
+import type { Apps, AuthType } from "@/shared/types";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 export const insertSyncJob = async (trx: TxnOrClient, job: Omit<InsertSyncJob, "externalId">): Promise<SelectSyncJob> => {
@@ -19,8 +19,8 @@ export const insertSyncJob = async (trx: TxnOrClient, job: Omit<InsertSyncJob, "
     return parsedData.data
 }
 
-export const getAppSyncJobs = async (trx: TxnOrClient, app: Apps): Promise<SelectSyncJob[]> => {
-    const jobs = await trx.select().from(syncJobs).where(eq(syncJobs.app, app))
+export const getAppSyncJobs = async (trx: TxnOrClient, app: Apps, authType: AuthType): Promise<SelectSyncJob[]> => {
+    const jobs = await trx.select().from(syncJobs).where(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)))
     const parsedData = z.array(selectSyncJobSchema).safeParse(jobs);
     if (!parsedData.success) {
         throw new Error(`Could not get Sync Jobs for app: ${app} ${parsedData.error.toString()}`)

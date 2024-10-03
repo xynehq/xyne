@@ -182,15 +182,18 @@ export const syncJobs = pgTable("sync_jobs", {
         .notNull(),
     workspaceExternalId: text("workspace_external_id")
         .notNull(),
-    // providerId: integer("provider_id")
-    //     .notNull()
-    //     .references(() => oauthProviders.id),
+
+    // this is the user for whom this sync job will run
+    // It's very helpful for service account where we
+    // create a sync job per user
+    email: text("email").notNull(),
     connectorId: integer("connector_id")
         .notNull()
         .references(() => connectors.id),
     type: syncJobEnum('type').notNull(),
     status: syncJobStatusEnum('status').notNull().default(SyncJobStatus.NotStarted),
     app: appTypeEnum(AppEnumField).notNull(),
+    authType: authTypeEnum('auth_type').notNull(),
     config: jsonb("config").notNull(),
     lastRanOn: timestamp("last_ran_on", { withTimezone: true })
         .default(sql`NOW()`),
@@ -228,6 +231,7 @@ export const syncHistory = pgTable("sync_history", {
         .default(""),  // Error message in case the sync fails
     type: syncJobEnum('type').notNull(),
     status: syncJobStatusEnum('status').notNull(),
+    authType: authTypeEnum('auth_type').notNull(),
     app: appTypeEnum(AppEnumField).notNull(),
     config: jsonb("config").notNull(),
     lastRanOn: timestamp("last_ran_on", { withTimezone: true })

@@ -8,6 +8,27 @@
       "when": 1727790029446,
       "tag": "0000_wide_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1727976179335,
+      "tag": "0001_rich_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1727976419637,
+      "tag": "0002_lyrical_sauron",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1727977662297,
+      "tag": "0003_little_reaper",
+      "breakpoints": true
     }
   ]
 }

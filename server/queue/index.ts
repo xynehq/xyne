@@ -1,4 +1,4 @@
-import { handleGoogleOAuthChanges, handleGoogleOAuthIngestion, handleGoogleServiceAccountIngestion } from "@/integrations/google";
+import { handleGoogleOAuthChanges, handleGoogleOAuthIngestion, handleGoogleServiceAccountChanges, handleGoogleServiceAccountIngestion } from "@/integrations/google";
 import { ConnectorType, type SaaSJob } from "@/types";
 import PgBoss from "pg-boss";
 import config from "@/config"
@@ -8,14 +8,16 @@ const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss(url);
 
 export const SaaSQueue = `ingestion-${ConnectorType.SaaS}`
-export const SyncSaaSQueue = `sync-${ConnectorType.SaaS}`
+export const SyncOAuthSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.OAuth}`
+export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`
 
 const Every10Minutes = `*/10 * * * *`
 
 export const init = async () => {
     await boss.start()
     await boss.createQueue(SaaSQueue)
-    await boss.createQueue(SyncSaaSQueue)
+    await boss.createQueue(SyncOAuthSaaSQueue)
+    await boss.createQueue(SyncServiceAccountSaaSQueue)
     await initWorkers()
 }
 const initWorkers = async () => {
@@ -31,9 +33,15 @@ const initWorkers = async () => {
     })
 
     // do not retry
-    await boss.schedule(SyncSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
-    await boss.work(SyncSaaSQueue, async ([job]) => {
+    await boss.schedule(SyncOAuthSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
+    await boss.schedule(SyncServiceAccountSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
+
+    await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
         await handleGoogleOAuthChanges(boss, job)
+    })
+
+    await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
+        await handleGoogleServiceAccountChanges(boss, job)
     })
 
 }

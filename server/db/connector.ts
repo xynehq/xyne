@@ -63,7 +63,7 @@ export const getConnectors = async (workspaceId: string) => {
 
 // don't call this
 // call the function that ensures the credentials are always refreshed
-export const getConnector = async (connectorId: number): Promise<SelectConnector> => {
+export const getConnector = async (trx: TxnOrClient, connectorId: number): Promise<SelectConnector> => {
     const res = await db.select().from(connectors).where(eq(connectors.id, connectorId)).limit(1)
     if (res.length) {
         const parsedRes = selectConnectorSchema.safeParse(res[0]);

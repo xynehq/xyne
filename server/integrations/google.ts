@@ -14,7 +14,7 @@ import { db } from "@/db/client";
 import { connectors, oauthProviders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
-import { Apps, ConnectorStatus, SyncJobStatus } from "@/shared/types";
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob";
 import { getUserById } from "@/db/user";
@@ -75,7 +75,6 @@ type ChangeStats = {
 
 const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: GoogleClient, email: string): Promise<ChangeStats> => {
     const stats = newStats()
-    console.log(change)
     const docId = change.fileId
     // remove item
     if (change.removed) {
@@ -153,9 +152,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
 export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any>) => {
     console.log('handleGoogleOAuthChanges')
     const data = job.data
-    // TODO: only fetch job with provider id associated with OAuth
-    // so it is a company wide OAuth Sync Job sync for google drive
-    const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive)
+    const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
     for (const syncJob of syncJobs) {
         let stats = newStats()
         try {
@@ -195,6 +192,7 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                         dataAdded: stats.added,
                         dataDeleted: stats.removed,
                         dataUpdated: stats.updated,
+                        authType: AuthType.OAuth,
                         summary: { description: stats.summary },
                         errorMessage: "",
                         app: Apps.GoogleDrive,
@@ -217,6 +215,84 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                 dataAdded: stats.added,
                 dataDeleted: stats.removed,
                 dataUpdated: stats.updated,
+                authType: AuthType.OAuth,
+                summary: { description: stats.summary },
+                errorMessage,
+                app: Apps.GoogleDrive,
+                status: SyncJobStatus.Failed,
+                config: newConfig,
+                type: SyncCron.ChangeToken,
+                lastRanOn: new Date(),
+            })
+        }
+    }
+}
+
+export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBoss.Job<any>) => {
+    console.log('handleGoogleServiceAccountChanges')
+    const data = job.data
+    const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.ServiceAccount)
+    for (const syncJob of syncJobs) {
+        let stats = newStats()
+        try {
+            const connector = await getConnector(db, syncJob.connectorId)
+            const user = await getUserById(db, connector.userId)
+            const serviceAccountKey: GoogleServiceAccount = JSON.parse(connector.credentials as string)
+            // const subject: string = connector.subject as string
+            let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
+            const driveClient = google.drive({ version: "v3", auth: jwtClient })
+            const config: ChangeToken = syncJob.config as ChangeToken
+            // TODO: add pagination for all the possible changes
+            const { changes, newStartPageToken } = (await driveClient.changes.list({ pageToken: config.token })).data
+            // there are changes
+
+            // Potential issues:
+            // we remove the doc but don't update the syncJob
+            // leading to us trying to remove the doc again which throws error
+            // as it is already removed
+            // we should still update it in that case?
+            if (changes?.length && newStartPageToken && newStartPageToken !== config.token) {
+                console.log(`total changes:  ${changes.length}`)
+                for (const change of changes) {
+                    let changeStats = await handleGoogleDriveChange(change, jwtClient, user.email)
+                    stats = mergeStats(stats, changeStats)
+                }
+                const newConfig = { lastSyncedAt: new Date(), token: newStartPageToken }
+                // update this sync job and
+                // create sync history
+                await db.transaction(async (trx) => {
+                    await updateSyncJob(trx, syncJob.id, { config: newConfig, lastRanOn: new Date(), status: SyncJobStatus.Successful })
+                    // make it compatible with sync history config type
+                    await insertSyncHistory(trx, {
+                        workspaceId: syncJob.workspaceId,
+                        workspaceExternalId: syncJob.workspaceExternalId,
+                        dataAdded: stats.added,
+                        dataDeleted: stats.removed,
+                        dataUpdated: stats.updated,
+                        authType: AuthType.ServiceAccount,
+                        summary: { description: stats.summary },
+                        errorMessage: "",
+                        app: Apps.GoogleDrive,
+                        status: SyncJobStatus.Successful,
+                        config: { token: newConfig.token, lastSyncedAt: newConfig.lastSyncedAt.toISOString() },
+                        type: SyncCron.ChangeToken,
+                        lastRanOn: new Date(),
+                    })
+                })
+                console.log(`Changes successfully synced: ${JSON.stringify(stats)}`)
+            }
+        } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            console.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
+            const config: ChangeToken = syncJob.config as ChangeToken
+            const newConfig = { token: config.token as string, lastSyncedAt: config.lastSyncedAt.toISOString() }
+            await insertSyncHistory(db, {
+                workspaceId: syncJob.workspaceId,
+                workspaceExternalId: syncJob.workspaceExternalId,
+                dataAdded: stats.added,
+                dataDeleted: stats.removed,
+                dataUpdated: stats.updated,
+                authType: AuthType.ServiceAccount,
                 summary: { description: stats.summary },
                 errorMessage,
                 app: Apps.GoogleDrive,
@@ -277,7 +353,9 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
                 workspaceExternalId: connector.workspaceExternalId,
                 app: Apps.GoogleDrive,
                 connectorId: connector.id,
+                authType: AuthType.OAuth,
                 config: changeToken,
+                email: userEmail,
                 type: SyncCron.ChangeToken,
                 status: SyncJobStatus.NotStarted
             })
@@ -295,11 +373,12 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
     }
 }
 
+type ChangeList = { email: string, changeToken: string }
 export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
     console.log('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSJob = job.data as SaaSJob
     try {
-        const connector = await getConnector(data.connectorId)
+        const connector = await getConnector(db, data.connectorId)
         const serviceAccountKey: GoogleServiceAccount = JSON.parse(connector.credentials as string)
         const subject: string = connector.subject as string
         let jwtClient = createJwtClient(serviceAccountKey, subject)
@@ -307,13 +386,33 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
 
         const workspace = await getWorkspaceByEmail(db, subject)
         const users = await listUsers(admin, workspace.domain)
+        const userEmails: ChangeList[] = []
         for (const [index, user] of users.entries()) {
-            sendWebsocketMessage(`${((index + 1) / users.length) * 100}% user's data is connected`, connector.externalId)
             const userEmail = user.primaryEmail || user.emails[0]
             jwtClient = createJwtClient(serviceAccountKey, userEmail)
+            const driveClient = google.drive({ version: "v3", auth: jwtClient })
+            const { startPageToken }: drive_v3.Schema$StartPageToken = (await driveClient.changes.getStartPageToken()).data
+            if (!startPageToken) {
+                throw new Error('Could not get start page token')
+            }
+            sendWebsocketMessage(`${((index + 1) / users.length) * 100}% user's data is connected`, connector.externalId)
+            userEmails.push({ email: userEmail, changeToken: startPageToken })
             await insertDriveForAUser(jwtClient, userEmail, connector)
         }
         await db.transaction(async (trx) => {
+            for (const { email, changeToken } of userEmails) {
+                await insertSyncJob(trx, {
+                    workspaceId: connector.workspaceId,
+                    workspaceExternalId: connector.workspaceExternalId,
+                    app: Apps.GoogleDrive,
+                    connectorId: connector.id,
+                    authType: AuthType.ServiceAccount,
+                    config: { token: changeToken, lastSyncedAt: new Date().toISOString() },
+                    email,
+                    type: SyncCron.ChangeToken,
+                    status: SyncJobStatus.NotStarted
+                })
+            }
             await trx.update(connectors).set({
                 status: ConnectorStatus.Connected
             }).where(eq(connectors.id, connector.id))
@@ -530,11 +629,10 @@ export const googleDocsVespa = async (client: GoogleClient, docsMetadata: drive_
 
         if (count % 5 === 0) {
             sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
+            process.stdout.write(`${Math.floor((count / total) * 100)}`)
+            process.stdout.write('\n')
         }
-        console.clear()
-        process.stdout.write(`${Math.floor((count / total) * 100)}`)
     }
-    process.stdout.write('\n')
     return docsList
 }
 
