@@ -160,7 +160,7 @@ app.get(
         if (existingWorkspaceRes && existingWorkspaceRes.length) {
             console.log('Workspace found, creating user')
             const existingWorkspace = existingWorkspaceRes[0]
-            const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, existingWorkspace.externalId)
+            const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, UserRole.User, existingWorkspace.externalId)
             const jwtToken = await generateToken(user.email, user.role, user.workspaceExternalId)
             setCookieByEnv(c, CookieName, jwtToken)
             return c.redirect(postOauthRedirect)
@@ -172,7 +172,7 @@ app.get(
         console.log('Creating workspace and user')
         const userAcc = await db.transaction(async (trx) => {
             const [workspace] = await createWorkspace(trx, email, domain)
-            const [user] = await createUser(trx, workspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, workspace.externalId)
+            const [user] = await createUser(trx, workspace.id, email, name, photoLink, UserRole.SuperAdmin, workspace.externalId)
             return user
         })
 
