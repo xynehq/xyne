@@ -59,7 +59,7 @@ const isBrowserGETRequest = (c: Context) => {
     }
 }
 
-const CheckCookieMiddleware = async (c: Context, next: Next) => {
+const AuthenticationMiddleare = async (c: Context, next: Next) => {
     const authToken = getCookie(c, CookieName);
 
     // If no auth token is found
@@ -115,7 +115,7 @@ export const WsApp = app.get(
 // export type WebSocketApp = typeof WsApp
 
 export const AppRoutes = app.basePath('/api')
-    .use('*', CheckCookieMiddleware)
+    .use('*', AuthMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
     .basePath('/admin')
@@ -128,11 +128,11 @@ export const AppRoutes = app.basePath('/api')
     .get('/connectors/all', GetConnectors)
 
 
-app.get('/oauth/callback', CheckCookieMiddleware, OAuthCallback)
+app.get('/oauth/callback', AuthMiddleware, OAuthCallback)
 
 // temporarily removing the AuthMiddleware for dev environment
 // if (process.env.NODE_ENV === "production") {
-app.get('/oauth/start', CheckCookieMiddleware, zValidator('query', oauthStartQuerySchema), StartOAuth)
+app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchema), StartOAuth)
 // } else {
 //     app.get('/oauth/start', zValidator('query', oauthStartQuerySchema), StartOAuth)
 // }
