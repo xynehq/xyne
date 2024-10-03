@@ -46,8 +46,10 @@ const AuthMiddleware = jwt({
     cookie: CookieName
 })
 
+// Checks if the req is GET from browser
 const isBrowserGETRequest = (c: Context) => {
     if (c.req.method === 'GET') {
+        // Browsers normally send Accept header with text/html
         const acceptHeader = c.req.header('Accept');
         if (acceptHeader?.includes('text/html')) {
             return true;
@@ -59,6 +61,10 @@ const isBrowserGETRequest = (c: Context) => {
     }
 }
 
+// Middleware for frontend routes
+// Checks if there is token in cookie or not
+// If there is token, verify it is valid or not
+// Redirect to auth page or send unauthorized error respectively
 const AuthenticationMiddleare = async (c: Context, next: Next) => {
     const authToken = getCookie(c, CookieName);
 
@@ -66,6 +72,7 @@ const AuthenticationMiddleare = async (c: Context, next: Next) => {
     if (!authToken) {
         if (isBrowserGETRequest(c)) {
             console.log("Redirected by server - No AuthToken")
+            // Redirect to login page if no token found
             return c.redirect(`${frontendBaseURL}/auth`) 
         } else {
             return c.json({ error: "Unauthorized" }, 401);
@@ -78,6 +85,7 @@ const AuthenticationMiddleare = async (c: Context, next: Next) => {
         console.error(err);
         if (isBrowserGETRequest(c)) {
             console.log("Redirected by server - Error in AuthMW")
+            // Redirect to auth page if token invalid
             return c.redirect(`${frontendBaseURL}/auth`) 
         } else {
             return c.json({ error: "Unauthorized" }, 401);
