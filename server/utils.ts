@@ -44,3 +44,11 @@ export const setCookieByEnv = (c: Context, CookieName: string, jwtToken: string,
         })
     }
 }
+
+
+// this helps prevent typescript from
+// being bothered by the error in the catch
+export const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) return error.message
+    return String(error)
+}
