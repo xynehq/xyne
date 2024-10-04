@@ -49,7 +49,7 @@ const AuthMiddleware = jwt({
 // Middleware for frontend routes
 // Checks if there is token in cookie or not
 // If there is token, verify it is valid or not
-// Redirect to auth page or send unauthorized error respectively
+// Redirect to auth page if no token or invalid token
 const AuthenticationMiddleare = async (c: Context, next: Next) => {
     const authToken = getCookie(c, CookieName);
 
