@@ -46,21 +46,6 @@ const AuthMiddleware = jwt({
     cookie: CookieName
 })
 
-// Checks if the req is GET from browser
-const isBrowserGETRequest = (c: Context) => {
-    if (c.req.method === 'GET') {
-        // Browsers normally send Accept header with text/html
-        const acceptHeader = c.req.header('Accept');
-        if (acceptHeader?.includes('text/html')) {
-            return true;
-        } else {
-            return false;
-        }
-    } else {
-        false;
-    }
-}
-
 // Middleware for frontend routes
 // Checks if there is token in cookie or not
 // If there is token, verify it is valid or not
@@ -70,26 +55,19 @@ const AuthenticationMiddleare = async (c: Context, next: Next) => {
 
     // If no auth token is found
     if (!authToken) {
-        if (isBrowserGETRequest(c)) {
-            console.log("Redirected by server - No AuthToken")
-            // Redirect to login page if no token found
-            return c.redirect(`${frontendBaseURL}/auth`) 
-        } else {
-            return c.json({ error: "Unauthorized" }, 401);
-        }
+        console.log("Redirected by server - No AuthToken")
+        // Redirect to login page if no token found
+        return c.redirect(`${frontendBaseURL}/auth`) 
     }
 
     try {
+        // Verify the token if available
         await AuthMiddleware(c, next);
     } catch (err) {
         console.error(err);
-        if (isBrowserGETRequest(c)) {
-            console.log("Redirected by server - Error in AuthMW")
-            // Redirect to auth page if token invalid
-            return c.redirect(`${frontendBaseURL}/auth`) 
-        } else {
-            return c.json({ error: "Unauthorized" }, 401);
-        }
+        console.log("Redirected by server - Error in AuthMW")
+        // Redirect to auth page if token invalid
+        return c.redirect(`${frontendBaseURL}/auth`)
     }
 };
 
@@ -247,9 +225,16 @@ app.get(
 //     < body > Hello! </body>
 //     </html>)
 // })
-app.get('*', serveStatic({ root: './dist' }));
-app.get('*', serveStatic({ path: './dist/index.html' }));
 
+// Serving exact frontend routes and adding AuthenticationMiddleare wherever needed
+app.get('/', serveStatic({ path: './dist/index.html' }));
+app.get('/auth', serveStatic({ path: './dist/index.html' }));
+app.get('/search', AuthenticationMiddleare, serveStatic({ path: './dist/index.html' }));
+app.get('/admin/integrations', AuthenticationMiddleare, serveStatic({ path: './dist/index.html' }));
+app.get('/oauth/success', AuthenticationMiddleare, serveStatic({ path: './dist/index.html' }));
+
+// Serve assets (CSS, JS, etc.)
+app.get('/assets/*', serveStatic({ root: './dist' })); 
 
 export const init = async () => {
     await initQueue()
