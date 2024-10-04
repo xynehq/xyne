@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, UseNavigateResult } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Connectors } from '@/types';
 import { OAuthModal } from '@/oauth';
 
-const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
+const submitServiceAccountForm = async (value: ServiceAccountFormData, navigate: UseNavigateResult<string>) => {
     const response = await api.api.admin.service_account.$post({
       form: {
         'service-key': value.file,
@@ -25,13 +25,18 @@ const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
       }
     });
     if(!response.ok) {
+        // If unauthorized or status code is 401, navigate to '/auth'
+        if (response.status === 401) {
+          navigate({ to: '/auth' })
+          throw new Error('Unauthorized')
+        }
         const errorText = await response.text();
         throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
     return response.json()
 }
 
-const submitOAuthForm = async (value: OAuthFormData) => {
+const submitOAuthForm = async (value: OAuthFormData, navigate: UseNavigateResult<string>) => {
     const response = await api.api.admin.oauth.create.$post({
       form: {
         'clientId': value.clientId,
@@ -41,6 +46,11 @@ const submitOAuthForm = async (value: OAuthFormData) => {
       }
     });
     if(!response.ok) {
+        // If unauthorized or status code is 401, navigate to '/auth'
+        if (response.status === 401) {
+          navigate({ to: '/auth' })
+          throw new Error('Unauthorized')
+        }
         const errorText = await response.text();
         throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
@@ -62,6 +72,7 @@ type OAuthFormData = {
 export const OAuthForm = ({onSuccess}: {onSuccess:any}) => {
 
   const { toast } = useToast();
+  const navigate = useNavigate();
   const form = useForm<OAuthFormData>({
     defaultValues: {
       clientId: '',
@@ -70,7 +81,7 @@ export const OAuthForm = ({onSuccess}: {onSuccess:any}) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value);  // Call the async function
+        await submitOAuthForm(value, navigate);  // Call the async function
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
@@ -166,6 +177,7 @@ export const ServiceAccountForm = ({onSuccess}: {onSuccess:any}) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const form = useForm<ServiceAccountFormData>({
     defaultValues: {
@@ -183,7 +195,7 @@ export const ServiceAccountForm = ({onSuccess}: {onSuccess:any}) => {
       }
     
       try {
-        await submitServiceAccountForm(value);  // Call the async function
+        await submitServiceAccountForm(value, navigate);  // Call the async function
         toast({
           title: "File uploaded successfully",
           description: "Integration in progress",
