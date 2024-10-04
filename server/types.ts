@@ -150,3 +150,29 @@ export enum UserRole {
 }
 
 export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
+
+
+export enum LOGGERTYPES {
+    server = 'SERVER',
+    auth = 'AUTH',
+    cleanup = 'CLEANUP',
+    cronjob = 'CRONJOB',
+    ingest = 'INGEST',
+}
+
+export enum OperationType {
+    sub = 'SUBSYSTEM'
+}
+
+export enum OperationStatus {
+    success = 'SUCCESS',
+    failure = 'FAILURE',
+    pendings = 'PENDING',
+    cancelled = 'CANCELLED',
+}
+
+export type additionalMessage = Partial<{
+  STATUS: OperationStatus;
+  OPERATION_TYPE: OperationType;
+  TIME_TAKEN: number;
+}>;

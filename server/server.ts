@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono'
 import { logger } from 'hono/logger'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
-import { addServiceConnectionSchema, createOAuthProvider, oauthStartQuerySchema, searchSchema, UserRole } from '@/types'
+import { addServiceConnectionSchema, createOAuthProvider, LOGGERTYPES, oauthStartQuerySchema, OperationStatus, OperationType, searchSchema, UserRole } from '@/types'
 import { AddServiceConnection, CreateOAuthProvider, GetConnectors, StartOAuth } from '@/api/admin'
 import { init as initQueue } from '@/queue'
 import { createBunWebSocket } from 'hono/bun'
@@ -22,8 +22,9 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
+import { SearchLogger } from './utils/logger'
 
-
+const Logger = new SearchLogger(LOGGERTYPES.server)
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
@@ -59,11 +60,11 @@ export const WsApp = app.get(
                 wsConnections.set(connectorId, ws)
             },
             onMessage(event, ws) {
-                console.log(`Message from client: ${event.data}`)
+                Logger.info(`Message from client: ${event.data}`)
                 ws.send(JSON.stringify({ message: 'Hello from server!' }))
             },
             onClose: (event, ws) => {
-                console.log('Connection closed')
+                Logger.info('Connection closed')
                 if (connectorId) {
                     wsConnections.delete(connectorId)
                 }
@@ -97,7 +98,7 @@ app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchem
 //     app.get('/oauth/start', zValidator('query', oauthStartQuerySchema), StartOAuth)
 // }
 const generateToken = async (email: string, role: string, workspaceId: string) => {
-    console.log('generating token')
+    Logger.info('generating token')
     const payload = {
         sub: email,
         role: role,
@@ -147,7 +148,7 @@ app.get(
         const existingUserRes = await getUserByEmail(db, email)
         // if user exists then workspace exists too
         if (existingUserRes && existingUserRes.length) {
-            console.log('User found')
+            Logger.info('User found')
             const existingUser = existingUserRes[0]
             const jwtToken = await generateToken(existingUser.email, existingUser.role, existingUser.workspaceExternalId)
             setCookieByEnv(c, CookieName, jwtToken)
@@ -158,7 +159,7 @@ app.get(
         // just create the user
         const existingWorkspaceRes = await getWorkspaceByDomain(domain)
         if (existingWorkspaceRes && existingWorkspaceRes.length) {
-            console.log('Workspace found, creating user')
+            Logger.info('Workspace found, creating user')
             const existingWorkspace = existingWorkspaceRes[0]
             const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, existingWorkspace.externalId)
             const jwtToken = await generateToken(user.email, user.role, user.workspaceExternalId)
@@ -169,7 +170,7 @@ app.get(
         // we could not find the user and the workspace
         // creating both
 
-        console.log('Creating workspace and user')
+        Logger.info('Creating workspace and user')
         const userAcc = await db.transaction(async (trx) => {
             const [workspace] = await createWorkspace(trx, email, domain)
             const [user] = await createUser(trx, workspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, workspace.externalId)
@@ -207,7 +208,7 @@ export const init = async () => {
     await initQueue()
 }
 init().catch(e => {
-    console.error(e)
+    Logger.error(e)
 })
 
 const server = Bun.serve({
@@ -215,4 +216,4 @@ const server = Bun.serve({
     port: config.port,
     websocket
 })
-console.log(`listening on port: ${config.port}`)
+Logger.info(`listening on port: ${config.port}`, {'STATUS' : OperationStatus.success} )
