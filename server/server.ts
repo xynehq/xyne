@@ -50,7 +50,7 @@ const AuthMiddleware = jwt({
 // Checks if there is token in cookie or not
 // If there is token, verify it is valid or not
 // Redirect to auth page if no token or invalid token
-const AuthenticationMiddleare = async (c: Context, next: Next) => {
+const AuthRedirect = async (c: Context, next: Next) => {
     const authToken = getCookie(c, CookieName);
 
     // If no auth token is found
@@ -226,12 +226,12 @@ app.get(
 //     </html>)
 // })
 
-// Serving exact frontend routes and adding AuthenticationMiddleare wherever needed
-app.get('/', serveStatic({ path: './dist/index.html' }));
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get('/', AuthRedirect, serveStatic({ path: './dist/index.html' }));
 app.get('/auth', serveStatic({ path: './dist/index.html' }));
-app.get('/search', AuthenticationMiddleare, serveStatic({ path: './dist/index.html' }));
-app.get('/admin/integrations', AuthenticationMiddleare, serveStatic({ path: './dist/index.html' }));
-app.get('/oauth/success', AuthenticationMiddleare, serveStatic({ path: './dist/index.html' }));
+app.get('/search', AuthRedirect, serveStatic({ path: './dist/index.html' }));
+app.get('/admin/integrations', AuthRedirect, serveStatic({ path: './dist/index.html' }));
+app.get('/oauth/success', serveStatic({ path: './dist/index.html' }));
 
 // Serve assets (CSS, JS, etc.)
 app.get('/assets/*', serveStatic({ root: './dist' })); 
