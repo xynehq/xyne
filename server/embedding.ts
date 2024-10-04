@@ -43,5 +43,5 @@ env.cacheDir = './'
 // }
 
 export const getExtractor = async (): Promise<FeatureExtractionPipeline> => {
-    return await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
+    return await pipeline('feature-extraction', 'Xenova/bge-small-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
 }
