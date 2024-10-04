@@ -75,7 +75,7 @@ const flattenGroups = (groups: Groups) => {
 
 const AutocompleteElement = forwardRef(
   (
-    { result, onClick}: { result:Autocomplete, onClick: any }, ref: ForwardedRef<HTMLDivElement>
+    { result, onClick}: { result: Autocomplete, onClick: any }, ref: ForwardedRef<HTMLDivElement>
   ) => {
   return (
     <div  ref={ref} onClick={onClick} className='cursor-pointer hover:bg-gray-100 px-4 py-2'>

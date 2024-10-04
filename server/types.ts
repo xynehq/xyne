@@ -4,6 +4,7 @@ import { Apps, AuthType } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { GoogleTokens } from 'arctic'
+import { admin_directory_v1, google, people_v1, type drive_v3 } from 'googleapis'
 
 export interface File {
     docId: string,
@@ -22,9 +23,38 @@ export interface File {
     chunk_embedding: number[]
 }
 
-export const AutocompleteResultSchema = z.object({
-    title: z.string().min(1),
-})
+export enum GooglePeopleSource {
+    Contacts = "Contacts",
+    OtherContacts = "OtherContacts",
+    AdminDirectory = "AdminDirectory"
+}
+
+export type PeopleSource = GooglePeopleSource
+// TODO: turn it into a union the moment PeopleSource has more than one type
+export const PeopleSourceSchema = z.nativeEnum(GooglePeopleSource)
+
+export const AutocompleteResultSchema = z.union([
+    z.object({
+        title: z.string().min(1),
+        app: z.string().min(1),
+        entity: z.string().min(1)
+    }),
+    z.object({
+        name: z.string().min(1),
+        email: z.string().min(1),
+        source: PeopleSourceSchema
+    })
+])
+
+
+
+type GoogleContacts = people_v1.Schema$Person
+type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
+
+// People graph of google workspace
+type GoogleWorkspacePeople = WorkspaceDirectoryUser | GoogleContacts
+
+type PeopleData = GoogleWorkspacePeople
 
 export const AutocompleteResultsSchema = z.object({
     children: z.array(AutocompleteResultSchema)

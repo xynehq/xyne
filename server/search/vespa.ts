@@ -8,15 +8,15 @@ import { type VespaResponse, type File } from "@/types";
 import { checkAndReadFile, getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
-import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
 import { z } from "zod";
 import { getLogger } from "../shared/logger";
 import { Subsystem } from "@/shared/types";
 import { ErrorDeletingDocuments, ErrorGettingDocument, ErrorUpdatingDocument, ErrorRetrievingDocuments, ErrorPerformingSearch, ErrorInsertingDocument } from "@/errors";
 
 // Define your Vespa endpoint and schema name
-const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
-const SCHEMA = 'file'; // Replace with your actual schema name
+const vespaEndpoint = `http://${config.vespaBaseHost}:8080`;
+const fileSchema = 'file'; // Replace with your actual schema name
+const peopleSchema = 'people'
 const NAMESPACE = 'namespace'; // Replace with your actual namespace
 const CLUSTER = 'my_content';
 env.backends.onnx.wasm.numThreads = 1;
@@ -64,7 +64,7 @@ function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {
  */
 async function deleteAllDocuments() {
     // Construct the DELETE URL
-    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid?selection=true&cluster=${CLUSTER}`;
+    const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid?selection=true&cluster=${CLUSTER}`;
 
     try {
         const response: Response = await fetch(url, {
@@ -86,7 +86,7 @@ async function deleteAllDocuments() {
 export const insertDocument = async (document: File) => {
     try {
         const response = await fetch(
-            `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${document.docId}`,
+            `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${document.docId}`,
             {
                 method: 'POST',
                 headers: {
@@ -110,9 +110,9 @@ export const insertDocument = async (document: File) => {
     }
 }
 
-export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaResponse | null> => {
+export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaResponse> => {
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
-    const yqlQuery = `select * from sources ${SCHEMA} where title_fuzzy contains ({maxEditDistance: 2, prefix: true}fuzzy(@query)) and permissions contains @email`;
+    const yqlQuery = `select * from sources ${fileSchema} where title_fuzzy contains ({maxEditDistance: 2, prefix: true}fuzzy(@query)) and permissions contains @email`;
 
     const searchPayload = {
         yql: yqlQuery,
@@ -123,7 +123,7 @@ export const autocomplete = async (query: string, email: string, limit: number =
         'presentation.summary': 'default',
     };
     try {
-        const response = await fetch(`${VESPA_ENDPOINT}/search/`, {
+        const response = await fetch(`${vespaEndpoint}/search/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -142,7 +142,7 @@ export const autocomplete = async (query: string, email: string, limit: number =
         Logger.error(`Error performing autocomplete search:, ${error} `);
         throw new ErrorPerformingSearch({ message: `Error performing autocomplete search`, cause: error as Error, sources: "file" })
         // TODO: instead of null just send empty response
-        return null;
+        throw error
     }
 };
 
@@ -283,7 +283,7 @@ const HybridDefaultProfileAppEntityCounts: YqlProfile = {
 
 // TODO: extract out the fetch and make an api client
 export const groupVespaSearch = async (query: string, email: string, app?: string, entity?: string): Promise<AppEntityCounts | {}> => {
-    const url = `${VESPA_ENDPOINT}/search/`;
+    const url = `${vespaEndpoint}/search/`;
     const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
     let yqlQuery = HybridDefaultProfileAppEntityCounts.yql
 
@@ -316,9 +316,9 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
     }
 }
 
-export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number, featureExtractor: typeof extractor = extractor): Promise<VespaResponse | {}> => {
-    const url = `${VESPA_ENDPOINT}/search/`;
-    const qEmbedding = (await featureExtractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
+export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number): Promise<VespaResponse | {}> => {
+    const url = `${vespaEndpoint}/search/`;
+    const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
     let yqlQuery = HybridDefaultProfile.yql
 
@@ -379,10 +379,10 @@ export const searchVespa = async (query: string, email: string, app?: string, en
  */
 const getDocumentCount = async () => {
     // Encode the YQL query to ensure it's URL-safe
-    const yql = encodeURIComponent(`select * from sources ${SCHEMA} where true`);
+    const yql = encodeURIComponent(`select * from sources ${fileSchema} where true`);
 
     // Construct the search URL with necessary query parameters
-    const url = `${VESPA_ENDPOINT}/search/?yql=${yql}&hits=0&cluster=${CLUSTER}`;
+    const url = `${vespaEndpoint}/search/?yql=${yql}&hits=0&cluster=${CLUSTER}`;
 
     try {
         const response: Response = await fetch(url, {
@@ -403,7 +403,7 @@ const getDocumentCount = async () => {
         const totalCount = data?.root?.fields?.totalCount;
 
         if (typeof totalCount === 'number') {
-            Logger.info(`Total documents in schema '${SCHEMA}' within namespace '${NAMESPACE}' and cluster '${CLUSTER}': ${totalCount}`);
+            Logger.info(`Total documents in schema '${fileSchema}' within namespace '${NAMESPACE}' and cluster '${CLUSTER}': ${totalCount}`);
         } else {
             Logger.error(`Unexpected response structure:', ${data}`);
         }
@@ -437,7 +437,7 @@ export const DocSchema = z.object({
 type Doc = z.infer<typeof DocSchema>
 
 export const GetDocument = async (docId: string): Promise<Doc> => {
-    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`;
+    const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`;
     try {
         const response = await fetch(url, {
             method: 'GET',
@@ -461,7 +461,7 @@ export const GetDocument = async (docId: string): Promise<Doc> => {
 }
 
 export const UpdateDocumentPermissions = async (docId: string, updatedPermissions: string[]) => {
-    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`
+    const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`
     try {
         const response = await fetch(url, {
             method: 'PUT',
@@ -489,7 +489,7 @@ export const UpdateDocumentPermissions = async (docId: string, updatedPermission
 }
 
 export const DeleteDocument = async (docId: string) => {
-    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`
+    const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`
     try {
         const response = await fetch(url, {
             method: 'DELETE'
@@ -537,7 +537,7 @@ export const ifDocumentsExist = async (docIds: string[]) => {
     const yqlQuery = `select docId from sources * where docId in (${yqlIds})`;
 
 
-    const url = `${VESPA_ENDPOINT}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`;
+    const url = `${vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`;
 
     try {
         const response = await fetch(url, {
@@ -573,10 +573,10 @@ export const ifDocumentsExist = async (docIds: string[]) => {
 
 const getNDocuments = async (n: number) => {
     // Encode the YQL query to ensure it's URL-safe
-    const yql = encodeURIComponent(`select * from sources ${SCHEMA} where true`);
+    const yql = encodeURIComponent(`select * from sources ${fileSchema} where true`);
 
     // Construct the search URL with necessary query parameters
-    const url = `${VESPA_ENDPOINT}/search/?yql=${yql}&hits=${n}&cluster=${CLUSTER}`;
+    const url = `${vespaEndpoint}/search/?yql=${yql}&hits=${n}&cluster=${CLUSTER}`;
 
     try {
         const response: Response = await fetch(url, {
