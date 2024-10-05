@@ -25,21 +25,27 @@ def init_worker():
     model.to('cpu')
 
 class DocumentProcessor:
-    def __init__(self, output_folder, docs_per_file=5000):
+    def __init__(self, output_folder, docs_per_file=10000):
         self.output_folder = output_folder
         self.docs_per_file = docs_per_file
         self.current_batch = []
         self.total_processed = 0
         self.file_counter = 0
+        print(f"Initialized DocumentProcessor with {docs_per_file} docs per file")
         
     def add_document(self, doc):
         """Add a document to the current batch"""
         if doc is not None:
             self.current_batch.append(doc)
             
-        # Write batch if we've reached the target size
-        if len(self.current_batch) >= self.docs_per_file:
-            self._write_current_batch()
+            # Debug print
+            if len(self.current_batch) % 100 == 0:
+                print(f"Current batch size: {len(self.current_batch)}")
+            
+            # Write batch if we've reached the target size
+            if len(self.current_batch) >= self.docs_per_file:
+                print(f"Batch full ({len(self.current_batch)} documents). Writing to file...")
+                self._write_current_batch()
     
     def _write_current_batch(self):
         """Write the current batch to a file"""
@@ -50,7 +56,7 @@ class DocumentProcessor:
         with open(output_path, 'w', encoding='utf-8') as output_file:
             json.dump(self.current_batch, output_file, ensure_ascii=False, indent=4)
             
-        print(f'Wrote {len(self.current_batch)} documents to {output_path}')
+        print(f'Wrote batch of {len(self.current_batch)} documents to {output_path}')
         self.total_processed += len(self.current_batch)
         self.current_batch = []
         self.file_counter += 1
@@ -58,9 +64,88 @@ class DocumentProcessor:
     def finish(self):
         """Write any remaining documents"""
         if self.current_batch:
+            print(f"Writing final batch of {len(self.current_batch)} documents...")
             self._write_current_batch()
         print(f'Total documents processed: {self.total_processed}')
 
+def convert_collection(args):
+    """Main function to process the collection"""
+    print('Converting collection...')
+    
+    # Use all available CPU cores
+    num_workers = multiprocessing.cpu_count()
+    print(f"Using all {num_workers} available CPU cores")
+    
+    # Create document processor with explicit batch size
+    docs_per_file = 5000  # or whatever value you set
+    print(f"Setting up document processor with {docs_per_file} docs per file")
+    doc_processor = DocumentProcessor(args.output_folder, docs_per_file=docs_per_file)
+    
+    # Count total documents
+    with open(args.collection_path, encoding='utf-8') as f:
+        total_docs = sum(1 for _ in f)
+    
+    print(f"Total documents to process: {total_docs}")
+    
+    # Create a queue to hold the results
+    result_queue = Queue(maxsize=num_workers * 2)
+    
+    # Create a flag for the writer thread
+    processing_complete = False
+    
+    def writer_thread():
+        """Thread to handle writing results to files"""
+        docs_processed = 0
+        while not (processing_complete and result_queue.empty()):
+            try:
+                result = result_queue.get(timeout=1)
+                if result is not None:
+                    doc_processor.add_document(result)
+                    docs_processed += 1
+                    if docs_processed % 100 == 0:
+                        print(f"Processed {docs_processed} documents so far")
+            except Exception as e:
+                continue
+    
+    # Start the writer thread
+    writer = Thread(target=writer_thread, daemon=True)
+    writer.start()
+    
+    # Process documents using all cores
+    with ProcessPoolExecutor(
+        max_workers=num_workers,
+        initializer=init_worker,
+        mp_context=multiprocessing.get_context('spawn')
+    ) as executor:
+        futures = []
+        
+        # Submit all documents for processing
+        with open(args.collection_path, encoding='utf-8') as f:
+            for line in tqdm(f, total=total_docs, desc="Submitting documents"):
+                try:
+                    doc_id, content = line.split('\t')
+                    future = executor.submit(process_chunk, (doc_id, content))
+                    futures.append(future)
+                except Exception as e:
+                    print(f"Error submitting document: {str(e)}")
+                    continue
+        
+        # Process results as they complete
+        for future in tqdm(futures, desc="Processing documents"):
+            try:
+                result = future.result()
+                result_queue.put(result)
+            except Exception as e:
+                print(f"Error getting result: {str(e)}")
+    
+    # Signal completion and wait for writer to finish
+    processing_complete = True
+    writer.join()
+    
+    # Write any remaining documents
+    doc_processor.finish()
+    
+    print('Processing completed successfully!')
 def process_chunk(chunk_data):
     """Process a single chunk of documents"""
     global model
@@ -103,81 +188,6 @@ def process_chunk(chunk_data):
     except Exception as e:
         print(f"Error processing chunk {doc_id}: {str(e)}")
         return None
-
-def convert_collection(args):
-    """Main function to process the collection"""
-    print('Converting collection...')
-    
-    # Use all available CPU cores
-    num_workers = multiprocessing.cpu_count()
-    print(f"Using all {num_workers} available CPU cores")
-    
-    # Create document processor
-    doc_processor = DocumentProcessor(args.output_folder, docs_per_file=10000)
-    
-    # Count total documents
-    with open(args.collection_path, encoding='utf-8') as f:
-        total_docs = sum(1 for _ in f)
-    
-    print(f"Total documents to process: {total_docs}")
-    
-    # Create a queue to hold the results
-    result_queue = Queue(maxsize=num_workers * 2)  # Buffer some results
-    
-    # Create a flag for the writer thread
-    processing_complete = False
-    
-    def writer_thread():
-        """Thread to handle writing results to files"""
-        while not (processing_complete and result_queue.empty()):
-            try:
-                result = result_queue.get(timeout=1)  # 1 second timeout
-                doc_processor.add_document(result)
-            except Exception:
-                continue
-    
-    # Start the writer thread
-    writer = Thread(target=writer_thread, daemon=True)
-    writer.start()
-    
-    # Process documents using all cores
-    with ProcessPoolExecutor(
-        max_workers=num_workers,
-        initializer=init_worker,
-        mp_context=multiprocessing.get_context('spawn')
-    ) as executor:
-        # Read and process documents
-        with open(args.collection_path, encoding='utf-8') as f:
-            # Create batches for submission
-            batch_data = []
-            futures = []
-            
-            # Submit initial batch of tasks
-            for line in tqdm(f, total=total_docs, desc="Submitting documents"):
-                try:
-                    doc_id, content = line.split('\t')
-                    future = executor.submit(process_chunk, (doc_id, content))
-                    futures.append(future)
-                except Exception as e:
-                    print(f"Error submitting document: {str(e)}")
-                    continue
-            
-            # Process results as they complete
-            for future in tqdm(futures, desc="Processing documents"):
-                try:
-                    result = future.result()
-                    result_queue.put(result)
-                except Exception as e:
-                    print(f"Error getting result: {str(e)}")
-    
-    # Signal completion and wait for writer to finish
-    processing_complete = True
-    writer.join()
-    
-    # Write any remaining documents
-    doc_processor.finish()
-    
-    print('Processing completed successfully!')
 
 if __name__ == '__main__':
     # Ensure we're using spawn method for process creation
