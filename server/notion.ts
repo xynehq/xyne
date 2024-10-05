@@ -1,13 +1,15 @@
 
 import { Client } from '@notionhq/client';
 import { crawler, pageToString } from "notion-md-crawler";
+import { ServerLogger } from './logger';
+import { LOGGERTYPES } from './types';
 
 const notionApiKey = process.env.NOTION_API_KEY
 const notion = new Client({
     auth: notionApiKey
 })
 
-
+const Logger = new ServerLogger(LOGGERTYPES.notion)
 const notionPagesToFiles = async (pages): Promise<File[]> => {
     const crawl = crawler({ client: notion })
     let notionDocs = []
@@ -19,13 +21,13 @@ const notionPagesToFiles = async (pages): Promise<File[]> => {
             permissions.push(page.user.person.email)
         }
         let pageText = ''
-        // console.log('crawing ', page.id)
+        //  Logger.info(`crawing , ${page.id`})
         for await (const result of crawl(page.id)) {
             count += 1
             console.clear()
             process.stdout.write(`${page.id} ${count} ${Math.floor((count / pages.length) * 100)}`)
             if (result.success) {
-                // console.log('crawling successful: ', result.id)
+                //  Logger.info(`crawling successful:  ${result.id}`)
                 pageText = pageToString(result.page);
 
                 const chunks = chunkDocument(pageText)
@@ -47,7 +49,7 @@ const notionPagesToFiles = async (pages): Promise<File[]> => {
 
                 }
             } else {
-                console.log('crawling failed')
+                Logger.info('crawling failed')
             }
         }
     }
@@ -60,7 +62,7 @@ const getNotionData = async () => {
     for (const user of users.results.filter(u => u.type !== 'bot')) {
         userMap[user.id] = user
     }
-    console.log('found all users')
+    Logger.info('found all users')
     let start_cursor = undefined
     let docs = []
     while (true) {
@@ -90,9 +92,9 @@ export const initNotion = async () => {
     if (!data) {
         const docs = await getNotionData()
         const pages = docs.filter(v => v.object === "page")
-        console.log('got notion pages: ', pages.length)
+        Logger.info(`got notion pages: , ${pages.length}`)
         const finalData = await notionPagesToFiles(pages)
-        console.log('started vectorizing')
+        Logger.info('started vectorizing')
         let c = 0
         data = await Promise.all([...finalData].map(async (doc, i) => ({
             properties: {
@@ -100,7 +102,7 @@ export const initNotion = async () => {
             },
             vectors: (await extractor(getVectorStr(doc.title, doc.chunk), { pooling: 'mean', normalize: true })).tolist()[0],  // Add the generated vector
         })));
-        console.log('vectorizing done')
+        Logger.info('vectorizing done')
         fs.writeFile('./notionData.json', JSON.stringify(finalData))
     }
     let processed = 0
@@ -109,6 +111,6 @@ export const initNotion = async () => {
         const part = data.slice(i, i + batchSize)
         const inserted = await collection.data.insertMany(part);
         processed += part.length
-        console.log('inserting chunks: ', processed)
+        Logger.info(`inserting chunks: ', ${processed}`)
     }
 }

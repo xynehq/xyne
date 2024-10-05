@@ -4,12 +4,13 @@
 import fs from "node:fs/promises";
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import type { VespaResponse, File } from "@/types";
+import { type VespaResponse, type File, LOGGERTYPES } from "@/types";
 import { checkAndReadFile } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
 import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
 import config from "@/config";
+import { ServerLogger } from "@/logger";
 
 // Define your Vespa endpoint and schema name
 const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
@@ -21,6 +22,9 @@ env.backends.onnx.wasm.numThreads = 1;
 
 env.localModelPath = './'
 env.cacheDir = './'
+
+const Logger = new ServerLogger(LOGGERTYPES.vespa)
+
 const extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
 function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {
     const appEntityCounts: AppEntityCounts = {};
@@ -66,13 +70,13 @@ async function deleteAllDocuments() {
         });
 
         if (response.ok) {
-            console.log('All documents deleted successfully.');
+            Logger.info('All documents deleted successfully.');
         } else {
             const errorText = await response.text();
             throw new Error(`Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`);
         }
     } catch (error) {
-        console.error('Error deleting documents:', error);
+        Logger.error(`Error deleting documents:, ${error}`);
     }
 }
 
@@ -92,12 +96,12 @@ export const insertDocument = async (document: File) => {
         const data = await response.json();
 
         if (response.ok) {
-            console.log(`Document ${document.docId} inserted successfully:`, data);
+            Logger.info(`Document ${document.docId} inserted successfully:, ${data}`);
         } else {
-            console.error(`Error inserting document ${document.docId}:`, data);
+            Logger.error(`Error inserting document ${document.docId}:, ${data}`);
         }
     } catch (error) {
-        console.error(`Error inserting document ${document.docId}:`, error.message);
+        Logger.error(`Error inserting document ${document.docId}:, ${error.message}`);
     }
 }
 
@@ -130,7 +134,7 @@ export const autocomplete = async (query: string, email: string, limit: number =
         const data = await response.json();
         return data;
     } catch (error) {
-        console.error('Error performing autocomplete search:', error);
+        Logger.error(`Error performing autocomplete search:, ${error} `);
         // TODO: instead of null just send empty response
         return null;
     }
@@ -300,7 +304,7 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
         const data = await response.json();
         return handleVespaGroupResponse(data)
     } catch (error) {
-        console.error('Error performing search:', error);
+        Logger.error(`Error performing search:, ${error}`);
         return {}
     }
 }
@@ -355,7 +359,7 @@ export const searchVespa = async (query: string, email: string, app?: string, en
         const data = await response.json();
         return data
     } catch (error) {
-        console.error('Error performing search:', error);
+        Logger.error(`Error performing search:, ${error}`);
         return {}
     }
 }
@@ -391,12 +395,12 @@ const getDocumentCount = async () => {
         const totalCount = data?.root?.fields?.totalCount;
 
         if (typeof totalCount === 'number') {
-            console.log(`Total documents in schema '${SCHEMA}' within namespace '${NAMESPACE}' and cluster '${CLUSTER}': ${totalCount}`);
+            Logger.info(`Total documents in schema '${SCHEMA}' within namespace '${NAMESPACE}' and cluster '${CLUSTER}': ${totalCount}`);
         } else {
-            console.error('Unexpected response structure:', data);
+            Logger.error(`Unexpected response structure:', ${data}`);
         }
     } catch (error) {
-        console.error('Error retrieving document count:', error);
+        Logger.error(`Error retrieving document count:, ${error}`);
     }
 }
 

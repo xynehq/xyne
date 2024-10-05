@@ -1,11 +1,13 @@
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { connectors, type SelectConnector } from "./schema";
-import type { ConnectorType, TxnOrClient } from "@/types";
+import { LOGGERTYPES, type ConnectorType, type TxnOrClient } from "@/types";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { eq } from "drizzle-orm";
 import { Apps, AuthType, type ConnectorStatus } from "@/shared/types";
+import { ServerLogger } from "@/logger";
 
+const Logger = new ServerLogger(LOGGERTYPES.db)
 
 export const insertConnector = async (
     trx: TxnOrClient,
@@ -39,10 +41,10 @@ export const insertConnector = async (
             oauthCredentials,
             ...(status ? { status } : {}),
         }).returning();
-        console.log("Connection inserted successfully");
+        Logger.info("Connection inserted successfully");
         return inserted[0]
     } catch (error) {
-        console.error("Error inserting connection:", error);
+        Logger.error(`Error inserting connection:, ${error}`);
         throw new Error('Could not insert connection');
     }
 };

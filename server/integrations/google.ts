@@ -2,7 +2,7 @@ import { admin_directory_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
 import fs from "node:fs/promises";
-import { type File, type SaaSJob, type SaaSOAuthJob } from "@/types";
+import { LOGGERTYPES, type File, type SaaSJob, type SaaSOAuthJob } from "@/types";
 import { JWT, OAuth2Client } from "google-auth-library";
 import path from 'node:path'
 import type PgBoss from "pg-boss";
@@ -18,7 +18,9 @@ import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
 import { ConnectorStatus } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
+import { ServerLogger } from "@/logger";
 
+const Logger = new ServerLogger(LOGGERTYPES.google)
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
     return new JWT({
@@ -52,14 +54,14 @@ const listUsers = async (admin: admin_directory_v1.Admin, domain: string) => {
         } while (nextPageToken);
         return users;
     } catch (error) {
-        console.error("Error listing users:", error);
+        Logger.error(`Error listing users:", ${error}`);
         throw error
         // return [];
     }
 };
 
 export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountIngestion', job.data)
+    Logger.info(`handleGoogleServiceAccountIngestion, ${job.data}`)
     const data: SaaSOAuthJob = job.data as SaaSOAuthJob
     try {
         const connector = await getConnector(data.connectorId)
@@ -75,12 +77,12 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
             await trx.update(connectors).set({
                 status: ConnectorStatus.Connected
             }).where(eq(connectors.id, connector.id))
-            console.log('status updated')
+            Logger.info('status updated')
             await boss.complete(SaaSQueue, job.id)
-            console.log('job completed')
+            Logger.info('job completed')
         })
     } catch (e) {
-        console.error('could not finish job successfully', e)
+        Logger.error(`could not finish job successfully \n, ${e}`)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed
@@ -91,7 +93,7 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
 }
 
 export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountIngestion', job.data)
+    Logger.info(`handleGoogleServiceAccountIngestion', ${job.data}`)
     const data: SaaSJob = job.data as SaaSJob
     try {
         const connector = await getConnector(data.connectorId)
@@ -112,12 +114,12 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             await trx.update(connectors).set({
                 status: ConnectorStatus.Connected
             }).where(eq(connectors.id, connector.id))
-            console.log('status updated')
+            Logger.info('status updated')
             await boss.complete(SaaSQueue, job.id)
-            console.log('job completed')
+            Logger.info('job completed')
         })
     } catch (e) {
-        console.error('could not finish job successfully', e)
+        Logger.error(`could not finish job successfully', ${e}`)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed

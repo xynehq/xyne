@@ -22,9 +22,9 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
-import { SearchLogger } from './utils/logger'
+import { ServerLogger } from './logger'
 
-const Logger = new SearchLogger(LOGGERTYPES.server)
+const Logger = new ServerLogger(LOGGERTYPES.server)
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!

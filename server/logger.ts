@@ -1,12 +1,12 @@
-import type { additionalMessage, LOGGERTYPES } from '@/types'
-import { destination, pino } from 'pino'
+import { LOGGERTYPES, type additionalMessage } from '@/types'
+import {pino } from 'pino'
 
 
-export class SearchLogger {
-    private logger: pino.Logger | undefined;
+export class ServerLogger {
+    private logger;
     constructor(loggerType: LOGGERTYPES) {
-        if (process.env.NODE_ENV === 'production') {
-
+        if (process.env.NODE_ENV !== 'production') {
+            let destinationPath = getLoggerDestination(loggerType);
             this.logger = pino({
                 name: loggerType,
                 transport: {
@@ -21,18 +21,13 @@ export class SearchLogger {
                             "stack",
                             "apiErrorHandlerCallStack",
                         ],
-                        //TODO :  set destination
-                        // destination: {
-                        //     dest: '../../logs/mylog.log',
-                        //     minLength: 4096, // Buffer before writing
-                        //     sync: false
-                       // mkdir
-                        // }
+                        destination: destinationPath
                     },
-                }
-            })
+                },
+            },
+            )
         } else {
-            // IF ENV IS IN DEVELOPMENT MODE 
+            //  IF ENV IS IN DEVELOPMENT MODE 
             this.logger = pino({
                 name: loggerType,
                 transport: {
@@ -63,8 +58,20 @@ export class SearchLogger {
     public error = (message: string, optionalMessage?: additionalMessage) => {
         this.logger?.error(optionalMessage, message)
     }
+
+    public debug = (message: string, optionalMessage?: additionalMessage) => {
+        this.logger?.debug(optionalMessage, message)
+    }
+
+    public trace = (message: string, optionalMessage?: additionalMessage) => {
+        this.logger?.trace(optionalMessage, message)
+    }
 }
 
+
+const getLoggerDestination = (loggerType: LOGGERTYPES) => {
+    return `./logs/${loggerType}.log`;
+}
 
 export const getLogger = (loggerType: LOGGERTYPES,) => {
     return pino({

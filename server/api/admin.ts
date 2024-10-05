@@ -1,11 +1,9 @@
 import type { Context } from "hono"
 import { HTTPException } from 'hono/http-exception'
-
-
 import { db } from '@/db/client'
 import { getUserByEmail } from "@/db/user"
 import { getConnectorByExternalId, getConnectors, insertConnector } from "@/db/connector"
-import { ConnectorType, type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection } from "@/types"
+import { ConnectorType, LOGGERTYPES, type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
@@ -14,6 +12,9 @@ const { JwtPayloadKey } = config
 import { generateCodeVerifier, generateState, Google } from 'arctic';
 import type { SelectOAuthProvider } from "@/db/schema"
 import { setCookieByEnv } from "@/utils"
+import { ServerLogger } from "@/logger"
+
+const Logger = new ServerLogger(LOGGERTYPES.api)
 
 
 export const GetConnectors = async (c: Context) => {
@@ -27,7 +28,7 @@ const getAuthorizationUrl = async (c: Context, app: Apps, provider: SelectOAuthP
     const google = new Google(clientId as string, clientSecret, `${config.host}/oauth/callback`);
     const state = generateState()
     const codeVerifier = generateCodeVerifier()
-    console.log('code verifier ', codeVerifier)
+    Logger.info('code verifier ', codeVerifier)
     // adding some data to state
     const newState = JSON.stringify({ app, random: state })
     const url: URL = await google.createAuthorizationURL(newState, codeVerifier, {
@@ -58,7 +59,7 @@ const getAuthorizationUrl = async (c: Context, app: Apps, provider: SelectOAuthP
 export const StartOAuth = async (c: Context) => {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const { app }: OAuthStartQuery = c.req.valid('query')
-    console.log(`${sub} started ${app} OAuth`)
+    Logger.info(`${sub} started ${app} OAuth`)
     const provider = await getOAuthProvider(db, app)
     const url = await getAuthorizationUrl(c, app, provider)
     return c.redirect(url.toString())
@@ -158,13 +159,13 @@ export const AddServiceConnection = async (c: Context) => {
             // Enqueue the background job within the same transaction
             const jobId = await boss.send(SaaSQueue, SaasJobPayload)
 
-            console.log(`Job ${jobId} enqueued for connection ${connector.id}`)
+            Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
             // Commit the transaction if everything is successful
             return c.json({ success: true, message: 'Connection created, job enqueued', id: connector.externalId })
 
         } catch (error) {
-            console.error("Error:", error)
+            Logger.error(`Error: ${error}`)
             // Rollback the transaction in case of any error
             throw new HTTPException(500, { message: 'Error creating connection or enqueuing job' })
         }

@@ -2,9 +2,13 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { users, workspaces } from "./schema";
 import { getUserAndWorkspaceByEmail } from "./user";
+import { ServerLogger } from "@/logger";
+import { LOGGERTYPES } from "@/types";
+
+const Logger =  new ServerLogger(LOGGERTYPES.db)
 
 const seed = async () => {
-    console.log('here')
+    Logger.info('here')
     try {
         const workspaceExternalId = createId();
         // Start a transaction
@@ -20,7 +24,7 @@ const seed = async () => {
                 })
                 .returning();
 
-            console.log('Inserted Workspace:', workspace);
+                Logger.info(`Inserted Workspace:, ${workspace}`);
 
             // Insert a new user associated with the workspace
             const [user] = await tx
@@ -35,12 +39,12 @@ const seed = async () => {
                 })
                 .returning();
 
-            console.log('Inserted User:', user);
+                Logger.info(`Inserted User:', ${user}`);
         });
 
-        console.log('Seeding completed successfully.');
+        Logger.info('Seeding completed successfully.');
     } catch (error) {
-        console.error('Error during seeding:', error);
+        Logger.error(`Error during seeding:, ${error}`);
     }
 
 }

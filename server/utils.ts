@@ -2,12 +2,16 @@ import type { Context } from "hono";
 import { setCookie } from "hono/cookie";
 import type { CookieOptions } from "hono/utils/cookie";
 import fs from "node:fs/promises";
+import { ServerLogger } from "./logger";
+import { LOGGERTYPES } from "./types";
+
+const Logger = new ServerLogger(LOGGERTYPES.utils)
 
 export const checkAndReadFile = async (path: string) => {
     try {
         // Check if the file exists
         await fs.access(path);
-        console.log(`File exists: ${path}`);
+        Logger.info(`File exists: ${path}`);
 
         // Read the file
         const data = JSON.parse(await fs.readFile(path, 'utf8'));
@@ -35,7 +39,7 @@ export const setCookieByEnv = (c: Context, CookieName: string, jwtToken: string,
     if (env === "production") {
         setCookie(c, CookieName, jwtToken, opts)
     } else {
-        console.log('here')
+        Logger.info('here')
         setCookie(c, CookieName, jwtToken, {
             ...opts,
             secure: false,
