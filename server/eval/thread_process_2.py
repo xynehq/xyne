@@ -9,43 +9,57 @@ import multiprocessing
 import numpy as np
 import psutil
 import torch
+from queue import Queue
+from threading import Thread
+import time
 
 # Global variables
 model = None
-device = None
 
 def init_worker():
     """Initialize the model in each worker process"""
-    global model, device
-    
-    # Set torch to use CPU only for worker processes
-    torch.set_num_threads(1)  # Prevent over-subscription
-    
-    # Initialize the model
+    global model
+    # Set torch to use single thread per process to prevent over-subscription
+    torch.set_num_threads(1)
     model = SentenceTransformer('BAAI/bge-small-en-v1.5')
-    model.to('cpu')  # Explicitly move to CPU
+    model.to('cpu')
 
-def get_optimal_workers():
-    """
-    Calculate optimal number of workers based on system resources
-    Specifically optimized for EC2 instances
-    """
-    cpu_count = multiprocessing.cpu_count()
-    memory = psutil.virtual_memory()
+class DocumentProcessor:
+    def __init__(self, output_folder, docs_per_file=5000):
+        self.output_folder = output_folder
+        self.docs_per_file = docs_per_file
+        self.current_batch = []
+        self.total_processed = 0
+        self.file_counter = 0
+        
+    def add_document(self, doc):
+        """Add a document to the current batch"""
+        if doc is not None:
+            self.current_batch.append(doc)
+            
+        # Write batch if we've reached the target size
+        if len(self.current_batch) >= self.docs_per_file:
+            self._write_current_batch()
     
-    # Calculate memory per worker (assuming model needs ~2GB)
-    memory_per_worker = 2 * 1024 * 1024 * 1024  # 2GB in bytes
-    max_workers_by_memory = memory.available // memory_per_worker
+    def _write_current_batch(self):
+        """Write the current batch to a file"""
+        if not self.current_batch:
+            return
+            
+        output_path = os.path.join(self.output_folder, f'docs_{self.file_counter:04d}.json')
+        with open(output_path, 'w', encoding='utf-8') as output_file:
+            json.dump(self.current_batch, output_file, ensure_ascii=False, indent=4)
+            
+        print(f'Wrote {len(self.current_batch)} documents to {output_path}')
+        self.total_processed += len(self.current_batch)
+        self.current_batch = []
+        self.file_counter += 1
     
-    # For EC2, we want to leave some headroom for system processes
-    if cpu_count >= 32:
-        # For large instances (32+ cores), use 50-60% of cores
-        optimal_workers = min(cpu_count // 2, max_workers_by_memory)
-    else:
-        # For smaller instances, use 75% of cores
-        optimal_workers = min(int(cpu_count * 0.75), max_workers_by_memory)
-    
-    return max(1, optimal_workers)
+    def finish(self):
+        """Write any remaining documents"""
+        if self.current_batch:
+            self._write_current_batch()
+        print(f'Total documents processed: {self.total_processed}')
 
 def process_chunk(chunk_data):
     """Process a single chunk of documents"""
@@ -69,7 +83,6 @@ def process_chunk(chunk_data):
             )
             all_embeddings.extend(sub_embeddings)
         
-        # Create output document structure
         output_dict = {
             "put": f"id:namespace:file::{doc_id}",
             "fields": {
@@ -91,102 +104,78 @@ def process_chunk(chunk_data):
         print(f"Error processing chunk {doc_id}: {str(e)}")
         return None
 
-def process_batch(batch_data, num_workers):
-    """Process a batch of documents using multiple processes"""
-    processed_docs = []
+def convert_collection(args):
+    """Main function to process the collection"""
+    print('Converting collection...')
     
+    # Use all available CPU cores
+    num_workers = multiprocessing.cpu_count()
+    print(f"Using all {num_workers} available CPU cores")
+    
+    # Create document processor
+    doc_processor = DocumentProcessor(args.output_folder, docs_per_file=10000)
+    
+    # Count total documents
+    with open(args.collection_path, encoding='utf-8') as f:
+        total_docs = sum(1 for _ in f)
+    
+    print(f"Total documents to process: {total_docs}")
+    
+    # Create a queue to hold the results
+    result_queue = Queue(maxsize=num_workers * 2)  # Buffer some results
+    
+    # Create a flag for the writer thread
+    processing_complete = False
+    
+    def writer_thread():
+        """Thread to handle writing results to files"""
+        while not (processing_complete and result_queue.empty()):
+            try:
+                result = result_queue.get(timeout=1)  # 1 second timeout
+                doc_processor.add_document(result)
+            except Exception:
+                continue
+    
+    # Start the writer thread
+    writer = Thread(target=writer_thread, daemon=True)
+    writer.start()
+    
+    # Process documents using all cores
     with ProcessPoolExecutor(
         max_workers=num_workers,
         initializer=init_worker,
         mp_context=multiprocessing.get_context('spawn')
     ) as executor:
-        futures = []
-        
-        # Submit all tasks
-        for item in batch_data:
-            futures.append(executor.submit(process_chunk, item))
-        
-        # Process results as they complete
-        for future in tqdm(futures, total=len(batch_data), desc="Processing documents"):
-            try:
-                result = future.result()
-                if result is not None:
-                    processed_docs.append(result)
-            except Exception as e:
-                print(f"Error processing document: {str(e)}")
-    
-    return processed_docs
-
-def write_batch_to_file(batch, output_path):
-    """Write a batch of documents to a JSON file"""
-    try:
-        with open(output_path, 'w', encoding='utf-8') as output_file:
-            json.dump(batch, output_file, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"Error writing batch to file: {str(e)}")
-        # Try writing to a backup file
-        backup_path = output_path + '.backup'
-        with open(backup_path, 'w', encoding='utf-8') as output_file:
-            json.dump(batch, output_file, ensure_ascii=False, indent=4)
-
-def convert_collection(args):
-    """Main function to process the collection"""
-    print('Converting collection...')
-    
-    # Get optimal number of workers based on system resources
-    optimal_workers = get_optimal_workers()
-    print(f"Using {optimal_workers} worker processes based on system resources")
-    
-    # Calculate batch sizes based on available memory
-    memory = psutil.virtual_memory()
-    total_memory_gb = memory.total / (1024 ** 3)
-    
-    # Adjust batch size based on available memory
-    if total_memory_gb >= 64:
-        default_batch_size = 1000
-    else:
-        default_batch_size = 500
-    
-    # Count total number of documents
-    with open(args.collection_path, encoding='utf-8') as f:
-        total_docs = sum(1 for _ in f)
-    
-    batch_size = min(args.max_docs_per_file, default_batch_size)
-    num_batches = math.ceil(total_docs / batch_size)
-    
-    print(f"Total documents: {total_docs}")
-    print(f"Processing in {num_batches} batches of up to {batch_size} documents each")
-    
-    # Process documents in batches
-    with open(args.collection_path, encoding='utf-8') as f:
-        for batch_idx in range(num_batches):
+        # Read and process documents
+        with open(args.collection_path, encoding='utf-8') as f:
+            # Create batches for submission
             batch_data = []
-            remaining_docs = total_docs - (batch_idx * batch_size)
-            current_batch_size = min(batch_size, remaining_docs)
+            futures = []
             
-            # Create batch of document data
-            for _ in range(current_batch_size):
+            # Submit initial batch of tasks
+            for line in tqdm(f, total=total_docs, desc="Submitting documents"):
                 try:
-                    line = next(f)
                     doc_id, content = line.split('\t')
-                    batch_data.append((doc_id, content))
-                except StopIteration:
-                    break
+                    future = executor.submit(process_chunk, (doc_id, content))
+                    futures.append(future)
+                except Exception as e:
+                    print(f"Error submitting document: {str(e)}")
+                    continue
             
-            print(f'\nProcessing batch {batch_idx + 1}/{num_batches} (size: {len(batch_data)})')
-            
-            try:
-                processed_docs = process_batch(batch_data, optimal_workers)
-                output_path = os.path.join(args.output_folder, f'docs{batch_idx:02d}.json')
-                write_batch_to_file(processed_docs, output_path)
-                print(f'Successfully wrote {len(processed_docs)} documents to {output_path}')
-                
-                # Clear some memory
-                del processed_docs
-                torch.cuda.empty_cache() if torch.cuda.is_available() else None
-                
-            except Exception as e:
-                print(f'Error processing batch {batch_idx}: {str(e)}')
+            # Process results as they complete
+            for future in tqdm(futures, desc="Processing documents"):
+                try:
+                    result = future.result()
+                    result_queue.put(result)
+                except Exception as e:
+                    print(f"Error getting result: {str(e)}")
+    
+    # Signal completion and wait for writer to finish
+    processing_complete = True
+    writer.join()
+    
+    # Write any remaining documents
+    doc_processor.finish()
     
     print('Processing completed successfully!')
 
@@ -200,8 +189,6 @@ if __name__ == '__main__':
                         help='Path to MS MARCO tsv collection.')
     parser.add_argument('--output-folder', required=True,
                         help='Output folder.')
-    parser.add_argument('--max-docs-per-file', default=1000000, type=int,
-                        help='Maximum number of documents in each json file.')
     
     args = parser.parse_args()
     
