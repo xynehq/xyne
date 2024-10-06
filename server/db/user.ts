@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "./client";
-import { selectUserSchema, userPublicSchema, users, users, workspacePublicSchema, workspaces, type PublicUserWorkspace, type SelectUser, type SelectUserWorkspace } from "./schema";
+import { selectUserSchema, userPublicSchema, users, workspacePublicSchema, workspaces, type PublicUserWorkspace, type SelectUser, type SelectUserWorkspace } from "./schema";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -8,7 +8,7 @@ import type { TxnOrClient } from "@/types";
 import { HTTPException } from "hono/http-exception";
 
 export const getUserAndWorkspaceByEmail = async (trx: TxnOrClient, workspaceId: string, email: string): Promise<PublicUserWorkspace> => {
-    const userAndWorkspace =  await trx
+    const userAndWorkspace = await trx
         .select({
             user: users,
             workspace: workspaces,
@@ -27,11 +27,11 @@ export const getUserAndWorkspaceByEmail = async (trx: TxnOrClient, workspaceId: 
     const userPublic = userPublicSchema.parse(user);
     const workspacePublic = workspacePublicSchema.parse(workspace);
 
-    return { user: userPublic, workspace: workspacePublic }    
+    return { user: userPublic, workspace: workspacePublic }
 }
 
 export const getUserAndWorkspaceByOnlyEmail = async (trx: PgTransaction<any>, email: string) => {
-    return await db
+    return await trx
         .select({
             user: users,
             workspace: workspaces,
@@ -54,7 +54,7 @@ const onlyOne = (res, errorMsg: string) => {
 
 // since email is unique across the users we don't need workspaceId
 export const getUserByEmail = async (trx: TxnOrClient, email: string) => {
-    return await db
+    return await trx
         .select().from(users)
         .where(and(
             eq(users.email, email),

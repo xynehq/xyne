@@ -1,0 +1,182 @@
+schema user {
+    document user {
+        field name type string {
+            indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
+        }
+
+        # primary email
+        field email type string {
+            indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
+        }
+        field app type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+
+        field entity type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+
+        field gender type string {
+            indexing: attribute | summary
+        }
+
+        field photoLink type string {
+            indexing: attribute | summary
+        }
+
+        field aliases type array<string> {
+            indexing: attribute | summary
+        }
+
+        field langauge type string {
+            indexing: attribute | summary
+        }
+
+        # is the user globally visible
+        field includeInGlobalAddressList type bool {
+            indexing: attribute | summary
+        }
+
+        # list of websites associated with the contact
+        field urls type array<string> {
+            indexing: attribute | summary
+        }
+
+        # from the organization object
+        field orgName type string {
+            indexing: attribute | summary
+        }
+
+        field orgJobTitle type string {
+            indexing: attribute | summary
+        }
+
+        field orgDepartment type string {
+            indexing: attribute | summary
+        }
+        field orgLocation type string {
+            indexing: attribute | summary
+        }
+
+        field orgDescription type string {
+            indexing: attribute | summary
+        }
+
+        field isAdmin type bool {
+            indexing: attribute | summary
+        }
+
+        field isDelegatedAdmin type bool {
+            indexing: attribute | summary
+        }
+
+        field suspended type bool {
+            indexing: summary | attribute
+        }
+
+        field archieved type bool {
+            indexing: summary | attribute
+        }
+
+        field creationTime type long {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+        field lastLoggedIn type long {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+        # such sensitive fields we can encrypt
+        # and keep in our own db as metadata
+        # or fetch from api when needed
+        # field phoneNumbers type array<string> {
+        #     indexing: attribute | summary
+        # }
+
+        field birthday type long {
+            indexing: attribute | summary
+        }
+
+        field occupations type array<string> {
+            indexing: attribute | summary
+        }
+
+        # can become a catch-all field
+        # user adds their own custom fields
+        field userDefined type array<string> {
+            indexing: attribute | summary
+        }
+
+        # for directory users
+        field customerId type string {
+            indexing: attribute | summary
+        }
+
+        # external apps store data here
+        field clientData type array<string> {
+            indexing: attribute | summary
+        }
+
+        # Fuzzy matching for the 'name' field
+        field name_fuzzy type string {
+            indexing: input name | index
+            index {
+                enable-bm25
+            }
+            match {
+                gram
+                gram-size: 3
+            }
+        }
+
+        # Fuzzy matching for the 'email' field
+        field email_fuzzy type string {
+            indexing: input email | index
+            index {
+                enable-bm25
+            }
+            match {
+                gram
+                gram-size: 3
+            }
+        }
+    }
+
+    fieldset autocomplete {
+        fields: name, email, app, entity, photoLink
+    }
+
+    fieldset default {
+        fields: name, email, app, entity, photoLink, creationTime
+    }
+
+    rank-profile default {
+        first-phase {
+            expression: bm25(name) + bm25(email)
+        }
+        match-features {
+            bm25(name)
+            bm25(email)
+        }
+    }
+
+     rank-profile autocomplete {
+        first-phase {
+            expression: bm25(name_fuzzy) + bm25(email_fuzzy)
+        }
+        match-features {
+            bm25(name_fuzzy)
+            bm25(email_fuzzy)
+        }
+    }
+}

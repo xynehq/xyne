@@ -4,7 +4,7 @@
 import fs from "node:fs/promises";
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import { type VespaResponse, type File } from "@/types";
+import type { VespaResponse, File, User, VespaFile } from "@/types";
 import { checkAndReadFile, getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
@@ -16,7 +16,7 @@ import { ErrorDeletingDocuments, ErrorGettingDocument, ErrorUpdatingDocument, Er
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`;
 const fileSchema = 'file'; // Replace with your actual schema name
-const peopleSchema = 'people'
+const userSchema = 'user'
 const NAMESPACE = 'namespace'; // Replace with your actual namespace
 const CLUSTER = 'my_content';
 env.backends.onnx.wasm.numThreads = 1;
@@ -83,7 +83,7 @@ async function deleteAllDocuments() {
     }
 }
 
-export const insertDocument = async (document: File) => {
+export const insertDocument = async (document: VespaFile) => {
     try {
         const response = await fetch(
             `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${document.docId}`,
@@ -109,6 +109,32 @@ export const insertDocument = async (document: File) => {
         throw new ErrorInsertingDocument({ docId: document.docId, cause: error as Error, sources: "file" })
     }
 }
+
+export const insertUser = async (user: User) => {
+    try {
+        const response = await fetch(
+            `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.userId}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ fields: document }),
+            }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+            console.log(`Document ${user.userId} inserted successfully:`, data);
+        } else {
+            console.error(`Error inserting document ${user.userId}:`, data);
+        }
+    } catch (error) {
+        console.error(`Error inserting document ${user.userId}:`, error.message);
+    }
+}
+
 
 export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaResponse> => {
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2

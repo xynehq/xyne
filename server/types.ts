@@ -1,10 +1,47 @@
 import config from '@/config'
-import { z } from 'zod'
+import { nativeEnum, z } from 'zod'
 import { Apps, AuthType } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { GoogleTokens } from 'arctic'
-import { admin_directory_v1, google, people_v1, type drive_v3 } from 'googleapis'
+import { JWT, type OAuth2Client } from 'google-auth-library'
+
+export enum GooglePeopleEntity {
+    Contacts = "Contacts",
+    OtherContacts = "OtherContacts",
+    AdminDirectory = "AdminDirectory"
+}
+
+const UserSchema = z.object({
+    name: z.string().min(1),
+    email: z.string().min(1).email(),
+    app: z.nativeEnum(Apps),
+    entity: z.nativeEnum(GooglePeopleEntity),
+    gender: z.string().optional(),
+    photoLink: z.string().optional(),
+    aliases: z.array(z.string()).optional(),
+    langauge: z.string().optional(),
+    includeInGlobalAddressList: z.boolean().optional(),
+    isAdmin: z.boolean().optional(),
+    isDelegatedAdmin: z.boolean().optional(),
+    suspended: z.boolean().optional(),
+    archived: z.boolean().optional(),
+    urls: z.array(z.string()).optional(),
+    orgName: z.string().optional(),
+    orgJobTitle: z.string().optional(),
+    orgDepartment: z.string().optional(),
+    orgLocation: z.string().optional(),
+    orgDescription: z.string().optional(),
+    creationTime: z.number(),
+    lastLoggedIn: z.number().optional(),
+    birthday: z.number().optional(),
+    occupations: z.array(z.string()).optional(),
+    userDefined: z.array(z.string()).optional(),
+    customerId: z.string().optional(),
+    clientData: z.array(z.string()).optional(),
+});
+
+export type User = z.infer<typeof UserSchema>
 
 export interface File {
     docId: string,
@@ -23,15 +60,10 @@ export interface File {
     chunk_embedding: number[]
 }
 
-export enum GooglePeopleSource {
-    Contacts = "Contacts",
-    OtherContacts = "OtherContacts",
-    AdminDirectory = "AdminDirectory"
-}
 
-export type PeopleSource = GooglePeopleSource
-// TODO: turn it into a union the moment PeopleSource has more than one type
-export const PeopleSourceSchema = z.nativeEnum(GooglePeopleSource)
+
+
+export type PeopleEntity = GooglePeopleEntity
 
 export const AutocompleteResultSchema = z.union([
     z.object({
@@ -39,22 +71,52 @@ export const AutocompleteResultSchema = z.union([
         app: z.string().min(1),
         entity: z.string().min(1)
     }),
-    z.object({
-        name: z.string().min(1),
-        email: z.string().min(1),
-        source: PeopleSourceSchema
+    UserSchema.pick({
+        name: true,
+        email: true,
+        app: true,
+        entity: true
     })
 ])
 
 
+export type Entity = PeopleEntity
 
-type GoogleContacts = people_v1.Schema$Person
-type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
+export type WorkspaceEntity = DriveEntity
+
+export enum DriveEntity {
+    Docs = "docs",
+    Sheets = "sheets",
+    Presentation = "presentation",
+    PDF = "pdf",
+    Folder = "folder",
+    Misc = "driveFile",
+    Drawing = "drawing",
+    Form = "form",
+    Script = "script",
+    Site = "site",
+    Map = "map",
+    Audio = "audio",
+    Video = "video",
+    Photo = "photo",
+    ThirdPartyApp = "third_party_app",
+    Image = "image",
+    Zip = "zip",
+    WordDocument = "word_document",
+    ExcelSpreadsheet = "excel_spreadsheet",
+    PowerPointPresentation = "powerpoint_presentation",
+    Text = "text",
+    CSV = "csv",
+}
+
+
+// type GoogleContacts = people_v1.Schema$Person
+// type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
 
 // People graph of google workspace
-type GoogleWorkspacePeople = WorkspaceDirectoryUser | GoogleContacts
+// type GoogleWorkspacePeople = WorkspaceDirectoryUser | GoogleContacts
 
-type PeopleData = GoogleWorkspacePeople
+// type PeopleData = GoogleWorkspacePeople
 
 export const AutocompleteResultsSchema = z.object({
     children: z.array(AutocompleteResultSchema)
@@ -223,9 +285,66 @@ export type SyncConfig = z.infer<typeof SyncConfigSchema>;
 
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>
 
-export enum DriveMime {
-    Docs = "application/vnd.google-apps.document",
-    Sheets = "application/vnd.google-apps.spreadsheet",
-    Slides = "application/vnd.google-apps.presentation",
+
+
+
+namespace Google {
+    export const DriveFileSchema = z.object({
+        id: z.string().nullable(),
+        webViewLink: z.string().nullable(),
+        createdTime: z.string().nullable(),
+        modifiedTime: z.string().nullable(),
+        name: z.string().nullable(),
+        owners: z.array(
+            z.object({
+                displayName: z.string().optional(),
+                emailAddress: z.string().optional(),
+                kind: z.string().optional(),
+                me: z.boolean().optional(),
+                permissionId: z.string().optional(),
+                photoLink: z.string().optional(),
+            })
+        ).optional(),
+        fileExtension: z.string().nullable(),
+        mimeType: z.string().nullable(),
+        permissions: z.array(
+            z.object({
+                id: z.string(),
+                type: z.string(),
+                emailAddress: z.string().nullable(),
+            })
+        ).nullable(),
+    });
+    export type DriveFile = z.infer<typeof DriveFileSchema>
 }
 
+const VespaFileSchema = z.object({
+    docId: z.string(),
+    app: z.string(),
+    entity: z.string(),
+    title: z.string(),
+    url: z.string().nullable(),
+    // we don't want zod to validate this for perf reason
+    chunks: z.any(),// z.array(z.string()),
+    // we don't want zod to validate this field
+    chunk_embeddings: z.any(), // z.record(z.string(), z.array(z.number())),
+    owner: z.string().nullable(),
+    ownerEmail: z.string().nullable(),
+    photoLink: z.string().nullable(),
+    permissions: z.array(z.string()),
+    mimeType: z.string().nullable(),
+});
+
+// Infer the TypeScript type from the Zod schema
+export type VespaFile = z.infer<typeof VespaFileSchema>;
+export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
+    permissions: any[]
+}
+
+
+export type GoogleClient = JWT | OAuth2Client
+
+export type GoogleServiceAccount = {
+    client_email: string,
+    private_key: string,
+}
