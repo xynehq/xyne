@@ -1,11 +1,11 @@
-import { LOGGERTYPES, type TxnOrClient } from "@/types";
+import {  type TxnOrClient } from "@/types";
 import { oauthProviders, type InsertOAuthProvider, type SelectOAuthProvider } from "./schema";
 import { createId } from "@paralleldrive/cuid2";
-import type { Apps } from "@/shared/types";
+import { LOGGERTYPES, type Apps } from "@/shared/types";
 import { eq } from "drizzle-orm";
-import { ServerLogger } from "@/logger";
+import { getLogger } from "@/shared/logger";
 
-const Logger = new ServerLogger(LOGGERTYPES.db)
+const Logger = getLogger(LOGGERTYPES.db)
 
 export const createOAuthProvider = async (trx: TxnOrClient, data: Omit<InsertOAuthProvider, "externalId">) => {
     const externalId = createId();

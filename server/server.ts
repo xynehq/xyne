@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono'
 import { logger } from 'hono/logger'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
-import { addServiceConnectionSchema, createOAuthProvider, LOGGERTYPES, oauthStartQuerySchema, OperationStatus, OperationType, searchSchema, UserRole } from '@/types'
+import { addServiceConnectionSchema, createOAuthProvider,  oauthStartQuerySchema,  searchSchema, UserRole } from '@/types'
 import { AddServiceConnection, CreateOAuthProvider, GetConnectors, StartOAuth } from '@/api/admin'
 import { init as initQueue } from '@/queue'
 import { createBunWebSocket } from 'hono/bun'
@@ -22,9 +22,10 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
-import { ServerLogger } from './logger'
+import { middlewareLogger, getLogger } from '@/shared/logger'
+import { LOGGERTYPES } from '@/shared/types'
 
-const Logger = new ServerLogger(LOGGERTYPES.server)
+// const Logger = new ServerLogger(LOGGERTYPES.server)
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
@@ -35,6 +36,7 @@ const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = 'auth-token'
 
+const Logger = getLogger(LOGGERTYPES.server)
 
 const { upgradeWebSocket, websocket } =
     createBunWebSocket<ServerWebSocket>()
@@ -46,7 +48,7 @@ const AuthMiddleware = jwt({
     cookie: CookieName
 })
 
-app.use('*', logger())
+app.use('*', middlewareLogger(LOGGERTYPES.server))
 
 export const wsConnections = new Map();
 
@@ -216,4 +218,4 @@ const server = Bun.serve({
     port: config.port,
     websocket
 })
-Logger.info(`listening on port: ${config.port}`, {'STATUS' : OperationStatus.success} )
+Logger.info(`listening on port: ${config.port}`, {'STATUS' : 'success'} )

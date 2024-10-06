@@ -2,7 +2,7 @@ import { admin_directory_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
 import fs from "node:fs/promises";
-import { LOGGERTYPES, type File, type SaaSJob, type SaaSOAuthJob } from "@/types";
+import {  type File, type SaaSJob, type SaaSOAuthJob } from "@/types";
 import { JWT, OAuth2Client } from "google-auth-library";
 import path from 'node:path'
 import type PgBoss from "pg-boss";
@@ -16,11 +16,11 @@ import { db } from "@/db/client";
 import { connectors } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
-import { ConnectorStatus } from "@/shared/types";
+import { ConnectorStatus, LOGGERTYPES } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
-import { ServerLogger } from "@/logger";
+import { getLogger } from "@/shared/logger";
 
-const Logger = new ServerLogger(LOGGERTYPES.google)
+const Logger = getLogger(LOGGERTYPES.google)
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
     return new JWT({

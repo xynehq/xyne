@@ -2,10 +2,10 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { users, workspaces } from "./schema";
 import { getUserAndWorkspaceByEmail } from "./user";
-import { ServerLogger } from "@/logger";
-import { LOGGERTYPES } from "@/types";
+import { getLogger } from "@/shared/logger";
+import { LOGGERTYPES } from "@/shared/types";
 
-const Logger =  new ServerLogger(LOGGERTYPES.db)
+const Logger =  getLogger(LOGGERTYPES.db)
 
 const seed = async () => {
     Logger.info('here')

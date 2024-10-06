@@ -1,0 +1,19 @@
+{
+  "name": "shared",
+  "module": "logger.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "hono": "^4.6.3",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2"
+  },
+  "scripts": {
+    "dev" : "bun run test.ts"
+  }
+}

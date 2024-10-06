@@ -1,10 +1,10 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import config from "@/config"
-import { ServerLogger } from '@/logger';
-import { LOGGERTYPES } from '@/types';
+import { getLogger } from '@/shared/logger';
+import { LOGGERTYPES } from '@/shared/types';
 
-const Logger =  new ServerLogger(LOGGERTYPES.db)
+const Logger =  getLogger(LOGGERTYPES.db)
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 Logger.info(url)

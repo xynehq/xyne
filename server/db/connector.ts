@@ -1,13 +1,13 @@
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { connectors, type SelectConnector } from "./schema";
-import { LOGGERTYPES, type ConnectorType, type TxnOrClient } from "@/types";
+import { type ConnectorType, type TxnOrClient } from "@/types";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { eq } from "drizzle-orm";
-import { Apps, AuthType, type ConnectorStatus } from "@/shared/types";
-import { ServerLogger } from "@/logger";
+import { Apps, AuthType, LOGGERTYPES, type ConnectorStatus } from "@/shared/types";
+import { getLogger } from "@/shared/logger";
 
-const Logger = new ServerLogger(LOGGERTYPES.db)
+const Logger = getLogger (LOGGERTYPES.db)
 
 export const insertConnector = async (
     trx: TxnOrClient,

@@ -36,7 +36,7 @@ services:
         max-file: "6"
 
   xyne-db:
-    image: postgres
+    image: postgres:16
     container_name: xyne-db
     environment:
       POSTGRES_USER: xyne
