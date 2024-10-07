@@ -24,7 +24,7 @@ env.backends.onnx.wasm.numThreads = 1;
 env.localModelPath = './'
 env.cacheDir = './'
 
-const Logger = getLogger(LOGGERTYPES.vespa)
+const Logger = getLogger(LOGGERTYPES.server).child({module: 'search'}).child({module: 'vespa'})
 
 const extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
 function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {

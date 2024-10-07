@@ -14,7 +14,7 @@ import type { SelectOAuthProvider } from "@/db/schema"
 import { setCookieByEnv } from "@/utils"
 import { getLogger } from "@/shared/logger"
 
-const Logger = getLogger(LOGGERTYPES.api)
+const Logger = getLogger(LOGGERTYPES.server).child({module: 'admin'})
 
 
 export const GetConnectors = async (c: Context) => {

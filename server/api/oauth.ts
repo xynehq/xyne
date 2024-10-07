@@ -13,7 +13,7 @@ import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 const { JwtPayloadKey } = config
 
-const Logger = getLogger(LOGGERTYPES.api)
+const Logger = getLogger(LOGGERTYPES.server).child({module: 'api'}).child({module: 'oauth'})
 
 interface OAuthCallbackQuery {
     state: string,

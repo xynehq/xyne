@@ -3,13 +3,13 @@ import type { LOGGERTYPES } from './types'
 import * as config from './config'
 import type { MiddlewareHandler, Context, Next } from "hono"
 import {getPath} from 'hono/utils/url'
+import { v4 as uuidv4 } from 'uuid';
 
-const destinationPath = config.default.destinationPath;
 
 export const getLogger = (loggerType: LOGGERTYPES) => {
-    if(process.env.NODE_ENV === 'production') {
+    if(process.env.NODE_ENV !== 'production') {
       return pino({
-            name: loggerType,
+            name: `${loggerType}`,
             transport: {
                 target: 'pino-pretty',
                 options: {
@@ -23,14 +23,12 @@ export const getLogger = (loggerType: LOGGERTYPES) => {
                         "apiErrorHandlerCallStack",
                     ],
                     destination: getLoggerDestination(loggerType),
-                    customPrettifiers: {}
                 },
             },
-        },
-        )
+        },)
     }else {
        return pino({
-            name: loggerType,
+            name: `${loggerType}`,
             transport: {
                 target: 'pino-pretty',
                 options: {
@@ -52,7 +50,7 @@ export const getLogger = (loggerType: LOGGERTYPES) => {
 
 
 const getLoggerDestination = (loggerType: LOGGERTYPES) => {
-    return `./${destinationPath}/${loggerType}.log`;
+    return `./logs/${loggerType}.log`;
 }
 
 
@@ -60,17 +58,22 @@ export const middlewareLogger = (loggerType: LOGGERTYPES): MiddlewareHandler => 
 
     const logger = getLogger(loggerType);
 
-    return async (c: Context, next: Next) => {
+    return async (c: Context, next: Next, optionalMessage?: object) => {
+
+    const requestId = uuidv4();
+     const c_reqId ="requestId" in c.req ? c.req.requestId : requestId;
+     c.set('requestId', c_reqId)
         const { method } = c.req;
         const path = getPath(c.req.raw)
 
         logger.info(
             {
-              requestId: "requestId" in c.req ? c.req.requestId : undefined,
+              requestId: c_reqId,
               request: {
                 method,
                 path,
-              },
+              },    
+              query: c.req.query('query') ? c.req.query('query') : c.req.query('prompt'),      
             },
             "Incoming request",
           )
@@ -84,7 +87,7 @@ export const middlewareLogger = (loggerType: LOGGERTYPES): MiddlewareHandler => 
           if (c.res.ok) {
             logger.info(
                 {
-                  requestId: "requestId" in c.req ? c.req.requestId : undefined,
+                  requestId: "requestId" in c.req ? c.req.requestId : c_reqId,
                   response: {
                     status,
                     ok: String(c.res.ok),
@@ -92,13 +95,33 @@ export const middlewareLogger = (loggerType: LOGGERTYPES): MiddlewareHandler => 
                 },
                 "Request completed",
               )
-          } else {
+          } else if(c.res.status >= 400)  {
             logger.error(
+              {
+                requestId: c_reqId,
+                response: {
+                  status,
+                  err: c.res.body,
+                },
+              },
+              "Request Error",
+            )
+          } else if(c.res.status === 302) {
+            logger.info(
+              {
+                requestId: c_reqId,
+                response: {
+                  status,
+                },
+              },
+              "Request redirected",
+            )
+          }else {
+            logger.info(
                 {
-                  requestId: "requestId" in c.req ? c.req.requestId : undefined,
+                  requestId: c_reqId,
                   response: {
                     status,
-                    err: String(c.res),
                   },
                 },
                 "Request completed",
@@ -106,16 +129,3 @@ export const middlewareLogger = (loggerType: LOGGERTYPES): MiddlewareHandler => 
           }
     }
 }
-
-// function time(start: number): string {
-//     const delta = Date.now() - start
-  
-//     return humanize([delta < 1000 ? delta + "ms" : Math.round(delta / 1000) + "s"])
-//   }
-
-//   function humanize(times: string[]): string {
-//     const [delimiter, separator] = [",", "."]
-//     const orderTimes = times.map((v) => v.replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1" + delimiter))
-  
-//     return orderTimes.join(separator)
-//   }

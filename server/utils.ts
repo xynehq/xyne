@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import { getLogger } from "@/shared/logger";
 import { LOGGERTYPES } from "@/shared/types";
 
-const Logger = getLogger(LOGGERTYPES.utils)
+const Logger = getLogger(LOGGERTYPES.server).child({module: 'utils'})
 
 export const checkAndReadFile = async (path: string) => {
     try {
@@ -39,7 +39,7 @@ export const setCookieByEnv = (c: Context, CookieName: string, jwtToken: string,
     if (env === "production") {
         setCookie(c, CookieName, jwtToken, opts)
     } else {
-        Logger.info('here')
+        Logger.info('Setting Cookie')
         setCookie(c, CookieName, jwtToken, {
             ...opts,
             secure: false,

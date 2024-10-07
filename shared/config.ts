@@ -1,3 +1,3 @@
 export default {
-    destinationPath: '../prod-logs/'
+    destinationPath: 'logs'
 }

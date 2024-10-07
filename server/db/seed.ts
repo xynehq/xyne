@@ -5,7 +5,7 @@ import { getUserAndWorkspaceByEmail } from "./user";
 import { getLogger } from "@/shared/logger";
 import { LOGGERTYPES } from "@/shared/types";
 
-const Logger =  getLogger(LOGGERTYPES.db)
+const Logger =  getLogger(LOGGERTYPES.server).child({module: 'db'}).child({module: 'seed'})
 
 const seed = async () => {
     Logger.info('here')

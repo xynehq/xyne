@@ -3,7 +3,8 @@
   "module": "logger.ts",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/uuid": "^10.0.0"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -14,6 +15,6 @@
     "pino-pretty": "^11.2.2"
   },
   "scripts": {
-    "dev" : "bun run test.ts"
+    "dev": "bun run test.ts"
   }
 }

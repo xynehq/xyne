@@ -1,8 +1,8 @@
-import { Hono, type Context } from 'hono'
+import { type Context, Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
-import { addServiceConnectionSchema, createOAuthProvider,  oauthStartQuerySchema,  searchSchema, UserRole } from '@/types'
+import { addServiceConnectionSchema, createOAuthProvider, oauthStartQuerySchema, searchSchema, UserRole } from '@/types'
 import { AddServiceConnection, CreateOAuthProvider, GetConnectors, StartOAuth } from '@/api/admin'
 import { init as initQueue } from '@/queue'
 import { createBunWebSocket } from 'hono/bun'
@@ -48,7 +48,9 @@ const AuthMiddleware = jwt({
     cookie: CookieName
 })
 
-app.use('*', middlewareLogger(LOGGERTYPES.server))
+const honoMiddlewareLogger = middlewareLogger(LOGGERTYPES.server)
+
+app.use('*', honoMiddlewareLogger)
 
 export const wsConnections = new Map();
 
@@ -78,7 +80,7 @@ export const WsApp = app.get(
 // export type WebSocketApp = typeof WsApp
 
 export const AppRoutes = app.basePath('/api')
-    .use('*', AuthMiddleware)
+    .use('*', honoMiddlewareLogger, AuthMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
     .basePath('/admin')
@@ -100,7 +102,12 @@ app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchem
 //     app.get('/oauth/start', zValidator('query', oauthStartQuerySchema), StartOAuth)
 // }
 const generateToken = async (email: string, role: string, workspaceId: string) => {
-    Logger.info('generating token')
+    Logger.info({
+        email: email,
+        role: role,
+        workspaceId,
+    },
+        'generating token for the following')
     const payload = {
         sub: email,
         role: role,
@@ -150,7 +157,14 @@ app.get(
         const existingUserRes = await getUserByEmail(db, email)
         // if user exists then workspace exists too
         if (existingUserRes && existingUserRes.length) {
-            Logger.info('User found')
+            Logger.info({
+                requestId: c.var.requestId, // Access the request ID
+                user: {
+                    email: user.email,
+                    name: user.name,
+                    verified_email: user.verified_email,
+                },
+            }, "User found and authenticated");
             const existingUser = existingUserRes[0]
             const jwtToken = await generateToken(existingUser.email, existingUser.role, existingUser.workspaceExternalId)
             setCookieByEnv(c, CookieName, jwtToken)
@@ -202,8 +216,8 @@ app.get(
 //     < body > Hello! </body>
 //     </html>)
 // })
-app.get('*', serveStatic({ root: './dist' }));
-app.get('*', serveStatic({ path: './dist/index.html' }));
+app.get('*', honoMiddlewareLogger, serveStatic({ root: './dist' }));
+app.get('*', honoMiddlewareLogger, serveStatic({ path: './dist/index.html' }));
 
 
 export const init = async () => {
@@ -218,4 +232,8 @@ const server = Bun.serve({
     port: config.port,
     websocket
 })
-Logger.info(`listening on port: ${config.port}`, {'STATUS' : 'success'} )
+Logger.info(`listening on port: ${config.port}`)
+
+async function Next(): Promise<void> {
+    await Logger.info(`Next`)
+}

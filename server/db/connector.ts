@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { Apps, AuthType, LOGGERTYPES, type ConnectorStatus } from "@/shared/types";
 import { getLogger } from "@/shared/logger";
 
-const Logger = getLogger (LOGGERTYPES.db)
+const Logger = getLogger (LOGGERTYPES.server).child({module: 'db'}).child({module: 'connector'})
 
 export const insertConnector = async (
     trx: TxnOrClient,

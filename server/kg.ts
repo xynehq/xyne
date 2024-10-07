@@ -8,7 +8,7 @@ import { LOGGERTYPES } from '@/shared/types';
 
 export const initKG = async () => {
 
-    const Logger = getLogger(LOGGERTYPES.kg)
+    const Logger = getLogger(LOGGERTYPES.server).child({module: 'kg'})
 
     let fullDocs = await checkAndReadFile(kgCache)
     if (!fullDocs) {
