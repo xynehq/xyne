@@ -4,6 +4,7 @@ import config from "@/config"
 import { db } from '@/db/client'
 import { getUserAndWorkspaceByOnlyEmail } from "@/db/user";
 import { userPublicSchema, workspacePublicSchema } from "@/db/schema";
+import { HTTPException } from "hono/http-exception";
 const { JwtPayloadKey } = config
 
 // import { generateCodeVerifier, generateState } from "arctic";
@@ -29,7 +30,7 @@ export const GetUserWorkspaceInfo = async (c: Context) => {
     const email = sub
     const userAndWorkspace = await getUserAndWorkspaceByOnlyEmail(db, email)
     if (!userAndWorkspace || userAndWorkspace.length === 0) {
-        return c.json({ error: "User or Workspace not found" }, 404)
+        throw new HTTPException(404, { message: "User or Workspace not found"})
     }
     const { user, workspace } = userAndWorkspace[0];
 

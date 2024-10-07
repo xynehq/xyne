@@ -314,3 +314,6 @@ export const workspacePublicSchema = selectWorkspaceSchema.omit({
     deletedAt: true,
     id: true,
 });
+
+export type PublicUser = z.infer<typeof userPublicSchema>
+export type PublicWorkspace = z.infer<typeof workspacePublicSchema>

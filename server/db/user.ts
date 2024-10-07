@@ -21,7 +21,7 @@ export const getUserAndWorkspaceByEmail = async (trx: PgTransaction<any>, worksp
 }
 
 export const getUserAndWorkspaceByOnlyEmail = async (trx: TxnOrClient, email: string) => {
-    return await db
+    return await trx
         .select({
             user: users,
             workspace: workspaces,
