@@ -476,6 +476,6 @@ const AdminLayout = () => {
   );
 };
 
-export const Route = createFileRoute('/admin/integrations')({
+export const Route = createFileRoute('/_authenticated/admin/integrations')({
   component: AdminLayout,
 });
