@@ -284,12 +284,16 @@ const insertFilesForUser = async (googleClient: GoogleClient, userEmail: string,
 }
 
 type Org = { endDate: null | string }
+type Lang = { preference: string, languageCode: string }
 
 // insert all the people data into vespa
 const insertUsersForWorkspace = async (users: admin_directory_v1.Schema$User[]) => {
     for (const user of users) {
         const currentOrg = user.organizations?.find((org: Org) => !org.endDate) || user.organizations?.[0];
+        const preferredLanguage = user.languages?.find((lang: Lang) => lang.preference === 'preferred')?.languageCode
+            ?? user.languages?.[0]?.languageCode;
         await insertUser({
+            docid: user.id!,
             name: user.name?.displayName ?? user.name?.fullName ?? "",
             email: user.primaryEmail ?? user.emails?.[0],
             app: Apps.GoogleWorkspace,
@@ -297,7 +301,7 @@ const insertUsersForWorkspace = async (users: admin_directory_v1.Schema$User[]) 
             gender: user.gender,
             photoLink: user.thumbnailPhotoUrl ?? "",
             aliases: user.aliases ?? [],
-            langauge: user.languages?.[0],
+            langauge: preferredLanguage,
             includeInGlobalAddressList: user.includeInGlobalAddressList ?? false,
             isAdmin: user.isAdmin ?? false,
             isDelegatedAdmin: user.isDelegatedAdmin ?? false,

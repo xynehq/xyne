@@ -73,7 +73,7 @@ schema file {
   }
 
   fieldset autocomplete {
-    fields: title
+    fields: title, app, entity
   }
   # Hybrid search rank profile combining BM25 for title and chunks, and vector search for chunk embeddings
   rank-profile default {

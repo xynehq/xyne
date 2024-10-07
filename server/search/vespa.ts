@@ -1,10 +1,9 @@
 // import { env, pipeline } from '@xenova/transformers';
 // let { pipeline, env } = await import('@xenova/transformers');
 
-import fs from "node:fs/promises";
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import type { VespaResponse, File, User, VespaFile } from "@/types";
+import type { VespaResponse, File, User, VespaFile, Autocomplete, VespaResult } from "@/types";
 import { checkAndReadFile, getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
@@ -28,7 +27,7 @@ env.cacheDir = './'
 const Logger = getLogger(Subsystem.Search).child({ module: 'vespa' })
 
 const extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
-function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {
+function handleVespaGroupResponse(response: VespaResponse<any>): AppEntityCounts {
     const appEntityCounts: AppEntityCounts = {};
 
     // Navigate to the first level of groups
@@ -106,39 +105,47 @@ export const insertDocument = async (document: VespaFile) => {
     } catch (error) {
         const errMessage = getErrorMessage(error)
         Logger.error(`Error inserting document ${document.docId}:, ${errMessage}`);
-        throw new ErrorInsertingDocument({ docId: document.docId, cause: error as Error, sources: "file" })
+        throw new ErrorInsertingDocument({ docId: document.docId, cause: error as Error, sources: fileSchema })
     }
 }
 
 export const insertUser = async (user: User) => {
     try {
         const response = await fetch(
-            `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.userId}`,
+            `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.docid}`,
             {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ fields: document }),
+                body: JSON.stringify({ fields: user }),
             }
         );
 
         const data = await response.json();
 
         if (response.ok) {
-            console.log(`Document ${user.userId} inserted successfully:`, data);
+            console.log(`Document ${user.docid} inserted successfully:`, data);
         } else {
-            console.error(`Error inserting document ${user.userId}:`, data);
+            console.error(`Error inserting user ${user.docid}:`, data);
         }
     } catch (error) {
-        console.error(`Error inserting document ${user.userId}:`, error.message);
+        const errorMessage = getErrorMessage(error)
+        console.error(`Error inserting user ${user.docid}:`, errorMessage);
     }
 }
 
 
-export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaResponse> => {
+export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaResponse<Autocomplete>> => {
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
-    const yqlQuery = `select * from sources ${fileSchema} where title_fuzzy contains ({maxEditDistance: 2, prefix: true}fuzzy(@query)) and permissions contains @email`;
+    const yqlQuery = `select * from sources file, user
+        where
+            (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and permissions contains @email)
+            or
+            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            );`
 
     const searchPayload = {
         yql: yqlQuery,
@@ -146,7 +153,7 @@ export const autocomplete = async (query: string, email: string, limit: number =
         email,
         hits: limit, // Limit the number of suggestions
         'ranking.profile': 'autocomplete', // Use the autocomplete rank profile
-        'presentation.summary': 'default',
+        'presentation.summary': 'autocomplete',
     };
     try {
         const response = await fetch(`${vespaEndpoint}/search/`, {
@@ -171,105 +178,6 @@ export const autocomplete = async (query: string, email: string, limit: number =
         throw error
     }
 };
-
-const vespaCacheDir = './data/vespa-data.json'
-// export const ingestAll = async (userEmail: string) => {
-//     const fileMetadata = (await listFiles(userEmail)).map(v => {
-//         v.permissions = toPermissionsList(v.permissions)
-//         return v
-//     })
-//     const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
-//     const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
-//     const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
-//     const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
-
-//     const documents: File[] = await googleDocs(googleDocsMetadata)
-//     const driveFiles: File[] = driveFilesToDoc(rest)
-//     console.log(documents.length, driveFiles.length)
-
-//     console.log('generating embeddings')
-//     let allFiles: File[] = [...driveFiles, ...documents]
-//     let vespaData = []
-//     for (const v of allFiles) {
-//         let title_embedding = (await extractor(v.title, { pooling: 'mean', normalize: true })).tolist()[0]
-//         let chunk_embedding = (await extractor(v.chunk, { pooling: 'mean', normalize: true })).tolist()[0]
-//         vespaData.push({
-//             docId: v.docId,
-//             title: v.title,
-//             chunk: v.chunk,
-//             chunkIndex: v.chunkIndex,
-//             url: v.url,
-//             app: v.app,
-//             owner: v.owner,
-//             photoLink: v.photoLink,
-//             ownerEmail: v.ownerEmail,
-//             entity: v.entity,
-//             permissions: v.permissions,
-//             mimeType: v.mimeType,
-//             title_embedding,
-//             chunk_embedding
-//         })
-//         console.clear()
-//         process.stdout.write(`${(vespaData.length / allFiles.length) * 100}`)
-//     }
-
-//     await fs.writeFile(vespaCacheDir, JSON.stringify(vespaData))
-//     return vespaData
-// }
-
-
-export const initVespa = async (email: string) => {
-    let data = await checkAndReadFile(vespaCacheDir)
-    // let docMap = {}
-
-    // for (const doc of data) {
-    //     const docId = doc.docId;
-
-    //     if (docMap[docId] != null) {
-    //         // Add chunks and their embeddings to existing doc
-    //         docMap[docId].chunks.push(doc.chunk);
-    //         docMap[docId].chunk_embeddings[doc.chunkIndex + ""] = doc.chunk_embedding;  // Use the chunk index as string for key
-    //         let tempDoc = docMap[docId]
-    //         delete tempDoc["chunk"]
-    //         delete tempDoc["chunk_embedding"]
-    //         delete tempDoc.chunkIndex
-    //         docMap[docId] = tempDoc
-    //     } else {
-    //         // Create a new doc object with chunks and embeddings
-    //         doc.chunks = [];
-    //         doc.chunk_embeddings = {};
-    //         doc.url = decodeURI(doc.url);
-
-    //         // Check if chunk exists before pushing to chunks array and embedding
-    //         if (doc.chunk) {
-    //             doc.chunks.push(doc.chunk);  // Push the chunk into chunks array
-    //             doc.chunk_embeddings[doc.chunkIndex + ""] = doc.chunk_embedding;  // Add embedding with string key
-    //         }
-    //         // Remove unnecessary fields
-    //         delete doc["title_embedding"];
-    //         delete doc["chunk"];
-    //         delete doc["chunk_embedding"];
-    //         delete doc.chunkIndex
-    //         // Assign the doc to the map
-    //         docMap[docId] = doc;
-    //     }
-    // }
-    // fs.writeFile(vespaCacheDir, JSON.stringify(docMap))
-
-    for (const [docId, doc] of Object.entries(data)) {
-        await insertDocument(doc)
-    }
-
-    // if (!data) {
-    //     data = await ingestAll(email)
-    // }
-
-    // for (const doc of data) {
-    //     doc.docId = `${doc.docId}-${doc.chunkIndex}`
-    //     await insertDocument(doc)
-    // }
-}
-
 
 type YqlProfile = {
     profile: string,
@@ -342,7 +250,7 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
     }
 }
 
-export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number): Promise<VespaResponse | {}> => {
+export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number): Promise<VespaResponse<any> | {}> => {
     const url = `${vespaEndpoint}/search/`;
     const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
@@ -439,30 +347,7 @@ const getDocumentCount = async () => {
     }
 }
 
-export const DocSchema = z.object({
-    pathId: z.string(),
-    id: z.string(),
-    fields: z.object({
-        title: z.string(),
-        chunks: z.array(z.string()),
-        permissions: z.array(z.string()),
-        photoLink: z.string(),
-        owner: z.string(),
-        ownerEmail: z.string(),
-        chunk_embeddings: z.object({
-            type: z.string(),
-            blocks: z.any()
-        }),
-        entity: z.string(),
-        app: z.string(),
-        mimeType: z.string(),
-        docId: z.string()
-    })
-})
-
-type Doc = z.infer<typeof DocSchema>
-
-export const GetDocument = async (docId: string): Promise<Doc> => {
+export const GetDocument = async (docId: string): Promise<VespaResult<VespaFile>> => {
     const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`;
     try {
         const response = await fetch(url, {
@@ -482,7 +367,7 @@ export const GetDocument = async (docId: string): Promise<Doc> => {
     } catch (error) {
         const errMessage = getErrorMessage(error)
         Logger.error(`Error fetching document ${docId}:  ${errMessage}`,);
-        throw new ErrorGettingDocument({ docId, cause: error as Error, sources: "file" })
+        throw new ErrorGettingDocument({ docId, cause: error as Error, sources: fileSchema })
     }
 }
 
@@ -510,7 +395,7 @@ export const UpdateDocumentPermissions = async (docId: string, updatedPermission
     } catch (error) {
         const errMessage = getErrorMessage(error)
         Logger.error(`Error updating permissions for document ${docId}:`, errMessage)
-        throw new ErrorUpdatingDocument({ docId, cause: error as Error, sources: "file" })
+        throw new ErrorUpdatingDocument({ docId, cause: error as Error, sources: fileSchema })
     }
 }
 
@@ -530,22 +415,9 @@ export const DeleteDocument = async (docId: string) => {
     } catch (error) {
         const errMessage = getErrorMessage(error)
         Logger.error(`Error deleting document ${docId}:  ${errMessage}`,)
-        throw new ErrorDeletingDocuments({ cause: error as Error, sources: "file" })
+        throw new ErrorDeletingDocuments({ cause: error as Error, sources: fileSchema })
     }
 }
-
-
-// Example usage:
-// await deleteAllDocuments()
-// console.log('deleted all docs')
-// await initVespa(email)
-// console.log(JSON.stringify(await searchVespa('welcome my friend, let me provide you with a prompt', 'saheb@xynehq.com')))
-// const output = (await searchVespa(query, email))
-// console.log(JSON.stringify(output, null, 2))
-
-// Execute the function
-// getDocumentCount();
-// await autocomplete(query, email)
 
 // Define a type for Entity Counts (where the key is the entity name and the value is the count)
 interface EntityCounts {

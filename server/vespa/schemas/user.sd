@@ -1,5 +1,9 @@
 schema user {
     document user {
+
+        field docid type string {
+            indexing: attribute | summary
+        }
         field name type string {
             indexing: index | attribute | summary
             index {
@@ -84,7 +88,7 @@ schema user {
             indexing: summary | attribute
         }
 
-        field archieved type bool {
+        field archived type bool {
             indexing: summary | attribute
         }
 
@@ -126,29 +130,28 @@ schema user {
         field clientData type array<string> {
             indexing: attribute | summary
         }
-
-        # Fuzzy matching for the 'name' field
-        field name_fuzzy type string {
-            indexing: input name | index
-            index {
-                enable-bm25
-            }
-            match {
-                gram
-                gram-size: 3
-            }
+    }
+    # Fuzzy matching for the 'name' field
+    field name_fuzzy type string {
+        indexing: input name | index
+        index {
+            enable-bm25
         }
+        match {
+            gram
+            gram-size: 3
+        }
+    }
 
-        # Fuzzy matching for the 'email' field
-        field email_fuzzy type string {
-            indexing: input email | index
-            index {
-                enable-bm25
-            }
-            match {
-                gram
-                gram-size: 3
-            }
+    # Fuzzy matching for the 'email' field
+    field email_fuzzy type string {
+        indexing: input email | index
+        index {
+            enable-bm25
+        }
+        match {
+            gram
+            gram-size: 3
         }
     }
 

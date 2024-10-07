@@ -13,6 +13,7 @@ export enum GooglePeopleEntity {
 }
 
 const UserSchema = z.object({
+    docid: z.string().min(1),
     name: z.string().min(1),
     email: z.string().min(1).email(),
     app: z.nativeEnum(Apps),
@@ -68,7 +69,7 @@ export type PeopleEntity = GooglePeopleEntity
 export const AutocompleteResultSchema = z.union([
     z.object({
         title: z.string().min(1),
-        app: z.string().min(1),
+        app: z.nativeEnum(Apps),
         entity: z.string().min(1)
     }),
     UserSchema.pick({
@@ -78,6 +79,8 @@ export const AutocompleteResultSchema = z.union([
         entity: true
     })
 ])
+
+export type Autocomplete = z.infer<typeof AutocompleteResultSchema>
 
 
 export type Entity = PeopleEntity
@@ -125,12 +128,12 @@ export const AutocompleteResultsSchema = z.object({
 export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
 
 // Base interface for Vespa response
-export interface VespaResponse {
-    root: VespaRoot
+export interface VespaResponse<T> {
+    root: VespaRoot<T>
 }
 
 // Root type handling both regular search results and groups
-export interface VespaRoot {
+export interface VespaRoot<T> {
     id: string
     relevance: number
     fields?: {
@@ -144,17 +147,15 @@ export interface VespaRoot {
         results: number
         resultsFull: number
     }
-    children: (VespaResult | VespaGroup)[]
+    children: (VespaResult<T> | VespaGroup)[]
 }
 
 // For regular search results
-export type VespaResult = {
+export type VespaResult<T> = {
     id: string
     relevance: number
-    fields: {
-        title: string
-        [key: string]: any
-    }
+    fields: T
+    pathId?: string
 }
 
 // For grouping response (e.g., app/entity counts)
@@ -285,9 +286,6 @@ export type SyncConfig = z.infer<typeof SyncConfigSchema>;
 
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>
 
-
-
-
 namespace Google {
     export const DriveFileSchema = z.object({
         id: z.string().nullable(),
@@ -320,14 +318,17 @@ namespace Google {
 
 const VespaFileSchema = z.object({
     docId: z.string(),
-    app: z.string(),
+    app: z.nativeEnum(Apps),
     entity: z.string(),
     title: z.string(),
     url: z.string().nullable(),
     // we don't want zod to validate this for perf reason
-    chunks: z.any(),// z.array(z.string()),
+    chunks: z.array(z.string()),
     // we don't want zod to validate this field
-    chunk_embeddings: z.any(), // z.record(z.string(), z.array(z.number())),
+    chunk_embeddings: z.object({
+        type: z.string(),
+        blocks: z.any()
+    }),
     owner: z.string().nullable(),
     ownerEmail: z.string().nullable(),
     photoLink: z.string().nullable(),
