@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 
 export const getLogger = (loggerType: LOGGERTYPES) => {
-    if(process.env.NODE_ENV !== 'production') {
+    if(process.env.NODE_ENV === 'production') {
       return pino({
             name: `${loggerType}`,
             transport: {

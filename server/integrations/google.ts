@@ -20,7 +20,7 @@ import { ConnectorStatus, LOGGERTYPES } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
 import { getLogger } from "@/shared/logger";
 
-const Logger = getLogger(LOGGERTYPES.server).child({module: 'integrations'}).child({module: 'google'})
+const Logger = getLogger(LOGGERTYPES.integrations).child({module: 'google'})
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
     return new JWT({

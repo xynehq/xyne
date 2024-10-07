@@ -44,20 +44,24 @@ export enum ConnectorStatus {
 
 
 export enum LOGGERTYPES {
+    // SERVER SIDE LOGGING
     server = 'SERVER',
     auth = 'AUTH',
     cleanup = 'CLEANUP',
     cronjob = 'CRONJOB',
     ingest = 'INGEST',
-    // integrations = 'INTEGRATIONS',
-    // search = 'SEARCH',
-    // db = 'DB',
-    // api = 'API',
-    // kg = 'KG',
-    // notion = 'NOTION_INTEGRATION',
-    // utils = 'UTILS',
-    // google = 'GOOGLE_INTEGRATION',
-    // vespa = 'VESPA'
+    integrations = 'SERVER/INTEGRATIONS',
+    search = 'SERVER/SEARCH',
+    db = 'SERVER/DB',
+    api = 'SERVER/API',
+    kg = 'SERVER/KG',
+    notion = 'SERVER/NOTION_INTEGRATION',
+    utils = 'SERVER/UTILS',
+    queue= 'SERVER/QUEUE',
+
+    // FRONTEND SIDE LOGGING 
+    client = 'CLIENT',
+    oauth = 'CLIENT/OAUTH',
 }
 
 export enum OperationType {

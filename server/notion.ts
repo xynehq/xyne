@@ -9,7 +9,7 @@ const notion = new Client({
     auth: notionApiKey
 })
 
-const Logger =  getLogger(LOGGERTYPES.server).child({module: 'notion'})
+const Logger =  getLogger(LOGGERTYPES.notion)
 const notionPagesToFiles = async (pages): Promise<File[]> => {
     const crawl = crawler({ client: notion })
     let notionDocs = []

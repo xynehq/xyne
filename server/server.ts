@@ -25,7 +25,6 @@ import { html, raw } from 'hono/html'
 import { middlewareLogger, getLogger } from '@/shared/logger'
 import { LOGGERTYPES } from '@/shared/types'
 
-// const Logger = new ServerLogger(LOGGERTYPES.server)
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
@@ -80,7 +79,7 @@ export const WsApp = app.get(
 // export type WebSocketApp = typeof WsApp
 
 export const AppRoutes = app.basePath('/api')
-    .use('*', honoMiddlewareLogger, AuthMiddleware)
+    .use('*', AuthMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
     .basePath('/admin')
@@ -103,9 +102,11 @@ app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchem
 // }
 const generateToken = async (email: string, role: string, workspaceId: string) => {
     Logger.info({
-        email: email,
-        role: role,
-        workspaceId,
+        tokenInfo: {
+            email: email,
+            role: role,
+            workspaceId,
+        }
     },
         'generating token for the following')
     const payload = {
@@ -216,8 +217,8 @@ app.get(
 //     < body > Hello! </body>
 //     </html>)
 // })
-app.get('*', honoMiddlewareLogger, serveStatic({ root: './dist' }));
-app.get('*', honoMiddlewareLogger, serveStatic({ path: './dist/index.html' }));
+app.get('*',  serveStatic({ root: './dist' }));
+app.get('*',  serveStatic({ path: './dist/index.html' }));
 
 
 export const init = async () => {

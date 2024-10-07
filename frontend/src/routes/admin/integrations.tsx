@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Apps, AuthType, ConnectorStatus } from '@shared/types';
+import { Apps, AuthType, ConnectorStatus, LOGGERTYPES } from '@shared/types';
 import { api, wsClient } from '@/api';
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
@@ -15,6 +15,10 @@ import { cn, getErrorMessage } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Connectors } from '@/types';
 import { OAuthModal } from '@/oauth';
+import pino from 'pino';
+import { getLogger } from '@shared/logger';
+
+const logger:pino.Logger = getLogger(LOGGERTYPES.client).child({module: 'admin'})
 
 const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
     const response = await api.api.admin.service_account.$post({
@@ -26,8 +30,19 @@ const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
     });
     if(!response.ok) {
         const errorText = await response.text();
+        logger.error({
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText
+        },
+        `Failed to upload file`)
         throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
+    logger.info({
+      status: response.status,
+      statusText: response.statusText,
+    },
+    `Successfullt uploaded file`)
     return response.json()
 }
 
@@ -42,8 +57,19 @@ const submitOAuthForm = async (value: OAuthFormData) => {
     });
     if(!response.ok) {
         const errorText = await response.text();
+        logger.error({
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText
+        },
+        `Failed to upload file`)
         throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
+        logger.info({
+      status: response.status,
+      statusText: response.statusText,
+    },
+    `Successfullt uploaded file`)
     return response.json()
 }
 
@@ -70,7 +96,8 @@ export const OAuthForm = ({onSuccess}: {onSuccess:any}) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value);  // Call the async function
+        await submitOAuthForm(value); 
+        logger.info(`OAuth integration added`)// Call the async function
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
@@ -373,7 +400,7 @@ const AdminLayout = () => {
     if (!isPending && data && data.length > 0) {
       setIsIntegratingSA(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount))
       const connector = data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth)
-      console.log(connector)
+      logger.info(`${connector}`)
       if(connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if(connector?.status === ConnectorStatus.Connected) {
@@ -401,10 +428,10 @@ const AdminLayout = () => {
     })
       // setWs(socket)
       socket?.addEventListener('open', () => {
-        console.log('open')
+        logger.info('open')
       })
       socket?.addEventListener('close', () => {
-        console.log('close')
+        logger.info('close')
       })
       socket?.addEventListener('message', (e) => {
         // const message = JSON.parse(e.data);

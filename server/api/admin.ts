@@ -13,8 +13,9 @@ import { generateCodeVerifier, generateState, Google } from 'arctic';
 import type { SelectOAuthProvider } from "@/db/schema"
 import { setCookieByEnv } from "@/utils"
 import { getLogger } from "@/shared/logger"
+import {getPath} from 'hono/utils/url'
 
-const Logger = getLogger(LOGGERTYPES.server).child({module: 'admin'})
+const Logger = getLogger(LOGGERTYPES.api).child({module: 'admin'})
 
 
 export const GetConnectors = async (c: Context) => {
@@ -57,6 +58,13 @@ const getAuthorizationUrl = async (c: Context, app: Apps, provider: SelectOAuthP
 }
 
 export const StartOAuth = async (c: Context) => {
+    const path = getPath(c.req.raw)
+    Logger.info( {
+        reqiestId: c.var.requestId,
+        method: c.req.method,
+        path,
+    },
+    "Started Oauth")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const { app }: OAuthStartQuery = c.req.valid('query')
     Logger.info(`${sub} started ${app} OAuth`)

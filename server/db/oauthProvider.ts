@@ -5,7 +5,7 @@ import { LOGGERTYPES, type Apps } from "@/shared/types";
 import { eq } from "drizzle-orm";
 import { getLogger } from "@/shared/logger";
 
-const Logger = getLogger(LOGGERTYPES.server).child({module: 'db'}).child({module: 'oauth_provider'})
+const Logger = getLogger(LOGGERTYPES.db).child({module: 'oauth_provider'})
 
 export const createOAuthProvider = async (trx: TxnOrClient, data: Omit<InsertOAuthProvider, "externalId">) => {
     const externalId = createId();

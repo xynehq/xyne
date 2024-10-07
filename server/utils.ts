@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import { getLogger } from "@/shared/logger";
 import { LOGGERTYPES } from "@/shared/types";
 
-const Logger = getLogger(LOGGERTYPES.server).child({module: 'utils'})
+const Logger = getLogger(LOGGERTYPES.utils)
 
 export const checkAndReadFile = async (path: string) => {
     try {
