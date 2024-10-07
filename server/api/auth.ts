@@ -2,8 +2,8 @@
 import type { Context } from "hono";
 import config from "@/config"
 import { db } from '@/db/client'
-import { getUserByEmail } from "@/db/user";
-import { getWorkspaceByEmail } from "@/db/workspace";
+import { getUserAndWorkspaceByOnlyEmail } from "@/db/user";
+import { userPublicSchema, workspacePublicSchema } from "@/db/schema";
 const { JwtPayloadKey } = config
 
 // import { generateCodeVerifier, generateState } from "arctic";
@@ -27,13 +27,17 @@ const { JwtPayloadKey } = config
 export const GetUserWorkspaceInfo = async (c: Context) => {
     const { sub } = c.get(JwtPayloadKey)
     const email = sub
-    const workspace = await getWorkspaceByEmail(db, email)
-    if (!workspace) {
-        return c.json({ error: "Workspace not found" }, 404)
+    const userAndWorkspace = await getUserAndWorkspaceByOnlyEmail(db, email)
+    if (!userAndWorkspace || userAndWorkspace.length === 0) {
+        return c.json({ error: "User or Workspace not found" }, 404)
     }
-    const user = await getUserByEmail(db, email)
-    if (!user || !user.length) {
-        return c.json({ error: "User not found" }, 404)
-    }
-    return c.json({user, workspace})
+    const { user, workspace } = userAndWorkspace[0];
+
+    const userPublic = userPublicSchema.parse(user);
+    const workspacePublic = workspacePublicSchema.parse(workspace);
+
+    return c.json({
+        user: userPublic,
+        workspace: workspacePublic,
+})
 }

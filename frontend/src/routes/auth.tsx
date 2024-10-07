@@ -49,7 +49,7 @@ export const Route = createFileRoute('/auth')({
     if (res.ok) {
       const userWorkspace = await res.json();
       // If User & Workspace exists, don't let user visit /auth
-      if (userWorkspace?.user && userWorkspace?.user?.length && userWorkspace?.workspace) {
+      if (userWorkspace?.user && userWorkspace?.workspace) {
         throw redirect({ to: '/' })
       }
     }

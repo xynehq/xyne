@@ -20,7 +20,7 @@ export const getUserAndWorkspaceByEmail = async (trx: PgTransaction<any>, worksp
         )).limit(1)
 }
 
-export const getUserAndWorkspaceByOnlyEmail = async (trx: PgTransaction<any>, email: string) => {
+export const getUserAndWorkspaceByOnlyEmail = async (trx: TxnOrClient, email: string) => {
     return await db
         .select({
             user: users,

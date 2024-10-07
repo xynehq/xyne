@@ -298,3 +298,19 @@ export type SelectSyncHistory = z.infer<typeof selectSyncHistorySchema>
 
 export const selectUserSchema = createSelectSchema(users)
 export type SelectUser = z.infer<typeof selectUserSchema>
+
+export const selectWorkspaceSchema = createSelectSchema(workspaces)
+
+export const userPublicSchema = selectUserSchema.omit({
+    lastLogin: true,
+    createdAt: true,
+    updatedAt: true,
+    deletedAt: true,
+    id: true,
+});
+export const workspacePublicSchema = selectWorkspaceSchema.omit({
+    createdAt: true,
+    updatedAt: true,
+    deletedAt: true,
+    id: true,
+});
