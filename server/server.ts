@@ -1,4 +1,4 @@
-import { type Context, Hono } from 'hono'
+import { type Context, Hono, type Next } from 'hono'
 import { logger } from 'hono/logger'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
@@ -16,7 +16,7 @@ import { db } from '@/db/client'
 import { HTTPException } from 'hono/http-exception'
 import { createWorkspace, getWorkspaceByDomain } from '@/db/workspace'
 import { createUser, getUserByEmail } from '@/db/user'
-import { setCookie } from 'hono/cookie'
+import { getCookie, setCookie } from 'hono/cookie'
 import { serveStatic } from 'hono/bun'
 import config from '@/config'
 import { OAuthCallback } from './api/oauth'
@@ -24,6 +24,8 @@ import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
 import { middlewareLogger, getLogger } from '@/shared/logger'
 import { LOGGERTYPES } from '@/shared/types'
+import { GetUserWorkspaceInfo } from './api/auth'
+
 
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -31,6 +33,7 @@ const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = process.env.GOOGLE_REDIRECT_URI!
 
 const postOauthRedirect = process.env.POST_OAUTH_REDIRECT!
+const frontendBaseURL = process.env.FRONTEND_BASE_URL!
 const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = 'auth-token'
@@ -46,6 +49,31 @@ const AuthMiddleware = jwt({
     secret: jwtSecret,
     cookie: CookieName
 })
+
+// Middleware for frontend routes
+// Checks if there is token in cookie or not
+// If there is token, verify it is valid or not
+// Redirect to auth page if no token or invalid token
+const AuthRedirect = async (c: Context, next: Next) => {
+    const authToken = getCookie(c, CookieName);
+
+    // If no auth token is found
+    if (!authToken) {
+        console.log("Redirected by server - No AuthToken")
+        // Redirect to login page if no token found
+        return c.redirect(`${frontendBaseURL}/auth`) 
+    }
+
+    try {
+        // Verify the token if available
+        await AuthMiddleware(c, next);
+    } catch (err) {
+        console.error(err);
+        console.log("Redirected by server - Error in AuthMW")
+        // Redirect to auth page if token invalid
+        return c.redirect(`${frontendBaseURL}/auth`)
+    }
+};
 
 const honoMiddlewareLogger = middlewareLogger(LOGGERTYPES.server)
 
@@ -82,6 +110,7 @@ export const AppRoutes = app.basePath('/api')
     .use('*', AuthMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
+    .get('/me', GetUserWorkspaceInfo)
     .basePath('/admin')
     // TODO: debug
     // for some reason the validation schema
@@ -178,7 +207,7 @@ app.get(
         if (existingWorkspaceRes && existingWorkspaceRes.length) {
             Logger.info('Workspace found, creating user')
             const existingWorkspace = existingWorkspaceRes[0]
-            const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, existingWorkspace.externalId)
+            const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, UserRole.User, existingWorkspace.externalId)
             const jwtToken = await generateToken(user.email, user.role, user.workspaceExternalId)
             setCookieByEnv(c, CookieName, jwtToken)
             return c.redirect(postOauthRedirect)
@@ -190,7 +219,7 @@ app.get(
         Logger.info('Creating workspace and user')
         const userAcc = await db.transaction(async (trx) => {
             const [workspace] = await createWorkspace(trx, email, domain)
-            const [user] = await createUser(trx, workspace.id, email, name, photoLink, token?.token, "test", UserRole.SuperAdmin, workspace.externalId)
+            const [user] = await createUser(trx, workspace.id, email, name, photoLink, UserRole.SuperAdmin, workspace.externalId)
             return user
         })
 
@@ -217,9 +246,16 @@ app.get(
 //     < body > Hello! </body>
 //     </html>)
 // })
-app.get('*',  serveStatic({ root: './dist' }));
-app.get('*',  serveStatic({ path: './dist/index.html' }));
 
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get('/', AuthRedirect,  serveStatic({ path: './dist/index.html' }));
+app.get('/auth', serveStatic({ path: './dist/index.html' }));
+app.get('/search', AuthRedirect, serveStatic({ path: './dist/index.html' }));
+app.get('/admin/integrations', AuthRedirect, serveStatic({ path: './dist/index.html' }));
+app.get('/oauth/success',  serveStatic({ path: './dist/index.html' }));
+
+// Serve assets (CSS, JS, etc.)
+app.get('/assets/*', serveStatic({ root: './dist' })); 
 
 export const init = async () => {
     await initQueue()

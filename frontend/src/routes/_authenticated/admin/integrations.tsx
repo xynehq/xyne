@@ -1,11 +1,11 @@
 import { Button } from '@/components/ui/button';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, UseNavigateResult } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Apps, AuthType, ConnectorStatus, LOGGERTYPES } from '@shared/types';
+import { Apps, AuthType, ConnectorStatus } from '@shared/types';
 import { api, wsClient } from '@/api';
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
@@ -15,12 +15,8 @@ import { cn, getErrorMessage } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Connectors } from '@/types';
 import { OAuthModal } from '@/oauth';
-import pino from 'pino';
-import { getLogger } from '@shared/logger';
 
-const logger:pino.Logger = getLogger(LOGGERTYPES.admin)
-
-const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
+const submitServiceAccountForm = async (value: ServiceAccountFormData, navigate: UseNavigateResult<string>) => {
     const response = await api.api.admin.service_account.$post({
       form: {
         'service-key': value.file,
@@ -29,24 +25,18 @@ const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
       }
     });
     if(!response.ok) {
+        // If unauthorized or status code is 401, navigate to '/auth'
+        if (response.status === 401) {
+          navigate({ to: '/auth' })
+          throw new Error('Unauthorized')
+        }
         const errorText = await response.text();
-        logger.error({
-          status: response.status,
-          statusText: response.statusText,
-          errorText: errorText
-        },
-        `Failed to upload file`)
         throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
-    logger.info({
-      status: response.status,
-      statusText: response.statusText,
-    },
-    `Successfullt uploaded file`)
     return response.json()
 }
 
-const submitOAuthForm = async (value: OAuthFormData) => {
+const submitOAuthForm = async (value: OAuthFormData, navigate: UseNavigateResult<string>) => {
     const response = await api.api.admin.oauth.create.$post({
       form: {
         'clientId': value.clientId,
@@ -56,20 +46,14 @@ const submitOAuthForm = async (value: OAuthFormData) => {
       }
     });
     if(!response.ok) {
+        // If unauthorized or status code is 401, navigate to '/auth'
+        if (response.status === 401) {
+          navigate({ to: '/auth' })
+          throw new Error('Unauthorized')
+        }
         const errorText = await response.text();
-        logger.error({
-          status: response.status,
-          statusText: response.statusText,
-          errorText: errorText
-        },
-        `Failed to upload file`)
         throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`);
     }
-        logger.info({
-      status: response.status,
-      statusText: response.statusText,
-    },
-    `Successfullt uploaded file`)
     return response.json()
 }
 
@@ -88,6 +72,7 @@ type OAuthFormData = {
 export const OAuthForm = ({onSuccess}: {onSuccess:any}) => {
 
   const { toast } = useToast();
+  const navigate = useNavigate();
   const form = useForm<OAuthFormData>({
     defaultValues: {
       clientId: '',
@@ -96,8 +81,7 @@ export const OAuthForm = ({onSuccess}: {onSuccess:any}) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value); 
-        logger.info(`OAuth integration added`)// Call the async function
+        await submitOAuthForm(value, navigate);  // Call the async function
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
@@ -193,6 +177,7 @@ export const ServiceAccountForm = ({onSuccess}: {onSuccess:any}) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const form = useForm<ServiceAccountFormData>({
     defaultValues: {
@@ -210,7 +195,7 @@ export const ServiceAccountForm = ({onSuccess}: {onSuccess:any}) => {
       }
     
       try {
-        await submitServiceAccountForm(value);  // Call the async function
+        await submitServiceAccountForm(value, navigate);  // Call the async function
         toast({
           title: "File uploaded successfully",
           description: "Integration in progress",
@@ -400,7 +385,7 @@ const AdminLayout = () => {
     if (!isPending && data && data.length > 0) {
       setIsIntegratingSA(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount))
       const connector = data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth)
-      logger.info(`${connector}`)
+      console.log(connector)
       if(connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if(connector?.status === ConnectorStatus.Connected) {
@@ -428,10 +413,10 @@ const AdminLayout = () => {
     })
       // setWs(socket)
       socket?.addEventListener('open', () => {
-        logger.info('open')
+        console.log('open')
       })
       socket?.addEventListener('close', () => {
-        logger.info('close')
+        console.log('close')
       })
       socket?.addEventListener('message', (e) => {
         // const message = JSON.parse(e.data);
@@ -491,6 +476,6 @@ const AdminLayout = () => {
   );
 };
 
-export const Route = createFileRoute('/admin/integrations')({
+export const Route = createFileRoute('/_authenticated/admin/integrations')({
   component: AdminLayout,
 });

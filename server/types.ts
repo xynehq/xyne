@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { Apps, AuthType } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
+import type { GoogleTokens } from 'arctic'
 
 export interface File {
     docId: string,
@@ -123,10 +124,16 @@ export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 // Define an enum for connection types
 export enum ConnectorType {
-    SaaS = 'saas',
-    Database = 'database',
-    API = 'api',
-    File = 'file',
+    // Google, Notion, Github
+    SaaS = 'SaaS',
+    // DuckDB, Postgres, MySQL
+    Database = 'Database',
+    // Weather api?
+    API = 'Api',
+    // Manually uploaded data like pdf
+    File = 'File',
+    // Where we can scrape and crawl
+    Website = 'Website'
 }
 
 export type SaaSJob = {
@@ -142,12 +149,53 @@ export type SaaSJob = {
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
 // very rudimentary
-// temporary roles
 export enum UserRole {
-    User = "user",
-    Admin = "admin",
-    SuperAdmin = "super_admin"
+    User = "User", // can do oauth of their own data or api key based
+    TeamLeader = "TeamLeader", // manage Users
+    Admin = "Admin", // Service account related changes
+    SuperAdmin = "SuperAdmin" // Admin level changes
 }
 
 export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
+
+
+export type OAuthCredentials = GoogleTokens | any
+
+
+export enum SyncCron {
+    // Sync based on a token provided by the external API
+    // Used to track changes since the last sync via change token.
+    ChangeToken = "ChangeToken",
+    // Sync based on querying the API with a last updated or modified timestamp.
+    // Useful when the API allows fetching updated data since a specific time.
+    Partial = "Partial",
+    // Perform a full data sync by fetching everything and 
+    // applying filters like modifiedAt/updatedAt internally.
+    FullSync = "FullSync",
+}
+
+// Define ChangeToken schema
+const ChangeTokenSchema = z.object({
+    token: z.string(),
+    lastSyncedAt: z.coerce.date()
+});
+
+// Define UpdatedAtVal schema
+const UpdatedAtValSchema = z.object({
+    updatedAt: z.coerce.date()
+});
+
+// Define Config schema (either ChangeToken or UpdatedAtVal)
+export const SyncConfigSchema = z.union([ChangeTokenSchema, UpdatedAtValSchema]);
+
+// TypeScript type for Config
+export type SyncConfig = z.infer<typeof SyncConfigSchema>;
+
+export type ChangeToken = z.infer<typeof ChangeTokenSchema>
+
+export enum DriveMime {
+    Docs = "application/vnd.google-apps.document",
+    Sheets = "application/vnd.google-apps.spreadsheet",
+    Slides = "application/vnd.google-apps.presentation",
+}
 

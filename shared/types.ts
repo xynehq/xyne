@@ -2,6 +2,9 @@
 import type { AppRoutes, WsApp } from "@/server"
 
 export enum Apps {
+    // includes everything google
+    GoogleWorkspace = "google-workspace",
+    // more granular
     GoogleDrive = "google-drive"
 }
 
@@ -40,6 +43,17 @@ export enum ConnectorStatus {
     Failed = 'failed',
     // for oauth we will default to this
     NotConnected = 'not-connected'
+}
+
+export enum SyncJobStatus {
+    // never ran
+    NotStarted = 'NotStarted',
+    // Ongoing
+    Started = 'Started',
+    // last status failed
+    Failed = 'Failed',
+    // last status was good
+    Successful = 'Successful'
 }
 
 

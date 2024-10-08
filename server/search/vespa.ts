@@ -10,6 +10,7 @@ import { progress_callback } from '@/utils';
 import config from "@/config";
 import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
 import config from "@/config";
+import { z } from "zod";
 import { getLogger } from "@/shared/logger";
 import { LOGGERTYPES } from "@/shared/types";
 
@@ -401,9 +402,102 @@ const getDocumentCount = async () => {
             Logger.error(`Unexpected response structure:', ${data}`);
         }
     } catch (error) {
-        Logger.error(`Error retrieving document count:, ${error}`);
+        Logger.error('Error retrieving document count:', error);
     }
 }
+
+export const DocSchema = z.object({
+    pathId: z.string(),
+    id: z.string(),
+    fields: z.object({
+        title: z.string(),
+        chunks: z.array(z.string()),
+        permissions: z.array(z.string()),
+        photoLink: z.string(),
+        owner: z.string(),
+        ownerEmail: z.string(),
+        chunk_embeddings: z.object({
+            type: z.string(),
+            blocks: z.any()
+        }),
+        entity: z.string(),
+        app: z.string(),
+        mimeType: z.string(),
+        docId: z.string()
+    })
+})
+
+type Doc = z.infer<typeof DocSchema>
+
+export const GetDocument = async (docId: string): Promise<Doc> => {
+    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`;
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch document: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const document = await response.json();
+        return document;
+    } catch (error) {
+        console.error(`Error fetching document ${docId}:`, error.message);
+        throw error;
+    }
+}
+
+export const UpdateDocumentPermissions = async (docId: string, updatedPermissions: string[]) => {
+    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`
+    try {
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                fields: {
+                    permissions: { "assign": updatedPermissions }
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to update document: ${response.status} ${response.statusText} - ${errorText}`)
+        }
+
+        console.log(`Successfully updated permissions for document ${docId}.`)
+    } catch (error) {
+        console.error(`Error updating permissions for document ${docId}:`, error.message)
+        throw error
+    }
+}
+
+export const DeleteDocument = async (docId: string) => {
+    const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`
+    try {
+        const response = await fetch(url, {
+            method: 'DELETE'
+        })
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Failed to delete document: ${response.status} ${response.statusText} - ${errorText}`)
+        }
+
+        console.log(`Document ${docId} deleted successfully.`)
+    } catch (error) {
+        console.error(`Error deleting document ${docId}:`, error.message)
+        throw error
+    }
+}
+
 
 // Example usage:
 // await deleteAllDocuments()
@@ -425,4 +519,71 @@ interface EntityCounts {
 // Define a type for App Entity Counts (where the key is the app name and the value is the entity counts)
 interface AppEntityCounts {
     [app: string]: EntityCounts;
+}
+
+export const ifDocumentsExist = async (docIds: string[]) => {
+    // Construct the YQL query
+    const yqlIds = docIds.map(id => `"${id}"`).join(', ');
+    const yqlQuery = `select docId from sources * where docId in (${yqlIds})`;
+
+
+    const url = `${VESPA_ENDPOINT}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Search query failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const result = await response.json();
+
+        // Extract the document IDs of the found documents
+        const foundIds = result.root.children?.map(hit => hit.fields.docId) || [];
+
+        // Determine which IDs exist and which do not
+        const existenceMap = docIds.reduce((acc, id) => {
+            acc[id] = foundIds.includes(id);
+            return acc;
+        }, {});
+
+        return existenceMap; // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
+    } catch (error) {
+        console.error(`Error checking documents existence:`, error.message);
+        throw error;
+    }
+};
+
+const getNDocuments = async (n: number) => {
+    // Encode the YQL query to ensure it's URL-safe
+    const yql = encodeURIComponent(`select * from sources ${SCHEMA} where true`);
+
+    // Construct the search URL with necessary query parameters
+    const url = `${VESPA_ENDPOINT}/search/?yql=${yql}&hits=${n}&cluster=${CLUSTER}`;
+
+    try {
+        const response: Response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch document count: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const data = await response.json();
+
+        return data
+    } catch (error) {
+        console.error('Error retrieving document count:', error);
+    }
 }

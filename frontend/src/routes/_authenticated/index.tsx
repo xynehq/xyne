@@ -9,7 +9,7 @@ import DocsSvg from '@/assets/docs.svg'
 import SlidesSvg from '@/assets/slides.svg'
 import SheetsSvg from '@/assets/sheets.svg'
 import DriveSvg from '@/assets/drive.svg'
-import NotionPageSvg from '../assets/notionPage.svg'
+import NotionPageSvg from '@/assets/notionPage.svg'
 
 
 import { Input } from '@/components/ui/input'
@@ -168,6 +168,15 @@ export const Index = () => {
             }
 
           })
+          
+          if (!response.ok) {
+            // If unauthorized or status code is 401, navigate to '/auth'
+            if (response.status === 401) {
+              navigate({to: '/auth'})
+              throw new Error('Unauthorized')
+            }
+          }
+
           const data = await response.json();
           if(data.children && data.children?.length) {
             // Assuming data has a structure like: { children: [{ fields: { title: '...' } }] }
@@ -267,6 +276,13 @@ export const Index = () => {
         }
       } else {
         const errorText = await response.text();
+        if (!response.ok) {
+          // If unauthorized or status code is 401, navigate to '/auth'
+          if (response.status === 401) {
+            navigate({ to: '/auth' })
+            throw new Error('Unauthorized');
+          }
+        }
         throw new Error(`Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`);
       }
     } catch (error) {
@@ -452,6 +468,6 @@ export const Index = () => {
   )
 }
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute('/_authenticated/')({
   component: Index,
 })
