@@ -3,12 +3,16 @@
 The [FiQA](https://sites.google.com/view/fiqa/home) (Financial Question Answering) dataset is a valuable resource for financial questions and answers,  This README walks through downloading the dataset, processing it for Vespa, feeding it into the Vespa search engine, and evaluating the results using `pytrec_eval`.
 
 you can easily download the dataset from [BeIR](https://github.com/beir-cellar/beir?tab=readme-ov-file) or just hit the below commands commands
-	
-	cd server/eval
-	
-    wget https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/fiqa.zip -P  data
+		
+			
+	cd server/eval && wget https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/fiqa.zip -P  data
+or
+   
 
-    unzip data/fiqa.zip
+     cd server/eval && curl -o data/fiqa.zip https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/fiqa.zip
+   _
+
+     unzip data/fiqa.zip -d data
     
 Before proceeding, we also need to convert the qrels (query relevance) file into TREC format
 
