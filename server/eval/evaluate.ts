@@ -6,7 +6,8 @@ import PQueue from "p-queue";
 import { searchVespa } from "@/search/vespa";
 const readline = require('readline');
 env.backends.onnx.wasm.numThreads = 1;
-
+env.localModelPath = '../'
+env.cacheDir = '../'
 
 const processedResultsData: string[] = []
 let counts = 0

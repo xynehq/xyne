@@ -5,6 +5,9 @@ const { env } = transformers;
 import { getExtractor } from "@/embedding";
 import { chunkDocument } from "@/chunks";
 env.backends.onnx.wasm.numThreads = 1;
+env.localModelPath = '../'
+env.cacheDir = '../'
+
 const SCHEMA = 'file'; // Replace with your actual schema name
 const NAMESPACE = 'namespace';
 
@@ -106,7 +109,9 @@ const process_data = async (filePath: string) => {
 
                 const t2 = performance.now();
                 totalProcessingTime += (t2 - t1);
-                console.log(`Processed ${totalProcessed} lines. Processing time: ${totalProcessingTime}ms`);
+                process.stdout.cursorTo(0);
+                process.stdout.clearLine(0);
+                process.stdout.write(`Processed ${totalProcessed} lines. Processing time: ${totalProcessingTime}ms`);
 
                 if (currentFileDocsCount >= docsPerFile) {
                     // Write remaining batch if any
@@ -150,11 +155,11 @@ const process_data = async (filePath: string) => {
 
         let totalDocsInFiles = 0;
         for (let i = 1; i <= currentFileCount; i++) {
-            const fileName = `process_data_${i}.json`;
+            const fileName = `data/output/process_data_${i}.json`;
             const fileContent = await fs.promises.readFile(fileName, 'utf8');
             const parsedData = JSON.parse(fileContent);
             totalDocsInFiles += parsedData.length;
-            console.log(`File ${fileName}: ${parsedData.length} documents`);
+            console.log(`File process_data_${i}.json: ${parsedData.length} documents`);
         }
 
         if (linesRead !== totalProcessed) {
