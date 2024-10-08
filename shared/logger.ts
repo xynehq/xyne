@@ -1,10 +1,11 @@
 import { pino, type Logger } from 'pino'
 import type { LOGGERTYPES } from './types'
-import * as config from './config'
 import type { MiddlewareHandler, Context, Next } from "hono"
 import {getPath} from 'hono/utils/url'
 import { v4 as uuidv4 } from 'uuid';
 
+
+// SERVER SIDE LOGGER 
 
 export const getLogger = (loggerType: LOGGERTYPES) => {
     if(process.env.NODE_ENV === 'production') {

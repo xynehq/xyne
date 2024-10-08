@@ -62,6 +62,7 @@ export enum LOGGERTYPES {
     // FRONTEND SIDE LOGGING 
     client = 'CLIENT',
     oauth = 'CLIENT/OAUTH',
+    admin = 'CLIENT/ADMIN',
 }
 
 export enum OperationType {

@@ -18,7 +18,7 @@ import { OAuthModal } from '@/oauth';
 import pino from 'pino';
 import { getLogger } from '@shared/logger';
 
-const logger:pino.Logger = getLogger(LOGGERTYPES.client).child({module: 'admin'})
+const logger:pino.Logger = getLogger(LOGGERTYPES.admin)
 
 const submitServiceAccountForm = async (value: ServiceAccountFormData) => {
     const response = await api.api.admin.service_account.$post({

@@ -1,5 +1,5 @@
 import { Apps, LOGGERTYPES } from "@shared/types";
-import { getLogger} from '@shared/logger'
+import { getLogger } from '@shared/logger'
 import * as pino from 'pino'
 
 const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
@@ -12,7 +12,7 @@ export class OAuthModal {
     private windowRef: Window | null = null;
     private intervalId: number | null = null;
     private completed = false; // Flag to prevent multiple resolve/reject calls
-    private logger:pino.Logger = getLogger(LOGGERTYPES.client).child({module: 'oauth'})
+    private logger:pino.Logger = getLogger(LOGGERTYPES.oauth)
 
     constructor(
         // connectorId: string;
@@ -27,6 +27,8 @@ export class OAuthModal {
     public startAuth(app: Apps) {
         return new Promise((resolve, reject) => {
             try {
+                //clientLog({currentApp: app}, 'Starting OAuth')
+                this.logger.info({currentApp: app}, 'Starting OAuth')
                 this.openAuthWindow(`${authUrl}?app=${app}`);
                 this.monitorWindow(resolve, reject);
             } catch (error) {
@@ -39,7 +41,7 @@ export class OAuthModal {
     private openAuthWindow(url: string) {
         const left = window.screen.width / 2 - this.width / 2;
         const top = window.screen.height / 2 - this.height / 2;
-
+        this.logger.info('Opened OAuth Window')
         const features = `width=${this.width},height=${this.height},top=${top},left=${left},status=no,menubar=no,toolbar=no`;
 
         this.windowRef = window.open(url, '_blank', features);
@@ -66,11 +68,7 @@ export class OAuthModal {
 
             try {
                 const currentUrl = this.windowRef?.location.href;
-                this.logger.info({
-                    monitorDetails : {
-                        url: currentUrl,
-                    }
-                }, "Monitoring window")
+                this.logger.info( "Monitoring window")
                 if (currentUrl && (currentUrl === successUrl)) {
                     // When the popup window reaches the success URL, stop monitoring
                     window.clearInterval(this.intervalId!);
