@@ -9,7 +9,6 @@ import { checkAndReadFile } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
 import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
-import config from "@/config";
 import { z } from "zod";
 import { getLogger } from "@/shared/logger";
 import { LOGGERTYPES } from "@/shared/types";
@@ -447,7 +446,7 @@ export const GetDocument = async (docId: string): Promise<Doc> => {
         const document = await response.json();
         return document;
     } catch (error) {
-        console.error(`Error fetching document ${docId}:`, error.message);
+        Logger.error(`Error fetching document ${docId}:  ${error.message}`,);
         throw error;
     }
 }
@@ -472,9 +471,9 @@ export const UpdateDocumentPermissions = async (docId: string, updatedPermission
             throw new Error(`Failed to update document: ${response.status} ${response.statusText} - ${errorText}`)
         }
 
-        console.log(`Successfully updated permissions for document ${docId}.`)
+        Logger.info(`Successfully updated permissions for document ${docId}.`)
     } catch (error) {
-        console.error(`Error updating permissions for document ${docId}:`, error.message)
+        Logger.error(`Error updating permissions for document ${docId}:`, error.message)
         throw error
     }
 }
@@ -491,9 +490,9 @@ export const DeleteDocument = async (docId: string) => {
             throw new Error(`Failed to delete document: ${response.status} ${response.statusText} - ${errorText}`)
         }
 
-        console.log(`Document ${docId} deleted successfully.`)
+        Logger.info(`Document ${docId} deleted successfully.`)
     } catch (error) {
-        console.error(`Error deleting document ${docId}:`, error.message)
+        Logger.error(`Error deleting document ${docId}:  ${error.message}`, )
         throw error
     }
 }
@@ -555,7 +554,7 @@ export const ifDocumentsExist = async (docIds: string[]) => {
 
         return existenceMap; // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
     } catch (error) {
-        console.error(`Error checking documents existence:`, error.message);
+        Logger.error(`Error checking documents existence:  ${error.message}`, );
         throw error;
     }
 };
@@ -584,6 +583,6 @@ const getNDocuments = async (n: number) => {
 
         return data
     } catch (error) {
-        console.error('Error retrieving document count:', error);
+        Logger.error(`Error retrieving document count: , ${error}`);
     }
 }

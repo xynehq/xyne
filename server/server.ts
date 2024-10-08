@@ -59,7 +59,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
 
     // If no auth token is found
     if (!authToken) {
-        console.log("Redirected by server - No AuthToken")
+        Logger.warn("Redirected by server - No AuthToken")
         // Redirect to login page if no token found
         return c.redirect(`${frontendBaseURL}/auth`) 
     }
@@ -68,8 +68,8 @@ const AuthRedirect = async (c: Context, next: Next) => {
         // Verify the token if available
         await AuthMiddleware(c, next);
     } catch (err) {
-        console.error(err);
-        console.log("Redirected by server - Error in AuthMW")
+        Logger.error(`${err}`);
+        Logger.warn("Redirected by server - Error in AuthMW")
         // Redirect to auth page if token invalid
         return c.redirect(`${frontendBaseURL}/auth`)
     }
@@ -261,7 +261,7 @@ export const init = async () => {
     await initQueue()
 }
 init().catch(e => {
-    Logger.error(e)
+    Logger.error(`${e}`)
 })
 
 const server = Bun.serve({

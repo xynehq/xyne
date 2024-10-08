@@ -116,7 +116,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
             stats.updated += 1
         } catch (e) {
             // catch the 404 error
-            console.error(`Could not get document ${docId}, probably does not exist, ${e}`)
+            Logger.error(`Could not get document ${docId}, probably does not exist, ${e}`)
             stats.added += 1
         }
         // for these mime types we fetch the file
@@ -146,13 +146,13 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
     } else if (change.driveId) {
         // TODO: handle this once we support multiple drives
     } else {
-        console.error('Could not handle change: ', change)
+        Logger.error(`Could not handle change: ', ${change}`)
     }
     return stats
 }
 
 export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleOAuthChanges')
+    Logger.info('handleGoogleOAuthChanges')
     const data = job.data
     const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
     for (const syncJob of syncJobs) {
@@ -177,7 +177,7 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
             // as it is already removed
             // we should still update it in that case?
             if (changes?.length && newStartPageToken && newStartPageToken !== config.token) {
-                console.log(`total changes:  ${changes.length}`)
+                Logger.info(`total changes:  ${changes.length}`)
                 for (const change of changes) {
                     let changeStats = await handleGoogleDriveChange(change, oauth2Client, user.email)
                     stats = mergeStats(stats, changeStats)
@@ -204,11 +204,11 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                         lastRanOn: new Date(),
                     })
                 })
-                console.log(`Changes successfully synced: ${JSON.stringify(stats)}`)
+                Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error)
-            console.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
+            Logger.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
             const config: ChangeToken = syncJob.config as ChangeToken
             const newConfig = { token: config.token as string, lastSyncedAt: config.lastSyncedAt.toISOString() }
             await insertSyncHistory(db, {
@@ -231,7 +231,7 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
 }
 
 export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountChanges')
+    Logger.info('handleGoogleServiceAccountChanges')
     const data = job.data
     const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.ServiceAccount)
     for (const syncJob of syncJobs) {
@@ -254,7 +254,7 @@ export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBos
             // as it is already removed
             // we should still update it in that case?
             if (changes?.length && newStartPageToken && newStartPageToken !== config.token) {
-                console.log(`total changes:  ${changes.length}`)
+                Logger.info(`total changes:  ${changes.length}`)
                 for (const change of changes) {
                     let changeStats = await handleGoogleDriveChange(change, jwtClient, user.email)
                     stats = mergeStats(stats, changeStats)
@@ -281,11 +281,11 @@ export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBos
                         lastRanOn: new Date(),
                     })
                 })
-                console.log(`Changes successfully synced: ${JSON.stringify(stats)}`)
+                Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error)
-            console.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
+            Logger.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
             const config: ChangeToken = syncJob.config as ChangeToken
             const newConfig = { token: config.token as string, lastSyncedAt: config.lastSyncedAt.toISOString() }
             await insertSyncHistory(db, {
@@ -481,7 +481,7 @@ const scopes = [
 ];
 
 const getFile = async (client: GoogleClient, fileId: string): Promise<drive_v3.Schema$File> => {
-    console.log('getFile')
+    Logger.info('getFile')
     const drive = google.drive({ version: "v3", auth: client });
     const fields = "id, webViewLink, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
     const file: GaxiosResponse<drive_v3.Schema$File> = await drive.files.get({ fileId, fields })
@@ -548,7 +548,7 @@ const sendWebsocketMessage = (message: string, connectorId: string) => {
 const extractor = await getExtractor()
 
 const getFileContent = async (client: GoogleClient, file: drive_v3.Schema$File, entity) => {
-    console.log('getFileContent')
+    Logger.info('getFileContent')
     const docs = google.docs({ version: "v1", auth: client });
     const documentContent = await docs.documents.get({
         documentId: file.id as string,

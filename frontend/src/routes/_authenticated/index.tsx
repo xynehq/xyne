@@ -22,8 +22,11 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from '@/api';
 import HighlightedText from '@/components/Highlight';
-import { FileResponse } from '@shared/types';
+import { FileResponse, LOGGERTYPES } from '@shared/types';
 import { Autocomplete, Groups } from '@/types';
+import { getLogger } from '@shared/logger';
+
+const logger = getLogger(LOGGERTYPES.client).child({module: 'routes/_authenticated'})
 
 export function SearchInfo({info}: {info: string}) {
   return (
@@ -185,7 +188,7 @@ export const Index = () => {
           }
 
         } catch (error) {
-          console.error('Error fetching autocomplete results:', error);
+          logger.error(`Error fetching autocomplete results:', ${error}`);
         }
       })();
     }, 300); // 300ms debounce
@@ -286,7 +289,7 @@ export const Index = () => {
         throw new Error(`Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`);
       }
     } catch (error) {
-      console.error('Error fetching search results:', error);
+      logger.error(`Error fetching search results:', ${error}`);
       setResults([]); // Clear results on error
     }
   };

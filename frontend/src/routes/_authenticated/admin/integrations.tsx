@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Apps, AuthType, ConnectorStatus } from '@shared/types';
+import { Apps, AuthType, ConnectorStatus, LOGGERTYPES } from '@shared/types';
 import { api, wsClient } from '@/api';
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
@@ -15,6 +15,9 @@ import { cn, getErrorMessage } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Connectors } from '@/types';
 import { OAuthModal } from '@/oauth';
+import { getLogger } from '@shared/logger';
+
+const logger = getLogger(LOGGERTYPES.client).child({module: '_authenticated/admin'})
 
 const submitServiceAccountForm = async (value: ServiceAccountFormData, navigate: UseNavigateResult<string>) => {
     const response = await api.api.admin.service_account.$post({
@@ -385,7 +388,7 @@ const AdminLayout = () => {
     if (!isPending && data && data.length > 0) {
       setIsIntegratingSA(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount))
       const connector = data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth)
-      console.log(connector)
+      logger.info(connector)
       if(connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if(connector?.status === ConnectorStatus.Connected) {
@@ -413,10 +416,10 @@ const AdminLayout = () => {
     })
       // setWs(socket)
       socket?.addEventListener('open', () => {
-        console.log('open')
+        logger.info('open')
       })
       socket?.addEventListener('close', () => {
-        console.log('close')
+        logger.info('close')
       })
       socket?.addEventListener('message', (e) => {
         // const message = JSON.parse(e.data);

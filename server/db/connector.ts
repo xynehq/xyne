@@ -142,7 +142,7 @@ export const getOAuthConnectorWithCredentials = async (trx: TxnOrClient, connect
             const updatedConnector = await updateConnector(trx, oauthRes.id, {
                 oauthCredentials: JSON.stringify(tokens)
             })
-            console.log(`Connector successfully updated: ${updatedConnector.id}`)
+            Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
             oauthRes.oauthCredentials = tokens
         } else {
             throw new Error(`Token has to refresh but ${oauthRes.app} app not yet supported`)
