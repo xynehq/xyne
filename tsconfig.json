@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "@/server/*": [
+                "server/*"
+            ],
+            "@/*": [
+                "./*"
+            ],
+            "@shared/*": [
+                "shared/*"
+            ]
+        },
+    },
+    "include": [
+        "server",
+        "shared"
+    ],
+    "references": [
+        {
+            "path": "./server"
+        },
+        {
+            "path": "./frontend"
+        }
+    ]
+}

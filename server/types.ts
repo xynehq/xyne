@@ -3,7 +3,7 @@ import { nativeEnum, z } from 'zod'
 import { Apps, AuthType } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
-import type { GoogleTokens } from 'arctic'
+import type { GoogleTokens, Notion } from 'arctic'
 import { JWT, type OAuth2Client } from 'google-auth-library'
 
 export enum GooglePeopleEntity {
@@ -11,6 +11,26 @@ export enum GooglePeopleEntity {
     OtherContacts = "OtherContacts",
     AdminDirectory = "AdminDirectory"
 }
+
+const VespaFileSchema = z.object({
+    docId: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: z.string(),
+    title: z.string(),
+    url: z.string().nullable(),
+    // we don't want zod to validate this for perf reason
+    chunks: z.array(z.string()),
+    // we don't want zod to validate this field
+    chunk_embeddings: z.object({
+        type: z.string(),
+        blocks: z.any()
+    }),
+    owner: z.string().nullable(),
+    ownerEmail: z.string().nullable(),
+    photoLink: z.string().nullable(),
+    permissions: z.array(z.string()),
+    mimeType: z.string().nullable(),
+});
 
 const UserSchema = z.object({
     docid: z.string().min(1),
@@ -44,46 +64,32 @@ const UserSchema = z.object({
 
 export type User = z.infer<typeof UserSchema>
 
-export interface File {
-    docId: string,
-    title: string,
-    chunk: string,
-    chunkIndex: number,
-    url: string,
-    app: string,
-    entity: string,
-    permissions: string[],
-    owner: string,
-    ownerEmail: string,
-    photoLink: string,
-    mimeType: string,
-    title_embedding: number[],
-    chunk_embedding: number[]
-}
-
-
-
-
 export type PeopleEntity = GooglePeopleEntity
 
-export const AutocompleteResultSchema = z.union([
-    z.object({
-        title: z.string().min(1),
-        app: z.nativeEnum(Apps),
-        entity: z.string().min(1)
-    }),
-    UserSchema.pick({
-        name: true,
-        email: true,
-        app: true,
-        entity: true
-    })
-])
+const AutocompleteFileSchema = VespaFileSchema.pick({
+    title: true,
+    app: true,
+    entity: true
+})
+const AutocompleteUserSchema = UserSchema.pick({
+    name: true,
+    email: true,
+    app: true,
+    entity: true
+})
 
+export const AutocompleteResultSchema = z.union([AutocompleteFileSchema, AutocompleteUserSchema])
+
+// export type Autocomplete = z.infer<typeof AutocompleteFileSchema> | z.infer<typeof AutocompleteUserSchema>  
 export type Autocomplete = z.infer<typeof AutocompleteResultSchema>
 
 
-export type Entity = PeopleEntity
+export type Entity = PeopleEntity | DriveEntity | NotionEntity
+
+export enum NotionEntity {
+    Page = "page",
+    Database = "database"
+}
 
 export type WorkspaceEntity = DriveEntity
 
@@ -147,7 +153,7 @@ export interface VespaRoot<T> {
         results: number
         resultsFull: number
     }
-    children: (VespaResult<T> | VespaGroup)[]
+    children: T[] //(VespaResult<T> | VespaGroup)[]
 }
 
 // For regular search results
@@ -171,17 +177,13 @@ export interface VespaGroup {
 }
 
 
-export interface XyneSearchResponse {
-
-}
-
 export const searchSchema = z.object({
     query: z.string(),
     groupCount: z.union([z.string(), z.undefined(), z.null()]).transform(x => x ? x === 'true' : false).pipe(z.boolean()).optional(),
     offset: z.union([z.string(), z.undefined(), z.null()]).transform(x => Number(x ?? 0)).pipe(z.number().min(0)).optional(),
     // removed min page size for filters
     page: z.union([z.string(), z.undefined(), z.null()]).transform(x => Number(x ?? config.page)).pipe(z.number()).optional(),
-    app: z.string().min(1).optional(),
+    app: z.nativeEnum(Apps).optional(),
     entity: z.string().min(1).optional()
 })
 
@@ -316,28 +318,9 @@ namespace Google {
     export type DriveFile = z.infer<typeof DriveFileSchema>
 }
 
-const VespaFileSchema = z.object({
-    docId: z.string(),
-    app: z.nativeEnum(Apps),
-    entity: z.string(),
-    title: z.string(),
-    url: z.string().nullable(),
-    // we don't want zod to validate this for perf reason
-    chunks: z.array(z.string()),
-    // we don't want zod to validate this field
-    chunk_embeddings: z.object({
-        type: z.string(),
-        blocks: z.any()
-    }),
-    owner: z.string().nullable(),
-    ownerEmail: z.string().nullable(),
-    photoLink: z.string().nullable(),
-    permissions: z.array(z.string()),
-    mimeType: z.string().nullable(),
-});
-
 // Infer the TypeScript type from the Zod schema
-export type VespaFile = z.infer<typeof VespaFileSchema>;
+export type VespaFile = z.infer<typeof VespaFileSchema>
+
 export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
     permissions: any[]
 }

@@ -3,7 +3,7 @@
 
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import type { VespaResponse, File, User, VespaFile, Autocomplete, VespaResult } from "@/types";
+import type { VespaResponse, User, VespaFile, Autocomplete, VespaResult } from "@/types";
 import { checkAndReadFile, getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";

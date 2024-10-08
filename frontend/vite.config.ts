@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
         "@": path.resolve(import.meta.dirname, "./src"),
         "@server": path.resolve(import.meta.dirname, "../server"),
         "@shared": path.resolve(import.meta.dirname, "../shared"),
+        "shared": path.resolve(import.meta.dirname, "../shared"),
       },
     },
     server: {

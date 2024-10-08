@@ -30,15 +30,15 @@ export const SearchApi = async (c: Context) => {
     const { sub } = c.get(JwtPayloadKey)
     const email = sub
     let { query, groupCount: gc, offset, page, app, entity } = c.req.valid('query');
-    let groupCount = {}
+    let groupCount: any = {}
     let results = {}
-    query = decodeURIComponent(query)
+    const decodedQuery = decodeURIComponent(query)
     if (gc) {
         groupCount = await groupVespaSearch(query, email)
-        results = await searchVespa(query, email, app, entity, page, offset)
+        results = await searchVespa(decodedQuery, email, app, entity, page, offset)
 
     } else {
-        results = await searchVespa(query, email, app, entity, page, offset)
+        results = await searchVespa(decodedQuery, email, app, entity, page, offset)
     }
     results.groupCount = groupCount
     return c.json(results)

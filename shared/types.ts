@@ -1,11 +1,18 @@
 //@ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 
+export type { AutocompleteResults, Autocomplete, Entity } from '@/server/types'
+export { DriveEntity, NotionEntity, AutocompleteResultsSchema } from '@/server/types'
+
+// export type AutocompleteResults = AutocompleteResults
+
 export enum Apps {
     // includes everything google
     GoogleWorkspace = "google-workspace",
     // more granular
-    GoogleDrive = "google-drive"
+    GoogleDrive = "google-drive",
+
+    Notion = "notion"
 }
 
 export type AppType = typeof AppRoutes

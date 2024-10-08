@@ -2,15 +2,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 
 const page = 8
 
-import { Folder, ChevronRight, ChevronLeft } from 'lucide-react';
+import { ChevronRight, ChevronLeft } from 'lucide-react';
 
-import { forwardRef, ForwardedRef, useEffect, useRef, useState } from 'react'
-import DocsSvg from '@/assets/docs.svg'
-import SlidesSvg from '@/assets/slides.svg'
-import SheetsSvg from '@/assets/sheets.svg'
-import DriveSvg from '@/assets/drive.svg'
-import NotionPageSvg from '@/assets/notionPage.svg'
-
+import { useEffect, useRef, useState } from 'react'
 
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -22,8 +16,10 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from '@/api';
 import HighlightedText from '@/components/Highlight';
-import { FileResponse } from '@shared/types';
-import { Autocomplete, Groups } from '@/types';
+import { Autocomplete, AutocompleteResultsSchema, FileResponse } from '@shared/types';
+import { Groups } from '@/types';
+import { AutocompleteElement } from '@/components/Autocomplete';
+import { getIcon } from '@/lib/common';
 
 const logger = console
 
@@ -42,26 +38,6 @@ export function SearchInfo({info}: {info: string}) {
   )
 }
 
-const getIcon = (app: string, entity: string) => {
-    const classNameVal = 'h-[16px] w-[16px] mr-2'
-  if(app === 'google') {
-    if(entity === 'docs') {
-      return <img className={classNameVal} src={DocsSvg}/>
-    } else if(entity === 'sheets') {
-      return <img className={classNameVal} src={SheetsSvg}/>
-    } else if(entity === 'slides') {
-      return <img className={classNameVal} src={SlidesSvg}/>
-    } else if(entity === 'folder') {
-      return <Folder className='h-[17px] w-[17px] mr-2' fill='rgb(196, 199, 197)' stroke='none' />
-    } else {
-      return <img className={classNameVal} src={DriveSvg}/>
-    }
-  } else if(app === 'notion') {
-    if(entity === 'page') {
-      return <img className={classNameVal} src={NotionPageSvg} />
-    }
-  }
-}
 
 const flattenGroups = (groups: Groups) => {
   return Object.keys(groups || {}).flatMap((app) => 
@@ -72,22 +48,6 @@ const flattenGroups = (groups: Groups) => {
   }))
 );
 }
-
-const AutocompleteElement = forwardRef(
-  (
-    { result, onClick}: { result: Autocomplete, onClick: any }, ref: ForwardedRef<HTMLDivElement>
-  ) => {
-  return (
-    <div  ref={ref} onClick={onClick} className='cursor-pointer hover:bg-gray-100 px-4 py-2'>
-      <div className='flex'>
-        {getIcon(result.app, result.entity)}
-        <p>
-          {result.title}
-        </p>
-      </div>
-    </div>
-  )
-})
 
 type Filter = {
   app: string,
@@ -170,21 +130,9 @@ export const Index = () => {
             }
 
           })
-          
-          if (!response.ok) {
-            // If unauthorized or status code is 401, navigate to '/auth'
-            if (response.status === 401) {
-              navigate({to: '/auth'})
-              throw new Error('Unauthorized')
-            }
-          }
-
-          const data = await response.json();
-          if(data.children && data.children?.length) {
-            // Assuming data has a structure like: { children: [{ fields: { title: '...' } }] }
-            // const titles = data.children.map((v: any) => v.fields.title);
-            setAutocompleteResults(data.children.map((v: {fields: Autocomplete}) => v.fields));
-          }
+          let data = await response.json();
+          data = AutocompleteResultsSchema.parse(data)
+          setAutocompleteResults(data.children.map((v: {fields: Autocomplete}) => v.fields));
 
         } catch (error) {
           logger.error(`Error fetching autocomplete results:', ${error}`);
