@@ -2,9 +2,8 @@
 import type { Context } from "hono";
 import config from "@/config"
 import { db } from '@/db/client'
-import { getUserAndWorkspaceByOnlyEmail } from "@/db/user";
-import { userPublicSchema, workspacePublicSchema } from "@/db/schema";
-import { HTTPException } from "hono/http-exception";
+import { getUserAndWorkspaceByEmail } from "@/db/user";
+import { type PublicUserWorkspace } from "@/db/schema";
 const { JwtPayloadKey } = config
 
 // import { generateCodeVerifier, generateState } from "arctic";
@@ -26,19 +25,8 @@ const { JwtPayloadKey } = config
 // const refreshTokens: GoogleRefreshedTokens = await google.refreshAccessToken(refreshToken);
 
 export const GetUserWorkspaceInfo = async (c: Context) => {
-    const { sub } = c.get(JwtPayloadKey)
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
-    const userAndWorkspace = await getUserAndWorkspaceByOnlyEmail(db, email)
-    if (!userAndWorkspace || userAndWorkspace.length === 0) {
-        throw new HTTPException(404, { message: "User or Workspace not found"})
-    }
-    const { user, workspace } = userAndWorkspace[0];
-
-    const userPublic = userPublicSchema.parse(user);
-    const workspacePublic = workspacePublicSchema.parse(workspace);
-
-    return c.json({
-        user: userPublic,
-        workspace: workspacePublic,
-})
+    const userAndWorkspace: PublicUserWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, email)
+    return c.json(userAndWorkspace)
 }

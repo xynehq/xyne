@@ -317,3 +317,4 @@ export const workspacePublicSchema = selectWorkspaceSchema.omit({
 
 export type PublicUser = z.infer<typeof userPublicSchema>
 export type PublicWorkspace = z.infer<typeof workspacePublicSchema>
+export type PublicUserWorkspace = { user: PublicUser, workspace: PublicWorkspace }

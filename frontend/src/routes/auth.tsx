@@ -47,6 +47,7 @@ export const Route = createFileRoute('/auth')({
   beforeLoad: async () => {
     const res = await api.api.me.$get();
     if (res.ok) {
+      // TODO: to type this response
       const userWorkspace = await res.json();
       // If User & Workspace exists, don't let user visit /auth
       if (userWorkspace?.user && userWorkspace?.workspace) {

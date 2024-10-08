@@ -1,13 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "./client";
-import { selectUserSchema, users, users, workspaces, type SelectUser } from "./schema";
+import { selectUserSchema, userPublicSchema, users, users, workspacePublicSchema, workspaces, type PublicUserWorkspace, type SelectUser, type SelectUserWorkspace } from "./schema";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { TxnOrClient } from "@/types";
+import { HTTPException } from "hono/http-exception";
 
-export const getUserAndWorkspaceByEmail = async (trx: PgTransaction<any>, workspaceId: number, email: string) => {
-    return await db
+export const getUserAndWorkspaceByEmail = async (trx: TxnOrClient, workspaceId: string, email: string): Promise<PublicUserWorkspace> => {
+    const userAndWorkspace =  await trx
         .select({
             user: users,
             workspace: workspaces,
@@ -16,12 +17,21 @@ export const getUserAndWorkspaceByEmail = async (trx: PgTransaction<any>, worksp
         .innerJoin(workspaces, eq(users.workspaceId, workspaces.id))  // Join workspaces on users.workspaceId
         .where(and(
             eq(users.email, email),  // Filter by user email
-            eq(users.workspaceId, workspaceId),  // Filter by workspaceId
+            eq(users.workspaceExternalId, workspaceId),  // Filter by workspaceId
         )).limit(1)
+    if (!userAndWorkspace || userAndWorkspace.length === 0) {
+        throw new HTTPException(404, { message: "User or Workspace not found" })
+    }
+
+    const { user, workspace } = userAndWorkspace[0];
+    const userPublic = userPublicSchema.parse(user);
+    const workspacePublic = workspacePublicSchema.parse(workspace);
+
+    return { user: userPublic, workspace: workspacePublic }    
 }
 
-export const getUserAndWorkspaceByOnlyEmail = async (trx: TxnOrClient, email: string) => {
-    return await trx
+export const getUserAndWorkspaceByOnlyEmail = async (trx: PgTransaction<any>, email: string) => {
+    return await db
         .select({
             user: users,
             workspace: workspaces,
