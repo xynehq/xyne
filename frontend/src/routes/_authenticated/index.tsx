@@ -9,7 +9,7 @@ import DocsSvg from '@/assets/docs.svg'
 import SlidesSvg from '@/assets/slides.svg'
 import SheetsSvg from '@/assets/sheets.svg'
 import DriveSvg from '@/assets/drive.svg'
-import NotionPageSvg from '../assets/notionPage.svg'
+import NotionPageSvg from '@/assets/notionPage.svg'
 
 
 import { Input } from '@/components/ui/input'
@@ -468,6 +468,6 @@ export const Index = () => {
   )
 }
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute('/_authenticated/')({
   component: Index,
 })

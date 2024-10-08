@@ -1,4 +1,10 @@
 // import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic";
+import type { Context } from "hono";
+import config from "@/config"
+import { db } from '@/db/client'
+import { getUserAndWorkspaceByEmail } from "@/db/user";
+import { type PublicUserWorkspace } from "@/db/schema";
+const { JwtPayloadKey } = config
 
 // import { generateCodeVerifier, generateState } from "arctic";
 
@@ -18,3 +24,9 @@
 // const tokens: GoogleTokens = await google.validateAuthorizationCode(code, codeVerifier);
 // const refreshTokens: GoogleRefreshedTokens = await google.refreshAccessToken(refreshToken);
 
+export const GetUserWorkspaceInfo = async (c: Context) => {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    const email = sub
+    const userAndWorkspace: PublicUserWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, email)
+    return c.json(userAndWorkspace)
+}

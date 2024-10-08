@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { Button } from "@/components/ui/button"
 import {
@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { api } from '@/api'
 
 export const description =
   "A login form with email and password. There's an option to login with Google and a link to sign up if you don't have an account."
@@ -43,5 +44,16 @@ export default function LoginForm() {
 }
 
 export const Route = createFileRoute('/auth')({
+  beforeLoad: async () => {
+    const res = await api.api.me.$get();
+    if (res.ok) {
+      // TODO: to type this response
+      const userWorkspace = await res.json();
+      // If User & Workspace exists, don't let user visit /auth
+      if (userWorkspace?.user && userWorkspace?.workspace) {
+        throw redirect({ to: '/' })
+      }
+    }
+  },
   component: LoginForm
 })

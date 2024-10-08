@@ -1,7 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { users, workspaces } from "./schema";
-import { getUserAndWorkspaceByEmail } from "./user";
 
 const seed = async () => {
     console.log('here')

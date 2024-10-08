@@ -22,6 +22,7 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
+import { GetUserWorkspaceInfo } from './api/auth'
 
 
 
@@ -104,6 +105,7 @@ export const AppRoutes = app.basePath('/api')
     .use('*', AuthMiddleware)
     .post('/autocomplete', zValidator('json', autocompleteSchema), AutocompleteApi)
     .get('/search', zValidator('query', searchSchema), SearchApi)
+    .get('/me', GetUserWorkspaceInfo)
     .basePath('/admin')
     // TODO: debug
     // for some reason the validation schema

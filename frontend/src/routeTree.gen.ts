@@ -11,27 +11,28 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
-import { Route as SearchImport } from './routes/search'
 import { Route as AuthImport } from './routes/auth'
-import { Route as IndexImport } from './routes/index'
+import { Route as AuthenticatedImport } from './routes/_authenticated'
+import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as OauthSuccessImport } from './routes/oauth/success'
-import { Route as AdminIntegrationsImport } from './routes/admin/integrations'
+import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedAdminIntegrationsImport } from './routes/_authenticated/admin/integrations'
 
 // Create/Update Routes
-
-const SearchRoute = SearchImport.update({
-  path: '/search',
-  getParentRoute: () => rootRoute,
-} as any)
 
 const AuthRoute = AuthImport.update({
   path: '/auth',
   getParentRoute: () => rootRoute,
 } as any)
 
-const IndexRoute = IndexImport.update({
-  path: '/',
+const AuthenticatedRoute = AuthenticatedImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRoute,
+} as any)
+
+const AuthenticatedIndexRoute = AuthenticatedIndexImport.update({
+  path: '/',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 const OauthSuccessRoute = OauthSuccessImport.update({
@@ -39,20 +40,26 @@ const OauthSuccessRoute = OauthSuccessImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const AdminIntegrationsRoute = AdminIntegrationsImport.update({
-  path: '/admin/integrations',
-  getParentRoute: () => rootRoute,
+const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
+  path: '/search',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
+
+const AuthenticatedAdminIntegrationsRoute =
+  AuthenticatedAdminIntegrationsImport.update({
+    path: '/admin/integrations',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexImport
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthenticatedImport
       parentRoute: typeof rootRoute
     }
     '/auth': {
@@ -62,19 +69,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthImport
       parentRoute: typeof rootRoute
     }
-    '/search': {
-      id: '/search'
+    '/_authenticated/search': {
+      id: '/_authenticated/search'
       path: '/search'
       fullPath: '/search'
-      preLoaderRoute: typeof SearchImport
-      parentRoute: typeof rootRoute
-    }
-    '/admin/integrations': {
-      id: '/admin/integrations'
-      path: '/admin/integrations'
-      fullPath: '/admin/integrations'
-      preLoaderRoute: typeof AdminIntegrationsImport
-      parentRoute: typeof rootRoute
+      preLoaderRoute: typeof AuthenticatedSearchImport
+      parentRoute: typeof AuthenticatedImport
     }
     '/oauth/success': {
       id: '/oauth/success'
@@ -83,16 +83,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OauthSuccessImport
       parentRoute: typeof rootRoute
     }
+    '/_authenticated/': {
+      id: '/_authenticated/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedIndexImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations': {
+      id: '/_authenticated/admin/integrations'
+      path: '/admin/integrations'
+      fullPath: '/admin/integrations'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsImport
+      parentRoute: typeof AuthenticatedImport
+    }
   }
 }
 
 // Create and export the route tree
 
 export const routeTree = rootRoute.addChildren({
-  IndexRoute,
+  AuthenticatedRoute: AuthenticatedRoute.addChildren({
+    AuthenticatedSearchRoute,
+    AuthenticatedIndexRoute,
+    AuthenticatedAdminIntegrationsRoute,
+  }),
   AuthRoute,
-  SearchRoute,
-  AdminIntegrationsRoute,
   OauthSuccessRoute,
 })
 
@@ -104,27 +120,36 @@ export const routeTree = rootRoute.addChildren({
     "__root__": {
       "filePath": "__root.tsx",
       "children": [
-        "/",
+        "/_authenticated",
         "/auth",
-        "/search",
-        "/admin/integrations",
         "/oauth/success"
       ]
     },
-    "/": {
-      "filePath": "index.tsx"
+    "/_authenticated": {
+      "filePath": "_authenticated.tsx",
+      "children": [
+        "/_authenticated/search",
+        "/_authenticated/",
+        "/_authenticated/admin/integrations"
+      ]
     },
     "/auth": {
       "filePath": "auth.tsx"
     },
-    "/search": {
-      "filePath": "search.tsx"
-    },
-    "/admin/integrations": {
-      "filePath": "admin/integrations.tsx"
+    "/_authenticated/search": {
+      "filePath": "_authenticated/search.tsx",
+      "parent": "/_authenticated"
     },
     "/oauth/success": {
       "filePath": "oauth/success.tsx"
+    },
+    "/_authenticated/": {
+      "filePath": "_authenticated/index.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations": {
+      "filePath": "_authenticated/admin/integrations.tsx",
+      "parent": "/_authenticated"
     }
   }
 }
