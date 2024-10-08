@@ -43,6 +43,7 @@ class DocumentProcessor:
                 print(f"Current batch size: {len(self.current_batch)}")
             
             # Write batch if we've reached the target size
+            print(self.docs_per_file,len(self.current_batch))
             if len(self.current_batch) >= self.docs_per_file:
                 print(f"Batch full ({len(self.current_batch)} documents). Writing to file...")
                 self._write_current_batch()
@@ -52,7 +53,7 @@ class DocumentProcessor:
         if not self.current_batch:
             return
             
-        output_path = os.path.join(self.output_folder, f'docs_{self.file_counter:04d}.json')
+        output_path = os.path.join(self.output_folder, f'docs_try_1_{self.file_counter:04d}.json')
         with open(output_path, 'w', encoding='utf-8') as output_file:
             json.dump(self.current_batch, output_file, ensure_ascii=False, indent=4)
             
@@ -68,17 +69,34 @@ class DocumentProcessor:
             self._write_current_batch()
         print(f'Total documents processed: {self.total_processed}')
 
+def load_processed_docs(output_folder):
+    """Load all previously processed document IDs from existing output files"""
+    processed_docs = set()
+    try:
+        for filename in os.listdir(output_folder):
+            if filename.startswith('docs') and filename.endswith('.json'):
+                file_path = os.path.join(output_folder, filename)
+                with open(file_path, 'r') as file:
+                    docs = json.load(file)
+                    for doc in docs:
+                        processed_docs.add(doc['fields']['docId'])
+        print(f"Found {len(processed_docs)} previously processed documents")
+        return processed_docs
+    except Exception as e:
+        print(f"Error loading processed documents: {e}")
+        return set()
+
 def convert_collection(args):
     """Main function to process the collection"""
     print('Converting collection...')
     
-    # Use all available CPU cores
-    num_workers = multiprocessing.cpu_count()
-    print(f"Using all {num_workers} available CPU cores")
+    # Load already processed documents
+    processed_docs = load_processed_docs(args.output_folder)
     
-    # Create document processor with explicit batch size
-    docs_per_file = 5000  # or whatever value you set
-    print(f"Setting up document processor with {docs_per_file} docs per file")
+    num_workers = multiprocessing.cpu_count()
+    print(f"Using {num_workers} workers")
+    
+    docs_per_file = 5000
     doc_processor = DocumentProcessor(args.output_folder, docs_per_file=docs_per_file)
     
     # Count total documents
@@ -86,11 +104,9 @@ def convert_collection(args):
         total_docs = sum(1 for _ in f)
     
     print(f"Total documents to process: {total_docs}")
+    print(f"Already processed documents: {len(processed_docs)}")
     
-    # Create a queue to hold the results
     result_queue = Queue(maxsize=num_workers * 2)
-    
-    # Create a flag for the writer thread
     processing_complete = False
     
     def writer_thread():
@@ -103,8 +119,8 @@ def convert_collection(args):
                     doc_processor.add_document(result)
                     docs_processed += 1
                     if docs_processed % 100 == 0:
-                        print(f"Processed {docs_processed} documents so far")
-            except Exception as e:
+                        print(f"Processed {docs_processed} new documents")
+            except Exception:
                 continue
     
     # Start the writer thread
@@ -118,20 +134,36 @@ def convert_collection(args):
         mp_context=multiprocessing.get_context('spawn')
     ) as executor:
         futures = []
+        skipped = 0
+        processed = 0
         
-        # Submit all documents for processing
+        # Submit documents for processing
         with open(args.collection_path, encoding='utf-8') as f:
-            for line in tqdm(f, total=total_docs, desc="Submitting documents"):
+            pbar = tqdm(f, total=total_docs, desc="Submitting documents")
+            for line in pbar:
                 try:
                     doc_id, content = line.split('\t')
+                    
+                    # Skip if already processed
+                    if doc_id in processed_docs:
+                        skipped += 1
+                        pbar.set_postfix({'skipped': skipped, 'processed': processed})
+                        continue
+                    
                     future = executor.submit(process_chunk, (doc_id, content))
                     futures.append(future)
+                    processed += 1
+                    pbar.set_postfix({'skipped': skipped, 'processed': processed})
+                    
                 except Exception as e:
                     print(f"Error submitting document: {str(e)}")
                     continue
         
+        print(f"\nSkipped {skipped} already processed documents")
+        print(f"Submitted {processed} new documents for processing")
+        
         # Process results as they complete
-        for future in tqdm(futures, desc="Processing documents"):
+        for future in tqdm(futures, desc="Processing new documents"):
             try:
                 result = future.result()
                 result_queue.put(result)
@@ -146,6 +178,10 @@ def convert_collection(args):
     doc_processor.finish()
     
     print('Processing completed successfully!')
+    print(f'Total documents processed in this run: {processed}')
+    print(f'Total documents skipped (already processed): {skipped}')
+
+# Rest of the code remains the same, including DocumentProcessor class and process_chunk function
 def process_chunk(chunk_data):
     """Process a single chunk of documents"""
     global model

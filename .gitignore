@@ -186,3 +186,4 @@ vespa-logs
 
 # models
 server/Xenova
+server/myenv

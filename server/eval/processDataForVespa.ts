@@ -4,7 +4,6 @@ import * as transformers from "@xenova/transformers"
 const { env } = transformers;
 import { getExtractor } from "@/embedding";
 import { chunkDocument } from "@/chunks";
-import PQueue from "p-queue";
 env.backends.onnx.wasm.numThreads = 1;
 const SCHEMA = 'file'; // Replace with your actual schema name
 const NAMESPACE = 'namespace';
@@ -12,26 +11,25 @@ const NAMESPACE = 'namespace';
 const extractor = await getExtractor();
 import readline from 'readline'
 
-const processBatch = async (batch: string[]) => {
+const processBatch = async (batch: any[]) => {
     const processedbatch: any[] = [];
     const allChunks: any[] = [];
     const documentChunksMap: Record<string, any[]> = {};
 
     for (const line of batch) {
-        const columns = line.split('\t');
-        const chunks = chunkDocument(columns[1]);
-        
+        // const columns = line.split('\t');
+        const chunks = chunkDocument(line.text);
         // Store document chunks mapped to the document ID
-        documentChunksMap[columns[0]] = chunks;
+        documentChunksMap[line._id] = chunks;
 
         // Collect all chunks for the embedding extraction
         allChunks.push(...chunks.map(c => c.chunk));
 
         const document = {
-            "put": `id:${NAMESPACE}:${SCHEMA}::${columns[0]}`,
+            "put": `id:${NAMESPACE}:${SCHEMA}::${line._id}`,
             "fields": {
-                "docId": columns[0],
-                "title": columns[1].slice(0, 20),
+                "docId": line._id,
+                "title": line.text.slice(0, 20),
                 "url": "https://example.com/vespa-hybrid-search",
                 "chunks": chunks.map(v => v.chunk),
                 "permissions": [
@@ -49,9 +47,9 @@ const processBatch = async (batch: string[]) => {
     for (const doc of processedbatch) {
         const chunkMap: Record<number, number[]> = {};
         const chunks = documentChunksMap[doc.fields.docId];
-        
+
         chunks.forEach((chunk, index) => {
-            chunkMap[chunk.chunkIndex] = embeddings[embeddingIndex]; // Assign embedding to respective chunk
+            chunkMap[chunk.chunkIndex] = embeddings[embeddingIndex];
             embeddingIndex++;
         });
 
@@ -67,11 +65,11 @@ const process_data = async (filePath: string) => {
     let count = 0;
     let totalProcessed = 0;
     let currentFileCount = 1;
-    const batchSize = 1000;
-    const docsPerFile = 1000000;
+    const batchSize = 50;
+    const docsPerFile = 10000;
     let currentFileDocsCount = 0;
     let isFirstBatch = true;
-    
+
     // Create the initial write stream
     let writeStream = createNewWriteStream(currentFileCount);
 
@@ -82,7 +80,7 @@ const process_data = async (filePath: string) => {
         crlfDelay: Infinity
     });
 
-    const batch: string[] = [];
+    let batch: string[] = [];
     let totalProcessingTime = 0;
     let linesRead = 0;
 
@@ -96,17 +94,16 @@ const process_data = async (filePath: string) => {
             try {
                 const t1 = performance.now();
 
-                batch.push(line);
+                batch.push(JSON.parse(line));
                 count++;
                 totalProcessed++;
                 currentFileDocsCount++;
 
-                // Step 2: When batch size is reached, process and write data
                 if (batch.length >= batchSize) {
                     const documents = await processBatch(batch);
                     await appendArrayChunk(writeStream, documents, isFirstBatch);
-                    
-                    batch.length = 0;  // Clear batch
+
+                    batch = [];  // Clear batch
                     isFirstBatch = false;
                 }
 
@@ -114,20 +111,17 @@ const process_data = async (filePath: string) => {
                 totalProcessingTime += (t2 - t1);
                 console.log(`Processed ${totalProcessed} lines. Processing time: ${totalProcessingTime}ms`);
 
-                // Step 3: When the file size limit is reached, finalize current file
                 if (currentFileDocsCount >= docsPerFile) {
                     // Write remaining batch if any
                     if (batch.length > 0) {
                         const documents = await processBatch(batch);
                         await appendArrayChunk(writeStream, documents, isFirstBatch);
-                        batch.length = 0;  // Clear batch
+                        batch = [];  // Clear batch
                     }
 
-                    // Close current file
                     writeStream.write('\n]\n');
                     await new Promise<void>((resolve) => writeStream.end(resolve));
 
-                    // Create new file and reset counters
                     currentFileCount++;
                     writeStream = createNewWriteStream(currentFileCount);
                     writeStream.write('[\n');
@@ -143,24 +137,20 @@ const process_data = async (filePath: string) => {
             }
         }
 
-        // Step 4: Write any remaining documents from the last batch
         if (batch.length > 0) {
             console.log(`Processing final batch of ${batch.length} documents`);
             const documents = await processBatch(batch);
             await appendArrayChunk(writeStream, documents, isFirstBatch);
         }
 
-        // Close the final file
         writeStream.write('\n]\n');
         await new Promise<void>((resolve) => writeStream.end(resolve));
 
-        // Verification step
         console.log("\nVerifying processed data...");
         console.log(`Total lines read: ${linesRead}`);
         console.log(`Total documents processed: ${totalProcessed}`);
         console.log(`Total files created: ${currentFileCount}`);
 
-        // Verify that the number of documents processed matches the number of lines read
         let totalDocsInFiles = 0;
         for (let i = 1; i <= currentFileCount; i++) {
             const fileName = `process_data_${i}.json`;
@@ -183,7 +173,6 @@ const process_data = async (filePath: string) => {
         console.error("Processing failed:", error);
         throw error;
     } finally {
-        // Ensure streams are closed
         if (writeStream) {
             writeStream.end();
         }
@@ -195,22 +184,20 @@ const process_data = async (filePath: string) => {
 };
 
 
-// Helper function to create new write stream
 const createNewWriteStream = (fileCount: number): fs.WriteStream => {
     const fileName = `process_data_${fileCount}.json`;
     return fs.createWriteStream(fileName, { flags: 'a' });
 };
 
-// Helper function to safely append array chunk
 const appendArrayChunk = async (
-    writeStream: fs.WriteStream, 
-    data: any[], 
+    writeStream: fs.WriteStream,
+    data: any[],
     isFirstBatch: boolean
 ): Promise<void> => {
     return new Promise((resolve, reject) => {
         const chunk = data.map(item => JSON.stringify(item)).join(',\n');
         const content = isFirstBatch ? chunk : ',\n' + chunk;
-        
+
         writeStream.write(content, (error) => {
             if (error) {
                 reject(error);
@@ -223,8 +210,7 @@ const appendArrayChunk = async (
 
 
 
-// Example usage
-await process_data('./eval/data/collectionandqueries/collection.tsv')
+await process_data('./eval/data/fiqa_dev/corpus.jsonl')
 process.exit(0)
 // function writeJSONLLine(obj: any, filePath: string) {
 //     const jsonLine = JSON.stringify(obj) + '\n';

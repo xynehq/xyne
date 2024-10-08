@@ -15,15 +15,14 @@ const processedResultsData: string[] = []
 let counts = 0
 const evaluate = async (queriesListPath: string) => {
     const k = 10;
-    const queue = new PQueue({ concurrency: 100 });
+    const queue = new PQueue({ concurrency: 15 });
 
     const processQuery = async ({ query, query_id }: { query: string, query_id: number }) => {
-        console.log(query)
         try {
             const results = await searchVespa(query, "junaid.s@xynehq.com", "", "", k);
-
             if ("children" in results.root) {
                 const hits = results.root.children
+                console.log(hits.length, "res_len")
                 for (let idx = 0; idx < hits.length; idx++) {
                     processedResultsData.push(`${query_id}\t${hits[idx].fields.docId}\t${idx + 1}`)
                 }
@@ -41,17 +40,18 @@ const evaluate = async (queriesListPath: string) => {
         crlfDelay: Infinity // Handle different newline characters
     });
     for await (const line of rl) {
-        const columns = line.split('\t')
-        queue.add(() => processQuery({ query_id: columns[0], query: columns[1] }));
+        // const columns = line.split('\t')
+        const columns = JSON.parse(line)
+        queue.add(() => processQuery({ query_id: columns._id, query: columns.text }));
     }
 
     await queue.onIdle();
 
-    fs.promises.writeFile('./test_demo.tsv', processedResultsData.join("\n"))
+    fs.promises.writeFile('./fiqa_result_qrels.tsv', processedResultsData.join("\n"))
 }
 
 
-evaluate(path.resolve(__dirname, "data/collectionandqueries/queries.dev.small.tsv"))
+evaluate(path.resolve(__dirname, "data/fiqa_dev/queries.jsonl"))
     .then(() => {
         console.log('Evaluation completed');
     })

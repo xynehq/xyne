@@ -77,6 +77,7 @@ async function deleteAllDocuments() {
 }
 
 export const insertDocument = async (document: File) => {
+    console.log(document,"document")
     try {
         const response = await fetch(
             `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${document.docId}`,
@@ -421,3 +422,5 @@ interface EntityCounts {
 interface AppEntityCounts {
     [app: string]: EntityCounts;
 }
+
+console.log(await searchVespa("I'm not saying I don't like the idea of on-the-job training too","junaid.s@xynehq.com"))
