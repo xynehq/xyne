@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 
 // import viteReact from '@vitejs/plugin-react'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
-
 export default defineConfig(({ mode }) => {
+  console.log(path.resolve(import.meta.dirname, "../shared"))
   process.env = { NODE_ENV: process.env.NODE_ENV, TZ: process.env.TZ, ...loadEnv(mode, process.cwd(), "VITE") };
   return {
     plugins: [
@@ -15,9 +15,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "./src"),
-        "@server": path.resolve(import.meta.dirname, "../server"),
-        "@shared": path.resolve(import.meta.dirname, "../shared"),
-        "shared": path.resolve(import.meta.dirname, "../shared"),
+        "@/server": path.resolve(import.meta.dirname, "../server"),
+        "shared": path.resolve(import.meta.dirname, "../server/shared"),
       },
     },
     server: {

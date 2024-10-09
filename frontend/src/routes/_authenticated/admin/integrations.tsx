@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Apps, AuthType, ConnectorStatus } from '@shared/types';
+import { Apps, AuthType, ConnectorStatus } from 'shared/types';
 import { api, wsClient } from '@/api';
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';

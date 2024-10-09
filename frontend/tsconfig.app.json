@@ -5,11 +5,11 @@
       "@/*": [
         "./src/*"
       ],
-      "@server/*": [
+      "@/server/*": [
         "../server/*"
       ],
-      "@shared/*": [
-        "../shared/*"
+      "shared/*": [
+        "../server/shared/*"
       ]
     },
     "target": "ES2020",
@@ -36,6 +36,6 @@
   },
   "include": [
     "src",
-    "../shared"
+    "../server/shared"
   ]
 }

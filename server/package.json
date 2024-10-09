@@ -1,6 +1,6 @@
 {
-  "name": "qdrant-langchain",
-  "module": "index.ts",
+  "name": "xyne-search",
+  "module": "server/server.ts",
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest",

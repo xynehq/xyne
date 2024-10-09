@@ -1,7 +1,7 @@
 import { admin_directory_v1, admin_reports_v1, docs_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
-import { DriveEntity, GooglePeopleEntity, SyncCron, type ChangeToken, type GoogleClient, type GoogleServiceAccount, type SaaSJob, type SaaSOAuthJob, type VespaFile, type VespaFileWithDrivePermission } from "@/types";
+import { SyncCron, type ChangeToken, type GoogleClient, type GoogleServiceAccount, type SaaSJob, type SaaSOAuthJob, type VespaFile, type VespaFileWithDrivePermission } from "@/types";
 import { JWT } from "google-auth-library";
 import PgBoss from "pg-boss";
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector";
@@ -14,7 +14,7 @@ import { db } from "@/db/client";
 import { connectors, type SelectConnector } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types";
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus, DriveEntity } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob";
 import { getUserById } from "@/db/user";

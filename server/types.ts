@@ -1,16 +1,10 @@
 import config from '@/config'
-import { nativeEnum, z } from 'zod'
-import { Apps, AuthType } from '@/shared/types'
+import { z } from 'zod'
+import { Apps, AuthType, GooglePeopleEntity } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { GoogleTokens, Notion } from 'arctic'
 import { JWT, type OAuth2Client } from 'google-auth-library'
-
-export enum GooglePeopleEntity {
-    Contacts = "Contacts",
-    OtherContacts = "OtherContacts",
-    AdminDirectory = "AdminDirectory"
-}
 
 const VespaFileSchema = z.object({
     docId: z.string(),
@@ -64,61 +58,6 @@ const UserSchema = z.object({
 
 export type User = z.infer<typeof UserSchema>
 
-export type PeopleEntity = GooglePeopleEntity
-
-const AutocompleteFileSchema = VespaFileSchema.pick({
-    title: true,
-    app: true,
-    entity: true
-})
-const AutocompleteUserSchema = UserSchema.pick({
-    name: true,
-    email: true,
-    app: true,
-    entity: true
-})
-
-export const AutocompleteResultSchema = z.union([AutocompleteFileSchema, AutocompleteUserSchema])
-
-// export type Autocomplete = z.infer<typeof AutocompleteFileSchema> | z.infer<typeof AutocompleteUserSchema>  
-export type Autocomplete = z.infer<typeof AutocompleteResultSchema>
-
-
-export type Entity = PeopleEntity | DriveEntity | NotionEntity
-
-export enum NotionEntity {
-    Page = "page",
-    Database = "database"
-}
-
-export type WorkspaceEntity = DriveEntity
-
-export enum DriveEntity {
-    Docs = "docs",
-    Sheets = "sheets",
-    Presentation = "presentation",
-    PDF = "pdf",
-    Folder = "folder",
-    Misc = "driveFile",
-    Drawing = "drawing",
-    Form = "form",
-    Script = "script",
-    Site = "site",
-    Map = "map",
-    Audio = "audio",
-    Video = "video",
-    Photo = "photo",
-    ThirdPartyApp = "third_party_app",
-    Image = "image",
-    Zip = "zip",
-    WordDocument = "word_document",
-    ExcelSpreadsheet = "excel_spreadsheet",
-    PowerPointPresentation = "powerpoint_presentation",
-    Text = "text",
-    CSV = "csv",
-}
-
-
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
 
@@ -127,11 +66,6 @@ export enum DriveEntity {
 
 // type PeopleData = GoogleWorkspacePeople
 
-export const AutocompleteResultsSchema = z.object({
-    children: z.array(AutocompleteResultSchema)
-})
-
-export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
 
 // Base interface for Vespa response
 export interface VespaResponse<T> {
@@ -324,7 +258,6 @@ export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
     permissions: any[]
 }
-
 
 export type GoogleClient = JWT | OAuth2Client
 

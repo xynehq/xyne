@@ -2,14 +2,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/server/*": [
-        "./*"
-      ],
-      "@/shared/*": [
-        "../shared/*"
-      ],
-      "@/*": [
-        "./*"
+      "@/*": ["./*"],
+      "@shared/*": [
+        "./shared/*"
       ],
     },
     // Enable latest features
@@ -36,5 +31,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["../shared"]
+  "include": [".", "./shared"]
 }

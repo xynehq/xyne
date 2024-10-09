@@ -1,5 +1,5 @@
 import { hc } from 'hono/client'
-import type { WebSocketApp, AppType } from '@shared/types'
+import type { WebSocketApp, AppType } from 'shared/types'
 export const api = hc<AppType>('/')
 
 

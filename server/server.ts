@@ -230,23 +230,8 @@ app.get(
     }
 )
 
-// app.get('/oauth/success', async (c: Context) => {
-//     return c.html(
-//         <html>
-//         <head>
-//         <title>Test Site </title>
-//             { html`
-//         <script>
-//             window.onload = function () {
-//             window.opener.postMessage({ success: true }, "*"); // Send a success message to the parent window
-//             window.close(); // Close the popup window
-//             </script>
-//         };
-//     `}
-//           </head>
-//     < body > Hello! </body>
-//     </html>)
-// })
+app.get('*', serveStatic({ root: './dist' }));
+app.get('*', serveStatic({ path: './dist/index.html' }));
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get('/', AuthRedirect, serveStatic({ path: './dist/index.html' }));

@@ -1,10 +1,10 @@
 import type { GaxiosResponse } from "gaxios";
-import { DriveEntity, type GoogleClient, type GoogleServiceAccount, type VespaFileWithDrivePermission } from "@/types";
+import { type GoogleClient, type GoogleServiceAccount, type VespaFileWithDrivePermission } from "@/types";
 import { docs_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from "@/doc";
 import { chunkDocument } from "@/chunks";
 import { getExtractor } from "@/embedding";
-import { Apps } from "@/shared/types";
+import { Apps, DriveEntity } from "@/shared/types";
 import { JWT } from "google-auth-library";
 import { scopes } from '@/integrations/google/config'
 

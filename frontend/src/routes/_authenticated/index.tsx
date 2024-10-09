@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from '@/api';
 import HighlightedText from '@/components/Highlight';
-import { Autocomplete, AutocompleteResultsSchema, FileResponse } from '@shared/types';
+import { Apps, Autocomplete, AutocompleteResultsSchema, Entity, FileResponse } from 'shared/types';
 import { Groups } from '@/types';
 import { AutocompleteElement } from '@/components/Autocomplete';
 import { getIcon } from '@/lib/common';
@@ -41,17 +41,17 @@ export function SearchInfo({info}: {info: string}) {
 
 const flattenGroups = (groups: Groups) => {
   return Object.keys(groups || {}).flatMap((app) => 
-  Object.keys(groups[app] || {}).map((entity) => ({
-    app,
-    entity,
-    count: groups[app][entity]
+  Object.keys(groups[app as Apps] || {}).map((entity) => ({
+    app: app as Apps,
+    entity: entity as Entity,
+    count: groups[app as Apps][entity as Entity]
   }))
 );
 }
 
 type Filter = {
-  app: string,
-  entity: string
+  app: Apps,
+  entity: Entity
 }
 
 type SearchMeta = {
@@ -303,7 +303,9 @@ export const Index = () => {
     <div ref={autocompleteRef} className='absolute top-full left-0 w-full bg-white rounded-md border font-mono text-sm shadow-sm z-10'>
       {autocompleteResults.map((result, index) => (
         <AutocompleteElement key={index} onClick={() => {
-          setQuery(result.title);
+          if(result.type === "file") {
+            setQuery(result.title);
+          }
           setAutocompleteResults([]);
         }} result={result} />
       ))}

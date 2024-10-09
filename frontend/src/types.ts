@@ -1,4 +1,4 @@
-import { Apps, AuthType, Autocomplete } from '@shared/types'
+import { Apps, AuthType, Entity } from 'shared/types'
 import { z } from 'zod'
 
 
@@ -18,4 +18,4 @@ export type Connectors = {
     authType: AuthType
 }
 
-export type Groups = Record<string, Record<string, number>>
+export type Groups = Record<Apps, Record<Entity, number>>

@@ -4,8 +4,8 @@ import SlidesSvg from '@/assets/slides.svg'
 import SheetsSvg from '@/assets/sheets.svg'
 import DriveSvg from '@/assets/drive.svg'
 import NotionPageSvg from '../assets/notionPage.svg'
-import type { Entity } from '@shared/types'
-import { Apps, DriveEntity, NotionEntity } from '@shared/types';
+import type { Entity } from 'shared/types'
+import { Apps, DriveEntity, NotionEntity } from 'shared/types';
 
 
 export const getIcon = (app: Apps, entity: Entity) => {
