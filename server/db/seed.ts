@@ -4,6 +4,7 @@ import { users, workspaces } from "./schema";
 import { getUserAndWorkspaceByEmail } from "./user";
 import { getLogger } from "@/shared/logger";
 import { LOGGERTYPES } from "@/shared/types";
+import { SeedingError } from "@/errors/db/seed/SeedingError";
 
 const Logger =  getLogger(LOGGERTYPES.db).child({module: 'seed'})
 
@@ -45,6 +46,7 @@ const seed = async () => {
         Logger.info('Seeding completed successfully.');
     } catch (error) {
         Logger.error(`Error during seeding:, ${error}`);
+        throw new SeedingError(`${error}`);
     }
 
 }

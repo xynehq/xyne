@@ -25,6 +25,8 @@ import { html, raw } from 'hono/html'
 import { middlewareLogger, getLogger } from '@/shared/logger'
 import { LOGGERTYPES } from '@/shared/types'
 import { GetUserWorkspaceInfo } from './api/auth'
+import { AuthRedirectError } from './errors/AuthRedirectionError'
+import { InitialisationError } from './errors/InitialisationError'
 
 
 
@@ -68,7 +70,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
         // Verify the token if available
         await AuthMiddleware(c, next);
     } catch (err) {
-        Logger.error(`${err}`);
+        Logger.error(`${new AuthRedirectError()} : \n ${err}`);
         Logger.warn("Redirected by server - Error in AuthMW")
         // Redirect to auth page if token invalid
         return c.redirect(`${frontendBaseURL}/auth`)
@@ -261,7 +263,8 @@ export const init = async () => {
     await initQueue()
 }
 init().catch(e => {
-    Logger.error(`${e}`)
+    Logger.error(`Error : \n${e}`)
+    throw new InitialisationError();
 })
 
 const server = Bun.serve({

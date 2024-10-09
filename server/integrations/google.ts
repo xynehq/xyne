@@ -22,6 +22,10 @@ import type { GaxiosResponse } from "gaxios";
 import { insertSyncHistory } from "@/db/syncHistory";
 import { getErrorMessage } from "@/utils";
 import { getLogger } from "@/shared/logger";
+import { UserListingError } from "@/errors/integrations/UserListingError";
+import { MissingDocumentWithId } from "@/errors/integrations/MissingDocumentWithId";
+import { UnableToCompleteSyncJob } from "@/errors/integrations/UnableToCompleteSyncJob";
+import { CouldNotFinishJobSuccessfully } from "@/errors/integrations/CouldNotFinishJobSuccessfully";
 
 const Logger = getLogger(LOGGERTYPES.integrations).child({module: 'google'})
 
@@ -57,7 +61,7 @@ const listUsers = async (admin: admin_directory_v1.Admin, domain: string): Promi
         return users;
     } catch (error) {
         Logger.error(`Error listing users:", ${error}`);
-        throw error
+        throw new UserListingError(error);
         // return [];
     }
 };
@@ -88,6 +92,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
                 try {
                     // also ensure that we are that permission
                     if (!(permissions[0] === email)) {
+                        Logger.error("We got a change for us that we didn't have access to in Vespa")
                         throw new Error("We got a change for us that we didn't have access to in Vespa")
                     }
                     await DeleteDocument(docId)
@@ -96,6 +101,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
                 } catch (e) {
                     // TODO: detect vespa 404 and only ignore for that case
                     // otherwise throw it further
+
                 }
             } else {
                 // remove our user's permission from the email
@@ -118,6 +124,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
             // catch the 404 error
             Logger.error(`Could not get document ${docId}, probably does not exist, ${e}`)
             stats.added += 1
+            throw new MissingDocumentWithId(docId,e)
         }
         // for these mime types we fetch the file
         // with the full processing
@@ -147,6 +154,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
         // TODO: handle this once we support multiple drives
     } else {
         Logger.error(`Could not handle change: ', ${change}`)
+        throw new Error(`Could not handle change: ${change}`)
     }
     return stats
 }
@@ -226,6 +234,7 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                 type: SyncCron.ChangeToken,
                 lastRanOn: new Date(),
             })
+            throw new UnableToCompleteSyncJob(syncJob.id, errorMessage)
         }
     }
 }
@@ -303,6 +312,7 @@ export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBos
                 type: SyncCron.ChangeToken,
                 lastRanOn: new Date(),
             })
+            throw new UnableToCompleteSyncJob(syncJob.id, errorMessage)
         }
     }
 }
@@ -365,13 +375,14 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
             Logger.info('job completed')
         })
     } catch (e) {
-        Logger.error(`could not finish job successfully \n, ${e}`)
+        Logger.error(`Could not finish job successfully \n, ${e}`)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
+        throw new CouldNotFinishJobSuccessfully(e)
     }
 }
 
@@ -395,6 +406,7 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             const driveClient = google.drive({ version: "v3", auth: jwtClient })
             const { startPageToken }: drive_v3.Schema$StartPageToken = (await driveClient.changes.getStartPageToken()).data
             if (!startPageToken) {
+                Logger.error('Could not get start page token')
                 throw new Error('Could not get start page token')
             }
             sendWebsocketMessage(`${((index + 1) / users.length) * 100}% user's data is connected`, connector.externalId)
@@ -423,13 +435,14 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             Logger.info('job completed')
         })
     } catch (e) {
-        Logger.error(`could not finish job successfully', ${e}`)
+        Logger.error(`Could not finish job successfully', ${e}`)       
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
+        throw new CouldNotFinishJobSuccessfully(e)
     }
 }
 

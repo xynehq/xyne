@@ -14,6 +14,9 @@ import type { SelectOAuthProvider } from "@/db/schema"
 import { setCookieByEnv } from "@/utils"
 import { getLogger } from "@/shared/logger"
 import {getPath} from 'hono/utils/url'
+import { AddServiceConnectionError } from "@/errors/api/admin/AddServiceConnectionError"
+import { NoUserFound } from "@/errors/api/admin/NoUserFound"
+import { ConnectorNotCreated } from "@/errors/api/admin/ConnectorNotCreated"
 
 const Logger = getLogger(LOGGERTYPES.api).child({module: 'admin'})
 
@@ -78,7 +81,7 @@ export const CreateOAuthProvider = async (c: Context) => {
     const email = sub
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
-        throw new Error('Could not get user')
+        throw new NoUserFound()
     }
     const [user] = userRes
     const form: OAuthProvider = c.req.valid('form')
@@ -103,7 +106,7 @@ export const CreateOAuthProvider = async (c: Context) => {
             ConnectorStatus.NotConnected
         )
         if (!connector) {
-            throw new Error("Connecter wasn't created")
+            throw new ConnectorNotCreated()
         }
         const provider = await createOAuthProvider(
             trx,
@@ -129,7 +132,7 @@ export const AddServiceConnection = async (c: Context) => {
     const email = sub
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
-        throw new Error('Could not get user')
+        throw new NoUserFound()
     }
     const [user] = userRes
     const form: ServiceAccountConnection = c.req.valid('form')
@@ -173,7 +176,7 @@ export const AddServiceConnection = async (c: Context) => {
             return c.json({ success: true, message: 'Connection created, job enqueued', id: connector.externalId })
 
         } catch (error) {
-            Logger.error(`Error: ${error}`)
+            Logger.error(`${new AddServiceConnectionError()} \n : ${error}`)
             // Rollback the transaction in case of any error
             throw new HTTPException(500, { message: 'Error creating connection or enqueuing job' })
         }

@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { getConnector, updateConnector } from "@/db/connector";
 import { getOAuthProvider } from "@/db/oauthProvider";
 import type { SelectConnector } from "@/db/schema";
+import { OAuthCallbackError } from "@/errors/api/oauth/OauthCallbackError";
 import { boss, SaaSQueue } from "@/queue";
 import { getLogger } from "@/shared/logger";
 import { Apps, LOGGERTYPES, type AuthType } from "@/shared/types";
@@ -67,7 +68,7 @@ export const OAuthCallback = async (c: Context) => {
         // Commit the transaction if everything is successful
         return c.redirect(`${config.host}/oauth/success`)
     } catch (error) {
-        Logger.error(`Error in OAuthCallback ${error}`)
+        Logger.error(`${new OAuthCallbackError(error)}`)
         throw new HTTPException(500, { message: 'Error in OAuthCallback' })
     }
 }
