@@ -38,7 +38,7 @@ export const initKG = async () => {
 
         await fs.writeFile('./fullDocs.json', JSON.stringify(fullDocs))
     }
-    Logger.info('doc\n', fullDocs[5])
+    Logger.info(`doc\n, ${fullDocs[5]}`)
     const response = await ollama.chat({
         model: 'phi3.5',
         messages: [{ role: 'user', content: getPrompt(fullDocs[5]) }],

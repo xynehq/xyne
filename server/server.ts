@@ -271,6 +271,3 @@ const server = Bun.serve({
 })
 Logger.info(`listening on port: ${config.port}`)
 
-async function Next(): Promise<void> {
-    await Logger.info(`Next`)
-}

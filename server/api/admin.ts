@@ -29,7 +29,7 @@ const getAuthorizationUrl = async (c: Context, app: Apps, provider: SelectOAuthP
     const google = new Google(clientId as string, clientSecret, `${config.host}/oauth/callback`);
     const state = generateState()
     const codeVerifier = generateCodeVerifier()
-    Logger.info('code verifier ', codeVerifier)
+    Logger.info(`code verifier  ${codeVerifier}`)
     // adding some data to state
     const newState = JSON.stringify({ app, random: state })
     const url: URL = await google.createAuthorizationURL(newState, codeVerifier, {
