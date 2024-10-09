@@ -1,3 +1,4 @@
+
 ## search eval using FiQA dataset
 
 The [FiQA](https://sites.google.com/view/fiqa/home) (Financial Question Answering) dataset is a valuable resource for financial questions and answers,  This README walks through downloading the dataset, processing it for Vespa, feeding it into the Vespa search engine, and evaluating the results using `pytrec_eval`.
@@ -32,13 +33,23 @@ After all files have been fed into Vespa, you can start the evaluation process b
     
  this will generate  a .tsv file  `data/output/fiqa_result_qrels.tsv` , now
 
-to run the evaluation script you need a `pytrec_eval` python package tobe installed
+to run the evaluation script you need a `pytrec_eval` python package tobe installed, lets create a virtual environment to run the python scripts.
 
-    pip install pytrec_eval
+	uv venv
+_
+	
+    source .venv/bin/activate
+   _
+   
+     uv pip install pytrec_eval
 
 
 Finally, run the following Python script to calculate the evaluation metrics:
 
     python trec_eval.py
+   or
+
+    python trec_eval.py --qrel_file path/to/qrels  --run_file  path/to/result_file
+	  
 
 This will compute the evaluation scores based on the provided qrels and results file.
