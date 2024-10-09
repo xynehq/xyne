@@ -12,7 +12,7 @@ env.localModelPath = '../'
 env.cacheDir = '../'
 env.backends.onnx.wasm.numThreads = 1;
 
-const extractor = getExtractor()
+const extractor = await getExtractor()
 const queriesPath = "data/fiqa/queries.jsonl"
 
 const processedResultsData: string[] = []
