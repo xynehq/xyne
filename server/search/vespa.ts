@@ -306,9 +306,9 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
     }
 }
 
-export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number): Promise<VespaResponse | {}> => {
+export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number, featureExtractor: typeof extractor = extractor): Promise<VespaResponse | {}> => {
     const url = `${VESPA_ENDPOINT}/search/`;
-    const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
+    const qEmbedding = (await featureExtractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
     let yqlQuery = HybridDefaultProfile.yql
 

@@ -1,13 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
-const transformers = require('@xenova/transformers')
-const { env } = transformers
+import * as transformers from "@xenova/transformers"
+const { env } = transformers;
 import PQueue from "p-queue";
 import { searchVespa } from "@/search/vespa";
+import { getExtractor } from "@/embedding";
 const readline = require('readline');
-env.backends.onnx.wasm.numThreads = 1;
+
+// this will share the cache embedding model from /server
 env.localModelPath = '../'
 env.cacheDir = '../'
+env.backends.onnx.wasm.numThreads = 1;
+
+const extractor = getExtractor()
+const queriesPath = "data/fiqa/queries.jsonl"
 
 const processedResultsData: string[] = []
 let counts = 0
@@ -17,7 +23,7 @@ const evaluate = async (queriesListPath: string) => {
 
     const processQuery = async ({ query, query_id }: { query: string, query_id: number }) => {
         try {
-            const results = await searchVespa(query, "junaid.s@xynehq.com", "", "", k);
+            const results = await searchVespa(query, "junaid.s@xynehq.com", "", "", k, 0, extractor);
             if ("children" in results.root) {
                 const hits = results.root.children
                 for (let idx = 0; idx < hits.length; idx++) {
@@ -45,11 +51,12 @@ const evaluate = async (queriesListPath: string) => {
 
     await queue.onIdle();
 
-    fs.promises.writeFile('data/output/fiqa_result_qrels.tsv', processedResultsData.join("\n"))
+    const outputPath = path.resolve(import.meta.dirname,'data/output/fiqa_result_qrels.tsv')
+    fs.promises.writeFile(outputPath, processedResultsData.join("\n"))
 }
 
 
-evaluate(path.resolve(__dirname, "data/fiqa/queries.jsonl"))
+evaluate(path.resolve(import.meta.dirname, queriesPath))
     .then(() => {
         console.log('Evaluation completed');
     })

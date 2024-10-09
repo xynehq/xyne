@@ -5,6 +5,8 @@ The [FiQA](https://sites.google.com/view/fiqa/home) (Financial Question Answerin
 
 you can easily download the dataset from [BeIR](https://github.com/beir-cellar/beir?tab=readme-ov-file) or just hit the below commands commands
 		
+
+> Note: Ensure you have run `server/vespa/deploy.sh ` to get the schema deployed to vespa.
 			
 	cd server/eval && wget https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/fiqa.zip -P  data
 or
@@ -33,7 +35,8 @@ After all files have been fed into Vespa, you can start the evaluation process b
     
  this will generate  a .tsv file  `data/output/fiqa_result_qrels.tsv` , now
 
-to run the evaluation script you need a `pytrec_eval` python package tobe installed, lets create a virtual environment to run the python scripts.
+to run the evaluation script you need a `pytrec_eval` python package tobe installed, lets create a virtual environment to run the python scripts. 
+to install uv please refer [here](https://github.com/astral-sh/uv)
 
 	uv venv
 _

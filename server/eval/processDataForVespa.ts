@@ -5,6 +5,8 @@ const { env } = transformers;
 import { getExtractor } from "@/embedding";
 import { chunkDocument } from "@/chunks";
 env.backends.onnx.wasm.numThreads = 1;
+
+// this will share the cache embedding model from /server
 env.localModelPath = '../'
 env.cacheDir = '../'
 
@@ -14,13 +16,18 @@ const NAMESPACE = 'namespace';
 const extractor = await getExtractor();
 import readline from 'readline'
 
+const corpusPath = path.resolve(import.meta.dirname, 'data/fiqa/corpus.jsonl')
+const user = "junaid.s@xynehq.com"
+
+// This function processes an entire batch of data at once,
+// generating embeddings for all chunks in the batch simultaneously, 
+// and returns the processed batch.
 const processBatch = async (batch: any[]) => {
     const processedbatch: any[] = [];
     const allChunks: any[] = [];
     const documentChunksMap: Record<string, any[]> = {};
 
     for (const line of batch) {
-        // const columns = line.split('\t');
         const chunks = chunkDocument(line.text);
         // Store document chunks mapped to the document ID
         documentChunksMap[line._id] = chunks;
@@ -32,12 +39,11 @@ const processBatch = async (batch: any[]) => {
             "put": `id:${NAMESPACE}:${SCHEMA}::${line._id}`,
             "fields": {
                 "docId": line._id,
-                "title": line.text.slice(0, 20),
+                "title": line.text.slice(0, 50),
                 "url": "https://example.com/vespa-hybrid-search",
-                "chunks": chunks.map(v => v.chunk),
-                "permissions": [
-                    "junaid.s@xynehq.com"
-                ],
+                // Clean up the ASCII characters
+                "chunks": chunks.map(v => v.chunk.replace(/[\x00-\x1F\x7F]/g, "")),
+                "permissions": [user],
                 "chunk_embeddings": {}
             }
         };
@@ -64,7 +70,7 @@ const processBatch = async (batch: any[]) => {
 };
 
 
-const process_data = async (filePath: string) => {
+const processData = async (filePath: string) => {
     let count = 0;
     let totalProcessed = 0;
     let currentFileCount = 1;
@@ -155,7 +161,7 @@ const process_data = async (filePath: string) => {
 
         let totalDocsInFiles = 0;
         for (let i = 1; i <= currentFileCount; i++) {
-            const fileName = `data/output/process_data_${i}.json`;
+            const fileName = path.resolve(import.meta.dirname, `data/output/process_data_${i}.json`);
             const fileContent = await fs.promises.readFile(fileName, 'utf8');
             const parsedData = JSON.parse(fileContent);
             totalDocsInFiles += parsedData.length;
@@ -187,7 +193,7 @@ const process_data = async (filePath: string) => {
 
 
 const createNewWriteStream = (fileCount: number): fs.WriteStream => {
-    const fileName = `data/output/process_data_${fileCount}.json`;
+    const fileName = path.resolve(import.meta.dirname, `data/output/process_data_${fileCount}.json`);
     return fs.createWriteStream(fileName, { flags: 'a' });
 };
 
@@ -212,9 +218,5 @@ const appendArrayChunk = async (
 
 
 
-await process_data('data/fiqa/corpus.jsonl')
+await processData(corpusPath)
 process.exit(0)
-// function writeJSONLLine(obj: any, filePath: string) {
-//     const jsonLine = JSON.stringify(obj) + '\n';
-//     fs.appendFile(filePath, jsonLine);
-// }
