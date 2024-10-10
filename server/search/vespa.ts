@@ -3,8 +3,9 @@
 
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import type { VespaResponse, User, VespaFile, Autocomplete, VespaResult } from "@/types";
-import { checkAndReadFile, getErrorMessage } from "@/utils";
+import type { VespaResponse, User, VespaFile, VespaResult } from "@/types";
+import type { Autocomplete, AutocompleteResults } from "@/shared/types";
+import { getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
 import { z } from "zod";
@@ -134,6 +135,12 @@ export const insertUser = async (user: User) => {
         console.error(`Error inserting user ${user.docid}:`, errorMessage);
     }
 }
+
+// export const mapVespaAutocomplete = async (data: VespaResponse<Autocomplete>): Promise<Autocomplete> => {
+//     const { root } = data
+//     return root.children.map(child => {
+//     })
+// }
 
 
 export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaResponse<Autocomplete>> => {

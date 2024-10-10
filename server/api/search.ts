@@ -1,9 +1,9 @@
 import type { Context, ValidationTargets } from "hono";
 import { autocomplete, groupVespaSearch, searchVespa } from "@/search/vespa";
 import { z } from 'zod'
-import type { AutocompleteResults } from "@/types";
 import config from "@/config"
 import { HTTPException } from "hono/http-exception";
+import { AutocompleteResultsSchema, type AutocompleteResults } from "@/shared/types";
 const { JwtPayloadKey } = config
 
 export const autocompleteSchema = z.object({

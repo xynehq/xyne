@@ -155,6 +155,24 @@ schema user {
         }
     }
 
+    document-summary autocomplete {
+        summary name {
+            source: name
+        }
+        summary email {
+            source: email
+        }
+        summary app {
+            source: app
+        }
+        summary entity {
+            source: entity
+        }
+        summary photoLink {
+            source: photoLink
+        }
+    }
+
     fieldset autocomplete {
         fields: name, email, app, entity, photoLink
     }

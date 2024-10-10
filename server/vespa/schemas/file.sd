@@ -124,6 +124,21 @@ schema file {
     summary docId {}
   }
 
+  document-summary autocomplete {
+    summary title {
+        source: title
+    }
+    summary app {
+        source: app
+    }
+    summary entity {
+        source: entity
+    }
+    summary docId {
+        source: docId
+    }
+  }
+
   # Autocomplete rank profile for fuzzy prefix search
   rank-profile autocomplete {
     first-phase {

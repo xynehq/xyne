@@ -137,7 +137,10 @@ const AutocompleteSchema = z.discriminatedUnion('type', [
 ]);
 
 export const AutocompleteResultsSchema = z.object({
-    children: z.array(AutocompleteSchema)
+    children: z.array(z.object({
+        relevance: z.number(),
+        fields: AutocompleteSchema
+    }))
 })
 
 export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
