@@ -19,7 +19,6 @@ import { ErrorRetrievingDocuments } from "@/errors/search/vespa/ErrorRetrievingD
 import { ErrorGettingDocument } from "@/errors/search/vespa/ErrorGettingDocument";
 import { ErrorUpdatingDocument } from "@/errors/search/vespa/ErrorUpdatingDocument";
 import { WrappedError } from "@/errors/wrapper/WrappedErrors";
-import { wrapError } from "@/errors/wrapError";
 
 // Define your Vespa endpoint and schema name
 const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
