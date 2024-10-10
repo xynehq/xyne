@@ -2,10 +2,10 @@ import type { Context } from "hono";
 import { setCookie } from "hono/cookie";
 import type { CookieOptions } from "hono/utils/cookie";
 import fs from "node:fs/promises";
-import { getLogger } from "@/shared/logger";
-import { LOGGERTYPES } from "@/shared/types";
+import { getLogger } from "./shared/logger";
+import { Subsystem } from "@/shared/types";
 
-const Logger = getLogger(LOGGERTYPES.utils)
+const Logger = getLogger(Subsystem.utils)
 
 export const checkAndReadFile = async (path: string) => {
     try {

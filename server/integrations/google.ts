@@ -14,16 +14,16 @@ import { db } from "@/db/client";
 import { connectors, oauthProviders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus, LOGGERTYPES } from "@/shared/types";
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus, Subsystem } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob";
 import { getUserById } from "@/db/user";
 import type { GaxiosResponse } from "gaxios";
 import { insertSyncHistory } from "@/db/syncHistory";
 import { getErrorMessage } from "@/utils";
-import { getLogger } from "@/shared/logger";
+import { getLogger } from "../shared/logger";
 
-const Logger = getLogger(LOGGERTYPES.integrations).child({module: 'google'})
+const Logger = getLogger(Subsystem.integrations).child({module: 'google'})
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
     return new JWT({

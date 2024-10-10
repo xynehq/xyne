@@ -10,8 +10,8 @@ import { progress_callback } from '@/utils';
 import config from "@/config";
 import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
 import { z } from "zod";
-import { getLogger } from "@/shared/logger";
-import { LOGGERTYPES } from "@/shared/types";
+import { getLogger } from "../shared/logger";
+import { Subsystem } from "@/shared/types";
 
 // Define your Vespa endpoint and schema name
 const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
@@ -24,7 +24,7 @@ env.backends.onnx.wasm.numThreads = 1;
 env.localModelPath = './'
 env.cacheDir = './'
 
-const Logger = getLogger(LOGGERTYPES.search).child({module: 'vespa'})
+const Logger = getLogger(Subsystem.search).child({module: 'vespa'})
 
 const extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
 function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {

@@ -6,16 +6,16 @@ import { getConnectorByExternalId, getConnectors, insertConnector } from "@/db/c
 import { ConnectorType,  type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
-import { Apps, AuthType, ConnectorStatus, LOGGERTYPES } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, Subsystem } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey } = config
 import { generateCodeVerifier, generateState, Google } from 'arctic';
 import type { SelectOAuthProvider } from "@/db/schema"
 import { setCookieByEnv } from "@/utils"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "../shared/logger"
 import {getPath} from 'hono/utils/url'
 
-const Logger = getLogger(LOGGERTYPES.api).child({module: 'admin'})
+const Logger = getLogger(Subsystem.api).child({module: 'admin'})
 
 
 export const GetConnectors = async (c: Context) => {

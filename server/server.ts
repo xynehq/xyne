@@ -22,8 +22,8 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
-import { middlewareLogger, getLogger } from '@/shared/logger'
-import { LOGGERTYPES } from '@/shared/types'
+import { middlewareLogger, getLogger } from './shared/logger'
+import { Subsystem } from '@/shared/types'
 import { GetUserWorkspaceInfo } from './api/auth'
 
 
@@ -38,7 +38,7 @@ const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = 'auth-token'
 
-const Logger = getLogger(LOGGERTYPES.server)
+const Logger = getLogger(Subsystem.server)
 
 const { upgradeWebSocket, websocket } =
     createBunWebSocket<ServerWebSocket>()
@@ -75,7 +75,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     }
 };
 
-const honoMiddlewareLogger = middlewareLogger(LOGGERTYPES.server)
+const honoMiddlewareLogger = middlewareLogger(Subsystem.server)
 
 app.use('*', honoMiddlewareLogger)
 

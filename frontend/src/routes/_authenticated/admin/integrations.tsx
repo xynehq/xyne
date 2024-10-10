@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Apps, AuthType, ConnectorStatus, LOGGERTYPES } from '@shared/types';
+import { Apps, AuthType, ConnectorStatus, Subsystem } from '@shared/types';
 import { api, wsClient } from '@/api';
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from '@tanstack/react-form';
@@ -15,9 +15,9 @@ import { cn, getErrorMessage } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Connectors } from '@/types';
 import { OAuthModal } from '@/oauth';
-import { getLogger } from '@shared/logger';
+import { getLogger } from '@server/shared/logger';
 
-const logger = getLogger(LOGGERTYPES.client).child({module: '_authenticated/admin'})
+const logger = getLogger(Subsystem.client).child({module: '_authenticated/admin'})
 
 const submitServiceAccountForm = async (value: ServiceAccountFormData, navigate: UseNavigateResult<string>) => {
     const response = await api.api.admin.service_account.$post({

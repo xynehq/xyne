@@ -4,11 +4,11 @@ import { connectors, oauthProviders, selectConnectorSchema, type SelectConnector
 import { type ConnectorType, OAuthCredentials, type TxnOrClient } from "@/types";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { and, eq } from "drizzle-orm";
-import { Apps, AuthType, LOGGERTYPES, ConnectorStatus } from "@/shared/types";
+import { Apps, AuthType, Subsystem, ConnectorStatus } from "@/shared/types";
 import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic";
-import config from "@/config";import { getLogger } from "@/shared/logger";
+import config from "@/config";import { getLogger } from "../shared/logger";
 
-const Logger = getLogger (LOGGERTYPES.db).child({module: 'connector'})
+const Logger = getLogger (Subsystem.db).child({module: 'connector'})
 
 export const insertConnector = async (
     trx: TxnOrClient,

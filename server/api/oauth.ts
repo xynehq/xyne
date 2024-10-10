@@ -4,8 +4,8 @@ import { getConnector, updateConnector } from "@/db/connector";
 import { getOAuthProvider } from "@/db/oauthProvider";
 import type { SelectConnector } from "@/db/schema";
 import { boss, SaaSQueue } from "@/queue";
-import { getLogger } from "@/shared/logger";
-import { Apps, LOGGERTYPES, type AuthType } from "@/shared/types";
+import { getLogger } from "../shared/logger";
+import { Apps, Subsystem, type AuthType } from "@/shared/types";
 import {  type SaaSOAuthJob } from "@/types";
 import { Google, type GoogleTokens } from "arctic";
 import type { Context } from "hono";
@@ -13,7 +13,7 @@ import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 const { JwtPayloadKey } = config
 
-const Logger = getLogger(LOGGERTYPES.api).child({module: 'oauth'})
+const Logger = getLogger(Subsystem.api).child({module: 'oauth'})
 
 interface OAuthCallbackQuery {
     state: string,

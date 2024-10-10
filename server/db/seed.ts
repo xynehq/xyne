@@ -2,10 +2,10 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { users, workspaces } from "./schema";
 import { getUserAndWorkspaceByEmail } from "./user";
-import { getLogger } from "@/shared/logger";
-import { LOGGERTYPES } from "@/shared/types";
+import { getLogger } from "../shared/logger";
+import { Subsystem } from "@/shared/types";
 
-const Logger =  getLogger(LOGGERTYPES.db).child({module: 'seed'})
+const Logger =  getLogger(Subsystem.db).child({module: 'seed'})
 
 const seed = async () => {
     Logger.info('here')

@@ -22,11 +22,11 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from '@/api';
 import HighlightedText from '@/components/Highlight';
-import { FileResponse, LOGGERTYPES } from '@shared/types';
+import { FileResponse, Subsystem } from '@shared/types';
 import { Autocomplete, Groups } from '@/types';
-import { getLogger } from '@shared/logger';
+import { getLogger } from '@server/shared/logger';
 
-const logger = getLogger(LOGGERTYPES.client).child({module: 'routes/_authenticated'})
+const logger = getLogger(Subsystem.client).child({module: 'routes/_authenticated'})
 
 export function SearchInfo({info}: {info: string}) {
   return (
