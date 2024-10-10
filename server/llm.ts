@@ -1,3 +1,1 @@
-interface llm {
-
-}
+interface llm {}

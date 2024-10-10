@@ -1,6 +1,3 @@
-
-
-
 // export const knowledgeGraphPrompt = `
 // Concise Document Analysis for Knowledge Graph Extraction
 // Analyze the given document and provide a JSON output with the following key information for knowledge graph construction:
@@ -169,7 +166,7 @@ Example output (truncated):
     "confidentialityLevel": "Internal Use Only"
   }
 }
-Analyze the input document provided above and generate a comprehensive JSON output following this structure and guidelines.`
+Analyze the input document provided above and generate a comprehensive JSON output following this structure and guidelines.`;
 
 export const kg2 = `You are an advanced algorithm designed to extract structured information from text to construct knowledge graphs. Your goal is to capture comprehensive information while maintaining accuracy. Analyze the given document and provide only a JSON output with key information for knowledge graph construction.
 Input Document:
@@ -209,8 +206,7 @@ Use this JSON structure for your output:
     "confidentialityLevel": "string"
   }
 }
-Analyze the input document provided above and generate a comprehensive JSON output following this structure and guidelines. The response must be strictly in JSON format.`
-
+Analyze the input document provided above and generate a comprehensive JSON output following this structure and guidelines. The response must be strictly in JSON format.`;
 
 const kg3 = `"Take the following Google Doc text input and extract key entities and their relationships for a knowledge graph. Identify named entities such as people, organizations, dates, locations, and products. Return the output strictly in JSON format, including entity types and relationships. Below is the input text."
 
@@ -320,8 +316,8 @@ Example JSON Output:
       "target": "Google Cloud"
     }
   ]
-}`
+}`;
 
 export const getPrompt = (document: string) => {
-    return kg3.replace('{input_document}', document)
-}
+  return kg3.replace("{input_document}", document);
+};

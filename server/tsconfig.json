@@ -1,12 +1,8 @@
 {
   "compilerOptions": {
     "paths": {
-      "@/*": [
-        "./*"
-      ],
-      "@/shared/*": [
-        "../shared/*"
-      ],
+      "@/*": ["./*"],
+      "@/shared/*": ["../shared/*"]
     },
     // Enable latest features
     "lib": ["ESNext", "DOM"],

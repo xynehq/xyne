@@ -3,9 +3,8 @@ import { progress_callback } from "./utils";
 
 env.backends.onnx.wasm.numThreads = 1;
 
-
-env.localModelPath = './'
-env.cacheDir = './'
+env.localModelPath = "./";
+env.cacheDir = "./";
 // try {
 
 //     // npm i @xenova/transformers
@@ -22,7 +21,6 @@ env.cacheDir = './'
 //         quantized: false, // Comment out this line to use the quantized version
 //         progress_callback
 //     });
-
 
 //     // Generate sentence embeddings
 //     const sentences = [
@@ -43,5 +41,8 @@ env.cacheDir = './'
 // }
 
 export const getExtractor = async (): Promise<FeatureExtractionPipeline> => {
-    return await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
-}
+  return await pipeline("feature-extraction", "Xenova/bge-base-en-v1.5", {
+    progress_callback,
+    cache_dir: env.cacheDir,
+  });
+};
