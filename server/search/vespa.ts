@@ -337,10 +337,11 @@ export const searchVespa = async (
   entity?: string,
   limit = config.page,
   offset?: number,
+  featureExtractor: typeof extractor = extractor,
 ): Promise<VespaResponse | {}> => {
   const url = `${VESPA_ENDPOINT}/search/`;
   const qEmbedding = (
-    await extractor(query, { pooling: "mean", normalize: true })
+    await featureExtractor(query, { pooling: "mean", normalize: true })
   ).tolist()[0];
 
   let yqlQuery = HybridDefaultProfile.yql;
