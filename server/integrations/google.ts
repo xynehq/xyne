@@ -14,20 +14,21 @@ import { db } from "@/db/client";
 import { connectors, oauthProviders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus, LOGGERTYPES } from "@/shared/types";
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus, Subsystem } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob";
 import { getUserById } from "@/db/user";
-import type { GaxiosResponse } from "gaxios";
+import { instance, type GaxiosResponse } from "gaxios";
 import { insertSyncHistory } from "@/db/syncHistory";
 import { getErrorMessage } from "@/utils";
-import { getLogger } from "@/shared/logger";
+import { getLogger } from "../shared/logger";
 import { UserListingError } from "@/errors/integrations/UserListingError";
 import { MissingDocumentWithId } from "@/errors/integrations/MissingDocumentWithId";
 import { UnableToCompleteSyncJob } from "@/errors/integrations/UnableToCompleteSyncJob";
 import { CouldNotFinishJobSuccessfully } from "@/errors/integrations/CouldNotFinishJobSuccessfully";
+import { WrappedError } from "@/errors/wrapper/WrappedErrors";
 
-const Logger = getLogger(LOGGERTYPES.integrations).child({module: 'google'})
+const Logger = getLogger(Subsystem.integrations).child({module: 'google'})
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
     return new JWT({
@@ -61,7 +62,7 @@ const listUsers = async (admin: admin_directory_v1.Admin, domain: string): Promi
         return users;
     } catch (error) {
         Logger.error(`Error listing users:", ${error}`);
-        throw new UserListingError(error);
+        throw new WrappedError(new UserListingError(undefined, error), (error instanceof Error)? error: undefined)
         // return [];
     }
 };
@@ -124,7 +125,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
             // catch the 404 error
             Logger.error(`Could not get document ${docId}, probably does not exist, ${e}`)
             stats.added += 1
-            throw new MissingDocumentWithId(docId,e)
+            throw new WrappedError(new MissingDocumentWithId(undefined, docId),(e instanceof Error) ? e : undefined)
         }
         // for these mime types we fetch the file
         // with the full processing
@@ -234,7 +235,7 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                 type: SyncCron.ChangeToken,
                 lastRanOn: new Date(),
             })
-            throw new UnableToCompleteSyncJob(syncJob.id, errorMessage)
+            throw new WrappedError(new UnableToCompleteSyncJob(undefined, syncJob.id, errorMessage), (error instanceof Error)? error : undefined)
         }
     }
 }
@@ -312,7 +313,7 @@ export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBos
                 type: SyncCron.ChangeToken,
                 lastRanOn: new Date(),
             })
-            throw new UnableToCompleteSyncJob(syncJob.id, errorMessage)
+            throw new WrappedError(new UnableToCompleteSyncJob(undefined, syncJob.id, errorMessage), (error instanceof Error)? error : undefined)
         }
     }
 }
@@ -382,7 +383,7 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
-        throw new CouldNotFinishJobSuccessfully(e)
+        throw new WrappedError(new CouldNotFinishJobSuccessfully(), (e instanceof Error) ? e : undefined)
     }
 }
 
@@ -442,7 +443,7 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
-        throw new CouldNotFinishJobSuccessfully(e)
+        throw new WrappedError(new CouldNotFinishJobSuccessfully(), (e instanceof Error) ? e : undefined)
     }
 }
 

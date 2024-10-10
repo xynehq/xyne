@@ -1,5 +1,6 @@
 export class OAuthCallbackError extends Error {
-    constructor(err:any) {
-        super(`Error while executing oauth callback : \n , ${err}`);
+    constructor(message?: string) {
+        super(`${message || 'Error while executing oauth callback'}`);
+        this.name = 'OAuthCallbackError';
     }   
 }

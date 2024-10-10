@@ -57,26 +57,25 @@ export enum SyncJobStatus {
 }
 
 
-export enum LOGGERTYPES {
+export enum Subsystem {
     // SERVER SIDE LOGGING
-    server = 'SERVER',
-    auth = 'AUTH',
-    cleanup = 'CLEANUP',
-    cronjob = 'CRONJOB',
-    ingest = 'INGEST',
-    integrations = 'SERVER/INTEGRATIONS',
-    search = 'SERVER/SEARCH',
-    db = 'SERVER/DB',
-    api = 'SERVER/API',
-    kg = 'SERVER/KG',
-    notion = 'SERVER/NOTION_INTEGRATION',
-    utils = 'SERVER/UTILS',
-    queue= 'SERVER/QUEUE',
+    server = 'Server',
+    auth = 'Auth',
+    cleanup = 'Cleanup',
+    cronjob = 'Cronjob',
+    ingest = 'Ingets',
+    integrations = 'Server/Integrations',
+    search = 'Server/Search',
+    db = 'Server/Db',
+    api = 'Server/Api',
+    notion = 'Server/Notion_Integration',
+    utils = 'Server/Utils',
+    queue= 'Server/Queue',
 
     // FRONTEND SIDE LOGGING 
-    client = 'CLIENT',
-    oauth = 'CLIENT/OAUTH',
-    admin = 'CLIENT/ADMIN',
+    client = 'CLient',
+    oauth = 'Client/Oauth',
+    admin = 'Client/Admin',
 }
 
 export enum OperationType {

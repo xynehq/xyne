@@ -1,6 +1,6 @@
 
-import { getLogger } from '@/shared/logger';
-import { LOGGERTYPES } from '@/shared/types';
+import { getLogger } from './shared/logger';
+import { Subsystem } from '@/shared/types';
 import { Client } from '@notionhq/client';
 import { crawler, pageToString } from "notion-md-crawler";
 
@@ -9,7 +9,7 @@ const notion = new Client({
     auth: notionApiKey
 })
 
-const Logger =  getLogger(LOGGERTYPES.notion)
+const Logger =  getLogger(Subsystem.notion)
 const notionPagesToFiles = async (pages): Promise<File[]> => {
     const crawl = crawler({ client: notion })
     let notionDocs = []

@@ -1,5 +1,6 @@
 export class ErrorUpdatingDocument extends Error {
-    constructor(docId:any, error:any) {
-        super(`Error fetching document ${docId}:  ${error.message}`);
+    constructor(message?:string, docId?:any, error?:any) {
+        super(`${message || `Error fetching document ${docId}:  ${error.message}`}`);
+        this.name = 'ErrorUpdatingDocument'
     }
 }

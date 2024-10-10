@@ -6,19 +6,20 @@ import { getConnectorByExternalId, getConnectors, insertConnector } from "@/db/c
 import { ConnectorType,  type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
-import { Apps, AuthType, ConnectorStatus, LOGGERTYPES } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, Subsystem } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey } = config
 import { generateCodeVerifier, generateState, Google } from 'arctic';
 import type { SelectOAuthProvider } from "@/db/schema"
 import { setCookieByEnv } from "@/utils"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "../shared/logger"
 import {getPath} from 'hono/utils/url'
 import { AddServiceConnectionError } from "@/errors/api/admin/AddServiceConnectionError"
 import { NoUserFound } from "@/errors/api/admin/NoUserFound"
 import { ConnectorNotCreated } from "@/errors/api/admin/ConnectorNotCreated"
+import { WrappedError } from "@/errors/wrapper/WrappedErrors"
 
-const Logger = getLogger(LOGGERTYPES.api).child({module: 'admin'})
+const Logger = getLogger(Subsystem.api).child({module: 'admin'})
 
 
 export const GetConnectors = async (c: Context) => {
@@ -81,7 +82,7 @@ export const CreateOAuthProvider = async (c: Context) => {
     const email = sub
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
-        throw new NoUserFound()
+        throw new WrappedError(new NoUserFound())
     }
     const [user] = userRes
     const form: OAuthProvider = c.req.valid('form')
@@ -106,7 +107,7 @@ export const CreateOAuthProvider = async (c: Context) => {
             ConnectorStatus.NotConnected
         )
         if (!connector) {
-            throw new ConnectorNotCreated()
+            throw new WrappedError(new ConnectorNotCreated())
         }
         const provider = await createOAuthProvider(
             trx,
@@ -132,7 +133,7 @@ export const AddServiceConnection = async (c: Context) => {
     const email = sub
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
-        throw new NoUserFound()
+        throw new WrappedError(new NoUserFound())
     }
     const [user] = userRes
     const form: ServiceAccountConnection = c.req.valid('form')

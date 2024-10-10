@@ -1,5 +1,6 @@
 export class ErrorRetrievingDocuments extends Error {
-    constructor(error:any) {
-        super(`Error retrieving document count:, ${error}`);
+    constructor(message?:string, error?:any) {
+        super(`${message || `Error retrieving document count:, ${error}`}`);
+        this.name = 'ErrorRetrievingDocuments';
     }
 }

@@ -1,5 +1,6 @@
 export class ErrorPerformingSearch extends Error {
-    constructor(error:any) {
-        super(`Error performing search:, ${error} `);
+    constructor(message?: string, error?:any) {
+        super(`${message || `Error performing search:, ${error}`} `);
+        this.name = 'ErrorPerformingSearch';
     }
 }

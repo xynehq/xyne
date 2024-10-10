@@ -3,12 +3,12 @@ import ollama from 'ollama'
 import { getPrompt } from './prompts';
 import { checkAndReadFile } from './utils';
 const kgCache = './fullDocs.json'
-import { getLogger } from '@/shared/logger';
-import { LOGGERTYPES } from '@/shared/types';
+import { getLogger } from './shared/logger';
+import { Subsystem } from '@/shared/types';
 
 export const initKG = async () => {
 
-    const Logger = getLogger(LOGGERTYPES.kg)
+    const Logger = getLogger(Subsystem.server).child({module: 'kg'})
 
     let fullDocs = await checkAndReadFile(kgCache)
     if (!fullDocs) {

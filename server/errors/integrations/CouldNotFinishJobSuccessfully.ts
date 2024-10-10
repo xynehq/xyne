@@ -1,5 +1,6 @@
 export class CouldNotFinishJobSuccessfully extends Error {
-    constructor(e:any) {
-        super(`Could not finish job successfully', ${e}`);
+    constructor(message?:string) {
+        super(`${message || 'Could not finish job successfully'}`);
+        this.name = 'CouldNotFinishJobSuccessfully';
     }
 }

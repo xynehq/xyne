@@ -22,11 +22,11 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { html, raw } from 'hono/html'
-import { middlewareLogger, getLogger } from '@/shared/logger'
-import { LOGGERTYPES } from '@/shared/types'
+import { middlewareLogger, getLogger } from './shared/logger'
+import { Subsystem } from '@/shared/types'
 import { GetUserWorkspaceInfo } from './api/auth'
-import { AuthRedirectError } from './errors/AuthRedirectionError'
-import { InitialisationError } from './errors/InitialisationError'
+import { AuthRedirectError } from './errors/server/AuthRedirectionError'
+import { InitialisationError } from './errors/server/InitialisationError'
 
 
 
@@ -40,7 +40,7 @@ const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = 'auth-token'
 
-const Logger = getLogger(LOGGERTYPES.server)
+const Logger = getLogger(Subsystem.server)
 
 const { upgradeWebSocket, websocket } =
     createBunWebSocket<ServerWebSocket>()
@@ -77,7 +77,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     }
 };
 
-const honoMiddlewareLogger = middlewareLogger(LOGGERTYPES.server)
+const honoMiddlewareLogger = middlewareLogger(Subsystem.server)
 
 app.use('*', honoMiddlewareLogger)
 
@@ -263,7 +263,8 @@ export const init = async () => {
     await initQueue()
 }
 init().catch(e => {
-    Logger.error(`Error : \n${e}`)
+    // Logger.error(`Error : \n${e}`)
+
     throw new InitialisationError();
 })
 

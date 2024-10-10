@@ -1,5 +1,6 @@
 export class InvalidOauthConnectorError extends Error {
-    constructor(err?:any | "") {
-        super(`Zod error: Invalid OAuth connector:  ${err}`);
+    constructor(message?: string) {
+        super(`${message || 'Zod error: Invalid OAuth connector'}`);
+        this.name = 'InvalidOauthConnectorError';
     }
 }

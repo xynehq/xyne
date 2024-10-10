@@ -1,5 +1,6 @@
 export class AddServiceConnectionError extends Error {
-    constructor() {
-        super('Error while adding service connection');
+    constructor(message?: string) {
+        super(`Error : ${message || 'While adding service connection'}`);
+        this.name = 'AddServiceConnectionError';
     }   
 }

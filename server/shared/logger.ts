@@ -1,5 +1,5 @@
 import { pino, type Logger } from 'pino'
-import type { LOGGERTYPES } from './types'
+import type { Subsystem } from '@/shared/types'
 import type { MiddlewareHandler, Context, Next } from "hono"
 import {getPath} from 'hono/utils/url'
 import { v4 as uuidv4 } from 'uuid';
@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 // SERVER SIDE LOGGER 
 
-export const getLogger = (loggerType: LOGGERTYPES) => {
+export const getLogger = (loggerType: Subsystem) => {
     if(process.env.NODE_ENV === 'production') {
       return pino({
             name: `${loggerType}`,
@@ -50,12 +50,12 @@ export const getLogger = (loggerType: LOGGERTYPES) => {
 }
 
 
-const getLoggerDestination = (loggerType: LOGGERTYPES) => {
+const getLoggerDestination = (loggerType: Subsystem) => {
     return `./logs/${loggerType}.log`;
 }
 
 
-export const middlewareLogger = (loggerType: LOGGERTYPES): MiddlewareHandler => {
+export const middlewareLogger = (loggerType: Subsystem): MiddlewareHandler => {
 
     const logger = getLogger(loggerType);
 

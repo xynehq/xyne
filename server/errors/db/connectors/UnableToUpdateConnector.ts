@@ -1,5 +1,6 @@
 export class UnableToUpdateConnector extends Error {
-    constructor() {
-        super('Could not update the connector');
+    constructor(message?: string) {
+        super(`${message || 'Could not update the connector'}`);
+        this.name = 'UnableToUpdateConnector';
     }
 }

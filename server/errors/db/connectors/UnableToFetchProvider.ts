@@ -1,5 +1,6 @@
 export class UnableToFetchProvider extends Error {
-    constructor() {
-        super( "Could not fetch provider while refreshing Google Token");
+    constructor(message?: string) {
+        super(`${message || 'Could not fetch provider while refreshing Google Token'}`);
+        this.name = 'UnableToFetchProvider'
     }
 }

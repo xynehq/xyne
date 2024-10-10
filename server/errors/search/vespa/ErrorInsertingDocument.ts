@@ -1,5 +1,6 @@
 export class ErrorInsertingDocument extends Error {
-    constructor(docId:any, data:any) {
-        super(`Error inserting document ${docId}:, ${data}`);
+    constructor(message?: string, docId?:any, data?:any) {
+        super(`${message || `Error inserting document ${docId}:, ${data}`}`);
+        this.name = 'ErrorInsertingDocument';
     }
 }

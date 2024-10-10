@@ -1,5 +1,6 @@
 export class SeedingError extends Error {
-    constructor(err:any) {
-        super(`Error during seeding : \n`, err);
+    constructor(message?:string) {
+        super(`${message || 'Error during seeding'}`);
+        this.name = 'SeedingError';
     }
 }

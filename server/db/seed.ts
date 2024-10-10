@@ -2,11 +2,12 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { users, workspaces } from "./schema";
 import { getUserAndWorkspaceByEmail } from "./user";
-import { getLogger } from "@/shared/logger";
-import { LOGGERTYPES } from "@/shared/types";
+import { getLogger } from "../shared/logger";
+import { Subsystem } from "@/shared/types";
 import { SeedingError } from "@/errors/db/seed/SeedingError";
+import { WrappedError } from "@/errors/wrapper/WrappedErrors";
 
-const Logger =  getLogger(LOGGERTYPES.db).child({module: 'seed'})
+const Logger =  getLogger(Subsystem.db).child({module: 'seed'})
 
 const seed = async () => {
     Logger.info('here')
@@ -46,7 +47,7 @@ const seed = async () => {
         Logger.info('Seeding completed successfully.');
     } catch (error) {
         Logger.error(`Error during seeding:, ${error}`);
-        throw new SeedingError(`${error}`);
+        throw new WrappedError(new SeedingError(), (error instanceof Error) ? error : undefined);
     }
 
 }

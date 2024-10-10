@@ -1,5 +1,6 @@
 export class InvalidConectionError extends Error {
-    constructor(err?:any | "") {
-        super(`Zod error: Invalid connector : ${err}`);
+    constructor(message?:string) { 
+        super(`${message || 'Zod error: Invalid connector'}`);
+        this.name = 'InvalidConectionError';
     }
 }

@@ -1,5 +1,6 @@
 export class ConnectionInsertionError extends Error {
-    constructor(err:any) {
-        super(`Could not insert connection : ${err}`);
+    constructor(message?:string) {
+        super(`${message || 'Could not insert connection'}`);
+        this.name = 'ConnectionInsertionError';
     }
 }

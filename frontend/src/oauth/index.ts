@@ -1,5 +1,5 @@
-import { Apps, LOGGERTYPES } from "@shared/types";
-import { getLogger } from '@shared/logger'
+import { Apps, Subsystem } from "@shared/types";
+import { getLogger } from '@server/shared/logger'
 import * as pino from 'pino'
 
 const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
@@ -12,7 +12,7 @@ export class OAuthModal {
     private windowRef: Window | null = null;
     private intervalId: number | null = null;
     private completed = false; // Flag to prevent multiple resolve/reject calls
-    private logger:pino.Logger = getLogger(LOGGERTYPES.oauth)
+    private logger:pino.Logger = getLogger(Subsystem.oauth)
 
     constructor(
         // connectorId: string;

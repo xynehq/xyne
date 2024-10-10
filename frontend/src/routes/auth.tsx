@@ -9,8 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import pino from 'pino'
-import { getLogger } from '@shared/logger'
-import { LOGGERTYPES } from '@shared/types'
+import { getLogger } from '@server/shared/logger'
+import { Subsystem } from '@shared/types'
 import { api } from '@/api'
 
 export const description =
@@ -20,7 +20,7 @@ export const containerClassName =
   "w-full h-screen flex items-center justify-center px-4"
 
 export default function LoginForm() {
-  const logger:pino.Logger = getLogger(LOGGERTYPES.client)
+  const logger:pino.Logger = getLogger(Subsystem.client)
   logger.info('LOGIN WITH GOOGLE CLICKED')
   return (
     <div className='flex w-full h-full justify-center'>

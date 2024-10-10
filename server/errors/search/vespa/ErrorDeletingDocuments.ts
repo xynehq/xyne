@@ -1,5 +1,6 @@
 export class ErrorDeletingDocuments extends Error {
-    constructor(error:any) {
-        super(`Error deleting documents:, ${error}`);
+    constructor(message?:string, error?:any) {
+        super(`${message || `Error deleting documents:, ${error}`}`);
+        this.name = 'ErrorDeletingDocuments';
     }
 }
