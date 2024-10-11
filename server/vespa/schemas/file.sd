@@ -34,13 +34,6 @@ schema file {
       index: enable-bm25
     }
 
-    field chunk_embeddings type tensor<bfloat16>(p{}, v[768]) {
-      indexing: attribute | index
-      attribute {
-        distance-metric: angular
-      }
-    }
-
     field owner type string {
       indexing: attribute | summary
     }
@@ -57,6 +50,14 @@ schema file {
       indexing: attribute | summary
     }
   }
+
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[768])  {
+    indexing: input chunks | embed | attribute | index | summary
+    attribute {
+        distance-metric: angular
+    }
+  }
+  
   field title_fuzzy type string {
     indexing: input title | index
     index {
