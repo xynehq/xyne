@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from '@/api';
 import HighlightedText from '@/components/Highlight';
-import { FileResponse, Subsystem } from '@shared/types';
+import { FileResponse } from '@shared/types';
 import { Autocomplete, Groups } from '@/types';
 
 const logger = console

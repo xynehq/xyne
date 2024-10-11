@@ -1,4 +1,4 @@
-import { Apps, Subsystem } from "@shared/types";
+import { Apps } from "@shared/types";
 
 const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
 const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth?success=true}`
