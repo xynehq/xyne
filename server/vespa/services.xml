@@ -1,5 +1,9 @@
 <services version="1.0">
     <container id="my_container" version="1.0">
+        <component id="hf-embedder" type="hugging-face-embedder">
+            <transformer-model path="models/model_quantized.onnx"/>
+            <tokenizer-model path="models/tokenizer.json"/>
+        </component>
         <search />
         <document-api />
     </container>
