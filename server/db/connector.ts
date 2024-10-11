@@ -15,7 +15,7 @@ import {
     FetchProviderFailed,
     UpdateConnectorFailed
 } from "@/errors";
-const Logger = getLogger(Subsystem.db).child({ module: 'connector' })
+const Logger = getLogger(Subsystem.Db).child({ module: 'connector' })
 
 export const insertConnector = async (
     trx: TxnOrClient,

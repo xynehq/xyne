@@ -1,11 +1,11 @@
-import {  type TxnOrClient } from "@/types";
+import { type TxnOrClient } from "@/types";
 import { oauthProviders, type InsertOAuthProvider, type SelectOAuthProvider } from "./schema";
 import { createId } from "@paralleldrive/cuid2";
 import { Subsystem, type Apps } from "@/shared/types";
 import { eq } from "drizzle-orm";
 import { getLogger } from "../shared/logger";
 
-const Logger = getLogger(Subsystem.db).child({module: 'oauth_provider'})
+const Logger = getLogger(Subsystem.Db).child({ module: 'oauth_provider' })
 
 export const createOAuthProvider = async (trx: TxnOrClient, data: Omit<InsertOAuthProvider, "externalId">) => {
     const externalId = createId();

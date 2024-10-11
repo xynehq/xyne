@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import { getLogger } from "./shared/logger";
 import { Subsystem } from "@/shared/types";
 
-const Logger = getLogger(Subsystem.utils)
+const Logger = getLogger(Subsystem.Utils)
 
 export const checkAndReadFile = async (path: string) => {
     try {

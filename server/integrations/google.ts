@@ -29,7 +29,7 @@ import {
     CouldNotFinishJobSuccessfully
 } from "@/errors"
 
-const Logger = getLogger(Subsystem.integrations).child({ module: 'google' })
+const Logger = getLogger(Subsystem.Integrations).child({ module: 'google' })
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
     return new JWT({

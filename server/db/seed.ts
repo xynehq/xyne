@@ -5,7 +5,7 @@ import { getUserAndWorkspaceByEmail } from "./user";
 import { getLogger } from "../shared/logger";
 import { Subsystem } from "@/shared/types";
 
-const Logger = getLogger(Subsystem.db).child({ module: 'seed' })
+const Logger = getLogger(Subsystem.Db).child({ module: 'seed' })
 
 const seed = async () => {
     Logger.info('here')

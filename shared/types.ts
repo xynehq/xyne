@@ -59,38 +59,31 @@ export enum SyncJobStatus {
 
 export enum Subsystem {
     // SERVER SIDE LOGGING
-    server = 'Server',
-    auth = 'Auth',
-    cleanup = 'Cleanup',
-    cronjob = 'Cronjob',
-    ingest = 'Ingets',
-    integrations = 'Server/Integrations',
-    search = 'Server/Search',
-    db = 'Server/Db',
-    api = 'Server/Api',
-    notion = 'Server/Notion_Integration',
-    utils = 'Server/Utils',
-    queue= 'Server/Queue',
-
-    // FRONTEND SIDE LOGGING 
-    client = 'CLient',
-    oauth = 'Client/Oauth',
-    admin = 'Client/Admin',
+    Server = 'Server',
+    Auth = 'Auth',
+    Cronjob = 'Cronjob',
+    Ingest = 'Ingest',
+    Integrations = 'Integrations',
+    Search = 'Search',
+    Db = 'Db',
+    Api = 'Api',
+    Utils = 'Utils',
+    Queue = 'Queue',
 }
 
-export enum OperationType {
-    sub = 'SUBSYSTEM'
-}
+// export enum OperationType {
+//     sub = 'SUBSYSTEM'
+// }
 
 export enum OperationStatus {
-    success = 'SUCCESS',
-    failure = 'FAILURE',
-    pendings = 'PENDING',
-    cancelled = 'CANCELLED',
+    Success = 'Success',
+    Failure = 'Failure',
+    Pendings = 'Pending',
+    Cancelled = 'Cancelled',
 }
 
 export type additionalMessage = Partial<{
-  STATUS: OperationStatus;
-  OPERATION_TYPE: OperationType;
-  TIME_TAKEN: number;
+    Status: OperationStatus;
+    // OperationType: OperationType;
+    TimeTaken: number;
 }>;

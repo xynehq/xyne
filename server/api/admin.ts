@@ -16,7 +16,7 @@ import { getLogger } from "../shared/logger"
 import { getPath } from 'hono/utils/url'
 import { AddServiceConnectionError, ConnectorNotCreated, NoUserFound } from "@/errors"
 
-const Logger = getLogger(Subsystem.api).child({ module: 'admin' })
+const Logger = getLogger(Subsystem.Api).child({ module: 'admin' })
 
 
 export const GetConnectors = async (c: Context) => {

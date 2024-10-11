@@ -39,7 +39,7 @@ const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = 'auth-token'
 
-const Logger = getLogger(Subsystem.server)
+const Logger = getLogger(Subsystem.Server)
 
 const { upgradeWebSocket, websocket } =
     createBunWebSocket<ServerWebSocket>()
