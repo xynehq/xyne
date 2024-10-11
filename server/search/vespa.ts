@@ -308,26 +308,26 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
 
 export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number, featureExtractor: typeof extractor = extractor): Promise<VespaResponse | {}> => {
     const url = `${VESPA_ENDPOINT}/search/`;
-    const qEmbedding = (await featureExtractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
+    // const qEmbedding = (await featureExtractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
     let yqlQuery = HybridDefaultProfile.yql
 
     if (app && entity) {
         yqlQuery += ` and app contains @app and entity contains @entity`;
     }
-    const semanticPayload = {
-        yql: SemanticProfile.yql,
-        email,
-        'ranking.profile': 'semantic',
-        'input.query(e)': qEmbedding,
-    };
+    // const semanticPayload = {
+    //     yql: SemanticProfile.yql,
+    //     email,
+    //     'ranking.profile': 'semantic',
+    //     'input.query(e)': qEmbedding,
+    // };
 
     const hybridDefaultPayload = {
         yql: yqlQuery,
         query,
         email,
         'ranking.profile': HybridDefaultProfile.profile,
-        'input.query(e)': qEmbedding,
+        'input.query(e)': 'embed(@query)',
         hits: limit,
         alpha: 0.5,
         ...(offset ? {
