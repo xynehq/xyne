@@ -3,7 +3,13 @@ import ollama from 'ollama'
 import { getPrompt } from './prompts';
 import { checkAndReadFile } from './utils';
 const kgCache = './fullDocs.json'
+import { getLogger } from './shared/logger';
+import { Subsystem } from '@/shared/types';
+
 export const initKG = async () => {
+
+    const Logger = getLogger(Subsystem.server).child({module: 'kg'})
+
     let fullDocs = await checkAndReadFile(kgCache)
     if (!fullDocs) {
         fullDocs = []
@@ -32,7 +38,7 @@ export const initKG = async () => {
 
         await fs.writeFile('./fullDocs.json', JSON.stringify(fullDocs))
     }
-    console.log('doc\n', fullDocs[5])
+    Logger.info(`doc\n, ${fullDocs[5]}`)
     const response = await ollama.chat({
         model: 'phi3.5',
         messages: [{ role: 'user', content: getPrompt(fullDocs[5]) }],

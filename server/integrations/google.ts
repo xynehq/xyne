@@ -14,14 +14,22 @@ import { db } from "@/db/client";
 import { connectors, oauthProviders } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getWorkspaceByEmail } from "@/db/workspace";
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types";
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus, Subsystem } from "@/shared/types";
 import type { GoogleTokens } from "arctic";
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob";
 import { getUserById } from "@/db/user";
-import type { GaxiosResponse } from "gaxios";
+import { instance, type GaxiosResponse } from "gaxios";
 import { insertSyncHistory } from "@/db/syncHistory";
 import { getErrorMessage } from "@/utils";
+import { getLogger } from "../shared/logger";
+import {
+    UserListingError,
+    MissingDocumentWithId,
+    SyncJobFailed,
+    CouldNotFinishJobSuccessfully
+} from "@/errors"
 
+const Logger = getLogger(Subsystem.Integrations).child({ module: 'google' })
 
 const createJwtClient = (serviceAccountKey: GoogleServiceAccount, subject: string): JWT => {
     return new JWT({
@@ -54,9 +62,8 @@ const listUsers = async (admin: admin_directory_v1.Admin, domain: string): Promi
         } while (nextPageToken);
         return users;
     } catch (error) {
-        console.error("Error listing users:", error);
-        throw error
-        // return [];
+        Logger.error(`Error listing users:", ${error}`);
+        throw new UserListingError({ cause: error as Error, integration: Apps.GoogleWorkspace, entity: "user", })
     }
 };
 
@@ -86,6 +93,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
                 try {
                     // also ensure that we are that permission
                     if (!(permissions[0] === email)) {
+                        Logger.error("We got a change for us that we didn't have access to in Vespa")
                         throw new Error("We got a change for us that we didn't have access to in Vespa")
                     }
                     await DeleteDocument(docId)
@@ -94,6 +102,7 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
                 } catch (e) {
                     // TODO: detect vespa 404 and only ignore for that case
                     // otherwise throw it further
+
                 }
             } else {
                 // remove our user's permission from the email
@@ -112,10 +121,12 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
         try {
             doc = await GetDocument(docId)
             stats.updated += 1
-        } catch (e) {
+        } catch (error) {
+            const errMessage = getErrorMessage(error)
             // catch the 404 error
-            console.error(`Could not get document ${docId}, probably does not exist, ${e}`)
+            Logger.error(`Could not get document ${docId}, probably does not exist, ${error}`)
             stats.added += 1
+            throw new MissingDocumentWithId({ docId, cause: error as Error, integration: Apps.GoogleDrive, entity: "docs" })
         }
         // for these mime types we fetch the file
         // with the full processing
@@ -144,13 +155,14 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
     } else if (change.driveId) {
         // TODO: handle this once we support multiple drives
     } else {
-        console.error('Could not handle change: ', change)
+        Logger.error(`Could not handle change: ', ${change}`)
+        throw new Error(`Could not handle change: ${change}`)
     }
     return stats
 }
 
 export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleOAuthChanges')
+    Logger.info('handleGoogleOAuthChanges')
     const data = job.data
     const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
     for (const syncJob of syncJobs) {
@@ -175,7 +187,7 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
             // as it is already removed
             // we should still update it in that case?
             if (changes?.length && newStartPageToken && newStartPageToken !== config.token) {
-                console.log(`total changes:  ${changes.length}`)
+                Logger.info(`total changes:  ${changes.length}`)
                 for (const change of changes) {
                     let changeStats = await handleGoogleDriveChange(change, oauth2Client, user.email)
                     stats = mergeStats(stats, changeStats)
@@ -202,11 +214,11 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                         lastRanOn: new Date(),
                     })
                 })
-                console.log(`Changes successfully synced: ${JSON.stringify(stats)}`)
+                Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error)
-            console.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
+            Logger.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
             const config: ChangeToken = syncJob.config as ChangeToken
             const newConfig = { token: config.token as string, lastSyncedAt: config.lastSyncedAt.toISOString() }
             await insertSyncHistory(db, {
@@ -224,12 +236,13 @@ export const handleGoogleOAuthChanges = async (boss: PgBoss, job: PgBoss.Job<any
                 type: SyncCron.ChangeToken,
                 lastRanOn: new Date(),
             })
+            throw new SyncJobFailed({ message: 'Could not complete sync job', cause: error as Error, integration: Apps.GoogleDrive, entity: "" })
         }
     }
 }
 
 export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountChanges')
+    Logger.info('handleGoogleServiceAccountChanges')
     const data = job.data
     const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.ServiceAccount)
     for (const syncJob of syncJobs) {
@@ -252,7 +265,7 @@ export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBos
             // as it is already removed
             // we should still update it in that case?
             if (changes?.length && newStartPageToken && newStartPageToken !== config.token) {
-                console.log(`total changes:  ${changes.length}`)
+                Logger.info(`total changes:  ${changes.length}`)
                 for (const change of changes) {
                     let changeStats = await handleGoogleDriveChange(change, jwtClient, user.email)
                     stats = mergeStats(stats, changeStats)
@@ -279,11 +292,11 @@ export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBos
                         lastRanOn: new Date(),
                     })
                 })
-                console.log(`Changes successfully synced: ${JSON.stringify(stats)}`)
+                Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error)
-            console.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
+            Logger.error(`Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`)
             const config: ChangeToken = syncJob.config as ChangeToken
             const newConfig = { token: config.token as string, lastSyncedAt: config.lastSyncedAt.toISOString() }
             await insertSyncHistory(db, {
@@ -301,6 +314,7 @@ export const handleGoogleServiceAccountChanges = async (boss: PgBoss, job: PgBos
                 type: SyncCron.ChangeToken,
                 lastRanOn: new Date(),
             })
+            throw new SyncJobFailed({ message: 'Could not complete sync job', cause: error as Error, integration: Apps.GoogleDrive, entity: "" })
         }
     }
 }
@@ -323,7 +337,7 @@ const mergeStats = (prev: ChangeStats, current: ChangeStats): ChangeStats => {
 }
 
 export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountIngestion', job.data)
+    Logger.info(`handleGoogleServiceAccountIngestion, ${job.data}`)
     const data: SaaSOAuthJob = job.data as SaaSOAuthJob
     try {
         // we will first fetch the change token
@@ -360,22 +374,23 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
                 status: SyncJobStatus.NotStarted
             })
             await boss.complete(SaaSQueue, job.id)
-            console.log('job completed')
+            Logger.info('job completed')
         })
     } catch (e) {
-        console.error('could not finish job successfully', e)
+        Logger.error(`Could not finish job successfully \n, ${e}`)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
+        throw new CouldNotFinishJobSuccessfully({ message: "Could not finish Oauth ingestion", integration: Apps.GoogleDrive, entity: "files", cause: e as Error })
     }
 }
 
 type ChangeList = { email: string, changeToken: string }
 export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountIngestion', job.data)
+    Logger.info(`handleGoogleServiceAccountIngestion', ${job.data}`)
     const data: SaaSJob = job.data as SaaSJob
     try {
         const connector = await getConnector(db, data.connectorId)
@@ -393,6 +408,7 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             const driveClient = google.drive({ version: "v3", auth: jwtClient })
             const { startPageToken }: drive_v3.Schema$StartPageToken = (await driveClient.changes.getStartPageToken()).data
             if (!startPageToken) {
+                Logger.error('Could not get start page token')
                 throw new Error('Could not get start page token')
             }
             sendWebsocketMessage(`${((index + 1) / users.length) * 100}% user's data is connected`, connector.externalId)
@@ -416,18 +432,19 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             await trx.update(connectors).set({
                 status: ConnectorStatus.Connected
             }).where(eq(connectors.id, connector.id))
-            console.log('status updated')
+            Logger.info('status updated')
             await boss.complete(SaaSQueue, job.id)
-            console.log('job completed')
+            Logger.info('job completed')
         })
-    } catch (e) {
-        console.error('could not finish job successfully', e)
+    } catch (error) {
+        Logger.error(`Could not finish job successfully', ${error}`)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
+        throw new CouldNotFinishJobSuccessfully({ integration: Apps.GoogleDrive, entity: "", cause: error as Error })
     }
 }
 
@@ -479,7 +496,7 @@ const scopes = [
 ];
 
 const getFile = async (client: GoogleClient, fileId: string): Promise<drive_v3.Schema$File> => {
-    console.log('getFile')
+    Logger.info('getFile')
     const drive = google.drive({ version: "v3", auth: client });
     const fields = "id, webViewLink, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
     const file: GaxiosResponse<drive_v3.Schema$File> = await drive.files.get({ fileId, fields })
@@ -546,7 +563,7 @@ const sendWebsocketMessage = (message: string, connectorId: string) => {
 const extractor = await getExtractor()
 
 const getFileContent = async (client: GoogleClient, file: drive_v3.Schema$File, entity) => {
-    console.log('getFileContent')
+    Logger.info('getFileContent')
     const docs = google.docs({ version: "v1", auth: client });
     const documentContent = await docs.documents.get({
         documentId: file.id as string,

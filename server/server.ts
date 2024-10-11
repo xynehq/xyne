@@ -1,4 +1,4 @@
-import { Hono, type Context, type Next } from 'hono'
+import { type Context, Hono, type Next } from 'hono'
 import { logger } from 'hono/logger'
 import { AutocompleteApi, autocompleteSchema, SearchApi } from '@/api/search'
 import { zValidator } from '@hono/zod-validator'
@@ -21,8 +21,10 @@ import { serveStatic } from 'hono/bun'
 import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
-import { html, raw } from 'hono/html'
+import { getLogger, LogMiddleware } from './shared/logger'
+import { Subsystem } from '@/shared/types'
 import { GetUserWorkspaceInfo } from './api/auth'
+import { AuthRedirectError, InitialisationError } from '@/errors'
 
 
 
@@ -36,6 +38,7 @@ const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = 'auth-token'
 
+const Logger = getLogger(Subsystem.Server)
 
 const { upgradeWebSocket, websocket } =
     createBunWebSocket<ServerWebSocket>()
@@ -56,23 +59,25 @@ const AuthRedirect = async (c: Context, next: Next) => {
 
     // If no auth token is found
     if (!authToken) {
-        console.log("Redirected by server - No AuthToken")
+        Logger.warn("Redirected by server - No AuthToken")
         // Redirect to login page if no token found
-        return c.redirect(`${frontendBaseURL}/auth`) 
+        return c.redirect(`${frontendBaseURL}/auth`)
     }
 
     try {
         // Verify the token if available
         await AuthMiddleware(c, next);
     } catch (err) {
-        console.error(err);
-        console.log("Redirected by server - Error in AuthMW")
+        Logger.error(`${new AuthRedirectError({ cause: err as Error })}`);
+        Logger.warn("Redirected by server - Error in AuthMW")
         // Redirect to auth page if token invalid
         return c.redirect(`${frontendBaseURL}/auth`)
     }
 };
 
-app.use('*', logger())
+const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
+
+app.use('*', honoMiddlewareLogger)
 
 export const wsConnections = new Map();
 
@@ -86,11 +91,11 @@ export const WsApp = app.get(
                 wsConnections.set(connectorId, ws)
             },
             onMessage(event, ws) {
-                console.log(`Message from client: ${event.data}`)
+                Logger.info(`Message from client: ${event.data}`)
                 ws.send(JSON.stringify({ message: 'Hello from server!' }))
             },
             onClose: (event, ws) => {
-                console.log('Connection closed')
+                Logger.info('Connection closed')
                 if (connectorId) {
                     wsConnections.delete(connectorId)
                 }
@@ -125,7 +130,14 @@ app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchem
 //     app.get('/oauth/start', zValidator('query', oauthStartQuerySchema), StartOAuth)
 // }
 const generateToken = async (email: string, role: string, workspaceId: string) => {
-    console.log('generating token')
+    Logger.info({
+        tokenInfo: {
+            // email: email,
+            role: role,
+            workspaceId,
+        }
+    },
+        'generating token for the following')
     const payload = {
         sub: email,
         role: role,
@@ -165,6 +177,7 @@ app.get(
             throw new HTTPException(500, { message: 'User email is not verified' })
         }
         // hosted domain
+        // @ts-ignore
         let domain = user.hd
         if (!domain && email) {
             domain = email.split('@')[1]
@@ -175,7 +188,14 @@ app.get(
         const existingUserRes = await getUserByEmail(db, email)
         // if user exists then workspace exists too
         if (existingUserRes && existingUserRes.length) {
-            console.log('User found')
+            Logger.info({
+                requestId: c.var.requestId, // Access the request ID
+                user: {
+                    email: user.email,
+                    name: user.name,
+                    verified_email: user.verified_email,
+                },
+            }, "User found and authenticated");
             const existingUser = existingUserRes[0]
             const jwtToken = await generateToken(existingUser.email, existingUser.role, existingUser.workspaceExternalId)
             setCookieByEnv(c, CookieName, jwtToken)
@@ -186,7 +206,7 @@ app.get(
         // just create the user
         const existingWorkspaceRes = await getWorkspaceByDomain(domain)
         if (existingWorkspaceRes && existingWorkspaceRes.length) {
-            console.log('Workspace found, creating user')
+            Logger.info('Workspace found, creating user')
             const existingWorkspace = existingWorkspaceRes[0]
             const [user] = await createUser(db, existingWorkspace.id, email, name, photoLink, UserRole.User, existingWorkspace.externalId)
             const jwtToken = await generateToken(user.email, user.role, user.workspaceExternalId)
@@ -197,7 +217,7 @@ app.get(
         // we could not find the user and the workspace
         // creating both
 
-        console.log('Creating workspace and user')
+        Logger.info('Creating workspace and user')
         const userAcc = await db.transaction(async (trx) => {
             const [workspace] = await createWorkspace(trx, email, domain)
             const [user] = await createUser(trx, workspace.id, email, name, photoLink, UserRole.SuperAdmin, workspace.externalId)
@@ -236,13 +256,13 @@ app.get('/admin/integrations', AuthRedirect, serveStatic({ path: './dist/index.h
 app.get('/oauth/success', serveStatic({ path: './dist/index.html' }));
 
 // Serve assets (CSS, JS, etc.)
-app.get('/assets/*', serveStatic({ root: './dist' })); 
+app.get('/assets/*', serveStatic({ root: './dist' }));
 
 export const init = async () => {
     await initQueue()
 }
-init().catch(e => {
-    console.error(e)
+init().catch(error => {
+    throw new InitialisationError({ cause: error });
 })
 
 const server = Bun.serve({
@@ -250,4 +270,5 @@ const server = Bun.serve({
     port: config.port,
     websocket
 })
-console.log(`listening on port: ${config.port}`)
+Logger.info(`listening on port: ${config.port}`)
+

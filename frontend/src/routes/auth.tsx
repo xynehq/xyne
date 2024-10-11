@@ -17,6 +17,8 @@ export const containerClassName =
   "w-full h-screen flex items-center justify-center px-4"
 
 export default function LoginForm() {
+  const logger = console
+  logger.info('LOGIN WITH GOOGLE CLICKED')
   return (
     <div className='flex w-full h-full justify-center'>
         <div className='max-w-sm flex items-center'>
@@ -30,6 +32,7 @@ export default function LoginForm() {
             <CardContent>
                 <div className="grid gap-4">
                 <Button variant="outline" className="w-full" onClick={(e) => {
+                    logger.info('User Clicked login with google')
                   const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`;
                     window.location.href = redirectUrl
                 }}>

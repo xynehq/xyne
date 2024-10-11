@@ -16,6 +16,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Connectors } from '@/types';
 import { OAuthModal } from '@/oauth';
 
+const logger = console
+
 const submitServiceAccountForm = async (value: ServiceAccountFormData, navigate: UseNavigateResult<string>) => {
     const response = await api.api.admin.service_account.$post({
       form: {
@@ -385,7 +387,7 @@ const AdminLayout = () => {
     if (!isPending && data && data.length > 0) {
       setIsIntegratingSA(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount))
       const connector = data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth)
-      console.log(connector)
+      logger.info(connector)
       if(connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if(connector?.status === ConnectorStatus.Connected) {
@@ -413,10 +415,10 @@ const AdminLayout = () => {
     })
       // setWs(socket)
       socket?.addEventListener('open', () => {
-        console.log('open')
+        logger.info('open')
       })
       socket?.addEventListener('close', () => {
-        console.log('close')
+        logger.info('close')
       })
       socket?.addEventListener('message', (e) => {
         // const message = JSON.parse(e.data);
