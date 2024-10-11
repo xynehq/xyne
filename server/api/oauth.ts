@@ -3,18 +3,18 @@ import { db } from "@/db/client";
 import { getConnector, updateConnector } from "@/db/connector";
 import { getOAuthProvider } from "@/db/oauthProvider";
 import type { SelectConnector } from "@/db/schema";
-import { OAuthCallbackError } from "@/errors/api/oauth/OauthCallbackError";
+import { OAuthCallbackError } from "@/errors";
 import { boss, SaaSQueue } from "@/queue";
 import { getLogger } from "../shared/logger";
 import { Apps, Subsystem, type AuthType } from "@/shared/types";
-import {  type SaaSOAuthJob } from "@/types";
+import { type SaaSOAuthJob } from "@/types";
 import { Google, type GoogleTokens } from "arctic";
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 const { JwtPayloadKey } = config
 
-const Logger = getLogger(Subsystem.api).child({module: 'oauth'})
+const Logger = getLogger(Subsystem.api).child({ module: 'oauth' })
 
 interface OAuthCallbackQuery {
     state: string,
@@ -63,12 +63,12 @@ export const OAuthCallback = async (c: Context) => {
         // Enqueue the background job within the same transaction
         const jobId = await boss.send(SaaSQueue, SaasJobPayload)
 
-    Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+        Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
         // Commit the transaction if everything is successful
         return c.redirect(`${config.host}/oauth/success`)
     } catch (error) {
-        Logger.error(`${new OAuthCallbackError()}`)
+        Logger.error(`${new OAuthCallbackError({ cause: error as Error })}`)
         throw new HTTPException(500, { message: 'Error in OAuthCallback' })
     }
 }
