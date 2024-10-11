@@ -24,9 +24,8 @@ import { api } from '@/api';
 import HighlightedText from '@/components/Highlight';
 import { FileResponse, Subsystem } from '@shared/types';
 import { Autocomplete, Groups } from '@/types';
-import { getLogger } from '@server/shared/logger';
 
-const logger = getLogger(Subsystem.client).child({module: 'routes/_authenticated'})
+const logger = console
 
 export function SearchInfo({info}: {info: string}) {
   return (

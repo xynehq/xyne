@@ -1,6 +1,4 @@
 import { Apps, Subsystem } from "@shared/types";
-import { getLogger } from '@server/shared/logger'
-import * as pino from 'pino'
 
 const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
 const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth?success=true}`
@@ -12,7 +10,7 @@ export class OAuthModal {
     private windowRef: Window | null = null;
     private intervalId: number | null = null;
     private completed = false; // Flag to prevent multiple resolve/reject calls
-    private logger:pino.Logger = getLogger(Subsystem.oauth)
+    private logger = console
 
     constructor(
         // connectorId: string;
@@ -28,7 +26,7 @@ export class OAuthModal {
         return new Promise((resolve, reject) => {
             try {
                 //clientLog({currentApp: app}, 'Starting OAuth')
-                this.logger.info({currentApp: app}, 'Starting OAuth')
+                this.logger.info({ currentApp: app }, 'Starting OAuth')
                 this.openAuthWindow(`${authUrl}?app=${app}`);
                 this.monitorWindow(resolve, reject);
             } catch (error) {
@@ -68,7 +66,7 @@ export class OAuthModal {
 
             try {
                 const currentUrl = this.windowRef?.location.href;
-                this.logger.info( "Monitoring window")
+                this.logger.info("Monitoring window")
                 if (currentUrl && (currentUrl === successUrl)) {
                     // When the popup window reaches the success URL, stop monitoring
                     window.clearInterval(this.intervalId!);
@@ -92,7 +90,7 @@ export class OAuthModal {
                     oauthProgress: {
                         success: false,
                     }
-                },'Authentication window was closed before completion.');
+                }, 'Authentication window was closed before completion.');
                 reject({ success: false, message: 'Authentication window was closed before completion.' })
             }
         }, 500); // Check every 500ms
