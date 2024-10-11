@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception'
 import { db } from '@/db/client'
 import { getUserByEmail } from "@/db/user"
 import { getConnectorByExternalId, getConnectors, insertConnector } from "@/db/connector"
-import { ConnectorType,  type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection } from "@/types"
+import { ConnectorType, type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus, Subsystem } from "@/shared/types"
@@ -11,11 +11,12 @@ import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey } = config
 import { generateCodeVerifier, generateState, Google } from 'arctic';
 import type { SelectOAuthProvider } from "@/db/schema"
-import { setCookieByEnv } from "@/utils"
+import { getErrorMessage, setCookieByEnv } from "@/utils"
 import { getLogger } from "../shared/logger"
-import {getPath} from 'hono/utils/url'
+import { getPath } from 'hono/utils/url'
+import { AddServiceConnectionError, ConnectorNotCreated, NoUserFound } from "@/errors"
 
-const Logger = getLogger(Subsystem.api).child({module: 'admin'})
+const Logger = getLogger(Subsystem.api).child({ module: 'admin' })
 
 
 export const GetConnectors = async (c: Context) => {
@@ -59,12 +60,12 @@ const getAuthorizationUrl = async (c: Context, app: Apps, provider: SelectOAuthP
 
 export const StartOAuth = async (c: Context) => {
     const path = getPath(c.req.raw)
-    Logger.info( {
+    Logger.info({
         reqiestId: c.var.requestId,
         method: c.req.method,
         path,
     },
-    "Started Oauth")
+        "Started Oauth")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const { app }: OAuthStartQuery = c.req.valid('query')
     Logger.info(`${sub} started ${app} OAuth`)
@@ -78,7 +79,7 @@ export const CreateOAuthProvider = async (c: Context) => {
     const email = sub
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
-        throw new Error('Could not get user')
+        throw new NoUserFound({})
     }
     const [user] = userRes
     const form: OAuthProvider = c.req.valid('form')
@@ -103,7 +104,7 @@ export const CreateOAuthProvider = async (c: Context) => {
             ConnectorStatus.NotConnected
         )
         if (!connector) {
-            throw new Error("Connecter wasn't created")
+            throw new ConnectorNotCreated({})
         }
         const provider = await createOAuthProvider(
             trx,
@@ -129,7 +130,7 @@ export const AddServiceConnection = async (c: Context) => {
     const email = sub
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
-        throw new Error('Could not get user')
+        throw new NoUserFound({})
     }
     const [user] = userRes
     const form: ServiceAccountConnection = c.req.valid('form')
@@ -173,7 +174,8 @@ export const AddServiceConnection = async (c: Context) => {
             return c.json({ success: true, message: 'Connection created, job enqueued', id: connector.externalId })
 
         } catch (error) {
-            Logger.error(`Error: ${error}`)
+            const errMessage = getErrorMessage(error)
+            Logger.error(`${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage}`)
             // Rollback the transaction in case of any error
             throw new HTTPException(500, { message: 'Error creating connection or enqueuing job' })
         }

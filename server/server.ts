@@ -25,6 +25,7 @@ import { html, raw } from 'hono/html'
 import { middlewareLogger, getLogger } from './shared/logger'
 import { Subsystem } from '@/shared/types'
 import { GetUserWorkspaceInfo } from './api/auth'
+import { AuthRedirectError, InitialisationError } from '@/errors'
 
 
 
@@ -61,14 +62,14 @@ const AuthRedirect = async (c: Context, next: Next) => {
     if (!authToken) {
         Logger.warn("Redirected by server - No AuthToken")
         // Redirect to login page if no token found
-        return c.redirect(`${frontendBaseURL}/auth`) 
+        return c.redirect(`${frontendBaseURL}/auth`)
     }
 
     try {
         // Verify the token if available
         await AuthMiddleware(c, next);
     } catch (err) {
-        Logger.error(`${err}`);
+        Logger.error(`${new AuthRedirectError({ cause: err as Error })}`);
         Logger.warn("Redirected by server - Error in AuthMW")
         // Redirect to auth page if token invalid
         return c.redirect(`${frontendBaseURL}/auth`)
@@ -177,6 +178,7 @@ app.get(
             throw new HTTPException(500, { message: 'User email is not verified' })
         }
         // hosted domain
+        // @ts-ignore
         let domain = user.hd
         if (!domain && email) {
             domain = email.split('@')[1]
@@ -248,20 +250,20 @@ app.get(
 // })
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
-app.get('/', AuthRedirect,  serveStatic({ path: './dist/index.html' }));
+app.get('/', AuthRedirect, serveStatic({ path: './dist/index.html' }));
 app.get('/auth', serveStatic({ path: './dist/index.html' }));
 app.get('/search', AuthRedirect, serveStatic({ path: './dist/index.html' }));
 app.get('/admin/integrations', AuthRedirect, serveStatic({ path: './dist/index.html' }));
-app.get('/oauth/success',  serveStatic({ path: './dist/index.html' }));
+app.get('/oauth/success', serveStatic({ path: './dist/index.html' }));
 
 // Serve assets (CSS, JS, etc.)
-app.get('/assets/*', serveStatic({ root: './dist' })); 
+app.get('/assets/*', serveStatic({ root: './dist' }));
 
 export const init = async () => {
     await initQueue()
 }
-init().catch(e => {
-    Logger.error(`${e}`)
+init().catch(error => {
+    throw new InitialisationError({ cause: error });
 })
 
 const server = Bun.serve({

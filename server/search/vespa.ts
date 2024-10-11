@@ -5,13 +5,14 @@ import fs from "node:fs/promises";
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
 import { type VespaResponse, type File } from "@/types";
-import { checkAndReadFile } from "@/utils";
+import { checkAndReadFile, getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
 import { driveFilesToDoc, DriveMime, googleDocs, listFiles, toPermissionsList } from "@/integrations/google";
 import { z } from "zod";
 import { getLogger } from "../shared/logger";
 import { Subsystem } from "@/shared/types";
+import { ErrorDeletingDocuments, ErrorGettingDocument, ErrorUpdatingDocument, ErrorRetrievingDocuments, ErrorPerformingSearch, ErrorInsertingDocument } from "@/errors";
 
 // Define your Vespa endpoint and schema name
 const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
@@ -24,7 +25,7 @@ env.backends.onnx.wasm.numThreads = 1;
 env.localModelPath = './'
 env.cacheDir = './'
 
-const Logger = getLogger(Subsystem.search).child({module: 'vespa'})
+const Logger = getLogger(Subsystem.search).child({ module: 'vespa' })
 
 const extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
 function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {
@@ -78,6 +79,7 @@ async function deleteAllDocuments() {
         }
     } catch (error) {
         Logger.error(`Error deleting documents:, ${error}`);
+        throw new ErrorDeletingDocuments({ cause: error as Error, sources: "file" })
     }
 }
 
@@ -102,7 +104,9 @@ export const insertDocument = async (document: File) => {
             Logger.error(`Error inserting document ${document.docId}:, ${data}`);
         }
     } catch (error) {
-        Logger.error(`Error inserting document ${document.docId}:, ${error.message}`);
+        const errMessage = getErrorMessage(error)
+        Logger.error(`Error inserting document ${document.docId}:, ${errMessage}`);
+        throw new ErrorInsertingDocument({ docId: document.docId, cause: error as Error, sources: "file" })
     }
 }
 
@@ -136,6 +140,7 @@ export const autocomplete = async (query: string, email: string, limit: number =
         return data;
     } catch (error) {
         Logger.error(`Error performing autocomplete search:, ${error} `);
+        throw new ErrorPerformingSearch({ message: `Error performing autocomplete search`, cause: error as Error, sources: "file" })
         // TODO: instead of null just send empty response
         return null;
     }
@@ -306,6 +311,7 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
         return handleVespaGroupResponse(data)
     } catch (error) {
         Logger.error(`Error performing search:, ${error}`);
+        throw new ErrorPerformingSearch({ cause: error as Error, sources: "file" })
         return {}
     }
 }
@@ -361,6 +367,7 @@ export const searchVespa = async (query: string, email: string, app?: string, en
         return data
     } catch (error) {
         Logger.error(`Error performing search:, ${error}`);
+        throw new ErrorPerformingSearch({ cause: error as Error, sources: "file" })
         return {}
     }
 }
@@ -402,6 +409,7 @@ const getDocumentCount = async () => {
         }
     } catch (error) {
         Logger.error('Error retrieving document count:', error);
+        throw new ErrorRetrievingDocuments({ cause: error as Error, sources: "file" })
     }
 }
 
@@ -446,8 +454,9 @@ export const GetDocument = async (docId: string): Promise<Doc> => {
         const document = await response.json();
         return document;
     } catch (error) {
-        Logger.error(`Error fetching document ${docId}:  ${error.message}`,);
-        throw error;
+        const errMessage = getErrorMessage(error)
+        Logger.error(`Error fetching document ${docId}:  ${errMessage}`,);
+        throw new ErrorGettingDocument({ docId, cause: error as Error, sources: "file" })
     }
 }
 
@@ -473,8 +482,9 @@ export const UpdateDocumentPermissions = async (docId: string, updatedPermission
 
         Logger.info(`Successfully updated permissions for document ${docId}.`)
     } catch (error) {
-        Logger.error(`Error updating permissions for document ${docId}:`, error.message)
-        throw error
+        const errMessage = getErrorMessage(error)
+        Logger.error(`Error updating permissions for document ${docId}:`, errMessage)
+        throw new ErrorUpdatingDocument({ docId, cause: error as Error, sources: "file" })
     }
 }
 
@@ -492,8 +502,9 @@ export const DeleteDocument = async (docId: string) => {
 
         Logger.info(`Document ${docId} deleted successfully.`)
     } catch (error) {
-        Logger.error(`Error deleting document ${docId}:  ${error.message}`, )
-        throw error
+        const errMessage = getErrorMessage(error)
+        Logger.error(`Error deleting document ${docId}:  ${errMessage}`,)
+        throw new ErrorDeletingDocuments({ cause: error as Error, sources: "file" })
     }
 }
 
@@ -554,7 +565,8 @@ export const ifDocumentsExist = async (docIds: string[]) => {
 
         return existenceMap; // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
     } catch (error) {
-        Logger.error(`Error checking documents existence:  ${error.message}`, );
+        const errMessage = getErrorMessage(error)
+        Logger.error(`Error checking documents existence:  ${errMessage}`,);
         throw error;
     }
 };
@@ -583,6 +595,8 @@ const getNDocuments = async (n: number) => {
 
         return data
     } catch (error) {
-        Logger.error(`Error retrieving document count: , ${error}`);
+        const errMessage = getErrorMessage(error)
+        Logger.error(`Error retrieving document count: , ${errMessage}`);
+        throw new ErrorRetrievingDocuments({ cause: error as Error, sources: "file" })
     }
 }
