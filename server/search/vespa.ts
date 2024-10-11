@@ -298,44 +298,39 @@ export const groupVespaSearch = async (
   }
 }
 
-export const searchVespa = async (
-  query: string,
-  email: string,
-  app?: string,
-  entity?: string,
-  limit = config.page,
-  offset?: number,
-): Promise<VespaSearchResponse> => {
-  const url = `${vespaEndpoint}/search/`
-  const qEmbedding = (
-    await extractor(query, { pooling: "mean", normalize: true })
-  ).tolist()[0]
+export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number, featureExtractor: typeof extractor = extractor): Promise<VespaSearchResponse | {}> => {
+    const url = `${vespaEndpoint}/search/`;
+    // const qEmbedding = (await featureExtractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
   let yqlQuery = HybridDefaultProfile(limit).yql
 
-  if (app && entity) {
-    yqlQuery += ` and app contains @app and entity contains @entity`
-  }
+    if (app && entity) {
+        yqlQuery += ` and app contains @app and entity contains @entity`;
+    }
+    // const semanticPayload = {
+    //     yql: SemanticProfile.yql,
+    //     email,
+    //     'ranking.profile': 'semantic',
+    //     'input.query(e)': qEmbedding,
+    // };
 
-  const hybridDefaultPayload = {
-    yql: yqlQuery,
-    query,
-    email,
-    "ranking.profile": HybridDefaultProfile(limit).profile,
-    "input.query(e)": qEmbedding,
-    hits: limit,
-    alpha: 0.5,
-    ...(offset
-      ? {
-          offset,
+    const hybridDefaultPayload = {
+        yql: yqlQuery,
+        query,
+        email,
+        'ranking.profile': HybridDefaultProfile(limit).profile,
+        'input.query(e)': 'embed(@query)',
+        hits: limit,
+        alpha: 0.5,
+        ...(offset ? {
+            offset
+        } : {}),
+        ...(app && entity ? ({ app, entity }) : {}),
+        variables: {
+            query,
+            app,
+            entity
         }
-      : {}),
-    ...(app && entity ? { app, entity } : {}),
-    variables: {
-      query,
-      app,
-      entity,
-    },
   }
   try {
     const response = await fetch(url, {
