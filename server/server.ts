@@ -21,8 +21,7 @@ import { serveStatic } from 'hono/bun'
 import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
-import { html, raw } from 'hono/html'
-import { middlewareLogger, getLogger } from './shared/logger'
+import { getLogger, LogMiddleware } from './shared/logger'
 import { Subsystem } from '@/shared/types'
 import { GetUserWorkspaceInfo } from './api/auth'
 import { AuthRedirectError, InitialisationError } from '@/errors'
@@ -76,7 +75,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     }
 };
 
-const honoMiddlewareLogger = middlewareLogger(Subsystem.server)
+const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 
 app.use('*', honoMiddlewareLogger)
 
@@ -133,7 +132,7 @@ app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchem
 const generateToken = async (email: string, role: string, workspaceId: string) => {
     Logger.info({
         tokenInfo: {
-            email: email,
+            // email: email,
             role: role,
             workspaceId,
         }
