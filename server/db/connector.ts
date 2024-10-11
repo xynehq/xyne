@@ -2,23 +2,20 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { connectors, oauthProviders, selectConnectorSchema, type SelectConnector, type SelectOAuthProvider } from "./schema";
 import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types";
-import type { PgTransaction } from "drizzle-orm/pg-core";
 import { and, eq } from "drizzle-orm";
 import { Apps, AuthType, Subsystem, ConnectorStatus } from "@/shared/types";
 import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic";
 import config from "@/config";
 import { getLogger } from "../shared/logger";
-import { ConnectionInsertionError } from "@/errors/db/connectors/ConnectionInsertionError";
-import { InvalidConectionError } from "@/errors/db/connectors/InvalidConnector";
-import { NoConnectorsFound } from "@/errors/db/connectors/NoConnectorsFound";
-import { NoOauthConnectorFound } from "@/errors/db/connectors/NoOauthConnectorFound";
-import { InvalidOauthConnectorError } from "@/errors/db/connectors/InvalidOauthConnector";
-import { MissingOauthConnectorCredentialsError } from "@/errors/db/connectors/MissingOauthConnectorCredentials";
-import { UnableToFetchProvider } from "@/errors/db/connectors/UnableToFetchProvider";
-import { UnableToUpdateConnector } from "@/errors/db/connectors/UnableToUpdateConnector";
-import { WrappedError } from "@/errors/wrapper/WrappedErrors";
-
-const Logger = getLogger (Subsystem.db).child({module: 'connector'})
+import {
+    ConnectionInsertionError,
+    NoConnectorsFound,
+    NoOauthConnectorFound,
+    MissingOauthConnectorCredentialsError,
+    FetchProviderFailed,
+    UpdateConnectorFailed
+} from "@/errors";
+const Logger = getLogger(Subsystem.db).child({ module: 'connector' })
 
 export const insertConnector = async (
     trx: TxnOrClient,
@@ -56,7 +53,7 @@ export const insertConnector = async (
         return inserted[0]
     } catch (error) {
         Logger.error(`Error inserting connection:, ${error}`);
-        throw new WrappedError(new ConnectionInsertionError(), (error instanceof Error)? error : undefined);
+        throw new ConnectionInsertionError({ message: 'Could not insert connection', cause: error as Error })
     }
 };
 
@@ -80,12 +77,12 @@ export const getConnector = async (trx: TxnOrClient, connectorId: number): Promi
     if (res.length) {
         const parsedRes = selectConnectorSchema.safeParse(res[0]);
         if (!parsedRes.success) {
-            throw new WrappedError(new InvalidConectionError() , (parsedRes.error instanceof Error)? parsedRes.error : undefined)
-       }
+            throw parsedRes.error
+        }
         // TODO: maybe add a check if OAuth and expired token then throw error
         return parsedRes.data
     } else {
-        throw new WrappedError(new NoConnectorsFound(undefined,connectorId))
+        throw new NoConnectorsFound({ message: `Could not get the connector with id: ${connectorId}` })
     }
 }
 
@@ -112,19 +109,14 @@ export const getOAuthConnectorWithCredentials = async (trx: TxnOrClient, connect
         )).limit(1)
 
     if (!res.length) {
-        throw new WrappedError(new NoOauthConnectorFound(undefined, connectorId))
+        throw new NoOauthConnectorFound({ message: `Could not get the oauth connector with id:  ${connectorId}` })
     }
 
-    const parsedRes = selectConnectorSchema.safeParse(res[0]);
+    const oauthRes: SelectConnector = selectConnectorSchema.parse(res[0]);
 
-    if (!parsedRes.success) {
-        throw new WrappedError(new InvalidOauthConnectorError(),( parsedRes.error instanceof Error ? parsedRes.error : undefined))
-    }
-
-    const oauthRes: SelectConnector = parsedRes.data
 
     if (!oauthRes.oauthCredentials) {
-        throw new WrappedError(new MissingOauthConnectorCredentialsError())
+        throw new MissingOauthConnectorCredentialsError({})
     }
     // parse the string
     oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials)
@@ -141,7 +133,7 @@ export const getOAuthConnectorWithCredentials = async (trx: TxnOrClient, connect
 
             if (!providers.length) {
                 Logger.error('Could not fetch provider while refreshing Google Token')
-                throw new WrappedError(new UnableToFetchProvider())
+                throw new FetchProviderFailed({ message: 'Could not fetch provider while refreshing Google Token' })
             }
             const [googleProvider] = providers
             const google = new Google(googleProvider.clientId!, googleProvider.clientSecret, `${config.host}/oauth/callback`)
@@ -169,7 +161,7 @@ export const getConnectorByExternalId = async (connectorId: string) => {
         return res[0]
     } else {
         Logger.error(`Connector not found for external ID ${connectorId}`)
-        throw new WrappedError(new NoConnectorsFound(undefined,connectorId))
+        throw new NoConnectorsFound({ message: `Could not get the connector with id: ${connectorId}` })
     }
 }
 
@@ -180,13 +172,8 @@ export const updateConnector = async (trx: TxnOrClient, connectorId: number, upd
 
     if (!updatedConnectors || !updatedConnectors.length) {
         Logger.error(`Could not update connector`)
-        throw new WrappedError(new UnableToUpdateConnector())
+        throw new UpdateConnectorFailed('Could not update connector')
     }
     const [connectorVal] = updatedConnectors
-    const parsedRes = selectConnectorSchema.safeParse(connectorVal)
-    if (!parsedRes.success) {
-        throw  new WrappedError(new InvalidConectionError() , (parsedRes.error instanceof Error)? parsedRes.error : undefined)
-    }
-
-    return parsedRes.data
+    return selectConnectorSchema.parse(connectorVal)
 }

@@ -4,10 +4,8 @@ import { users, workspaces } from "./schema";
 import { getUserAndWorkspaceByEmail } from "./user";
 import { getLogger } from "../shared/logger";
 import { Subsystem } from "@/shared/types";
-import { SeedingError } from "@/errors/db/seed/SeedingError";
-import { WrappedError } from "@/errors/wrapper/WrappedErrors";
 
-const Logger =  getLogger(Subsystem.db).child({module: 'seed'})
+const Logger = getLogger(Subsystem.db).child({ module: 'seed' })
 
 const seed = async () => {
     Logger.info('here')
@@ -26,7 +24,7 @@ const seed = async () => {
                 })
                 .returning();
 
-                Logger.info(`Inserted Workspace:, ${workspace}`);
+            Logger.info(`Inserted Workspace:, ${workspace}`);
 
             // Insert a new user associated with the workspace
             const [user] = await tx
@@ -41,13 +39,13 @@ const seed = async () => {
                 })
                 .returning();
 
-                Logger.info(`Inserted User:', ${user}`);
+            Logger.info(`Inserted User:', ${user}`);
         });
 
         Logger.info('Seeding completed successfully.');
     } catch (error) {
         Logger.error(`Error during seeding:, ${error}`);
-        throw new WrappedError(new SeedingError(), (error instanceof Error) ? error : undefined);
+        throw new Error('Error while seeding')
     }
 
 }
