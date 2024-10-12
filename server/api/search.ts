@@ -4,6 +4,8 @@ import { z } from 'zod'
 import config from "@/config"
 import { HTTPException } from "hono/http-exception";
 import { AutocompleteResultsSchema, type AutocompleteResults } from "@/shared/types";
+import type { VespaSearchResponse } from "@/search/types";
+import { VespaAutocompleteResponseToResult, VespaSearchResponseToSearchResult } from "@/search/mappers";
 const { JwtPayloadKey } = config
 
 export const autocompleteSchema = z.object({
@@ -16,12 +18,14 @@ export const AutocompleteApi = async (c: Context) => {
         const email = sub
         const body = c.req.valid("json")
         const { query } = body;
-        const results: AutocompleteResults = (await autocomplete(query, email, 5))?.root
+        const results = await autocomplete(query, email, 5)
         if (!results) {
             return c.json({ children: [] })
         }
-        return c.json(results)
+        const newResults = VespaAutocompleteResponseToResult(results)
+        return c.json(newResults)
     } catch (e) {
+        console.error(e)
         throw new HTTPException(500, { message: 'Could not fetch autocomplete results' })
     }
 }
@@ -31,7 +35,7 @@ export const SearchApi = async (c: Context) => {
     const email = sub
     let { query, groupCount: gc, offset, page, app, entity } = c.req.valid('query');
     let groupCount: any = {}
-    let results = {}
+    let results: VespaSearchResponse = {} as VespaSearchResponse
     const decodedQuery = decodeURIComponent(query)
     if (gc) {
         groupCount = await groupVespaSearch(query, email)
@@ -40,6 +44,7 @@ export const SearchApi = async (c: Context) => {
     } else {
         results = await searchVespa(decodedQuery, email, app, entity, page, offset)
     }
-    results.groupCount = groupCount
-    return c.json(results)
+    const newResults = VespaSearchResponseToSearchResult(results)
+    newResults.groupCount = groupCount
+    return c.json(newResults)
 }

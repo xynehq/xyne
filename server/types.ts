@@ -6,58 +6,6 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { GoogleTokens, Notion } from 'arctic'
 import { JWT, type OAuth2Client } from 'google-auth-library'
 
-const VespaFileSchema = z.object({
-    docId: z.string(),
-    app: z.nativeEnum(Apps),
-    entity: z.string(),
-    title: z.string(),
-    url: z.string().nullable(),
-    // we don't want zod to validate this for perf reason
-    chunks: z.array(z.string()),
-    // we don't want zod to validate this field
-    chunk_embeddings: z.object({
-        type: z.string(),
-        blocks: z.any()
-    }),
-    owner: z.string().nullable(),
-    ownerEmail: z.string().nullable(),
-    photoLink: z.string().nullable(),
-    permissions: z.array(z.string()),
-    mimeType: z.string().nullable(),
-});
-
-const UserSchema = z.object({
-    docid: z.string().min(1),
-    name: z.string().min(1),
-    email: z.string().min(1).email(),
-    app: z.nativeEnum(Apps),
-    entity: z.nativeEnum(GooglePeopleEntity),
-    gender: z.string().optional(),
-    photoLink: z.string().optional(),
-    aliases: z.array(z.string()).optional(),
-    langauge: z.string().optional(),
-    includeInGlobalAddressList: z.boolean().optional(),
-    isAdmin: z.boolean().optional(),
-    isDelegatedAdmin: z.boolean().optional(),
-    suspended: z.boolean().optional(),
-    archived: z.boolean().optional(),
-    urls: z.array(z.string()).optional(),
-    orgName: z.string().optional(),
-    orgJobTitle: z.string().optional(),
-    orgDepartment: z.string().optional(),
-    orgLocation: z.string().optional(),
-    orgDescription: z.string().optional(),
-    creationTime: z.number(),
-    lastLoggedIn: z.number().optional(),
-    birthday: z.number().optional(),
-    occupations: z.array(z.string()).optional(),
-    userDefined: z.array(z.string()).optional(),
-    customerId: z.string().optional(),
-    clientData: z.array(z.string()).optional(),
-});
-
-export type User = z.infer<typeof UserSchema>
-
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
 
@@ -65,51 +13,6 @@ export type User = z.infer<typeof UserSchema>
 // type GoogleWorkspacePeople = WorkspaceDirectoryUser | GoogleContacts
 
 // type PeopleData = GoogleWorkspacePeople
-
-
-// Base interface for Vespa response
-export interface VespaResponse<T> {
-    root: VespaRoot<T>
-}
-
-// Root type handling both regular search results and groups
-export interface VespaRoot<T> {
-    id: string
-    relevance: number
-    fields?: {
-        totalCount: number
-    }
-    coverage: {
-        coverage: number
-        documents: number
-        full: boolean
-        nodes: number
-        results: number
-        resultsFull: number
-    }
-    children: T[] //(VespaResult<T> | VespaGroup)[]
-}
-
-// For regular search results
-export type VespaResult<T> = {
-    id: string
-    relevance: number
-    fields: T
-    pathId?: string
-}
-
-// For grouping response (e.g., app/entity counts)
-export interface VespaGroup {
-    id: string
-    relevance: number
-    label: string
-    value?: string // e.g., app or entity value
-    fields?: {
-        "count()": number
-    }
-    children: VespaGroup[] // Nested groups (e.g., app -> entity)
-}
-
 
 export const searchSchema = z.object({
     query: z.string(),
@@ -147,9 +50,7 @@ export const createOAuthProvider = z.object({
     app: z.nativeEnum(Apps),
 })
 
-
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
-
 
 // Define an enum for connection types
 export enum ConnectorType {
@@ -187,9 +88,7 @@ export enum UserRole {
 
 export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
 
-
 export type OAuthCredentials = GoogleTokens | any
-
 
 export enum SyncCron {
     // Sync based on a token provided by the external API
@@ -250,13 +149,6 @@ namespace Google {
         ).nullable(),
     });
     export type DriveFile = z.infer<typeof DriveFileSchema>
-}
-
-// Infer the TypeScript type from the Zod schema
-export type VespaFile = z.infer<typeof VespaFileSchema>
-
-export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
-    permissions: any[]
 }
 
 export type GoogleClient = JWT | OAuth2Client

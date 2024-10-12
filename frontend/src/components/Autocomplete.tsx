@@ -4,7 +4,7 @@ import { ForwardedRef, forwardRef } from "react"
 
 
 export const FileAutocompleteElement = ({result}: {result: FileAutocomplete}) => {
-  return (<div className='flex'>
+  return (<div className='flex items-center'>
     {getIcon(result.app, result.entity)}
     <p>
       {result.title}
@@ -13,7 +13,7 @@ export const FileAutocompleteElement = ({result}: {result: FileAutocomplete}) =>
 }
 
 export const UserAutocompleteElement = ({result}: {result: UserAutocomplete}) => {
-  return (<div className='flex'>
+  return (<div className='flex items-center'>
     <img  referrerPolicy="no-referrer" className='mr-2 w-[16px] h-[16px] rounded-full' src={result.photoLink}></img>
     <p>
       {result.name}

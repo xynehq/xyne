@@ -1,7 +1,7 @@
 schema user {
     document user {
 
-        field docid type string {
+        field docId type string {
             indexing: attribute | summary
         }
         field name type string {

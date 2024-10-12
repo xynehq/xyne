@@ -293,7 +293,7 @@ const insertUsersForWorkspace = async (users: admin_directory_v1.Schema$User[]) 
         const preferredLanguage = user.languages?.find((lang: Lang) => lang.preference === 'preferred')?.languageCode
             ?? user.languages?.[0]?.languageCode;
         await insertUser({
-            docid: user.id!,
+            docId: user.id!,
             name: user.name?.displayName ?? user.name?.fullName ?? "",
             email: user.primaryEmail ?? user.emails?.[0],
             app: Apps.GoogleWorkspace,

@@ -15,11 +15,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from '@/api';
-import HighlightedText from '@/components/Highlight';
-import { Apps, Autocomplete, AutocompleteResultsSchema, Entity, FileResponse } from 'shared/types';
+import { Apps, Autocomplete, AutocompleteResults, AutocompleteResultsSchema, Entity, SearchResponse, SearchResultDiscriminatedUnion } from 'shared/types';
 import { Groups } from '@/types';
 import { AutocompleteElement } from '@/components/Autocomplete';
 import { getIcon } from '@/lib/common';
+import { SearchResult } from '@/components/SearchResult';
 
 const logger = console
 
@@ -40,7 +40,7 @@ export function SearchInfo({info}: {info: string}) {
 
 
 const flattenGroups = (groups: Groups) => {
-  return Object.keys(groups || {}).flatMap((app) => 
+  return Object.keys(groups || {}).flatMap((app) =>
   Object.keys(groups[app as Apps] || {}).map((entity) => ({
     app: app as Apps,
     entity: entity as Entity,
@@ -55,8 +55,7 @@ type Filter = {
 }
 
 type SearchMeta = {
-  coverage: any,
-  fields: any
+  totalCount: number
 }
 
 export const Index = () => {
@@ -76,7 +75,7 @@ export const Index = () => {
 
   const [query, setQuery] = useState(''); // State to hold the search query
   const [offset, setOffset] = useState(0)
-  const [results, setResults] = useState<FileResponse[]>([]); // State to hold the search results
+  const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]); // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter | null>(null)
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
@@ -86,7 +85,7 @@ export const Index = () => {
 
 
   // close autocomplete if clicked outside
-  const autocompleteRef = useRef<HTMLDivElement | null>(null); 
+  const autocompleteRef = useRef<HTMLDivElement | null>(null);
   const [autocompleteQuery, setAutocompleteQuery] = useState('')
 
 
@@ -130,9 +129,9 @@ export const Index = () => {
             }
 
           })
-          let data = await response.json();
+          let data:AutocompleteResults = await response.json();
           data = AutocompleteResultsSchema.parse(data)
-          setAutocompleteResults(data.children.map((v: {fields: Autocomplete}) => v.fields));
+          setAutocompleteResults(data.results)
 
         } catch (error) {
           logger.error(`Error fetching autocomplete results:', ${error}`);
@@ -204,10 +203,9 @@ export const Index = () => {
         query: params
       })
       if(response.ok) {
-        const data: any = await response.json()
+        const data:SearchResponse = await response.json()
 
-        if(data.root?.children && data.root.children?.length) {
-          setResults(data.root.children.map((v: {fields:any}) => v.fields))
+          setResults(data.results)
           setAutocompleteResults([])
           // ensure even if autocomplete results came a little later we don't show right after we show
           // first set of results after a search
@@ -219,9 +217,9 @@ export const Index = () => {
           setTimeout(() => {
             setAutocompleteResults([])
           }, 1000)
-        }
+
         if(groupCount) {
-          setSearchMeta({coverage: data.root?.coverage, fields: data.root?.fields})
+          setSearchMeta({totalCount: data.count})
           setGroups(data.groupCount)
         }
       } else {
@@ -299,7 +297,7 @@ export const Index = () => {
             }
           }}
         />
-        {!!autocompleteResults?.length && 
+        {!!autocompleteResults?.length &&
     <div ref={autocompleteRef} className='absolute top-full left-0 w-full bg-white rounded-md border font-mono text-sm shadow-sm z-10'>
       {autocompleteResults.map((result, index) => (
         <AutocompleteElement key={index} onClick={() => {
@@ -313,8 +311,8 @@ export const Index = () => {
       </div>
       }
       </div>
-        <Button 
-          onClick={(e) => handleSearch()} 
+        <Button
+          onClick={(e) => handleSearch()}
           className="px-4 py-2 text-white rounded-md"
         >
           Search
@@ -324,36 +322,13 @@ export const Index = () => {
       <div className='flex flex-row'>
       <div className="mt-4 w-full pr-10 space-y-3">
         {results?.length > 0 ? (
-          results.map((result, index) => (
-            <div className='flex flex-col mt-2' key={index}>
-            <div className="flex items-center justify-start space-x-2">
-              <a 
-              href={result.url} 
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center text-blue-800 space-x-2"
-            >
-              {getIcon(result.app, result.entity)}
-              {result.title}
-            </a> 
-            </div>
-            <div className='flex flex-row items-center mt-1'>
-              <img  referrerPolicy="no-referrer" className='mr-2 w-[16px] h-[16px] rounded-full' src={result.photoLink}></img>
-              <a target='_blank' rel="noopener noreferrer" href={`https://contacts.google.com/${result.ownerEmail}`}>
-              <p className='text-left text-sm pt-1 text-gray-500'>{result.owner}</p>
-              </a>
-            </div>
-            {result.chunks_summary && result.chunks_summary?.length && (
-              result.chunks_summary.slice(0, 2).map(summary => ((<HighlightedText chunk_summary={summary} />)))
-            )}
-            </div>
-          ))
+          results.map((result, index) => <SearchResult result={result} index={index} />)
         ) : (
           <p></p>
         )}
       </div>
       {
-        groups && 
+        groups &&
       (<div className='bg-slate-100 rounded-md mt-4 mr-20 max-h-fit h-fit border border-gray-100'>
 
             <div onClick={(e) => {
@@ -362,10 +337,10 @@ export const Index = () => {
               <div className="flex items-center">
           <p>All</p>
         </div>
-              {searchMeta && <p className='text-blue-500 ml-7'>{searchMeta.fields?.totalCount}</p>}
+              {searchMeta && <p className='text-blue-500 ml-7'>{searchMeta.totalCount}</p>}
         </div>
         {
-          
+
         flattenGroups(groups).map(({app, entity, count}, index) => {
           return (
             <div key={index} onClick={(e) => {
@@ -380,13 +355,13 @@ export const Index = () => {
           )
         })
         }
-        
+
       </div>)
       }
 
       </div>
       <div className='mt-auto flex space-x-2 items-center justify-center w-full'>
-        {offset > 0 && 
+        {offset > 0 &&
           <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
             handlePrev()
             setPageNumber(prev => prev-1)
@@ -398,7 +373,7 @@ export const Index = () => {
       {searchMeta &&
         (
           <div className='flex space-x-2 items-center'>
-            {Array(Math.round( (filter && groups ? groups[filter.app][filter.entity] : searchMeta.fields?.totalCount) / page) || 1).fill(0).map((count, index) => {
+            {Array(Math.round( (filter && groups ? groups[filter.app][filter.entity] : searchMeta.totalCount) / page) || 1).fill(0).map((count, index) => {
               return (<p key={index} className={`cursor-pointer hover:text-sky-700 ${index+1 === pageNumber ? "text-blue-500" : "text-gray-700"}`} onClick={(e) => {
                 goToPage(index)
                 setPageNumber(index+1)
@@ -408,7 +383,7 @@ export const Index = () => {
         )
 
       }
-      {results?.length > 0 && pageNumber * page < searchMeta?.fields?.totalCount && (
+      {searchMeta && results?.length > 0 && pageNumber * page < searchMeta.totalCount && (
           <Button className='bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none' onClick={(e) => {
           handleNext()
           setPageNumber(prev => prev+1)

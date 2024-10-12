@@ -3,7 +3,7 @@
 
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import type { VespaResponse, User, VespaFile, VespaResult } from "@/types";
+import type { User, VespaAutocompleteResponse, VespaFile, VespaResult, VespaSearchResponse } from "@/search/types";
 import type { Autocomplete, AutocompleteResults } from "@/shared/types";
 import { getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
@@ -21,14 +21,13 @@ const NAMESPACE = 'namespace'; // Replace with your actual namespace
 const CLUSTER = 'my_content';
 env.backends.onnx.wasm.numThreads = 1;
 
-
 env.localModelPath = './'
 env.cacheDir = './'
 
 const Logger = getLogger(Subsystem.Search).child({ module: 'vespa' })
 
 const extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5', { progress_callback, cache_dir: env.cacheDir });
-function handleVespaGroupResponse(response: VespaResponse<any>): AppEntityCounts {
+function handleVespaGroupResponse(response: VespaSearchResponse): AppEntityCounts {
     const appEntityCounts: AppEntityCounts = {};
 
     // Navigate to the first level of groups
@@ -113,7 +112,7 @@ export const insertDocument = async (document: VespaFile) => {
 export const insertUser = async (user: User) => {
     try {
         const response = await fetch(
-            `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.docid}`,
+            `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.docId}`,
             {
                 method: 'POST',
                 headers: {
@@ -126,24 +125,17 @@ export const insertUser = async (user: User) => {
         const data = await response.json();
 
         if (response.ok) {
-            console.log(`Document ${user.docid} inserted successfully:`, data);
+            console.log(`Document ${user.docId} inserted successfully:`, data);
         } else {
-            console.error(`Error inserting user ${user.docid}:`, data);
+            console.error(`Error inserting user ${user.docId}:`, data);
         }
     } catch (error) {
         const errorMessage = getErrorMessage(error)
-        console.error(`Error inserting user ${user.docid}:`, errorMessage);
+        console.error(`Error inserting user ${user.docId}:`, errorMessage);
     }
 }
 
-// export const mapVespaAutocomplete = async (data: VespaResponse<Autocomplete>): Promise<Autocomplete> => {
-//     const { root } = data
-//     return root.children.map(child => {
-//     })
-// }
-
-
-export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaResponse<Autocomplete>> => {
+export const autocomplete = async (query: string, email: string, limit: number = 5): Promise<VespaAutocompleteResponse> => {
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
     const yqlQuery = `select * from sources file, user
         where
@@ -191,48 +183,50 @@ type YqlProfile = {
     yql: string
 }
 
-const SemanticProfile: YqlProfile = {
-    profile: "semantic",
-    yql: "select * from file where {targetHits:10}nearestNeighbor(title_embedding, e)"
-}
-
-const HybridProfile: YqlProfile = {
-    profile: "hybrid",
-    yql: "select * from file where ({targetHits:10}userInput(@query)) or ({targetHits:10}nearestNeighbor(title_embedding,e))"
-}
-const HybridDefaultProfile: YqlProfile = {
-    profile: "default",
-    yql: `select * from file 
-        where (({targetHits:10}userInput(@query)) 
-        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email`
-}
-
-// select * from file where (({targetHits:10}userInput(@query)) or ({targetHits:10}nearestNeighbor(title_embedding, e))) and app == @app and entity == @entity
-
-const HybridDefaultProfileAppEntityCounts: YqlProfile = {
-    profile: "default",
-    yql: `select * from file 
-        where (({targetHits:10}userInput(@query)) 
-        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email
-        limit 0 
-        | all(
-            group(app) each(
-            group(entity) each(output(count()))
+const HybridDefaultProfile = (hits: number): YqlProfile => {
+    return {
+        profile: "default",
+        yql: `
+            select * from sources file, user
+            where ((
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-        )`
+            and permissions contains @email)
+            or
+            ({targetHits:${hits}}userInput(@query))
+        `
+    }
+}
+
+const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
+    return {
+        profile: "default",
+        yql: `select * from sources file, user
+            where ((({targetHits:${hits}}userInput(@query))
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
+            or ({targetHits:${hits}}userInput(@query))
+            limit 0
+            | all(
+                group(app) each(
+                group(entity) each(output(count()))
+                )
+            )`
+    }
 }
 
 // TODO: extract out the fetch and make an api client
-export const groupVespaSearch = async (query: string, email: string, app?: string, entity?: string): Promise<AppEntityCounts | {}> => {
+export const groupVespaSearch = async (query: string, email: string, app?: string, entity?: string, limit = config.page): Promise<AppEntityCounts> => {
     const url = `${vespaEndpoint}/search/`;
     const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
-    let yqlQuery = HybridDefaultProfileAppEntityCounts.yql
+    let yqlQuery = HybridDefaultProfileAppEntityCounts(limit).yql
 
     const hybridDefaultPayload = {
         yql: yqlQuery,
         query,
         email,
-        'ranking.profile': HybridDefaultProfileAppEntityCounts.profile,
+        'ranking.profile': HybridDefaultProfileAppEntityCounts(limit).profile,
         'input.query(e)': qEmbedding,
     }
     try {
@@ -252,32 +246,25 @@ export const groupVespaSearch = async (query: string, email: string, app?: strin
         return handleVespaGroupResponse(data)
     } catch (error) {
         Logger.error(`Error performing search:, ${error}`);
-        throw new ErrorPerformingSearch({ cause: error as Error, sources: "file" })
-        return {}
+        throw new ErrorPerformingSearch({ cause: error as Error, sources: fileSchema })
     }
 }
 
-export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number): Promise<VespaResponse<any> | {}> => {
+export const searchVespa = async (query: string, email: string, app?: string, entity?: string, limit = config.page, offset?: number): Promise<VespaSearchResponse> => {
     const url = `${vespaEndpoint}/search/`;
     const qEmbedding = (await extractor(query, { pooling: 'mean', normalize: true })).tolist()[0];
 
-    let yqlQuery = HybridDefaultProfile.yql
+    let yqlQuery = HybridDefaultProfile(limit).yql
 
     if (app && entity) {
         yqlQuery += ` and app contains @app and entity contains @entity`;
     }
-    const semanticPayload = {
-        yql: SemanticProfile.yql,
-        email,
-        'ranking.profile': 'semantic',
-        'input.query(e)': qEmbedding,
-    };
 
     const hybridDefaultPayload = {
         yql: yqlQuery,
         query,
         email,
-        'ranking.profile': HybridDefaultProfile.profile,
+        'ranking.profile': HybridDefaultProfile(limit).profile,
         'input.query(e)': qEmbedding,
         hits: limit,
         alpha: 0.5,
@@ -308,12 +295,9 @@ export const searchVespa = async (query: string, email: string, app?: string, en
         return data
     } catch (error) {
         Logger.error(`Error performing search:, ${error}`);
-        throw new ErrorPerformingSearch({ cause: error as Error, sources: "file" })
-        return {}
+        throw new ErrorPerformingSearch({ cause: error as Error, sources: fileSchema })
     }
 }
-
-
 
 /**
  * Retrieves the total count of documents in the specified schema, namespace, and cluster.
@@ -354,7 +338,7 @@ const getDocumentCount = async () => {
     }
 }
 
-export const GetDocument = async (docId: string): Promise<VespaResult<VespaFile>> => {
+export const GetDocument = async (docId: string): Promise<VespaResult> => {
     const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`;
     try {
         const response = await fetch(url, {

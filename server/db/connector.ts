@@ -24,8 +24,8 @@ export const insertConnector = async (
     workspaceExternalId: string,
     name: string,
     type: ConnectorType,        // Use TypeScript enum for type safety
-    authType: AuthType,          // Use TypeScript enum for authType
-    app: Apps,                   // Use TypeScript enum for app
+    authType: AuthType,         // Use TypeScript enum for authType
+    app: Apps,                  // Use TypeScript enum for app
     config: Record<string, any>,
     credentials: string | null,
     subject: string | null,

@@ -36,6 +36,6 @@
   },
   "include": [
     "src",
-    "../server/shared"
+    "../server/shared",
   ]
 }

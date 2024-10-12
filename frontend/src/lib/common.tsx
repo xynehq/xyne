@@ -22,6 +22,8 @@ export const getIcon = (app: Apps, entity: Entity) => {
     } else {
       return <img className={ classNameVal } src = { DriveSvg } />
     }
+  } else if(app === Apps.GoogleWorkspace) {
+    // TODO: add default
   } else if (app === Apps.Notion) {
     if (entity === NotionEntity.Page) {
       return <img className={ classNameVal } src = { NotionPageSvg } />
