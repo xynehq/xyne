@@ -1,5 +1,6 @@
-import { AuthType } from '@shared/types'
+import { Apps, AuthType, Entity } from 'shared/types'
 import { z } from 'zod'
+
 
 export const searchSchema = z.object({
     query: z.string(),
@@ -17,11 +18,4 @@ export type Connectors = {
     authType: AuthType
 }
 
-export type Groups = Record<string, Record<string, number>>
-
-
-export type Autocomplete = {
-    app: string
-    entity: string
-    title: string
-}
+export type Groups = Record<Apps, Record<Entity, number>>

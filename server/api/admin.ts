@@ -3,16 +3,16 @@ import { HTTPException } from 'hono/http-exception'
 import { db } from '@/db/client'
 import { getUserByEmail } from "@/db/user"
 import { getConnectorByExternalId, getConnectors, insertConnector } from "@/db/connector"
-import { ConnectorType, type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection } from "@/types"
+import { ConnectorType, type OAuthProvider, type OAuthStartQuery, type SaaSJob, type ServiceAccountConnection, Subsystem } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
-import { Apps, AuthType, ConnectorStatus, Subsystem } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey } = config
 import { generateCodeVerifier, generateState, Google } from 'arctic';
 import type { SelectOAuthProvider } from "@/db/schema"
 import { getErrorMessage, setCookieByEnv } from "@/utils"
-import { getLogger } from "../shared/logger"
+import { getLogger } from "@/shared/logger"
 import { getPath } from 'hono/utils/url'
 import { AddServiceConnectionError, ConnectorNotCreated, NoUserFound } from "@/errors"
 

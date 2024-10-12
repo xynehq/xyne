@@ -3,7 +3,7 @@ import { setCookie } from "hono/cookie";
 import type { CookieOptions } from "hono/utils/cookie";
 import fs from "node:fs/promises";
 import { getLogger } from "./shared/logger";
-import { Subsystem } from "@/shared/types";
+import { Subsystem } from "@/types";
 
 const Logger = getLogger(Subsystem.Utils)
 

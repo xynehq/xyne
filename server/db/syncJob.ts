@@ -21,11 +21,7 @@ export const insertSyncJob = async (trx: TxnOrClient, job: Omit<InsertSyncJob, "
 
 export const getAppSyncJobs = async (trx: TxnOrClient, app: Apps, authType: AuthType): Promise<SelectSyncJob[]> => {
     const jobs = await trx.select().from(syncJobs).where(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)))
-    const parsedData = z.array(selectSyncJobSchema).safeParse(jobs);
-    if (!parsedData.success) {
-        throw new Error(`Could not get Sync Jobs for app: ${app} ${parsedData.error.toString()}`)
-    }
-    return parsedData.data
+    return z.array(selectSyncJobSchema).parse(jobs)
 }
 
 export const updateSyncJob = async (trx: TxnOrClient, jobId: number, updateData: Partial<SelectSyncJob>): Promise<SelectSyncJob> => {

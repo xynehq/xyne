@@ -2,9 +2,9 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import config from "@/config"
 import { getLogger } from '../shared/logger';
-import { Subsystem } from '@/shared/types';
+import { Subsystem } from '@/types';
 
-const Logger =  getLogger(Subsystem.db).child({module: 'client'})
+const Logger = getLogger(Subsystem.Db).child({ module: 'client' })
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 Logger.info(url)

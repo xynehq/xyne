@@ -1,11 +1,18 @@
 //@ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 
+export type { AutocompleteResults, Autocomplete, Entity } from '@/search/types'
+export { DriveEntity, NotionEntity, AutocompleteResultsSchema } from '@/search/types'
+
+// export type AutocompleteResults = AutocompleteResults
+
 export enum Apps {
     // includes everything google
     GoogleWorkspace = "google-workspace",
     // more granular
-    GoogleDrive = "google-drive"
+    GoogleDrive = "google-drive",
+
+    Notion = "notion"
 }
 
 export type AppType = typeof AppRoutes
@@ -55,35 +62,3 @@ export enum SyncJobStatus {
     // last status was good
     Successful = 'Successful'
 }
-
-
-export enum Subsystem {
-    // SERVER SIDE LOGGING
-    Server = 'Server',
-    Auth = 'Auth',
-    Cronjob = 'Cronjob',
-    Ingest = 'Ingest',
-    Integrations = 'Integrations',
-    Search = 'Search',
-    Db = 'Db',
-    Api = 'Api',
-    Utils = 'Utils',
-    Queue = 'Queue',
-}
-
-// export enum OperationType {
-//     sub = 'SUBSYSTEM'
-// }
-
-export enum OperationStatus {
-    Success = 'Success',
-    Failure = 'Failure',
-    Pendings = 'Pending',
-    Cancelled = 'Cancelled',
-}
-
-export type additionalMessage = Partial<{
-    Status: OperationStatus;
-    // OperationType: OperationType;
-    TimeTaken: number;
-}>;
