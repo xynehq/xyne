@@ -315,7 +315,6 @@ const insertUsersForWorkspace = async (users: admin_directory_v1.Schema$User[]) 
             creationTime: (user.creationTime && new Date(user.creationTime).getTime()) || 0,
             lastLoggedIn: (user.lastLoginTime && new Date(user.lastLoginTime).getTime()) || 0,
             customerId: user.customerId ?? "",
-
         });
     }
 }

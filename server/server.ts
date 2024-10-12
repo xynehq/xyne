@@ -22,7 +22,7 @@ import config from '@/config'
 import { OAuthCallback } from './api/oauth'
 import { setCookieByEnv } from './utils'
 import { getLogger, LogMiddleware } from './shared/logger'
-import { Subsystem } from '@/shared/types'
+import { Subsystem } from '@/types'
 import { GetUserWorkspaceInfo } from './api/auth'
 import { AuthRedirectError, InitialisationError } from '@/errors'
 

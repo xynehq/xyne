@@ -1,6 +1,6 @@
 import config from '@/config'
 import { z } from 'zod'
-import { Apps, AuthType, GooglePeopleEntity } from '@/shared/types'
+import { Apps, AuthType } from '@/shared/types'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { GoogleTokens, Notion } from 'arctic'
@@ -157,3 +157,28 @@ export type GoogleServiceAccount = {
     client_email: string,
     private_key: string,
 }
+
+export enum Subsystem {
+    Server = 'Server',
+    Auth = 'Auth',
+    Cronjob = 'Cronjob',
+    Ingest = 'Ingest',
+    Integrations = 'Integrations',
+    Search = 'Search',
+    Db = 'Db',
+    Api = 'Api',
+    Utils = 'Utils',
+    Queue = 'Queue',
+}
+
+export enum OperationStatus {
+    Success = 'Success',
+    Failure = 'Failure',
+    Pendings = 'Pending',
+    Cancelled = 'Cancelled',
+}
+
+export type additionalMessage = Partial<{
+    Status: OperationStatus;
+    TimeTaken: number;
+}>;

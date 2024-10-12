@@ -3,14 +3,14 @@
 
 const transformers = require('@xenova/transformers')
 const { pipeline, env } = transformers
-import type { User, VespaAutocompleteResponse, VespaFile, VespaResult, VespaSearchResponse } from "@/search/types";
+import type { VespaAutocompleteResponse, VespaFile, VespaResult, VespaSearchResponse, VespaUser } from "@/search/types";
 import type { Autocomplete, AutocompleteResults } from "@/shared/types";
 import { getErrorMessage } from "@/utils";
 import { progress_callback } from '@/utils';
 import config from "@/config";
 import { z } from "zod";
-import { getLogger } from "../shared/logger";
-import { Subsystem } from "@/shared/types";
+import { getLogger } from "@/shared/logger";
+import { Subsystem } from "@/types";
 import { ErrorDeletingDocuments, ErrorGettingDocument, ErrorUpdatingDocument, ErrorRetrievingDocuments, ErrorPerformingSearch, ErrorInsertingDocument } from "@/errors";
 
 // Define your Vespa endpoint and schema name
@@ -109,7 +109,7 @@ export const insertDocument = async (document: VespaFile) => {
     }
 }
 
-export const insertUser = async (user: User) => {
+export const insertUser = async (user: VespaUser) => {
     try {
         const response = await fetch(
             `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.docId}`,

@@ -1,6 +1,5 @@
 import { z } from 'zod'
 // not using @ because of vite of frontend
-// import { Apps } from '../shared/types'
 
 export enum Apps {
     // includes everything google

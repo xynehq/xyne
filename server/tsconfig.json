@@ -3,9 +3,6 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@shared/*": [
-        "./shared/*"
-      ],
     },
     // Enable latest features
     "lib": [
@@ -31,5 +28,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": [".", "./shared"]
+  "include": ["."]
 }

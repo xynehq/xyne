@@ -2,11 +2,12 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "./client";
 import { connectors, oauthProviders, selectConnectorSchema, type SelectConnector, type SelectOAuthProvider } from "./schema";
 import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types";
+import { Subsystem } from "@/types";
 import { and, eq } from "drizzle-orm";
-import { Apps, AuthType, Subsystem, ConnectorStatus } from "@/shared/types";
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types";
 import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic";
 import config from "@/config";
-import { getLogger } from "../shared/logger";
+import { getLogger } from "@/shared/logger";
 import {
     ConnectionInsertionError,
     NoConnectorsFound,

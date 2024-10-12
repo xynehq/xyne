@@ -3,7 +3,6 @@ import { autocomplete, groupVespaSearch, searchVespa } from "@/search/vespa";
 import { z } from 'zod'
 import config from "@/config"
 import { HTTPException } from "hono/http-exception";
-import { AutocompleteResultsSchema, type AutocompleteResults } from "@/shared/types";
 import type { VespaSearchResponse } from "@/search/types";
 import { VespaAutocompleteResponseToResult, VespaSearchResponseToSearchResult } from "@/search/mappers";
 const { JwtPayloadKey } = config

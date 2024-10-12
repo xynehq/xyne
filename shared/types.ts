@@ -1,8 +1,8 @@
 //@ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 
-export type { AutocompleteResults, Autocomplete, Entity } from '@/server/types'
-export { DriveEntity, NotionEntity, AutocompleteResultsSchema } from '@/server/types'
+export type { AutocompleteResults, Autocomplete, Entity } from '@/search/types'
+export { DriveEntity, NotionEntity, AutocompleteResultsSchema } from '@/search/types'
 
 // export type AutocompleteResults = AutocompleteResults
 
@@ -62,35 +62,3 @@ export enum SyncJobStatus {
     // last status was good
     Successful = 'Successful'
 }
-
-
-export enum Subsystem {
-    // SERVER SIDE LOGGING
-    Server = 'Server',
-    Auth = 'Auth',
-    Cronjob = 'Cronjob',
-    Ingest = 'Ingest',
-    Integrations = 'Integrations',
-    Search = 'Search',
-    Db = 'Db',
-    Api = 'Api',
-    Utils = 'Utils',
-    Queue = 'Queue',
-}
-
-// export enum OperationType {
-//     sub = 'SUBSYSTEM'
-// }
-
-export enum OperationStatus {
-    Success = 'Success',
-    Failure = 'Failure',
-    Pendings = 'Pending',
-    Cancelled = 'Cancelled',
-}
-
-export type additionalMessage = Partial<{
-    Status: OperationStatus;
-    // OperationType: OperationType;
-    TimeTaken: number;
-}>;
