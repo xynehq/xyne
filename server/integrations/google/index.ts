@@ -1,7 +1,7 @@
 import { admin_directory_v1, docs_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from '@/doc';
 import { chunkDocument } from '@/chunks';
-import { SyncCron, type ChangeToken, type GoogleClient, type GoogleServiceAccount, type SaaSJob, type SaaSOAuthJob, type VespaFile, type VespaFileWithDrivePermission } from "@/types";
+import { Subsystem, SyncCron, type ChangeToken, type GoogleClient, type GoogleServiceAccount, type SaaSJob, type SaaSOAuthJob } from "@/types";
 import PgBoss from "pg-boss";
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector";
 import { getExtractor } from "@/embedding";
@@ -21,6 +21,13 @@ import type { GaxiosResponse } from "gaxios";
 import { insertSyncHistory } from "@/db/syncHistory";
 import { getErrorMessage } from "@/utils";
 import { createJwtClient, DocsParsingError, driveFileToIndexed, DriveMime, mimeTypeMap, toPermissionsList } from "@/integrations/google/utils";
+import { getLogger } from "@/shared/logger";
+import type { VespaFileWithDrivePermission } from "@/search/types";
+import {
+    UserListingError,
+    CouldNotFinishJobSuccessfully
+} from "@/errors"
+const Logger = getLogger(Subsystem.Integrations).child({ module: 'google' })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>;
 
@@ -43,7 +50,8 @@ const listUsers = async (admin: admin_directory_v1.Admin, domain: string): Promi
         } while (nextPageToken);
         return users;
     } catch (error) {
-        throw new Error(`Error listing users: ${error}`);
+        Logger.error(`Error listing users:", ${error}`);
+        throw new UserListingError({ cause: error as Error, integration: Apps.GoogleWorkspace, entity: "user", })
     }
 };
 
@@ -95,7 +103,7 @@ export const syncGoogleWorkspace = async (boss: PgBoss, job: PgBoss.Job<any>) =>
         })
     } catch (error) {
         const errorMessage = getErrorMessage(error)
-        console.error('Could not sync Google workspace: ', errorMessage)
+        Logger.error('Could not sync Google workspace: ', errorMessage)
         if (error instanceof SyncJobsCountError) {
             boss.fail(job.name, job.id)
             return
@@ -118,13 +126,14 @@ export const syncGoogleWorkspace = async (boss: PgBoss, job: PgBoss.Job<any>) =>
             lastRanOn: new Date(),
         })
         boss.fail(job.name, job.id)
+        throw new CouldNotFinishJobSuccessfully({ integration: Apps.GoogleWorkspace, entity: "", cause: error as Error })
     }
 }
 
 
 
 export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountIngestion', job.data)
+    Logger.info('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSOAuthJob = job.data as SaaSOAuthJob
     try {
         // we will first fetch the change token
@@ -161,16 +170,17 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
                 status: SyncJobStatus.NotStarted
             })
             await boss.complete(SaaSQueue, job.id)
-            console.log('job completed')
+            Logger.info('job completed')
         })
-    } catch (e) {
-        console.error('could not finish job successfully', e)
+    } catch (error) {
+        Logger.error('could not finish job successfully', error)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
+        throw new CouldNotFinishJobSuccessfully({ message: "Could not finish Oauth ingestion", integration: Apps.GoogleDrive, entity: "files", cause: error as Error })
     }
 }
 
@@ -178,7 +188,7 @@ export const handleGoogleOAuthIngestion = async (boss: PgBoss, job: PgBoss.Job<a
 type ChangeList = { email: string, changeToken: string }
 
 export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgBoss.Job<any>) => {
-    console.log('handleGoogleServiceAccountIngestion', job.data)
+    Logger.info('handleGoogleServiceAccountIngestion', job.data)
     const data: SaaSJob = job.data as SaaSJob
     try {
         const connector = await getConnector(db, data.connectorId)
@@ -236,18 +246,19 @@ export const handleGoogleServiceAccountIngestion = async (boss: PgBoss, job: PgB
             await trx.update(connectors).set({
                 status: ConnectorStatus.Connected
             }).where(eq(connectors.id, connector.id))
-            console.log('status updated')
+            Logger.info('status updated')
             await boss.complete(SaaSQueue, job.id)
-            console.log('job completed')
+            Logger.info('job completed')
         })
     } catch (e) {
-        console.error('could not finish job successfully', e)
+        Logger.error('could not finish job successfully', e)
         await db.transaction(async (trx) => {
             trx.update(connectors).set({
                 status: ConnectorStatus.Failed
             }).where(eq(connectors.id, data.connectorId))
             await boss.fail(job.name, job.id)
         })
+        throw new CouldNotFinishJobSuccessfully({ message: "Could not finish Oauth ingestion", integration: Apps.GoogleWorkspace, entity: "files and users", cause: e as Error })
     }
 }
 
@@ -279,7 +290,7 @@ const insertFilesForUser = async (googleClient: GoogleClient, userEmail: string,
         }
     } catch (error) {
         const errorMessage = getErrorMessage(error)
-        console.error('Could not insert files for user: ', errorMessage)
+        Logger.error('Could not insert files for user: ', errorMessage)
     }
 }
 
