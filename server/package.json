@@ -3,6 +3,7 @@
   "module": "server/server.ts",
   "type": "module",
   "devDependencies": {
+    "@biomejs/biome": "1.9.3",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.24.2",
@@ -17,7 +18,8 @@
     "dev": "bun run --watch server.ts",
     "build": "bunx --bun vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "format": "bunx biome format --write ../"
   },
   "dependencies": {
     "@hono/oauth-providers": "^0.6.1",

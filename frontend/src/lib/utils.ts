@@ -5,7 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-
 // this helps prevent typescript from
 // being bothered by the error in the catch
 export const getErrorMessage = (error: unknown) => {

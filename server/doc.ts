@@ -1,9 +1,9 @@
-import type { docs_v1 } from "googleapis";
+import type { docs_v1 } from "googleapis"
 
 /**
  * Cleans the input text by replacing multiple consecutive whitespace characters
  * (excluding newlines and carriage returns) with a single space.
- * 
+ *
  * This preserves the formatting of newlines while normalizing spaces within lines.
  * Note: If the input is empty or only contains whitespace, it will return an empty string.
  *
@@ -11,16 +11,16 @@ import type { docs_v1 } from "googleapis";
  * @returns The cleaned string with normalized whitespace, or an empty string if the input is empty.
  */
 const cleanText = (text: string): string => {
-    return text.replace(/[^\S\r\n]+/g, " "); // Replace multiple spaces with a single space
-};
+  return text.replace(/[^\S\r\n]+/g, " ") // Replace multiple spaces with a single space
+}
 
 /**
  * @param element - The ParagraphElement containing the textRun.
  * @returns The cleaned text content or an empty string if no content is present.
  */
 const getText = (element: docs_v1.Schema$ParagraphElement): string => {
-    return cleanText(element.textRun?.content || "");
-};
+  return cleanText(element.textRun?.content || "")
+}
 
 /**
  * Retrieves image data from an inline object element within the document.
@@ -34,26 +34,26 @@ const getText = (element: docs_v1.Schema$ParagraphElement): string => {
  * @returns An object containing the image source URL, title, and alt text, or null if the inline object is not an image or is missing data.
  */
 const getImageFromInlineObject = (
-    document: docs_v1.Schema$Document,
-    inlineObjectElement: docs_v1.Schema$InlineObjectElement
+  document: docs_v1.Schema$Document,
+  inlineObjectElement: docs_v1.Schema$InlineObjectElement,
 ): { source: string; title: string; alt: string } | null => {
-    const inlineObjectId = inlineObjectElement.inlineObjectId;
-    if (inlineObjectId) {
-        const embeddedObject =
-            document.inlineObjects?.[inlineObjectId]?.inlineObjectProperties?.embeddedObject;
-        const contentUri = embeddedObject?.imageProperties?.contentUri;
+  const inlineObjectId = inlineObjectElement.inlineObjectId
+  if (inlineObjectId) {
+    const embeddedObject =
+      document.inlineObjects?.[inlineObjectId]?.inlineObjectProperties
+        ?.embeddedObject
+    const contentUri = embeddedObject?.imageProperties?.contentUri
 
-        if (contentUri) {
-            return {
-                source: contentUri,
-                title: embeddedObject.title || "",
-                alt: embeddedObject.description || "",
-            };
-        }
+    if (contentUri) {
+      return {
+        source: contentUri,
+        title: embeddedObject.title || "",
+        alt: embeddedObject.description || "",
+      }
     }
-    return null;
+  }
+  return null
 }
-
 
 /**
  * Extracts the textual content from a paragraph, processing its elements
@@ -68,24 +68,27 @@ const getImageFromInlineObject = (
  * @returns The concatenated string representing the paragraph's content.
  */
 const extractParagraphContent = (
-    document: docs_v1.Schema$Document,
-    paragraph: docs_v1.Schema$Paragraph
+  document: docs_v1.Schema$Document,
+  paragraph: docs_v1.Schema$Paragraph,
 ): string => {
-    return (
-        paragraph.elements
-            ?.map((e: docs_v1.Schema$ParagraphElement) => {
-                if (e.textRun) return getText(e);
-                if (e.footnoteReference)
-                    return `[^${e.footnoteReference.footnoteNumber}]`;
-                if (e.inlineObjectElement) {
-                    const image = getImageFromInlineObject(document, e.inlineObjectElement);
-                    return image ? `![${image.alt}](${image.source})` : "";
-                }
-                return "";
-            })
-            .join("") ?? ""
-    );
-};
+  return (
+    paragraph.elements
+      ?.map((e: docs_v1.Schema$ParagraphElement) => {
+        if (e.textRun) return getText(e)
+        if (e.footnoteReference)
+          return `[^${e.footnoteReference.footnoteNumber}]`
+        if (e.inlineObjectElement) {
+          const image = getImageFromInlineObject(
+            document,
+            e.inlineObjectElement,
+          )
+          return image ? `![${image.alt}](${image.source})` : ""
+        }
+        return ""
+      })
+      .join("") ?? ""
+  )
+}
 
 /**
  * Determines the appropriate markdown heading prefix for a paragraph based on its style.
@@ -98,12 +101,11 @@ const extractParagraphContent = (
  * @returns A string with '#' characters indicating the heading level, followed by a space, or an empty string if not a heading.
  */
 const getHeadingPrefix = (paragraph: docs_v1.Schema$Paragraph): string => {
-    const headingMatch = paragraph.paragraphStyle?.namedStyleType?.match(
-        /HEADING_(\d+)/
-    );
-    const headingLevel = headingMatch ? parseInt(headingMatch[1]) : null;
-    return headingLevel ? "#".repeat(headingLevel) + " " : "";
-};
+  const headingMatch =
+    paragraph.paragraphStyle?.namedStyleType?.match(/HEADING_(\d+)/)
+  const headingLevel = headingMatch ? parseInt(headingMatch[1]) : null
+  return headingLevel ? "#".repeat(headingLevel) + " " : ""
+}
 
 /**
  * Recursively extracts text from a Google Docs StructuralElement, handling different types of elements:
@@ -126,52 +128,52 @@ const getHeadingPrefix = (paragraph: docs_v1.Schema$Paragraph): string => {
  * @returns The extracted text representation of the element.
  */
 export const extractText = (
-    document: docs_v1.Schema$Document,
-    element: docs_v1.Schema$StructuralElement,
-    nestLevel: number = 0
+  document: docs_v1.Schema$Document,
+  element: docs_v1.Schema$StructuralElement,
+  nestLevel: number = 0,
 ): string => {
-    let text = "";
+  let text = ""
 
-    if (element.paragraph) {
-        const paragraph = element.paragraph;
-        let paragraphContent = "";
+  if (element.paragraph) {
+    const paragraph = element.paragraph
+    let paragraphContent = ""
 
-        if (paragraph.bullet) {
-            // Process list items
-            const bullet = "  ".repeat(paragraph.bullet.nestingLevel || 0) + "- ";
-            paragraphContent =
-                bullet + extractParagraphContent(document, paragraph) + "\n";
-        } else {
-            const headingPrefix = getHeadingPrefix(paragraph);
-            paragraphContent =
-                headingPrefix + extractParagraphContent(document, paragraph) + "\n";
-        }
-
-        text += paragraphContent;
-    } else if (element.table) {
-        // Process table elements
-        text +=
-            element.table.tableRows
-                ?.map((row) => {
-                    return row.tableCells
-                        ?.map((cell) => {
-                            return cell.content
-                                ?.map((e) => extractText(document, e, nestLevel + 1))
-                                .join("");
-                        })
-                        .join("\t"); // Tab-separated cells
-                })
-                .join("\n") + "\n\n"; // Newline-separated rows
-    } else if (element.tableOfContents) {
-        // Process table of contents
-        text +=
-            element.tableOfContents.content
-                ?.map((e) => extractText(document, e, nestLevel))
-                .join("") + "\n\n";
+    if (paragraph.bullet) {
+      // Process list items
+      const bullet = "  ".repeat(paragraph.bullet.nestingLevel || 0) + "- "
+      paragraphContent =
+        bullet + extractParagraphContent(document, paragraph) + "\n"
+    } else {
+      const headingPrefix = getHeadingPrefix(paragraph)
+      paragraphContent =
+        headingPrefix + extractParagraphContent(document, paragraph) + "\n"
     }
 
-    return text;
-};
+    text += paragraphContent
+  } else if (element.table) {
+    // Process table elements
+    text +=
+      element.table.tableRows
+        ?.map((row) => {
+          return row.tableCells
+            ?.map((cell) => {
+              return cell.content
+                ?.map((e) => extractText(document, e, nestLevel + 1))
+                .join("")
+            })
+            .join("\t") // Tab-separated cells
+        })
+        .join("\n") + "\n\n" // Newline-separated rows
+  } else if (element.tableOfContents) {
+    // Process table of contents
+    text +=
+      element.tableOfContents.content
+        ?.map((e) => extractText(document, e, nestLevel))
+        .join("") + "\n\n"
+  }
+
+  return text
+}
 
 /**
  * Post-processes the extracted text to normalize whitespace and handle newlines intelligently.
@@ -193,78 +195,76 @@ export const extractText = (
  * @returns The post-processed text with normalized newlines and paragraphs.
  */
 export const postProcessText = (text: string): string => {
-    const lines = text.split("\n");
-    const processedLines: string[] = [];
-    let previousLine = "";
-    let consecutiveNewlines = 0;
+  const lines = text.split("\n")
+  const processedLines: string[] = []
+  let previousLine = ""
+  let consecutiveNewlines = 0
 
-    const isListItem = (line: string): boolean => /^[\s]*[-*+] /.test(line);
+  const isListItem = (line: string): boolean => /^[\s]*[-*+] /.test(line)
 
-    lines.forEach((line, index) => {
-        const trimmedLine = line.trim();
+  lines.forEach((line, index) => {
+    const trimmedLine = line.trim()
 
-        if (trimmedLine === "") {
-            consecutiveNewlines++;
-            if (consecutiveNewlines <= 2) {
-                processedLines.push(""); // Keep up to two empty lines
-            }
-        } else {
-            if (
-                consecutiveNewlines >= 2 ||
-                index === 0 ||
-                trimmedLine.startsWith("#")
-            ) {
-                // Start of a new paragraph or heading
-                processedLines.push(trimmedLine);
-            } else if (previousLine !== "" && !isListItem(previousLine)) {
-                // Continuation of the previous paragraph (not a list item)
-                processedLines[processedLines.length - 1] += " " + trimmedLine;
-            } else {
-                // Single line paragraph or list item
-                processedLines.push(trimmedLine);
-            }
-            consecutiveNewlines = 0;
-        }
+    if (trimmedLine === "") {
+      consecutiveNewlines++
+      if (consecutiveNewlines <= 2) {
+        processedLines.push("") // Keep up to two empty lines
+      }
+    } else {
+      if (
+        consecutiveNewlines >= 2 ||
+        index === 0 ||
+        trimmedLine.startsWith("#")
+      ) {
+        // Start of a new paragraph or heading
+        processedLines.push(trimmedLine)
+      } else if (previousLine !== "" && !isListItem(previousLine)) {
+        // Continuation of the previous paragraph (not a list item)
+        processedLines[processedLines.length - 1] += " " + trimmedLine
+      } else {
+        // Single line paragraph or list item
+        processedLines.push(trimmedLine)
+      }
+      consecutiveNewlines = 0
+    }
 
-        previousLine = trimmedLine;
-    });
+    previousLine = trimmedLine
+  })
 
-    return processedLines.join("\n");
-};
+  return processedLines.join("\n")
+}
 
 // Extract footnotes
-export const extractFootnotes = (
-    document: docs_v1.Schema$Document
-): string => {
-    let footnotes = "";
-    if (document.footnotes) {
-        Object.entries(document.footnotes).forEach(([id, footnote]) => {
-            footnotes += `[^${footnote.footnoteId}]: ${footnote.content
-                ?.map((e) => extractText(document, e))
-                .join("")}\n`;
-        });
-    }
-    return footnotes;
-};
+export const extractFootnotes = (document: docs_v1.Schema$Document): string => {
+  let footnotes = ""
+  if (document.footnotes) {
+    Object.entries(document.footnotes).forEach(([id, footnote]) => {
+      footnotes += `[^${footnote.footnoteId}]: ${footnote.content
+        ?.map((e) => extractText(document, e))
+        .join("")}\n`
+    })
+  }
+  return footnotes
+}
 
 // Extract headers and footers
 export const extractHeadersAndFooters = (
-    document: docs_v1.Schema$Document
+  document: docs_v1.Schema$Document,
 ): string => {
-    let headerFooter = "";
-    if (document.headers) {
-        Object.entries(document.headers).forEach(([key, header]) => {
-            headerFooter += `Header (${key}):\n${header.content
-                ?.map((e) => extractText(document, e))
-                .join("")}\n\n`;
-        });
-    }
-    if (document.footers) {
-        Object.entries(document.footers).forEach(([key, footer]) => {
-            headerFooter += `Footer (${key}):\n${footer.content
-                ?.map((e) => extractText(document, e))
-                .join("")}\n\n`;
-        });
-    }
-    return headerFooter;
-};
+  let headerFooter = ""
+  if (document.headers) {
+    Object.entries(document.headers).forEach(([key, header]) => {
+      headerFooter += `Header (${key}):\n${header.content
+        ?.map((e) => extractText(document, e))
+        .join("")}\n\n`
+    })
+  }
+  if (document.footers) {
+    Object.entries(document.footers).forEach(([key, footer]) => {
+      headerFooter += `Footer (${key}):\n${footer.content
+        ?.map((e) => extractText(document, e))
+        .join("")}\n\n`
+    })
+  }
+  return headerFooter
+}

@@ -1,15 +1,15 @@
-import { pino, type Logger } from 'pino'
-import { Subsystem } from '@/types'
+import { pino, type Logger } from "pino"
+import { Subsystem } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
-import { getPath } from 'hono/utils/url'
-import { v4 as uuidv4 } from 'uuid';
+import { getPath } from "hono/utils/url"
+import { v4 as uuidv4 } from "uuid"
 
 export const getLogger = (loggerType: Subsystem) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === "production") {
     return pino({
       name: `${loggerType}`,
       transport: {
-        target: 'pino-pretty',
+        target: "pino-pretty",
         options: {
           colorize: true,
           colorizeObjects: true,
@@ -23,12 +23,12 @@ export const getLogger = (loggerType: Subsystem) => {
           destination: getLoggerDestination(loggerType),
         },
       },
-    },)
+    })
   } else {
     return pino({
       name: `${loggerType}`,
       transport: {
-        target: 'pino-pretty',
+        target: "pino-pretty",
         options: {
           colorize: true,
           colorizeObjects: true,
@@ -39,28 +39,25 @@ export const getLogger = (loggerType: Subsystem) => {
             "stack",
             "apiErrorHandlerCallStack",
           ],
-          ignore: 'pid,hostname',
+          ignore: "pid,hostname",
         },
       },
     })
   }
 }
 
-
 const getLoggerDestination = (loggerType: Subsystem) => {
-  return `./logs/${loggerType}.log`;
+  return `./logs/${loggerType}.log`
 }
 
 export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
-
-  const logger = getLogger(loggerType);
+  const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next, optionalMessage?: object) => {
-
-    const requestId = uuidv4();
-    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId;
-    c.set('requestId', c_reqId)
-    const { method } = c.req;
+    const requestId = uuidv4()
+    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
+    c.set("requestId", c_reqId)
+    const { method } = c.req
     const path = getPath(c.req.raw)
 
     logger.info(
@@ -70,7 +67,9 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           method,
           path,
         },
-        query: c.req.query('query') ? c.req.query('query') : c.req.query('prompt'),
+        query: c.req.query("query")
+          ? c.req.query("query")
+          : c.req.query("prompt"),
       },
       "Incoming request",
     )
@@ -79,7 +78,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 
     await next()
 
-    const { status } = c.res;
+    const { status } = c.res
 
     if (c.res.ok) {
       logger.info(

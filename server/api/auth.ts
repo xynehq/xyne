@@ -1,9 +1,9 @@
 // import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic";
-import type { Context } from "hono";
+import type { Context } from "hono"
 import config from "@/config"
-import { db } from '@/db/client'
-import { getUserAndWorkspaceByEmail } from "@/db/user";
-import { type PublicUserWorkspace } from "@/db/schema";
+import { db } from "@/db/client"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { type PublicUserWorkspace } from "@/db/schema"
 const { JwtPayloadKey } = config
 
 // import { generateCodeVerifier, generateState } from "arctic";
@@ -13,7 +13,6 @@ const { JwtPayloadKey } = config
 // const redirectURI = process.env.GOOGLE_REDIRECT_URI!
 
 // const google = new Google(clientId, clientSecret, redirectURI);
-
 
 // const state = generateState();
 // const codeVerifier = generateCodeVerifier();
@@ -25,8 +24,9 @@ const { JwtPayloadKey } = config
 // const refreshTokens: GoogleRefreshedTokens = await google.refreshAccessToken(refreshToken);
 
 export const GetUserWorkspaceInfo = async (c: Context) => {
-    const { sub, workspaceId } = c.get(JwtPayloadKey)
-    const email = sub
-    const userAndWorkspace: PublicUserWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, email)
-    return c.json(userAndWorkspace)
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userAndWorkspace: PublicUserWorkspace =
+    await getUserAndWorkspaceByEmail(db, workspaceId, email)
+  return c.json(userAndWorkspace)
 }

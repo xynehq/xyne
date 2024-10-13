@@ -1,59 +1,55 @@
-import { z } from 'zod'
+import { z } from "zod"
 // not using @ because of vite of frontend
 
 export enum Apps {
-    // includes everything google
-    GoogleWorkspace = "google-workspace",
-    // more granular
-    GoogleDrive = "google-drive",
+  // includes everything google
+  GoogleWorkspace = "google-workspace",
+  // more granular
+  GoogleDrive = "google-drive",
 
-    Notion = "notion"
+  Notion = "notion",
 }
 
 export enum GooglePeopleEntity {
-    Contacts = "Contacts",
-    OtherContacts = "OtherContacts",
-    AdminDirectory = "AdminDirectory"
+  Contacts = "Contacts",
+  OtherContacts = "OtherContacts",
+  AdminDirectory = "AdminDirectory",
 }
 // the vespa schemas
-const Schemas = z.union([
-    z.literal("user"),
-    z.literal("file")
-])
+const Schemas = z.union([z.literal("user"), z.literal("file")])
 
 export enum DriveEntity {
-    Docs = "docs",
-    Sheets = "sheets",
-    Presentation = "presentation",
-    PDF = "pdf",
-    Folder = "folder",
-    Misc = "driveFile",
-    Drawing = "drawing",
-    Form = "form",
-    Script = "script",
-    Site = "site",
-    Map = "map",
-    Audio = "audio",
-    Video = "video",
-    Photo = "photo",
-    ThirdPartyApp = "third_party_app",
-    Image = "image",
-    Zip = "zip",
-    WordDocument = "word_document",
-    ExcelSpreadsheet = "excel_spreadsheet",
-    PowerPointPresentation = "powerpoint_presentation",
-    Text = "text",
-    CSV = "csv",
+  Docs = "docs",
+  Sheets = "sheets",
+  Presentation = "presentation",
+  PDF = "pdf",
+  Folder = "folder",
+  Misc = "driveFile",
+  Drawing = "drawing",
+  Form = "form",
+  Script = "script",
+  Site = "site",
+  Map = "map",
+  Audio = "audio",
+  Video = "video",
+  Photo = "photo",
+  ThirdPartyApp = "third_party_app",
+  Image = "image",
+  Zip = "zip",
+  WordDocument = "word_document",
+  ExcelSpreadsheet = "excel_spreadsheet",
+  PowerPointPresentation = "powerpoint_presentation",
+  Text = "text",
+  CSV = "csv",
 }
-
 
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
 
 export enum NotionEntity {
-    Page = "page",
-    Database = "database"
+  Page = "page",
+  Database = "database",
 }
 
 export const FileEntitySchema = z.nativeEnum(DriveEntity)
@@ -61,7 +57,9 @@ export const FileEntitySchema = z.nativeEnum(DriveEntity)
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
 export const entitySchema = z.union([
-    PeopleEntitySchema, FileEntitySchema, NotionEntitySchema
+  PeopleEntitySchema,
+  FileEntitySchema,
+  NotionEntitySchema,
 ])
 
 export type Entity = PeopleEntity | DriveEntity | NotionEntity
@@ -69,13 +67,14 @@ export type Entity = PeopleEntity | DriveEntity | NotionEntity
 export type WorkspaceEntity = DriveEntity
 
 export const defaultVespaFieldsSchema = z.object({
-    relevance: z.number(),
-    source: z.string(),
-    sddocname: Schemas,
-    documentid: z.string()
+  relevance: z.number(),
+  source: z.string(),
+  sddocname: Schemas,
+  documentid: z.string(),
 })
 
-export const VespaFileSchema = z.object({
+export const VespaFileSchema = z
+  .object({
     docId: z.string(),
     app: z.nativeEnum(Apps),
     entity: FileEntitySchema,
@@ -87,17 +86,19 @@ export const VespaFileSchema = z.object({
     // this is what we get when we fetch from vespa
     // what we insert is different
     chunk_embeddings: z.object({
-        type: z.string(),
-        blocks: z.any()
+      type: z.string(),
+      blocks: z.any(),
     }),
     owner: z.string().nullable(),
     ownerEmail: z.string().nullable(),
     photoLink: z.string().nullable(),
     permissions: z.array(z.string()),
     mimeType: z.string().nullable(),
-}).merge(defaultVespaFieldsSchema);
+  })
+  .merge(defaultVespaFieldsSchema)
 
-export const VespaUserSchema = z.object({
+export const VespaUserSchema = z
+  .object({
     docId: z.string().min(1),
     name: z.string().min(1),
     email: z.string().min(1).email(),
@@ -125,127 +126,143 @@ export const VespaUserSchema = z.object({
     userDefined: z.array(z.string()).optional(),
     customerId: z.string().optional(),
     clientData: z.array(z.string()).optional(),
-}).merge(defaultVespaFieldsSchema)
+  })
+  .merge(defaultVespaFieldsSchema)
 
-export const VespaFieldsSchema = z.discriminatedUnion('sddocname', [VespaFileSchema, VespaUserSchema])
+export const VespaFieldsSchema = z.discriminatedUnion("sddocname", [
+  VespaFileSchema,
+  VespaUserSchema,
+])
 
 const VespaResultSchema = z.object({
-    id: z.string(),
-    relevance: z.number(),
-    fields: VespaFieldsSchema,
-    pathId: z.string().optional(),
-});
+  id: z.string(),
+  relevance: z.number(),
+  fields: VespaFieldsSchema,
+  pathId: z.string().optional(),
+})
 
 export type VespaResult = z.infer<typeof VespaResultSchema>
 
 const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
-    id: z.string(),
-    relevance: z.number(),
-    label: z.string(),
-    value: z.string().optional(),
-    fields: z.object({
-        'count()': z.number(),
-    }).optional(),
-    children: z.array(z.lazy(() => VespaGroupSchema)).optional(),
-});
+  id: z.string(),
+  relevance: z.number(),
+  label: z.string(),
+  value: z.string().optional(),
+  fields: z
+    .object({
+      "count()": z.number(),
+    })
+    .optional(),
+  children: z.array(z.lazy(() => VespaGroupSchema)).optional(),
+})
 
 type VespaGroupType = {
-    id: string;
-    relevance: number;
-    label: string;
-    value?: string;
-    fields?: {
-        'count()': number;
-    };
-    children?: VespaGroupType[]; // Recursive type definition
-};
+  id: string
+  relevance: number
+  label: string
+  value?: string
+  fields?: {
+    "count()": number
+  }
+  children?: VespaGroupType[] // Recursive type definition
+}
 
 const VespaRootBaseSchema = z.object({
-    root: z.object({
-        id: z.string(),
-        relevance: z.number(),
-        fields: z.object({
-            totalCount: z.number(),
-        }).optional(),
-        coverage: z.object({
-            coverage: z.number(),
-            documents: z.number(),
-            full: z.boolean(),
-            nodes: z.number(),
-            results: z.number(),
-            resultsFull: z.number(),
-        }),
-    })
-});
+  root: z.object({
+    id: z.string(),
+    relevance: z.number(),
+    fields: z
+      .object({
+        totalCount: z.number(),
+      })
+      .optional(),
+    coverage: z.object({
+      coverage: z.number(),
+      documents: z.number(),
+      full: z.boolean(),
+      nodes: z.number(),
+      results: z.number(),
+      resultsFull: z.number(),
+    }),
+  }),
+})
 
 const VespaSearchResultSchema = z.union([VespaResultSchema, VespaGroupSchema])
 export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>
 
 const VespaSearchResponseSchema = VespaRootBaseSchema.extend({
-    root: VespaRootBaseSchema.shape.root.extend({
-        children: z.array(VespaSearchResultSchema),
-    })
+  root: VespaRootBaseSchema.shape.root.extend({
+    children: z.array(VespaSearchResultSchema),
+  }),
 })
 
-export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>;
+export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>
 
 export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaUser = z.infer<typeof VespaUserSchema>
 
 export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
-    permissions: any[]
+  permissions: any[]
 }
 
 const MatchFeaturesSchema = z.union([
-    z.object({
-        "bm25(title_fuzzy)": z.number()
-    }),
-    z.object({
-        "bm25(email_fuzzy)": z.number(),
-        "bm25(name_fuzzy)": z.number()
-    })
+  z.object({
+    "bm25(title_fuzzy)": z.number(),
+  }),
+  z.object({
+    "bm25(email_fuzzy)": z.number(),
+    "bm25(name_fuzzy)": z.number(),
+  }),
 ])
 
-const VespaAutocompleteFileSchema = z.object({
+const VespaAutocompleteFileSchema = z
+  .object({
     docId: z.string(),
     title: z.string(),
     app: z.nativeEnum(Apps),
     entity: entitySchema,
-}).merge(defaultVespaFieldsSchema)
+  })
+  .merge(defaultVespaFieldsSchema)
 
-const VespaAutocompleteUserSchema = z.object({
+const VespaAutocompleteUserSchema = z
+  .object({
     docId: z.string(),
     name: z.string(),
     email: z.string(),
     app: z.nativeEnum(Apps),
     entity: entitySchema,
     photoLink: z.string(),
-}).merge(defaultVespaFieldsSchema)
+  })
+  .merge(defaultVespaFieldsSchema)
 
 const VespaAutocompleteSummarySchema = z.union([
-    VespaAutocompleteFileSchema,
-    VespaAutocompleteUserSchema
+  VespaAutocompleteFileSchema,
+  VespaAutocompleteUserSchema,
 ])
 
-const VespaAutocompleteFieldsSchema = z.object({
+const VespaAutocompleteFieldsSchema = z
+  .object({
     matchfeatures: MatchFeaturesSchema,
     sddocname: Schemas,
-}).and(VespaAutocompleteSummarySchema)
+  })
+  .and(VespaAutocompleteSummarySchema)
 
 export const VespaAutocompleteSchema = z.object({
-    id: z.string(),
-    relevance: z.number(),
-    source: z.string(),
-    fields: VespaAutocompleteFieldsSchema
+  id: z.string(),
+  relevance: z.number(),
+  source: z.string(),
+  fields: VespaAutocompleteFieldsSchema,
 })
 
 export const VespaAutocompleteResponseSchema = VespaRootBaseSchema.extend({
-    root: VespaRootBaseSchema.shape.root.extend({
-        children: z.array(VespaAutocompleteSchema)
-    })
+  root: VespaRootBaseSchema.shape.root.extend({
+    children: z.array(VespaAutocompleteSchema),
+  }),
 })
 
 export type VespaAutocomplete = z.infer<typeof VespaAutocompleteSchema>
-export type VespaAutocompleteResponse = z.infer<typeof VespaAutocompleteResponseSchema>
+export type VespaAutocompleteResponse = z.infer<
+  typeof VespaAutocompleteResponseSchema
+>
 export type VespaAutocompleteFile = z.infer<typeof VespaAutocompleteFileSchema>
 export type VespaAutocompleteUser = z.infer<typeof VespaAutocompleteUserSchema>

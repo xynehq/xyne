@@ -1,6 +1,6 @@
 {
-  "id": "217467b8-f6df-4197-87f0-0d931eb33da1",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "a4d9985e-2bcc-416a-967a-32ea7457e1ca",
+  "prevId": "389f9c47-5803-47dc-975e-01ac33cedf2e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -341,7 +341,14 @@
           "type": "sync_status",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
+        },
+        "auth_type": {
+          "name": "auth_type",
+          "type": "auth_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
         },
         "app_type": {
           "name": "app_type",
@@ -433,6 +440,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "connector_id": {
           "name": "connector_id",
           "type": "integer",
@@ -451,11 +464,19 @@
           "type": "sync_status",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'NotStarted'"
         },
         "app_type": {
           "name": "app_type",
           "type": "app_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_type": {
+          "name": "auth_type",
+          "type": "auth_type",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
@@ -725,7 +746,7 @@
     "public.app_type": {
       "name": "app_type",
       "schema": "public",
-      "values": ["google-workspace", "google-drive"]
+      "values": ["google-workspace", "google-drive", "notion"]
     },
     "public.auth_type": {
       "name": "auth_type",
