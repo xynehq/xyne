@@ -4,20 +4,20 @@ import {
   VespaFileSchema,
   VespaUserSchema,
   Apps,
-} from "../search/types";
+} from "../search/types"
 export {
   GooglePeopleEntity,
   DriveEntity,
   NotionEntity,
   Apps,
-} from "../search/types";
-export type { Entity } from "../search/types";
+} from "../search/types"
+export type { Entity } from "../search/types"
 // @ts-ignore
-import type { AppRoutes, WsApp } from "@/server";
-import { z } from "zod";
+import type { AppRoutes, WsApp } from "@/server"
+import { z } from "zod"
 
-export type AppType = typeof AppRoutes;
-export type WebSocketApp = typeof WsApp;
+export type AppType = typeof AppRoutes
+export type WebSocketApp = typeof WsApp
 
 export enum AuthType {
   OAuth = "oauth",
@@ -57,7 +57,7 @@ export const AutocompleteFileSchema = z
     app: z.nativeEnum(Apps),
     entity: entitySchema,
   })
-  .strip();
+  .strip()
 
 export const AutocompleteUserSchema = z
   .object({
@@ -69,25 +69,25 @@ export const AutocompleteUserSchema = z
     entity: entitySchema,
     photoLink: z.string().optional(),
   })
-  .strip();
+  .strip()
 
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
-]);
+])
 
 export const AutocompleteResultsSchema = z.object({
   results: z.array(AutocompleteSchema),
-});
+})
 
-export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>;
+export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
 
 // when imported from the frontend the type comes with unknown types
 // possibly related to
 // https://github.com/colinhacks/zod/issues/3536#issuecomment-2374074951
-export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>;
-export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>;
-export type Autocomplete = z.infer<typeof AutocompleteSchema>;
+export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
+export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
+export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
 // search result
 
@@ -108,7 +108,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
     mimeType: z.string(),
     chunks_summary: z.array(z.string()).optional(),
   })
-  .strip();
+  .strip()
 
 export const UserResponseSchema = VespaUserSchema.pick({
   name: true,
@@ -120,24 +120,22 @@ export const UserResponseSchema = VespaUserSchema.pick({
   .strip()
   .extend({
     type: z.literal("user"),
-  });
+  })
 
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
   FileResponseSchema,
-]);
+])
 
-export type SearchResultDiscriminatedUnion = z.infer<
-  typeof SearchResultsSchema
->;
+export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
 
 export const SearchResponseSchema = z.object({
   count: z.number(),
   results: z.array(SearchResultsSchema),
   groupCount: z.any(),
-});
+})
 
-export type FileResponse = z.infer<typeof FileResponseSchema>;
+export type FileResponse = z.infer<typeof FileResponseSchema>
 
-export type SearchResponse = z.infer<typeof SearchResponseSchema>;
+export type SearchResponse = z.infer<typeof SearchResponseSchema>

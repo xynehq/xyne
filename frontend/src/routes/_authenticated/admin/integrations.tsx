@@ -1,31 +1,31 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button"
 import {
   createFileRoute,
   useNavigate,
   UseNavigateResult,
-} from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@tanstack/react-router"
+import { useEffect, useState } from "react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Apps, AuthType, ConnectorStatus } from "shared/types";
-import { api, wsClient } from "@/api";
-import { toast, useToast } from "@/hooks/use-toast";
-import { useForm } from "@tanstack/react-form";
+} from "@/components/ui/card"
+import { Apps, AuthType, ConnectorStatus } from "shared/types"
+import { api, wsClient } from "@/api"
+import { toast, useToast } from "@/hooks/use-toast"
+import { useForm } from "@tanstack/react-form"
 
-import { cn, getErrorMessage } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
-import { Connectors } from "@/types";
-import { OAuthModal } from "@/oauth";
+import { cn, getErrorMessage } from "@/lib/utils"
+import { useQuery } from "@tanstack/react-query"
+import { Connectors } from "@/types"
+import { OAuthModal } from "@/oauth"
 
-const logger = console;
+const logger = console
 
 const submitServiceAccountForm = async (
   value: ServiceAccountFormData,
@@ -37,20 +37,20 @@ const submitServiceAccountForm = async (
       app: Apps.GoogleDrive,
       email: value.email, // Pass email along with the file
     },
-  });
+  })
   if (!response.ok) {
     // If unauthorized or status code is 401, navigate to '/auth'
     if (response.status === 401) {
-      navigate({ to: "/auth" });
-      throw new Error("Unauthorized");
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
     }
-    const errorText = await response.text();
+    const errorText = await response.text()
     throw new Error(
       `Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`,
-    );
+    )
   }
-  return response.json();
-};
+  return response.json()
+}
 
 const submitOAuthForm = async (
   value: OAuthFormData,
@@ -63,35 +63,35 @@ const submitOAuthForm = async (
       scopes: value.scopes,
       app: Apps.GoogleDrive,
     },
-  });
+  })
   if (!response.ok) {
     // If unauthorized or status code is 401, navigate to '/auth'
     if (response.status === 401) {
-      navigate({ to: "/auth" });
-      throw new Error("Unauthorized");
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
     }
-    const errorText = await response.text();
+    const errorText = await response.text()
     throw new Error(
       `Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`,
-    );
+    )
   }
-  return response.json();
-};
+  return response.json()
+}
 
 type ServiceAccountFormData = {
-  email: string;
-  file: any;
-};
+  email: string
+  file: any
+}
 
 type OAuthFormData = {
-  clientId: string;
-  clientSecret: string;
-  scopes: string[];
-};
+  clientId: string
+  clientSecret: string
+  scopes: string[]
+}
 
 export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
-  const { toast } = useToast();
-  const navigate = useNavigate();
+  const { toast } = useToast()
+  const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
     defaultValues: {
       clientId: "",
@@ -100,26 +100,26 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value, navigate); // Call the async function
+        await submitOAuthForm(value, navigate) // Call the async function
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
-        });
-        onSuccess();
+        })
+        onSuccess()
       } catch (error) {
         toast({
           title: "Could not create integration",
           description: `Error: ${getErrorMessage(error)}`,
           variant: "destructive",
-        });
+        })
       }
     },
-  });
+  })
   return (
     <form
       onSubmit={(e) => {
-        e.preventDefault();
-        form.handleSubmit();
+        e.preventDefault()
+        form.handleSubmit()
       }}
       className="grid w-full max-w-sm items-center gap-1.5"
     >
@@ -197,14 +197,14 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
 
       <Button type="submit">Create Integration</Button>
     </form>
-  );
-};
+  )
+}
 
 export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
   //@ts-ignore
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const { toast } = useToast();
-  const navigate = useNavigate();
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const { toast } = useToast()
+  const navigate = useNavigate()
 
   const form = useForm<ServiceAccountFormData>({
     defaultValues: {
@@ -217,32 +217,32 @@ export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
           title: "No file selected",
           description: "Please upload a file before submitting.",
           variant: "destructive",
-        });
-        return;
+        })
+        return
       }
 
       try {
-        await submitServiceAccountForm(value, navigate); // Call the async function
+        await submitServiceAccountForm(value, navigate) // Call the async function
         toast({
           title: "File uploaded successfully",
           description: "Integration in progress",
-        });
-        onSuccess();
+        })
+        onSuccess()
       } catch (error) {
         toast({
           title: "Could not upload the service account key",
           description: `Error: ${getErrorMessage(error)}`,
           variant: "destructive",
-        });
+        })
       }
     },
-  });
+  })
 
   return (
     <form
       onSubmit={(e) => {
-        e.preventDefault();
-        form.handleSubmit();
+        e.preventDefault()
+        form.handleSubmit()
       }}
       className="grid w-full max-w-sm items-center gap-1.5"
     >
@@ -295,8 +295,8 @@ export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
 
       <Button type="submit">Upload</Button>
     </form>
-  );
-};
+  )
+}
 
 const OAuthButton = ({
   app,
@@ -304,21 +304,21 @@ const OAuthButton = ({
   setOAuthIntegrationStatus,
 }: { app: Apps; text: string; setOAuthIntegrationStatus: any }) => {
   const handleOAuth = async () => {
-    const oauth = new OAuthModal();
+    const oauth = new OAuthModal()
     try {
-      await oauth.startAuth(app);
-      setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting);
+      await oauth.startAuth(app)
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
     } catch (error) {
       toast({
         title: "Could not finish oauth",
         description: `Error: ${getErrorMessage(error)}`,
         variant: "destructive",
-      });
+      })
     }
-  };
+  }
 
-  return <Button onClick={handleOAuth}>{text}</Button>;
-};
+  return <Button onClick={handleOAuth}>{text}</Button>
+}
 
 export const LoadingSpinner = ({ className }: { className: string }) => {
   return (
@@ -336,20 +336,20 @@ export const LoadingSpinner = ({ className }: { className: string }) => {
     >
       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
     </svg>
-  );
-};
-const minHeight = 320;
+  )
+}
+const minHeight = 320
 
 const getConnectors = async (): Promise<any> => {
-  const res = await api.api.admin.connectors.all.$get();
+  const res = await api.api.admin.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error("Unauthorized");
+      throw new Error("Unauthorized")
     }
-    throw new Error("Could not get connectors");
+    throw new Error("Could not get connectors")
   }
-  return res.json();
-};
+  return res.json()
+}
 
 const ServiceAccountTab = ({
   connectors,
@@ -357,14 +357,14 @@ const ServiceAccountTab = ({
   onSuccess,
   isIntegrating,
 }: {
-  connectors: Connectors[];
-  updateStatus: string;
-  onSuccess: any;
-  isIntegrating: boolean;
+  connectors: Connectors[]
+  updateStatus: string
+  onSuccess: any
+  isIntegrating: boolean
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
-  );
+  )
   if (!isIntegrating && !googleSAConnector) {
     return (
       <Card>
@@ -378,7 +378,7 @@ const ServiceAccountTab = ({
           <ServiceAccountForm onSuccess={onSuccess} />
         </CardContent>
       </Card>
-    );
+    )
   } else if (googleSAConnector) {
     return (
       <CardHeader>
@@ -389,9 +389,9 @@ const ServiceAccountTab = ({
           <p>status: {googleSAConnector?.status}</p>
         </CardContent>
       </CardHeader>
-    );
+    )
   }
-};
+}
 
 const LoaderContent = () => {
   return (
@@ -402,8 +402,8 @@ const LoaderContent = () => {
         <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
       </div>
     </div>
-  );
-};
+  )
+}
 
 enum OAuthIntegrationStatus {
   Provider = "Provider", // yet to create provider
@@ -413,24 +413,24 @@ enum OAuthIntegrationStatus {
 }
 
 const AdminLayout = () => {
-  const navigator = useNavigate();
+  const navigator = useNavigate()
   const { isPending, error, data } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        return await getConnectors();
+        return await getConnectors()
       } catch (error) {
-        const message = getErrorMessage(error);
+        const message = getErrorMessage(error)
         if (message === "Unauthorized") {
-          navigator({ to: "/auth" });
-          return [];
+          navigator({ to: "/auth" })
+          return []
         }
-        throw error;
+        throw error
       }
     },
-  });
+  })
   // const [ws, setWs] = useState(null);
-  const [updateStatus, setUpateStatus] = useState("");
+  const [updateStatus, setUpateStatus] = useState("")
   const [isIntegratingSA, setIsIntegratingSA] = useState<boolean>(
     data
       ? !!data.find(
@@ -439,7 +439,7 @@ const AdminLayout = () => {
             v.authType === AuthType.ServiceAccount,
         )
       : false,
-  );
+  )
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(
       data
@@ -449,7 +449,7 @@ const AdminLayout = () => {
           ? OAuthIntegrationStatus.OAuth
           : OAuthIntegrationStatus.Provider
         : OAuthIntegrationStatus.Provider,
-    );
+    )
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
@@ -459,57 +459,57 @@ const AdminLayout = () => {
             v.app === Apps.GoogleDrive &&
             v.authType === AuthType.ServiceAccount,
         ),
-      );
+      )
       const connector = data.find(
         (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
-      );
-      logger.info(connector);
+      )
+      logger.info(connector)
       if (connector?.status === ConnectorStatus.Connecting) {
-        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting);
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
-        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected);
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
-        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth);
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
       } else {
-        setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider);
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
       }
       // setIsIntegratingProvider(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth))
     } else {
-      setIsIntegratingSA(false);
+      setIsIntegratingSA(false)
       // setIsIntegratingProvider(false)
-      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider);
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
     }
-  }, [data, isPending]);
+  }, [data, isPending])
 
   useEffect(() => {
-    let socket: WebSocket | null = null;
+    let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
       socket = wsClient.ws.$ws({
         query: {
           id: data[0]?.id,
         },
-      });
+      })
       // setWs(socket)
       socket?.addEventListener("open", () => {
-        logger.info("open");
-      });
+        logger.info("open")
+      })
       socket?.addEventListener("close", () => {
-        logger.info("close");
-      });
+        logger.info("close")
+      })
       socket?.addEventListener("message", (e) => {
         // const message = JSON.parse(e.data);
-        const data = JSON.parse(e.data);
-        setUpateStatus(data.message);
-      });
+        const data = JSON.parse(e.data)
+        setUpateStatus(data.message)
+      })
     }
     return () => {
-      socket?.close();
+      socket?.close()
       // setWs(null)
-    };
-  }, [data, isPending]);
+    }
+  }, [data, isPending])
 
   // if (isPending) return <LoaderContent />
-  if (error) return "An error has occurred: " + error.message;
+  if (error) return "An error has occurred: " + error.message
   return (
     <div className="w-full h-full flex items-center justify-center">
       <Tabs
@@ -575,9 +575,9 @@ const AdminLayout = () => {
         </TabsContent>
       </Tabs>
     </div>
-  );
-};
+  )
+}
 
 export const Route = createFileRoute("/_authenticated/admin/integrations")({
   component: AdminLayout,
-});
+})

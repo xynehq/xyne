@@ -1,5 +1,5 @@
-import { Apps, AuthType, Entity } from "shared/types";
-import { z } from "zod";
+import { Apps, AuthType, Entity } from "shared/types"
+import { z } from "zod"
 
 export const searchSchema = z.object({
   query: z.string(),
@@ -21,12 +21,12 @@ export const searchSchema = z.object({
     .optional(),
   app: z.string().min(1).optional(),
   entity: z.string().min(1).optional(),
-});
+})
 
 export type Connectors = {
-  app: string;
-  status: string;
-  authType: AuthType;
-};
+  app: string
+  status: string
+  authType: AuthType
+}
 
-export type Groups = Record<Apps, Record<Entity, number>>;
+export type Groups = Record<Apps, Record<Entity, number>>

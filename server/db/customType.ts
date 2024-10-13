@@ -1,5 +1,5 @@
-import { customType } from "drizzle-orm/pg-core";
-import { Encryption } from "@/utils/encryption"; // Adjust the path as necessary
+import { customType } from "drizzle-orm/pg-core"
+import { Encryption } from "@/utils/encryption" // Adjust the path as necessary
 
 /**
  * Custom type for encrypted text fields using the Encryption class.
@@ -8,7 +8,7 @@ import { Encryption } from "@/utils/encryption"; // Adjust the path as necessary
 export const encryptedText = (encryption: Encryption) => {
   return customType<{ data: string | null; notNull: false }>({
     dataType() {
-      return "text";
+      return "text"
     },
     /**
      * Transforms the value retrieved from the database.
@@ -17,9 +17,9 @@ export const encryptedText = (encryption: Encryption) => {
      */
     fromDriver(value: unknown): string | null {
       if (!value) {
-        return value as null;
+        return value as null
       }
-      return encryption.decrypt(value as string);
+      return encryption.decrypt(value as string)
     },
     /**
      * Transforms the value before storing it in the database.
@@ -28,9 +28,9 @@ export const encryptedText = (encryption: Encryption) => {
      */
     toDriver(value: string | null): string | null {
       if (!value) {
-        return value;
+        return value
       }
-      return encryption.encrypt(value);
+      return encryption.encrypt(value)
     },
-  });
-};
+  })
+}

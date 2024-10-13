@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod"
 // not using @ because of vite of frontend
 
 export enum Apps {
@@ -16,7 +16,7 @@ export enum GooglePeopleEntity {
   AdminDirectory = "AdminDirectory",
 }
 // the vespa schemas
-const Schemas = z.union([z.literal("user"), z.literal("file")]);
+const Schemas = z.union([z.literal("user"), z.literal("file")])
 
 export enum DriveEntity {
   Docs = "docs",
@@ -43,35 +43,35 @@ export enum DriveEntity {
   CSV = "csv",
 }
 
-export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity);
+export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 
-export type PeopleEntity = z.infer<typeof PeopleEntitySchema>;
+export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
 
 export enum NotionEntity {
   Page = "page",
   Database = "database",
 }
 
-export const FileEntitySchema = z.nativeEnum(DriveEntity);
+export const FileEntitySchema = z.nativeEnum(DriveEntity)
 
-const NotionEntitySchema = z.nativeEnum(NotionEntity);
+const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
 export const entitySchema = z.union([
   PeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
-]);
+])
 
-export type Entity = PeopleEntity | DriveEntity | NotionEntity;
+export type Entity = PeopleEntity | DriveEntity | NotionEntity
 
-export type WorkspaceEntity = DriveEntity;
+export type WorkspaceEntity = DriveEntity
 
 export const defaultVespaFieldsSchema = z.object({
   relevance: z.number(),
   source: z.string(),
   sddocname: Schemas,
   documentid: z.string(),
-});
+})
 
 export const VespaFileSchema = z
   .object({
@@ -95,7 +95,7 @@ export const VespaFileSchema = z
     permissions: z.array(z.string()),
     mimeType: z.string().nullable(),
   })
-  .merge(defaultVespaFieldsSchema);
+  .merge(defaultVespaFieldsSchema)
 
 export const VespaUserSchema = z
   .object({
@@ -127,18 +127,18 @@ export const VespaUserSchema = z
     customerId: z.string().optional(),
     clientData: z.array(z.string()).optional(),
   })
-  .merge(defaultVespaFieldsSchema);
+  .merge(defaultVespaFieldsSchema)
 
-export const VespaFieldsSchema = z.union([VespaFileSchema, VespaUserSchema]);
+export const VespaFieldsSchema = z.union([VespaFileSchema, VespaUserSchema])
 
 const VespaResultSchema = z.object({
   id: z.string(),
   relevance: z.number(),
   fields: VespaFieldsSchema,
   pathId: z.string().optional(),
-});
+})
 
-export type VespaResult = z.infer<typeof VespaResultSchema>;
+export type VespaResult = z.infer<typeof VespaResultSchema>
 
 const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
   id: z.string(),
@@ -151,18 +151,18 @@ const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
     })
     .optional(),
   children: z.array(z.lazy(() => VespaGroupSchema)).optional(),
-});
+})
 
 type VespaGroupType = {
-  id: string;
-  relevance: number;
-  label: string;
-  value?: string;
+  id: string
+  relevance: number
+  label: string
+  value?: string
   fields?: {
-    "count()": number;
-  };
-  children?: VespaGroupType[]; // Recursive type definition
-};
+    "count()": number
+  }
+  children?: VespaGroupType[] // Recursive type definition
+}
 
 const VespaRootBaseSchema = z.object({
   root: z.object({
@@ -182,25 +182,25 @@ const VespaRootBaseSchema = z.object({
       resultsFull: z.number(),
     }),
   }),
-});
+})
 
-const VespaSearchResultSchema = z.union([VespaResultSchema, VespaGroupSchema]);
-export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>;
+const VespaSearchResultSchema = z.union([VespaResultSchema, VespaGroupSchema])
+export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>
 
 const VespaSearchResponseSchema = VespaRootBaseSchema.extend({
   root: VespaRootBaseSchema.shape.root.extend({
     children: z.array(VespaSearchResultSchema),
   }),
-});
+})
 
-export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>;
+export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>
 
-export type VespaFile = z.infer<typeof VespaFileSchema>;
-export type VespaUser = z.infer<typeof VespaUserSchema>;
+export type VespaFile = z.infer<typeof VespaFileSchema>
+export type VespaUser = z.infer<typeof VespaUserSchema>
 
 export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
-  permissions: any[];
-};
+  permissions: any[]
+}
 
 const MatchFeaturesSchema = z.union([
   z.object({
@@ -210,7 +210,7 @@ const MatchFeaturesSchema = z.union([
     "bm25(email_fuzzy)": z.number(),
     "bm25(name_fuzzy)": z.number(),
   }),
-]);
+])
 
 const VespaAutocompleteFileSchema = z
   .object({
@@ -219,7 +219,7 @@ const VespaAutocompleteFileSchema = z
     app: z.nativeEnum(Apps),
     entity: entitySchema,
   })
-  .merge(defaultVespaFieldsSchema);
+  .merge(defaultVespaFieldsSchema)
 
 const VespaAutocompleteUserSchema = z
   .object({
@@ -230,36 +230,36 @@ const VespaAutocompleteUserSchema = z
     entity: entitySchema,
     photoLink: z.string(),
   })
-  .merge(defaultVespaFieldsSchema);
+  .merge(defaultVespaFieldsSchema)
 
 const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteFileSchema,
   VespaAutocompleteUserSchema,
-]);
+])
 
 const VespaAutocompleteFieldsSchema = z
   .object({
     matchfeatures: MatchFeaturesSchema,
     sddocname: Schemas,
   })
-  .and(VespaAutocompleteSummarySchema);
+  .and(VespaAutocompleteSummarySchema)
 
 export const VespaAutocompleteSchema = z.object({
   id: z.string(),
   relevance: z.number(),
   source: z.string(),
   fields: VespaAutocompleteFieldsSchema,
-});
+})
 
 export const VespaAutocompleteResponseSchema = VespaRootBaseSchema.extend({
   root: VespaRootBaseSchema.shape.root.extend({
     children: z.array(VespaAutocompleteSchema),
   }),
-});
+})
 
-export type VespaAutocomplete = z.infer<typeof VespaAutocompleteSchema>;
+export type VespaAutocomplete = z.infer<typeof VespaAutocompleteSchema>
 export type VespaAutocompleteResponse = z.infer<
   typeof VespaAutocompleteResponseSchema
->;
-export type VespaAutocompleteFile = z.infer<typeof VespaAutocompleteFileSchema>;
-export type VespaAutocompleteUser = z.infer<typeof VespaAutocompleteUserSchema>;
+>
+export type VespaAutocompleteFile = z.infer<typeof VespaAutocompleteFileSchema>
+export type VespaAutocompleteUser = z.infer<typeof VespaAutocompleteUserSchema>

@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { db } from "./client";
+import { and, eq } from "drizzle-orm"
+import { db } from "./client"
 import {
   selectUserSchema,
   userPublicSchema,
@@ -9,12 +9,12 @@ import {
   type PublicUserWorkspace,
   type SelectUser,
   type SelectUserWorkspace,
-} from "./schema";
-import type { PgTransaction } from "drizzle-orm/pg-core";
-import { createId } from "@paralleldrive/cuid2";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import type { TxnOrClient } from "@/types";
-import { HTTPException } from "hono/http-exception";
+} from "./schema"
+import type { PgTransaction } from "drizzle-orm/pg-core"
+import { createId } from "@paralleldrive/cuid2"
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
+import type { TxnOrClient } from "@/types"
+import { HTTPException } from "hono/http-exception"
 
 export const getUserAndWorkspaceByEmail = async (
   trx: TxnOrClient,
@@ -34,17 +34,17 @@ export const getUserAndWorkspaceByEmail = async (
         eq(users.workspaceExternalId, workspaceId), // Filter by workspaceId
       ),
     )
-    .limit(1);
+    .limit(1)
   if (!userAndWorkspace || userAndWorkspace.length === 0) {
-    throw new HTTPException(404, { message: "User or Workspace not found" });
+    throw new HTTPException(404, { message: "User or Workspace not found" })
   }
 
-  const { user, workspace } = userAndWorkspace[0];
-  const userPublic = userPublicSchema.parse(user);
-  const workspacePublic = workspacePublicSchema.parse(workspace);
+  const { user, workspace } = userAndWorkspace[0]
+  const userPublic = userPublicSchema.parse(user)
+  const workspacePublic = workspacePublicSchema.parse(workspace)
 
-  return { user: userPublic, workspace: workspacePublic };
-};
+  return { user: userPublic, workspace: workspacePublic }
+}
 
 export const getUserAndWorkspaceByOnlyEmail = async (
   trx: PgTransaction<any>,
@@ -62,17 +62,17 @@ export const getUserAndWorkspaceByOnlyEmail = async (
         eq(users.email, email), // Filter by user email
       ),
     )
-    .limit(1);
-};
+    .limit(1)
+}
 
 // a util to fetch one whenever we do limit(1)
 const onlyOne = (res, errorMsg: string) => {
   if (res.length) {
-    return res[0];
+    return res[0]
   } else {
-    throw new Error(errorMsg);
+    throw new Error(errorMsg)
   }
-};
+}
 
 // since email is unique across the users we don't need workspaceId
 export const getUserByEmail = async (trx: TxnOrClient, email: string) => {
@@ -80,8 +80,8 @@ export const getUserByEmail = async (trx: TxnOrClient, email: string) => {
     .select()
     .from(users)
     .where(and(eq(users.email, email)))
-    .limit(1);
-};
+    .limit(1)
+}
 
 export const createUser = async (
   trx: TxnOrClient,
@@ -94,7 +94,7 @@ export const createUser = async (
   role: string,
   workspaceExternalId: string,
 ) => {
-  const externalId = createId();
+  const externalId = createId()
   return await trx
     .insert(users)
     .values({
@@ -109,20 +109,20 @@ export const createUser = async (
       lastLogin: new Date(),
       role,
     })
-    .returning();
-};
+    .returning()
+}
 
 export const getUserById = async (
   trx: TxnOrClient,
   userId: number,
 ): Promise<SelectUser> => {
-  const resp = await trx.select().from(users).where(eq(users.id, userId));
+  const resp = await trx.select().from(users).where(eq(users.id, userId))
   if (!resp || !resp.length) {
-    throw new Error("Could not get User by Id");
+    throw new Error("Could not get User by Id")
   }
-  const parsedRes = selectUserSchema.safeParse(resp[0]);
+  const parsedRes = selectUserSchema.safeParse(resp[0])
   if (!parsedRes.success) {
-    throw new Error(`Could not parse user: ${parsedRes.error.toString()}`);
+    throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
   }
-  return parsedRes.data;
-};
+  return parsedRes.data
+}

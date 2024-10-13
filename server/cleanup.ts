@@ -30,7 +30,7 @@ export default function cleanup() {
     "header",
     "nav",
     "head",
-  ];
+  ]
 
   const attributesToRemove = [
     "style",
@@ -42,19 +42,19 @@ export default function cleanup() {
     "tabindex",
     "on",
     "data-",
-  ];
+  ]
 
-  const elementTree = document.querySelectorAll("*");
+  const elementTree = document.querySelectorAll("*")
 
   elementTree.forEach((element) => {
     if (elementsToRemove.includes(element.tagName.toLowerCase())) {
-      element.remove();
+      element.remove()
     }
 
     Array.from(element.attributes).forEach((attr) => {
       if (attributesToRemove.some((a) => attr.name.startsWith(a))) {
-        element.removeAttribute(attr.name);
+        element.removeAttribute(attr.name)
       }
-    });
-  });
+    })
+  })
 }

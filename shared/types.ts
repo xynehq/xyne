@@ -1,12 +1,12 @@
 //@ts-ignore
-import type { AppRoutes, WsApp } from "@/server";
+import type { AppRoutes, WsApp } from "@/server"
 
-export type { AutocompleteResults, Autocomplete, Entity } from "@/search/types";
+export type { AutocompleteResults, Autocomplete, Entity } from "@/search/types"
 export {
   DriveEntity,
   NotionEntity,
   AutocompleteResultsSchema,
-} from "@/search/types";
+} from "@/search/types"
 
 // export type AutocompleteResults = AutocompleteResults
 
@@ -19,22 +19,22 @@ export enum Apps {
   Notion = "notion",
 }
 
-export type AppType = typeof AppRoutes;
-export type WebSocketApp = typeof WsApp;
+export type AppType = typeof AppRoutes
+export type WebSocketApp = typeof WsApp
 
 export interface FileResponse {
-  docId: string;
-  title: string;
-  chunk: string;
-  chunkIndex: number;
-  url: string;
-  app: string;
-  entity: string;
-  mimeType: string;
-  photoLink: string;
-  owner: string;
-  ownerEmail: string;
-  chunks_summary: string[];
+  docId: string
+  title: string
+  chunk: string
+  chunkIndex: number
+  url: string
+  app: string
+  entity: string
+  mimeType: string
+  photoLink: string
+  owner: string
+  ownerEmail: string
+  chunks_summary: string[]
 }
 
 export enum AuthType {

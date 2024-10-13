@@ -1,4 +1,4 @@
-import { sql, type InferModelFromColumns } from "drizzle-orm";
+import { sql, type InferModelFromColumns } from "drizzle-orm"
 import {
   serial,
   pgTable,
@@ -10,28 +10,28 @@ import {
   boolean,
   pgEnum,
   unique,
-} from "drizzle-orm/pg-core";
-import { encryptedText } from "./customType";
-import { Encryption } from "@/utils/encryption";
-import { ConnectorType, SyncConfigSchema, SyncCron, UserRole } from "@/types";
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
-import { z } from "zod";
+} from "drizzle-orm/pg-core"
+import { encryptedText } from "./customType"
+import { Encryption } from "@/utils/encryption"
+import { ConnectorType, SyncConfigSchema, SyncCron, UserRole } from "@/types"
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types"
+import { createInsertSchema, createSelectSchema } from "drizzle-zod"
+import { z } from "zod"
 
-const encryptionKey = process.env.ENCRYPTION_KEY!;
+const encryptionKey = process.env.ENCRYPTION_KEY!
 if (!encryptionKey) {
-  throw new Error("ENCRYPTION_KEY environment variable is not set.");
+  throw new Error("ENCRYPTION_KEY environment variable is not set.")
 }
-const serviceAccountEncryptionKey = process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY;
+const serviceAccountEncryptionKey = process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY
 if (!serviceAccountEncryptionKey) {
   throw new Error(
     "SERVICE_ACCOUNT_ENCRYPTION_KEY environment variable is not set.",
-  );
+  )
 }
 
-const accesskeyEncryption = new Encryption(encryptionKey);
+const accesskeyEncryption = new Encryption(encryptionKey)
 
-const serviceAccountEncryption = new Encryption(serviceAccountEncryptionKey);
+const serviceAccountEncryption = new Encryption(serviceAccountEncryptionKey)
 
 // Workspaces Table
 export const workspaces = pgTable("workspaces", {
@@ -50,12 +50,12 @@ export const workspaces = pgTable("workspaces", {
   deletedAt: timestamp("deleted_at", { withTimezone: true })
     .notNull()
     .default(sql`'1970-01-01T00:00:00Z'`),
-});
+})
 
 export const userRoleEnum = pgEnum(
   "role",
   Object.values(UserRole) as [string, ...string[]],
-);
+)
 
 // Users Table
 export const users = pgTable(
@@ -88,27 +88,27 @@ export const users = pgTable(
       sql`LOWER(${table.email})`,
     ),
   }),
-);
+)
 
-const AppEnumField = "app_type";
+const AppEnumField = "app_type"
 
 export const connectorTypeEnum = pgEnum(
   "connector_type",
   Object.values(ConnectorType) as [string, ...string[]],
-);
+)
 export const authTypeEnum = pgEnum(
   "auth_type",
   Object.values(AuthType) as [string, ...string[]],
-);
+)
 // used by connectors, oauth_providers and sync_jobs
 export const appTypeEnum = pgEnum(
   AppEnumField,
   Object.values(Apps) as [string, ...string[]],
-);
+)
 export const statusEnum = pgEnum(
   "status",
   Object.values(ConnectorStatus) as [string, ...string[]],
-);
+)
 
 // Connectors Table
 // data source + credentails(if needed) + status of ingestion job
@@ -152,7 +152,7 @@ export const connectors = pgTable(
   (t) => ({
     uniqueConnector: unique().on(t.workspaceId, t.userId, t.app, t.authType),
   }),
-);
+)
 
 // anytime we make a oauth provider we make a corresponding
 // connector with not connected status.
@@ -182,16 +182,16 @@ export const oauthProviders = pgTable("oauth_providers", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
-});
+})
 
 export const syncJobEnum = pgEnum(
   "type",
   Object.values(SyncCron) as [string, ...string[]],
-);
+)
 export const syncJobStatusEnum = pgEnum(
   "sync_status",
   Object.values(SyncJobStatus) as [string, ...string[]],
-);
+)
 
 export const syncJobs = pgTable("sync_jobs", {
   id: serial("id").notNull().primaryKey(),
@@ -225,7 +225,7 @@ export const syncJobs = pgTable("sync_jobs", {
     .notNull()
     .default(sql`NOW()`),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
+})
 
 // can be helpful as an audit log
 // snapshot of sync jobs
@@ -260,7 +260,7 @@ export const syncHistory = pgTable("sync_history", {
     .notNull()
     .default(sql`NOW()`),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
+})
 
 export const insertProviderSchema = createInsertSchema(oauthProviders, {
   // added to prevent type error
@@ -269,22 +269,22 @@ export const insertProviderSchema = createInsertSchema(oauthProviders, {
   createdAt: true,
   updatedAt: true,
   id: true,
-});
-export type InsertOAuthProvider = z.infer<typeof insertProviderSchema>;
+})
+export type InsertOAuthProvider = z.infer<typeof insertProviderSchema>
 
 export const selectProviderSchema = createSelectSchema(oauthProviders, {
   // added to prevent type error
   oauthScopes: z.array(z.string()),
-});
+})
 
-export type SelectOAuthProvider = z.infer<typeof selectProviderSchema>;
+export type SelectOAuthProvider = z.infer<typeof selectProviderSchema>
 
 export const selectConnectorSchema = createSelectSchema(connectors, {
   app: z.nativeEnum(Apps),
   config: z.any(),
-});
+})
 
-export type SelectConnector = z.infer<typeof selectConnectorSchema>;
+export type SelectConnector = z.infer<typeof selectConnectorSchema>
 
 export const insertSyncJob = createInsertSchema(syncJobs).omit({
   createdAt: true,
@@ -292,31 +292,31 @@ export const insertSyncJob = createInsertSchema(syncJobs).omit({
   deletedAt: true,
   id: true,
   lastRanOn: true,
-});
-export type InsertSyncJob = z.infer<typeof insertSyncJob>;
+})
+export type InsertSyncJob = z.infer<typeof insertSyncJob>
 
 export const selectSyncJobSchema = createSelectSchema(syncJobs, {
   config: SyncConfigSchema,
-});
-export type SelectSyncJob = z.infer<typeof selectSyncJobSchema>;
+})
+export type SelectSyncJob = z.infer<typeof selectSyncJobSchema>
 
 export const insertSyncHistorySchema = createInsertSchema(syncHistory).omit({
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
   id: true,
-});
-export type InsertSyncHistory = z.infer<typeof insertSyncHistorySchema>;
+})
+export type InsertSyncHistory = z.infer<typeof insertSyncHistorySchema>
 
 export const selectSyncHistorySchema = createSelectSchema(syncHistory, {
   config: SyncConfigSchema,
-});
-export type SelectSyncHistory = z.infer<typeof selectSyncHistorySchema>;
+})
+export type SelectSyncHistory = z.infer<typeof selectSyncHistorySchema>
 
-export const selectUserSchema = createSelectSchema(users);
-export type SelectUser = z.infer<typeof selectUserSchema>;
+export const selectUserSchema = createSelectSchema(users)
+export type SelectUser = z.infer<typeof selectUserSchema>
 
-export const selectWorkspaceSchema = createSelectSchema(workspaces);
+export const selectWorkspaceSchema = createSelectSchema(workspaces)
 
 export const userPublicSchema = selectUserSchema.omit({
   lastLogin: true,
@@ -324,17 +324,17 @@ export const userPublicSchema = selectUserSchema.omit({
   updatedAt: true,
   deletedAt: true,
   id: true,
-});
+})
 export const workspacePublicSchema = selectWorkspaceSchema.omit({
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
   id: true,
-});
+})
 
-export type PublicUser = z.infer<typeof userPublicSchema>;
-export type PublicWorkspace = z.infer<typeof workspacePublicSchema>;
+export type PublicUser = z.infer<typeof userPublicSchema>
+export type PublicWorkspace = z.infer<typeof workspacePublicSchema>
 export type PublicUserWorkspace = {
-  user: PublicUser;
-  workspace: PublicWorkspace;
-};
+  user: PublicUser
+  workspace: PublicWorkspace
+}

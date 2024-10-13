@@ -1,36 +1,36 @@
-import type { TxnOrClient } from "@/types";
+import type { TxnOrClient } from "@/types"
 import {
   selectSyncJobSchema,
   syncJobs,
   type InsertSyncJob,
   type SelectSyncJob,
-} from "./schema";
-import { createId } from "@paralleldrive/cuid2";
-import type { Apps, AuthType } from "@/shared/types";
-import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+} from "./schema"
+import { createId } from "@paralleldrive/cuid2"
+import type { Apps, AuthType } from "@/shared/types"
+import { and, eq } from "drizzle-orm"
+import { z } from "zod"
 
 export const insertSyncJob = async (
   trx: TxnOrClient,
   job: Omit<InsertSyncJob, "externalId">,
 ): Promise<SelectSyncJob> => {
-  const externalId = createId(); // Generate unique external ID
-  const jobWithExternalId = { ...job, externalId };
+  const externalId = createId() // Generate unique external ID
+  const jobWithExternalId = { ...job, externalId }
   const jobArr = await trx
     .insert(syncJobs)
     .values(jobWithExternalId)
-    .returning();
+    .returning()
   if (!jobArr || !jobArr.length) {
-    throw new Error('Error in insert of sync job "returning"');
+    throw new Error('Error in insert of sync job "returning"')
   }
-  const parsedData = selectSyncJobSchema.safeParse(jobArr[0]);
+  const parsedData = selectSyncJobSchema.safeParse(jobArr[0])
   if (!parsedData.success) {
     throw new Error(
       `Could not get sync job after inserting: ${parsedData.error.toString()}`,
-    );
+    )
   }
-  return parsedData.data;
-};
+  return parsedData.data
+}
 
 export const getAppSyncJobs = async (
   trx: TxnOrClient,
@@ -40,9 +40,9 @@ export const getAppSyncJobs = async (
   const jobs = await trx
     .select()
     .from(syncJobs)
-    .where(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)));
-  return z.array(selectSyncJobSchema).parse(jobs);
-};
+    .where(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)))
+  return z.array(selectSyncJobSchema).parse(jobs)
+}
 
 export const updateSyncJob = async (
   trx: TxnOrClient,
@@ -53,17 +53,17 @@ export const updateSyncJob = async (
     .update(syncJobs)
     .set(updateData)
     .where(eq(syncJobs.id, jobId))
-    .returning();
+    .returning()
 
   if (!updatedSyncJobs || !updatedSyncJobs.length) {
-    throw new Error("Could not update the connector");
+    throw new Error("Could not update the connector")
   }
-  const [connectorVal] = updatedSyncJobs;
-  const parsedRes = selectSyncJobSchema.safeParse(connectorVal);
+  const [connectorVal] = updatedSyncJobs
+  const parsedRes = selectSyncJobSchema.safeParse(connectorVal)
   if (!parsedRes.success) {
     throw new Error(
       `zod error: Invalid connector: ${parsedRes.error.toString()}`,
-    );
+    )
   }
-  return parsedRes.data;
-};
+  return parsedRes.data
+}

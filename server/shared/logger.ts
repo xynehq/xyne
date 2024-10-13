@@ -1,8 +1,8 @@
-import { pino, type Logger } from "pino";
-import { Subsystem } from "@/types";
-import type { MiddlewareHandler, Context, Next } from "hono";
-import { getPath } from "hono/utils/url";
-import { v4 as uuidv4 } from "uuid";
+import { pino, type Logger } from "pino"
+import { Subsystem } from "@/types"
+import type { MiddlewareHandler, Context, Next } from "hono"
+import { getPath } from "hono/utils/url"
+import { v4 as uuidv4 } from "uuid"
 
 export const getLogger = (loggerType: Subsystem) => {
   if (process.env.NODE_ENV === "production") {
@@ -23,7 +23,7 @@ export const getLogger = (loggerType: Subsystem) => {
           destination: getLoggerDestination(loggerType),
         },
       },
-    });
+    })
   } else {
     return pino({
       name: `${loggerType}`,
@@ -42,23 +42,23 @@ export const getLogger = (loggerType: Subsystem) => {
           ignore: "pid,hostname",
         },
       },
-    });
+    })
   }
-};
+}
 
 const getLoggerDestination = (loggerType: Subsystem) => {
-  return `./logs/${loggerType}.log`;
-};
+  return `./logs/${loggerType}.log`
+}
 
 export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
-  const logger = getLogger(loggerType);
+  const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next, optionalMessage?: object) => {
-    const requestId = uuidv4();
-    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId;
-    c.set("requestId", c_reqId);
-    const { method } = c.req;
-    const path = getPath(c.req.raw);
+    const requestId = uuidv4()
+    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
+    c.set("requestId", c_reqId)
+    const { method } = c.req
+    const path = getPath(c.req.raw)
 
     logger.info(
       {
@@ -72,13 +72,13 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           : c.req.query("prompt"),
       },
       "Incoming request",
-    );
+    )
 
-    const start = Date.now();
+    const start = Date.now()
 
-    await next();
+    await next()
 
-    const { status } = c.res;
+    const { status } = c.res
 
     if (c.res.ok) {
       logger.info(
@@ -90,7 +90,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           },
         },
         "Request completed",
-      );
+      )
     } else if (c.res.status >= 400) {
       logger.error(
         {
@@ -101,7 +101,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           },
         },
         "Request Error",
-      );
+      )
     } else if (c.res.status === 302) {
       logger.info(
         {
@@ -111,7 +111,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           },
         },
         "Request redirected",
-      );
+      )
     } else {
       logger.info(
         {
@@ -121,7 +121,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           },
         },
         "Request completed",
-      );
+      )
     }
-  };
-};
+  }
+}

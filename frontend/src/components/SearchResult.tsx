@@ -1,12 +1,12 @@
-import HighlightedText from "@/components/Highlight";
-import { getIcon } from "@/lib/common";
-import { SearchResultDiscriminatedUnion } from "@/server/shared/types";
+import HighlightedText from "@/components/Highlight"
+import { getIcon } from "@/lib/common"
+import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
 
 export const SearchResult = ({
   result,
   index,
 }: { result: SearchResultDiscriminatedUnion; index: number }) => {
-  let content;
+  let content
   if (result.type === "file") {
     content = (
       <div className="flex flex-col mt-2" key={index}>
@@ -43,7 +43,7 @@ export const SearchResult = ({
             .slice(0, 2)
             .map((summary) => <HighlightedText chunk_summary={summary} />)}
       </div>
-    );
+    )
   } else {
     // user
     content = (
@@ -65,7 +65,7 @@ export const SearchResult = ({
           </a>
         </div>
       </div>
-    );
+    )
   }
-  return content;
-};
+  return content
+}

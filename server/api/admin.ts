@@ -1,12 +1,12 @@
-import type { Context } from "hono";
-import { HTTPException } from "hono/http-exception";
-import { db } from "@/db/client";
-import { getUserByEmail } from "@/db/user";
+import type { Context } from "hono"
+import { HTTPException } from "hono/http-exception"
+import { db } from "@/db/client"
+import { getUserByEmail } from "@/db/user"
 import {
   getConnectorByExternalId,
   getConnectors,
   insertConnector,
-} from "@/db/connector";
+} from "@/db/connector"
 import {
   ConnectorType,
   type OAuthProvider,
@@ -14,53 +14,53 @@ import {
   type SaaSJob,
   type ServiceAccountConnection,
   Subsystem,
-} from "@/types";
-import { boss, SaaSQueue } from "@/queue";
-import config from "@/config";
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types";
-import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider";
-const { JwtPayloadKey } = config;
-import { generateCodeVerifier, generateState, Google } from "arctic";
-import type { SelectOAuthProvider } from "@/db/schema";
-import { getErrorMessage, setCookieByEnv } from "@/utils";
-import { getLogger } from "@/shared/logger";
-import { getPath } from "hono/utils/url";
+} from "@/types"
+import { boss, SaaSQueue } from "@/queue"
+import config from "@/config"
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
+const { JwtPayloadKey } = config
+import { generateCodeVerifier, generateState, Google } from "arctic"
+import type { SelectOAuthProvider } from "@/db/schema"
+import { getErrorMessage, setCookieByEnv } from "@/utils"
+import { getLogger } from "@/shared/logger"
+import { getPath } from "hono/utils/url"
 import {
   AddServiceConnectionError,
   ConnectorNotCreated,
   NoUserFound,
-} from "@/errors";
+} from "@/errors"
 
-const Logger = getLogger(Subsystem.Api).child({ module: "admin" });
+const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
 export const GetConnectors = async (c: Context) => {
-  const { workspaceId } = c.get(JwtPayloadKey);
-  const connectors = await getConnectors(workspaceId);
-  return c.json(connectors);
-};
+  const { workspaceId } = c.get(JwtPayloadKey)
+  const connectors = await getConnectors(workspaceId)
+  return c.json(connectors)
+}
 
 const getAuthorizationUrl = async (
   c: Context,
   app: Apps,
   provider: SelectOAuthProvider,
 ): Promise<URL> => {
-  const { clientId, clientSecret, oauthScopes } = provider;
+  const { clientId, clientSecret, oauthScopes } = provider
   const google = new Google(
     clientId as string,
     clientSecret,
     `${config.host}/oauth/callback`,
-  );
-  const state = generateState();
-  const codeVerifier = generateCodeVerifier();
-  Logger.info(`code verifier  ${codeVerifier}`);
+  )
+  const state = generateState()
+  const codeVerifier = generateCodeVerifier()
+  Logger.info(`code verifier  ${codeVerifier}`)
   // adding some data to state
-  const newState = JSON.stringify({ app, random: state });
+  const newState = JSON.stringify({ app, random: state })
   const url: URL = await google.createAuthorizationURL(newState, codeVerifier, {
     scopes: oauthScopes,
-  });
+  })
   // for google refresh token
   if (app === Apps.GoogleDrive) {
-    url.searchParams.set("access_type", "offline");
+    url.searchParams.set("access_type", "offline")
   }
   // store state verifier as cookie
   setCookieByEnv(c, `${app}-state`, state, {
@@ -68,7 +68,7 @@ const getAuthorizationUrl = async (
     path: "/",
     httpOnly: true,
     maxAge: 60 * 10, // 10 min
-  });
+  })
 
   // store code verifier as cookie
   setCookieByEnv(c, `${app}-code-verifier`, codeVerifier, {
@@ -76,12 +76,12 @@ const getAuthorizationUrl = async (
     path: "/",
     httpOnly: true,
     maxAge: 60 * 10, // 10 min
-  });
-  return url;
-};
+  })
+  return url
+}
 
 export const StartOAuth = async (c: Context) => {
-  const path = getPath(c.req.raw);
+  const path = getPath(c.req.raw)
   Logger.info(
     {
       reqiestId: c.var.requestId,
@@ -89,28 +89,28 @@ export const StartOAuth = async (c: Context) => {
       path,
     },
     "Started Oauth",
-  );
-  const { sub, workspaceId } = c.get(JwtPayloadKey);
-  const { app }: OAuthStartQuery = c.req.valid("query");
-  Logger.info(`${sub} started ${app} OAuth`);
-  const provider = await getOAuthProvider(db, app);
-  const url = await getAuthorizationUrl(c, app, provider);
-  return c.redirect(url.toString());
-};
+  )
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const { app }: OAuthStartQuery = c.req.valid("query")
+  Logger.info(`${sub} started ${app} OAuth`)
+  const provider = await getOAuthProvider(db, app)
+  const url = await getAuthorizationUrl(c, app, provider)
+  return c.redirect(url.toString())
+}
 
 export const CreateOAuthProvider = async (c: Context) => {
-  const { sub, workspaceId } = c.get(JwtPayloadKey);
-  const email = sub;
-  const userRes = await getUserByEmail(db, email);
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
-    throw new NoUserFound({});
+    throw new NoUserFound({})
   }
-  const [user] = userRes;
-  const form: OAuthProvider = c.req.valid("form");
-  const clientId = form.clientId;
-  const clientSecret = form.clientSecret;
-  const scopes = form.scopes;
-  const app = form.app;
+  const [user] = userRes
+  const form: OAuthProvider = c.req.valid("form")
+  const clientId = form.clientId
+  const clientSecret = form.clientSecret
+  const scopes = form.scopes
+  const app = form.app
 
   return await db.transaction(async (trx) => {
     const connector = await insertConnector(
@@ -126,9 +126,9 @@ export const CreateOAuthProvider = async (c: Context) => {
       null,
       null,
       ConnectorStatus.NotConnected,
-    );
+    )
     if (!connector) {
-      throw new ConnectorNotCreated({});
+      throw new ConnectorNotCreated({})
     }
     const provider = await createOAuthProvider(trx, {
       clientId,
@@ -139,26 +139,26 @@ export const CreateOAuthProvider = async (c: Context) => {
       workspaceExternalId: user.workspaceExternalId,
       connectorId: connector.id,
       app,
-    });
+    })
     return c.json({
       success: true,
       message: "Connection and Provider created",
-    });
-  });
-};
+    })
+  })
+}
 
 export const AddServiceConnection = async (c: Context) => {
-  const { sub, workspaceId } = c.get(JwtPayloadKey);
-  const email = sub;
-  const userRes = await getUserByEmail(db, email);
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
-    throw new NoUserFound({});
+    throw new NoUserFound({})
   }
-  const [user] = userRes;
-  const form: ServiceAccountConnection = c.req.valid("form");
-  const data = await form["service-key"].text();
-  const subject = form.email;
-  const app = form.app;
+  const [user] = userRes
+  const form: ServiceAccountConnection = c.req.valid("form")
+  const data = await form["service-key"].text()
+  const subject = form.email
+  const app = form.app
 
   // Start a transaction
   return await db.transaction(async (trx) => {
@@ -176,7 +176,7 @@ export const AddServiceConnection = async (c: Context) => {
         {},
         data,
         subject,
-      );
+      )
 
       const SaasJobPayload: SaaSJob = {
         connectorId: connector.id,
@@ -186,27 +186,27 @@ export const AddServiceConnection = async (c: Context) => {
         externalId: connector.externalId,
         authType: connector.authType as AuthType,
         email: sub,
-      };
+      }
       // Enqueue the background job within the same transaction
-      const jobId = await boss.send(SaaSQueue, SaasJobPayload);
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload)
 
-      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`);
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
       // Commit the transaction if everything is successful
       return c.json({
         success: true,
         message: "Connection created, job enqueued",
         id: connector.externalId,
-      });
+      })
     } catch (error) {
-      const errMessage = getErrorMessage(error);
+      const errMessage = getErrorMessage(error)
       Logger.error(
         `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage}`,
-      );
+      )
       // Rollback the transaction in case of any error
       throw new HTTPException(500, {
         message: "Error creating connection or enqueuing job",
-      });
+      })
     }
-  });
-};
+  })
+}

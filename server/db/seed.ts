@@ -1,16 +1,16 @@
-import { createId } from "@paralleldrive/cuid2";
-import { db } from "./client";
-import { users, workspaces } from "./schema";
-import { getUserAndWorkspaceByEmail } from "./user";
-import { getLogger } from "../shared/logger";
-import { Subsystem } from "@/shared/types";
+import { createId } from "@paralleldrive/cuid2"
+import { db } from "./client"
+import { users, workspaces } from "./schema"
+import { getUserAndWorkspaceByEmail } from "./user"
+import { getLogger } from "../shared/logger"
+import { Subsystem } from "@/shared/types"
 
-const Logger = getLogger(Subsystem.Db).child({ module: "seed" });
+const Logger = getLogger(Subsystem.Db).child({ module: "seed" })
 
 const seed = async () => {
-  Logger.info("here");
+  Logger.info("here")
   try {
-    const workspaceExternalId = createId();
+    const workspaceExternalId = createId()
     // Start a transaction
     await db.transaction(async (tx) => {
       // Insert a new workspace
@@ -22,9 +22,9 @@ const seed = async () => {
           externalId: workspaceExternalId, // Set externalId explicitly
           // createdAt, updatedAt, deletedAt are set by defaults
         })
-        .returning();
+        .returning()
 
-      Logger.info(`Inserted Workspace:, ${workspace}`);
+      Logger.info(`Inserted Workspace:, ${workspace}`)
 
       // Insert a new user associated with the workspace
       const [user] = await tx
@@ -37,17 +37,17 @@ const seed = async () => {
           // role defaults to 'user'
           // createdAt, updatedAt, deletedAt are set by defaults
         })
-        .returning();
+        .returning()
 
-      Logger.info(`Inserted User:', ${user}`);
-    });
+      Logger.info(`Inserted User:', ${user}`)
+    })
 
-    Logger.info("Seeding completed successfully.");
+    Logger.info("Seeding completed successfully.")
   } catch (error) {
-    Logger.error(`Error during seeding:, ${error}`);
-    throw new Error("Error while seeding");
+    Logger.error(`Error during seeding:, ${error}`)
+    throw new Error("Error while seeding")
   }
-};
+}
 
-await seed();
-process.exit(0);
+await seed()
+process.exit(0)

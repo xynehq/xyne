@@ -185,8 +185,8 @@ export const mimeTypeToSearchKeyword = {
   "text/calendar": "ics",
   "application/warc": "warc",
   "text/vtt": "vtt",
-};
+}
 
 export const getSingleMimetypeKeyword = (mimeType: string): string => {
-  return mimeTypeToSearchKeyword[mimeType] || "";
-};
+  return mimeTypeToSearchKeyword[mimeType] || ""
+}

@@ -1,10 +1,10 @@
-import config from "@/config";
-import { z } from "zod";
-import { Apps, AuthType } from "@/shared/types";
-import type { PgTransaction } from "drizzle-orm/pg-core";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import type { GoogleTokens, Notion } from "arctic";
-import { JWT, type OAuth2Client } from "google-auth-library";
+import config from "@/config"
+import { z } from "zod"
+import { Apps, AuthType } from "@/shared/types"
+import type { PgTransaction } from "drizzle-orm/pg-core"
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
+import type { GoogleTokens, Notion } from "arctic"
+import { JWT, type OAuth2Client } from "google-auth-library"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -34,37 +34,37 @@ export const searchSchema = z.object({
     .optional(),
   app: z.nativeEnum(Apps).optional(),
   entity: z.string().min(1).optional(),
-});
+})
 
 export const searchQuerySchema = searchSchema.extend({
   permissions: z.array(z.string()),
-});
+})
 
-export type SearchQuery = z.infer<typeof searchQuerySchema>;
+export type SearchQuery = z.infer<typeof searchQuerySchema>
 
 export const oauthStartQuerySchema = z.object({
   app: z.nativeEnum(Apps),
-});
-export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>;
+})
+export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
   "service-key": z.any(),
   app: z.nativeEnum(Apps),
   email: z.string(),
-});
+})
 
 export type ServiceAccountConnection = z.infer<
   typeof addServiceConnectionSchema
->;
+>
 
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
   scopes: z.array(z.string()),
   app: z.nativeEnum(Apps),
-});
+})
 
-export type OAuthProvider = z.infer<typeof createOAuthProvider>;
+export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 // Define an enum for connection types
 export enum ConnectorType {
@@ -81,16 +81,16 @@ export enum ConnectorType {
 }
 
 export type SaaSJob = {
-  connectorId: number;
-  workspaceId: number;
-  userId: number;
-  app: Apps;
-  externalId: string;
-  authType: AuthType;
-  email: string;
-};
+  connectorId: number
+  workspaceId: number
+  userId: number
+  app: Apps
+  externalId: string
+  authType: AuthType
+  email: string
+}
 
-export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">;
+export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
 // very rudimentary
 export enum UserRole {
@@ -100,9 +100,9 @@ export enum UserRole {
   SuperAdmin = "SuperAdmin", // Admin level changes
 }
 
-export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase;
+export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
 
-export type OAuthCredentials = GoogleTokens | any;
+export type OAuthCredentials = GoogleTokens | any
 
 export enum SyncCron {
   // Sync based on a token provided by the external API
@@ -120,23 +120,20 @@ export enum SyncCron {
 const ChangeTokenSchema = z.object({
   token: z.string(),
   lastSyncedAt: z.coerce.date(),
-});
+})
 
 // Define UpdatedAtVal schema
 const UpdatedAtValSchema = z.object({
   updatedAt: z.coerce.date(),
-});
+})
 
 // Define Config schema (either ChangeToken or UpdatedAtVal)
-export const SyncConfigSchema = z.union([
-  ChangeTokenSchema,
-  UpdatedAtValSchema,
-]);
+export const SyncConfigSchema = z.union([ChangeTokenSchema, UpdatedAtValSchema])
 
 // TypeScript type for Config
-export type SyncConfig = z.infer<typeof SyncConfigSchema>;
+export type SyncConfig = z.infer<typeof SyncConfigSchema>
 
-export type ChangeToken = z.infer<typeof ChangeTokenSchema>;
+export type ChangeToken = z.infer<typeof ChangeTokenSchema>
 
 namespace Google {
   export const DriveFileSchema = z.object({
@@ -168,16 +165,16 @@ namespace Google {
         }),
       )
       .nullable(),
-  });
-  export type DriveFile = z.infer<typeof DriveFileSchema>;
+  })
+  export type DriveFile = z.infer<typeof DriveFileSchema>
 }
 
-export type GoogleClient = JWT | OAuth2Client;
+export type GoogleClient = JWT | OAuth2Client
 
 export type GoogleServiceAccount = {
-  client_email: string;
-  private_key: string;
-};
+  client_email: string
+  private_key: string
+}
 
 export enum Subsystem {
   Server = "Server",
@@ -200,6 +197,6 @@ export enum OperationStatus {
 }
 
 export type additionalMessage = Partial<{
-  Status: OperationStatus;
-  TimeTaken: number;
-}>;
+  Status: OperationStatus
+  TimeTaken: number
+}>

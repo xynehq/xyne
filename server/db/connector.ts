@@ -1,19 +1,19 @@
-import { createId } from "@paralleldrive/cuid2";
-import { db } from "./client";
+import { createId } from "@paralleldrive/cuid2"
+import { db } from "./client"
 import {
   connectors,
   oauthProviders,
   selectConnectorSchema,
   type SelectConnector,
   type SelectOAuthProvider,
-} from "./schema";
-import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types";
-import { Subsystem } from "@/types";
-import { and, eq } from "drizzle-orm";
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types";
-import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic";
-import config from "@/config";
-import { getLogger } from "@/shared/logger";
+} from "./schema"
+import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
+import { Subsystem } from "@/types"
+import { and, eq } from "drizzle-orm"
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic"
+import config from "@/config"
+import { getLogger } from "@/shared/logger"
 import {
   ConnectionInsertionError,
   NoConnectorsFound,
@@ -21,8 +21,8 @@ import {
   MissingOauthConnectorCredentialsError,
   FetchProviderFailed,
   UpdateConnectorFailed,
-} from "@/errors";
-const Logger = getLogger(Subsystem.Db).child({ module: "connector" });
+} from "@/errors"
+const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
   trx: TxnOrClient,
@@ -39,7 +39,7 @@ export const insertConnector = async (
   oauthCredentials?: string | null,
   status?: ConnectorStatus | null,
 ) => {
-  const externalId = createId(); // Generate unique external ID
+  const externalId = createId() // Generate unique external ID
   try {
     const inserted = await trx
       .insert(connectors)
@@ -58,17 +58,17 @@ export const insertConnector = async (
         oauthCredentials,
         ...(status ? { status } : {}),
       })
-      .returning();
-    Logger.info("Connection inserted successfully");
-    return inserted[0];
+      .returning()
+    Logger.info("Connection inserted successfully")
+    return inserted[0]
   } catch (error) {
-    Logger.error(`Error inserting connection:, ${error}`);
+    Logger.error(`Error inserting connection:, ${error}`)
     throw new ConnectionInsertionError({
       message: "Could not insert connection",
       cause: error as Error,
-    });
+    })
   }
-};
+}
 
 // for the admin we can get all the connectors
 export const getConnectors = async (workspaceId: string) => {
@@ -82,9 +82,9 @@ export const getConnectors = async (workspaceId: string) => {
       createdAt: connectors.createdAt,
     })
     .from(connectors)
-    .where(eq(connectors.workspaceExternalId, workspaceId));
-  return res;
-};
+    .where(eq(connectors.workspaceExternalId, workspaceId))
+  return res
+}
 
 // don't call this
 // call the function that ensures the credentials are always refreshed
@@ -96,20 +96,20 @@ export const getConnector = async (
     .select()
     .from(connectors)
     .where(eq(connectors.id, connectorId))
-    .limit(1);
+    .limit(1)
   if (res.length) {
-    const parsedRes = selectConnectorSchema.safeParse(res[0]);
+    const parsedRes = selectConnectorSchema.safeParse(res[0])
     if (!parsedRes.success) {
-      throw parsedRes.error;
+      throw parsedRes.error
     }
     // TODO: maybe add a check if OAuth and expired token then throw error
-    return parsedRes.data;
+    return parsedRes.data
   } else {
     throw new NoConnectorsFound({
       message: `Could not get the connector with id: ${connectorId}`,
-    });
+    })
   }
-};
+}
 
 const IsTokenExpired = (
   app: Apps,
@@ -117,15 +117,15 @@ const IsTokenExpired = (
   bufferInSeconds: number,
 ): boolean => {
   if (app === Apps.GoogleDrive) {
-    const tokens: GoogleTokens = oauthCredentials;
-    const now: Date = new Date();
+    const tokens: GoogleTokens = oauthCredentials
+    const now: Date = new Date()
     // make the type as Date, currently the date is stringified
-    const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime();
-    const currentTime = now.getTime();
-    return currentTime + bufferInSeconds * 1000 > expirationTime;
+    const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime()
+    const currentTime = now.getTime()
+    return currentTime + bufferInSeconds * 1000 > expirationTime
   }
-  return false;
-};
+  return false
+}
 
 // this method ensures that if it retuns the connector then the access token will always be valid
 // it takes upon itself to refresh if expired
@@ -142,21 +142,21 @@ export const getOAuthConnectorWithCredentials = async (
         eq(connectors.authType, AuthType.OAuth),
       ),
     )
-    .limit(1);
+    .limit(1)
 
   if (!res.length) {
     throw new NoOauthConnectorFound({
       message: `Could not get the oauth connector with id:  ${connectorId}`,
-    });
+    })
   }
 
-  const oauthRes: SelectConnector = selectConnectorSchema.parse(res[0]);
+  const oauthRes: SelectConnector = selectConnectorSchema.parse(res[0])
 
   if (!oauthRes.oauthCredentials) {
-    throw new MissingOauthConnectorCredentialsError({});
+    throw new MissingOauthConnectorCredentialsError({})
   }
   // parse the string
-  oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials);
+  oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials)
 
   // google tokens have expiry of 1 hour
   // 5 minutes before expiry we refresh them
@@ -169,60 +169,60 @@ export const getOAuthConnectorWithCredentials = async (
         .select()
         .from(oauthProviders)
         .where(eq(oauthProviders.connectorId, oauthRes.id))
-        .limit(1);
+        .limit(1)
 
       if (!providers.length) {
-        Logger.error("Could not fetch provider while refreshing Google Token");
+        Logger.error("Could not fetch provider while refreshing Google Token")
         throw new FetchProviderFailed({
           message: "Could not fetch provider while refreshing Google Token",
-        });
+        })
       }
-      const [googleProvider] = providers;
+      const [googleProvider] = providers
       const google = new Google(
         googleProvider.clientId!,
         googleProvider.clientSecret,
         `${config.host}/oauth/callback`,
-      );
-      const tokens: GoogleTokens = oauthRes.oauthCredentials;
+      )
+      const tokens: GoogleTokens = oauthRes.oauthCredentials
       const refreshedTokens: GoogleRefreshedTokens =
-        await google.refreshAccessToken(tokens.refreshToken!);
+        await google.refreshAccessToken(tokens.refreshToken!)
       // update the token values
-      tokens.accessToken = refreshedTokens.accessToken;
+      tokens.accessToken = refreshedTokens.accessToken
       tokens.accessTokenExpiresAt = new Date(
         refreshedTokens.accessTokenExpiresAt,
-      );
+      )
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
         oauthCredentials: JSON.stringify(tokens),
-      });
-      Logger.info(`Connector successfully updated: ${updatedConnector.id}`);
-      oauthRes.oauthCredentials = tokens;
+      })
+      Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
+      oauthRes.oauthCredentials = tokens
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,
-      );
+      )
       throw new Error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,
-      );
+      )
     }
   }
-  return oauthRes;
-};
+  return oauthRes
+}
 
 export const getConnectorByExternalId = async (connectorId: string) => {
   const res = await db
     .select()
     .from(connectors)
     .where(eq(connectors.externalId, connectorId))
-    .limit(1);
+    .limit(1)
   if (res.length) {
-    return res[0];
+    return res[0]
   } else {
-    Logger.error(`Connector not found for external ID ${connectorId}`);
+    Logger.error(`Connector not found for external ID ${connectorId}`)
     throw new NoConnectorsFound({
       message: `Could not get the connector with id: ${connectorId}`,
-    });
+    })
   }
-};
+}
 
 export const updateConnector = async (
   trx: TxnOrClient,
@@ -233,12 +233,12 @@ export const updateConnector = async (
     .update(connectors)
     .set(updateData)
     .where(eq(connectors.id, connectorId))
-    .returning();
+    .returning()
 
   if (!updatedConnectors || !updatedConnectors.length) {
-    Logger.error(`Could not update connector`);
-    throw new UpdateConnectorFailed("Could not update connector");
+    Logger.error(`Could not update connector`)
+    throw new UpdateConnectorFailed("Could not update connector")
   }
-  const [connectorVal] = updatedConnectors;
-  return selectConnectorSchema.parse(connectorVal);
-};
+  const [connectorVal] = updatedConnectors
+  return selectConnectorSchema.parse(connectorVal)
+}

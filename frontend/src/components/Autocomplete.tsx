@@ -1,10 +1,10 @@
-import { getIcon } from "@/lib/common";
+import { getIcon } from "@/lib/common"
 import type {
   Autocomplete,
   FileAutocomplete,
   UserAutocomplete,
-} from "shared/types";
-import { ForwardedRef, forwardRef } from "react";
+} from "shared/types"
+import { ForwardedRef, forwardRef } from "react"
 
 export const FileAutocompleteElement = ({
   result,
@@ -14,8 +14,8 @@ export const FileAutocompleteElement = ({
       {getIcon(result.app, result.entity)}
       <p>{result.title}</p>
     </div>
-  );
-};
+  )
+}
 
 export const UserAutocompleteElement = ({
   result,
@@ -29,21 +29,21 @@ export const UserAutocompleteElement = ({
       ></img>
       <p>{result.name}</p>
     </div>
-  );
-};
+  )
+}
 
 export const AutocompleteElement = forwardRef(
   (
     { result, onClick }: { result: Autocomplete; onClick: any },
     ref: ForwardedRef<HTMLDivElement>,
   ) => {
-    let content;
+    let content
     if (result.type === "file") {
-      content = <FileAutocompleteElement result={result} />;
+      content = <FileAutocompleteElement result={result} />
     } else if (result.type === "user") {
-      content = <UserAutocompleteElement result={result} />;
+      content = <UserAutocompleteElement result={result} />
     } else {
-      throw new Error("invalid type");
+      throw new Error("invalid type")
     }
     return (
       <div
@@ -53,6 +53,6 @@ export const AutocompleteElement = forwardRef(
       >
         {content}
       </div>
-    );
+    )
   },
-);
+)
