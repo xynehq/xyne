@@ -17,7 +17,7 @@ export const checkAndReadFile = async (path: string) => {
     const data = JSON.parse(await fs.readFile(path, "utf8"))
     return data
   } catch (err) {
-    if (err.code === "ENOENT") {
+    if ((err as ErrnoException).code === "ENOENT") {
       return null
     } else {
       throw err
@@ -25,6 +25,7 @@ export const checkAndReadFile = async (path: string) => {
   }
 }
 
+// @ts-ignore
 export const progress_callback = (args) => {
   if (args.status != "progress") return
   let n = Math.floor(args.progress / 5)

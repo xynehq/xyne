@@ -427,6 +427,8 @@ const insertUsersForWorkspace = async (
     const preferredLanguage =
       user.languages?.find((lang: Lang) => lang.preference === "preferred")
         ?.languageCode ?? user.languages?.[0]?.languageCode
+    // TODO: remove ts-ignore and fix correctly
+    // @ts-ignore
     await insertUser({
       docId: user.id!,
       name: user.name?.displayName ?? user.name?.fullName ?? "",
@@ -515,11 +517,14 @@ export const googleDocsVespa = async (
       )
     }
     const documentContent: docs_v1.Schema$Document = docResponse.data
+
     const rawTextContent = documentContent?.body?.content
-      ?.map((e) => extractText(e))
+      ?.map((e) => extractText(documentContent, e))
       .join("")
+
     const footnotes = extractFootnotes(documentContent)
     const headerFooter = extractHeadersAndFooters(documentContent)
+
     const cleanedTextContent = postProcessText(
       rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
     )
@@ -542,6 +547,8 @@ export const googleDocsVespa = async (
       ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
       entity: DriveEntity.Docs,
       chunks: chunks.map((v) => v.chunk),
+      // TODO: remove ts-ignore and fix correctly
+      // @ts-ignore
       chunk_embeddings: chunkMap,
       permissions: doc.permissions ?? [],
       mimeType: doc.mimeType ?? "",

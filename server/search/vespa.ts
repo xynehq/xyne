@@ -10,11 +10,8 @@ import type {
   VespaSearchResponse,
   VespaUser,
 } from "@/search/types"
-import type { Autocomplete, AutocompleteResults } from "@/shared/types"
 import { getErrorMessage } from "@/utils"
-import { progress_callback } from "@/utils"
 import config from "@/config"
-import { z } from "zod"
 import { getLogger } from "@/shared/logger"
 import { Subsystem } from "@/types"
 import {
@@ -25,6 +22,7 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
+import { getExtractor } from "@/embedding"
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -39,11 +37,8 @@ env.cacheDir = "./"
 
 const Logger = getLogger(Subsystem.Search).child({ module: "vespa" })
 
-const extractor = await pipeline(
-  "feature-extraction",
-  "Xenova/bge-base-en-v1.5",
-  { progress_callback, cache_dir: env.cacheDir },
-)
+const extractor = await getExtractor()
+
 function handleVespaGroupResponse(
   response: VespaSearchResponse,
 ): AppEntityCounts {
@@ -58,6 +53,7 @@ function handleVespaGroupResponse(
   if (!appGroup || !("children" in appGroup)) return appEntityCounts // Safeguard for missing app group
 
   // Iterate through the apps
+  // @ts-ignore
   for (const app of appGroup.children) {
     const appName = app.value as string // Get the app name
     appEntityCounts[appName] = {} // Initialize the app entry
@@ -67,6 +63,7 @@ function handleVespaGroupResponse(
     if (!entityGroup || !("children" in entityGroup)) continue // Skip if no entities
 
     // Iterate through the entities
+    // @ts-ignore
     for (const entity of entityGroup.children) {
       const entityName = entity.value as string // Get the entity name
       const count = entity.fields?.["count()"] || 0 // Get the count or default to 0
@@ -544,13 +541,17 @@ export const ifDocumentsExist = async (docIds: string[]) => {
     const result = await response.json()
 
     // Extract the document IDs of the found documents
+    // @ts-ignore
     const foundIds = result.root.children?.map((hit) => hit.fields.docId) || []
 
     // Determine which IDs exist and which do not
-    const existenceMap = docIds.reduce((acc, id) => {
-      acc[id] = foundIds.includes(id)
-      return acc
-    }, {})
+    const existenceMap = docIds.reduce(
+      (acc, id) => {
+        acc[id] = foundIds.includes(id)
+        return acc
+      },
+      {} as Record<string, boolean>,
+    )
 
     return existenceMap // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
   } catch (error) {

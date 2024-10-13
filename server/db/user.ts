@@ -8,7 +8,6 @@ import {
   workspaces,
   type PublicUserWorkspace,
   type SelectUser,
-  type SelectUserWorkspace,
 } from "./schema"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
@@ -63,15 +62,6 @@ export const getUserAndWorkspaceByOnlyEmail = async (
       ),
     )
     .limit(1)
-}
-
-// a util to fetch one whenever we do limit(1)
-const onlyOne = (res, errorMsg: string) => {
-  if (res.length) {
-    return res[0]
-  } else {
-    throw new Error(errorMsg)
-  }
 }
 
 // since email is unique across the users we don't need workspaceId

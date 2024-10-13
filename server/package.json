@@ -6,7 +6,8 @@
     "@biomejs/biome": "1.9.3",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
-    "drizzle-kit": "^0.24.2"
+    "drizzle-kit": "^0.24.2",
+    "p-queue": "^8.0.1"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

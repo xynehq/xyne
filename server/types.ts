@@ -45,6 +45,7 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>
 export const oauthStartQuerySchema = z.object({
   app: z.nativeEnum(Apps),
 })
+
 export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({

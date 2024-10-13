@@ -3,7 +3,7 @@ import { db } from "./client"
 import { users, workspaces } from "./schema"
 import { getUserAndWorkspaceByEmail } from "./user"
 import { getLogger } from "../shared/logger"
-import { Subsystem } from "@/shared/types"
+import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "seed" })
 
@@ -16,6 +16,7 @@ const seed = async () => {
       // Insert a new workspace
       const [workspace] = await tx
         .insert(workspaces)
+        // @ts-ignore
         .values({
           name: "Xyne",
           domain: "xynehq.com",
@@ -29,6 +30,7 @@ const seed = async () => {
       // Insert a new user associated with the workspace
       const [user] = await tx
         .insert(users)
+        // @ts-ignore
         .values({
           workspaceId: workspace.id,
           email: "saheb@xynehq.com",

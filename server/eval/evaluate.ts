@@ -12,7 +12,6 @@ env.localModelPath = "../"
 env.cacheDir = "../"
 env.backends.onnx.wasm.numThreads = 1
 
-const extractor = await getExtractor()
 const queriesPath = "data/fiqa/queries.jsonl"
 
 const processedResultsData: string[] = []
@@ -33,14 +32,14 @@ const evaluate = async (queriesListPath: string) => {
         "",
         k,
         0,
-        extractor,
       )
       if ("children" in results.root) {
         const hits = results.root.children
         for (let idx = 0; idx < hits.length; idx++) {
           // TREC format query_id Q0 document_id rank score run_id
+          // @ts-ignore
           processedResultsData.push(
-            `${query_id}\tQ0\t${hits[idx].fields.docId}\t${idx + 1}\t${hits[idx].relevance}\trun-1`,
+            `${query_id}\tQ0\t${hits[idx]?.fields?.docId}\t${idx + 1}\t${hits[idx].relevance}\trun-1`,
           )
         }
       }

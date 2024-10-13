@@ -91,6 +91,7 @@ export const StartOAuth = async (c: Context) => {
     "Started Oauth",
   )
   const { sub, workspaceId } = c.get(JwtPayloadKey)
+  // @ts-ignore
   const { app }: OAuthStartQuery = c.req.valid("query")
   Logger.info(`${sub} started ${app} OAuth`)
   const provider = await getOAuthProvider(db, app)
@@ -106,6 +107,7 @@ export const CreateOAuthProvider = async (c: Context) => {
     throw new NoUserFound({})
   }
   const [user] = userRes
+  // @ts-ignore
   const form: OAuthProvider = c.req.valid("form")
   const clientId = form.clientId
   const clientSecret = form.clientSecret
@@ -155,6 +157,7 @@ export const AddServiceConnection = async (c: Context) => {
     throw new NoUserFound({})
   }
   const [user] = userRes
+  // @ts-ignore
   const form: ServiceAccountConnection = c.req.valid("form")
   const data = await form["service-key"].text()
   const subject = form.email
