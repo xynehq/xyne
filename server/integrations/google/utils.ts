@@ -1,5 +1,5 @@
 import type { GaxiosResponse } from "gaxios";
-import { type GoogleClient, type GoogleServiceAccount, type VespaFileWithDrivePermission } from "@/types";
+import { type GoogleClient, type GoogleServiceAccount } from "@/types";
 import { docs_v1, drive_v3, google } from "googleapis";
 import { extractFootnotes, extractHeadersAndFooters, extractText, postProcessText } from "@/doc";
 import { chunkDocument } from "@/chunks";
@@ -7,6 +7,7 @@ import { getExtractor } from "@/embedding";
 import { Apps, DriveEntity } from "@/shared/types";
 import { JWT } from "google-auth-library";
 import { scopes } from '@/integrations/google/config'
+import type { VespaFileWithDrivePermission } from "@/search/types";
 
 // TODO: make it even more extensive
 export const mimeTypeMap: Record<string, DriveEntity> = {
@@ -71,12 +72,14 @@ export const getFileContent = async (client: GoogleClient, file: drive_v3.Schema
     }
     const documentContent: docs_v1.Schema$Document = docResponse.data
     const rawTextContent = documentContent?.body?.content
-        ?.map((e) => extractText(e))
+        ?.map((e) => extractText(documentContent, e))
         .join("");
+
     const footnotes = extractFootnotes(documentContent);
     const headerFooter = extractHeadersAndFooters(documentContent);
+
     const cleanedTextContent = postProcessText(
-        rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
+        rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter
     );
 
     const chunks = chunkDocument(cleanedTextContent)
@@ -96,6 +99,8 @@ export const getFileContent = async (client: GoogleClient, file: drive_v3.Schema
         ownerEmail: file.owners ? file.owners[0]?.emailAddress ?? "" : "",
         entity,
         chunks: chunks.map(v => v.chunk),
+        // TODO: fix this correctly
+        // @ts-ignore
         chunk_embeddings: chunkMap,
         permissions: file.permissions ?? [],
         mimeType: file.mimeType ?? ""
@@ -115,6 +120,8 @@ export const driveFileToIndexed = (file: drive_v3.Schema$File): VespaFileWithDri
         owner: file.owners ? file.owners[0].displayName ?? "" : "",
         photoLink: file.owners ? file.owners[0].photoLink ?? "" : "",
         ownerEmail: file.owners ? file.owners[0]?.emailAddress ?? "" : "",
+        // TODO: fix this correctly
+        // @ts-ignore
         chunk_embeddings: {},
         permissions: file.permissions ?? [],
         mimeType: file.mimeType ?? ""

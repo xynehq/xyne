@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "./client";
-import { selectUserSchema, userPublicSchema, users, workspacePublicSchema, workspaces, type PublicUserWorkspace, type SelectUser, type SelectUserWorkspace } from "./schema";
+import { selectUserSchema, userPublicSchema, users, workspacePublicSchema, workspaces, type PublicUserWorkspace, type SelectUser } from "./schema";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -41,15 +41,6 @@ export const getUserAndWorkspaceByOnlyEmail = async (trx: PgTransaction<any>, em
         .where(and(
             eq(users.email, email),  // Filter by user email
         )).limit(1)
-}
-
-// a util to fetch one whenever we do limit(1)
-const onlyOne = (res, errorMsg: string) => {
-    if (res.length) {
-        return res[0]
-    } else {
-        throw new Error(errorMsg)
-    }
 }
 
 // since email is unique across the users we don't need workspaceId

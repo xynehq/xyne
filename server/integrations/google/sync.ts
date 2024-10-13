@@ -14,6 +14,7 @@ import { getErrorMessage } from "@/utils";
 import { createJwtClient, driveFileToIndexed, getFile, getFileContent, MimeMapForContent, toPermissionsList } from "./utils";
 import { SyncJobFailed } from "@/errors";
 import { getLogger } from "@/shared/logger";
+import type { VespaFile } from "@/search/types";
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: 'google' })
 
@@ -33,27 +34,29 @@ const handleGoogleDriveChange = async (change: drive_v3.Schema$Change, client: G
     if (change.removed) {
         if (docId) {
             const doc = await GetDocument(docId)
-            const permissions = doc.fields.permissions
-            if (permissions.length === 1) {
-                // remove it
-                try {
-                    // also ensure that we are that permission
-                    if (!(permissions[0] === email)) {
-                        throw new Error("We got a change for us that we didn't have access to in Vespa")
+            if (doc.fields.sddocname === 'file') {
+                const permissions = (doc.fields as VespaFile).permissions
+                if (permissions.length === 1) {
+                    // remove it
+                    try {
+                        // also ensure that we are that permission
+                        if (!(permissions[0] === email)) {
+                            throw new Error("We got a change for us that we didn't have access to in Vespa")
+                        }
+                        await DeleteDocument(docId)
+                        stats.removed += 1
+                        stats.summary += `${docId} removed\n`
+                    } catch (e) {
+                        // TODO: detect vespa 404 and only ignore for that case
+                        // otherwise throw it further
                     }
-                    await DeleteDocument(docId)
-                    stats.removed += 1
-                    stats.summary += `${docId} removed\n`
-                } catch (e) {
-                    // TODO: detect vespa 404 and only ignore for that case
-                    // otherwise throw it further
+                } else {
+                    // remove our user's permission from the email
+                    const newPermissions = permissions.filter(v => v !== email)
+                    await UpdateDocumentPermissions(docId, newPermissions)
+                    stats.updated += 1
+                    stats.summary += `user lost permission for doc: ${docId}\n`
                 }
-            } else {
-                // remove our user's permission from the email
-                const newPermissions = permissions.filter(v => v !== email)
-                await UpdateDocumentPermissions(docId, newPermissions)
-                stats.updated += 1
-                stats.summary += `user lost permission for doc: ${docId}\n`
             }
         }
     } else if (docId && change.file) {
