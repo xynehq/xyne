@@ -23,7 +23,7 @@ const { JwtPayloadKey } = config
 import { generateCodeVerifier, generateState, Google } from "arctic"
 import type { SelectOAuthProvider } from "@/db/schema"
 import { getErrorMessage, setCookieByEnv } from "@/utils"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "@/logger"
 import { getPath } from "hono/utils/url"
 import {
   AddServiceConnectionError,

@@ -2,7 +2,7 @@ import type { Context } from "hono"
 import { setCookie } from "hono/cookie"
 import type { CookieOptions } from "hono/utils/cookie"
 import fs from "node:fs/promises"
-import { getLogger } from "./shared/logger"
+import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Utils)

@@ -54,7 +54,7 @@ import {
   mimeTypeMap,
   toPermissionsList,
 } from "@/integrations/google/utils"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "@/logger"
 import type { VespaFileWithDrivePermission } from "@/search/types"
 import { UserListingError, CouldNotFinishJobSuccessfully } from "@/errors"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })

@@ -5,7 +5,9 @@
     "paths": {
       "@/*": ["./src/*"],
       "@/server/*": ["../server/*"],
-      "shared/*": ["../server/shared/*"]
+      "shared/*": ["../server/shared/*"],
+      // so shared types can work with types from search file
+      "search/types": ["../server/search/types"]
     }
   },
   "references": [

@@ -4,14 +4,14 @@ import {
   VespaFileSchema,
   VespaUserSchema,
   Apps,
-} from "../search/types"
+} from "search/types"
 export {
   GooglePeopleEntity,
   DriveEntity,
   NotionEntity,
   Apps,
-} from "../search/types"
-export type { Entity } from "../search/types"
+} from "search/types"
+export type { Entity } from "search/types"
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"

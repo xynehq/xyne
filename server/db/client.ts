@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 import config from "@/config"
-import { getLogger } from "../shared/logger"
+import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "client" })

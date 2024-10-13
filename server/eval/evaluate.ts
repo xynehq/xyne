@@ -37,8 +37,8 @@ const evaluate = async (queriesListPath: string) => {
         const hits = results.root.children
         for (let idx = 0; idx < hits.length; idx++) {
           // TREC format query_id Q0 document_id rank score run_id
-          // @ts-ignore
           processedResultsData.push(
+            // @ts-ignore
             `${query_id}\tQ0\t${hits[idx]?.fields?.docId}\t${idx + 1}\t${hits[idx].relevance}\trun-1`,
           )
         }

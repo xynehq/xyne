@@ -38,7 +38,6 @@ export const AutocompleteApi = async (c: Context) => {
 export const SearchApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   const email = sub
-  // @ts-ignore
   let {
     query,
     groupCount: gc,
@@ -46,6 +45,7 @@ export const SearchApi = async (c: Context) => {
     page,
     app,
     entity,
+    // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse

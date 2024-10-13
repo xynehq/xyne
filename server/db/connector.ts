@@ -13,7 +13,7 @@ import { and, eq } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic"
 import config from "@/config"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "@/logger"
 import {
   ConnectionInsertionError,
   NoConnectorsFound,

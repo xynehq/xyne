@@ -130,8 +130,8 @@ export const VespaUserSchema = z
   .merge(defaultVespaFieldsSchema)
 
 export const VespaFieldsSchema = z.discriminatedUnion("sddocname", [
-  VespaFileSchema,
   VespaUserSchema,
+  VespaFileSchema,
 ])
 
 const VespaResultSchema = z.object({
