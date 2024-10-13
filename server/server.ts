@@ -289,9 +289,6 @@ app.get(
   },
 )
 
-app.get("*", serveStatic({ root: "./dist" }))
-app.get("*", serveStatic({ path: "./dist/index.html" }))
-
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
