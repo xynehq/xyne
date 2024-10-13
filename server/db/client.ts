@@ -1,9 +1,13 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import config from "@/config";
+import { getLogger } from "../shared/logger";
+import { Subsystem } from "@/types";
+
+const Logger = getLogger(Subsystem.Db).child({ module: "client" });
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`;
-console.log(url);
+Logger.info(url);
 
 const queryClient = postgres(url, {
   idle_timeout: 0,

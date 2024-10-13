@@ -73,8 +73,9 @@ schema file {
   }
 
   fieldset autocomplete {
-    fields: title
+    fields: title, app, entity
   }
+
   # Hybrid search rank profile combining BM25 for title and chunks, and vector search for chunk embeddings
   rank-profile default {
     # Inputs for the query vector and alpha for hybrid search
@@ -122,6 +123,21 @@ schema file {
       source: chunks
     }
     summary docId {}
+  }
+
+  document-summary autocomplete {
+    summary title {
+        source: title
+    }
+    summary app {
+        source: app
+    }
+    summary entity {
+        source: entity
+    }
+    summary docId {
+        source: docId
+    }
   }
 
   # Autocomplete rank profile for fuzzy prefix search

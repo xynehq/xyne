@@ -1,13 +1,16 @@
 import {
-  handleGoogleOAuthChanges,
   handleGoogleOAuthIngestion,
-  handleGoogleServiceAccountChanges,
   handleGoogleServiceAccountIngestion,
+  syncGoogleWorkspace,
 } from "@/integrations/google";
 import { ConnectorType, type SaaSJob } from "@/types";
 import PgBoss from "pg-boss";
 import config from "@/config";
 import { Apps, AuthType } from "@/shared/types";
+import {
+  handleGoogleOAuthChanges,
+  handleGoogleServiceAccountChanges,
+} from "@/integrations/google/sync";
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`;
 export const boss = new PgBoss(url);
@@ -15,16 +18,32 @@ export const boss = new PgBoss(url);
 export const SaaSQueue = `ingestion-${ConnectorType.SaaS}`;
 export const SyncOAuthSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.OAuth}`;
 export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`;
+export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`;
 
 const Every10Minutes = `*/10 * * * *`;
+const EveryHour = `0 * * * *`;
+const Every6Hours = `0 */6 * * *`;
 
 export const init = async () => {
   await boss.start();
   await boss.createQueue(SaaSQueue);
   await boss.createQueue(SyncOAuthSaaSQueue);
   await boss.createQueue(SyncServiceAccountSaaSQueue);
+  await boss.createQueue(SyncGoogleWorkspace);
   await initWorkers();
 };
+
+// when the Service account is connected
+export const setupServiceAccountCronjobs = async () => {
+  await boss.schedule(
+    SyncServiceAccountSaaSQueue,
+    Every10Minutes,
+    {},
+    { retryLimit: 0 },
+  );
+  await boss.schedule(SyncGoogleWorkspace, Every6Hours, {}, { retryLimit: 0 });
+};
+
 const initWorkers = async () => {
   await boss.work(SaaSQueue, async ([job]) => {
     const jobData: SaaSJob = job.data as SaaSJob;
@@ -50,19 +69,25 @@ const initWorkers = async () => {
     {},
     { retryLimit: 0 },
   );
-  await boss.schedule(
-    SyncServiceAccountSaaSQueue,
-    Every10Minutes,
-    {},
-    { retryLimit: 0 },
-  );
+  await setupServiceAccountCronjobs();
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
     await handleGoogleOAuthChanges(boss, job);
   });
 
+  // Any Service account related SaaS jobs
   await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
+    // call all the service account handlers in parallel
     await handleGoogleServiceAccountChanges(boss, job);
   });
+
+  await boss.work(SyncGoogleWorkspace, async ([job]) => {
+    await syncGoogleWorkspace(boss, job);
+  });
 };
+
 export const ProgressEvent = "progress-event";
+
+boss.on("error", (error) => {
+  console.error(`Queue error: ${error}`);
+});

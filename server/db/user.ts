@@ -50,7 +50,7 @@ export const getUserAndWorkspaceByOnlyEmail = async (
   trx: PgTransaction<any>,
   email: string,
 ) => {
-  return await db
+  return await trx
     .select({
       user: users,
       workspace: workspaces,
@@ -76,7 +76,7 @@ const onlyOne = (res, errorMsg: string) => {
 
 // since email is unique across the users we don't need workspaceId
 export const getUserByEmail = async (trx: TxnOrClient, email: string) => {
-  return await db
+  return await trx
     .select()
     .from(users)
     .where(and(eq(users.email, email)))

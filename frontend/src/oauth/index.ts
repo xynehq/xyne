@@ -1,4 +1,4 @@
-import { Apps } from "@shared/types";
+import { Apps } from "shared/types";
 
 const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`;
 const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth?success=true}`;
@@ -10,6 +10,7 @@ export class OAuthModal {
   private windowRef: Window | null = null;
   private intervalId: number | null = null;
   private completed = false; // Flag to prevent multiple resolve/reject calls
+  private logger = console;
 
   constructor(
     // connectorId: string;
@@ -24,10 +25,12 @@ export class OAuthModal {
   public startAuth(app: Apps) {
     return new Promise((resolve, reject) => {
       try {
+        //clientLog({currentApp: app}, 'Starting OAuth')
+        this.logger.info({ currentApp: app }, "Starting OAuth");
         this.openAuthWindow(`${authUrl}?app=${app}`);
         this.monitorWindow(resolve, reject);
       } catch (error) {
-        console.error("Error starting OAuth:", error);
+        this.logger.error(`Error starting OAuth: ${error}`);
         reject(error);
       }
     });
@@ -36,12 +39,13 @@ export class OAuthModal {
   private openAuthWindow(url: string) {
     const left = window.screen.width / 2 - this.width / 2;
     const top = window.screen.height / 2 - this.height / 2;
-
+    this.logger.info("Opened OAuth Window");
     const features = `width=${this.width},height=${this.height},top=${top},left=${left},status=no,menubar=no,toolbar=no`;
 
     this.windowRef = window.open(url, "_blank", features);
 
     if (!this.windowRef) {
+      this.logger.error("Popup blocked. User had popups blocked");
       throw new Error("Popup blocked. Please allow popups and try again.");
     }
   }
@@ -68,7 +72,7 @@ export class OAuthModal {
 
       try {
         const currentUrl = this.windowRef?.location.href;
-        console.log(currentUrl);
+        this.logger.info("Monitoring window");
         if (currentUrl && currentUrl === successUrl) {
           // When the popup window reaches the success URL, stop monitoring
           window.clearInterval(this.intervalId!);
@@ -77,12 +81,28 @@ export class OAuthModal {
           if (!this.completed) {
             this.completed = true; // Mark as completed
             this.windowRef?.close();
+            this.logger.info(
+              {
+                oauthProgress: {
+                  success: true,
+                },
+              },
+              "Oauth Successful",
+            );
             resolve({ success: true, message: "OAuth successful!" });
           }
         }
       } catch (error) {
         // This error happens due to cross-origin issues before the window redirects to your domain
         // It can be safely ignored until the popup window navigates to a URL on your domain
+        this.logger.error(
+          {
+            oauthProgress: {
+              success: false,
+            },
+          },
+          "Authentication window was closed before completion.",
+        );
         reject({
           success: false,
           message: "Authentication window was closed before completion.",

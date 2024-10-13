@@ -3,81 +3,16 @@ import { z } from "zod";
 import { Apps, AuthType } from "@/shared/types";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import type { GoogleTokens } from "arctic";
+import type { GoogleTokens, Notion } from "arctic";
+import { JWT, type OAuth2Client } from "google-auth-library";
 
-export interface File {
-  docId: string;
-  title: string;
-  chunk: string;
-  chunkIndex: number;
-  url: string;
-  app: string;
-  entity: string;
-  permissions: string[];
-  owner: string;
-  ownerEmail: string;
-  photoLink: string;
-  mimeType: string;
-  title_embedding: number[];
-  chunk_embedding: number[];
-}
+// type GoogleContacts = people_v1.Schema$Person
+// type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
 
-export const AutocompleteResultSchema = z.object({
-  title: z.string().min(1),
-});
+// People graph of google workspace
+// type GoogleWorkspacePeople = WorkspaceDirectoryUser | GoogleContacts
 
-export const AutocompleteResultsSchema = z.object({
-  children: z.array(AutocompleteResultSchema),
-});
-
-export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>;
-
-// Base interface for Vespa response
-export interface VespaResponse {
-  root: VespaRoot;
-}
-
-// Root type handling both regular search results and groups
-export interface VespaRoot {
-  id: string;
-  relevance: number;
-  fields?: {
-    totalCount: number;
-  };
-  coverage: {
-    coverage: number;
-    documents: number;
-    full: boolean;
-    nodes: number;
-    results: number;
-    resultsFull: number;
-  };
-  children: (VespaResult | VespaGroup)[];
-}
-
-// For regular search results
-export type VespaResult = {
-  id: string;
-  relevance: number;
-  fields: {
-    title: string;
-    [key: string]: any;
-  };
-};
-
-// For grouping response (e.g., app/entity counts)
-export interface VespaGroup {
-  id: string;
-  relevance: number;
-  label: string;
-  value?: string; // e.g., app or entity value
-  fields?: {
-    "count()": number;
-  };
-  children: VespaGroup[]; // Nested groups (e.g., app -> entity)
-}
-
-export interface XyneSearchResponse {}
+// type PeopleData = GoogleWorkspacePeople
 
 export const searchSchema = z.object({
   query: z.string(),
@@ -97,7 +32,7 @@ export const searchSchema = z.object({
     .transform((x) => Number(x ?? config.page))
     .pipe(z.number())
     .optional(),
-  app: z.string().min(1).optional(),
+  app: z.nativeEnum(Apps).optional(),
   entity: z.string().min(1).optional(),
 });
 
@@ -203,8 +138,68 @@ export type SyncConfig = z.infer<typeof SyncConfigSchema>;
 
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>;
 
-export enum DriveMime {
-  Docs = "application/vnd.google-apps.document",
-  Sheets = "application/vnd.google-apps.spreadsheet",
-  Slides = "application/vnd.google-apps.presentation",
+namespace Google {
+  export const DriveFileSchema = z.object({
+    id: z.string().nullable(),
+    webViewLink: z.string().nullable(),
+    createdTime: z.string().nullable(),
+    modifiedTime: z.string().nullable(),
+    name: z.string().nullable(),
+    owners: z
+      .array(
+        z.object({
+          displayName: z.string().optional(),
+          emailAddress: z.string().optional(),
+          kind: z.string().optional(),
+          me: z.boolean().optional(),
+          permissionId: z.string().optional(),
+          photoLink: z.string().optional(),
+        }),
+      )
+      .optional(),
+    fileExtension: z.string().nullable(),
+    mimeType: z.string().nullable(),
+    permissions: z
+      .array(
+        z.object({
+          id: z.string(),
+          type: z.string(),
+          emailAddress: z.string().nullable(),
+        }),
+      )
+      .nullable(),
+  });
+  export type DriveFile = z.infer<typeof DriveFileSchema>;
 }
+
+export type GoogleClient = JWT | OAuth2Client;
+
+export type GoogleServiceAccount = {
+  client_email: string;
+  private_key: string;
+};
+
+export enum Subsystem {
+  Server = "Server",
+  Auth = "Auth",
+  Cronjob = "Cronjob",
+  Ingest = "Ingest",
+  Integrations = "Integrations",
+  Search = "Search",
+  Db = "Db",
+  Api = "Api",
+  Utils = "Utils",
+  Queue = "Queue",
+}
+
+export enum OperationStatus {
+  Success = "Success",
+  Failure = "Failure",
+  Pendings = "Pending",
+  Cancelled = "Cancelled",
+}
+
+export type additionalMessage = Partial<{
+  Status: OperationStatus;
+  TimeTaken: number;
+}>;

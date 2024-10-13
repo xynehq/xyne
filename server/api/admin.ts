@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-
 import { db } from "@/db/client";
 import { getUserByEmail } from "@/db/user";
 import {
@@ -14,6 +13,7 @@ import {
   type OAuthStartQuery,
   type SaaSJob,
   type ServiceAccountConnection,
+  Subsystem,
 } from "@/types";
 import { boss, SaaSQueue } from "@/queue";
 import config from "@/config";
@@ -22,7 +22,16 @@ import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider";
 const { JwtPayloadKey } = config;
 import { generateCodeVerifier, generateState, Google } from "arctic";
 import type { SelectOAuthProvider } from "@/db/schema";
-import { setCookieByEnv } from "@/utils";
+import { getErrorMessage, setCookieByEnv } from "@/utils";
+import { getLogger } from "@/shared/logger";
+import { getPath } from "hono/utils/url";
+import {
+  AddServiceConnectionError,
+  ConnectorNotCreated,
+  NoUserFound,
+} from "@/errors";
+
+const Logger = getLogger(Subsystem.Api).child({ module: "admin" });
 
 export const GetConnectors = async (c: Context) => {
   const { workspaceId } = c.get(JwtPayloadKey);
@@ -43,7 +52,7 @@ const getAuthorizationUrl = async (
   );
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
-  console.log("code verifier ", codeVerifier);
+  Logger.info(`code verifier  ${codeVerifier}`);
   // adding some data to state
   const newState = JSON.stringify({ app, random: state });
   const url: URL = await google.createAuthorizationURL(newState, codeVerifier, {
@@ -72,9 +81,18 @@ const getAuthorizationUrl = async (
 };
 
 export const StartOAuth = async (c: Context) => {
+  const path = getPath(c.req.raw);
+  Logger.info(
+    {
+      reqiestId: c.var.requestId,
+      method: c.req.method,
+      path,
+    },
+    "Started Oauth",
+  );
   const { sub, workspaceId } = c.get(JwtPayloadKey);
   const { app }: OAuthStartQuery = c.req.valid("query");
-  console.log(`${sub} started ${app} OAuth`);
+  Logger.info(`${sub} started ${app} OAuth`);
   const provider = await getOAuthProvider(db, app);
   const url = await getAuthorizationUrl(c, app, provider);
   return c.redirect(url.toString());
@@ -85,7 +103,7 @@ export const CreateOAuthProvider = async (c: Context) => {
   const email = sub;
   const userRes = await getUserByEmail(db, email);
   if (!userRes || !userRes.length) {
-    throw new Error("Could not get user");
+    throw new NoUserFound({});
   }
   const [user] = userRes;
   const form: OAuthProvider = c.req.valid("form");
@@ -110,7 +128,7 @@ export const CreateOAuthProvider = async (c: Context) => {
       ConnectorStatus.NotConnected,
     );
     if (!connector) {
-      throw new Error("Connecter wasn't created");
+      throw new ConnectorNotCreated({});
     }
     const provider = await createOAuthProvider(trx, {
       clientId,
@@ -134,7 +152,7 @@ export const AddServiceConnection = async (c: Context) => {
   const email = sub;
   const userRes = await getUserByEmail(db, email);
   if (!userRes || !userRes.length) {
-    throw new Error("Could not get user");
+    throw new NoUserFound({});
   }
   const [user] = userRes;
   const form: ServiceAccountConnection = c.req.valid("form");
@@ -172,7 +190,7 @@ export const AddServiceConnection = async (c: Context) => {
       // Enqueue the background job within the same transaction
       const jobId = await boss.send(SaaSQueue, SaasJobPayload);
 
-      console.log(`Job ${jobId} enqueued for connection ${connector.id}`);
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`);
 
       // Commit the transaction if everything is successful
       return c.json({
@@ -181,7 +199,10 @@ export const AddServiceConnection = async (c: Context) => {
         id: connector.externalId,
       });
     } catch (error) {
-      console.error("Error:", error);
+      const errMessage = getErrorMessage(error);
+      Logger.error(
+        `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage}`,
+      );
       // Rollback the transaction in case of any error
       throw new HTTPException(500, {
         message: "Error creating connection or enqueuing job",

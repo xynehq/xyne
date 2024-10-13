@@ -7,6 +7,7 @@
         <redundancy reply-after="1">1</redundancy>
         <documents>
             <document type="file" mode="index" />
+            <document type="user" mode="index" />
             <document type="user_query" mode="index" />
         </documents>
         <nodes>

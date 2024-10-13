@@ -1,4 +1,4 @@
-import { Hono, type Context, type Next } from "hono";
+import { type Context, Hono, type Next } from "hono";
 import { logger } from "hono/logger";
 import { AutocompleteApi, autocompleteSchema, SearchApi } from "@/api/search";
 import { zValidator } from "@hono/zod-validator";
@@ -32,8 +32,10 @@ import { serveStatic } from "hono/bun";
 import config from "@/config";
 import { OAuthCallback } from "./api/oauth";
 import { setCookieByEnv } from "./utils";
-import { html, raw } from "hono/html";
+import { getLogger, LogMiddleware } from "./shared/logger";
+import { Subsystem } from "@/types";
 import { GetUserWorkspaceInfo } from "./api/auth";
+import { AuthRedirectError, InitialisationError } from "@/errors";
 
 const clientId = process.env.GOOGLE_CLIENT_ID!;
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
@@ -44,6 +46,8 @@ const frontendBaseURL = process.env.FRONTEND_BASE_URL!;
 const jwtSecret = process.env.JWT_SECRET!;
 
 const CookieName = "auth-token";
+
+const Logger = getLogger(Subsystem.Server);
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 
@@ -63,7 +67,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
 
   // If no auth token is found
   if (!authToken) {
-    console.log("Redirected by server - No AuthToken");
+    Logger.warn("Redirected by server - No AuthToken");
     // Redirect to login page if no token found
     return c.redirect(`${frontendBaseURL}/auth`);
   }
@@ -72,14 +76,16 @@ const AuthRedirect = async (c: Context, next: Next) => {
     // Verify the token if available
     await AuthMiddleware(c, next);
   } catch (err) {
-    console.error(err);
-    console.log("Redirected by server - Error in AuthMW");
+    Logger.error(`${new AuthRedirectError({ cause: err as Error })}`);
+    Logger.warn("Redirected by server - Error in AuthMW");
     // Redirect to auth page if token invalid
     return c.redirect(`${frontendBaseURL}/auth`);
   }
 };
 
-app.use("*", logger());
+const honoMiddlewareLogger = LogMiddleware(Subsystem.Server);
+
+app.use("*", honoMiddlewareLogger);
 
 export const wsConnections = new Map();
 
@@ -93,11 +99,11 @@ export const WsApp = app.get(
         wsConnections.set(connectorId, ws);
       },
       onMessage(event, ws) {
-        console.log(`Message from client: ${event.data}`);
+        Logger.info(`Message from client: ${event.data}`);
         ws.send(JSON.stringify({ message: "Hello from server!" }));
       },
       onClose: (event, ws) => {
-        console.log("Connection closed");
+        Logger.info("Connection closed");
         if (connectorId) {
           wsConnections.delete(connectorId);
         }
@@ -153,7 +159,16 @@ const generateToken = async (
   role: string,
   workspaceId: string,
 ) => {
-  console.log("generating token");
+  Logger.info(
+    {
+      tokenInfo: {
+        // email: email,
+        role: role,
+        workspaceId,
+      },
+    },
+    "generating token for the following",
+  );
   const payload = {
     sub: email,
     role: role,
@@ -195,6 +210,7 @@ app.get(
       throw new HTTPException(500, { message: "User email is not verified" });
     }
     // hosted domain
+    // @ts-ignore
     let domain = user.hd;
     if (!domain && email) {
       domain = email.split("@")[1];
@@ -205,7 +221,17 @@ app.get(
     const existingUserRes = await getUserByEmail(db, email);
     // if user exists then workspace exists too
     if (existingUserRes && existingUserRes.length) {
-      console.log("User found");
+      Logger.info(
+        {
+          requestId: c.var.requestId, // Access the request ID
+          user: {
+            email: user.email,
+            name: user.name,
+            verified_email: user.verified_email,
+          },
+        },
+        "User found and authenticated",
+      );
       const existingUser = existingUserRes[0];
       const jwtToken = await generateToken(
         existingUser.email,
@@ -220,7 +246,7 @@ app.get(
     // just create the user
     const existingWorkspaceRes = await getWorkspaceByDomain(domain);
     if (existingWorkspaceRes && existingWorkspaceRes.length) {
-      console.log("Workspace found, creating user");
+      Logger.info("Workspace found, creating user");
       const existingWorkspace = existingWorkspaceRes[0];
       const [user] = await createUser(
         db,
@@ -243,7 +269,7 @@ app.get(
     // we could not find the user and the workspace
     // creating both
 
-    console.log("Creating workspace and user");
+    Logger.info("Creating workspace and user");
     const userAcc = await db.transaction(async (trx) => {
       const [workspace] = await createWorkspace(trx, email, domain);
       const [user] = await createUser(
@@ -268,23 +294,8 @@ app.get(
   },
 );
 
-// app.get('/oauth/success', async (c: Context) => {
-//     return c.html(
-//         <html>
-//         <head>
-//         <title>Test Site </title>
-//             { html`
-//         <script>
-//             window.onload = function () {
-//             window.opener.postMessage({ success: true }, "*"); // Send a success message to the parent window
-//             window.close(); // Close the popup window
-//             </script>
-//         };
-//     `}
-//           </head>
-//     < body > Hello! </body>
-//     </html>)
-// })
+app.get("*", serveStatic({ root: "./dist" }));
+app.get("*", serveStatic({ path: "./dist/index.html" }));
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }));
@@ -303,8 +314,8 @@ app.get("/assets/*", serveStatic({ root: "./dist" }));
 export const init = async () => {
   await initQueue();
 };
-init().catch((e) => {
-  console.error(e);
+init().catch((error) => {
+  throw new InitialisationError({ cause: error });
 });
 
 const server = Bun.serve({
@@ -312,4 +323,4 @@ const server = Bun.serve({
   port: config.port,
   websocket,
 });
-console.log(`listening on port: ${config.port}`);
+Logger.info(`listening on port: ${config.port}`);

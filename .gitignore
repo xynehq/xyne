@@ -186,3 +186,7 @@ vespa-logs
 
 # models
 server/Xenova
+
+
+# fe
+.mjs

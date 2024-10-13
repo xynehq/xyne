@@ -41,13 +41,7 @@ export const getAppSyncJobs = async (
     .select()
     .from(syncJobs)
     .where(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)));
-  const parsedData = z.array(selectSyncJobSchema).safeParse(jobs);
-  if (!parsedData.success) {
-    throw new Error(
-      `Could not get Sync Jobs for app: ${app} ${parsedData.error.toString()}`,
-    );
-  }
-  return parsedData.data;
+  return z.array(selectSyncJobSchema).parse(jobs);
 };
 
 export const updateSyncJob = async (

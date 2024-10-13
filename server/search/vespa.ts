@@ -1,38 +1,52 @@
 // import { env, pipeline } from '@xenova/transformers';
 // let { pipeline, env } = await import('@xenova/transformers');
 
-import fs from "node:fs/promises";
 const transformers = require("@xenova/transformers");
 const { pipeline, env } = transformers;
-import type { VespaResponse, File } from "@/types";
-import { checkAndReadFile } from "@/utils";
+import type {
+  VespaAutocompleteResponse,
+  VespaFile,
+  VespaResult,
+  VespaSearchResponse,
+  VespaUser,
+} from "@/search/types";
+import type { Autocomplete, AutocompleteResults } from "@/shared/types";
+import { getErrorMessage } from "@/utils";
 import { progress_callback } from "@/utils";
 import config from "@/config";
-import {
-  driveFilesToDoc,
-  DriveMime,
-  googleDocs,
-  listFiles,
-  toPermissionsList,
-} from "@/integrations/google";
-import config from "@/config";
 import { z } from "zod";
+import { getLogger } from "@/shared/logger";
+import { Subsystem } from "@/types";
+import {
+  ErrorDeletingDocuments,
+  ErrorGettingDocument,
+  ErrorUpdatingDocument,
+  ErrorRetrievingDocuments,
+  ErrorPerformingSearch,
+  ErrorInsertingDocument,
+} from "@/errors";
 
 // Define your Vespa endpoint and schema name
-const VESPA_ENDPOINT = `http://${config.vespaBaseHost}:8080`;
-const SCHEMA = "file"; // Replace with your actual schema name
+const vespaEndpoint = `http://${config.vespaBaseHost}:8080`;
+const fileSchema = "file"; // Replace with your actual schema name
+const userSchema = "user";
 const NAMESPACE = "namespace"; // Replace with your actual namespace
 const CLUSTER = "my_content";
 env.backends.onnx.wasm.numThreads = 1;
 
 env.localModelPath = "./";
 env.cacheDir = "./";
+
+const Logger = getLogger(Subsystem.Search).child({ module: "vespa" });
+
 const extractor = await pipeline(
   "feature-extraction",
   "Xenova/bge-base-en-v1.5",
   { progress_callback, cache_dir: env.cacheDir },
 );
-function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {
+function handleVespaGroupResponse(
+  response: VespaSearchResponse,
+): AppEntityCounts {
   const appEntityCounts: AppEntityCounts = {};
 
   // Navigate to the first level of groups
@@ -68,7 +82,7 @@ function handleVespaGroupResponse(response: VespaResponse): AppEntityCounts {
  */
 async function deleteAllDocuments() {
   // Construct the DELETE URL
-  const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid?selection=true&cluster=${CLUSTER}`;
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid?selection=true&cluster=${CLUSTER}`;
 
   try {
     const response: Response = await fetch(url, {
@@ -76,7 +90,7 @@ async function deleteAllDocuments() {
     });
 
     if (response.ok) {
-      console.log("All documents deleted successfully.");
+      Logger.info("All documents deleted successfully.");
     } else {
       const errorText = await response.text();
       throw new Error(
@@ -84,14 +98,18 @@ async function deleteAllDocuments() {
       );
     }
   } catch (error) {
-    console.error("Error deleting documents:", error);
+    Logger.error(`Error deleting documents:, ${error}`);
+    throw new ErrorDeletingDocuments({
+      cause: error as Error,
+      sources: "file",
+    });
   }
 }
 
-export const insertDocument = async (document: File) => {
+export const insertDocument = async (document: VespaFile) => {
   try {
     const response = await fetch(
-      `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${document.docId}`,
+      `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${document.docId}`,
       {
         method: "POST",
         headers: {
@@ -104,12 +122,44 @@ export const insertDocument = async (document: File) => {
     const data = await response.json();
 
     if (response.ok) {
-      console.log(`Document ${document.docId} inserted successfully:`, data);
+      Logger.info(`Document ${document.docId} inserted successfully:, ${data}`);
     } else {
-      console.error(`Error inserting document ${document.docId}:`, data);
+      Logger.error(`Error inserting document ${document.docId}:, ${data}`);
     }
   } catch (error) {
-    console.error(`Error inserting document ${document.docId}:`, error.message);
+    const errMessage = getErrorMessage(error);
+    Logger.error(`Error inserting document ${document.docId}:, ${errMessage}`);
+    throw new ErrorInsertingDocument({
+      docId: document.docId,
+      cause: error as Error,
+      sources: fileSchema,
+    });
+  }
+};
+
+export const insertUser = async (user: VespaUser) => {
+  try {
+    const response = await fetch(
+      `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.docId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fields: user }),
+      },
+    );
+
+    const data = await response.json();
+
+    if (response.ok) {
+      console.log(`Document ${user.docId} inserted successfully:`, data);
+    } else {
+      console.error(`Error inserting user ${user.docId}:`, data);
+    }
+  } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    console.error(`Error inserting user ${user.docId}:`, errorMessage);
   }
 };
 
@@ -117,9 +167,16 @@ export const autocomplete = async (
   query: string,
   email: string,
   limit: number = 5,
-): Promise<VespaResponse | null> => {
+): Promise<VespaAutocompleteResponse> => {
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
-  const yqlQuery = `select * from sources ${SCHEMA} where title_fuzzy contains ({maxEditDistance: 2, prefix: true}fuzzy(@query)) and permissions contains @email`;
+  const yqlQuery = `select * from sources file, user
+        where
+            (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and permissions contains @email)
+            or
+            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            );`;
 
   const searchPayload = {
     yql: yqlQuery,
@@ -127,10 +184,10 @@ export const autocomplete = async (
     email,
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
-    "presentation.summary": "default",
+    "presentation.summary": "autocomplete",
   };
   try {
-    const response = await fetch(`${VESPA_ENDPOINT}/search/`, {
+    const response = await fetch(`${vespaEndpoint}/search/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -148,107 +205,15 @@ export const autocomplete = async (
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error("Error performing autocomplete search:", error);
+    Logger.error(`Error performing autocomplete search:, ${error} `);
+    throw new ErrorPerformingSearch({
+      message: `Error performing autocomplete search`,
+      cause: error as Error,
+      sources: "file",
+    });
     // TODO: instead of null just send empty response
-    return null;
+    throw error;
   }
-};
-
-const vespaCacheDir = "./data/vespa-data.json";
-// export const ingestAll = async (userEmail: string) => {
-//     const fileMetadata = (await listFiles(userEmail)).map(v => {
-//         v.permissions = toPermissionsList(v.permissions)
-//         return v
-//     })
-//     const googleDocsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Docs)
-//     const googleSheetsMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Sheets)
-//     const googleSlidesMetadata = fileMetadata.filter(v => v.mimeType === DriveMime.Slides)
-//     const rest = fileMetadata.filter(v => v.mimeType !== DriveMime.Docs)
-
-//     const documents: File[] = await googleDocs(googleDocsMetadata)
-//     const driveFiles: File[] = driveFilesToDoc(rest)
-//     console.log(documents.length, driveFiles.length)
-
-//     console.log('generating embeddings')
-//     let allFiles: File[] = [...driveFiles, ...documents]
-//     let vespaData = []
-//     for (const v of allFiles) {
-//         let title_embedding = (await extractor(v.title, { pooling: 'mean', normalize: true })).tolist()[0]
-//         let chunk_embedding = (await extractor(v.chunk, { pooling: 'mean', normalize: true })).tolist()[0]
-//         vespaData.push({
-//             docId: v.docId,
-//             title: v.title,
-//             chunk: v.chunk,
-//             chunkIndex: v.chunkIndex,
-//             url: v.url,
-//             app: v.app,
-//             owner: v.owner,
-//             photoLink: v.photoLink,
-//             ownerEmail: v.ownerEmail,
-//             entity: v.entity,
-//             permissions: v.permissions,
-//             mimeType: v.mimeType,
-//             title_embedding,
-//             chunk_embedding
-//         })
-//         console.clear()
-//         process.stdout.write(`${(vespaData.length / allFiles.length) * 100}`)
-//     }
-
-//     await fs.writeFile(vespaCacheDir, JSON.stringify(vespaData))
-//     return vespaData
-// }
-
-export const initVespa = async (email: string) => {
-  let data = await checkAndReadFile(vespaCacheDir);
-  // let docMap = {}
-
-  // for (const doc of data) {
-  //     const docId = doc.docId;
-
-  //     if (docMap[docId] != null) {
-  //         // Add chunks and their embeddings to existing doc
-  //         docMap[docId].chunks.push(doc.chunk);
-  //         docMap[docId].chunk_embeddings[doc.chunkIndex + ""] = doc.chunk_embedding;  // Use the chunk index as string for key
-  //         let tempDoc = docMap[docId]
-  //         delete tempDoc["chunk"]
-  //         delete tempDoc["chunk_embedding"]
-  //         delete tempDoc.chunkIndex
-  //         docMap[docId] = tempDoc
-  //     } else {
-  //         // Create a new doc object with chunks and embeddings
-  //         doc.chunks = [];
-  //         doc.chunk_embeddings = {};
-  //         doc.url = decodeURI(doc.url);
-
-  //         // Check if chunk exists before pushing to chunks array and embedding
-  //         if (doc.chunk) {
-  //             doc.chunks.push(doc.chunk);  // Push the chunk into chunks array
-  //             doc.chunk_embeddings[doc.chunkIndex + ""] = doc.chunk_embedding;  // Add embedding with string key
-  //         }
-  //         // Remove unnecessary fields
-  //         delete doc["title_embedding"];
-  //         delete doc["chunk"];
-  //         delete doc["chunk_embedding"];
-  //         delete doc.chunkIndex
-  //         // Assign the doc to the map
-  //         docMap[docId] = doc;
-  //     }
-  // }
-  // fs.writeFile(vespaCacheDir, JSON.stringify(docMap))
-
-  for (const [docId, doc] of Object.entries(data)) {
-    await insertDocument(doc);
-  }
-
-  // if (!data) {
-  //     data = await ingestAll(email)
-  // }
-
-  // for (const doc of data) {
-  //     doc.docId = `${doc.docId}-${doc.chunkIndex}`
-  //     await insertDocument(doc)
-  // }
 };
 
 type YqlProfile = {
@@ -256,35 +221,37 @@ type YqlProfile = {
   yql: string;
 };
 
-const SemanticProfile: YqlProfile = {
-  profile: "semantic",
-  yql: "select * from file where {targetHits:10}nearestNeighbor(title_embedding, e)",
-};
-
-const HybridProfile: YqlProfile = {
-  profile: "hybrid",
-  yql: "select * from file where ({targetHits:10}userInput(@query)) or ({targetHits:10}nearestNeighbor(title_embedding,e))",
-};
-const HybridDefaultProfile: YqlProfile = {
-  profile: "default",
-  yql: `select * from file 
-        where (({targetHits:10}userInput(@query)) 
-        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email`,
-};
-
-// select * from file where (({targetHits:10}userInput(@query)) or ({targetHits:10}nearestNeighbor(title_embedding, e))) and app == @app and entity == @entity
-
-const HybridDefaultProfileAppEntityCounts: YqlProfile = {
-  profile: "default",
-  yql: `select * from file 
-        where (({targetHits:10}userInput(@query)) 
-        or ({targetHits:10}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email
-        limit 0 
-        | all(
-            group(app) each(
-            group(entity) each(output(count()))
+const HybridDefaultProfile = (hits: number): YqlProfile => {
+  return {
+    profile: "default",
+    yql: `
+            select * from sources file, user
+            where ((
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-        )`,
+            and permissions contains @email)
+            or
+            ({targetHits:${hits}}userInput(@query))
+        `,
+  };
+};
+
+const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
+  return {
+    profile: "default",
+    yql: `select * from sources file, user
+            where ((({targetHits:${hits}}userInput(@query))
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
+            or ({targetHits:${hits}}userInput(@query))
+            limit 0
+            | all(
+                group(app) each(
+                group(entity) each(output(count()))
+                )
+            )`,
+  };
 };
 
 // TODO: extract out the fetch and make an api client
@@ -293,18 +260,19 @@ export const groupVespaSearch = async (
   email: string,
   app?: string,
   entity?: string,
-): Promise<AppEntityCounts | {}> => {
-  const url = `${VESPA_ENDPOINT}/search/`;
+  limit = config.page,
+): Promise<AppEntityCounts> => {
+  const url = `${vespaEndpoint}/search/`;
   const qEmbedding = (
     await extractor(query, { pooling: "mean", normalize: true })
   ).tolist()[0];
-  let yqlQuery = HybridDefaultProfileAppEntityCounts.yql;
+  let yqlQuery = HybridDefaultProfileAppEntityCounts(limit).yql;
 
   const hybridDefaultPayload = {
     yql: yqlQuery,
     query,
     email,
-    "ranking.profile": HybridDefaultProfileAppEntityCounts.profile,
+    "ranking.profile": HybridDefaultProfileAppEntityCounts(limit).profile,
     "input.query(e)": qEmbedding,
   };
   try {
@@ -325,8 +293,11 @@ export const groupVespaSearch = async (
     const data = await response.json();
     return handleVespaGroupResponse(data);
   } catch (error) {
-    console.error("Error performing search:", error);
-    return {};
+    Logger.error(`Error performing search:, ${error}`);
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: fileSchema,
+    });
   }
 };
 
@@ -337,30 +308,23 @@ export const searchVespa = async (
   entity?: string,
   limit = config.page,
   offset?: number,
-  featureExtractor: typeof extractor = extractor,
-): Promise<VespaResponse | {}> => {
-  const url = `${VESPA_ENDPOINT}/search/`;
+): Promise<VespaSearchResponse> => {
+  const url = `${vespaEndpoint}/search/`;
   const qEmbedding = (
-    await featureExtractor(query, { pooling: "mean", normalize: true })
+    await extractor(query, { pooling: "mean", normalize: true })
   ).tolist()[0];
 
-  let yqlQuery = HybridDefaultProfile.yql;
+  let yqlQuery = HybridDefaultProfile(limit).yql;
 
   if (app && entity) {
     yqlQuery += ` and app contains @app and entity contains @entity`;
   }
-  const semanticPayload = {
-    yql: SemanticProfile.yql,
-    email,
-    "ranking.profile": "semantic",
-    "input.query(e)": qEmbedding,
-  };
 
   const hybridDefaultPayload = {
     yql: yqlQuery,
     query,
     email,
-    "ranking.profile": HybridDefaultProfile.profile,
+    "ranking.profile": HybridDefaultProfile(limit).profile,
     "input.query(e)": qEmbedding,
     hits: limit,
     alpha: 0.5,
@@ -394,8 +358,11 @@ export const searchVespa = async (
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error("Error performing search:", error);
-    return {};
+    Logger.error(`Error performing search:, ${error}`);
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: fileSchema,
+    });
   }
 };
 
@@ -404,10 +371,12 @@ export const searchVespa = async (
  */
 const getDocumentCount = async () => {
   // Encode the YQL query to ensure it's URL-safe
-  const yql = encodeURIComponent(`select * from sources ${SCHEMA} where true`);
+  const yql = encodeURIComponent(
+    `select * from sources ${fileSchema} where true`,
+  );
 
   // Construct the search URL with necessary query parameters
-  const url = `${VESPA_ENDPOINT}/search/?yql=${yql}&hits=0&cluster=${CLUSTER}`;
+  const url = `${vespaEndpoint}/search/?yql=${yql}&hits=0&cluster=${CLUSTER}`;
 
   try {
     const response: Response = await fetch(url, {
@@ -430,42 +399,23 @@ const getDocumentCount = async () => {
     const totalCount = data?.root?.fields?.totalCount;
 
     if (typeof totalCount === "number") {
-      console.log(
-        `Total documents in schema '${SCHEMA}' within namespace '${NAMESPACE}' and cluster '${CLUSTER}': ${totalCount}`,
+      Logger.info(
+        `Total documents in schema '${fileSchema}' within namespace '${NAMESPACE}' and cluster '${CLUSTER}': ${totalCount}`,
       );
     } else {
-      console.error("Unexpected response structure:", data);
+      Logger.error(`Unexpected response structure:', ${data}`);
     }
   } catch (error) {
-    console.error("Error retrieving document count:", error);
+    Logger.error("Error retrieving document count:", error);
+    throw new ErrorRetrievingDocuments({
+      cause: error as Error,
+      sources: "file",
+    });
   }
 };
 
-export const DocSchema = z.object({
-  pathId: z.string(),
-  id: z.string(),
-  fields: z.object({
-    title: z.string(),
-    chunks: z.array(z.string()),
-    permissions: z.array(z.string()),
-    photoLink: z.string(),
-    owner: z.string(),
-    ownerEmail: z.string(),
-    chunk_embeddings: z.object({
-      type: z.string(),
-      blocks: z.any(),
-    }),
-    entity: z.string(),
-    app: z.string(),
-    mimeType: z.string(),
-    docId: z.string(),
-  }),
-});
-
-type Doc = z.infer<typeof DocSchema>;
-
-export const GetDocument = async (docId: string): Promise<Doc> => {
-  const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`;
+export const GetDocument = async (docId: string): Promise<VespaResult> => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`;
   try {
     const response = await fetch(url, {
       method: "GET",
@@ -484,8 +434,13 @@ export const GetDocument = async (docId: string): Promise<Doc> => {
     const document = await response.json();
     return document;
   } catch (error) {
-    console.error(`Error fetching document ${docId}:`, error.message);
-    throw error;
+    const errMessage = getErrorMessage(error);
+    Logger.error(`Error fetching document ${docId}:  ${errMessage}`);
+    throw new ErrorGettingDocument({
+      docId,
+      cause: error as Error,
+      sources: fileSchema,
+    });
   }
 };
 
@@ -493,7 +448,7 @@ export const UpdateDocumentPermissions = async (
   docId: string,
   updatedPermissions: string[],
 ) => {
-  const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`;
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`;
   try {
     const response = await fetch(url, {
       method: "PUT",
@@ -514,18 +469,23 @@ export const UpdateDocumentPermissions = async (
       );
     }
 
-    console.log(`Successfully updated permissions for document ${docId}.`);
+    Logger.info(`Successfully updated permissions for document ${docId}.`);
   } catch (error) {
-    console.error(
+    const errMessage = getErrorMessage(error);
+    Logger.error(
       `Error updating permissions for document ${docId}:`,
-      error.message,
+      errMessage,
     );
-    throw error;
+    throw new ErrorUpdatingDocument({
+      docId,
+      cause: error as Error,
+      sources: fileSchema,
+    });
   }
 };
 
 export const DeleteDocument = async (docId: string) => {
-  const url = `${VESPA_ENDPOINT}/document/v1/${NAMESPACE}/${SCHEMA}/docid/${docId}`;
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`;
   try {
     const response = await fetch(url, {
       method: "DELETE",
@@ -538,24 +498,16 @@ export const DeleteDocument = async (docId: string) => {
       );
     }
 
-    console.log(`Document ${docId} deleted successfully.`);
+    Logger.info(`Document ${docId} deleted successfully.`);
   } catch (error) {
-    console.error(`Error deleting document ${docId}:`, error.message);
-    throw error;
+    const errMessage = getErrorMessage(error);
+    Logger.error(`Error deleting document ${docId}:  ${errMessage}`);
+    throw new ErrorDeletingDocuments({
+      cause: error as Error,
+      sources: fileSchema,
+    });
   }
 };
-
-// Example usage:
-// await deleteAllDocuments()
-// console.log('deleted all docs')
-// await initVespa(email)
-// console.log(JSON.stringify(await searchVespa('welcome my friend, let me provide you with a prompt', 'saheb@xynehq.com')))
-// const output = (await searchVespa(query, email))
-// console.log(JSON.stringify(output, null, 2))
-
-// Execute the function
-// getDocumentCount();
-// await autocomplete(query, email)
 
 // Define a type for Entity Counts (where the key is the entity name and the value is the count)
 interface EntityCounts {
@@ -572,7 +524,7 @@ export const ifDocumentsExist = async (docIds: string[]) => {
   const yqlIds = docIds.map((id) => `"${id}"`).join(", ");
   const yqlQuery = `select docId from sources * where docId in (${yqlIds})`;
 
-  const url = `${VESPA_ENDPOINT}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`;
+  const url = `${vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`;
 
   try {
     const response = await fetch(url, {
@@ -602,17 +554,20 @@ export const ifDocumentsExist = async (docIds: string[]) => {
 
     return existenceMap; // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
   } catch (error) {
-    console.error(`Error checking documents existence:`, error.message);
+    const errMessage = getErrorMessage(error);
+    Logger.error(`Error checking documents existence:  ${errMessage}`);
     throw error;
   }
 };
 
 const getNDocuments = async (n: number) => {
   // Encode the YQL query to ensure it's URL-safe
-  const yql = encodeURIComponent(`select * from sources ${SCHEMA} where true`);
+  const yql = encodeURIComponent(
+    `select * from sources ${fileSchema} where true`,
+  );
 
   // Construct the search URL with necessary query parameters
-  const url = `${VESPA_ENDPOINT}/search/?yql=${yql}&hits=${n}&cluster=${CLUSTER}`;
+  const url = `${vespaEndpoint}/search/?yql=${yql}&hits=${n}&cluster=${CLUSTER}`;
 
   try {
     const response: Response = await fetch(url, {
@@ -633,6 +588,11 @@ const getNDocuments = async (n: number) => {
 
     return data;
   } catch (error) {
-    console.error("Error retrieving document count:", error);
+    const errMessage = getErrorMessage(error);
+    Logger.error(`Error retrieving document count: , ${errMessage}`);
+    throw new ErrorRetrievingDocuments({
+      cause: error as Error,
+      sources: "file",
+    });
   }
 };

@@ -1,12 +1,15 @@
-import type { TxnOrClient } from "@/types";
+import { Subsystem, type TxnOrClient } from "@/types";
 import {
   oauthProviders,
   type InsertOAuthProvider,
   type SelectOAuthProvider,
 } from "./schema";
 import { createId } from "@paralleldrive/cuid2";
-import type { Apps } from "@/shared/types";
+import { type Apps } from "@/shared/types";
 import { eq } from "drizzle-orm";
+import { getLogger } from "@/shared/logger";
+
+const Logger = getLogger(Subsystem.Db).child({ module: "oauth_provider" });
 
 export const createOAuthProvider = async (
   trx: TxnOrClient,
@@ -19,10 +22,10 @@ export const createOAuthProvider = async (
       .insert(oauthProviders)
       .values(toInsert)
       .returning();
-    console.log("Provider inserted successfully");
+    Logger.info("Provider inserted successfully");
     return inserted[0];
   } catch (error) {
-    console.error("Error inserting provider:", error);
+    Logger.error(`Error inserting provider:, ${error}`);
     throw new Error("Could not insert provider");
   }
 };
