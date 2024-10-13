@@ -303,6 +303,8 @@ const insertUsersForWorkspace = async (users: admin_directory_v1.Schema$User[]) 
         const currentOrg = user.organizations?.find((org: Org) => !org.endDate) || user.organizations?.[0];
         const preferredLanguage = user.languages?.find((lang: Lang) => lang.preference === 'preferred')?.languageCode
             ?? user.languages?.[0]?.languageCode;
+        // TODO: remove ts-ignore and fix correctly
+        // @ts-ignore
         await insertUser({
             docId: user.id!,
             name: user.name?.displayName ?? user.name?.fullName ?? "",
@@ -374,13 +376,16 @@ export const googleDocsVespa = async (client: GoogleClient, docsMetadata: drive_
             throw new DocsParsingError(`Could not get document content for file: ${doc.id}`)
         }
         const documentContent: docs_v1.Schema$Document = docResponse.data
+
         const rawTextContent = documentContent?.body?.content
-            ?.map((e) => extractText(e))
+            ?.map((e) => extractText(documentContent, e))
             .join("");
+
         const footnotes = extractFootnotes(documentContent);
         const headerFooter = extractHeadersAndFooters(documentContent);
+
         const cleanedTextContent = postProcessText(
-            rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
+            rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter
         );
 
         const chunks = chunkDocument(cleanedTextContent)
@@ -399,6 +404,8 @@ export const googleDocsVespa = async (client: GoogleClient, docsMetadata: drive_
             ownerEmail: doc.owners ? doc.owners[0]?.emailAddress ?? "" : "",
             entity: DriveEntity.Docs,
             chunks: chunks.map(v => v.chunk),
+            // TODO: remove ts-ignore and fix correctly
+            // @ts-ignore
             chunk_embeddings: chunkMap,
             permissions: doc.permissions ?? [],
             mimeType: doc.mimeType ?? ""

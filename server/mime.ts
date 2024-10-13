@@ -1,4 +1,4 @@
-export const mimeTypeToSearchKeyword = {
+export const mimeTypeToSearchKeyword: Record<string, string> = {
     "image/jpeg": "jpeg",
     "image/png": "png",
     "application/pdf": "pdf",

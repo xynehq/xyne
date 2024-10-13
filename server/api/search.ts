@@ -15,6 +15,7 @@ export const AutocompleteApi = async (c: Context) => {
     try {
         const { sub } = c.get(JwtPayloadKey)
         const email = sub
+        // @ts-ignore
         const body = c.req.valid("json")
         const { query } = body;
         const results = await autocomplete(query, email, 5)
@@ -32,6 +33,7 @@ export const AutocompleteApi = async (c: Context) => {
 export const SearchApi = async (c: Context) => {
     const { sub } = c.get(JwtPayloadKey)
     const email = sub
+    // @ts-ignore
     let { query, groupCount: gc, offset, page, app, entity } = c.req.valid('query');
     let groupCount: any = {}
     let results: VespaSearchResponse = {} as VespaSearchResponse

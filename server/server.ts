@@ -122,13 +122,8 @@ export const AppRoutes = app.basePath('/api')
 
 
 app.get('/oauth/callback', AuthMiddleware, OAuthCallback)
-
-// temporarily removing the AuthMiddleware for dev environment
-// if (process.env.NODE_ENV === "production") {
 app.get('/oauth/start', AuthMiddleware, zValidator('query', oauthStartQuerySchema), StartOAuth)
-// } else {
-//     app.get('/oauth/start', zValidator('query', oauthStartQuerySchema), StartOAuth)
-// }
+
 const generateToken = async (email: string, role: string, workspaceId: string) => {
     Logger.info({
         tokenInfo: {

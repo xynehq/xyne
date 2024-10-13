@@ -12,7 +12,6 @@ env.localModelPath = '../'
 env.cacheDir = '../'
 env.backends.onnx.wasm.numThreads = 1;
 
-const extractor = await getExtractor()
 const queriesPath = "data/fiqa/queries.jsonl"
 
 const processedResultsData: string[] = []
@@ -23,12 +22,13 @@ const evaluate = async (queriesListPath: string) => {
 
     const processQuery = async ({ query, query_id }: { query: string, query_id: number }) => {
         try {
-            const results = await searchVespa(query, "junaid.s@xynehq.com", "", "", k, 0, extractor);
+            const results = await searchVespa(query, "junaid.s@xynehq.com", "", "", k, 0);
             if ("children" in results.root) {
                 const hits = results.root.children
                 for (let idx = 0; idx < hits.length; idx++) {
                     // TREC format query_id Q0 document_id rank score run_id
-                    processedResultsData.push(`${query_id}\tQ0\t${hits[idx].fields.docId}\t${idx + 1}\t${hits[idx].relevance}\trun-1`)
+                    // @ts-ignore
+                    processedResultsData.push(`${query_id}\tQ0\t${hits[idx]?.fields?.docId}\t${idx + 1}\t${hits[idx].relevance}\trun-1`)
                 }
             }
             counts++
@@ -51,7 +51,7 @@ const evaluate = async (queriesListPath: string) => {
 
     await queue.onIdle();
 
-    const outputPath = path.resolve(import.meta.dirname,'data/output/fiqa_result_qrels.tsv')
+    const outputPath = path.resolve(import.meta.dirname, 'data/output/fiqa_result_qrels.tsv')
     fs.promises.writeFile(outputPath, processedResultsData.join("\n"))
 }
 
