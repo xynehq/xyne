@@ -16,7 +16,7 @@ export enum GooglePeopleEntity {
   AdminDirectory = "AdminDirectory",
 }
 // the vespa schemas
-const Schemas = z.enum(["file", "user"])
+const Schemas = z.union([z.literal("file"), z.literal("user")])
 
 export enum DriveEntity {
   Docs = "docs",
@@ -223,6 +223,7 @@ const VespaAutocompleteFileSchema = z
     title: z.string(),
     app: z.nativeEnum(Apps),
     entity: entitySchema,
+    sddocname: Schemas,
   })
   .merge(defaultVespaFieldsSchema)
 
@@ -234,6 +235,7 @@ const VespaAutocompleteUserSchema = z
     app: z.nativeEnum(Apps),
     entity: entitySchema,
     photoLink: z.string(),
+    sddocname: Schemas,
   })
   .merge(defaultVespaFieldsSchema)
 
