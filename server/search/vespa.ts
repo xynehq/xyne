@@ -12,7 +12,7 @@ import type {
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import {
   ErrorDeletingDocuments,

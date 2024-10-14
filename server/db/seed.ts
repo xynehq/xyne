@@ -2,7 +2,7 @@ import { createId } from "@paralleldrive/cuid2"
 import { db } from "./client"
 import { users, workspaces } from "./schema"
 import { getUserAndWorkspaceByEmail } from "./user"
-import { getLogger } from "../shared/logger"
+import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "seed" })

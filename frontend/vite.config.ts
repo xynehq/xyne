@@ -16,6 +16,10 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@": path.resolve(import.meta.dirname, "./src"),
         "@/server": path.resolve(import.meta.dirname, "../server"),
+        "search/types": path.resolve(
+          import.meta.dirname,
+          "../server/search/types",
+        ),
         shared: path.resolve(import.meta.dirname, "../server/shared"),
       },
     },

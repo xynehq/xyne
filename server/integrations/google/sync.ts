@@ -39,7 +39,7 @@ import {
   toPermissionsList,
 } from "./utils"
 import { SyncJobFailed } from "@/errors"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "@/logger"
 import type { VespaFile } from "@/search/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })

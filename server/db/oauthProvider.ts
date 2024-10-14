@@ -7,7 +7,7 @@ import {
 import { createId } from "@paralleldrive/cuid2"
 import { type Apps } from "@/shared/types"
 import { eq } from "drizzle-orm"
-import { getLogger } from "@/shared/logger"
+import { getLogger } from "@/logger"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "oauth_provider" })
 
