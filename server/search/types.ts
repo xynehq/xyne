@@ -16,7 +16,7 @@ export enum GooglePeopleEntity {
   AdminDirectory = "AdminDirectory",
 }
 // the vespa schemas
-const Schemas = z.union([z.literal("user"), z.literal("file")])
+const Schemas = z.enum(["file", "user"])
 
 export enum DriveEntity {
   Docs = "docs",
@@ -69,7 +69,7 @@ export type WorkspaceEntity = DriveEntity
 export const defaultVespaFieldsSchema = z.object({
   relevance: z.number(),
   source: z.string(),
-  sddocname: Schemas,
+  // sddocname: Schemas,
   documentid: z.string(),
 })
 
@@ -94,6 +94,7 @@ export const VespaFileSchema = z
     photoLink: z.string().nullable(),
     permissions: z.array(z.string()),
     mimeType: z.string().nullable(),
+    sddocname: z.literal("file"),
   })
   .merge(defaultVespaFieldsSchema)
 
@@ -126,6 +127,7 @@ export const VespaUserSchema = z
     userDefined: z.array(z.string()).optional(),
     customerId: z.string().optional(),
     clientData: z.array(z.string()).optional(),
+    sddocname: z.literal("user"),
   })
   .merge(defaultVespaFieldsSchema)
 
