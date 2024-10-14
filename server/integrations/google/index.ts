@@ -552,7 +552,7 @@ export const googlePDFsVespa = async (
     const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
     // Ignore the PDF files larger than 20MB
     if (pdfSizeInMB > 20) {
-      console.log(`Ignoring ${pdf.name} as its more than 0.5 MB`)
+      console.log(`Ignoring ${pdf.name} as its more than 20 MB`)
       continue
     }
     await downloadPDF(drive, pdf.id!, pdf.name!)
