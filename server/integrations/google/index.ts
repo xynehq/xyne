@@ -57,6 +57,9 @@ import {
 import { getLogger } from "@/logger"
 import type { VespaFileWithDrivePermission } from "@/search/types"
 import { UserListingError, CouldNotFinishJobSuccessfully } from "@/errors"
+import fs from "node:fs"
+import path from "node:path"
+
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -379,38 +382,148 @@ const insertFilesForUser = async (
     const googleDocsMetadata = fileMetadata.filter(
       (v) => v.mimeType === DriveMime.Docs,
     )
+    const googlePDFsMetadata = fileMetadata.filter(
+      (v) => v.mimeType === DriveMime.PDF,
+    )
     const googleSheetsMetadata = fileMetadata.filter(
       (v) => v.mimeType === DriveMime.Sheets,
     )
     const googleSlidesMetadata = fileMetadata.filter(
       (v) => v.mimeType === DriveMime.Slides,
     )
-    const rest = fileMetadata.filter((v) => v.mimeType !== DriveMime.Docs)
+    const rest = fileMetadata.filter(
+      (v) => v.mimeType !== DriveMime.Docs && v.mimeType !== DriveMime.PDF,
+    )
 
-    const documents: VespaFileWithDrivePermission[] = await googleDocsVespa(
+    // const documents: VespaFileWithDrivePermission[] = await googleDocsVespa(
+    //   googleClient,
+    //   googleDocsMetadata,
+    //   connector.externalId,
+    // )
+    const pdfDocuments: VespaFileWithDrivePermission[] = await googlePDFsVespa(
       googleClient,
-      googleDocsMetadata,
+      googlePDFsMetadata,
       connector.externalId,
     )
-    const driveFiles: VespaFileWithDrivePermission[] =
-      await driveFilesToDoc(rest)
+    // const driveFiles: VespaFileWithDrivePermission[] =
+    //   await driveFilesToDoc(rest)
 
-    sendWebsocketMessage("generating embeddings", connector.externalId)
-    let allFiles: VespaFileWithDrivePermission[] = [
-      ...driveFiles,
-      ...documents,
-    ].map((v) => {
-      v.permissions = toPermissionsList(v.permissions, userEmail)
-      return v
-    })
+    // sendWebsocketMessage("generating embeddings", connector.externalId)
+    // let allFiles: VespaFileWithDrivePermission[] = [
+    //   ...driveFiles,
+    //   ...documents,
+    // ].map((v) => {
+    //   v.permissions = toPermissionsList(v.permissions, userEmail)
+    //   return v
+    // })
 
-    for (const doc of allFiles) {
-      await insertDocument(doc)
-    }
+    // for (const doc of allFiles) {
+    //   await insertDocument(doc)
+    // }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     Logger.error("Could not insert files for user: ", errorMessage)
   }
+}
+
+async function downloadPDF(
+  drive: drive_v3.Drive,
+  fileId: string,
+  fileName: string,
+) {
+  // Todo Make a folder named downloads if not there
+  const dest = fs.createWriteStream(
+    path.resolve(__dirname, "../../downloads", fileName),
+  )
+  const res = await drive.files.get(
+    { fileId: fileId, alt: "media" },
+    { responseType: "stream" },
+  )
+  return new Promise<void>((resolve, reject) => {
+    res.data
+      .on("end", () => {
+        console.log(`Downloaded ${fileName}`)
+        resolve()
+      })
+      .on("error", (err) => {
+        console.error("Error downloading file.")
+        reject(err)
+      })
+      .pipe(dest)
+  })
+}
+
+export const googlePDFsVespa = async (
+  client: GoogleClient,
+  pdfsMetadata: drive_v3.Schema$File[],
+  connectorId: string,
+): Promise<VespaFileWithDrivePermission[]> => {
+  const extractor = await getExtractor()
+  sendWebsocketMessage(
+    `Scanning ${pdfsMetadata.length} Google PDFs`,
+    connectorId,
+  )
+  const pdfsList: VespaFileWithDrivePermission[] = []
+  const drive = google.drive({ version: "v3", auth: client })
+  const total = pdfsMetadata.length
+  let count = 0
+  for (const pdf of pdfsMetadata) {
+    await downloadPDF(drive, pdf.id!, pdf.name!)
+    // const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
+    //   await docs.documents.get({
+    //     documentId: doc.id as string,
+    //   })
+    // if (!docResponse || !docResponse.data) {
+    //   throw new DocsParsingError(
+    //     `Could not get document content for file: ${doc.id}`,
+    //   )
+    // }
+    // const documentContent: docs_v1.Schema$Document = docResponse.data
+
+    // const rawTextContent = documentContent?.body?.content
+    //   ?.map((e) => extractText(documentContent, e))
+    //   .join("")
+
+    // const footnotes = extractFootnotes(documentContent)
+    // const headerFooter = extractHeadersAndFooters(documentContent)
+
+    // const cleanedTextContent = postProcessText(
+    //   rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
+    // )
+
+    // const chunks = chunkDocument(cleanedTextContent)
+    // let chunkMap: Record<string, number[]> = {}
+    // for (const c of chunks) {
+    //   const { chunk, chunkIndex } = c
+    //   chunkMap[chunkIndex] = (
+    //     await extractor(chunk, { pooling: "mean", normalize: true })
+    //   ).tolist()[0]
+    // }
+    // pdfsList.push({
+    //   title: doc.name!,
+    //   url: doc.webViewLink ?? "",
+    //   app: Apps.GoogleDrive,
+    //   docId: doc.id!,
+    //   owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
+    //   photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
+    //   ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
+    //   entity: DriveEntity.Docs,
+    //   chunks: chunks.map((v) => v.chunk),
+    //   // TODO: remove ts-ignore and fix correctly
+    //   // @ts-ignore
+    //   chunk_embeddings: chunkMap,
+    //   permissions: doc.permissions ?? [],
+    //   mimeType: doc.mimeType ?? "",
+    // })
+    // count += 1
+
+    // if (count % 5 === 0) {
+    //   sendWebsocketMessage(`${count} Google PDFs scanned`, connectorId)
+    //   process.stdout.write(`${Math.floor((count / total) * 100)}`)
+    //   process.stdout.write("\n")
+    // }
+  }
+  return pdfsList
 }
 
 type Org = { endDate: null | string }
