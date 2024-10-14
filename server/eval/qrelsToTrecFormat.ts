@@ -22,7 +22,7 @@ const modify = async () => {
     }
 
     fs.promises.writeFile(
-      "data/fiqa/dev_trec_qrels.tsv",
+      "data/output/dev_trec_qrels.tsv",
       processedResultsData.join("\n"),
     )
     console.log("qrels processed successfull")
