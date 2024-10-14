@@ -59,9 +59,8 @@ import type { VespaFileWithDrivePermission } from "@/search/types"
 import { UserListingError, CouldNotFinishJobSuccessfully } from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
-// import pdf2text from "pdf-to-text"
-// import pdfParse from 'pdf-parse'
-import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import pdf2text from "pdf-to-text"
+// import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -471,17 +470,17 @@ const getPdfInfo = (filePath) => {
 }
 
 // Function to handle PDF text extraction
-// const getPdfText = (filePath: string): Promise<string> => {
-//   return new Promise((resolve, reject) => {
-//     pdf2text.pdfToText(filePath, (err, text) => {
-//       if (err) {
-//         reject("Error extracting PDF text:")
-//       } else {
-//         resolve(text)
-//       }
-//     })
-//   })
-// }
+const getPdfText = (filePath: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    pdf2text.pdfToText(filePath, (err, text) => {
+      if (err) {
+        reject("Error extracting PDF text:")
+      } else {
+        resolve(text)
+      }
+    })
+  })
+}
 
 // const getPdfText = (filePath: string): Promise<string> => {
 //   return new Promise((resolve, reject) => {
@@ -521,18 +520,19 @@ export const googlePDFsVespa = async (
     }
     await downloadPDF(drive, pdf.id!, pdf.name!)
     const pdfPath = path.resolve(__dirname, `../../downloads/${pdf?.name}`)
-    // const [pdfInfo, pdfText] = await Promise.all([
-    //   getPdfInfo(pdfPath),
-    //   getPdfText(pdfPath),
-    // ])
-    const loader = new PDFLoader(pdfPath)
-    const docs = await loader.load()
+    const [pdfInfo, pdfText] = await Promise.all([
+      getPdfInfo(pdfPath),
+      getPdfText(pdfPath),
+    ])
+    // const loader = new PDFLoader(pdfPath)
+    // const docs = await loader.load()
+    const docs = pdfText.split("\f").filter((page) => page.trim().length > 0)
 
     if (!docs) {
       throw new Error(`Could not get content for file: ${pdf.id}`)
     }
 
-    const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+    const chunks = docs.flatMap((doc) => chunkDocument(doc))
     let chunkMap: Record<string, number[]> = {}
     for (const c of chunks) {
       const { chunk, chunkIndex } = c
