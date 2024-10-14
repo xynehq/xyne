@@ -5,7 +5,7 @@ import {
   extractText,
   postProcessText,
 } from "@/doc"
-import { chunkDocument } from "@/chunks"
+import { chunkDocument, chunkTextByParagraph } from "@/chunks"
 import {
   Subsystem,
   SyncCron,
@@ -59,6 +59,9 @@ import type { VespaFileWithDrivePermission } from "@/search/types"
 import { UserListingError, CouldNotFinishJobSuccessfully } from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
+// import pdf2text from "pdf-to-text"
+// import pdfParse from 'pdf-parse'
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -408,18 +411,19 @@ const insertFilesForUser = async (
     // const driveFiles: VespaFileWithDrivePermission[] =
     //   await driveFilesToDoc(rest)
 
-    // sendWebsocketMessage("generating embeddings", connector.externalId)
-    // let allFiles: VespaFileWithDrivePermission[] = [
-    //   ...driveFiles,
-    //   ...documents,
-    // ].map((v) => {
-    //   v.permissions = toPermissionsList(v.permissions, userEmail)
-    //   return v
-    // })
+    sendWebsocketMessage("generating embeddings", connector.externalId)
+    let allFiles: VespaFileWithDrivePermission[] = [
+      // ...driveFiles,
+      // ...documents,
+      ...pdfDocuments,
+    ].map((v) => {
+      v.permissions = toPermissionsList(v.permissions, userEmail)
+      return v
+    })
 
-    // for (const doc of allFiles) {
-    //   await insertDocument(doc)
-    // }
+    for (const doc of allFiles) {
+      await insertDocument(doc)
+    }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     Logger.error("Could not insert files for user: ", errorMessage)
@@ -453,6 +457,47 @@ async function downloadPDF(
   })
 }
 
+// Function to handle PDF info
+const getPdfInfo = (filePath) => {
+  return new Promise((resolve, reject) => {
+    pdf2text.info(filePath, (err, info) => {
+      if (err) {
+        reject("Error parsing PDF info:")
+      } else {
+        resolve(info)
+      }
+    })
+  })
+}
+
+// Function to handle PDF text extraction
+// const getPdfText = (filePath: string): Promise<string> => {
+//   return new Promise((resolve, reject) => {
+//     pdf2text.pdfToText(filePath, (err, text) => {
+//       if (err) {
+//         reject("Error extracting PDF text:")
+//       } else {
+//         resolve(text)
+//       }
+//     })
+//   })
+// }
+
+// const getPdfText = (filePath: string): Promise<string> => {
+//   return new Promise((resolve, reject) => {
+//     let dataBuffer = fs.readFileSync(filePath);
+//     pdfParse(dataBuffer)
+//       .then((data) => {
+//         // Resolve the Promise with the text extracted from the PDF
+//         resolve(data.text)
+//       })
+//       .catch((err) => {
+//         // Reject the Promise if there's an error
+//         reject(`Error extracting PDF text: ${err}`)
+//       })
+//   })
+// }
+
 export const googlePDFsVespa = async (
   client: GoogleClient,
   pdfsMetadata: drive_v3.Schema$File[],
@@ -468,60 +513,56 @@ export const googlePDFsVespa = async (
   const total = pdfsMetadata.length
   let count = 0
   for (const pdf of pdfsMetadata) {
+    const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
+    // Ignore the PDF files larger than 20MB
+    if (pdfSizeInMB > 20) {
+      console.log(`Ignoring ${pdf.name} as its more than 0.5 MB`)
+      continue
+    }
     await downloadPDF(drive, pdf.id!, pdf.name!)
-    // const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-    //   await docs.documents.get({
-    //     documentId: doc.id as string,
-    //   })
-    // if (!docResponse || !docResponse.data) {
-    //   throw new DocsParsingError(
-    //     `Could not get document content for file: ${doc.id}`,
-    //   )
-    // }
-    // const documentContent: docs_v1.Schema$Document = docResponse.data
+    const pdfPath = path.resolve(__dirname, `../../downloads/${pdf?.name}`)
+    // const [pdfInfo, pdfText] = await Promise.all([
+    //   getPdfInfo(pdfPath),
+    //   getPdfText(pdfPath),
+    // ])
+    const loader = new PDFLoader(pdfPath)
+    const docs = await loader.load()
 
-    // const rawTextContent = documentContent?.body?.content
-    //   ?.map((e) => extractText(documentContent, e))
-    //   .join("")
+    if (!docs) {
+      throw new Error(`Could not get content for file: ${pdf.id}`)
+    }
 
-    // const footnotes = extractFootnotes(documentContent)
-    // const headerFooter = extractHeadersAndFooters(documentContent)
+    const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+    let chunkMap: Record<string, number[]> = {}
+    for (const c of chunks) {
+      const { chunk, chunkIndex } = c
+      chunkMap[chunkIndex] = (
+        await extractor(chunk, { pooling: "mean", normalize: true })
+      ).tolist()[0]
+    }
+    pdfsList.push({
+      title: pdf.name!,
+      url: pdf.webViewLink ?? "",
+      app: Apps.GoogleDrive,
+      docId: pdf.id!,
+      owner: pdf.owners ? (pdf.owners[0].displayName ?? "") : "",
+      photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
+      ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
+      entity: DriveEntity.PDF,
+      chunks: chunks.map((v) => v.chunk),
+      // TODO: remove ts-ignore and fix correctly
+      // @ts-ignore
+      chunk_embeddings: chunkMap,
+      permissions: pdf.permissions ?? [],
+      mimeType: pdf.mimeType ?? "",
+    })
+    count += 1
 
-    // const cleanedTextContent = postProcessText(
-    //   rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
-    // )
-
-    // const chunks = chunkDocument(cleanedTextContent)
-    // let chunkMap: Record<string, number[]> = {}
-    // for (const c of chunks) {
-    //   const { chunk, chunkIndex } = c
-    //   chunkMap[chunkIndex] = (
-    //     await extractor(chunk, { pooling: "mean", normalize: true })
-    //   ).tolist()[0]
-    // }
-    // pdfsList.push({
-    //   title: doc.name!,
-    //   url: doc.webViewLink ?? "",
-    //   app: Apps.GoogleDrive,
-    //   docId: doc.id!,
-    //   owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
-    //   photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
-    //   ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
-    //   entity: DriveEntity.Docs,
-    //   chunks: chunks.map((v) => v.chunk),
-    //   // TODO: remove ts-ignore and fix correctly
-    //   // @ts-ignore
-    //   chunk_embeddings: chunkMap,
-    //   permissions: doc.permissions ?? [],
-    //   mimeType: doc.mimeType ?? "",
-    // })
-    // count += 1
-
-    // if (count % 5 === 0) {
-    //   sendWebsocketMessage(`${count} Google PDFs scanned`, connectorId)
-    //   process.stdout.write(`${Math.floor((count / total) * 100)}`)
-    //   process.stdout.write("\n")
-    // }
+    if (count % 5 === 0) {
+      sendWebsocketMessage(`${count} Google PDFs scanned`, connectorId)
+      process.stdout.write(`${Math.floor((count / total) * 100)}`)
+      process.stdout.write("\n")
+    }
   }
   return pdfsList
 }
@@ -586,7 +627,7 @@ export const listFiles = async (
           ? { q: "mimeType='application/vnd.google-apps.document'" }
           : {}),
         fields:
-          "nextPageToken, files(id, webViewLink, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
+          "nextPageToken, files(id, webViewLink, size, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
         ...(nextPageToken ? { pageToken: nextPageToken } : {}),
       })
 
