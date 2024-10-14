@@ -190,3 +190,6 @@ server/Xenova
 
 # fe
 .mjs
+
+# downloads like pdfs
+server/downloads

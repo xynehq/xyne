@@ -50,6 +50,7 @@ export enum DriveMime {
   Docs = "application/vnd.google-apps.document",
   Sheets = "application/vnd.google-apps.spreadsheet",
   Slides = "application/vnd.google-apps.presentation",
+  PDF = "application/pdf",
 }
 
 export const MimeMapForContent: Record<string, boolean> = {
