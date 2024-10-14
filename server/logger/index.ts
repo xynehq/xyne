@@ -4,6 +4,23 @@ import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
 
+const humanize = (times: string[]) => {
+  const [delimiter, separator] = [",", "."]
+
+  const orderTimes = times.map((v) =>
+    v.replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1" + delimiter),
+  )
+
+  return orderTimes.join(separator)
+}
+
+const time = (start: number) => {
+  const delta = Date.now() - start
+  return humanize([
+    delta < 1000 ? delta + "ms" : Math.round(delta / 1000) + "s",
+  ])
+}
+
 export const getLogger = (loggerType: Subsystem) => {
   if (process.env.NODE_ENV === "production") {
     return pino({
@@ -80,6 +97,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
 
     const { status } = c.res
 
+    const elapsed: string = time(start)
     if (c.res.ok) {
       logger.info(
         {
@@ -87,6 +105,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           response: {
             status,
             ok: String(c.res.ok),
+            elapsed,
           },
         },
         "Request completed",
@@ -98,6 +117,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           response: {
             status,
             err: c.res.body,
+            elapsed,
           },
         },
         "Request Error",
@@ -108,6 +128,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           requestId: c_reqId,
           response: {
             status,
+            elapsed,
           },
         },
         "Request redirected",
@@ -118,6 +139,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
           requestId: c_reqId,
           response: {
             status,
+            elapsed,
           },
         },
         "Request completed",
