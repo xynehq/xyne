@@ -293,7 +293,7 @@ export const searchVespa = async (
   entity?: string,
   limit = config.page,
   offset?: number,
-): Promise<VespaSearchResponse | {}> => {
+): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
   let yqlQuery = HybridDefaultProfile(limit).yql
@@ -582,3 +582,15 @@ const getNDocuments = async (n: number) => {
     })
   }
 }
+
+
+// console.log((await searchVespa(
+//   'What is considered a business expense on a business trip?',
+//   "junaid.s@xynehq.com",
+//   "",
+//   "",
+//   10,
+//   0,
+// )).root.children)
+
+await deleteAllDocuments()
