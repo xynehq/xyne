@@ -63,12 +63,61 @@ import {
 } from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
-import pdf2text from "pdf-to-text"
+// import pdf2text from "pdf-to-text"
 // import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import { spawn } from "child_process"
+import tracer from "dd-trace"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
+
+export async function dpdf2text(
+  pdfPath: string,
+): Promise<{ pages: string[]; content: string }> {
+  return tracer.trace(
+    dpdf2text,
+    {
+      resource: dpdf2text,
+    },
+    async (span) => {
+      span?.setTag("pdfPath", pdfPath)
+      const argsPerPage: string[] = ["-layout", "-enc", "UTF-8", pdfPath, "-"]
+
+      const content = await new Promise<string>((resolve, reject) => {
+        const child = spawn("pdftotext", argsPerPage)
+
+        let capturedStdoutPerPage = ""
+        let capturedStderrPerPage = ""
+
+        child.stdout.on("data", (data) => {
+          capturedStdoutPerPage += data
+        })
+        child.stderr.on("data", (data) => {
+          capturedStderrPerPage += data
+        })
+
+        child.on("close", (code) => {
+          if (code === 0) {
+            resolve(capturedStdoutPerPage)
+          } else {
+            reject(new Error(capturedStderrPerPage))
+          }
+        })
+      })
+
+      // This assumes \f is not used in the PDF content. Checking popper source code (from which
+      // pdftotext is derived), it seems that \f is considered to separate pages.
+      // To mititage any major risk, we filter out empty pages which may be caused by extraneous \f.
+      // From various tests on different PDFs this seems to work well. If we have a really problematic
+      // PDF we can expect that upsert will fail because some chunks sections will have less content
+      // than their prefix.
+      const pages = content.split("\f").filter((page) => page.trim().length > 0)
+
+      return { pages, content }
+    },
+  )
+}
 
 const listUsers = async (
   admin: admin_directory_v1.Admin,
@@ -558,19 +607,26 @@ export const googlePDFsVespa = async (
     }
     await downloadPDF(drive, pdf.id!, pdf.name!)
     const pdfPath = path.resolve(__dirname, `../../downloads/${pdf?.name}`)
-    const [pdfInfo, pdfText] = await Promise.all([
-      getPdfInfo(pdfPath),
-      getPdfText(pdfPath),
-    ])
+    const docs = await dpdf2text(pdfPath)
+    // console.log("Text Content")
+    // console.log(result.content)
+    // console.log("Text Content")
+    // console.log("Pages")
+    // console.log(result.pages)
+    // console.log("Pages")
+    // const [pdfInfo, pdfText] = await Promise.all([
+    //   getPdfInfo(pdfPath),
+    //   getPdfText(pdfPath),
+    // ])
     // const loader = new PDFLoader(pdfPath)
     // const docs = await loader.load()
-    const docs = pdfText.split("\f").filter((page) => page.trim().length > 0)
+    // const docs = pdfText.split("\f").filter((page) => page.trim().length > 0)
 
     if (!docs) {
       throw new Error(`Could not get content for file: ${pdf.id}`)
     }
 
-    const chunks = docs.flatMap((doc) => chunkDocument(doc))
+    const chunks = docs.pages.flatMap((doc) => chunkDocument(doc))
     let chunkMap: Record<string, number[]> = {}
     for (const c of chunks) {
       const { chunk, chunkIndex } = c
