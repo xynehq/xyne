@@ -1,8 +1,8 @@
 <services version="1.0">
     <container id="my_container" version="1.0">
         <component id="hf-embedder" type="hugging-face-embedder">
-            <transformer-model path="models/model_quantized.onnx"/>
-            <tokenizer-model path="models/tokenizer.json"/>
+            <transformer-model url="https://huggingface.co/Xenova/bge-base-en-v1.5/resolve/main/onnx/model_quantized.onnx"/>
+            <tokenizer-model url="https://huggingface.co/Xenova/bge-base-en-v1.5/raw/main/tokenizer.json"/>
         </component>
         <search />
         <document-api />
