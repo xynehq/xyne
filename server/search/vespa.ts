@@ -301,12 +301,6 @@ export const searchVespa = async (
   if (app && entity) {
     yqlQuery += ` and app contains @app and entity contains @entity`
   }
-  // const semanticPayload = {
-  //     yql: SemanticProfile.yql,
-  //     email,
-  //     'ranking.profile': 'semantic',
-  //     'input.query(e)': qEmbedding,
-  // };
 
   const hybridDefaultPayload = {
     yql: yqlQuery,
