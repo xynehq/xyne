@@ -147,7 +147,12 @@ export const insertUser = async (user: VespaUser) => {
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    console.error(`Error inserting user ${user.docId}:`, errorMessage)
+    Logger.error(`Error inserting user ${user.docId}:`, errorMessage)
+    throw new ErrorInsertingDocument({
+      docId: user.docId,
+      cause: error as Error,
+      sources: userSchema,
+    })
   }
 }
 

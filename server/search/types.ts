@@ -127,6 +127,8 @@ export const VespaUserSchema = z
     userDefined: z.array(z.string()).optional(),
     customerId: z.string().optional(),
     clientData: z.array(z.string()).optional(),
+    // this only exists for contacts
+    owner: z.string().optional(),
     sddocname: z.literal("user"),
   })
   .merge(defaultVespaFieldsSchema)

@@ -9,6 +9,7 @@ import {
   Subsystem,
   SyncCron,
   type ChangeToken,
+  type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
   type SaaSJob,
@@ -102,7 +103,7 @@ const handleGoogleDriveChange = async (
       stats.updated += 1
     } catch (e) {
       // catch the 404 error
-      Logger.error(
+      Logger.warn(
         `Could not get document ${docId}, probably does not exist, ${e}`,
       )
       stats.added += 1
@@ -156,14 +157,14 @@ export const handleGoogleOAuthChanges = async (
       const user = await getUserById(db, connector.userId)
       const oauthTokens: GoogleTokens = connector.oauthCredentials
       const oauth2Client = new google.auth.OAuth2()
-      const config: ChangeToken = syncJob.config as ChangeToken
+      const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
       oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
       const driveClient = google.drive({ version: "v3", auth: oauth2Client })
       // TODO: add pagination for all the possible changes
       const { changes, newStartPageToken } = (
-        await driveClient.changes.list({ pageToken: config.token })
+        await driveClient.changes.list({ pageToken: config.driveToken })
       ).data
       // there are changes
 
@@ -175,7 +176,7 @@ export const handleGoogleOAuthChanges = async (
       if (
         changes?.length &&
         newStartPageToken &&
-        newStartPageToken !== config.token
+        newStartPageToken !== config.driveToken
       ) {
         Logger.info(`total changes:  ${changes.length}`)
         for (const change of changes) {
@@ -211,7 +212,7 @@ export const handleGoogleOAuthChanges = async (
             app: Apps.GoogleDrive,
             status: SyncJobStatus.Successful,
             config: {
-              token: newConfig.token,
+              ...newConfig,
               lastSyncedAt: newConfig.lastSyncedAt.toISOString(),
             },
             type: SyncCron.ChangeToken,
@@ -225,9 +226,9 @@ export const handleGoogleOAuthChanges = async (
       Logger.error(
         `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`,
       )
-      const config: ChangeToken = syncJob.config as ChangeToken
+      const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       const newConfig = {
-        token: config.token as string,
+        ...config,
         lastSyncedAt: config.lastSyncedAt.toISOString(),
       }
       await insertSyncHistory(db, {
@@ -276,10 +277,10 @@ export const handleGoogleServiceAccountChanges = async (
       // const subject: string = connector.subject as string
       let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
       const driveClient = google.drive({ version: "v3", auth: jwtClient })
-      const config: ChangeToken = syncJob.config as ChangeToken
+      const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // TODO: add pagination for all the possible changes
       const { changes, newStartPageToken } = (
-        await driveClient.changes.list({ pageToken: config.token })
+        await driveClient.changes.list({ pageToken: config.driveToken })
       ).data
       // there are changes
 
@@ -291,7 +292,7 @@ export const handleGoogleServiceAccountChanges = async (
       if (
         changes?.length &&
         newStartPageToken &&
-        newStartPageToken !== config.token
+        newStartPageToken !== config.driveToken
       ) {
         Logger.info(`total changes:  ${changes.length}`)
         for (const change of changes) {
@@ -303,8 +304,9 @@ export const handleGoogleServiceAccountChanges = async (
           stats = mergeStats(stats, changeStats)
         }
         const newConfig = {
+          ...config,
+          driveToken: newStartPageToken,
           lastSyncedAt: new Date(),
-          token: newStartPageToken,
         }
         // update this sync job and
         // create sync history
@@ -327,7 +329,7 @@ export const handleGoogleServiceAccountChanges = async (
             app: Apps.GoogleDrive,
             status: SyncJobStatus.Successful,
             config: {
-              token: newConfig.token,
+              ...newConfig,
               lastSyncedAt: newConfig.lastSyncedAt.toISOString(),
             },
             type: SyncCron.ChangeToken,
@@ -343,7 +345,7 @@ export const handleGoogleServiceAccountChanges = async (
       )
       const config: ChangeToken = syncJob.config as ChangeToken
       const newConfig = {
-        token: config.token as string,
+        ...config,
         lastSyncedAt: config.lastSyncedAt.toISOString(),
       }
       await insertSyncHistory(db, {
