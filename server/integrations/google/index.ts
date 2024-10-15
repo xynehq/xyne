@@ -67,7 +67,7 @@ import path from "node:path"
 // import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import { spawn } from "child_process"
 import tracer from "dd-trace"
-import fileSys from"node:fs/promises"
+import fileSys from "node:fs/promises"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -527,11 +527,11 @@ const insertFilesForUser = async (
   }
 }
 
-async function downloadPDF(
+const downloadPDF = async (
   drive: drive_v3.Drive,
   fileId: string,
   fileName: string,
-) {
+) => {
   // Todo Make a folder named downloads if not there
   const dest = fs.createWriteStream(
     path.resolve(__dirname, "../../downloads", fileName),
@@ -580,21 +580,6 @@ const getPdfText = (filePath: string): Promise<string> => {
   })
 }
 
-// const getPdfText = (filePath: string): Promise<string> => {
-//   return new Promise((resolve, reject) => {
-//     let dataBuffer = fs.readFileSync(filePath);
-//     pdfParse(dataBuffer)
-//       .then((data) => {
-//         // Resolve the Promise with the text extracted from the PDF
-//         resolve(data.text)
-//       })
-//       .catch((err) => {
-//         // Reject the Promise if there's an error
-//         reject(`Error extracting PDF text: ${err}`)
-//       })
-//   })
-// }
-
 export const googlePDFsVespa = async (
   client: GoogleClient,
   pdfsMetadata: drive_v3.Schema$File[],
@@ -616,15 +601,19 @@ export const googlePDFsVespa = async (
       console.log(`Ignoring ${pdf.name} as its more than 20 MB`)
       continue
     }
-    await downloadPDF(drive, pdf.id!, pdf.name!)
+    try {
+      await downloadPDF(drive, pdf.id!, pdf.name!)
+    } catch (error) {
+      console.error("An error occurred while downloading the PDF:", error)
+    }
     const pdfPath = path.resolve(__dirname, `../../downloads/${pdf?.name}`)
-    const docs = await dpdf2text(pdfPath)
-    // console.log("Text Content")
-    // console.log(result.content)
-    // console.log("Text Content")
-    // console.log("Pages")
-    // console.log(result.pages)
-    // console.log("Pages")
+    // TODO add proper type here
+    let docs: { pages: any[]; content: string } = []
+    try {
+      docs = await dpdf2text(pdfPath)
+    } catch (error) {
+      console.error("Error occured while parsing PDF:", error)
+    }
     // const [pdfInfo, pdfText] = await Promise.all([
     //   getPdfInfo(pdfPath),
     //   getPdfText(pdfPath),
@@ -669,7 +658,11 @@ export const googlePDFsVespa = async (
       process.stdout.write("\n")
     }
     // Deleting document
-    await deleteDocument(pdfPath)
+    try {
+      await deleteDocument(pdfPath)
+    } catch (err) {
+      console.error("Error occured while deleting PDF", err)
+    }
   }
   return pdfsList
 }
