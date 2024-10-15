@@ -582,15 +582,3 @@ const getNDocuments = async (n: number) => {
     })
   }
 }
-
-
-// console.log((await searchVespa(
-//   'What is considered a business expense on a business trip?',
-//   "junaid.s@xynehq.com",
-//   "",
-//   "",
-//   10,
-//   0,
-// )).root.children)
-
-await deleteAllDocuments()
