@@ -7,7 +7,7 @@ def main():
     parser = argparse.ArgumentParser(description='Evaluate TREC QREL results.')
     parser.add_argument(
         '--qrel_file', 
-        default='data/output/dev_trec_qrels.tsv', 
+        default='data/fiqa/dev_trec_qrels.tsv', 
         help='Path to the qrel file (default: data/output/dev_trec_qrels.tsv)'
     )
     parser.add_argument(

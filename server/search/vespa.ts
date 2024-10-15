@@ -1,8 +1,6 @@
 // import { env, pipeline } from '@xenova/transformers';
 // let { pipeline, env } = await import('@xenova/transformers');
 
-const transformers = require("@xenova/transformers")
-const { pipeline, env } = transformers
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -22,7 +20,6 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
-import { getExtractor } from "@/embedding"
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -30,14 +27,8 @@ const fileSchema = "file" // Replace with your actual schema name
 const userSchema = "user"
 const NAMESPACE = "namespace" // Replace with your actual namespace
 const CLUSTER = "my_content"
-env.backends.onnx.wasm.numThreads = 1
-
-env.localModelPath = "./"
-env.cacheDir = "./"
 
 const Logger = getLogger(Subsystem.Search).child({ module: "vespa" })
-
-const extractor = await getExtractor()
 
 function handleVespaGroupResponse(
   response: VespaSearchResponse,
@@ -260,9 +251,6 @@ export const groupVespaSearch = async (
   limit = config.page,
 ): Promise<AppEntityCounts> => {
   const url = `${vespaEndpoint}/search/`
-  const qEmbedding = (
-    await extractor(query, { pooling: "mean", normalize: true })
-  ).tolist()[0]
   let yqlQuery = HybridDefaultProfileAppEntityCounts(limit).yql
 
   const hybridDefaultPayload = {
@@ -270,7 +258,7 @@ export const groupVespaSearch = async (
     query,
     email,
     "ranking.profile": HybridDefaultProfileAppEntityCounts(limit).profile,
-    "input.query(e)": qEmbedding,
+    "input.query(e)": "embed(@query)",
   }
   try {
     const response = await fetch(url, {
@@ -307,9 +295,6 @@ export const searchVespa = async (
   offset?: number,
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
-  const qEmbedding = (
-    await extractor(query, { pooling: "mean", normalize: true })
-  ).tolist()[0]
 
   let yqlQuery = HybridDefaultProfile(limit).yql
 
@@ -322,7 +307,7 @@ export const searchVespa = async (
     query,
     email,
     "ranking.profile": HybridDefaultProfile(limit).profile,
-    "input.query(e)": qEmbedding,
+    "input.query(e)": "embed(@query)",
     hits: limit,
     alpha: 0.5,
     ...(offset
