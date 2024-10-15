@@ -67,6 +67,7 @@ import path from "node:path"
 // import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import { spawn } from "child_process"
 import tracer from "dd-trace"
+import fileSys from"node:fs/promises"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -451,6 +452,16 @@ export const handleGoogleServiceAccountIngestion = async (
   }
 }
 
+const deleteDocument = async (filePath: string) => {
+  try {
+    await fileSys.unlink(filePath) // Delete the file at the provided path
+    console.log(`File at ${filePath} deleted successfully`)
+  } catch (err) {
+    console.error(`Error deleting file at ${filePath}:`, err)
+    throw new Error("File deletion failed")
+  }
+}
+
 const insertFilesForUser = async (
   googleClient: GoogleClient,
   userEmail: string,
@@ -657,6 +668,8 @@ export const googlePDFsVespa = async (
       process.stdout.write(`${Math.floor((count / total) * 100)}`)
       process.stdout.write("\n")
     }
+    // Deleting document
+    await deleteDocument(pdfPath)
   }
   return pdfsList
 }
