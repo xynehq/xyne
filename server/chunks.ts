@@ -15,7 +15,9 @@ export const chunkTextByParagraph = (
   // Helper function to get the byte length of a string
   const getByteLength = (str: string) => Buffer.byteLength(str, "utf8")
 
-  // Helper function to clean up illegal code points
+  // Helper function to clean up illegal code points in a string
+  // Some PDFs may contain illegal UTF-8 code points like 0xF and 0x2
+  // Vespa throws an error when ingesting such strings, so we replace those characters
   const cleanText = (str: string) => {
     // Use a regular expression to remove illegal UTF-8 code points
     return str.replace(
