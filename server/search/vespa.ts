@@ -117,7 +117,9 @@ export const insertDocument = async (document: VespaFile) => {
     )
 
     const data = await response.json()
-
+    console.log("----DATA----")
+    console.log(data)
+    console.log("----DATA----")
     if (response.ok) {
       Logger.info(`Document ${document.docId} inserted successfully:, ${data}`)
     } else {
