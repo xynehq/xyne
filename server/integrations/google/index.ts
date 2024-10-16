@@ -250,7 +250,10 @@ export const handleGoogleOAuthIngestion = async (
       Logger.info("job completed")
     })
   } catch (error) {
-    Logger.error("could not finish job successfully", error)
+    Logger.error(
+      `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
+      error,
+    )
     await db.transaction(async (trx) => {
       trx
         .update(connectors)
@@ -372,7 +375,10 @@ export const handleGoogleServiceAccountIngestion = async (
       Logger.info("job completed")
     })
   } catch (error) {
-    Logger.error(`could not finish job successfully: ${error}`, error)
+    Logger.error(
+      `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
+      error,
+    )
     await db.transaction(async (trx) => {
       trx
         .update(connectors)
