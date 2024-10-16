@@ -24,8 +24,8 @@ import {
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
-const fileSchema = "file" // Replace with your actual schema name
-const userSchema = "user"
+export const fileSchema = "file" // Replace with your actual schema name
+export const userSchema = "user"
 const NAMESPACE = "namespace" // Replace with your actual namespace
 const CLUSTER = "my_content"
 
@@ -515,8 +515,8 @@ export const UpdateDocumentPermissions = async (
   }
 }
 
-export const DeleteDocument = async (docId: string) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`
+export const DeleteDocument = async (docId: string, schema: string) => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
     const response = await fetch(url, {
       method: "DELETE",
@@ -535,7 +535,7 @@ export const DeleteDocument = async (docId: string) => {
     Logger.error(`Error deleting document ${docId}:  ${errMessage}`)
     throw new ErrorDeletingDocuments({
       cause: error as Error,
-      sources: fileSchema,
+      sources: schema,
     })
   }
 }
@@ -546,7 +546,7 @@ interface EntityCounts {
 }
 
 // Define a type for App Entity Counts (where the key is the app name and the value is the entity counts)
-interface AppEntityCounts {
+export interface AppEntityCounts {
   [app: string]: EntityCounts
 }
 

@@ -576,101 +576,103 @@ const listAllContacts = async (
   }
 }
 
+export const insertContact = async (
+  contact: people_v1.Schema$Person,
+  entity: GooglePeopleEntity,
+  owner: string,
+) => {
+  const docId = contact.resourceName || ""
+  if (!docId) {
+    Logger.error(`Id does not exist for ${entity}`)
+    return
+    // throw new ContactMappingError({
+    //   integration: Apps.GoogleDrive,
+    //   entity: GooglePeopleEntity.Contacts,
+    // })
+  }
+
+  const name = contact.names?.[0]?.displayName ?? ""
+  const email = contact.emailAddresses?.[0]?.value ?? ""
+  if (!email) {
+    Logger.error(`Email does not exist for ${entity}`)
+    return
+    // throw new ContactMappingError({
+    //   integration: Apps.GoogleDrive,
+    //   entity: GooglePeopleEntity.Contacts,
+    // })
+  }
+
+  const app = Apps.GoogleDrive
+
+  const gender = contact.genders?.[0]?.value ?? ""
+  const photoLink = contact.photos?.[0]?.url ?? ""
+  const aliases =
+    contact.emailAddresses?.slice(1)?.map((e) => e.value ?? "") || []
+  const urls = contact.urls?.map((url) => url.value ?? "") || []
+
+  const currentOrg =
+    contact.organizations?.find((org) => !org.endDate) ||
+    contact.organizations?.[0]
+
+  const orgName = currentOrg?.name ?? ""
+  const orgJobTitle = currentOrg?.title ?? ""
+  const orgDepartment = currentOrg?.department ?? ""
+  const orgLocation = currentOrg?.location ?? ""
+  const orgDescription = ""
+
+  const updateTimeStr = contact.metadata?.sources?.[0]?.updateTime
+  const creationTime = updateTimeStr
+    ? new Date(updateTimeStr).getTime()
+    : Date.now()
+
+  const birthdayObj = contact.birthdays?.[0]?.date
+  const birthday = birthdayObj
+    ? new Date(
+        `${birthdayObj.year || "1970"}-${birthdayObj.month || "01"}-${birthdayObj.day || "01"}`,
+      ).getTime()
+    : undefined
+
+  const occupations = contact.occupations?.map((o) => o.value ?? "") || []
+  const userDefined =
+    contact.userDefined?.map((u) => `${u.key}: ${u.value}`) || []
+
+  // TODO: remove ts-ignore and fix correctly
+  const vespaContact = {
+    docId,
+    name,
+    email,
+    app,
+    entity,
+    gender,
+    photoLink,
+    aliases,
+    urls,
+    orgName,
+    orgJobTitle,
+    orgDepartment,
+    orgLocation,
+    orgDescription,
+    creationTime,
+    birthday,
+    occupations,
+    userDefined,
+    owner,
+  }
+  // @ts-ignore
+  await insertUser(vespaContact)
+}
+
 const insertContactsToVespa = async (
   contacts: people_v1.Schema$Person[],
   otherContacts: people_v1.Schema$Person[],
   owner: string,
 ): Promise<void> => {
   try {
-    const insertContact = async (
-      contact: people_v1.Schema$Person,
-      entity: GooglePeopleEntity,
-    ) => {
-      const docId = contact.resourceName || ""
-      if (!docId) {
-        Logger.error(`Id does not exist for ${entity}`)
-        return
-        // throw new ContactMappingError({
-        //   integration: Apps.GoogleDrive,
-        //   entity: GooglePeopleEntity.Contacts,
-        // })
-      }
-
-      const name = contact.names?.[0]?.displayName ?? ""
-      const email = contact.emailAddresses?.[0]?.value ?? ""
-      if (!email) {
-        Logger.error(`Email does not exist for ${entity}`)
-        return
-        // throw new ContactMappingError({
-        //   integration: Apps.GoogleDrive,
-        //   entity: GooglePeopleEntity.Contacts,
-        // })
-      }
-
-      const app = Apps.GoogleDrive
-
-      const gender = contact.genders?.[0]?.value ?? ""
-      const photoLink = contact.photos?.[0]?.url ?? ""
-      const aliases =
-        contact.emailAddresses?.slice(1)?.map((e) => e.value ?? "") || []
-      const urls = contact.urls?.map((url) => url.value ?? "") || []
-
-      const currentOrg =
-        contact.organizations?.find((org) => !org.endDate) ||
-        contact.organizations?.[0]
-
-      const orgName = currentOrg?.name ?? ""
-      const orgJobTitle = currentOrg?.title ?? ""
-      const orgDepartment = currentOrg?.department ?? ""
-      const orgLocation = currentOrg?.location ?? ""
-      const orgDescription = ""
-
-      const updateTimeStr = contact.metadata?.sources?.[0]?.updateTime
-      const creationTime = updateTimeStr
-        ? new Date(updateTimeStr).getTime()
-        : Date.now()
-
-      const birthdayObj = contact.birthdays?.[0]?.date
-      const birthday = birthdayObj
-        ? new Date(
-            `${birthdayObj.year || "1970"}-${birthdayObj.month || "01"}-${birthdayObj.day || "01"}`,
-          ).getTime()
-        : undefined
-
-      const occupations = contact.occupations?.map((o) => o.value ?? "") || []
-      const userDefined =
-        contact.userDefined?.map((u) => `${u.key}: ${u.value}`) || []
-
-      // TODO: remove ts-ignore and fix correctly
-      const vespaContact = {
-        docId,
-        name,
-        email,
-        app,
-        entity,
-        gender,
-        photoLink,
-        aliases,
-        urls,
-        orgName,
-        orgJobTitle,
-        orgDepartment,
-        orgLocation,
-        orgDescription,
-        creationTime,
-        birthday,
-        occupations,
-        userDefined,
-        owner,
-      }
-      // @ts-ignore
-      await insertUser(vespaContact)
-    }
     for (const contact of contacts) {
-      await insertContact(contact, GooglePeopleEntity.Contacts)
+      await insertContact(contact, GooglePeopleEntity.Contacts, owner)
     }
     for (const contact of otherContacts) {
-      await insertContact(contact, GooglePeopleEntity.OtherContacts)
+      await insertContact(contact, GooglePeopleEntity.OtherContacts, owner)
     }
   } catch (error) {
     // error is related to vespa and not mapping
@@ -687,7 +689,6 @@ const insertContactsToVespa = async (
         integration: Apps.GoogleDrive,
         entity: GooglePeopleEntity.Contacts,
         cause: error as Error,
-        // fn: insertContactsToVespa,
       })
     }
   }
