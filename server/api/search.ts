@@ -62,6 +62,8 @@ export const SearchApi = async (c: Context) => {
   } else {
     results = await searchVespa(decodedQuery, email, app, entity, page, offset)
   }
+
+  // TODO: deduplicate for googel admin and contacts
   const newResults = VespaSearchResponseToSearchResult(results)
   newResults.groupCount = groupCount
   return c.json(newResults)

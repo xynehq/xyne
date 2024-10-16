@@ -252,6 +252,7 @@ type YqlProfile = {
   yql: string
 }
 
+// TODO: it seems the owner part is complicating things
 const HybridDefaultProfile = (hits: number): YqlProfile => {
   return {
     profile: "default",
@@ -264,7 +265,9 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
             )
             and permissions contains @email)
             or
-            ({targetHits:${hits}}userInput(@query))
+            (({targetHits:${hits}}userInput(@query)) and app contains "${Apps.GoogleWorkspace}")
+            or
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email)
         `,
   }
 }
@@ -275,7 +278,10 @@ const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
     yql: `select * from sources file, user
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
-            or ({targetHits:${hits}}userInput(@query))
+            or
+            (({targetHits:${hits}}userInput(@query)) and app contains "${Apps.GoogleWorkspace}")
+            or
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email)
             limit 0
             | all(
                 group(app) each(

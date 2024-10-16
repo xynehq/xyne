@@ -61,7 +61,7 @@ export const SearchResult = ({
               className="mr-2 w-[16px] h-[16px] rounded-full"
               src={result.photoLink}
             ></img>
-            {result.name}
+            {result.name || result.email}
           </a>
         </div>
       </div>
