@@ -1,5 +1,10 @@
 import type { Context, ValidationTargets } from "hono"
-import { autocomplete, groupVespaSearch, searchVespa } from "@/search/vespa"
+import {
+  autocomplete,
+  deduplicateAutocomplete,
+  groupVespaSearch,
+  searchVespa,
+} from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
@@ -21,10 +26,11 @@ export const AutocompleteApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
-    const results = await autocomplete(query, email, 5)
+    let results = await autocomplete(query, email, 5)
     if (!results) {
       return c.json({ children: [] })
     }
+    results = deduplicateAutocomplete(results)
     const newResults = VespaAutocompleteResponseToResult(results)
     return c.json(newResults)
   } catch (e) {

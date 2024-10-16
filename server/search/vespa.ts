@@ -1,6 +1,7 @@
 // import { env, pipeline } from '@xenova/transformers';
 // let { pipeline, env } = await import('@xenova/transformers');
 
+import { Apps } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -110,13 +111,13 @@ export const insertDocument = async (document: VespaFile) => {
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${document.docId} inserted successfully:, ${data}`)
+      Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
-      Logger.error(`Error inserting document ${document.docId}:, ${data}`)
+      Logger.error(`Error inserting document ${document.docId}: ${data}`)
     }
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(`Error inserting document ${document.docId}:, ${errMessage}`)
+    Logger.error(`Error inserting document ${document.docId}: ${errMessage}`)
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
@@ -156,20 +157,57 @@ export const insertUser = async (user: VespaUser) => {
   }
 }
 
+export const deduplicateAutocomplete = (
+  resp: VespaAutocompleteResponse,
+): VespaAutocompleteResponse => {
+  const { root } = resp
+  if (!root.children) {
+    return resp
+  }
+  const uniqueResults = []
+  const emails = new Set()
+  for (const child of root.children) {
+    // @ts-ignore
+    const email = child.fields.email
+    if (email && !emails.has(email)) {
+      emails.add(email)
+      uniqueResults.push(child)
+    } else if (!email) {
+      uniqueResults.push(child)
+    }
+  }
+  resp.root.children = uniqueResults
+  return resp
+}
+
 export const autocomplete = async (
   query: string,
   email: string,
   limit: number = 5,
 ): Promise<VespaAutocompleteResponse> => {
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
+  // the drawback here is that for user field we will get duplicates, for the same
+  // email one contact and one from user directory
   const yqlQuery = `select * from sources file, user
-        where
-            (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and permissions contains @email)
-            or
+    where
+        (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and permissions contains @email)
+        or
+        (
             (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            );`
+            and owner contains @email)
+            or
+            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and owner contains @email)
+        )
+        or
+        (
+            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and app contains "${Apps.GoogleWorkspace}")
+            or
+            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and app contains "${Apps.GoogleWorkspace}")
+        );`
 
   const searchPayload = {
     yql: yqlQuery,

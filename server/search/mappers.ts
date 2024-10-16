@@ -51,6 +51,9 @@ export const VespaAutocompleteResponseToResult = (
   resp: VespaAutocompleteResponse,
 ): AutocompleteResults => {
   const { root } = resp
+  if (!root.children) {
+    return { results: [] }
+  }
   return {
     results: root.children.map((child: VespaAutocomplete) => {
       // Narrow down the type based on `sddocname`

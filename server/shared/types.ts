@@ -63,7 +63,8 @@ export const AutocompleteUserSchema = z
   .object({
     type: z.literal("user"),
     relevance: z.number(),
-    name: z.string(),
+    // optional due to contacts
+    name: z.string().optional(),
     email: z.string(),
     app: z.nativeEnum(Apps),
     entity: entitySchema,

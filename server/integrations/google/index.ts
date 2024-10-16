@@ -371,8 +371,8 @@ export const handleGoogleServiceAccountIngestion = async (
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
-  } catch (e) {
-    Logger.error("could not finish job successfully", e)
+  } catch (error) {
+    Logger.error(`could not finish job successfully: ${error}`, error)
     await db.transaction(async (trx) => {
       trx
         .update(connectors)
@@ -386,7 +386,7 @@ export const handleGoogleServiceAccountIngestion = async (
       message: "Could not finish Oauth ingestion",
       integration: Apps.GoogleWorkspace,
       entity: "files and users",
-      cause: e as Error,
+      cause: error as Error,
     })
   }
 }
@@ -588,19 +588,23 @@ const insertContactsToVespa = async (
     ) => {
       const docId = contact.resourceName || ""
       if (!docId) {
-        throw new ContactMappingError({
-          integration: Apps.GoogleDrive,
-          entity: GooglePeopleEntity.Contacts,
-        })
+        Logger.error(`Id does not exist for ${entity}`)
+        return
+        // throw new ContactMappingError({
+        //   integration: Apps.GoogleDrive,
+        //   entity: GooglePeopleEntity.Contacts,
+        // })
       }
 
       const name = contact.names?.[0]?.displayName ?? ""
       const email = contact.emailAddresses?.[0]?.value ?? ""
       if (!email) {
-        throw new ContactMappingError({
-          integration: Apps.GoogleDrive,
-          entity: GooglePeopleEntity.Contacts,
-        })
+        Logger.error(`Email does not exist for ${entity}`)
+        return
+        // throw new ContactMappingError({
+        //   integration: Apps.GoogleDrive,
+        //   entity: GooglePeopleEntity.Contacts,
+        // })
       }
 
       const app = Apps.GoogleDrive
@@ -638,8 +642,7 @@ const insertContactsToVespa = async (
         contact.userDefined?.map((u) => `${u.key}: ${u.value}`) || []
 
       // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
-      await insertUser({
+      const vespaContact = {
         docId,
         name,
         email,
@@ -659,7 +662,9 @@ const insertContactsToVespa = async (
         occupations,
         userDefined,
         owner,
-      })
+      }
+      // @ts-ignore
+      await insertUser(vespaContact)
     }
     for (const contact of contacts) {
       await insertContact(contact, GooglePeopleEntity.Contacts)
@@ -673,12 +678,16 @@ const insertContactsToVespa = async (
       Logger.error("Could not insert contact: ", error)
       throw error
     } else {
-      Logger.error("Error mapping contact:", error)
+      Logger.error(
+        `Error mapping contact: ${error} ${(error as Error).stack}`,
+        error,
+      )
       throw new ContactMappingError({
         message: "Error in the catch of mapping google contact",
         integration: Apps.GoogleDrive,
         entity: GooglePeopleEntity.Contacts,
         cause: error as Error,
+        // fn: insertContactsToVespa,
       })
     }
   }

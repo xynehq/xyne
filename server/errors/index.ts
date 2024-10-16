@@ -19,6 +19,7 @@ enum Model {
 type BaseErrorOpts = {
   message?: string
   cause?: Error
+  fn?: any
 }
 
 type ErrorOpts = {
@@ -88,6 +89,7 @@ class IntegrationsError extends Error {
     if (docId) fullMessage += ` for docId: ${docId}`
     if (jobId) fullMessage += ` and jobId: ${jobId}`
     super(fullMessage, { cause })
+    Error.captureStackTrace(this)
   }
 }
 

@@ -27,7 +27,7 @@ export const UserAutocompleteElement = ({
         className="mr-2 w-[16px] h-[16px] rounded-full"
         src={result.photoLink}
       ></img>
-      <p>{result.name}</p>
+      <p>{result.name || result.email}</p>
     </div>
   )
 }
@@ -35,13 +35,23 @@ export const UserAutocompleteElement = ({
 export const AutocompleteElement = forwardRef(
   (
     { result, onClick }: { result: Autocomplete; onClick: any },
-    ref: ForwardedRef<HTMLDivElement>,
+    ref: ForwardedRef<any>,
   ) => {
     let content
     if (result.type === "file") {
       content = <FileAutocompleteElement result={result} />
     } else if (result.type === "user") {
       content = <UserAutocompleteElement result={result} />
+      return (
+        <a
+          href={`https://contacts.google.com/${result.email}`}
+          ref={ref}
+          onClick={onClick}
+          className="flex cursor-pointer hover:bg-gray-100 px-4 py-2 no-underline text-inherit"
+        >
+          {content}
+        </a>
+      )
     } else {
       throw new Error("invalid type")
     }
