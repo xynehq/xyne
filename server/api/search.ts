@@ -1,9 +1,19 @@
 import type { Context, ValidationTargets } from "hono"
-import { autocomplete, groupVespaSearch, searchVespa } from "@/search/vespa"
+import {
+  autocomplete,
+  deduplicateAutocomplete,
+  groupVespaSearch,
+  searchVespa,
+  type AppEntityCounts,
+} from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
-import type { VespaSearchResponse } from "@/search/types"
+import {
+  Apps,
+  GooglePeopleEntity,
+  type VespaSearchResponse,
+} from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
@@ -21,10 +31,11 @@ export const AutocompleteApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
-    const results = await autocomplete(query, email, 5)
+    let results = await autocomplete(query, email, 5)
     if (!results) {
       return c.json({ children: [] })
     }
+    results = deduplicateAutocomplete(results)
     const newResults = VespaAutocompleteResponseToResult(results)
     return c.json(newResults)
   } catch (e) {
@@ -56,7 +67,58 @@ export const SearchApi = async (c: Context) => {
   } else {
     results = await searchVespa(decodedQuery, email, app, entity, page, offset)
   }
+
+  // results = postProcess(results, groupCount)
+
+  // TODO: deduplicate for googel admin and contacts
   const newResults = VespaSearchResponseToSearchResult(results)
   newResults.groupCount = groupCount
   return c.json(newResults)
 }
+
+// temporaryly pausing this since contact is a
+// separate data source it does make sense for to be separate
+//
+// const postProcess = (
+//   resp: VespaSearchResponse,
+//   groupCount: AppEntityCounts,
+// ): VespaSearchResponse => {
+//   const { root } = resp
+//   if (!root.children) {
+//     return resp
+//   }
+//   // if group data is available it will be
+//   // more performant to pre-check
+//   if (groupCount) {
+//     // first drive and workspace data both has to be present
+//     if (!(groupCount[Apps.GoogleDrive] && groupCount[Apps.GoogleWorkspace])) {
+//       return resp
+//     }
+//     if (
+//       !(
+//         (groupCount[Apps.GoogleDrive][GooglePeopleEntity.Contacts] ||
+//           groupCount[Apps.GoogleDrive][GooglePeopleEntity.OtherContacts]) &&
+//         groupCount[Apps.GoogleWorkspace][GooglePeopleEntity.AdminDirectory]
+//       )
+//     ) {
+//       return resp
+//     }
+//     // we have to manage the group counts ourself now
+//     // one issue here is that you can give incorrect counts
+//     // because for this page we are deduplicating
+//     // but if next few pages has duplicates then the count will
+//     // be shown more than the results we send back
+//     const uniqueResults = []
+//     const emails = new Set()
+//     for (const child of root.children) {
+//       // @ts-ignore
+//       const email = child.fields.email
+//       if (email && !emails.has(email)) {
+//         emails.add(email)
+//         uniqueResults.push(child)
+//       } else if (!email) {
+//         uniqueResults.push(child)
+//       }
+//     }
+//   }
+// }

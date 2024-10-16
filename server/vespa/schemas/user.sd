@@ -130,6 +130,12 @@ schema user {
         field clientData type array<string> {
             indexing: attribute | summary
         }
+
+        # we just put the email
+        # for who has this contact
+        field owner type string {
+            indexing: attribute | summary
+        }
     }
     # Fuzzy matching for the 'name' field
     field name_fuzzy type string {

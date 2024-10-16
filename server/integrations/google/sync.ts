@@ -4,11 +4,13 @@ import {
   docs_v1,
   drive_v3,
   google,
+  people_v1,
 } from "googleapis"
 import {
   Subsystem,
   SyncCron,
   type ChangeToken,
+  type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
   type SaaSJob,
@@ -19,12 +21,20 @@ import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   DeleteDocument,
+  fileSchema,
   GetDocument,
   insertDocument,
   UpdateDocumentPermissions,
+  userSchema,
 } from "@/search/vespa"
 import { db } from "@/db/client"
-import { Apps, AuthType, SyncJobStatus, DriveEntity } from "@/shared/types"
+import {
+  Apps,
+  AuthType,
+  SyncJobStatus,
+  DriveEntity,
+  GooglePeopleEntity,
+} from "@/shared/types"
 import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
@@ -41,6 +51,7 @@ import {
 import { SyncJobFailed } from "@/errors"
 import { getLogger } from "@/logger"
 import type { VespaFile } from "@/search/types"
+import { insertContact } from "@/integrations/google"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -64,7 +75,7 @@ const handleGoogleDriveChange = async (
   if (change.removed) {
     if (docId) {
       const doc = await GetDocument(docId)
-      if (doc.fields.sddocname === "file") {
+      if (doc.fields.sddocname === fileSchema) {
         const permissions = (doc.fields as VespaFile).permissions
         if (permissions.length === 1) {
           // remove it
@@ -75,7 +86,7 @@ const handleGoogleDriveChange = async (
                 "We got a change for us that we didn't have access to in Vespa",
               )
             }
-            await DeleteDocument(docId)
+            await DeleteDocument(docId, fileSchema)
             stats.removed += 1
             stats.summary += `${docId} removed\n`
           } catch (e) {
@@ -102,7 +113,7 @@ const handleGoogleDriveChange = async (
       stats.updated += 1
     } catch (e) {
       // catch the 404 error
-      Logger.error(
+      Logger.warn(
         `Could not get document ${docId}, probably does not exist, ${e}`,
       )
       stats.added += 1
@@ -139,6 +150,19 @@ const handleGoogleDriveChange = async (
   return stats
 }
 
+const contactKeys = [
+  "names",
+  "emailAddresses",
+  "photos",
+  "organizations",
+  "metadata",
+  "urls",
+  "birthdays",
+  "genders",
+  "occupations",
+  "userDefined",
+]
+
 export const handleGoogleOAuthChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -149,6 +173,8 @@ export const handleGoogleOAuthChanges = async (
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {
+      // flag to know if there were any updates
+      let changesExist = false
       const connector = await getOAuthConnectorWithCredentials(
         db,
         syncJob.connectorId,
@@ -156,14 +182,15 @@ export const handleGoogleOAuthChanges = async (
       const user = await getUserById(db, connector.userId)
       const oauthTokens: GoogleTokens = connector.oauthCredentials
       const oauth2Client = new google.auth.OAuth2()
-      const config: ChangeToken = syncJob.config as ChangeToken
+      let config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
       oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+
       const driveClient = google.drive({ version: "v3", auth: oauth2Client })
       // TODO: add pagination for all the possible changes
       const { changes, newStartPageToken } = (
-        await driveClient.changes.list({ pageToken: config.token })
+        await driveClient.changes.list({ pageToken: config.driveToken })
       ).data
       // there are changes
 
@@ -175,7 +202,7 @@ export const handleGoogleOAuthChanges = async (
       if (
         changes?.length &&
         newStartPageToken &&
-        newStartPageToken !== config.token
+        newStartPageToken !== config.driveToken
       ) {
         Logger.info(`total changes:  ${changes.length}`)
         for (const change of changes) {
@@ -185,16 +212,75 @@ export const handleGoogleOAuthChanges = async (
             user.email,
           )
           stats = mergeStats(stats, changeStats)
+          changesExist = true
         }
-        const newConfig = {
+      }
+      const peopleService = google.people({ version: "v1", auth: oauth2Client })
+      let nextPageToken = ""
+      let contactsToken = config.contactsToken
+      let otherContactsToken = config.otherContactsToken
+      do {
+        const response = await peopleService.people.connections.list({
+          resourceName: "people/me",
+          personFields: contactKeys.join(","),
+          syncToken: config.contactsToken,
+          requestSyncToken: true,
+          pageSize: 1000, // Adjust the page size based on your quota and needs
+          pageToken: nextPageToken, // Use the nextPageToken for pagination
+        })
+        contactsToken = response.data.nextSyncToken ?? contactsToken
+        nextPageToken = response.data.nextPageToken ?? nextPageToken
+        if (response.data.connections) {
+          let changeStats = await syncContacts(
+            peopleService,
+            response.data.connections,
+            user.email,
+            GooglePeopleEntity.Contacts,
+          )
+          stats = mergeStats(stats, changeStats)
+          changesExist = true
+        }
+      } while (nextPageToken)
+
+      // reset
+      nextPageToken = ""
+
+      do {
+        const response = await peopleService.otherContacts.list({
+          pageSize: 1000,
+          readMask: contactKeys.join(","),
+          syncToken: otherContactsToken,
+          pageToken: nextPageToken,
+          requestSyncToken: true,
+          sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
+        })
+        otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+        nextPageToken = response.data.nextPageToken ?? nextPageToken
+        if (response.data.otherContacts) {
+          let changeStats = await syncContacts(
+            peopleService,
+            response.data.otherContacts,
+            user.email,
+            GooglePeopleEntity.OtherContacts,
+          )
+
+          stats = mergeStats(stats, changeStats)
+          changesExist = true
+        }
+      } while (nextPageToken)
+      if (changesExist) {
+        config = {
           lastSyncedAt: new Date(),
-          token: newStartPageToken,
+          driveToken: newStartPageToken ?? config.driveToken,
+          contactsToken,
+          otherContactsToken,
         }
+
         // update this sync job and
         // create sync history
         await db.transaction(async (trx) => {
           await updateSyncJob(trx, syncJob.id, {
-            config: newConfig,
+            config,
             lastRanOn: new Date(),
             status: SyncJobStatus.Successful,
           })
@@ -211,23 +297,25 @@ export const handleGoogleOAuthChanges = async (
             app: Apps.GoogleDrive,
             status: SyncJobStatus.Successful,
             config: {
-              token: newConfig.token,
-              lastSyncedAt: newConfig.lastSyncedAt.toISOString(),
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
             },
             type: SyncCron.ChangeToken,
             lastRanOn: new Date(),
           })
         })
         Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
+      } else {
+        Logger.info(`No changes to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
         `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`,
       )
-      const config: ChangeToken = syncJob.config as ChangeToken
+      const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       const newConfig = {
-        token: config.token as string,
+        ...config,
         lastSyncedAt: config.lastSyncedAt.toISOString(),
       }
       await insertSyncHistory(db, {
@@ -254,6 +342,43 @@ export const handleGoogleOAuthChanges = async (
     }
   }
 }
+
+const syncContacts = async (
+  client: people_v1.People,
+  contacts: people_v1.Schema$Person[],
+  email: string,
+  entity: GooglePeopleEntity,
+): Promise<ChangeStats> => {
+  const stats = newStats()
+  const connections = contacts || [] // Get contacts from current page
+  // check if deleted else update/add
+  for (const contact of connections) {
+    // if the contact is deleted
+    if (contact.metadata?.deleted && contact.resourceName) {
+      await DeleteDocument(contact.resourceName, userSchema)
+      stats.removed += 1
+    } else {
+      // TODO: distinction between insert vs update
+      if (contact.resourceName) {
+        if (entity === GooglePeopleEntity.Contacts) {
+          // we probably don't need this get
+          const contactResp = await client.people.get({
+            resourceName: contact.resourceName,
+            personFields: contactKeys.join(","),
+          })
+          await insertContact(contactResp.data, entity, email)
+        } else if (entity === GooglePeopleEntity.OtherContacts) {
+          // insert as is what we got for the changes
+          await insertContact(contact, entity, email)
+        }
+        stats.added += 1
+        Logger.info(`Updated contact ${contact.resourceName}`)
+      }
+    }
+  }
+  return stats
+}
+
 export const handleGoogleServiceAccountChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -268,6 +393,8 @@ export const handleGoogleServiceAccountChanges = async (
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {
+      // flag to know if there were any updates
+      let changesExist = false
       const connector = await getConnector(db, syncJob.connectorId)
       const user = await getUserById(db, connector.userId)
       const serviceAccountKey: GoogleServiceAccount = JSON.parse(
@@ -276,10 +403,10 @@ export const handleGoogleServiceAccountChanges = async (
       // const subject: string = connector.subject as string
       let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
       const driveClient = google.drive({ version: "v3", auth: jwtClient })
-      const config: ChangeToken = syncJob.config as ChangeToken
+      const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // TODO: add pagination for all the possible changes
       const { changes, newStartPageToken } = (
-        await driveClient.changes.list({ pageToken: config.token })
+        await driveClient.changes.list({ pageToken: config.driveToken })
       ).data
       // there are changes
 
@@ -291,9 +418,9 @@ export const handleGoogleServiceAccountChanges = async (
       if (
         changes?.length &&
         newStartPageToken &&
-        newStartPageToken !== config.token
+        newStartPageToken !== config.driveToken
       ) {
-        Logger.info(`total changes:  ${changes.length}`)
+        Logger.info(`About to Sync Drive changes:  ${changes.length}`)
         for (const change of changes) {
           let changeStats = await handleGoogleDriveChange(
             change,
@@ -302,9 +429,73 @@ export const handleGoogleServiceAccountChanges = async (
           )
           stats = mergeStats(stats, changeStats)
         }
+        changesExist = true
+      }
+      const peopleService = google.people({
+        version: "v1",
+        auth: jwtClient,
+      })
+      let nextPageToken = ""
+      let contactsToken = config.contactsToken
+      let otherContactsToken = config.otherContactsToken
+      do {
+        const response = await peopleService.people.connections.list({
+          resourceName: "people/me",
+          personFields: contactKeys.join(","),
+          syncToken: config.contactsToken,
+          requestSyncToken: true,
+          pageSize: 1000, // Adjust the page size based on your quota and needs
+          pageToken: nextPageToken, // Use the nextPageToken for pagination
+        })
+        contactsToken = response.data.nextSyncToken ?? contactsToken
+        if (response.data.connections && response.data.connections.length) {
+          Logger.info(
+            `About to update ${response.data.connections.length} contacts`,
+          )
+          let changeStats = await syncContacts(
+            peopleService,
+            response.data.connections,
+            user.email,
+            GooglePeopleEntity.Contacts,
+          )
+          stats = mergeStats(stats, changeStats)
+          changesExist = true
+        }
+      } while (nextPageToken)
+
+      // reset
+      nextPageToken = ""
+
+      do {
+        const response = await peopleService.otherContacts.list({
+          pageSize: 1000,
+          readMask: contactKeys.join(","),
+          syncToken: otherContactsToken,
+          pageToken: nextPageToken,
+          requestSyncToken: true,
+          sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
+        })
+        otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+        if (response.data.otherContacts && response.data.otherContacts.length) {
+          Logger.info(
+            `About to update ${response.data.otherContacts.length} other contacts`,
+          )
+          let changeStats = await syncContacts(
+            peopleService,
+            response.data.otherContacts,
+            user.email,
+            GooglePeopleEntity.OtherContacts,
+          )
+          stats = mergeStats(stats, changeStats)
+          changesExist = true
+        }
+      } while (nextPageToken)
+      if (changesExist) {
         const newConfig = {
+          driveToken: newStartPageToken ?? config.driveToken,
+          contactsToken,
+          otherContactsToken,
           lastSyncedAt: new Date(),
-          token: newStartPageToken,
         }
         // update this sync job and
         // create sync history
@@ -327,7 +518,7 @@ export const handleGoogleServiceAccountChanges = async (
             app: Apps.GoogleDrive,
             status: SyncJobStatus.Successful,
             config: {
-              token: newConfig.token,
+              ...newConfig,
               lastSyncedAt: newConfig.lastSyncedAt.toISOString(),
             },
             type: SyncCron.ChangeToken,
@@ -335,15 +526,17 @@ export const handleGoogleServiceAccountChanges = async (
           })
         })
         Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
+      } else {
+        Logger.info(`No changes to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
-        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`,
+        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: ChangeToken = syncJob.config as ChangeToken
       const newConfig = {
-        token: config.token as string,
+        ...config,
         lastSyncedAt: config.lastSyncedAt.toISOString(),
       }
       await insertSyncHistory(db, {

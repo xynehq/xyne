@@ -118,10 +118,21 @@ export enum SyncCron {
 }
 
 // Define ChangeToken schema
-const ChangeTokenSchema = z.object({
+const DefaultTokenSchema = z.object({
   token: z.string(),
   lastSyncedAt: z.coerce.date(),
 })
+
+// Google Drive and Contact change token
+// clubbing drive, contact and other contact tokens
+const GoogleChangeTokenSchema = z.object({
+  driveToken: z.string(),
+  contactsToken: z.string(),
+  otherContactsToken: z.string(),
+  lastSyncedAt: z.coerce.date(),
+})
+
+const ChangeTokenSchema = z.union([DefaultTokenSchema, GoogleChangeTokenSchema])
 
 // Define UpdatedAtVal schema
 const UpdatedAtValSchema = z.object({
@@ -135,6 +146,7 @@ export const SyncConfigSchema = z.union([ChangeTokenSchema, UpdatedAtValSchema])
 export type SyncConfig = z.infer<typeof SyncConfigSchema>
 
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>
+export type GoogleChangeToken = z.infer<typeof GoogleChangeTokenSchema>
 
 namespace Google {
   export const DriveFileSchema = z.object({

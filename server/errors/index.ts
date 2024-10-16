@@ -19,6 +19,7 @@ enum Model {
 type BaseErrorOpts = {
   message?: string
   cause?: Error
+  fn?: any
 }
 
 type ErrorOpts = {
@@ -88,6 +89,7 @@ class IntegrationsError extends Error {
     if (docId) fullMessage += ` for docId: ${docId}`
     if (jobId) fullMessage += ` and jobId: ${jobId}`
     super(fullMessage, { cause })
+    Error.captureStackTrace(this)
   }
 }
 
@@ -198,12 +200,33 @@ export class CouldNotFinishJobSuccessfully extends IntegrationsError {
   }
 }
 
-// integrations/UserListingError
 export class UserListingError extends IntegrationsError {
   constructor(integrationErrOpts: IntegrationErrorPartialMsgOpts) {
     let { message } = integrationErrOpts
     if (!message) {
       message = `Error listing users`
+    }
+    super({ ...integrationErrOpts, message })
+    this.name = this.constructor.name
+  }
+}
+
+export class ContactListingError extends IntegrationsError {
+  constructor(integrationErrOpts: IntegrationErrorPartialMsgOpts) {
+    let { message } = integrationErrOpts
+    if (!message) {
+      message = `Could not list contact`
+    }
+    super({ ...integrationErrOpts, message })
+    this.name = this.constructor.name
+  }
+}
+
+export class ContactMappingError extends IntegrationsError {
+  constructor(integrationErrOpts: IntegrationErrorPartialMsgOpts) {
+    let { message } = integrationErrOpts
+    if (!message) {
+      message = `Could not map contact to vespa schema`
     }
     super({ ...integrationErrOpts, message })
     this.name = this.constructor.name

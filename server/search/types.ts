@@ -101,7 +101,7 @@ export const VespaFileSchema = z
 export const VespaUserSchema = z
   .object({
     docId: z.string().min(1),
-    name: z.string().min(1),
+    name: z.string().optional(), //.min(1),
     email: z.string().min(1).email(),
     app: z.nativeEnum(Apps),
     entity: z.nativeEnum(GooglePeopleEntity),
@@ -127,6 +127,8 @@ export const VespaUserSchema = z
     userDefined: z.array(z.string()).optional(),
     customerId: z.string().optional(),
     clientData: z.array(z.string()).optional(),
+    // this only exists for contacts
+    owner: z.string().optional(),
     sddocname: z.literal("user"),
   })
   .merge(defaultVespaFieldsSchema)
@@ -230,7 +232,8 @@ const VespaAutocompleteFileSchema = z
 const VespaAutocompleteUserSchema = z
   .object({
     docId: z.string(),
-    name: z.string(),
+    // optional due to contacts
+    name: z.string().optional(),
     email: z.string(),
     app: z.nativeEnum(Apps),
     entity: entitySchema,
