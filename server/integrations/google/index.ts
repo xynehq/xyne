@@ -60,12 +60,15 @@ import {
   ContactListingError,
   ContactMappingError,
   ErrorInsertingDocument,
+  DeleteDocumentError,
+  DownloadDocumentError,
 } from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
+import { MAX_GD_PDF_SIZE } from "./config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -405,10 +408,16 @@ export const handleGoogleServiceAccountIngestion = async (
 const deleteDocument = async (filePath: string) => {
   try {
     await fileSys.unlink(filePath) // Delete the file at the provided path
-    console.log(`File at ${filePath} deleted successfully`)
+    Logger.info(`File at ${filePath} deleted successfully`)
   } catch (err) {
-    console.error(`Error deleting file at ${filePath}:`, err)
-    throw new Error("File deletion failed")
+    Logger.error(
+      `Error deleting file at ${filePath}: ${err} ${(err as Error).stack}`,
+      err,
+    )
+    throw new DeleteDocumentError({
+      message: "Error in the catch of deleting file",
+      cause: err as Error,
+    })
   }
 }
 
@@ -477,13 +486,13 @@ const insertFilesForUser = async (
   }
 }
 
+const downloadDir = path.resolve(__dirname, "../../downloads")
+
 const downloadPDF = async (
   drive: drive_v3.Drive,
   fileId: string,
   fileName: string,
 ) => {
-  const downloadDir = path.resolve(__dirname, "../../downloads")
-
   if (!fs.existsSync(downloadDir)) {
     // Check if the downloads directory exists, create it if it doesn't
     fs.mkdirSync(downloadDir, { recursive: true })
@@ -498,18 +507,21 @@ const downloadPDF = async (
     return new Promise<void>((resolve, reject) => {
       res.data
         .on("end", () => {
-          console.log(`Downloaded ${fileName}`)
+          Logger.info(`Downloaded ${fileName}`)
           resolve()
         })
         .on("error", (err) => {
-          console.error("Error downloading file.")
+          Logger.error("Error downloading file.", err)
           reject(err)
         })
         .pipe(dest)
     })
   } catch (error) {
-    console.error("Error fetching the file stream:", error)
-    throw error
+    Logger.error(`Error fetching the file stream:`, error)
+    throw new DownloadDocumentError({
+      message: "Error in downloading file",
+      cause: error as Error,
+    })
   }
 }
 
@@ -528,31 +540,45 @@ export const googlePDFsVespa = async (
   let count = 0
   for (const pdf of pdfsMetadata) {
     const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
-    // Ignore the PDF files larger than 20MB
-    if (pdfSizeInMB > 20) {
-      console.log(`Ignoring ${pdf.name} as its more than 20 MB`)
+    // Ignore the PDF files larger than Max PDF Size
+    if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
+      Logger.info(`Ignoring ${pdf.name} as its more than 20 MB`)
       continue
     }
     try {
       await downloadPDF(drive, pdf.id!, pdf.name!)
     } catch (error) {
-      console.error("An error occurred while downloading the PDF:", error)
+      Logger.error(
+        `Error downloading file: ${error} ${(error as Error).stack}`,
+        error,
+      )
+      throw new DownloadDocumentError({
+        message: "Error in the catch of downloading file",
+        cause: error as Error,
+      })
     }
-    const pdfPath = path.resolve(__dirname, `../../downloads/${pdf?.name}`)
+    const pdfPath = `${downloadDir}/${pdf?.name}`
     let docs: Document[] = []
     try {
       const loader = new PDFLoader(pdfPath)
       docs = await loader.load()
     } catch (error) {
-      console.error("Error occured while parsing PDF:", error)
+      Logger.error(
+        `Error parsing file: ${error} ${(error as Error).stack}`,
+        error,
+      )
     }
 
     if (!docs || docs.length === 0) {
-      console.error(`Could not get content for file: ${pdf.name}. Skipping it`)
+      Logger.error(`Could not get content for file: ${pdf.name}. Skipping it`)
       try {
         await deleteDocument(pdfPath)
       } catch (err) {
-        console.error(`Error occured while deleting ${pdf.name}`, err)
+        Logger.error(`Error occured while deleting ${pdf.name}`, err)
+        throw new DeleteDocumentError({
+          message: "Error in deleting file",
+          cause: err as Error,
+        })
       }
       continue
     }
@@ -584,7 +610,11 @@ export const googlePDFsVespa = async (
     try {
       await deleteDocument(pdfPath)
     } catch (err) {
-      console.error(`Error occured while deleting ${pdf.name}`, err)
+      Logger.error(`Error occured while deleting ${pdf.name}`, err)
+      throw new DeleteDocumentError({
+        message: "Error in deleting file",
+        cause: err as Error,
+      })
     }
   }
   return pdfsList

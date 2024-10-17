@@ -328,3 +328,25 @@ export class ConnectorNotCreated extends DbError {
     this.name = this.constructor.name
   }
 }
+
+export class DownloadDocumentError extends Error {
+  constructor(errOpts: errorOpts) {
+    let { message, cause } = errOpts
+    if (!message) {
+      message = "Error while downloading document"
+    }
+    super(message, { cause })
+    this.name = this.constructor.name
+  }
+}
+
+export class DeleteDocumentError extends Error {
+  constructor(errOpts: errorOpts) {
+    let { message, cause } = errOpts
+    if (!message) {
+      message = "Error while deleting document"
+    }
+    super(message, { cause })
+    this.name = this.constructor.name
+  }
+}
