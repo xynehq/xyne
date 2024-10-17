@@ -82,12 +82,6 @@ export const VespaFileSchema = z
     url: z.string().nullable(),
     // we don't want zod to validate this for perf reason
     chunks: z.array(z.string()),
-    // chunk_embeddings will be generated from chunks within Vespa
-    // this is how chunk_embeddings we get when we fetch from vespa
-    // chunk_embeddings: z.object({
-    //   type: z.string(),
-    //   blocks: z.any(),
-    // }),
     owner: z.string().nullable(),
     ownerEmail: z.string().nullable(),
     photoLink: z.string().nullable(),

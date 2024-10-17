@@ -114,7 +114,7 @@ export const getFileContent = async (
     photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
     ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
     entity,
-    chunks: chunks.map((v) => v.chunk), // Chunk embeddings will created within vespa
+    chunks: chunks.map((v) => v.chunk),
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
   }

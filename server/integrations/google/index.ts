@@ -782,7 +782,7 @@ export const googleDocsVespa = async (
       photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
       ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
       entity: DriveEntity.Docs,
-      chunks: chunks.map((v) => v.chunk), // Chunk embeddings will created within vespa
+      chunks: chunks.map((v) => v.chunk),
       permissions: doc.permissions ?? [],
       mimeType: doc.mimeType ?? "",
     })
