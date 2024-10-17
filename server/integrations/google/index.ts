@@ -5,7 +5,7 @@ import {
   extractText,
   postProcessText,
 } from "@/doc"
-import { chunkDocument, chunkTextByParagraph } from "@/chunks"
+import { chunkDocument } from "@/chunks"
 import {
   Subsystem,
   SyncCron,
@@ -408,23 +408,23 @@ const insertFilesForUser = async (
       (v) => v.mimeType !== DriveMime.Docs && v.mimeType !== DriveMime.PDF,
     )
 
-    // const documents: VespaFileWithDrivePermission[] = await googleDocsVespa(
-    //   googleClient,
-    //   googleDocsMetadata,
-    //   connector.externalId,
-    // )
+    const documents: VespaFileWithDrivePermission[] = await googleDocsVespa(
+      googleClient,
+      googleDocsMetadata,
+      connector.externalId,
+    )
     const pdfDocuments: VespaFileWithDrivePermission[] = await googlePDFsVespa(
       googleClient,
       googlePDFsMetadata,
       connector.externalId,
     )
-    // const driveFiles: VespaFileWithDrivePermission[] =
-    //   await driveFilesToDoc(rest)
+    const driveFiles: VespaFileWithDrivePermission[] =
+      await driveFilesToDoc(rest)
 
     sendWebsocketMessage("generating embeddings", connector.externalId)
     let allFiles: VespaFileWithDrivePermission[] = [
-      // ...driveFiles,
-      // ...documents,
+      ...driveFiles,
+      ...documents,
       ...pdfDocuments,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
@@ -445,10 +445,14 @@ const downloadPDF = async (
   fileId: string,
   fileName: string,
 ) => {
-  // Todo Make a folder named downloads if not there
-  const dest = fs.createWriteStream(
-    path.resolve(__dirname, "../../downloads", fileName),
-  )
+  const downloadDir = path.resolve(__dirname, "../../downloads")
+
+  if (!fs.existsSync(downloadDir)) {
+    // Check if the downloads directory exists, create it if it doesn't
+    fs.mkdirSync(downloadDir, { recursive: true })
+  }
+
+  const dest = fs.createWriteStream(path.join(downloadDir, fileName))
   const res = await drive.files.get(
     { fileId: fileId, alt: "media" },
     { responseType: "stream" },
