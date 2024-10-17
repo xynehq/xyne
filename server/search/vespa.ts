@@ -1,8 +1,7 @@
 // import { env, pipeline } from '@xenova/transformers';
 // let { pipeline, env } = await import('@xenova/transformers');
 
-const transformers = require("@xenova/transformers")
-const { pipeline, env } = transformers
+import { Apps } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -22,22 +21,15 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
-import { getExtractor } from "@/embedding"
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
-const fileSchema = "file" // Replace with your actual schema name
-const userSchema = "user"
+export const fileSchema = "file" // Replace with your actual schema name
+export const userSchema = "user"
 const NAMESPACE = "namespace" // Replace with your actual namespace
 const CLUSTER = "my_content"
-env.backends.onnx.wasm.numThreads = 1
-
-env.localModelPath = "./"
-env.cacheDir = "./"
 
 const Logger = getLogger(Subsystem.Search).child({ module: "vespa" })
-
-const extractor = await getExtractor()
 
 function handleVespaGroupResponse(
   response: VespaSearchResponse,
@@ -119,13 +111,13 @@ export const insertDocument = async (document: VespaFile) => {
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${document.docId} inserted successfully:, ${data}`)
+      Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
-      Logger.error(`Error inserting document ${document.docId}:, ${data}`)
+      Logger.error(`Error inserting document ${document.docId}: ${data}`)
     }
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(`Error inserting document ${document.docId}:, ${errMessage}`)
+    Logger.error(`Error inserting document ${document.docId}: ${errMessage}`)
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
@@ -156,8 +148,36 @@ export const insertUser = async (user: VespaUser) => {
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    console.error(`Error inserting user ${user.docId}:`, errorMessage)
+    Logger.error(`Error inserting user ${user.docId}:`, errorMessage)
+    throw new ErrorInsertingDocument({
+      docId: user.docId,
+      cause: error as Error,
+      sources: userSchema,
+    })
   }
+}
+
+export const deduplicateAutocomplete = (
+  resp: VespaAutocompleteResponse,
+): VespaAutocompleteResponse => {
+  const { root } = resp
+  if (!root.children) {
+    return resp
+  }
+  const uniqueResults = []
+  const emails = new Set()
+  for (const child of root.children) {
+    // @ts-ignore
+    const email = child.fields.email
+    if (email && !emails.has(email)) {
+      emails.add(email)
+      uniqueResults.push(child)
+    } else if (!email) {
+      uniqueResults.push(child)
+    }
+  }
+  resp.root.children = uniqueResults
+  return resp
 }
 
 export const autocomplete = async (
@@ -166,14 +186,28 @@ export const autocomplete = async (
   limit: number = 5,
 ): Promise<VespaAutocompleteResponse> => {
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
+  // the drawback here is that for user field we will get duplicates, for the same
+  // email one contact and one from user directory
   const yqlQuery = `select * from sources file, user
-        where
-            (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and permissions contains @email)
-            or
+    where
+        (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and permissions contains @email)
+        or
+        (
             (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            );`
+            and owner contains @email)
+            or
+            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and owner contains @email)
+        )
+        or
+        (
+            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and app contains "${Apps.GoogleWorkspace}")
+            or
+            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+            and app contains "${Apps.GoogleWorkspace}")
+        );`
 
   const searchPayload = {
     yql: yqlQuery,
@@ -218,6 +252,7 @@ type YqlProfile = {
   yql: string
 }
 
+// TODO: it seems the owner part is complicating things
 const HybridDefaultProfile = (hits: number): YqlProfile => {
   return {
     profile: "default",
@@ -230,7 +265,9 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
             )
             and permissions contains @email)
             or
-            ({targetHits:${hits}}userInput(@query))
+            (({targetHits:${hits}}userInput(@query)) and app contains "${Apps.GoogleWorkspace}")
+            or
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email)
         `,
   }
 }
@@ -241,7 +278,10 @@ const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
     yql: `select * from sources file, user
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
-            or ({targetHits:${hits}}userInput(@query))
+            or
+            (({targetHits:${hits}}userInput(@query)) and app contains "${Apps.GoogleWorkspace}")
+            or
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email)
             limit 0
             | all(
                 group(app) each(
@@ -260,9 +300,6 @@ export const groupVespaSearch = async (
   limit = config.page,
 ): Promise<AppEntityCounts> => {
   const url = `${vespaEndpoint}/search/`
-  const qEmbedding = (
-    await extractor(query, { pooling: "mean", normalize: true })
-  ).tolist()[0]
   let yqlQuery = HybridDefaultProfileAppEntityCounts(limit).yql
 
   const hybridDefaultPayload = {
@@ -270,7 +307,7 @@ export const groupVespaSearch = async (
     query,
     email,
     "ranking.profile": HybridDefaultProfileAppEntityCounts(limit).profile,
-    "input.query(e)": qEmbedding,
+    "input.query(e)": "embed(@query)",
   }
   try {
     const response = await fetch(url, {
@@ -307,9 +344,6 @@ export const searchVespa = async (
   offset?: number,
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
-  const qEmbedding = (
-    await extractor(query, { pooling: "mean", normalize: true })
-  ).tolist()[0]
 
   let yqlQuery = HybridDefaultProfile(limit).yql
 
@@ -322,7 +356,7 @@ export const searchVespa = async (
     query,
     email,
     "ranking.profile": HybridDefaultProfile(limit).profile,
-    "input.query(e)": qEmbedding,
+    "input.query(e)": "embed(@query)",
     hits: limit,
     alpha: 0.5,
     ...(offset
@@ -481,8 +515,8 @@ export const UpdateDocumentPermissions = async (
   }
 }
 
-export const DeleteDocument = async (docId: string) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`
+export const DeleteDocument = async (docId: string, schema: string) => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
     const response = await fetch(url, {
       method: "DELETE",
@@ -501,7 +535,7 @@ export const DeleteDocument = async (docId: string) => {
     Logger.error(`Error deleting document ${docId}:  ${errMessage}`)
     throw new ErrorDeletingDocuments({
       cause: error as Error,
-      sources: fileSchema,
+      sources: schema,
     })
   }
 }
@@ -512,7 +546,7 @@ interface EntityCounts {
 }
 
 // Define a type for App Entity Counts (where the key is the app name and the value is the entity counts)
-interface AppEntityCounts {
+export interface AppEntityCounts {
   [app: string]: EntityCounts
 }
 

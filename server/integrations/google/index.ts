@@ -1,4 +1,10 @@
-import { admin_directory_v1, docs_v1, drive_v3, google } from "googleapis"
+import {
+  admin_directory_v1,
+  docs_v1,
+  drive_v3,
+  google,
+  people_v1,
+} from "googleapis"
 import {
   extractFootnotes,
   extractHeadersAndFooters,
@@ -9,7 +15,7 @@ import { chunkDocument } from "@/chunks"
 import {
   Subsystem,
   SyncCron,
-  type ChangeToken,
+  type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
   type SaaSJob,
@@ -18,13 +24,7 @@ import {
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import { getExtractor } from "@/embedding"
-import {
-  DeleteDocument,
-  GetDocument,
-  insertDocument,
-  insertUser,
-  UpdateDocumentPermissions,
-} from "@/search/vespa"
+import { insertDocument, insertUser } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
 import { wsConnections } from "@/server"
 import type { WSContext } from "hono/ws"
@@ -42,7 +42,6 @@ import {
 } from "@/shared/types"
 import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob"
-import { getUserById } from "@/db/user"
 import type { GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
 import { getErrorMessage } from "@/utils"
@@ -51,18 +50,22 @@ import {
   DocsParsingError,
   driveFileToIndexed,
   DriveMime,
-  mimeTypeMap,
   toPermissionsList,
 } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
-import type { VespaFileWithDrivePermission } from "@/search/types"
-import { UserListingError, CouldNotFinishJobSuccessfully } from "@/errors"
+import { type VespaFileWithDrivePermission } from "@/search/types"
+import {
+  UserListingError,
+  CouldNotFinishJobSuccessfully,
+  ContactListingError,
+  ContactMappingError,
+  ErrorInsertingDocument,
+} from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
-
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -211,6 +214,9 @@ export const handleGoogleOAuthIngestion = async (
     // hand one hour, we should increase this time
     oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
+    const { contacts, otherContacts, contactsToken, otherContactsToken } =
+      await listAllContacts(oauth2Client)
+    await insertContactsToVespa(contacts, otherContacts, userEmail)
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -218,9 +224,12 @@ export const handleGoogleOAuthIngestion = async (
     if (!startPageToken) {
       throw new Error("Could not get start page token")
     }
+
     await insertFilesForUser(oauth2Client, userEmail, connector)
-    const changeToken = {
-      token: startPageToken,
+    const changeTokens = {
+      driveToken: startPageToken,
+      contactsToken,
+      otherContactsToken,
       lastSyncedAt: new Date().toISOString(),
     }
     await db.transaction(async (trx) => {
@@ -237,7 +246,7 @@ export const handleGoogleOAuthIngestion = async (
         app: Apps.GoogleDrive,
         connectorId: connector.id,
         authType: AuthType.OAuth,
-        config: changeToken,
+        config: changeTokens,
         email: userEmail,
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
@@ -246,7 +255,10 @@ export const handleGoogleOAuthIngestion = async (
       Logger.info("job completed")
     })
   } catch (error) {
-    Logger.error("could not finish job successfully", error)
+    Logger.error(
+      `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
+      error,
+    )
     await db.transaction(async (trx) => {
       trx
         .update(connectors)
@@ -265,8 +277,15 @@ export const handleGoogleOAuthIngestion = async (
   }
 }
 
-type ChangeList = { email: string; changeToken: string }
+type IngestionMetadata = {
+  email: string
+  driveToken: string
+  contactsToken: string
+  otherContactsToken: string
+}
 
+// we make 2 sync jobs
+// one for drive and one for google workspace
 export const handleGoogleServiceAccountIngestion = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -285,11 +304,14 @@ export const handleGoogleServiceAccountIngestion = async (
     const workspace = await getWorkspaceByEmail(db, subject)
     // TODO: handle multiple domains
     const users = await listUsers(admin, workspace.domain)
-    const userEmails: ChangeList[] = []
+    const ingestionMetadata: IngestionMetadata[] = []
     for (const [index, user] of users.entries()) {
       const userEmail = user.primaryEmail || user.emails[0]
       jwtClient = createJwtClient(serviceAccountKey, userEmail)
       const driveClient = google.drive({ version: "v3", auth: jwtClient })
+      const { contacts, otherContacts, contactsToken, otherContactsToken } =
+        await listAllContacts(jwtClient)
+      await insertContactsToVespa(contacts, otherContacts, userEmail)
       const { startPageToken }: drive_v3.Schema$StartPageToken = (
         await driveClient.changes.getStartPageToken()
       ).data
@@ -300,7 +322,12 @@ export const handleGoogleServiceAccountIngestion = async (
         `${((index + 1) / users.length) * 100}% user's data is connected`,
         connector.externalId,
       )
-      userEmails.push({ email: userEmail, changeToken: startPageToken })
+      ingestionMetadata.push({
+        email: userEmail,
+        driveToken: startPageToken,
+        contactsToken: contactsToken,
+        otherContactsToken: otherContactsToken,
+      })
       await insertFilesForUser(jwtClient, userEmail, connector)
       // insert that user
     }
@@ -308,7 +335,12 @@ export const handleGoogleServiceAccountIngestion = async (
     await insertUsersForWorkspace(users)
 
     await db.transaction(async (trx) => {
-      for (const { email, changeToken } of userEmails) {
+      for (const {
+        email,
+        driveToken,
+        contactsToken,
+        otherContactsToken,
+      } of ingestionMetadata) {
         await insertSyncJob(trx, {
           workspaceId: connector.workspaceId,
           workspaceExternalId: connector.workspaceExternalId,
@@ -316,7 +348,9 @@ export const handleGoogleServiceAccountIngestion = async (
           connectorId: connector.id,
           authType: AuthType.ServiceAccount,
           config: {
-            token: changeToken,
+            driveToken,
+            contactsToken,
+            otherContactsToken,
             lastSyncedAt: new Date().toISOString(),
           },
           email,
@@ -345,8 +379,11 @@ export const handleGoogleServiceAccountIngestion = async (
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
-  } catch (e) {
-    Logger.error("could not finish job successfully", e)
+  } catch (error) {
+    Logger.error(
+      `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
+      error,
+    )
     await db.transaction(async (trx) => {
       trx
         .update(connectors)
@@ -360,7 +397,7 @@ export const handleGoogleServiceAccountIngestion = async (
       message: "Could not finish Oauth ingestion",
       integration: Apps.GoogleWorkspace,
       entity: "files and users",
-      cause: e as Error,
+      cause: error as Error,
     })
   }
 }
@@ -481,7 +518,6 @@ export const googlePDFsVespa = async (
   pdfsMetadata: drive_v3.Schema$File[],
   connectorId: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  const extractor = await getExtractor()
   sendWebsocketMessage(
     `Scanning ${pdfsMetadata.length} Google PDFs`,
     connectorId,
@@ -522,13 +558,8 @@ export const googlePDFsVespa = async (
     }
 
     const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
-    let chunkMap: Record<string, number[]> = {}
-    for (const c of chunks) {
-      const { chunk, chunkIndex } = c
-      chunkMap[chunkIndex] = (
-        await extractor(chunk, { pooling: "mean", normalize: true })
-      ).tolist()[0]
-    }
+    // TODO: remove ts-ignore and fix correctly
+    // @ts-ignore
     pdfsList.push({
       title: pdf.name!,
       url: pdf.webViewLink ?? "",
@@ -539,9 +570,6 @@ export const googlePDFsVespa = async (
       ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
       entity: DriveEntity.PDF,
       chunks: chunks.map((v) => v.chunk),
-      // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
-      chunk_embeddings: chunkMap,
       permissions: pdf.permissions ?? [],
       mimeType: pdf.mimeType ?? "",
     })
@@ -604,6 +632,210 @@ const insertUsersForWorkspace = async (
         (user.lastLoginTime && new Date(user.lastLoginTime).getTime()) || 0,
       customerId: user.customerId ?? "",
     })
+  }
+}
+
+type ContactsResponse = {
+  contacts: people_v1.Schema$Person[]
+  otherContacts: people_v1.Schema$Person[]
+  contactsToken: string
+  otherContactsToken: string
+}
+
+// get both contacts and other contacts and return the sync tokens
+const listAllContacts = async (
+  client: GoogleClient,
+): Promise<ContactsResponse> => {
+  const peopleService = google.people({ version: "v1", auth: client })
+  const keys = [
+    "names",
+    "emailAddresses",
+    "photos",
+    "organizations",
+    "metadata",
+    "urls",
+    "birthdays",
+    "genders",
+    "occupations",
+    "userDefined",
+  ]
+  const maxOtherContactsPerPage = 1000
+  let pageToken: string = ""
+  const contacts: any[] = []
+  const otherContacts: any[] = []
+
+  // will be returned in the end
+  let newSyncTokenContacts: string = ""
+  let newSyncTokenOtherContacts: string = ""
+
+  do {
+    const response = await peopleService.people.connections.list({
+      resourceName: "people/me",
+      pageSize: maxOtherContactsPerPage,
+      personFields: keys.join(","),
+      pageToken,
+      requestSyncToken: true,
+    })
+
+    if (response.data.connections) {
+      contacts.push(...response.data.connections)
+    }
+
+    pageToken = response.data.nextPageToken ?? ""
+    newSyncTokenContacts = response.data.nextSyncToken ?? ""
+  } while (pageToken)
+
+  // reset page token for other contacts
+  pageToken = ""
+
+  do {
+    const response = await peopleService.otherContacts.list({
+      pageSize: maxOtherContactsPerPage,
+      readMask: keys.join(","),
+      pageToken,
+      requestSyncToken: true,
+      sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
+    })
+
+    if (response.data.otherContacts) {
+      otherContacts.push(...response.data.otherContacts)
+    }
+
+    pageToken = response.data.nextPageToken ?? ""
+    newSyncTokenOtherContacts = response.data.nextSyncToken ?? ""
+  } while (pageToken)
+
+  if (!newSyncTokenContacts || !newSyncTokenOtherContacts) {
+    throw new ContactListingError({
+      message: "Could not get sync tokens for contact",
+      integration: Apps.GoogleDrive,
+      entity: GooglePeopleEntity.Contacts,
+    })
+  }
+
+  return {
+    contacts,
+    otherContacts,
+    contactsToken: newSyncTokenContacts,
+    otherContactsToken: newSyncTokenOtherContacts,
+  }
+}
+
+export const insertContact = async (
+  contact: people_v1.Schema$Person,
+  entity: GooglePeopleEntity,
+  owner: string,
+) => {
+  const docId = contact.resourceName || ""
+  if (!docId) {
+    Logger.error(`Id does not exist for ${entity}`)
+    return
+    // throw new ContactMappingError({
+    //   integration: Apps.GoogleDrive,
+    //   entity: GooglePeopleEntity.Contacts,
+    // })
+  }
+
+  const name = contact.names?.[0]?.displayName ?? ""
+  const email = contact.emailAddresses?.[0]?.value ?? ""
+  if (!email) {
+    Logger.error(`Email does not exist for ${entity}`)
+    return
+    // throw new ContactMappingError({
+    //   integration: Apps.GoogleDrive,
+    //   entity: GooglePeopleEntity.Contacts,
+    // })
+  }
+
+  const app = Apps.GoogleDrive
+
+  const gender = contact.genders?.[0]?.value ?? ""
+  const photoLink = contact.photos?.[0]?.url ?? ""
+  const aliases =
+    contact.emailAddresses?.slice(1)?.map((e) => e.value ?? "") || []
+  const urls = contact.urls?.map((url) => url.value ?? "") || []
+
+  const currentOrg =
+    contact.organizations?.find((org) => !org.endDate) ||
+    contact.organizations?.[0]
+
+  const orgName = currentOrg?.name ?? ""
+  const orgJobTitle = currentOrg?.title ?? ""
+  const orgDepartment = currentOrg?.department ?? ""
+  const orgLocation = currentOrg?.location ?? ""
+  const orgDescription = ""
+
+  const updateTimeStr = contact.metadata?.sources?.[0]?.updateTime
+  const creationTime = updateTimeStr
+    ? new Date(updateTimeStr).getTime()
+    : Date.now()
+
+  const birthdayObj = contact.birthdays?.[0]?.date
+  const birthday = birthdayObj
+    ? new Date(
+        `${birthdayObj.year || "1970"}-${birthdayObj.month || "01"}-${birthdayObj.day || "01"}`,
+      ).getTime()
+    : undefined
+
+  const occupations = contact.occupations?.map((o) => o.value ?? "") || []
+  const userDefined =
+    contact.userDefined?.map((u) => `${u.key}: ${u.value}`) || []
+
+  // TODO: remove ts-ignore and fix correctly
+  const vespaContact = {
+    docId,
+    name,
+    email,
+    app,
+    entity,
+    gender,
+    photoLink,
+    aliases,
+    urls,
+    orgName,
+    orgJobTitle,
+    orgDepartment,
+    orgLocation,
+    orgDescription,
+    creationTime,
+    birthday,
+    occupations,
+    userDefined,
+    owner,
+  }
+  // @ts-ignore
+  await insertUser(vespaContact)
+}
+
+const insertContactsToVespa = async (
+  contacts: people_v1.Schema$Person[],
+  otherContacts: people_v1.Schema$Person[],
+  owner: string,
+): Promise<void> => {
+  try {
+    for (const contact of contacts) {
+      await insertContact(contact, GooglePeopleEntity.Contacts, owner)
+    }
+    for (const contact of otherContacts) {
+      await insertContact(contact, GooglePeopleEntity.OtherContacts, owner)
+    }
+  } catch (error) {
+    // error is related to vespa and not mapping
+    if (error instanceof ErrorInsertingDocument) {
+      Logger.error("Could not insert contact: ", error)
+      throw error
+    } else {
+      Logger.error(
+        `Error mapping contact: ${error} ${(error as Error).stack}`,
+        error,
+      )
+      throw new ContactMappingError({
+        message: "Error in the catch of mapping google contact",
+        integration: Apps.GoogleDrive,
+        entity: GooglePeopleEntity.Contacts,
+        cause: error as Error,
+      })
+    }
   }
 }
 
