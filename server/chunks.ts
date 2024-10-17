@@ -6,7 +6,6 @@
  * @param {number} overlap - Number of overlapping characters between chunks.
  * @returns {string[]} - An array of text chunks.
  */
-
 export const chunkTextByParagraph = (
   text: string,
   maxChunkSize = 512,
