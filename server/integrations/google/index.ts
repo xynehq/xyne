@@ -68,7 +68,7 @@ import path from "node:path"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
-import { MAX_GD_PDF_SIZE } from "./config"
+import { MAX_GD_PDF_SIZE } from "@/integrations/google/config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -417,6 +417,8 @@ const deleteDocument = async (filePath: string) => {
     throw new DeleteDocumentError({
       message: "Error in the catch of deleting file",
       cause: err as Error,
+      integration: Apps.GoogleDrive,
+      entity: DriveEntity.PDF,
     })
   }
 }
@@ -510,8 +512,20 @@ const downloadPDF = async (
           Logger.info(`Downloaded ${fileName}`)
           resolve()
         })
-        .on("error", (err) => {
+        .on("error", async (err) => {
           Logger.error("Error downloading file.", err)
+          // Deleting document here if downloading fails
+          try {
+            await deleteDocument(`${downloadDir}/${fileName}`)
+          } catch (err) {
+            Logger.error(`Error occured while deleting ${fileName}`, err)
+            throw new DeleteDocumentError({
+              message: "Error in the catch of deleting file",
+              cause: err as Error,
+              integration: Apps.GoogleDrive,
+              entity: DriveEntity.PDF,
+            })
+          }
           reject(err)
         })
         .pipe(dest)
@@ -521,6 +535,8 @@ const downloadPDF = async (
     throw new DownloadDocumentError({
       message: "Error in downloading file",
       cause: error as Error,
+      integration: Apps.GoogleDrive,
+      entity: DriveEntity.PDF,
     })
   }
 }
@@ -555,6 +571,8 @@ export const googlePDFsVespa = async (
       throw new DownloadDocumentError({
         message: "Error in the catch of downloading file",
         cause: error as Error,
+        integration: Apps.GoogleDrive,
+        entity: DriveEntity.PDF,
       })
     }
     const pdfPath = `${downloadDir}/${pdf?.name}`
@@ -576,8 +594,10 @@ export const googlePDFsVespa = async (
       } catch (err) {
         Logger.error(`Error occured while deleting ${pdf.name}`, err)
         throw new DeleteDocumentError({
-          message: "Error in deleting file",
+          message: "Error in the catch of deleting file",
           cause: err as Error,
+          integration: Apps.GoogleDrive,
+          entity: DriveEntity.PDF,
         })
       }
       continue
@@ -612,8 +632,10 @@ export const googlePDFsVespa = async (
     } catch (err) {
       Logger.error(`Error occured while deleting ${pdf.name}`, err)
       throw new DeleteDocumentError({
-        message: "Error in deleting file",
+        message: "Error in the catch of deleting file",
         cause: err as Error,
+        integration: Apps.GoogleDrive,
+        entity: DriveEntity.PDF,
       })
     }
   }
