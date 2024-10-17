@@ -59,62 +59,13 @@ import type { VespaFileWithDrivePermission } from "@/search/types"
 import { UserListingError, CouldNotFinishJobSuccessfully } from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
-// import pdf2text from "pdf-to-text"
-// import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
-import { spawn } from "child_process"
-import tracer from "dd-trace"
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
+import type { Document } from "@langchain/core/documents"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
-
-export async function dpdf2text(
-  pdfPath: string,
-): Promise<{ pages: string[]; content: string }> {
-  return tracer.trace(
-    dpdf2text,
-    {
-      resource: dpdf2text,
-    },
-    async (span) => {
-      span?.setTag("pdfPath", pdfPath)
-      const argsPerPage: string[] = ["-layout", "-enc", "UTF-8", pdfPath, "-"]
-
-      const content = await new Promise<string>((resolve, reject) => {
-        const child = spawn("pdftotext", argsPerPage)
-
-        let capturedStdoutPerPage = ""
-        let capturedStderrPerPage = ""
-
-        child.stdout.on("data", (data) => {
-          capturedStdoutPerPage += data
-        })
-        child.stderr.on("data", (data) => {
-          capturedStderrPerPage += data
-        })
-
-        child.on("close", (code) => {
-          if (code === 0) {
-            resolve(capturedStdoutPerPage)
-          } else {
-            reject(new Error(capturedStderrPerPage))
-          }
-        })
-      })
-
-      // This assumes \f is not used in the PDF content. Checking popper source code (from which
-      // pdftotext is derived), it seems that \f is considered to separate pages.
-      // To mititage any major risk, we filter out empty pages which may be caused by extraneous \f.
-      // From various tests on different PDFs this seems to work well. If we have a really problematic
-      // PDF we can expect that upsert will fail because some chunks sections will have less content
-      // than their prefix.
-      const pages = content.split("\f").filter((page) => page.trim().length > 0)
-
-      return { pages, content }
-    },
-  )
-}
 
 const listUsers = async (
   admin: admin_directory_v1.Admin,
@@ -516,32 +467,6 @@ const downloadPDF = async (
   })
 }
 
-// Function to handle PDF info
-const getPdfInfo = (filePath) => {
-  return new Promise((resolve, reject) => {
-    pdf2text.info(filePath, (err, info) => {
-      if (err) {
-        reject("Error parsing PDF info:")
-      } else {
-        resolve(info)
-      }
-    })
-  })
-}
-
-// Function to handle PDF text extraction
-const getPdfText = (filePath: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    pdf2text.pdfToText(filePath, (err, text) => {
-      if (err) {
-        reject("Error extracting PDF text:")
-      } else {
-        resolve(text)
-      }
-    })
-  })
-}
-
 export const googlePDFsVespa = async (
   client: GoogleClient,
   pdfsMetadata: drive_v3.Schema$File[],
@@ -569,26 +494,25 @@ export const googlePDFsVespa = async (
       console.error("An error occurred while downloading the PDF:", error)
     }
     const pdfPath = path.resolve(__dirname, `../../downloads/${pdf?.name}`)
-    // TODO add proper type here
-    let docs: { pages: any[]; content: string } = []
+    let docs: Document[] = []
     try {
-      docs = await dpdf2text(pdfPath)
+      const loader = new PDFLoader(pdfPath)
+      docs = await loader.load()
     } catch (error) {
       console.error("Error occured while parsing PDF:", error)
     }
-    // const [pdfInfo, pdfText] = await Promise.all([
-    //   getPdfInfo(pdfPath),
-    //   getPdfText(pdfPath),
-    // ])
-    // const loader = new PDFLoader(pdfPath)
-    // const docs = await loader.load()
-    // const docs = pdfText.split("\f").filter((page) => page.trim().length > 0)
 
-    if (!docs) {
-      throw new Error(`Could not get content for file: ${pdf.id}`)
+    if (!docs || docs.length === 0) {
+      console.error(`Could not get content for file: ${pdf.name}. Skipping it`)
+      try {
+        await deleteDocument(pdfPath)
+      } catch (err) {
+        console.error(`Error occured while deleting ${pdf.name}`, err)
+      }
+      continue
     }
 
-    const chunks = docs.pages.flatMap((doc) => chunkDocument(doc))
+    const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
     let chunkMap: Record<string, number[]> = {}
     for (const c of chunks) {
       const { chunk, chunkIndex } = c
@@ -623,7 +547,7 @@ export const googlePDFsVespa = async (
     try {
       await deleteDocument(pdfPath)
     } catch (err) {
-      console.error("Error occured while deleting PDF", err)
+      console.error(`Error occured while deleting ${pdf.name}`, err)
     }
   }
   return pdfsList
