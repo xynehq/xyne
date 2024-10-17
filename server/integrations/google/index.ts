@@ -23,7 +23,6 @@ import {
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
-import { getExtractor } from "@/embedding"
 import { insertDocument, insertUser } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
 import { wsConnections } from "@/server"
@@ -739,7 +738,6 @@ export const googleDocsVespa = async (
   docsMetadata: drive_v3.Schema$File[],
   connectorId: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  const extractor = await getExtractor()
   sendWebsocketMessage(
     `Scanning ${docsMetadata.length} Google Docs`,
     connectorId,
@@ -772,13 +770,9 @@ export const googleDocsVespa = async (
     )
 
     const chunks = chunkDocument(cleanedTextContent)
-    let chunkMap: Record<string, number[]> = {}
-    for (const c of chunks) {
-      const { chunk, chunkIndex } = c
-      chunkMap[chunkIndex] = (
-        await extractor(chunk, { pooling: "mean", normalize: true })
-      ).tolist()[0]
-    }
+
+    // TODO: fix this correctly
+    // @ts-ignore
     docsList.push({
       title: doc.name!,
       url: doc.webViewLink ?? "",
@@ -788,10 +782,7 @@ export const googleDocsVespa = async (
       photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
       ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
       entity: DriveEntity.Docs,
-      chunks: chunks.map((v) => v.chunk),
-      // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
-      chunk_embeddings: chunkMap,
+      chunks: chunks.map((v) => v.chunk), // Chunk embeddings will created within vespa
       permissions: doc.permissions ?? [],
       mimeType: doc.mimeType ?? "",
     })

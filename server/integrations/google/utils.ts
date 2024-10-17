@@ -8,7 +8,6 @@ import {
   postProcessText,
 } from "@/doc"
 import { chunkDocument } from "@/chunks"
-import { getExtractor } from "@/embedding"
 import { Apps, DriveEntity } from "@/shared/types"
 import { JWT } from "google-auth-library"
 import { scopes } from "@/integrations/google/config"
@@ -79,7 +78,6 @@ export const getFileContent = async (
   file: drive_v3.Schema$File,
   entity: DriveEntity,
 ): Promise<VespaFileWithDrivePermission> => {
-  const extractor = await getExtractor()
   console.log("getFileContent")
   const docs = google.docs({ version: "v1", auth: client })
   const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
@@ -104,14 +102,9 @@ export const getFileContent = async (
   )
 
   const chunks = chunkDocument(cleanedTextContent)
-  // let title_embedding = (await extractor(doc.name, { pooling: 'mean', normalize: true })).tolist()[0]
-  let chunkMap: Record<string, number[]> = {}
-  for (const c of chunks) {
-    const { chunk, chunkIndex } = c
-    chunkMap[chunkIndex] = (
-      await extractor(chunk, { pooling: "mean", normalize: true })
-    ).tolist()[0]
-  }
+
+  // TODO: fix this correctly
+  // @ts-ignore
   return {
     title: file.name!,
     url: file.webViewLink ?? "",
@@ -121,10 +114,7 @@ export const getFileContent = async (
     photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
     ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
     entity,
-    chunks: chunks.map((v) => v.chunk),
-    // TODO: fix this correctly
-    // @ts-ignore
-    chunk_embeddings: chunkMap,
+    chunks: chunks.map((v) => v.chunk), // Chunk embeddings will created within vespa
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
   }
@@ -135,6 +125,8 @@ export const driveFileToIndexed = (
 ): VespaFileWithDrivePermission => {
   let entity = mimeTypeMap[file.mimeType!] ?? DriveEntity.Misc
 
+  // TODO: fix this correctly
+  // @ts-ignore
   return {
     title: file.name!,
     url: file.webViewLink ?? "",
@@ -145,9 +137,6 @@ export const driveFileToIndexed = (
     owner: file.owners ? (file.owners[0].displayName ?? "") : "",
     photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
     ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
-    // TODO: fix this correctly
-    // @ts-ignore
-    chunk_embeddings: {},
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
   }
