@@ -453,22 +453,27 @@ const downloadPDF = async (
   }
 
   const dest = fs.createWriteStream(path.join(downloadDir, fileName))
-  const res = await drive.files.get(
-    { fileId: fileId, alt: "media" },
-    { responseType: "stream" },
-  )
-  return new Promise<void>((resolve, reject) => {
-    res.data
-      .on("end", () => {
-        console.log(`Downloaded ${fileName}`)
-        resolve()
-      })
-      .on("error", (err) => {
-        console.error("Error downloading file.")
-        reject(err)
-      })
-      .pipe(dest)
-  })
+  try {
+    const res = await drive.files.get(
+      { fileId: fileId, alt: "media" },
+      { responseType: "stream" },
+    )
+    return new Promise<void>((resolve, reject) => {
+      res.data
+        .on("end", () => {
+          console.log(`Downloaded ${fileName}`)
+          resolve()
+        })
+        .on("error", (err) => {
+          console.error("Error downloading file.")
+          reject(err)
+        })
+        .pipe(dest)
+    })
+  } catch (error) {
+    console.error("Error fetching the file stream:", error)
+    throw error
+  }
 }
 
 export const googlePDFsVespa = async (
