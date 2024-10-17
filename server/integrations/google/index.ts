@@ -66,7 +66,6 @@ import path from "node:path"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
-
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -519,7 +518,6 @@ export const googlePDFsVespa = async (
   pdfsMetadata: drive_v3.Schema$File[],
   connectorId: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  const extractor = await getExtractor()
   sendWebsocketMessage(
     `Scanning ${pdfsMetadata.length} Google PDFs`,
     connectorId,
@@ -560,13 +558,8 @@ export const googlePDFsVespa = async (
     }
 
     const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
-    let chunkMap: Record<string, number[]> = {}
-    for (const c of chunks) {
-      const { chunk, chunkIndex } = c
-      chunkMap[chunkIndex] = (
-        await extractor(chunk, { pooling: "mean", normalize: true })
-      ).tolist()[0]
-    }
+    // TODO: remove ts-ignore and fix correctly
+    // @ts-ignore
     pdfsList.push({
       title: pdf.name!,
       url: pdf.webViewLink ?? "",
@@ -577,9 +570,6 @@ export const googlePDFsVespa = async (
       ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
       entity: DriveEntity.PDF,
       chunks: chunks.map((v) => v.chunk),
-      // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
-      chunk_embeddings: chunkMap,
       permissions: pdf.permissions ?? [],
       mimeType: pdf.mimeType ?? "",
     })
