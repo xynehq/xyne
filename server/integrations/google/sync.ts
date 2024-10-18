@@ -21,11 +21,9 @@ import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   DeleteDocument,
-  fileSchema,
   GetDocument,
   insertDocument,
   UpdateDocumentPermissions,
-  userSchema,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -52,7 +50,7 @@ import {
 } from "./utils"
 import { SyncJobFailed } from "@/errors"
 import { getLogger } from "@/logger"
-import type { VespaFile } from "@/search/types"
+import { fileSchema, userSchema, type VespaFile } from "@/search/types"
 import { insertContact } from "@/integrations/google"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
@@ -241,7 +239,7 @@ export const handleGoogleOAuthChanges = async (
           pageToken: nextPageToken, // Use the nextPageToken for pagination
         })
         contactsToken = response.data.nextSyncToken ?? contactsToken
-        nextPageToken = response.data.nextPageToken ?? nextPageToken
+        nextPageToken = response.data.nextPageToken ?? ""
         if (response.data.connections) {
           let changeStats = await syncContacts(
             peopleService,
@@ -267,7 +265,7 @@ export const handleGoogleOAuthChanges = async (
           sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
         })
         otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
-        nextPageToken = response.data.nextPageToken ?? nextPageToken
+        nextPageToken = response.data.nextPageToken ?? ""
         if (response.data.otherContacts) {
           let changeStats = await syncContacts(
             peopleService,

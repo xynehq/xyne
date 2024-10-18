@@ -1,7 +1,7 @@
 // import { env, pipeline } from '@xenova/transformers';
 // let { pipeline, env } = await import('@xenova/transformers');
 
-import { Apps } from "@/search/types"
+import { Apps, fileSchema, userSchema } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -21,15 +21,14 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
+import type { VespaMail } from "@/integrations/types/gmail"
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
-export const fileSchema = "file" // Replace with your actual schema name
-export const userSchema = "user"
 const NAMESPACE = "namespace" // Replace with your actual namespace
 const CLUSTER = "my_content"
 
-const Logger = getLogger(Subsystem.Search).child({ module: "vespa" })
+const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
 function handleVespaGroupResponse(
   response: VespaSearchResponse,
@@ -113,7 +112,7 @@ export const insertDocument = async (document: VespaFile) => {
     if (response.ok) {
       Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
-      Logger.error(`Error inserting document ${document.docId}: ${data}`)
+      Logger.error(`Error inserting document ${document.docId}`)
     }
   } catch (error) {
     const errMessage = getErrorMessage(error)
@@ -122,6 +121,45 @@ export const insertDocument = async (document: VespaFile) => {
       docId: document.docId,
       cause: error as Error,
       sources: fileSchema,
+    })
+  }
+}
+
+// generic insert method
+export const insert = async (
+  document: VespaUser | VespaFile | VespaMail,
+  schema: string,
+) => {
+  try {
+    const response = await fetch(
+      `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${document.docId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fields: document }),
+      },
+    )
+
+    const data = await response.json()
+
+    if (response.ok) {
+      Logger.info(`Document ${document.docId} inserted successfully`)
+    } else {
+      Logger.error(
+        `Error inserting document ${document.docId} for ${schema} ${data.message}`,
+      )
+    }
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error inserting document ${document.docId}: ${errMessage} ${(error as Error).stack}`,
+    )
+    throw new ErrorInsertingDocument({
+      docId: document.docId,
+      cause: error as Error,
+      sources: schema,
     })
   }
 }
@@ -142,9 +180,9 @@ export const insertUser = async (user: VespaUser) => {
     const data = await response.json()
 
     if (response.ok) {
-      console.log(`Document ${user.docId} inserted successfully:`, data)
+      Logger.info(`Document ${user.docId} inserted successfully:`, data)
     } else {
-      console.error(`Error inserting user ${user.docId}:`, data)
+      Logger.error(`Error inserting user ${user.docId}: ${data}`, data)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -188,7 +226,7 @@ export const autocomplete = async (
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
-  const yqlQuery = `select * from sources file, user
+  const yqlQuery = `select * from sources file, user, mail
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
@@ -207,7 +245,10 @@ export const autocomplete = async (
             or
             (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
             and app contains "${Apps.GoogleWorkspace}")
-        );`
+        )
+        or
+        (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and permissions contains @email);`
 
   const searchPayload = {
     yql: yqlQuery,
@@ -257,7 +298,7 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
   return {
     profile: "default",
     yql: `
-            select * from sources file, user
+            select * from sources file, user, mail
             where ((
                 ({targetHits:${hits}}userInput(@query))
                 or
@@ -275,7 +316,7 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
 const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
   return {
     profile: "default",
-    yql: `select * from sources file, user
+    yql: `select * from sources file, user, mail
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
             or

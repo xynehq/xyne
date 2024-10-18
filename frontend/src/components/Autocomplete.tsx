@@ -2,6 +2,7 @@ import { getIcon } from "@/lib/common"
 import type {
   Autocomplete,
   FileAutocomplete,
+  MailAutocomplete,
   UserAutocomplete,
 } from "shared/types"
 import { ForwardedRef, forwardRef } from "react"
@@ -13,6 +14,17 @@ export const FileAutocompleteElement = ({
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
       <p>{result.title}</p>
+    </div>
+  )
+}
+
+export const MailAutocompleteElement = ({
+  result,
+}: { result: MailAutocomplete }) => {
+  return (
+    <div className="flex items-center">
+      {getIcon(result.app, result.entity)}
+      <p>{result.subject}</p>
     </div>
   )
 }
@@ -52,6 +64,8 @@ export const AutocompleteElement = forwardRef(
           {content}
         </a>
       )
+    } else if (result.type === "mail") {
+      content = <MailAutocompleteElement result={result} />
     } else {
       throw new Error("invalid type")
     }

@@ -1,0 +1,187 @@
+schema mail {
+  document mail {
+
+    # basically the messageId
+    field docId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field threadId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field subject type string {
+      indexing: summary | index
+      index: enable-bm25
+    }
+
+    field chunks type array<string> {
+      indexing: index | summary
+      index {
+        enable-bm25
+      }
+    }
+
+    field timestamp type long {
+      indexing: attribute | summary
+    }
+
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field permissions type array<string> {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field from type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    field to type array<string> {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    field cc type array<string> {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    field bcc type array<string> {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    field mimeType type string {
+      indexing: attribute | summary
+    }
+
+    field attachmentFilenames type array<string> {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    # Define attachments as an array of structured objects
+    # order matters
+    struct attachment {
+      field fileType type string {}
+      field fileSize type long {}
+    }
+
+    field attachments type array<attachment> {
+    }
+  }
+  field chunk_embeddings type tensor<bfloat16>(x[768]) {
+    indexing: guard { input chunks } | embed | attribute | index | summary
+    attribute {
+      distance-metric: angular
+    }
+  }
+  field subject_fuzzy type string {
+    indexing: input subject | index
+    index {
+      enable-bm25
+    }
+    match {
+      gram
+      gram-size: 3
+    }
+  }
+
+  fieldset default {
+    fields: subject, app, entity, chunks, attachmentFilenames
+  }
+
+  fieldset autocomplete {
+    fields: subject, app, entity
+  }
+
+  # Hybrid search rank profile combining BM25 for subject and chunks, and vector search for chunk embeddings
+  rank-profile default {
+    inputs {
+      query(e) tensor<bfloat16>(v[768])  # Query embedding
+      query(alpha) double  # Alpha parameter for hybrid weight
+    }
+
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embeddings)
+    }
+
+    function subject_bm25_score() {
+      expression: bm25(subject)
+    }
+    function attachment_bm25_score() {
+      expression: bm25(attachmentFilenames)
+    }
+
+    # First phase combines BM25 (subject and chunks) and vector similarity (chunks)
+    first-phase {
+      expression: (query(alpha) * chunk_vector_score()) + ((1 - query(alpha)) * (bm25(chunks) + bm25(subject)))
+    }
+
+    # Global phase (optional if more complex reranking is needed)
+    # Note: Ensure the functions are called properly in the expression
+    global-phase {
+      expression {
+        (query(alpha) * normalize_linear(chunk_vector_score)) +
+        ((1 - query(alpha)) * (normalize_linear(bm25(chunks)) + normalize_linear(bm25(subject)) + normalize_linear(attachment_bm25_score)))
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      bm25(subject)
+      bm25(chunks)
+      closeness(field, chunk_embeddings)
+    }
+  }
+
+  document-summary default {
+    summary subject {}
+    summary chunks_summary {
+      bolding: on
+      source: chunks
+    }
+    summary to {}
+    summary cc {}
+    summary bcc {}
+    summary attachments {
+      source: attachments
+    }
+  }
+
+  document-summary autocomplete {
+    summary docId {}
+    summary threadId {}
+    summary subject {}
+    summary app {}
+    summary entity {}
+  }
+
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(subject_fuzzy)
+    }
+    match-features {
+      bm25(subject_fuzzy)
+    }
+  }
+}

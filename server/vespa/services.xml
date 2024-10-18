@@ -13,6 +13,7 @@
         <documents>
             <document type="file" mode="index" />
             <document type="user" mode="index" />
+            <document type="mail" mode="index" />
             <document type="user_query" mode="index" />
         </documents>
         <nodes>

@@ -10,7 +10,9 @@ export const scopes = [
   // "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/contacts.readonly",
   "https://www.googleapis.com/auth/contacts.other.readonly",
-  // "https://www.googleapis.com/auth/gmail.readonly"
+  "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
 export const MAX_GD_PDF_SIZE = 20 // In MB
+export const GoogleDocsConcurrency = 5
+export const GmailConcurrency = 15

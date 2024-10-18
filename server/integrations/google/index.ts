@@ -68,7 +68,10 @@ import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import { MAX_GD_PDF_SIZE } from "@/integrations/google/config"
+import { handleGmailIngestion } from "@/integrations/google/gmail"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+import pLimit from "p-limit"
+import { GoogleDocsConcurrency } from "./config"
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
@@ -330,8 +333,10 @@ export const handleGoogleServiceAccountIngestion = async (
         contactsToken: contactsToken,
         otherContactsToken: otherContactsToken,
       })
-      await insertFilesForUser(jwtClient, userEmail, connector)
-      // insert that user
+      await Promise.all([
+        insertFilesForUser(jwtClient, userEmail, connector),
+        handleGmailIngestion(jwtClient, userEmail),
+      ])
     }
     // insert all the workspace users
     await insertUsersForWorkspace(users)
@@ -899,54 +904,57 @@ export const googleDocsVespa = async (
   const docs = google.docs({ version: "v1", auth: client })
   const total = docsMetadata.length
   let count = 0
-  for (const doc of docsMetadata) {
-    const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-      await docs.documents.get({
-        documentId: doc.id as string,
-      })
-    if (!docResponse || !docResponse.data) {
-      throw new DocsParsingError(
-        `Could not get document content for file: ${doc.id}`,
+  const limit = pLimit(GoogleDocsConcurrency)
+  const docsPromises = docsMetadata.map((doc) =>
+    limit(async () => {
+      const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
+        await docs.documents.get({
+          documentId: doc.id as string,
+        })
+      if (!docResponse || !docResponse.data) {
+        throw new DocsParsingError(
+          `Could not get document content for file: ${doc.id}`,
+        )
+      }
+      const documentContent: docs_v1.Schema$Document = docResponse.data
+
+      const rawTextContent = documentContent?.body?.content
+        ?.map((e) => extractText(documentContent, e))
+        .join("")
+
+      const footnotes = extractFootnotes(documentContent)
+      const headerFooter = extractHeadersAndFooters(documentContent)
+
+      const cleanedTextContent = postProcessText(
+        rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
       )
-    }
-    const documentContent: docs_v1.Schema$Document = docResponse.data
 
-    const rawTextContent = documentContent?.body?.content
-      ?.map((e) => extractText(documentContent, e))
-      .join("")
+      const chunks = chunkDocument(cleanedTextContent)
 
-    const footnotes = extractFootnotes(documentContent)
-    const headerFooter = extractHeadersAndFooters(documentContent)
+      docsList.push({
+        title: doc.name!,
+        url: doc.webViewLink ?? "",
+        app: Apps.GoogleDrive,
+        docId: doc.id!,
+        owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
+        photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
+        ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
+        entity: DriveEntity.Docs,
+        chunks: chunks.map((v) => v.chunk),
+        permissions: doc.permissions ?? [],
+        mimeType: doc.mimeType ?? "",
+      })
+      count += 1
 
-    const cleanedTextContent = postProcessText(
-      rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
-    )
-
-    const chunks = chunkDocument(cleanedTextContent)
-
-    // TODO: fix this correctly
-    // @ts-ignore
-    docsList.push({
-      title: doc.name!,
-      url: doc.webViewLink ?? "",
-      app: Apps.GoogleDrive,
-      docId: doc.id!,
-      owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
-      photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
-      ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
-      entity: DriveEntity.Docs,
-      chunks: chunks.map((v) => v.chunk),
-      permissions: doc.permissions ?? [],
-      mimeType: doc.mimeType ?? "",
-    })
-    count += 1
-
-    if (count % 5 === 0) {
-      sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
-      process.stdout.write(`${Math.floor((count / total) * 100)}`)
-      process.stdout.write("\n")
-    }
-  }
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+    }),
+  )
+  await Promise.all(docsPromises)
+  // }
   return docsList
 }
 

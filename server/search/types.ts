@@ -1,4 +1,7 @@
 import { z } from "zod"
+export const fileSchema = "file" // Replace with your actual schema name
+export const userSchema = "user"
+export const mailSchema = "mail"
 // not using @ because of vite of frontend
 
 export enum Apps {
@@ -6,6 +9,8 @@ export enum Apps {
   GoogleWorkspace = "google-workspace",
   // more granular
   GoogleDrive = "google-drive",
+
+  Gmail = "gmail",
 
   Notion = "notion",
 }
@@ -16,7 +21,15 @@ export enum GooglePeopleEntity {
   AdminDirectory = "AdminDirectory",
 }
 // the vespa schemas
-const Schemas = z.union([z.literal("file"), z.literal("user")])
+const Schemas = z.union([
+  z.literal(fileSchema),
+  z.literal(userSchema),
+  z.literal(mailSchema),
+])
+
+export enum MailEntity {
+  Email = "mail",
+}
 
 export enum DriveEntity {
   Docs = "docs",
@@ -53,6 +66,7 @@ export enum NotionEntity {
 }
 
 export const FileEntitySchema = z.nativeEnum(DriveEntity)
+export const MailEntitySchema = z.nativeEnum(MailEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
@@ -60,9 +74,10 @@ export const entitySchema = z.union([
   PeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
+  MailEntitySchema,
 ])
 
-export type Entity = PeopleEntity | DriveEntity | NotionEntity
+export type Entity = PeopleEntity | DriveEntity | NotionEntity | MailEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -73,23 +88,23 @@ export const defaultVespaFieldsSchema = z.object({
   documentid: z.string(),
 })
 
-export const VespaFileSchema = z
-  .object({
-    docId: z.string(),
-    app: z.nativeEnum(Apps),
-    entity: FileEntitySchema,
-    title: z.string(),
-    url: z.string().nullable(),
-    // we don't want zod to validate this for perf reason
-    chunks: z.array(z.string()),
-    owner: z.string().nullable(),
-    ownerEmail: z.string().nullable(),
-    photoLink: z.string().nullable(),
-    permissions: z.array(z.string()),
-    mimeType: z.string().nullable(),
-    sddocname: z.literal("file"),
-  })
-  .merge(defaultVespaFieldsSchema)
+export const VespaFileSchema = z.object({
+  docId: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: FileEntitySchema,
+  title: z.string(),
+  url: z.string().nullable(),
+  chunks: z.array(z.string()),
+  owner: z.string().nullable(),
+  ownerEmail: z.string().nullable(),
+  photoLink: z.string().nullable(),
+  permissions: z.array(z.string()),
+  mimeType: z.string().nullable(),
+})
+
+export const VespaFileGetSchema = VespaFileSchema.extend({
+  sddocname: z.literal(fileSchema),
+}).merge(defaultVespaFieldsSchema)
 
 export const VespaUserSchema = z
   .object({
@@ -122,13 +137,45 @@ export const VespaUserSchema = z
     clientData: z.array(z.string()).optional(),
     // this only exists for contacts
     owner: z.string().optional(),
-    sddocname: z.literal("user"),
+    sddocname: z.literal(userSchema),
   })
   .merge(defaultVespaFieldsSchema)
 
+// Mail Types
+export const AttachmentSchema = z.object({
+  fileType: z.string(),
+  fileSize: z.number(),
+})
+
+export const MailSchema = z.object({
+  docId: z.string(),
+  threadId: z.string(),
+  subject: z.string(),
+  chunks: z.array(z.string()),
+  timestamp: z.number(),
+  app: z.string(),
+  entity: z.string(),
+  permissions: z.array(z.string()),
+  from: z.string(),
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  bcc: z.array(z.string()),
+  mimeType: z.string(),
+  attachmentFilenames: z.array(z.string()),
+  attachments: z.array(AttachmentSchema),
+})
+export const VespaMailSchema = MailSchema.extend({
+  docId: z.string().min(1),
+})
+
+export const VespaMailGetSchema = VespaMailSchema.extend({
+  sddocname: z.literal("mail"),
+}).merge(defaultVespaFieldsSchema)
+
 export const VespaFieldsSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
-  VespaFileSchema,
+  VespaFileGetSchema,
+  VespaMailGetSchema,
 ])
 
 const VespaResultSchema = z.object({
@@ -195,6 +242,7 @@ const VespaSearchResponseSchema = VespaRootBaseSchema.extend({
 
 export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>
 
+export type VespaFileGet = z.infer<typeof VespaFileGetSchema>
 export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaUser = z.infer<typeof VespaUserSchema>
 
@@ -235,9 +283,21 @@ const VespaAutocompleteUserSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
+const VespaAutocompleteMailSchema = z
+  .object({
+    docId: z.string(),
+    threadId: z.string(),
+    subject: z.string().optional(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    sddocname: Schemas,
+  })
+  .merge(defaultVespaFieldsSchema)
+
 const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteFileSchema,
   VespaAutocompleteUserSchema,
+  VespaAutocompleteMailSchema,
 ])
 
 const VespaAutocompleteFieldsSchema = z
@@ -266,3 +326,25 @@ export type VespaAutocompleteResponse = z.infer<
 >
 export type VespaAutocompleteFile = z.infer<typeof VespaAutocompleteFileSchema>
 export type VespaAutocompleteUser = z.infer<typeof VespaAutocompleteUserSchema>
+export type VespaAutocompleteMail = z.infer<typeof VespaAutocompleteMailSchema>
+
+export type Mail = z.infer<typeof MailSchema>
+export type Attachment = z.infer<typeof AttachmentSchema>
+
+export type VespaMail = z.infer<typeof VespaMailSchema>
+export type VespaMailGet = z.infer<typeof VespaMailGetSchema>
+
+export const MailResponseSchema = VespaMailGetSchema.pick({
+  docId: true,
+  threadId: true,
+  app: true,
+  entity: true,
+  subject: true,
+  from: true,
+})
+  .strip()
+  .extend({
+    type: z.literal("mail"),
+    mimeType: z.string(),
+    chunks_summary: z.array(z.string()).optional(),
+  })

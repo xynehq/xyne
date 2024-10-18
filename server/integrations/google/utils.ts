@@ -77,7 +77,6 @@ export const getFile = async (
   client: GoogleClient,
   fileId: string,
 ): Promise<drive_v3.Schema$File> => {
-  console.log("getFile")
   const drive = google.drive({ version: "v3", auth: client })
   const fields =
     "id, webViewLink, createdTime, modifiedTime, name, size, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
@@ -94,7 +93,6 @@ export const getFileContent = async (
   file: drive_v3.Schema$File,
   entity: DriveEntity,
 ): Promise<VespaFileWithDrivePermission> => {
-  console.log("getFileContent")
   const docs = google.docs({ version: "v1", auth: client })
   const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
     await docs.documents.get({

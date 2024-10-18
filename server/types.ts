@@ -196,6 +196,7 @@ export enum Subsystem {
   Ingest = "Ingest",
   Integrations = "Integrations",
   Search = "Search",
+  Vespa = "Vespa",
   Db = "Db",
   Api = "Api",
   Utils = "Utils",
