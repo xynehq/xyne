@@ -103,7 +103,10 @@ const handleGoogleDriveChange = async (
           stats.summary += `user lost permission for doc: ${docId}\n`
         }
       } catch (err) {
-        Logger.error(`Trying to delete document that doesnt exist in Vespa`, err)
+        Logger.error(
+          `Trying to delete document that doesnt exist in Vespa`,
+          err,
+        )
       }
     }
   } else if (docId && change.file) {

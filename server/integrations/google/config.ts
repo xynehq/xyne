@@ -13,4 +13,4 @@ export const scopes = [
   // "https://www.googleapis.com/auth/gmail.readonly"
 ]
 
-export const MAX_GD_PDF_SIZE = 20; // In MB
+export const MAX_GD_PDF_SIZE = 20 // In MB
