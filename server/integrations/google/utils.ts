@@ -1,5 +1,5 @@
 import type { GaxiosResponse } from "gaxios"
-import { type GoogleClient, type GoogleServiceAccount } from "@/types"
+import { Subsystem, type GoogleClient, type GoogleServiceAccount } from "@/types"
 import { docs_v1, drive_v3, google } from "googleapis"
 import {
   extractFootnotes,
@@ -10,8 +10,15 @@ import {
 import { chunkDocument } from "@/chunks"
 import { Apps, DriveEntity } from "@/shared/types"
 import { JWT } from "google-auth-library"
-import { scopes } from "@/integrations/google/config"
+import { MAX_GD_PDF_SIZE, scopes } from "@/integrations/google/config"
 import type { VespaFileWithDrivePermission } from "@/search/types"
+import { DeleteDocumentError, DownloadDocumentError } from "@/errors"
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import type { Document } from "@langchain/core/documents"
+import { deleteDocument, downloadDir, downloadPDF } from "."
+import { getLogger } from "@/logger"
+
+const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 // TODO: make it even more extensive
 export const mimeTypeMap: Record<string, DriveEntity> = {
@@ -54,6 +61,7 @@ export enum DriveMime {
 
 export const MimeMapForContent: Record<string, boolean> = {
   [DriveMime.Docs]: true,
+  [DriveMime.PDF]: true,
 }
 
 export class DocsParsingError extends Error {}
@@ -65,7 +73,7 @@ export const getFile = async (
   console.log("getFile")
   const drive = google.drive({ version: "v3", auth: client })
   const fields =
-    "id, webViewLink, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
+    "id, webViewLink, createdTime, modifiedTime, name, size, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
   const file: GaxiosResponse<drive_v3.Schema$File> = await drive.files.get({
     fileId,
     fields,
@@ -118,6 +126,90 @@ export const getFileContent = async (
     chunks: chunks.map((v) => v.chunk),
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
+  }
+}
+
+export const getPDFContent = async (
+  client: GoogleClient,
+  pdfFile: drive_v3.Schema$File,
+  entity: DriveEntity,
+): Promise<VespaFileWithDrivePermission | void> => {
+  const drive = google.drive({ version: "v3", auth: client })
+  const pdfSizeInMB = parseInt(pdfFile.size!) / (1024 * 1024)
+  // Ignore the PDF files larger than Max PDF Size
+  if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
+    Logger.error(`Ignoring ${pdfFile.name} as its more than 20 MB`)
+    return
+  }
+  try {
+    await downloadPDF(drive, pdfFile.id!, pdfFile.name!)
+  } catch (error) {
+    Logger.error(
+      `Error downloading file: ${error} ${(error as Error).stack}`,
+      error,
+    )
+    throw new DownloadDocumentError({
+      message: "Error in the catch of downloading file",
+      cause: error as Error,
+      integration: Apps.GoogleDrive,
+      entity: DriveEntity.PDF,
+    })
+  }
+  const pdfPath = `${downloadDir}/${pdfFile?.name}`
+  let docs: Document[] = []
+  try {
+    const loader = new PDFLoader(pdfPath)
+    docs = await loader.load()
+  } catch (error) {
+    Logger.error(
+      `Error parsing file: ${error} ${(error as Error).stack}`,
+      error,
+    )
+  }
+
+  if (!docs || docs.length === 0) {
+    Logger.error(`Could not get content for file: ${pdfFile.name}. Skipping it`)
+    try {
+      await deleteDocument(pdfPath)
+    } catch (err) {
+      Logger.error(`Error occured while deleting ${pdfFile.name}`, err)
+      throw new DeleteDocumentError({
+        message: "Error in the catch of deleting file",
+        cause: err as Error,
+        integration: Apps.GoogleDrive,
+        entity: DriveEntity.PDF,
+      })
+    }
+    return
+  }
+
+  const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+  // Deleting document
+  try {
+    await deleteDocument(pdfPath)
+  } catch (err) {
+    Logger.error(`Error occured while deleting ${pdfFile.name}`, err)
+    throw new DeleteDocumentError({
+      message: "Error in the catch of deleting file",
+      cause: err as Error,
+      integration: Apps.GoogleDrive,
+      entity: DriveEntity.PDF,
+    })
+  }
+  // TODO: remove ts-ignore and fix correctly
+  // @ts-ignore
+  return {
+    title: pdfFile.name!,
+    url: pdfFile.webViewLink ?? "",
+    app: Apps.GoogleDrive,
+    docId: pdfFile.id!,
+    owner: pdfFile.owners ? (pdfFile.owners[0].displayName ?? "") : "",
+    photoLink: pdfFile.owners ? (pdfFile.owners[0].photoLink ?? "") : "",
+    ownerEmail: pdfFile.owners ? (pdfFile.owners[0]?.emailAddress ?? "") : "",
+    entity,
+    chunks: chunks.map((v) => v.chunk),
+    permissions: pdfFile.permissions ?? [],
+    mimeType: pdfFile.mimeType ?? "",
   }
 }
 

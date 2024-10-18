@@ -43,8 +43,10 @@ import { getErrorMessage } from "@/utils"
 import {
   createJwtClient,
   driveFileToIndexed,
+  DriveMime,
   getFile,
   getFileContent,
+  getPDFContent,
   MimeMapForContent,
   toPermissionsList,
 } from "./utils"
@@ -74,8 +76,8 @@ const handleGoogleDriveChange = async (
   // remove item
   if (change.removed) {
     if (docId) {
-      const doc = await GetDocument(docId)
-      if (doc.fields.sddocname === fileSchema) {
+      try {
+        const doc = await GetDocument(docId)
         const permissions = (doc.fields as VespaFile).permissions
         if (permissions.length === 1) {
           // remove it
@@ -100,6 +102,8 @@ const handleGoogleDriveChange = async (
           stats.updated += 1
           stats.summary += `user lost permission for doc: ${docId}\n`
         }
+      } catch (err) {
+        Logger.error(`Trying to delete document that doesnt exist in Vespa`, err)
       }
     }
   } else if (docId && change.file) {
@@ -121,13 +125,19 @@ const handleGoogleDriveChange = async (
     // for these mime types we fetch the file
     // with the full processing
     let vespaData
+    // TODO: make this generic
     if (file.mimeType && MimeMapForContent[file.mimeType]) {
-      // TODO: make this generic
-      vespaData = await getFileContent(client, file, DriveEntity.Docs)
-      if (doc) {
-        stats.summary += `updated the content for ${docId}\n`
-      } else {
+      if (file.mimeType === DriveMime.PDF) {
+        console.log("Running getPDFContent now...........")
+        vespaData = await getPDFContent(client, file, DriveEntity.PDF)
         stats.summary += `indexed new content ${docId}\n`
+      } else {
+        vespaData = await getFileContent(client, file, DriveEntity.Docs)
+        if (doc) {
+          stats.summary += `updated the content for ${docId}\n`
+        } else {
+          stats.summary += `indexed new content ${docId}\n`
+        }
       }
     } else {
       if (doc) {
@@ -138,8 +148,8 @@ const handleGoogleDriveChange = async (
       // just update it as is
       vespaData = driveFileToIndexed(file)
     }
-    vespaData.permissions = toPermissionsList(vespaData.permissions, email)
     if (vespaData) {
+      vespaData.permissions = toPermissionsList(vespaData.permissions, email)
       insertDocument(vespaData)
     }
   } else if (change.driveId) {

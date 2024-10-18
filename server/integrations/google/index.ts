@@ -404,7 +404,7 @@ export const handleGoogleServiceAccountIngestion = async (
   }
 }
 
-const deleteDocument = async (filePath: string) => {
+export const deleteDocument = async (filePath: string) => {
   try {
     await fileSys.unlink(filePath) // Delete the file at the provided path
     Logger.info(`File at ${filePath} deleted successfully`)
@@ -487,9 +487,9 @@ const insertFilesForUser = async (
   }
 }
 
-const downloadDir = path.resolve(__dirname, "../../downloads")
+export const downloadDir = path.resolve(__dirname, "../../downloads")
 
-const downloadPDF = async (
+export const downloadPDF = async (
   drive: drive_v3.Drive,
   fileId: string,
   fileName: string,
