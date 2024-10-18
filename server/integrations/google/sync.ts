@@ -131,7 +131,6 @@ const handleGoogleDriveChange = async (
     // TODO: make this generic
     if (file.mimeType && MimeMapForContent[file.mimeType]) {
       if (file.mimeType === DriveMime.PDF) {
-        console.log("Running getPDFContent now...........")
         vespaData = await getPDFContent(client, file, DriveEntity.PDF)
         stats.summary += `indexed new content ${docId}\n`
       } else {
