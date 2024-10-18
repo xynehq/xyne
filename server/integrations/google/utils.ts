@@ -1,5 +1,9 @@
 import type { GaxiosResponse } from "gaxios"
-import { Subsystem, type GoogleClient, type GoogleServiceAccount } from "@/types"
+import {
+  Subsystem,
+  type GoogleClient,
+  type GoogleServiceAccount,
+} from "@/types"
 import { docs_v1, drive_v3, google } from "googleapis"
 import {
   extractFootnotes,
@@ -17,6 +21,9 @@ import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
 import { deleteDocument, downloadDir, downloadPDF } from "."
 import { getLogger } from "@/logger"
+import type PgBoss from "pg-boss"
+import fs from "node:fs/promises"
+import path from "path"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -274,4 +281,38 @@ export const createJwtClient = (
     scopes,
     subject,
   })
+}
+
+export const checkDownloadsFolder = async (
+  boss: PgBoss,
+  job: PgBoss.Job<any>,
+) => {
+  Logger.info("Checking downloads folder...")
+
+  try {
+    // Read the contents of the downloads directory
+    const files = await fs.readdir(downloadDir)
+
+    if (files.length === 0) {
+      Logger.info("No files found in downloads folder.")
+      return
+    }
+
+    Logger.info(
+      `Found ${files.length} file(s) in downloads folder. Deleting...`,
+    )
+
+    // Loop through each file and delete it
+    for (const file of files) {
+      const filePath = path.join(downloadDir, file)
+      await fs.unlink(filePath)
+      Logger.info(`Deleted file: ${filePath}`)
+    }
+
+    Logger.info("All files deleted successfully.")
+  } catch (error) {
+    Logger.error(
+      `Error checking or deleting files in downloads folder: ${error}`,
+    )
+  }
 }

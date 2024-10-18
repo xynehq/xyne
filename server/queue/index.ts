@@ -11,6 +11,7 @@ import {
   handleGoogleOAuthChanges,
   handleGoogleServiceAccountChanges,
 } from "@/integrations/google/sync"
+import { checkDownloadsFolder } from "@/integrations/google/utils"
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss(url)
@@ -19,10 +20,12 @@ export const SaaSQueue = `ingestion-${ConnectorType.SaaS}`
 export const SyncOAuthSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.OAuth}`
 export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`
 export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`
+export const CheckDownloadsFolderQueue = `check-downloads-folder`
 
 const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
+const EveryWeek = `0 0 */7 * *`
 
 export const init = async () => {
   await boss.start()
@@ -30,6 +33,7 @@ export const init = async () => {
   await boss.createQueue(SyncOAuthSaaSQueue)
   await boss.createQueue(SyncServiceAccountSaaSQueue)
   await boss.createQueue(SyncGoogleWorkspace)
+  await boss.createQueue(CheckDownloadsFolderQueue)
   await initWorkers()
 }
 
@@ -64,6 +68,13 @@ const initWorkers = async () => {
 
   // do not retry
   await boss.schedule(SyncOAuthSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
+  await boss.schedule(
+    CheckDownloadsFolderQueue,
+    EveryWeek,
+    {},
+    { retryLimit: 0 },
+  )
+
   await setupServiceAccountCronjobs()
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
@@ -78,6 +89,10 @@ const initWorkers = async () => {
 
   await boss.work(SyncGoogleWorkspace, async ([job]) => {
     await syncGoogleWorkspace(boss, job)
+  })
+
+  await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
+    await checkDownloadsFolder(boss, job)
   })
 }
 
