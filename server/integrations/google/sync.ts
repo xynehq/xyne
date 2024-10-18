@@ -77,7 +77,7 @@ const handleGoogleDriveChange = async (
   if (change.removed) {
     if (docId) {
       try {
-        const doc = await GetDocument(docId)
+        const doc = await GetDocument(docId, fileSchema)
         const permissions = (doc.fields as VespaFile).permissions
         if (permissions.length === 1) {
           // remove it
@@ -116,7 +116,7 @@ const handleGoogleDriveChange = async (
     // or user got access to a completely new doc
     let doc = null
     try {
-      doc = await GetDocument(docId)
+      doc = await GetDocument(docId, fileSchema)
       stats.updated += 1
     } catch (e) {
       // catch the 404 error

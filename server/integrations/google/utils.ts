@@ -150,73 +150,49 @@ export const getPDFContent = async (
   }
   try {
     await downloadPDF(drive, pdfFile.id!, pdfFile.name!)
+    const pdfPath = `${downloadDir}/${pdfFile?.name}`
+    let docs: Document[] = []
+
+    const loader = new PDFLoader(pdfPath)
+    docs = await loader.load()
+
+    if (!docs || docs.length === 0) {
+      Logger.error(
+        `Could not get content for file: ${pdfFile.name}. Skipping it`,
+      )
+      await deleteDocument(pdfPath)
+      return
+    }
+
+    const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+    // Deleting document
+    await deleteDocument(pdfPath)
+    // TODO: remove ts-ignore and fix correctly
+    // @ts-ignore
+    return {
+      title: pdfFile.name!,
+      url: pdfFile.webViewLink ?? "",
+      app: Apps.GoogleDrive,
+      docId: pdfFile.id!,
+      owner: pdfFile.owners ? (pdfFile.owners[0].displayName ?? "") : "",
+      photoLink: pdfFile.owners ? (pdfFile.owners[0].photoLink ?? "") : "",
+      ownerEmail: pdfFile.owners ? (pdfFile.owners[0]?.emailAddress ?? "") : "",
+      entity,
+      chunks: chunks.map((v) => v.chunk),
+      permissions: pdfFile.permissions ?? [],
+      mimeType: pdfFile.mimeType ?? "",
+    }
   } catch (error) {
     Logger.error(
-      `Error downloading file: ${error} ${(error as Error).stack}`,
+      `Error getting file: ${error} ${(error as Error).stack}`,
       error,
     )
     throw new DownloadDocumentError({
-      message: "Error in the catch of downloading file",
+      message: "Error in getting file content",
       cause: error as Error,
       integration: Apps.GoogleDrive,
       entity: DriveEntity.PDF,
     })
-  }
-  const pdfPath = `${downloadDir}/${pdfFile?.name}`
-  let docs: Document[] = []
-  try {
-    const loader = new PDFLoader(pdfPath)
-    docs = await loader.load()
-  } catch (error) {
-    Logger.error(
-      `Error parsing file: ${error} ${(error as Error).stack}`,
-      error,
-    )
-  }
-
-  if (!docs || docs.length === 0) {
-    Logger.error(`Could not get content for file: ${pdfFile.name}. Skipping it`)
-    try {
-      await deleteDocument(pdfPath)
-    } catch (err) {
-      Logger.error(`Error occured while deleting ${pdfFile.name}`, err)
-      throw new DeleteDocumentError({
-        message: "Error in the catch of deleting file",
-        cause: err as Error,
-        integration: Apps.GoogleDrive,
-        entity: DriveEntity.PDF,
-      })
-    }
-    return
-  }
-
-  const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
-  // Deleting document
-  try {
-    await deleteDocument(pdfPath)
-  } catch (err) {
-    Logger.error(`Error occured while deleting ${pdfFile.name}`, err)
-    throw new DeleteDocumentError({
-      message: "Error in the catch of deleting file",
-      cause: err as Error,
-      integration: Apps.GoogleDrive,
-      entity: DriveEntity.PDF,
-    })
-  }
-  // TODO: remove ts-ignore and fix correctly
-  // @ts-ignore
-  return {
-    title: pdfFile.name!,
-    url: pdfFile.webViewLink ?? "",
-    app: Apps.GoogleDrive,
-    docId: pdfFile.id!,
-    owner: pdfFile.owners ? (pdfFile.owners[0].displayName ?? "") : "",
-    photoLink: pdfFile.owners ? (pdfFile.owners[0].photoLink ?? "") : "",
-    ownerEmail: pdfFile.owners ? (pdfFile.owners[0]?.emailAddress ?? "") : "",
-    entity,
-    chunks: chunks.map((v) => v.chunk),
-    permissions: pdfFile.permissions ?? [],
-    mimeType: pdfFile.mimeType ?? "",
   }
 }
 
