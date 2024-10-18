@@ -59,7 +59,15 @@ import {
   ContactListingError,
   ContactMappingError,
   ErrorInsertingDocument,
+  DeleteDocumentError,
+  DownloadDocumentError,
 } from "@/errors"
+import fs from "node:fs"
+import path from "node:path"
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import fileSys from "node:fs/promises"
+import type { Document } from "@langchain/core/documents"
+import { MAX_GD_PDF_SIZE } from "@/integrations/google/config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -396,6 +404,24 @@ export const handleGoogleServiceAccountIngestion = async (
   }
 }
 
+export const deleteDocument = async (filePath: string) => {
+  try {
+    await fileSys.unlink(filePath) // Delete the file at the provided path
+    Logger.info(`File at ${filePath} deleted successfully`)
+  } catch (err) {
+    Logger.error(
+      `Error deleting file at ${filePath}: ${err} ${(err as Error).stack}`,
+      err,
+    )
+    throw new DeleteDocumentError({
+      message: "Error in the catch of deleting file",
+      cause: err as Error,
+      integration: Apps.GoogleDrive,
+      entity: DriveEntity.PDF,
+    })
+  }
+}
+
 const insertFilesForUser = async (
   googleClient: GoogleClient,
   userEmail: string,
@@ -416,17 +442,27 @@ const insertFilesForUser = async (
     const googleDocsMetadata = fileMetadata.filter(
       (v) => v.mimeType === DriveMime.Docs,
     )
+    const googlePDFsMetadata = fileMetadata.filter(
+      (v) => v.mimeType === DriveMime.PDF,
+    )
     const googleSheetsMetadata = fileMetadata.filter(
       (v) => v.mimeType === DriveMime.Sheets,
     )
     const googleSlidesMetadata = fileMetadata.filter(
       (v) => v.mimeType === DriveMime.Slides,
     )
-    const rest = fileMetadata.filter((v) => v.mimeType !== DriveMime.Docs)
+    const rest = fileMetadata.filter(
+      (v) => v.mimeType !== DriveMime.Docs && v.mimeType !== DriveMime.PDF,
+    )
 
     const documents: VespaFileWithDrivePermission[] = await googleDocsVespa(
       googleClient,
       googleDocsMetadata,
+      connector.externalId,
+    )
+    const pdfDocuments: VespaFileWithDrivePermission[] = await googlePDFsVespa(
+      googleClient,
+      googlePDFsMetadata,
       connector.externalId,
     )
     const driveFiles: VespaFileWithDrivePermission[] =
@@ -436,6 +472,7 @@ const insertFilesForUser = async (
     let allFiles: VespaFileWithDrivePermission[] = [
       ...driveFiles,
       ...documents,
+      ...pdfDocuments,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
       return v
@@ -448,6 +485,122 @@ const insertFilesForUser = async (
     const errorMessage = getErrorMessage(error)
     Logger.error("Could not insert files for user: ", errorMessage)
   }
+}
+
+export const downloadDir = path.resolve(__dirname, "../../downloads")
+
+export const downloadPDF = async (
+  drive: drive_v3.Drive,
+  fileId: string,
+  fileName: string,
+) => {
+  if (!fs.existsSync(downloadDir)) {
+    // Check if the downloads directory exists, create it if it doesn't
+    fs.mkdirSync(downloadDir, { recursive: true })
+  }
+
+  const dest = fs.createWriteStream(path.join(downloadDir, fileName))
+  try {
+    const res = await drive.files.get(
+      { fileId: fileId, alt: "media" },
+      { responseType: "stream" },
+    )
+    return new Promise<void>((resolve, reject) => {
+      res.data
+        .on("end", () => {
+          Logger.info(`Downloaded ${fileName}`)
+          resolve()
+        })
+        .on("error", async (err) => {
+          Logger.error("Error downloading file.", err)
+          // Deleting document here if downloading fails
+          await deleteDocument(`${downloadDir}/${fileName}`)
+          reject(err)
+        })
+        .pipe(dest)
+    })
+  } catch (error) {
+    Logger.error(`Error fetching the file stream:`, error)
+    throw new DownloadDocumentError({
+      message: "Error in downloading file",
+      cause: error as Error,
+      integration: Apps.GoogleDrive,
+      entity: DriveEntity.PDF,
+    })
+  }
+}
+
+export const googlePDFsVespa = async (
+  client: GoogleClient,
+  pdfsMetadata: drive_v3.Schema$File[],
+  connectorId: string,
+): Promise<VespaFileWithDrivePermission[]> => {
+  sendWebsocketMessage(
+    `Scanning ${pdfsMetadata.length} Google PDFs`,
+    connectorId,
+  )
+  const pdfsList: VespaFileWithDrivePermission[] = []
+  const drive = google.drive({ version: "v3", auth: client })
+  const total = pdfsMetadata.length
+  let count = 0
+  for (const pdf of pdfsMetadata) {
+    const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
+    // Ignore the PDF files larger than Max PDF Size
+    if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
+      Logger.info(`Ignoring ${pdf.name} as its more than 20 MB`)
+      continue
+    }
+    try {
+      await downloadPDF(drive, pdf.id!, pdf.name!)
+      const pdfPath = `${downloadDir}/${pdf?.name}`
+      let docs: Document[] = []
+
+      const loader = new PDFLoader(pdfPath)
+      docs = await loader.load()
+
+      if (!docs || docs.length === 0) {
+        Logger.error(`Could not get content for file: ${pdf.name}. Skipping it`)
+        await deleteDocument(pdfPath)
+        continue
+      }
+      const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+      // TODO: remove ts-ignore and fix correctly
+      // @ts-ignore
+      pdfsList.push({
+        title: pdf.name!,
+        url: pdf.webViewLink ?? "",
+        app: Apps.GoogleDrive,
+        docId: pdf.id!,
+        owner: pdf.owners ? (pdf.owners[0].displayName ?? "") : "",
+        photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
+        ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
+        entity: DriveEntity.PDF,
+        chunks: chunks.map((v) => v.chunk),
+        permissions: pdf.permissions ?? [],
+        mimeType: pdf.mimeType ?? "",
+      })
+      count += 1
+
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google PDFs scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+      await deleteDocument(pdfPath)
+    } catch (error) {
+      Logger.error(
+        `Error getting PDF files: ${error} ${(error as Error).stack}`,
+        error,
+      )
+      throw new DownloadDocumentError({
+        message: "Error in the catch of getting PDF files",
+        cause: error as Error,
+        integration: Apps.GoogleDrive,
+        entity: DriveEntity.PDF,
+      })
+    }
+  }
+  return pdfsList
 }
 
 type Org = { endDate: null | string }
@@ -714,7 +867,7 @@ export const listFiles = async (
           ? { q: "mimeType='application/vnd.google-apps.document'" }
           : {}),
         fields:
-          "nextPageToken, files(id, webViewLink, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
+          "nextPageToken, files(id, webViewLink, size, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
         ...(nextPageToken ? { pageToken: nextPageToken } : {}),
       })
 

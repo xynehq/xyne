@@ -328,3 +328,25 @@ export class ConnectorNotCreated extends DbError {
     this.name = this.constructor.name
   }
 }
+
+export class DownloadDocumentError extends IntegrationsError {
+  constructor(integrationErrOpts: IntegrationErrorPartialMsgOpts) {
+    let { message } = integrationErrOpts
+    if (!message) {
+      message = `Error while downloading document`
+    }
+    super({ ...integrationErrOpts, message })
+    this.name = this.constructor.name
+  }
+}
+
+export class DeleteDocumentError extends IntegrationsError {
+  constructor(integrationErrOpts: IntegrationErrorPartialMsgOpts) {
+    let { message } = integrationErrOpts
+    if (!message) {
+      message = `Error while deleting document`
+    }
+    super({ ...integrationErrOpts, message })
+    this.name = this.constructor.name
+  }
+}

@@ -445,8 +445,11 @@ const getDocumentCount = async () => {
   }
 }
 
-export const GetDocument = async (docId: string): Promise<VespaResult> => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`
+export const GetDocument = async (
+  docId: string,
+  schema: string,
+): Promise<VespaResult> => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
     const response = await fetch(url, {
       method: "GET",

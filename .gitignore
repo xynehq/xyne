@@ -186,7 +186,10 @@ vespa-logs
 
 # models
 server/Xenova
-
+server/vespa/models/
 
 # fe
 .mjs
+
+# downloads like pdfs
+server/downloads
