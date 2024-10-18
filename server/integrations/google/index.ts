@@ -514,17 +514,7 @@ export const downloadPDF = async (
         .on("error", async (err) => {
           Logger.error("Error downloading file.", err)
           // Deleting document here if downloading fails
-          try {
-            await deleteDocument(`${downloadDir}/${fileName}`)
-          } catch (err) {
-            Logger.error(`Error occured while deleting ${fileName}`, err)
-            throw new DeleteDocumentError({
-              message: "Error in the catch of deleting file",
-              cause: err as Error,
-              integration: Apps.GoogleDrive,
-              entity: DriveEntity.PDF,
-            })
-          }
+          await deleteDocument(`${downloadDir}/${fileName}`)
           reject(err)
         })
         .pipe(dest)
@@ -562,77 +552,49 @@ export const googlePDFsVespa = async (
     }
     try {
       await downloadPDF(drive, pdf.id!, pdf.name!)
+      const pdfPath = `${downloadDir}/${pdf?.name}`
+      let docs: Document[] = []
+
+      const loader = new PDFLoader(pdfPath)
+      docs = await loader.load()
+
+      if (!docs || docs.length === 0) {
+        Logger.error(`Could not get content for file: ${pdf.name}. Skipping it`)
+        await deleteDocument(pdfPath)
+        continue
+      }
+      const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+      // TODO: remove ts-ignore and fix correctly
+      // @ts-ignore
+      pdfsList.push({
+        title: pdf.name!,
+        url: pdf.webViewLink ?? "",
+        app: Apps.GoogleDrive,
+        docId: pdf.id!,
+        owner: pdf.owners ? (pdf.owners[0].displayName ?? "") : "",
+        photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
+        ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
+        entity: DriveEntity.PDF,
+        chunks: chunks.map((v) => v.chunk),
+        permissions: pdf.permissions ?? [],
+        mimeType: pdf.mimeType ?? "",
+      })
+      count += 1
+
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google PDFs scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+      await deleteDocument(pdfPath)
     } catch (error) {
       Logger.error(
-        `Error downloading file: ${error} ${(error as Error).stack}`,
+        `Error getting PDF files: ${error} ${(error as Error).stack}`,
         error,
       )
       throw new DownloadDocumentError({
-        message: "Error in the catch of downloading file",
+        message: "Error in the catch of getting PDF files",
         cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: DriveEntity.PDF,
-      })
-    }
-    const pdfPath = `${downloadDir}/${pdf?.name}`
-    let docs: Document[] = []
-    try {
-      const loader = new PDFLoader(pdfPath)
-      docs = await loader.load()
-    } catch (error) {
-      Logger.error(
-        `Error parsing file: ${error} ${(error as Error).stack}`,
-        error,
-      )
-    }
-
-    if (!docs || docs.length === 0) {
-      Logger.error(`Could not get content for file: ${pdf.name}. Skipping it`)
-      try {
-        await deleteDocument(pdfPath)
-      } catch (err) {
-        Logger.error(`Error occured while deleting ${pdf.name}`, err)
-        throw new DeleteDocumentError({
-          message: "Error in the catch of deleting file",
-          cause: err as Error,
-          integration: Apps.GoogleDrive,
-          entity: DriveEntity.PDF,
-        })
-      }
-      continue
-    }
-
-    const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
-    // TODO: remove ts-ignore and fix correctly
-    // @ts-ignore
-    pdfsList.push({
-      title: pdf.name!,
-      url: pdf.webViewLink ?? "",
-      app: Apps.GoogleDrive,
-      docId: pdf.id!,
-      owner: pdf.owners ? (pdf.owners[0].displayName ?? "") : "",
-      photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
-      ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
-      entity: DriveEntity.PDF,
-      chunks: chunks.map((v) => v.chunk),
-      permissions: pdf.permissions ?? [],
-      mimeType: pdf.mimeType ?? "",
-    })
-    count += 1
-
-    if (count % 5 === 0) {
-      sendWebsocketMessage(`${count} Google PDFs scanned`, connectorId)
-      process.stdout.write(`${Math.floor((count / total) * 100)}`)
-      process.stdout.write("\n")
-    }
-    // Deleting document
-    try {
-      await deleteDocument(pdfPath)
-    } catch (err) {
-      Logger.error(`Error occured while deleting ${pdf.name}`, err)
-      throw new DeleteDocumentError({
-        message: "Error in the catch of deleting file",
-        cause: err as Error,
         integration: Apps.GoogleDrive,
         entity: DriveEntity.PDF,
       })
