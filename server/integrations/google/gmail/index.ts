@@ -94,7 +94,7 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 }
 
 // Function to parse and validate email data
-const parseMail = (email: gmail_v1.Schema$Message): Mail => {
+export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)

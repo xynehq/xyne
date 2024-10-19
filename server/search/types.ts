@@ -102,9 +102,15 @@ export const VespaFileSchema = z.object({
   mimeType: z.string().nullable(),
 })
 
-export const VespaFileGetSchema = VespaFileSchema.extend({
+export const VespaFileSearchSchema = VespaFileSchema.extend({
   sddocname: z.literal(fileSchema),
 }).merge(defaultVespaFieldsSchema)
+
+// basically GetDocument doesn't return sddocname
+// in search it's always present
+export const VespaFileGetSchema = VespaFileSchema.merge(
+  defaultVespaFieldsSchema,
+)
 
 export const VespaUserSchema = z
   .object({
@@ -168,24 +174,43 @@ export const VespaMailSchema = MailSchema.extend({
   docId: z.string().min(1),
 })
 
-export const VespaMailGetSchema = VespaMailSchema.extend({
+export const VespaMailSearchSchema = VespaMailSchema.extend({
   sddocname: z.literal("mail"),
 }).merge(defaultVespaFieldsSchema)
 
-export const VespaFieldsSchema = z.discriminatedUnion("sddocname", [
+export const VespaMailGetSchema = VespaMailSchema.merge(
+  defaultVespaFieldsSchema,
+)
+
+export const VespaSearchFieldsSchema = z.discriminatedUnion("sddocname", [
+  VespaUserSchema,
+  VespaFileSearchSchema,
+  VespaMailSearchSchema,
+])
+
+export const VespaGetFieldsSchema = z.union([
   VespaUserSchema,
   VespaFileGetSchema,
   VespaMailGetSchema,
 ])
 
-const VespaResultSchema = z.object({
+const VespaSearchResultsSchema = z.object({
   id: z.string(),
   relevance: z.number(),
-  fields: VespaFieldsSchema,
+  fields: VespaSearchFieldsSchema,
   pathId: z.string().optional(),
 })
 
-export type VespaResult = z.infer<typeof VespaResultSchema>
+export type VespaSearchResults = z.infer<typeof VespaSearchResultSchema>
+
+const VespaGetResultSchema = z.object({
+  id: z.string(),
+  relevance: z.number(),
+  fields: VespaSearchFieldsSchema,
+  pathId: z.string().optional(),
+})
+
+export type VespaGetResult = z.infer<typeof VespaGetResultSchema>
 
 const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
   id: z.string(),
@@ -231,7 +256,10 @@ const VespaRootBaseSchema = z.object({
   }),
 })
 
-const VespaSearchResultSchema = z.union([VespaResultSchema, VespaGroupSchema])
+const VespaSearchResultSchema = z.union([
+  VespaSearchResultsSchema,
+  VespaGroupSchema,
+])
 export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>
 
 const VespaSearchResponseSchema = VespaRootBaseSchema.extend({
@@ -243,6 +271,8 @@ const VespaSearchResponseSchema = VespaRootBaseSchema.extend({
 export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>
 
 export type VespaFileGet = z.infer<typeof VespaFileGetSchema>
+export type VespaFileSearch = z.infer<typeof VespaFileSearchSchema>
+export type VespaMailSearch = z.infer<typeof VespaMailSearchSchema>
 export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaUser = z.infer<typeof VespaUserSchema>
 

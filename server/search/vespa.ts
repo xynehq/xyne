@@ -3,9 +3,10 @@ import type {
   VespaAutocompleteResponse,
   VespaFile,
   VespaMail,
-  VespaResult,
+  VespaSearchResult,
   VespaSearchResponse,
   VespaUser,
+  VespaGetResult,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -86,7 +87,7 @@ async function deleteAllDocuments() {
     Logger.error(`Error deleting documents:, ${error}`)
     throw new ErrorDeletingDocuments({
       cause: error as Error,
-      sources: "file",
+      sources: AllSources,
     })
   }
 }
@@ -371,7 +372,7 @@ export const groupVespaSearch = async (
     Logger.error(`Error performing search:, ${error}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: fileSchema,
+      sources: AllSources,
     })
   }
 }
@@ -433,7 +434,7 @@ export const searchVespa = async (
     Logger.error(`Error performing search:, ${error}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: fileSchema,
+      sources: AllSources,
     })
   }
 }
@@ -489,7 +490,7 @@ const getDocumentCount = async () => {
 export const GetDocument = async (
   docId: string,
   schema: string,
-): Promise<VespaResult> => {
+): Promise<VespaGetResult> => {
   const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
     const response = await fetch(url, {
@@ -514,16 +515,17 @@ export const GetDocument = async (
     throw new ErrorGettingDocument({
       docId,
       cause: error as Error,
-      sources: fileSchema,
+      sources: schema,
     })
   }
 }
 
 export const UpdateDocumentPermissions = async (
+  schema: string,
   docId: string,
   updatedPermissions: string[],
 ) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
     const response = await fetch(url, {
       method: "PUT",
@@ -539,22 +541,26 @@ export const UpdateDocumentPermissions = async (
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(
-        `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
-      )
+      throw new ErrorUpdatingDocument({
+        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
+        docId,
+        sources: schema,
+      })
     }
 
-    Logger.info(`Successfully updated permissions for document ${docId}.`)
+    Logger.info(
+      `Successfully updated permissions in schema ${schema} for document ${docId}.`,
+    )
   } catch (error) {
     const errMessage = getErrorMessage(error)
     Logger.error(
-      `Error updating permissions for document ${docId}:`,
+      `Error updating permissions in schema ${schema} for document ${docId}:`,
       errMessage,
     )
     throw new ErrorUpdatingDocument({
       docId,
       cause: error as Error,
-      sources: fileSchema,
+      sources: schema,
     })
   }
 }

@@ -10,22 +10,19 @@ import {
   type VespaAutocompleteMail,
   type VespaAutocompleteResponse,
   type VespaAutocompleteUser,
-  type VespaFile,
-  type VespaFileGet,
   type VespaSearchResponse,
   type VespaSearchResult,
   type VespaUser,
   MailResponseSchema,
-  type VespaMailGet,
+  type VespaFileSearch,
+  type VespaMailSearch,
 } from "@/search/types"
 import {
   AutocompleteFileSchema,
   AutocompleteMailSchema,
   AutocompleteUserSchema,
   FileResponseSchema,
-  SearchResultsSchema,
   UserResponseSchema,
-  type Autocomplete,
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -40,13 +37,13 @@ export const VespaSearchResponseToSearchResult = (
     count: root.fields?.totalCount ?? 0,
     results: root.children.map((child: VespaSearchResult) => {
       // Narrow down the type based on `sddocname`
-      if ((child.fields as VespaFileGet).sddocname === fileSchema) {
+      if ((child.fields as VespaFileSearch).sddocname === fileSchema) {
         ;(child.fields as any).type = fileSchema
         return FileResponseSchema.parse(child.fields)
       } else if ((child.fields as VespaUser).sddocname === userSchema) {
         ;(child.fields as any).type = userSchema
         return UserResponseSchema.parse(child.fields)
-      } else if ((child.fields as VespaMailGet).sddocname === mailSchema) {
+      } else if ((child.fields as VespaMailSearch).sddocname === mailSchema) {
         ;(child.fields as any).type = mailSchema
         return MailResponseSchema.parse(child.fields)
       } else {
