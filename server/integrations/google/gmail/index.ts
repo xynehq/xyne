@@ -14,12 +14,13 @@ const Logger = getLogger(Subsystem.Integrations)
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
-) => {
+): Promise<string> => {
   const gmail = google.gmail({ version: "v1", auth: client })
   let totalMails = 0
   let nextPageToken = ""
 
   const limit = pLimit(GmailConcurrency)
+  let historyId: string = ""
   do {
     const resp = await gmail.users.messages.list({
       userId: "me",
@@ -29,6 +30,22 @@ export const handleGmailIngestion = async (
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
       totalMails += resp.data.messages.length
+      const firstMessage = resp.data.messages.shift()
+      // we want to set the history Id for the first message itself
+      // to prevent any discrepency
+      if (firstMessage) {
+        const firstMsgResp = await gmail.users.messages.get({
+          userId: "me",
+          id: firstMessage.id!,
+          format: "full",
+        })
+
+        if (firstMsgResp.data.historyId) {
+          historyId = firstMsgResp.data.historyId
+          Logger.info(`History ID set from the first message: ${historyId}`)
+        }
+        await insert(parseMail(firstMsgResp.data), mailSchema)
+      }
       const messagePromises = resp.data.messages.map((message) =>
         limit(async () => {
           const msgResp = await gmail.users.messages.get({
@@ -36,9 +53,9 @@ export const handleGmailIngestion = async (
             id: message.id!,
             format: "full",
           })
-          const fullMessage = msgResp.data
-          const parsedEmail: Mail = parseMail(fullMessage)
-          await insert(parsedEmail, mailSchema)
+          if (!historyId) {
+          }
+          await insert(parseMail(msgResp.data), mailSchema)
         }),
       )
       // Process messages in parallel for each page
@@ -46,6 +63,7 @@ export const handleGmailIngestion = async (
     }
   } while (nextPageToken)
   Logger.info(`Inserted ${totalMails} mails`)
+  return historyId
 }
 
 const extractEmailAddresses = (headerValue: string): string[] => {

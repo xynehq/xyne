@@ -1,10 +1,8 @@
-// import { env, pipeline } from '@xenova/transformers';
-// let { pipeline, env } = await import('@xenova/transformers');
-
-import { Apps, fileSchema, userSchema } from "@/search/types"
+import { Apps, fileSchema, mailSchema, userSchema } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
+  VespaMail,
   VespaResult,
   VespaSearchResponse,
   VespaUser,
@@ -21,7 +19,6 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
-import type { VespaMail } from "@/integrations/types/gmail"
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -218,6 +215,8 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
+const AllSources = [fileSchema, userSchema, mailSchema].join(", ")
+
 export const autocomplete = async (
   query: string,
   email: string,
@@ -226,7 +225,7 @@ export const autocomplete = async (
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
-  const yqlQuery = `select * from sources file, user, mail
+  const yqlQuery = `select * from sources ${AllSources}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
@@ -298,7 +297,7 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
   return {
     profile: "default",
     yql: `
-            select * from sources file, user, mail
+            select * from sources ${AllSources}
             where ((
                 ({targetHits:${hits}}userInput(@query))
                 or
@@ -310,13 +309,14 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
             or
             (({targetHits:${hits}}userInput(@query)) and owner contains @email)
         `,
+    // the last 2 are due to the 2 types of users, contacts and admin directory present in the same schema
   }
 }
 
 const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
   return {
     profile: "default",
-    yql: `select * from sources file, user, mail
+    yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
             or

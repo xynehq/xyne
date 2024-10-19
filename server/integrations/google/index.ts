@@ -229,7 +229,10 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    await insertFilesForUser(oauth2Client, userEmail, connector)
+    const [_, historyId] = await Promise.all([
+      insertFilesForUser(oauth2Client, userEmail, connector),
+      handleGmailIngestion(oauth2Client, userEmail),
+    ])
     const changeTokens = {
       driveToken: startPageToken,
       contactsToken,
@@ -251,6 +254,17 @@ export const handleGoogleOAuthIngestion = async (
         connectorId: connector.id,
         authType: AuthType.OAuth,
         config: changeTokens,
+        email: userEmail,
+        type: SyncCron.ChangeToken,
+        status: SyncJobStatus.NotStarted,
+      })
+      await insertSyncJob(trx, {
+        workspaceId: connector.workspaceId,
+        workspaceExternalId: connector.workspaceExternalId,
+        app: Apps.Gmail,
+        connectorId: connector.id,
+        authType: AuthType.OAuth,
+        config: { historyId, lastSyncedAt: new Date().toISOString() },
         email: userEmail,
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
@@ -286,6 +300,8 @@ type IngestionMetadata = {
   driveToken: string
   contactsToken: string
   otherContactsToken: string
+  // gmail
+  historyId: string
 }
 
 // we make 2 sync jobs
@@ -326,16 +342,17 @@ export const handleGoogleServiceAccountIngestion = async (
         `${((index + 1) / users.length) * 100}% user's data is connected`,
         connector.externalId,
       )
-      ingestionMetadata.push({
-        email: userEmail,
-        driveToken: startPageToken,
-        contactsToken: contactsToken,
-        otherContactsToken: otherContactsToken,
-      })
-      await Promise.all([
+      const [_, historyId] = await Promise.all([
         insertFilesForUser(jwtClient, userEmail, connector),
         handleGmailIngestion(jwtClient, userEmail),
       ])
+      ingestionMetadata.push({
+        email: userEmail,
+        driveToken: startPageToken,
+        contactsToken,
+        otherContactsToken,
+        historyId,
+      })
     }
     // insert all the workspace users
     await insertUsersForWorkspace(users)
@@ -346,7 +363,9 @@ export const handleGoogleServiceAccountIngestion = async (
         driveToken,
         contactsToken,
         otherContactsToken,
+        historyId,
       } of ingestionMetadata) {
+        // drive and contacts per user
         await insertSyncJob(trx, {
           workspaceId: connector.workspaceId,
           workspaceExternalId: connector.workspaceExternalId,
@@ -363,7 +382,20 @@ export const handleGoogleServiceAccountIngestion = async (
           type: SyncCron.ChangeToken,
           status: SyncJobStatus.NotStarted,
         })
+        // gmail per user
+        await insertSyncJob(trx, {
+          workspaceId: connector.workspaceId,
+          workspaceExternalId: connector.workspaceExternalId,
+          app: Apps.Gmail,
+          connectorId: connector.id,
+          authType: AuthType.ServiceAccount,
+          config: { historyId, updatedAt: new Date().toISOString() },
+          email,
+          type: SyncCron.ChangeToken,
+          status: SyncJobStatus.NotStarted,
+        })
       }
+      // workspace sync for the Org
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
         workspaceExternalId: connector.workspaceExternalId,
@@ -375,6 +407,7 @@ export const handleGoogleServiceAccountIngestion = async (
         type: SyncCron.FullSync,
         status: SyncJobStatus.NotStarted,
       })
+
       await trx
         .update(connectors)
         .set({

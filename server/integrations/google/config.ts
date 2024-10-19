@@ -14,5 +14,5 @@ export const scopes = [
 ]
 
 export const MAX_GD_PDF_SIZE = 20 // In MB
-export const GoogleDocsConcurrency = 5
+export const GoogleDocsConcurrency = 10
 export const GmailConcurrency = 15
