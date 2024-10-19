@@ -1,11 +1,4 @@
-import {
-  admin_directory_v1,
-  admin_reports_v1,
-  docs_v1,
-  drive_v3,
-  google,
-  people_v1,
-} from "googleapis"
+import { drive_v3, google, people_v1 } from "googleapis"
 import {
   Subsystem,
   SyncCron,
@@ -13,10 +6,7 @@ import {
   type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
-  type SaaSJob,
-  type SaaSOAuthJob,
 } from "@/types"
-import { JWT } from "google-auth-library"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {

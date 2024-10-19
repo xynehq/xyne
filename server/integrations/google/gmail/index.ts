@@ -1,21 +1,15 @@
 import { chunkTextByParagraph } from "@/chunks"
 import { EmailParsingError } from "@/errors"
 import { getLogger } from "@/logger"
-import {
-  Apps,
-  mailSchema,
-  type Attachment,
-  type Mail,
-  type VespaMail,
-} from "@/search/types"
-import { insert, insertDocument } from "@/search/vespa"
+import { Apps, mailSchema, type Attachment, type Mail } from "@/search/types"
+import { insert } from "@/search/vespa"
 import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
-const htmlToText = require("html-to-text")
-const Logger = getLogger(Subsystem.Integrations)
 import pLimit from "p-limit"
 import { GmailConcurrency } from "../config"
+const htmlToText = require("html-to-text")
+const Logger = getLogger(Subsystem.Integrations)
 
 export const handleGmailIngestion = async (
   client: GoogleClient,

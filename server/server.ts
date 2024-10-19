@@ -20,13 +20,12 @@ import type { ServerWebSocket } from "bun"
 import { googleAuth } from "@hono/oauth-providers/google"
 import { jwt } from "hono/jwt"
 import type { JwtVariables } from "hono/jwt"
-type Variables = JwtVariables
 import { sign } from "hono/jwt"
 import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
 import { createUser, getUserByEmail } from "@/db/user"
-import { getCookie, setCookie } from "hono/cookie"
+import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
 import { OAuthCallback } from "./api/oauth"
@@ -35,6 +34,7 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "./api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
+type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!

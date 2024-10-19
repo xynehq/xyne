@@ -15,7 +15,6 @@ import { chunkDocument } from "@/chunks"
 import {
   Subsystem,
   SyncCron,
-  type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
   type SaaSJob,
@@ -69,9 +68,9 @@ import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import { MAX_GD_PDF_SIZE } from "@/integrations/google/config"
 import { handleGmailIngestion } from "@/integrations/google/gmail"
-const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
+const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
