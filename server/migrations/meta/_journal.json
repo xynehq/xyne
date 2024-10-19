@@ -36,6 +36,13 @@
       "when": 1728815559482,
       "tag": "0004_great_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1729340901092,
+      "tag": "0005_military_gideon",
+      "breakpoints": true
     }
   ]
 }

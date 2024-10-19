@@ -245,6 +245,17 @@ export class SyncJobFailed extends IntegrationsError {
   }
 }
 
+export class EmailParsingError extends IntegrationsError {
+  constructor(integrationErrOpts: IntegrationErrorPartialMsgOpts) {
+    let { message } = integrationErrOpts
+    if (!message) {
+      message = `Could not parse email`
+    }
+    super({ ...integrationErrOpts, message })
+    this.name = this.constructor.name
+  }
+}
+
 // db/connectors/MissingOauthConnectorCredentials
 export class MissingOauthConnectorCredentialsError extends DbError {
   constructor(errOpts: BaseErrorOpts) {

@@ -16,7 +16,7 @@ import { Apps, DriveEntity } from "@/shared/types"
 import { JWT } from "google-auth-library"
 import { MAX_GD_PDF_SIZE, scopes } from "@/integrations/google/config"
 import type { VespaFileWithDrivePermission } from "@/search/types"
-import { DeleteDocumentError, DownloadDocumentError } from "@/errors"
+import { DownloadDocumentError } from "@/errors"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
 import { deleteDocument, downloadDir, downloadPDF } from "."
@@ -77,7 +77,6 @@ export const getFile = async (
   client: GoogleClient,
   fileId: string,
 ): Promise<drive_v3.Schema$File> => {
-  console.log("getFile")
   const drive = google.drive({ version: "v3", auth: client })
   const fields =
     "id, webViewLink, createdTime, modifiedTime, name, size, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
@@ -94,7 +93,6 @@ export const getFileContent = async (
   file: drive_v3.Schema$File,
   entity: DriveEntity,
 ): Promise<VespaFileWithDrivePermission> => {
-  console.log("getFileContent")
   const docs = google.docs({ version: "v1", auth: client })
   const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
     await docs.documents.get({

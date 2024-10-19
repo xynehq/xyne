@@ -4,6 +4,10 @@ import {
   VespaFileSchema,
   VespaUserSchema,
   Apps,
+  mailSchema,
+  userSchema,
+  fileSchema,
+  MailResponseSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -51,7 +55,7 @@ export enum SyncJobStatus {
 
 export const AutocompleteFileSchema = z
   .object({
-    type: z.literal("file"),
+    type: z.literal(fileSchema),
     relevance: z.number(),
     title: z.string(),
     app: z.nativeEnum(Apps),
@@ -61,7 +65,7 @@ export const AutocompleteFileSchema = z
 
 export const AutocompleteUserSchema = z
   .object({
-    type: z.literal("user"),
+    type: z.literal(userSchema),
     relevance: z.number(),
     // optional due to contacts
     name: z.string().optional(),
@@ -72,9 +76,23 @@ export const AutocompleteUserSchema = z
   })
   .strip()
 
+export const AutocompleteMailSchema = z
+  .object({
+    type: z.literal(mailSchema),
+    relevance: z.number(),
+    // optional due to contacts
+    subject: z.string().optional(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    threadId: z.string().optional(),
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
+  AutocompleteMailSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -88,6 +106,7 @@ export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
 // https://github.com/colinhacks/zod/issues/3536#issuecomment-2374074951
 export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
+export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
 // search result
@@ -103,7 +122,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
   photoLink: true,
 })
   .extend({
-    type: z.literal("file"),
+    type: z.literal(fileSchema),
     chunk: z.string().optional(),
     chunkIndex: z.number().optional(),
     mimeType: z.string(),
@@ -120,13 +139,14 @@ export const UserResponseSchema = VespaUserSchema.pick({
 })
   .strip()
   .extend({
-    type: z.literal("user"),
+    type: z.literal(userSchema),
   })
 
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
   FileResponseSchema,
+  MailResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>

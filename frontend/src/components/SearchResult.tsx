@@ -6,7 +6,7 @@ export const SearchResult = ({
   result,
   index,
 }: { result: SearchResultDiscriminatedUnion; index: number }) => {
-  let content
+  let content = <></>
   if (result.type === "file") {
     content = (
       <div className="flex flex-col mt-2" key={index}>
@@ -44,8 +44,7 @@ export const SearchResult = ({
             .map((summary) => <HighlightedText chunk_summary={summary} />)}
       </div>
     )
-  } else {
-    // user
+  } else if (result.type === "user") {
     content = (
       <div className="flex flex-col mt-2" key={index}>
         <div className="flex items-center justify-start space-x-2">
@@ -64,6 +63,32 @@ export const SearchResult = ({
             {result.name || result.email}
           </a>
         </div>
+      </div>
+    )
+  } else if (result.type === "mail") {
+    content = (
+      <div className="flex flex-col mt-2" key={index}>
+        <div className="flex items-center justify-start space-x-2">
+          <a
+            href={`https://mail.google.com/mail/u/0/#inbox/${result.docId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-blue-800 space-x-2"
+          >
+            {/* TODO: if photoLink doesn't exist then show icon */}
+            {/* <img
+              referrerPolicy="no-referrer"
+              className="mr-2 w-[16px] h-[16px] rounded-full"
+              src={result.photoLink}
+            ></img> */}
+            {result.subject}
+          </a>
+        </div>
+        {result.chunks_summary &&
+          result.chunks_summary?.length &&
+          result.chunks_summary
+            .slice(0, 2)
+            .map((summary) => <HighlightedText chunk_summary={summary} />)}
       </div>
     )
   }

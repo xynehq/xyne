@@ -15,7 +15,6 @@ import { chunkDocument } from "@/chunks"
 import {
   Subsystem,
   SyncCron,
-  type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
   type SaaSJob,
@@ -68,6 +67,9 @@ import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import { MAX_GD_PDF_SIZE } from "@/integrations/google/config"
+import { handleGmailIngestion } from "@/integrations/google/gmail"
+import pLimit from "p-limit"
+import { GoogleDocsConcurrency } from "./config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -227,7 +229,10 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    await insertFilesForUser(oauth2Client, userEmail, connector)
+    const [_, historyId] = await Promise.all([
+      insertFilesForUser(oauth2Client, userEmail, connector),
+      handleGmailIngestion(oauth2Client, userEmail),
+    ])
     const changeTokens = {
       driveToken: startPageToken,
       contactsToken,
@@ -249,6 +254,17 @@ export const handleGoogleOAuthIngestion = async (
         connectorId: connector.id,
         authType: AuthType.OAuth,
         config: changeTokens,
+        email: userEmail,
+        type: SyncCron.ChangeToken,
+        status: SyncJobStatus.NotStarted,
+      })
+      await insertSyncJob(trx, {
+        workspaceId: connector.workspaceId,
+        workspaceExternalId: connector.workspaceExternalId,
+        app: Apps.Gmail,
+        connectorId: connector.id,
+        authType: AuthType.OAuth,
+        config: { historyId, lastSyncedAt: new Date().toISOString() },
         email: userEmail,
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
@@ -284,6 +300,8 @@ type IngestionMetadata = {
   driveToken: string
   contactsToken: string
   otherContactsToken: string
+  // gmail
+  historyId: string
 }
 
 // we make 2 sync jobs
@@ -324,14 +342,17 @@ export const handleGoogleServiceAccountIngestion = async (
         `${((index + 1) / users.length) * 100}% user's data is connected`,
         connector.externalId,
       )
+      const [_, historyId] = await Promise.all([
+        insertFilesForUser(jwtClient, userEmail, connector),
+        handleGmailIngestion(jwtClient, userEmail),
+      ])
       ingestionMetadata.push({
         email: userEmail,
         driveToken: startPageToken,
-        contactsToken: contactsToken,
-        otherContactsToken: otherContactsToken,
+        contactsToken,
+        otherContactsToken,
+        historyId,
       })
-      await insertFilesForUser(jwtClient, userEmail, connector)
-      // insert that user
     }
     // insert all the workspace users
     await insertUsersForWorkspace(users)
@@ -342,7 +363,9 @@ export const handleGoogleServiceAccountIngestion = async (
         driveToken,
         contactsToken,
         otherContactsToken,
+        historyId,
       } of ingestionMetadata) {
+        // drive and contacts per user
         await insertSyncJob(trx, {
           workspaceId: connector.workspaceId,
           workspaceExternalId: connector.workspaceExternalId,
@@ -359,7 +382,20 @@ export const handleGoogleServiceAccountIngestion = async (
           type: SyncCron.ChangeToken,
           status: SyncJobStatus.NotStarted,
         })
+        // gmail per user
+        await insertSyncJob(trx, {
+          workspaceId: connector.workspaceId,
+          workspaceExternalId: connector.workspaceExternalId,
+          app: Apps.Gmail,
+          connectorId: connector.id,
+          authType: AuthType.ServiceAccount,
+          config: { historyId, updatedAt: new Date().toISOString() },
+          email,
+          type: SyncCron.ChangeToken,
+          status: SyncJobStatus.NotStarted,
+        })
       }
+      // workspace sync for the Org
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
         workspaceExternalId: connector.workspaceExternalId,
@@ -371,6 +407,7 @@ export const handleGoogleServiceAccountIngestion = async (
         type: SyncCron.FullSync,
         status: SyncJobStatus.NotStarted,
       })
+
       await trx
         .update(connectors)
         .set({
@@ -483,7 +520,9 @@ const insertFilesForUser = async (
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error("Could not insert files for user: ", errorMessage)
+    Logger.error(
+      `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
+    )
   }
 }
 
@@ -854,7 +893,6 @@ const insertContactsToVespa = async (
 
 export const listFiles = async (
   client: GoogleClient,
-  onlyDocs: boolean = false,
 ): Promise<drive_v3.Schema$File[]> => {
   const drive = google.drive({ version: "v3", auth: client })
   let nextPageToken = null
@@ -862,10 +900,13 @@ export const listFiles = async (
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await drive.files.list({
+        // anyone who uses Google AI Studio, AI Studio creates a folder
+        // and all the pdf's they upload on it is part of this folder
+        // these can be quite large and for now we can just avoid it
+        // this does not guarantee that this folder is only created by AI studio
+        // so that edge case is not handled
+        q: "trashed = false and name != 'Google AI Studio' and not 'Google AI Studio' in parents",
         pageSize: 100,
-        ...(onlyDocs
-          ? { q: "mimeType='application/vnd.google-apps.document'" }
-          : {}),
         fields:
           "nextPageToken, files(id, webViewLink, size, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
         ...(nextPageToken ? { pageToken: nextPageToken } : {}),
@@ -899,54 +940,57 @@ export const googleDocsVespa = async (
   const docs = google.docs({ version: "v1", auth: client })
   const total = docsMetadata.length
   let count = 0
-  for (const doc of docsMetadata) {
-    const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-      await docs.documents.get({
-        documentId: doc.id as string,
-      })
-    if (!docResponse || !docResponse.data) {
-      throw new DocsParsingError(
-        `Could not get document content for file: ${doc.id}`,
+  const limit = pLimit(GoogleDocsConcurrency)
+  const docsPromises = docsMetadata.map((doc) =>
+    limit(async () => {
+      const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
+        await docs.documents.get({
+          documentId: doc.id as string,
+        })
+      if (!docResponse || !docResponse.data) {
+        throw new DocsParsingError(
+          `Could not get document content for file: ${doc.id}`,
+        )
+      }
+      const documentContent: docs_v1.Schema$Document = docResponse.data
+
+      const rawTextContent = documentContent?.body?.content
+        ?.map((e) => extractText(documentContent, e))
+        .join("")
+
+      const footnotes = extractFootnotes(documentContent)
+      const headerFooter = extractHeadersAndFooters(documentContent)
+
+      const cleanedTextContent = postProcessText(
+        rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
       )
-    }
-    const documentContent: docs_v1.Schema$Document = docResponse.data
 
-    const rawTextContent = documentContent?.body?.content
-      ?.map((e) => extractText(documentContent, e))
-      .join("")
+      const chunks = chunkDocument(cleanedTextContent)
 
-    const footnotes = extractFootnotes(documentContent)
-    const headerFooter = extractHeadersAndFooters(documentContent)
+      docsList.push({
+        title: doc.name!,
+        url: doc.webViewLink ?? "",
+        app: Apps.GoogleDrive,
+        docId: doc.id!,
+        owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
+        photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
+        ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
+        entity: DriveEntity.Docs,
+        chunks: chunks.map((v) => v.chunk),
+        permissions: doc.permissions ?? [],
+        mimeType: doc.mimeType ?? "",
+      })
+      count += 1
 
-    const cleanedTextContent = postProcessText(
-      rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
-    )
-
-    const chunks = chunkDocument(cleanedTextContent)
-
-    // TODO: fix this correctly
-    // @ts-ignore
-    docsList.push({
-      title: doc.name!,
-      url: doc.webViewLink ?? "",
-      app: Apps.GoogleDrive,
-      docId: doc.id!,
-      owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
-      photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
-      ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
-      entity: DriveEntity.Docs,
-      chunks: chunks.map((v) => v.chunk),
-      permissions: doc.permissions ?? [],
-      mimeType: doc.mimeType ?? "",
-    })
-    count += 1
-
-    if (count % 5 === 0) {
-      sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
-      process.stdout.write(`${Math.floor((count / total) * 100)}`)
-      process.stdout.write("\n")
-    }
-  }
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+    }),
+  )
+  await Promise.all(docsPromises)
+  // }
   return docsList
 }
 

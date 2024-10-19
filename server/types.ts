@@ -3,7 +3,7 @@ import { z } from "zod"
 import { Apps, AuthType } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
-import type { GoogleTokens, Notion } from "arctic"
+import type { GoogleTokens } from "arctic"
 import { JWT, type OAuth2Client } from "google-auth-library"
 
 // type GoogleContacts = people_v1.Schema$Person
@@ -125,14 +125,23 @@ const DefaultTokenSchema = z.object({
 
 // Google Drive and Contact change token
 // clubbing drive, contact and other contact tokens
-const GoogleChangeTokenSchema = z.object({
+const GoogleDriveChangeTokenSchema = z.object({
   driveToken: z.string(),
   contactsToken: z.string(),
   otherContactsToken: z.string(),
   lastSyncedAt: z.coerce.date(),
 })
 
-const ChangeTokenSchema = z.union([DefaultTokenSchema, GoogleChangeTokenSchema])
+const GmailChangeTokenSchema = z.object({
+  historyId: z.string(),
+  lastSyncedAt: z.coerce.date(),
+})
+
+const ChangeTokenSchema = z.union([
+  DefaultTokenSchema,
+  GoogleDriveChangeTokenSchema,
+  GmailChangeTokenSchema,
+])
 
 // Define UpdatedAtVal schema
 const UpdatedAtValSchema = z.object({
@@ -146,7 +155,8 @@ export const SyncConfigSchema = z.union([ChangeTokenSchema, UpdatedAtValSchema])
 export type SyncConfig = z.infer<typeof SyncConfigSchema>
 
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>
-export type GoogleChangeToken = z.infer<typeof GoogleChangeTokenSchema>
+export type GoogleChangeToken = z.infer<typeof GoogleDriveChangeTokenSchema>
+export type GmailChangeToken = z.infer<typeof GmailChangeTokenSchema>
 
 namespace Google {
   export const DriveFileSchema = z.object({
@@ -196,6 +206,7 @@ export enum Subsystem {
   Ingest = "Ingest",
   Integrations = "Integrations",
   Search = "Search",
+  Vespa = "Vespa",
   Db = "Db",
   Api = "Api",
   Utils = "Utils",

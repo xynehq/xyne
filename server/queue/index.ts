@@ -26,6 +26,7 @@ const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
 const EveryWeek = `0 0 */7 * *`
+const EveryMin = `*/1 * * * *`
 
 export const init = async () => {
   await boss.start()

@@ -1,23 +1,28 @@
 // module contains all the transformations
 // from vespa to the user accepted types
 
-import type {
-  VespaAutocomplete,
-  VespaAutocompleteFile,
-  VespaAutocompleteResponse,
-  VespaAutocompleteUser,
-  VespaFile,
-  VespaSearchResponse,
-  VespaSearchResult,
-  VespaUser,
+import {
+  fileSchema,
+  mailSchema,
+  userSchema,
+  type VespaAutocomplete,
+  type VespaAutocompleteFile,
+  type VespaAutocompleteMail,
+  type VespaAutocompleteResponse,
+  type VespaAutocompleteUser,
+  type VespaSearchResponse,
+  type VespaSearchResult,
+  type VespaUser,
+  MailResponseSchema,
+  type VespaFileSearch,
+  type VespaMailSearch,
 } from "@/search/types"
 import {
   AutocompleteFileSchema,
+  AutocompleteMailSchema,
   AutocompleteUserSchema,
   FileResponseSchema,
-  SearchResultsSchema,
   UserResponseSchema,
-  type Autocomplete,
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -32,12 +37,15 @@ export const VespaSearchResponseToSearchResult = (
     count: root.fields?.totalCount ?? 0,
     results: root.children.map((child: VespaSearchResult) => {
       // Narrow down the type based on `sddocname`
-      if ((child.fields as VespaFile).sddocname === "file") {
-        ;(child.fields as any).type = "file"
+      if ((child.fields as VespaFileSearch).sddocname === fileSchema) {
+        ;(child.fields as any).type = fileSchema
         return FileResponseSchema.parse(child.fields)
-      } else if ((child.fields as VespaUser).sddocname === "user") {
-        ;(child.fields as any).type = "user"
+      } else if ((child.fields as VespaUser).sddocname === userSchema) {
+        ;(child.fields as any).type = userSchema
         return UserResponseSchema.parse(child.fields)
+      } else if ((child.fields as VespaMailSearch).sddocname === mailSchema) {
+        ;(child.fields as any).type = mailSchema
+        return MailResponseSchema.parse(child.fields)
       } else {
         throw new Error(
           `Unknown schema type: ${(child.fields as any)?.sddocname}`,
@@ -57,14 +65,22 @@ export const VespaAutocompleteResponseToResult = (
   return {
     results: root.children.map((child: VespaAutocomplete) => {
       // Narrow down the type based on `sddocname`
-      if ((child.fields as VespaAutocompleteFile).sddocname === "file") {
-        ;(child.fields as any).type = "file"
+      if ((child.fields as VespaAutocompleteFile).sddocname === fileSchema) {
+        ;(child.fields as any).type = fileSchema
         ;(child.fields as any).relevance = child.relevance
         return AutocompleteFileSchema.parse(child.fields)
-      } else if ((child.fields as VespaAutocompleteUser).sddocname === "user") {
-        ;(child.fields as any).type = "user"
+      } else if (
+        (child.fields as VespaAutocompleteUser).sddocname === userSchema
+      ) {
+        ;(child.fields as any).type = userSchema
         ;(child.fields as any).relevance = child.relevance
         return AutocompleteUserSchema.parse(child.fields)
+      } else if (
+        (child.fields as VespaAutocompleteMail).sddocname === mailSchema
+      ) {
+        ;(child.fields as any).type = mailSchema
+        ;(child.fields as any).relevance = child.relevance
+        return AutocompleteMailSchema.parse(child.fields)
       } else {
         throw new Error(
           `Unknown schema type: ${(child.fields as any)?.sddocname}`,

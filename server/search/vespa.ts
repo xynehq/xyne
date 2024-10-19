@@ -1,13 +1,12 @@
-// import { env, pipeline } from '@xenova/transformers';
-// let { pipeline, env } = await import('@xenova/transformers');
-
-import { Apps } from "@/search/types"
+import { Apps, fileSchema, mailSchema, userSchema } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
-  VespaResult,
+  VespaMail,
+  VespaSearchResult,
   VespaSearchResponse,
   VespaUser,
+  VespaGetResult,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -24,12 +23,10 @@ import {
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
-export const fileSchema = "file" // Replace with your actual schema name
-export const userSchema = "user"
 const NAMESPACE = "namespace" // Replace with your actual namespace
 const CLUSTER = "my_content"
 
-const Logger = getLogger(Subsystem.Search).child({ module: "vespa" })
+const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
 function handleVespaGroupResponse(
   response: VespaSearchResponse,
@@ -90,7 +87,7 @@ async function deleteAllDocuments() {
     Logger.error(`Error deleting documents:, ${error}`)
     throw new ErrorDeletingDocuments({
       cause: error as Error,
-      sources: "file",
+      sources: AllSources,
     })
   }
 }
@@ -113,7 +110,7 @@ export const insertDocument = async (document: VespaFile) => {
     if (response.ok) {
       Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
-      Logger.error(`Error inserting document ${document.docId}: ${data}`)
+      Logger.error(`Error inserting document ${document.docId}`)
     }
   } catch (error) {
     const errMessage = getErrorMessage(error)
@@ -122,6 +119,49 @@ export const insertDocument = async (document: VespaFile) => {
       docId: document.docId,
       cause: error as Error,
       sources: fileSchema,
+    })
+  }
+}
+
+// generic insert method
+export const insert = async (
+  document: VespaUser | VespaFile | VespaMail,
+  schema: string,
+) => {
+  try {
+    const response = await fetch(
+      `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${document.docId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fields: document }),
+      },
+    )
+
+    const data = await response.json()
+
+    if (response.ok) {
+      Logger.info(`Document ${document.docId} inserted successfully`)
+    } else {
+      const errorText = await response.text()
+      Logger.error(
+        `Error inserting document ${document.docId} for ${schema} ${data.message}`,
+      )
+      throw new Error(
+        `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error inserting document ${document.docId}: ${errMessage} ${(error as Error).stack}`,
+    )
+    throw new ErrorInsertingDocument({
+      docId: document.docId,
+      cause: error as Error,
+      sources: schema,
     })
   }
 }
@@ -142,9 +182,9 @@ export const insertUser = async (user: VespaUser) => {
     const data = await response.json()
 
     if (response.ok) {
-      console.log(`Document ${user.docId} inserted successfully:`, data)
+      Logger.info(`Document ${user.docId} inserted successfully:`, data)
     } else {
-      console.error(`Error inserting user ${user.docId}:`, data)
+      Logger.error(`Error inserting user ${user.docId}: ${data}`, data)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -180,6 +220,8 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
+const AllSources = [fileSchema, userSchema, mailSchema].join(", ")
+
 export const autocomplete = async (
   query: string,
   email: string,
@@ -188,7 +230,7 @@ export const autocomplete = async (
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
-  const yqlQuery = `select * from sources file, user
+  const yqlQuery = `select * from sources ${AllSources}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
@@ -207,7 +249,10 @@ export const autocomplete = async (
             or
             (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
             and app contains "${Apps.GoogleWorkspace}")
-        );`
+        )
+        or
+        (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and permissions contains @email);`
 
   const searchPayload = {
     yql: yqlQuery,
@@ -257,7 +302,7 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
   return {
     profile: "default",
     yql: `
-            select * from sources file, user
+            select * from sources ${AllSources}
             where ((
                 ({targetHits:${hits}}userInput(@query))
                 or
@@ -269,13 +314,14 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
             or
             (({targetHits:${hits}}userInput(@query)) and owner contains @email)
         `,
+    // the last 2 are due to the 2 types of users, contacts and admin directory present in the same schema
   }
 }
 
 const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
   return {
     profile: "default",
-    yql: `select * from sources file, user
+    yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
             or
@@ -330,7 +376,7 @@ export const groupVespaSearch = async (
     Logger.error(`Error performing search:, ${error}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: fileSchema,
+      sources: AllSources,
     })
   }
 }
@@ -392,7 +438,7 @@ export const searchVespa = async (
     Logger.error(`Error performing search:, ${error}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: fileSchema,
+      sources: AllSources,
     })
   }
 }
@@ -448,7 +494,7 @@ const getDocumentCount = async () => {
 export const GetDocument = async (
   docId: string,
   schema: string,
-): Promise<VespaResult> => {
+): Promise<VespaGetResult> => {
   const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
     const response = await fetch(url, {
@@ -473,16 +519,17 @@ export const GetDocument = async (
     throw new ErrorGettingDocument({
       docId,
       cause: error as Error,
-      sources: fileSchema,
+      sources: schema,
     })
   }
 }
 
 export const UpdateDocumentPermissions = async (
+  schema: string,
   docId: string,
   updatedPermissions: string[],
 ) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${docId}`
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
     const response = await fetch(url, {
       method: "PUT",
@@ -498,22 +545,26 @@ export const UpdateDocumentPermissions = async (
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(
-        `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
-      )
+      throw new ErrorUpdatingDocument({
+        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
+        docId,
+        sources: schema,
+      })
     }
 
-    Logger.info(`Successfully updated permissions for document ${docId}.`)
+    Logger.info(
+      `Successfully updated permissions in schema ${schema} for document ${docId}.`,
+    )
   } catch (error) {
     const errMessage = getErrorMessage(error)
     Logger.error(
-      `Error updating permissions for document ${docId}:`,
+      `Error updating permissions in schema ${schema} for document ${docId}:`,
       errMessage,
     )
     throw new ErrorUpdatingDocument({
       docId,
       cause: error as Error,
-      sources: fileSchema,
+      sources: schema,
     })
   }
 }

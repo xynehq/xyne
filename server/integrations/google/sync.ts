@@ -1,31 +1,21 @@
-import {
-  admin_directory_v1,
-  admin_reports_v1,
-  docs_v1,
-  drive_v3,
-  google,
-  people_v1,
-} from "googleapis"
+import { drive_v3, gmail_v1, google, people_v1 } from "googleapis"
 import {
   Subsystem,
   SyncCron,
   type ChangeToken,
+  type GmailChangeToken,
   type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
-  type SaaSJob,
-  type SaaSOAuthJob,
 } from "@/types"
-import { JWT } from "google-auth-library"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   DeleteDocument,
-  fileSchema,
   GetDocument,
+  insert,
   insertDocument,
   UpdateDocumentPermissions,
-  userSchema,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -52,8 +42,15 @@ import {
 } from "./utils"
 import { SyncJobFailed } from "@/errors"
 import { getLogger } from "@/logger"
-import type { VespaFile } from "@/search/types"
+import {
+  fileSchema,
+  mailSchema,
+  userSchema,
+  type VespaFile,
+  type VespaMail,
+} from "@/search/types"
 import { insertContact } from "@/integrations/google"
+import { parseMail } from "./gmail"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -98,7 +95,7 @@ const handleGoogleDriveChange = async (
         } else {
           // remove our user's permission from the email
           const newPermissions = permissions.filter((v) => v !== email)
-          await UpdateDocumentPermissions(docId, newPermissions)
+          await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
           stats.updated += 1
           stats.summary += `user lost permission for doc: ${docId}\n`
         }
@@ -175,6 +172,8 @@ const contactKeys = [
   "userDefined",
 ]
 
+// TODO: check early, if new change token is same as last
+// return early
 export const handleGoogleOAuthChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -241,7 +240,7 @@ export const handleGoogleOAuthChanges = async (
           pageToken: nextPageToken, // Use the nextPageToken for pagination
         })
         contactsToken = response.data.nextSyncToken ?? contactsToken
-        nextPageToken = response.data.nextPageToken ?? nextPageToken
+        nextPageToken = response.data.nextPageToken ?? ""
         if (response.data.connections) {
           let changeStats = await syncContacts(
             peopleService,
@@ -267,7 +266,7 @@ export const handleGoogleOAuthChanges = async (
           sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
         })
         otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
-        nextPageToken = response.data.nextPageToken ?? nextPageToken
+        nextPageToken = response.data.nextPageToken ?? ""
         if (response.data.otherContacts) {
           let changeStats = await syncContacts(
             peopleService,
@@ -316,7 +315,9 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
           })
         })
-        Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
+        Logger.info(
+          `Changes successfully synced for Drive: ${JSON.stringify(stats)}`,
+        )
       } else {
         Logger.info(`No changes to sync`)
       }
@@ -353,6 +354,167 @@ export const handleGoogleOAuthChanges = async (
       })
     }
   }
+
+  const gmailSyncJobs = await getAppSyncJobs(db, Apps.Gmail, AuthType.OAuth)
+  let stats = newStats()
+  for (const syncJob of gmailSyncJobs) {
+    try {
+      // flag to know if there were any updates
+      const connector = await getOAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+      const user = await getUserById(db, connector.userId)
+      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauth2Client = new google.auth.OAuth2()
+      let config: GmailChangeToken = syncJob.config as GmailChangeToken
+      // we have guarantee that when we started this job access Token at least
+      // hand one hour, we should increase this time
+      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      const gmail = google.gmail({ version: "v1", auth: oauth2Client })
+
+      let { historyId, stats, changesExist } = await handleGmailChanges(
+        gmail,
+        config.historyId,
+        syncJob.id,
+        syncJob.email,
+      )
+
+      if (changesExist) {
+        // update the change token
+        config.historyId = historyId
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+          // make it compatible with sync history config type
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: stats.added,
+            dataDeleted: stats.removed,
+            dataUpdated: stats.updated,
+            authType: AuthType.OAuth,
+            summary: { description: stats.summary },
+            errorMessage: "",
+            app: Apps.Gmail,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+        Logger.info(
+          `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
+        )
+      } else {
+        Logger.info(`No Gmail changes to sync`)
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        `Could not successfully complete Oauth sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+      const config: GmailChangeToken = syncJob.config as GmailChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.OAuth,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.Gmail,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+      throw new SyncJobFailed({
+        message: "Could not complete sync job",
+        cause: error as Error,
+        integration: Apps.Gmail,
+        entity: "",
+      })
+    }
+  }
+}
+
+const handleGmailChanges = async (
+  gmail: gmail_v1.Gmail,
+  historyId: string,
+  syncJobId: number,
+  userEmail: string,
+): Promise<{
+  historyId: string
+  stats: ChangeStats
+  changesExist: boolean
+}> => {
+  let changesExist = false
+  const stats = newStats()
+  let nextPageToken = ""
+  let newHistoryId = ""
+  do {
+    const res = await gmail.users.history.list({
+      userId: "me",
+      startHistoryId: historyId,
+      maxResults: 100,
+      pageToken: nextPageToken,
+    })
+    newHistoryId = res.data.historyId ?? historyId
+    // if nothing has changed, then return early
+    if (newHistoryId === historyId) {
+      return { stats, historyId, changesExist }
+    }
+    if (res.data.history) {
+      for (const history of res.data.history) {
+        if (history.messagesAdded) {
+          for (const { message } of history.messagesAdded) {
+            const msgResp = await gmail.users.messages.get({
+              userId: "me",
+              id: message?.id!, // The message ID from history
+              format: "full", // To get the full message content
+            })
+            await insert(parseMail(msgResp.data), mailSchema)
+            stats.added += 1
+            changesExist = true
+          }
+        } else if (history.messagesDeleted) {
+          for (const { message } of history.messagesDeleted) {
+            const mailMsg = await GetDocument(message?.id!, mailSchema)
+            const permissions = (mailMsg.fields as VespaMail).permissions
+            if (permissions.length === 1) {
+              await DeleteDocument(message?.id!, mailSchema)
+            } else {
+              const newPermissions = permissions.filter((v) => v !== userEmail)
+              await UpdateDocumentPermissions(
+                mailSchema,
+                message?.id!,
+                newPermissions,
+              )
+            }
+            stats.removed += 1
+            changesExist = true
+          }
+        } else {
+          Logger.warn(
+            `Invalid history: ${history.id} for syncJob: ${syncJobId}`,
+          )
+        }
+      }
+    }
+  } while (nextPageToken)
+  return { historyId: newHistoryId, stats, changesExist }
 }
 
 const syncContacts = async (
@@ -412,7 +574,6 @@ export const handleGoogleServiceAccountChanges = async (
       const serviceAccountKey: GoogleServiceAccount = JSON.parse(
         connector.credentials as string,
       )
-      // const subject: string = connector.subject as string
       let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
       const driveClient = google.drive({ version: "v3", auth: jwtClient })
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
@@ -570,6 +731,101 @@ export const handleGoogleServiceAccountChanges = async (
         message: "Could not complete sync job",
         cause: error as Error,
         integration: Apps.GoogleDrive,
+        entity: "",
+      })
+    }
+  }
+  const gmailSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.Gmail,
+    AuthType.ServiceAccount,
+  )
+  let stats = newStats()
+  for (const syncJob of gmailSyncJobs) {
+    try {
+      const connector = await getConnector(db, syncJob.connectorId)
+      const serviceAccountKey: GoogleServiceAccount = JSON.parse(
+        connector.credentials as string,
+      )
+      // const subject: string = connector.subject as string
+      let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
+
+      let config: GmailChangeToken = syncJob.config as GmailChangeToken
+      // we have guarantee that when we started this job access Token at least
+      // hand one hour, we should increase this time
+      const gmail = google.gmail({ version: "v1", auth: jwtClient })
+
+      let { historyId, stats, changesExist } = await handleGmailChanges(
+        gmail,
+        config.historyId,
+        syncJob.id,
+        syncJob.email,
+      )
+
+      if (changesExist) {
+        // update the change token
+        config.historyId = historyId
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+          // make it compatible with sync history config type
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: stats.added,
+            dataDeleted: stats.removed,
+            dataUpdated: stats.updated,
+            authType: AuthType.ServiceAccount,
+            summary: { description: stats.summary },
+            errorMessage: "",
+            app: Apps.Gmail,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+        Logger.info(
+          `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
+        )
+      } else {
+        Logger.info(`No Gmail changes to sync`)
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        `Could not successfully complete ServiceAccount sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+      const config: GmailChangeToken = syncJob.config as GmailChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.ServiceAccount,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.Gmail,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+      throw new SyncJobFailed({
+        message: "Could not complete sync job",
+        cause: error as Error,
+        integration: Apps.Gmail,
         entity: "",
       })
     }

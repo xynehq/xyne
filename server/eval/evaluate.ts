@@ -1,10 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import * as transformers from "@xenova/transformers"
-const { env } = transformers
 import PQueue from "p-queue"
 import { searchVespa } from "@/search/vespa"
-import { getExtractor } from "@/embedding"
+const { env } = transformers
 const readline = require("readline")
 
 // this will share the cache embedding model from /server
