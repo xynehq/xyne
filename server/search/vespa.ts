@@ -145,8 +145,12 @@ export const insert = async (
     if (response.ok) {
       Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
+      const errorText = await response.text()
       Logger.error(
         `Error inserting document ${document.docId} for ${schema} ${data.message}`,
+      )
+      throw new Error(
+        `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
       )
     }
   } catch (error) {

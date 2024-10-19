@@ -40,7 +40,7 @@ export const handleGmailIngestion = async (
           format: "full",
         })
 
-        if (firstMsgResp.data.historyId) {
+        if (firstMsgResp.data.historyId && !historyId) {
           historyId = firstMsgResp.data.historyId
           Logger.info(`History ID set from the first message: ${historyId}`)
         }

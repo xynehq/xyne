@@ -520,7 +520,9 @@ const insertFilesForUser = async (
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error("Could not insert files for user: ", errorMessage)
+    Logger.error(
+      `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
+    )
   }
 }
 
@@ -891,7 +893,6 @@ const insertContactsToVespa = async (
 
 export const listFiles = async (
   client: GoogleClient,
-  onlyDocs: boolean = false,
 ): Promise<drive_v3.Schema$File[]> => {
   const drive = google.drive({ version: "v3", auth: client })
   let nextPageToken = null
@@ -899,10 +900,13 @@ export const listFiles = async (
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await drive.files.list({
+        // anyone who uses Google AI Studio, AI Studio creates a folder
+        // and all the pdf's they upload on it is part of this folder
+        // these can be quite large and for now we can just avoid it
+        // this does not guarantee that this folder is only created by AI studio
+        // so that edge case is not handled
+        q: "trashed = false and name != 'Google AI Studio' and not 'Google AI Studio' in parents",
         pageSize: 100,
-        ...(onlyDocs
-          ? { q: "mimeType='application/vnd.google-apps.document'" }
-          : {}),
         fields:
           "nextPageToken, files(id, webViewLink, size, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
         ...(nextPageToken ? { pageToken: nextPageToken } : {}),
