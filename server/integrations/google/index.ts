@@ -492,16 +492,13 @@ const insertFilesForUser = async (
       (v) => v.mimeType !== DriveMime.Docs && v.mimeType !== DriveMime.PDF,
     )
 
-    const documents: VespaFileWithDrivePermission[] = await googleDocsVespa(
-      googleClient,
-      googleDocsMetadata,
-      connector.externalId,
-    )
-    const pdfDocuments: VespaFileWithDrivePermission[] = await googlePDFsVespa(
-      googleClient,
-      googlePDFsMetadata,
-      connector.externalId,
-    )
+    const [documents, pdfDocuments]: [
+      VespaFileWithDrivePermission[],
+      VespaFileWithDrivePermission[],
+    ] = await Promise.all([
+      googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
+      googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+    ])
     const driveFiles: VespaFileWithDrivePermission[] =
       await driveFilesToDoc(rest)
 
@@ -895,27 +892,30 @@ export const listFiles = async (
   client: GoogleClient,
 ): Promise<drive_v3.Schema$File[]> => {
   const drive = google.drive({ version: "v3", auth: client })
-  let nextPageToken = null
+  let nextPageToken = ""
   let files: drive_v3.Schema$File[] = []
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await drive.files.list({
+        // TODO: prevent Google AI studio from getting indexed or add limits
+        // that don't cause that issue.
         // anyone who uses Google AI Studio, AI Studio creates a folder
         // and all the pdf's they upload on it is part of this folder
-        // these can be quite large and for now we can just avoid it
+        // these can be quite large and for now we should just avoid it
         // this does not guarantee that this folder is only created by AI studio
         // so that edge case is not handled
-        q: "trashed = false and name != 'Google AI Studio' and not 'Google AI Studio' in parents",
+        // or just depend on the size limit of pdfs, we don't want to index books as of now
+        q: "trashed = false",
         pageSize: 100,
         fields:
           "nextPageToken, files(id, webViewLink, size, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
-        ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+        pageToken: nextPageToken,
       })
 
     if (res.data.files) {
       files = files.concat(res.data.files)
     }
-    nextPageToken = res.data.nextPageToken
+    nextPageToken = res.data.nextPageToken ?? ""
   } while (nextPageToken)
   return files
 }

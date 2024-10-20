@@ -20,7 +20,14 @@ export const handleGmailIngestion = async (
   let nextPageToken = ""
 
   const limit = pLimit(GmailConcurrency)
-  let historyId: string = ""
+  const profile = await gmail.users.getProfile({ userId: "me" })
+  const historyId = profile.data.historyId!
+  if (!historyId) {
+    // TODO: turn this into custom error
+    throw new Error(
+      "Could not get historyId from getProfile so can't ingest Gmail",
+    )
+  }
   do {
     const resp = await gmail.users.messages.list({
       userId: "me",
@@ -30,22 +37,6 @@ export const handleGmailIngestion = async (
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
       totalMails += resp.data.messages.length
-      const firstMessage = resp.data.messages.shift()
-      // we want to set the history Id for the first message itself
-      // to prevent any discrepency
-      if (firstMessage) {
-        const firstMsgResp = await gmail.users.messages.get({
-          userId: "me",
-          id: firstMessage.id!,
-          format: "full",
-        })
-
-        if (firstMsgResp.data.historyId && !historyId) {
-          historyId = firstMsgResp.data.historyId
-          Logger.info(`History ID set from the first message: ${historyId}`)
-        }
-        await insert(parseMail(firstMsgResp.data), mailSchema)
-      }
       const messagePromises = resp.data.messages.map((message) =>
         limit(async () => {
           const msgResp = await gmail.users.messages.get({
@@ -53,8 +44,6 @@ export const handleGmailIngestion = async (
             id: message.id!,
             format: "full",
           })
-          if (!historyId) {
-          }
           await insert(parseMail(msgResp.data), mailSchema)
         }),
       )
