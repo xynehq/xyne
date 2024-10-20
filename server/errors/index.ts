@@ -36,6 +36,7 @@ type DbErrorOpts = BaseErrorOpts & {
 class DbError extends Error {
   constructor({ message, model, dbOp, cause }: DbErrorOpts) {
     super(`${message}: for model ${model} and op: ${dbOp}`, { cause })
+    Error.captureStackTrace(this, this.constructor)
   }
 }
 
@@ -58,6 +59,7 @@ class VespaError extends Error {
     let fullMessage = `${message}: for source ${sources} and op: ${op}`
     if (docId) fullMessage += ` for docId: ${docId}`
     super(fullMessage, { cause })
+    Error.captureStackTrace(this, this.constructor)
   }
 }
 
@@ -89,7 +91,7 @@ class IntegrationsError extends Error {
     if (docId) fullMessage += ` for docId: ${docId}`
     if (jobId) fullMessage += ` and jobId: ${jobId}`
     super(fullMessage, { cause })
-    Error.captureStackTrace(this)
+    Error.captureStackTrace(this, this.constructor)
   }
 }
 
