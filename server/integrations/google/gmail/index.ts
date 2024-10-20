@@ -20,16 +20,20 @@ export const handleGmailIngestion = async (
   let nextPageToken = ""
 
   const limit = pLimit(GmailConcurrency)
-  let historyId: string = ""
+  const profile = await gmail.users.getProfile({ userId: "me" })
+  const historyId = profile.data.historyId!
+  if (!historyId) {
+    // TODO: turn this into custom error
+    throw new Error(
+      "Could not get historyId from getProfile so can't ingest Gmail",
+    )
+  }
   do {
     const resp = await gmail.users.messages.list({
       userId: "me",
       maxResults: 100,
       pageToken: nextPageToken,
     })
-    const profile = await gmail.users.getProfile({ userId: "me" })
-    // TODO: throw error if this doesn't exist
-    historyId = profile.data.historyId!
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
       totalMails += resp.data.messages.length
