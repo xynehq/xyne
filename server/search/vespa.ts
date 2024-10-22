@@ -302,7 +302,7 @@ const HybridDefaultProfile = (hits: number): YqlProfile => {
   return {
     profile: "default",
     yql: `
-            select * from sources ${AllSources}
+            select docId, chunks from sources ${fileSchema}
             where ((
                 ({targetHits:${hits}}userInput(@query))
                 or
@@ -353,7 +353,7 @@ export const groupVespaSearch = async (
     query,
     email,
     "ranking.profile": HybridDefaultProfileAppEntityCounts(limit).profile,
-    "input.query(e)": "embed(@query)",
+    "input.query(e)": "embed(chunk_embed,@query)",
   }
   try {
     const response = await fetch(url, {
@@ -389,7 +389,7 @@ export const searchVespa = async (
   limit = config.page,
   offset?: number,
 ): Promise<VespaSearchResponse> => {
-  const url = `${vespaEndpoint}/search/`
+  const url = `${vespaEndpoint}/search/?timeout=2000`
 
   let yqlQuery = HybridDefaultProfile(limit).yql
 
@@ -401,8 +401,10 @@ export const searchVespa = async (
     yql: yqlQuery,
     query,
     email,
-    "ranking.profile": HybridDefaultProfile(limit).profile,
-    "input.query(e)": "embed(@query)",
+    "ranking.profile": 'cross_encoder_reranker',
+    // "ranking.profile": HybridDefaultProfile(limit).profile,
+    "input.query(e)": "embed(chunk_embed,@query)",
+    "input.query(q_tokens)": "embed(tokenizer, @query)",
     hits: limit,
     alpha: 0.5,
     ...(offset
@@ -685,3 +687,15 @@ const getNDocuments = async (n: number) => {
     })
   }
 }
+
+// await deleteAllDocuments()
+// const results = await searchVespa(
+//   "who wrote to kill a mockingbird?",
+//   "junaid.s@xynehq.com",
+//   "",
+//   "",
+//   10,
+//   0,
+// )
+
+// console.log(results, "rsult")
