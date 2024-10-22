@@ -9,6 +9,15 @@ if (process.env.NODE_ENV === "production") {
   host = process.env.HOST!
 }
 
+let bedrockSupport = false
+let AwsAccessKey = ""
+let AwsSecretKey = ""
+if (process.env.AwsAccessKey && process.env.AwsSecretKey) {
+  AwsAccessKey = process.env.AwsAccessKey
+  AwsSecretKey = process.env.AwsSecretKey
+  bedrockSupport = true
+}
+
 export default {
   page: 8,
   JwtPayloadKey: "jwtPayload",
@@ -16,4 +25,7 @@ export default {
   postgresBaseHost,
   port,
   host,
+  bedrockSupport,
+  AwsAccessKey,
+  AwsSecretKey,
 }

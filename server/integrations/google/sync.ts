@@ -508,7 +508,7 @@ const handleGmailChanges = async (
           }
         } else {
           Logger.warn(
-            `Invalid history: ${history.id} for syncJob: ${syncJobId}`,
+            `Invalid operation, we only support add, remove messages. history: ${history.id} for syncJob: ${syncJobId}`,
           )
         }
       }

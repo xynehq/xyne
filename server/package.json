@@ -22,6 +22,8 @@
     "format": "bunx biome format --write ../"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock": "^3.675.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.675.0",
     "@hono/oauth-providers": "^0.6.1",
     "@hono/zod-validator": "^0.2.2",
     "@langchain/community": "^0.3.5",

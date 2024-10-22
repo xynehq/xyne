@@ -18,6 +18,15 @@ import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
 } from "@/search/mappers"
+import { askQuestion } from "@/ai/provider/bedrock"
+import { answerContextMap } from "@/ai/context"
+import { VespaSearchResultsSchema } from "@/search/types"
+import { AnswerSSEEvents } from "@/shared/types"
+import { streamSSE } from "hono/streaming"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+const Logger = getLogger(Subsystem.Api)
+
 const { JwtPayloadKey } = config
 
 export const autocompleteSchema = z.object({
@@ -68,12 +77,61 @@ export const SearchApi = async (c: Context) => {
     results = await searchVespa(decodedQuery, email, app, entity, page, offset)
   }
 
-  // results = postProcess(results, groupCount)
-
-  // TODO: deduplicate for googel admin and contacts
+  // TODO: deduplicate for google admin and contacts
   const newResults = VespaSearchResponseToSearchResult(results)
   newResults.groupCount = groupCount
   return c.json(newResults)
+}
+
+export const AnswerApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  // @ts-ignore
+  const { query, app, entity } = c.req.valid("query")
+  const decodedQuery = decodeURIComponent(query)
+  let results: VespaSearchResponse = await searchVespa(
+    decodedQuery,
+    email,
+    app,
+    entity,
+    config.page,
+    0,
+  )
+
+  return streamSSE(c, async (stream) => {
+    // Stream the initial context information
+    await stream.writeSSE({
+      data: `Starting response for query: ${query}`,
+      event: AnswerSSEEvents.Start,
+    })
+
+    const contextData = results.root.children
+      .map(
+        (v, i) =>
+          `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+      )
+      .join("\n\n")
+
+    await askQuestion(
+      `Based on this context from search engine ${contextData}. Only use the relevant chunks, ignore the rest. Answer if it is a question or summarize. Do not give any unnecessary details. Also respond with the index of the chunk that helped you answer the query the most. ${query}`,
+      { temperature: 0 },
+      async (chunk) => {
+        await stream.writeSSE({
+          data: chunk,
+          event: AnswerSSEEvents.AnswerUpdate,
+        })
+      },
+    )
+
+    await stream.writeSSE({
+      data: "Answer complete",
+      event: AnswerSSEEvents.End,
+    })
+
+    stream.onAbort(() => {
+      Logger.error("SSE stream aborted")
+    })
+  })
 }
 
 // temporaryly pausing this since contact is a

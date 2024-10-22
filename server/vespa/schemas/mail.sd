@@ -90,7 +90,7 @@ schema mail {
     }
   }
   field chunk_embeddings type tensor<bfloat16>(x[768]) {
-    indexing: guard { input chunks } | embed | attribute | index | summary
+    indexing: guard { input chunks } | embed | attribute | index
     attribute {
       distance-metric: angular
     }
