@@ -36,6 +36,12 @@ export const searchSchema = z.object({
   entity: z.string().min(1).optional(),
 })
 
+export const answerSchema = z.object({
+  query: z.string(),
+  app: z.nativeEnum(Apps).optional(),
+  entity: z.string().min(1).optional(),
+})
+
 export const searchQuerySchema = searchSchema.extend({
   permissions: z.array(z.string()),
 })

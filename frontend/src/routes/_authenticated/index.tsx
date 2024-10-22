@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/tooltip"
 import { api } from "@/api"
 import {
+  AnswerSSEEvents,
   Apps,
   Autocomplete,
   AutocompleteResults,
@@ -71,19 +72,6 @@ type SearchMeta = {
 }
 
 export const Index = () => {
-  // const routerState = useRouterState()
-  // const currentPath = routerState.location.pathname
-  // if(currentPath === '/search') {
-  //   const {
-  //     query: queryParam,
-  //     groupCount,
-  //     offset: offsetParam,
-  //     page: pageParam,
-  //     app: appParam,
-  //     entity: entityParam,
-  //   } = useSearch({ from: '/search' });
-  // }
-
   const [query, setQuery] = useState("") // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
@@ -91,6 +79,7 @@ export const Index = () => {
   const [filter, setFilter] = useState<Filter | null>(null)
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
+  const [answer, setAnswer] = useState<string | null>(null)
 
   const navigate = useNavigate({ from: "/search" })
 
@@ -158,6 +147,51 @@ export const Index = () => {
       }
     }
   }, [autocompleteQuery])
+
+  const handleAnswer = async (newFilter = filter) => {
+    if (!query) return // If the query is empty, do nothing
+
+    setAnswer(null)
+
+    const url = new URL(`/api/answer`, window.location.origin)
+    if (newFilter) {
+      url.searchParams.append("query", encodeURIComponent(query))
+      url.searchParams.append("app", newFilter.app)
+      url.searchParams.append("entity", newFilter.entity)
+    } else {
+      url.searchParams.append("query", encodeURIComponent(query))
+    }
+
+    const eventSource = new EventSource(url.toString(), {
+      withCredentials: true,
+    })
+
+    eventSource.addEventListener(AnswerSSEEvents.AnswerUpdate, (event) => {
+      const chunk = event.data
+      setAnswer((prevAnswer) => (prevAnswer ? prevAnswer + chunk : chunk))
+    })
+
+    eventSource.addEventListener(AnswerSSEEvents.Start, (event) => {
+      // Handle start event if needed
+    })
+
+    eventSource.addEventListener(AnswerSSEEvents.End, (event) => {
+      // Handle end event
+      eventSource.close()
+    })
+
+    // Listen for incoming messages from the server
+    eventSource.onmessage = (event) => {
+      const chunk = event.data // Assuming data is just text
+      setAnswer((prevAnswer) => (prevAnswer ? prevAnswer + chunk : chunk)) // Append chunk to the answer
+    }
+
+    // Handle error events
+    eventSource.onerror = (error) => {
+      console.error("Error with SSE:", error, error.stack, error.message)
+      eventSource.close() // Close the connection on error
+    }
+  }
 
   const handleSearch = async (newOffset = offset, newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
@@ -309,6 +343,7 @@ export const Index = () => {
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 handleSearch()
+                handleAnswer()
               }
             }}
           />
@@ -339,6 +374,12 @@ export const Index = () => {
           Search
         </Button>
       </div>
+      {answer && (
+        <div className="mt-4 p-4 bg-gray-100 border border-gray-200 rounded-lg">
+          <h2 className="text-lg font-semibold">Answer</h2>
+          <p>{answer}</p>
+        </div>
+      )}
 
       <div className="flex flex-row">
         <div className="mt-4 w-full pr-10 space-y-3">

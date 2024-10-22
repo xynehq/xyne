@@ -127,6 +127,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
     chunkIndex: z.number().optional(),
     mimeType: z.string(),
     chunks_summary: z.array(z.string()).optional(),
+    relevance: z.number(),
   })
   .strip()
 
@@ -140,6 +141,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
   .strip()
   .extend({
     type: z.literal(userSchema),
+    relevance: z.number(),
   })
 
 // Search Response Schema
@@ -160,3 +162,11 @@ export const SearchResponseSchema = z.object({
 export type FileResponse = z.infer<typeof FileResponseSchema>
 
 export type SearchResponse = z.infer<typeof SearchResponseSchema>
+
+export const AnswerResponseSchema = z.object({})
+
+export enum AnswerSSEEvents {
+  Start = "start",
+  AnswerUpdate = "answer-update",
+  End = "end",
+}
