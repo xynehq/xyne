@@ -4,6 +4,7 @@ import {
   drive_v3,
   google,
   people_v1,
+  sheets_v4,
 } from "googleapis"
 import {
   extractFootnotes,
@@ -220,7 +221,7 @@ export const handleGoogleOAuthIngestion = async (
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
-    await insertContactsToVespa(contacts, otherContacts, userEmail)
+    // await insertContactsToVespa(contacts, otherContacts, userEmail)
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -229,9 +230,12 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [_, historyId] = await Promise.all([
+    const [
+      _,
+      // historyId
+    ] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
-      handleGmailIngestion(oauth2Client, userEmail),
+      // handleGmailIngestion(oauth2Client, userEmail),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -258,17 +262,17 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      await insertSyncJob(trx, {
-        workspaceId: connector.workspaceId,
-        workspaceExternalId: connector.workspaceExternalId,
-        app: Apps.Gmail,
-        connectorId: connector.id,
-        authType: AuthType.OAuth,
-        config: { historyId, lastSyncedAt: new Date().toISOString() },
-        email: userEmail,
-        type: SyncCron.ChangeToken,
-        status: SyncJobStatus.NotStarted,
-      })
+      // await insertSyncJob(trx, {
+      //   workspaceId: connector.workspaceId,
+      //   workspaceExternalId: connector.workspaceExternalId,
+      //   app: Apps.Gmail,
+      //   connectorId: connector.id,
+      //   authType: AuthType.OAuth,
+      //   config: { historyId, lastSyncedAt: new Date().toISOString() },
+      //   email: userEmail,
+      //   type: SyncCron.ChangeToken,
+      //   status: SyncJobStatus.NotStarted,
+      // })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
@@ -489,38 +493,163 @@ const insertFilesForUser = async (
       (v) => v.mimeType === DriveMime.Slides,
     )
     const rest = fileMetadata.filter(
-      (v) => v.mimeType !== DriveMime.Docs && v.mimeType !== DriveMime.PDF,
+      (v) =>
+        v.mimeType !== DriveMime.Docs &&
+        v.mimeType !== DriveMime.PDF &&
+        v.mimeType !== DriveMime.Sheets,
     )
 
-    const [documents, pdfDocuments]: [
-      VespaFileWithDrivePermission[],
+    const [
+      // documents,
+      // pdfDocuments,
+      sheets,
+    ]: [
+      // VespaFileWithDrivePermission[],
+      // VespaFileWithDrivePermission[],
       VespaFileWithDrivePermission[],
     ] = await Promise.all([
-      googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
-      googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+      // googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
+      // googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+      googleSheetsVespa(
+        googleClient,
+        googleSheetsMetadata,
+        connector.externalId,
+      ),
     ])
-    const driveFiles: VespaFileWithDrivePermission[] =
-      await driveFilesToDoc(rest)
+    // const driveFiles: VespaFileWithDrivePermission[] =
+    //   await driveFilesToDoc(rest)
 
     sendWebsocketMessage("generating embeddings", connector.externalId)
     let allFiles: VespaFileWithDrivePermission[] = [
-      ...driveFiles,
-      ...documents,
-      ...pdfDocuments,
+      // ...driveFiles,
+      // ...documents,
+      // ...pdfDocuments,
+      ...sheets,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
       return v
     })
 
-    for (const doc of allFiles) {
-      await insertDocument(doc)
-    }
+    // for (const doc of allFiles) {
+    //   await insertDocument(doc)
+    // }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     Logger.error(
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
   }
+}
+
+const getAllSheetsFromSpreadSheet = async (
+  sheets: sheets_v4.Sheets,
+  spreadsheet: sheets_v4.Schema$Spreadsheet,
+  spreadsheetId: string,
+) => {
+  const allSheets = []
+  for (const sheet of spreadsheet.sheets!) {
+    const sheetProp = sheet.properties
+    const sheetTitle = sheetProp?.title
+    const sheetType = sheetProp?.sheetType
+
+    // If sheetType is GRID meaning table like structure, then only go further
+    // Other sheetType includes OBJECT which represent charts, graphs, etc. Ignoring them for now
+    if (sheetType !== "GRID") {
+      continue
+    }
+
+    const sheetRanges = await sheets.spreadsheets.values.get({
+      range: `'${sheetTitle}'`,
+      spreadsheetId,
+      valueRenderOption: "FORMATTED_VALUE",
+    })
+
+    const valueRanges = sheetRanges?.data?.values!
+    // Making a object of one sheet info here to specify sheet data with sheet info
+    allSheets.push({
+      sheetId: sheetProp?.sheetId,
+      sheetTitle,
+      valueRanges,
+    })
+  }
+  return allSheets
+}
+
+const googleSheetsVespa = async (
+  client: GoogleClient,
+  spreadsheetsMetadata: drive_v3.Schema$File[],
+  connectorId: string,
+): Promise<VespaFileWithDrivePermission[]> => {
+  sendWebsocketMessage(
+    `Scanning ${spreadsheetsMetadata.length} Google Sheets`,
+    connectorId,
+  )
+  const sheetsList: VespaFileWithDrivePermission[] = []
+  const sheets = google.sheets({ version: "v4", auth: client })
+  // Function to get the whole spreadsheet
+  // One spreadsheet can contain multiple sheets like Sheet1, Sheet2
+  const getSpreadsheet = (id: string) =>
+    sheets.spreadsheets.get({ spreadsheetId: id })
+  const total = spreadsheetsMetadata.length
+  let count = 0
+
+  for (const spreadsheet of spreadsheetsMetadata) {
+    try {
+      const spreadSheetData = await getSpreadsheet(spreadsheet.id!)
+
+      // Now we should get all sheets inside this spreadsheet using the spreadSheetData
+      const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
+        sheets,
+        spreadSheetData.data,
+        spreadsheet.id!,
+      )
+
+      console.log("allSheetsFromSpreadSheet")
+      console.log(allSheetsFromSpreadSheet)
+      console.log("allSheetsFromSpreadSheet")
+
+      // if (!csvData || csvData.length === 0) {
+      //   Logger.error(
+      //     `Could not get content for file: ${sheet.name}. Skipping it`,
+      //   )
+      //   continue
+      // }
+      // TODO: remove ts-ignore and fix correctly
+      // @ts-ignore
+      // .push({
+      //   title: sheet.name!,
+      //   url: sheet.webViewLink ?? "",
+      //   app: Apps.GoogleDrive,
+      //   docId: sheet.id!,
+      //   owner: sheet.owners ? (sheet.owners[0].displayName ?? "") : "",
+      //   photoLink: sheet.owners ? (sheet.owners[0].photoLink ?? "") : "",
+      //   ownerEmail: sheet.owners ? (sheet.owners[0]?.emailAddress ?? "") : "",
+      //   entity: DriveEntity.Sheets,
+      //   // chunks: chunks.map((v) => v.chunk),
+      //   permissions: sheet.permissions ?? [],
+      //   mimeType: sheet.mimeType ?? "",
+      // })
+      count += 1
+
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+    } catch (error) {
+      Logger.error(
+        `Error getting sheet files: ${error} ${(error as Error).stack}`,
+        error,
+      )
+      throw new DownloadDocumentError({
+        message: "Error in the catch of getting sheet files",
+        cause: error as Error,
+        integration: Apps.GoogleDrive,
+        entity: DriveEntity.Sheets,
+      })
+    }
+  }
+  return sheetsList
 }
 
 export const downloadDir = path.resolve(__dirname, "../../downloads")
