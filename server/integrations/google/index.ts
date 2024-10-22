@@ -575,6 +575,49 @@ const getAllSheetsFromSpreadSheet = async (
   return allSheets
 }
 
+const cleanSheetAndGetValidRows = async (allRows: string[][]) => {
+  const rowsWithData = allRows?.filter((row) =>
+    row.some((r) => r.trim() !== ""),
+  )
+
+  if (!rowsWithData || rowsWithData.length === 0) {
+    // If no row is filled, no data is there
+    //todo Throw error
+    Logger.error("No data in any row")
+    return []
+  }
+
+  let noOfCols = 0
+  for (const row of rowsWithData) {
+    if (row.length > noOfCols) {
+      noOfCols = row.length
+    }
+  }
+
+  // If some cells are empty in a row, and there are less values compared to the noOfCols
+  // Put "" string in them
+  const processedRows: string[][] = rowsWithData.map((row) =>
+    row.length < noOfCols
+      ? row.concat(Array(noOfCols - row.length).fill(""))
+      : row,
+  )
+
+  if (processedRows.length < 2) {
+    // One rows is assumed to be headers/column names
+    // Atleast one additional row for the data should be there
+    // So there should be atleast two rows to continue further
+    return []
+  }
+
+  if (processedRows.length > 50000) {
+    // todo Add this const in config
+    // todo log error here
+    return []
+  }
+
+  return processedRows
+}
+
 const googleSheetsVespa = async (
   client: GoogleClient,
   spreadsheetsMetadata: drive_v3.Schema$File[],
@@ -604,31 +647,35 @@ const googleSheetsVespa = async (
         spreadsheet.id!,
       )
 
-      console.log("allSheetsFromSpreadSheet")
-      console.log(allSheetsFromSpreadSheet)
-      console.log("allSheetsFromSpreadSheet")
+      for (const sheet of allSheetsFromSpreadSheet) {
+        const finalRows = await cleanSheetAndGetValidRows(sheet.valueRanges)
+        console.log(`Final Rows for ${sheet.sheetTitle}`)
+        console.log(finalRows)
+        console.log(`Final Rows for ${sheet.sheetTitle}`)
 
-      // if (!csvData || csvData.length === 0) {
-      //   Logger.error(
-      //     `Could not get content for file: ${sheet.name}. Skipping it`,
-      //   )
-      //   continue
-      // }
-      // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
-      // .push({
-      //   title: sheet.name!,
-      //   url: sheet.webViewLink ?? "",
-      //   app: Apps.GoogleDrive,
-      //   docId: sheet.id!,
-      //   owner: sheet.owners ? (sheet.owners[0].displayName ?? "") : "",
-      //   photoLink: sheet.owners ? (sheet.owners[0].photoLink ?? "") : "",
-      //   ownerEmail: sheet.owners ? (sheet.owners[0]?.emailAddress ?? "") : "",
-      //   entity: DriveEntity.Sheets,
-      //   // chunks: chunks.map((v) => v.chunk),
-      //   permissions: sheet.permissions ?? [],
-      //   mimeType: sheet.mimeType ?? "",
-      // })
+        // TODO: remove ts-ignore and fix correctly
+        // @ts-ignore
+        sheetsList.push({
+          title: spreadsheet.name!,
+          url: spreadsheet.webViewLink ?? "",
+          app: Apps.GoogleDrive,
+          docId: spreadsheet.id!, // todo should sheetId be added or spreadsheetId
+          owner: spreadsheet.owners
+            ? (spreadsheet.owners[0].displayName ?? "")
+            : "",
+          photoLink: spreadsheet.owners
+            ? (spreadsheet.owners[0].photoLink ?? "")
+            : "",
+          ownerEmail: spreadsheet.owners
+            ? (spreadsheet.owners[0]?.emailAddress ?? "")
+            : "",
+          entity: DriveEntity.Sheets,
+          // chunks: chunks.map((v) => v.chunk), // TODO Add stringified ver of finalRows here
+          permissions: spreadsheet.permissions ?? [],
+          mimeType: spreadsheet.mimeType ?? "",
+        })
+      }
+
       count += 1
 
       if (count % 5 === 0) {
