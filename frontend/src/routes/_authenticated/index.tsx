@@ -2,11 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 const page = 8
 
-import { ChevronRight, ChevronLeft } from "lucide-react"
+import { ArrowRight, Search } from "lucide-react"
+import { Sidebar } from "@/components/Sidebar"
 
 import { useEffect, useRef, useState } from "react"
 
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -188,7 +188,7 @@ export const Index = () => {
 
     // Handle error events
     eventSource.onerror = (error) => {
-      console.error("Error with SSE:", error, error.stack, error.message)
+      // console.error("Error with SSE:", error, error.stack, error.message)
       eventSource.close() // Close the connection on error
     }
   }
@@ -328,156 +328,172 @@ export const Index = () => {
   }
 
   return (
-    <div className="p-4 flex flex-col h-full w-full">
-      <div className="flex space-x-2 max-w-4xl">
-        <div className="relative w-full">
-          <Input
-            placeholder="Search workspace"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setAutocompleteQuery(e.target.value)
-              setOffset(0)
-            }}
-            className="px-4 py-2 border border-gray-300 rounded-md focus-visible:ring-offset-0 focus-visible:ring-0"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                handleSearch()
-                handleAnswer()
-              }
-            }}
-          />
-          {!!autocompleteResults?.length && (
-            <div
-              ref={autocompleteRef}
-              className="absolute top-full left-0 w-full bg-white rounded-md border font-mono text-sm shadow-sm z-10"
-            >
-              {autocompleteResults.map((result, index) => (
-                <AutocompleteElement
-                  key={index}
-                  onClick={() => {
-                    if (result.type === "file") {
-                      setQuery(result.title)
-                    }
-                    setAutocompleteResults([])
+    <div className="h-screen w-full flex">
+      <Sidebar />
+      <div className="p-4 flex flex-grow h-full items-center justify-center">
+        <div className="flex flex-col items-center w-full max-w-4xl mb-[300px]">
+          <div className="flex space-x-2 w-full items-center justify-center">
+            <div className="relative w-full">
+              <div
+                className={`flex items-center w-full bg-white ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"} border border-[#AEBAD3] h-[52px] shadow-sm`}
+              >
+                <Search className="text-[#AEBAD3] ml-4 mr-2" size={18} />
+                <input
+                  placeholder="Search workspace"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setAutocompleteQuery(e.target.value)
+                    setOffset(0)
                   }}
-                  result={result}
+                  className="w-full border- focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] text-[16px] leading-[24px] focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleSearch()
+                      handleAnswer()
+                    }
+                  }}
                 />
-              ))}
-            </div>
-          )}
-        </div>
-        <Button
-          onClick={(e) => handleSearch()}
-          className="px-4 py-2 text-white rounded-md"
-        >
-          Search
-        </Button>
-      </div>
-      {answer && (
-        <div className="mt-4 p-4 bg-gray-100 border border-gray-200 rounded-lg">
-          <h2 className="text-lg font-semibold">Answer</h2>
-          <p>{answer}</p>
-        </div>
-      )}
-
-      <div className="flex flex-row">
-        <div className="mt-4 w-full pr-10 space-y-3">
-          {results?.length > 0 ? (
-            results.map((result, index) => (
-              <SearchResult result={result} index={index} />
-            ))
-          ) : (
-            <p></p>
-          )}
-        </div>
-        {groups && (
-          <div className="bg-slate-100 rounded-md mt-4 mr-20 max-h-fit h-fit border border-gray-100">
-            <div
-              onClick={(e) => {
-                handleFilterChange(null)
-              }}
-              className={`${filter == null ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
-            >
-              <div className="flex items-center">
-                <p>All</p>
+                <Button
+                  onClick={(e) => handleSearch()}
+                  className="mr-2 bg-[#464B53] text-white p-2 hover:bg-[#5a5f66] rounded-full"
+                >
+                  <ArrowRight className="text-white" size={20} />
+                </Button>
+                {!!autocompleteResults?.length && (
+                  <div
+                    ref={autocompleteRef}
+                    className="absolute top-full left-0 w-full bg-white rounded-b-lg border border-t-0 border-[#AEBAD3] shadow-md"
+                  >
+                    {autocompleteResults.map((result, index) => (
+                      <AutocompleteElement
+                        key={index}
+                        onClick={() => {
+                          if (result.type === "file") {
+                            setQuery(result.title)
+                          }
+                          setAutocompleteResults([])
+                        }}
+                        result={result}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              {searchMeta && (
-                <p className="text-blue-500 ml-7">{searchMeta.totalCount}</p>
+            </div>
+          </div>
+        </div>
+        {answer && (
+          <div className="mt-4 p-4 bg-gray-100 border border-gray-200 rounded-lg">
+            <h2 className="text-lg font-semibold">Answer</h2>
+            <p>{answer}</p>
+          </div>
+        )}
+
+        {!!results?.length && (
+          <div className="flex flex-row">
+            <div className="mt-4 w-full pr-10 space-y-3">
+              {results?.length > 0 ? (
+                results.map((result, index) => (
+                  <SearchResult result={result} index={index} />
+                ))
+              ) : (
+                <p></p>
               )}
             </div>
-            {flattenGroups(groups).map(({ app, entity, count }, index) => {
-              return (
+            {groups && (
+              <div className="bg-slate-100 rounded-md mt-4 mr-20 max-h-fit h-fit border border-gray-100">
                 <div
-                  key={index}
                   onClick={(e) => {
-                    handleFilterChange({ app, entity })
+                    handleFilterChange(null)
                   }}
-                  className={`${filter && filter.app === app && filter.entity === entity ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
+                  className={`${filter == null ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
                 >
                   <div className="flex items-center">
-                    {getIcon(app, entity)}
-                    <p>{entity}</p>
+                    <p>All</p>
                   </div>
-                  <p className="text-blue-500 ml-7">{groups[app][entity]}</p>
+                  {searchMeta && (
+                    <p className="text-blue-500 ml-7">
+                      {searchMeta.totalCount}
+                    </p>
+                  )}
                 </div>
-              )
-            })}
+                {flattenGroups(groups).map(({ app, entity, count }, index) => {
+                  return (
+                    <div
+                      key={index}
+                      onClick={(e) => {
+                        handleFilterChange({ app, entity })
+                      }}
+                      className={`${filter && filter.app === app && filter.entity === entity ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
+                    >
+                      <div className="flex items-center">
+                        {getIcon(app, entity)}
+                        <p>{entity}</p>
+                      </div>
+                      <p className="text-blue-500 ml-7">
+                        {groups[app][entity]}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
-      </div>
-      <div className="mt-auto flex space-x-2 items-center justify-center w-full">
-        {offset > 0 && (
-          <Button
-            className="bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none"
-            onClick={(e) => {
-              handlePrev()
-              setPageNumber((prev) => prev - 1)
-            }}
-          >
-            <ChevronLeft />
-          </Button>
-        )}
-
-        {searchMeta && (
-          <div className="flex space-x-2 items-center">
-            {Array(
-              Math.round(
-                (filter && groups
-                  ? groups[filter.app][filter.entity]
-                  : searchMeta.totalCount) / page,
-              ) || 1,
-            )
-              .fill(0)
-              .map((count, index) => {
-                return (
-                  <p
-                    key={index}
-                    className={`cursor-pointer hover:text-sky-700 ${index + 1 === pageNumber ? "text-blue-500" : "text-gray-700"}`}
-                    onClick={(e) => {
-                      goToPage(index)
-                      setPageNumber(index + 1)
-                    }}
-                  >
-                    {index + 1}
-                  </p>
-                )
-              })}
-          </div>
-        )}
-        {searchMeta &&
-          results?.length > 0 &&
-          pageNumber * page < searchMeta.totalCount && (
+        {/* <div className="mt-auto flex space-x-2 items-center justify-center w-full">
+          {offset > 0 && (
             <Button
               className="bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none"
               onClick={(e) => {
-                handleNext()
-                setPageNumber((prev) => prev + 1)
+                handlePrev()
+                setPageNumber((prev) => prev - 1)
               }}
             >
-              <ChevronRight />
+              <ChevronLeft />
             </Button>
-          )}
+
+          {searchMeta && (
+            <div className="flex space-x-2 items-center">
+              {Array(
+                Math.round(
+                  (filter && groups
+                    ? groups[filter.app][filter.entity]
+                    : searchMeta.totalCount) / page,
+                ) || 1,
+              )
+                .fill(0)
+                .map((count, index) => {
+                  return (
+                    <p
+                      key={index}
+                      className={`cursor-pointer hover:text-sky-700 ${index + 1 === pageNumber ? "text-blue-500" : "text-gray-700"}`}
+                      onClick={(e) => {
+                        goToPage(index)
+                        setPageNumber(index + 1)
+                      }}
+                    >
+                      {index + 1}
+                    </p>
+                  )
+                })}
+            </div>
+          {searchMeta &&
+            results?.length > 0 &&
+            pageNumber * page < searchMeta.totalCount && (
+              <Button
+                className="bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none"
+                onClick={(e) => {
+                  handleNext()
+                  setPageNumber((prev) => prev + 1)
+                }}
+              >
+                <ChevronRight />
+              </Button>
+            )} */}
+
+        {/* </div>
+        )} */}
       </div>
     </div>
   )

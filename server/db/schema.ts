@@ -41,6 +41,7 @@ export const workspaces = pgTable("workspaces", {
   // email
   createdBy: text("created_by").notNull().unique(),
   externalId: text("external_id").unique().notNull(),
+  photoLink: text("photoLink"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
