@@ -530,9 +530,9 @@ const insertFilesForUser = async (
       return v
     })
 
-    // for (const doc of allFiles) {
-    //   await insertDocument(doc)
-    // }
+    for (const doc of allFiles) {
+      await insertDocument(doc)
+    }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     Logger.error(
@@ -653,13 +653,26 @@ const googleSheetsVespa = async (
         console.log(finalRows)
         console.log(`Final Rows for ${sheet.sheetTitle}`)
 
+        // Get the headers/col names
+        const headers = finalRows[0]
+        const rows = finalRows.slice(1)
+        // Generate chunks such that every value has col name before the value hence context abt itself
+        // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
+        const chunks = rows.map((row) => {
+          return row
+            .map((cell, index) => `${headers[index]}: ${cell}`)
+            .join(", ")
+        })
+
         // TODO: remove ts-ignore and fix correctly
         // @ts-ignore
         sheetsList.push({
           title: spreadsheet.name!,
           url: spreadsheet.webViewLink ?? "",
           app: Apps.GoogleDrive,
-          docId: spreadsheet.id!, // todo should sheetId be added or spreadsheetId
+          // TODO Document it eveyrwhere
+          // Combining spreadsheetId and sheetId as single spreadsheet can have multiple sheets inside it
+          docId: `${spreadsheet?.id}_${sheet?.sheetId}`,
           owner: spreadsheet.owners
             ? (spreadsheet.owners[0].displayName ?? "")
             : "",
@@ -670,7 +683,7 @@ const googleSheetsVespa = async (
             ? (spreadsheet.owners[0]?.emailAddress ?? "")
             : "",
           entity: DriveEntity.Sheets,
-          // chunks: chunks.map((v) => v.chunk), // TODO Add stringified ver of finalRows here
+          chunks,
           permissions: spreadsheet.permissions ?? [],
           mimeType: spreadsheet.mimeType ?? "",
         })
