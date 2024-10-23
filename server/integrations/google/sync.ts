@@ -37,6 +37,7 @@ import {
   getFile,
   getFileContent,
   getPDFContent,
+  getSheetsFromSpreadSheet,
   MimeMapForContent,
   toPermissionsList,
 } from "./utils"
@@ -49,8 +50,9 @@ import {
   type VespaFile,
   type VespaMail,
 } from "@/search/types"
-import { insertContact } from "@/integrations/google"
+import { getSpreadsheet, insertContact } from "@/integrations/google"
 import { parseMail } from "./gmail"
+import { type VespaFileWithDrivePermission } from "@/search/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -68,6 +70,9 @@ const handleGoogleDriveChange = async (
   client: GoogleClient,
   email: string,
 ): Promise<ChangeStats> => {
+  console.log("Change")
+  console.log(change)
+  console.log("Change")
   const stats = newStats()
   const docId = change.fileId
   // remove item
@@ -113,8 +118,35 @@ const handleGoogleDriveChange = async (
     // or user got access to a completely new doc
     let doc = null
     try {
-      doc = await GetDocument(docId, fileSchema)
-      stats.updated += 1
+      // todo here there will be a diff call to get doc for sheets as docId is not just spreadsheetId
+      if (
+        file.mimeType &&
+        MimeMapForContent[file.mimeType] &&
+        file.mimeType === DriveMime.Sheets
+      ) {
+        const spreadsheetId = docId
+        const sheets = google.sheets({ version: "v4", auth: client })
+        const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
+        const sheetIdArr = spreadsheet.data.sheets?.map(
+          (sheet) => sheet.properties?.sheetId,
+        )!
+
+        // Check for each sheetId, if that sheet if already there in vespa or not
+        for (const sheetId of sheetIdArr) {
+          const id = `${spreadsheetId}_${sheetId}`
+          try {
+            doc = await GetDocument(id, fileSchema)
+            stats.updated += 1
+            continue
+          } catch (e) {
+            stats.added += 1
+            continue
+          }
+        }
+      } else {
+        doc = await GetDocument(docId, fileSchema)
+        stats.updated += 1
+      }
     } catch (e) {
       // catch the 404 error
       Logger.warn(
@@ -130,6 +162,13 @@ const handleGoogleDriveChange = async (
       if (file.mimeType === DriveMime.PDF) {
         vespaData = await getPDFContent(client, file, DriveEntity.PDF)
         stats.summary += `indexed new content ${docId}\n`
+      } else if (file.mimeType === DriveMime.Sheets) {
+        vespaData = await getSheetsFromSpreadSheet(
+          client,
+          file,
+          DriveEntity.Sheets,
+        )
+        stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
       } else {
         vespaData = await getFileContent(client, file, DriveEntity.Docs)
         if (doc) {
@@ -148,8 +187,21 @@ const handleGoogleDriveChange = async (
       vespaData = driveFileToIndexed(file)
     }
     if (vespaData) {
-      vespaData.permissions = toPermissionsList(vespaData.permissions, email)
-      insertDocument(vespaData)
+      // If vespaData is of array type containing multiple things
+      if (Array.isArray(vespaData)) {
+        let allData: VespaFileWithDrivePermission[] = [...vespaData].map(
+          (v) => {
+            v.permissions = toPermissionsList(v.permissions, email)
+            return v
+          },
+        )
+        for (const data of allData) {
+          insertDocument(data)
+        }
+      } else {
+        vespaData.permissions = toPermissionsList(vespaData.permissions, email)
+        insertDocument(vespaData)
+      }
     }
   } else if (change.driveId) {
     // TODO: handle this once we support multiple drives

@@ -541,7 +541,7 @@ const insertFilesForUser = async (
   }
 }
 
-const getAllSheetsFromSpreadSheet = async (
+export const getAllSheetsFromSpreadSheet = async (
   sheets: sheets_v4.Sheets,
   spreadsheet: sheets_v4.Schema$Spreadsheet,
   spreadsheetId: string,
@@ -575,7 +575,7 @@ const getAllSheetsFromSpreadSheet = async (
   return allSheets
 }
 
-const cleanSheetAndGetValidRows = async (allRows: string[][]) => {
+export const cleanSheetAndGetValidRows = async (allRows: string[][]) => {
   const rowsWithData = allRows?.filter((row) =>
     row.some((r) => r.trim() !== ""),
   )
@@ -618,6 +618,11 @@ const cleanSheetAndGetValidRows = async (allRows: string[][]) => {
   return processedRows
 }
 
+// Function to get the whole spreadsheet
+// One spreadsheet can contain multiple sheets like Sheet1, Sheet2
+export const getSpreadsheet = (sheets: sheets_v4.Sheets, id: string) =>
+  sheets.spreadsheets.get({ spreadsheetId: id })
+
 const googleSheetsVespa = async (
   client: GoogleClient,
   spreadsheetsMetadata: drive_v3.Schema$File[],
@@ -629,16 +634,12 @@ const googleSheetsVespa = async (
   )
   const sheetsList: VespaFileWithDrivePermission[] = []
   const sheets = google.sheets({ version: "v4", auth: client })
-  // Function to get the whole spreadsheet
-  // One spreadsheet can contain multiple sheets like Sheet1, Sheet2
-  const getSpreadsheet = (id: string) =>
-    sheets.spreadsheets.get({ spreadsheetId: id })
   const total = spreadsheetsMetadata.length
   let count = 0
 
   for (const spreadsheet of spreadsheetsMetadata) {
     try {
-      const spreadSheetData = await getSpreadsheet(spreadsheet.id!)
+      const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
 
       // Now we should get all sheets inside this spreadsheet using the spreadSheetData
       const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
@@ -649,9 +650,6 @@ const googleSheetsVespa = async (
 
       for (const sheet of allSheetsFromSpreadSheet) {
         const finalRows = await cleanSheetAndGetValidRows(sheet.valueRanges)
-        console.log(`Final Rows for ${sheet.sheetTitle}`)
-        console.log(finalRows)
-        console.log(`Final Rows for ${sheet.sheetTitle}`)
 
         // Get the headers/col names
         const headers = finalRows[0]

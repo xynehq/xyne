@@ -19,7 +19,14 @@ import type { VespaFileWithDrivePermission } from "@/search/types"
 import { DownloadDocumentError } from "@/errors"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
-import { deleteDocument, downloadDir, downloadPDF } from "."
+import {
+  cleanSheetAndGetValidRows,
+  deleteDocument,
+  downloadDir,
+  downloadPDF,
+  getAllSheetsFromSpreadSheet,
+  getSpreadsheet,
+} from "."
 import { getLogger } from "@/logger"
 import type PgBoss from "pg-boss"
 import fs from "node:fs/promises"
@@ -69,6 +76,7 @@ export enum DriveMime {
 export const MimeMapForContent: Record<string, boolean> = {
   [DriveMime.Docs]: true,
   [DriveMime.PDF]: true,
+  [DriveMime.Sheets]: true,
 }
 
 export class DocsParsingError extends Error {}
@@ -191,6 +199,67 @@ export const getPDFContent = async (
       integration: Apps.GoogleDrive,
       entity: DriveEntity.PDF,
     })
+  }
+}
+
+export const getSheetsFromSpreadSheet = async (
+  client: GoogleClient,
+  spreadsheet: drive_v3.Schema$File,
+  entity: DriveEntity,
+): Promise<VespaFileWithDrivePermission[]> => {
+  const sheetsList = []
+  try {
+    const sheets = google.sheets({ version: "v4", auth: client })
+    const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
+
+    // Now we should get all sheets inside this spreadsheet using the spreadSheetData
+    const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
+      sheets,
+      spreadSheetData.data,
+      spreadsheet.id!,
+    )
+
+    for (const sheet of allSheetsFromSpreadSheet) {
+      const finalRows = await cleanSheetAndGetValidRows(sheet.valueRanges)
+
+      // Get the headers/col names
+      const headers = finalRows[0]
+      const rows = finalRows.slice(1)
+      // Generate chunks such that every value has col name before the value hence context abt itself
+      // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
+      const chunks = rows.map((row) => {
+        return row.map((cell, index) => `${headers[index]}: ${cell}`).join(", ")
+      })
+
+      // TODO: remove ts-ignore and fix correctly
+      // @ts-ignore
+      sheetsList.push({
+        title: spreadsheet.name!,
+        url: spreadsheet.webViewLink ?? "",
+        app: Apps.GoogleDrive,
+        // TODO Document it eveyrwhere
+        // Combining spreadsheetId and sheetId as single spreadsheet can have multiple sheets inside it
+        docId: `${spreadsheet?.id}_${sheet?.sheetId}`,
+        owner: spreadsheet.owners
+          ? (spreadsheet.owners[0].displayName ?? "")
+          : "",
+        photoLink: spreadsheet.owners
+          ? (spreadsheet.owners[0].photoLink ?? "")
+          : "",
+        ownerEmail: spreadsheet.owners
+          ? (spreadsheet.owners[0]?.emailAddress ?? "")
+          : "",
+        entity,
+        chunks,
+        permissions: spreadsheet.permissions ?? [],
+        mimeType: spreadsheet.mimeType ?? "",
+      })
+    }
+    return sheetsList
+  } catch (err) {
+    Logger.error(`Error in catch of getSheetsFromSpreadSheet`, err)
+    // todo throw error here
+    return []
   }
 }
 
