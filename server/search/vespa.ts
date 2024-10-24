@@ -292,12 +292,12 @@ export const autocomplete = async (
   }
 }
 
+type RankProfile = "default" | "cross_encoder_reranker" | "cosine_RRF"
 type YqlProfile = {
-  profile: string
+  profile: RankProfile
   yql: string
 }
 
-type RankProfile = "default" | "cross_encoder_reranker" | "cosine_RRF"
 // TODO: it seems the owner part is complicating things
 const HybridDefaultProfile = (hits: number, profile: RankProfile = "default"): YqlProfile => {
   return {
