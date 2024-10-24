@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import MarkdownPreview from "@uiw/react-markdown-preview"
 
 const page = 8
 
@@ -25,10 +26,12 @@ import {
   SearchResponse,
   SearchResultDiscriminatedUnion,
 } from "shared/types"
-import { Groups } from "@/types"
+import { Filter, Groups } from "@/types"
 import { AutocompleteElement } from "@/components/Autocomplete"
-import { getIcon } from "@/lib/common"
 import { SearchResult } from "@/components/SearchResult"
+import answerSparkle from "@/assets/answerSparkle.svg"
+import { SearchFilters } from "@/components/SearchFilter"
+import { GroupFilter } from "@/components/GroupFilter"
 
 const logger = console
 
@@ -50,21 +53,6 @@ export function SearchInfo({ info }: { info: string }) {
       </Tooltip>
     </TooltipProvider>
   )
-}
-
-const flattenGroups = (groups: Groups) => {
-  return Object.keys(groups || {}).flatMap((app) =>
-    Object.keys(groups[app as Apps] || {}).map((entity) => ({
-      app: app as Apps,
-      entity: entity as Entity,
-      count: groups[app as Apps][entity as Entity],
-    })),
-  )
-}
-
-type Filter = {
-  app: Apps
-  entity: Entity
 }
 
 type SearchMeta = {
@@ -199,7 +187,7 @@ export const Index = () => {
     if (!query) return // If the query is empty, do nothing
     setHasSearched(true)
 
-    // setAutocompleteResults([])
+    setAutocompleteResults([])
     try {
       let params = {}
       let groupCount
@@ -334,129 +322,126 @@ export const Index = () => {
     <div className="h-full w-full flex">
       <Sidebar />
       <div
-        className={`flex flex-col flex-grow h-full ${hasSearched ? "ml-[186px] pt-[12px]" : "items-center justify-center"}`}
+        className={`flex flex-col flex-grow h-full ${hasSearched ? "pt-[12px]" : "justify-center"}`}
       >
         <div
-          className={`flex flex-col items-center w-full max-w-3xl ${hasSearched ? "" : "mb-[280px]"}`}
+          className={`flex flex-col ${hasSearched ? "border-b-[1px] border-b-[#E6EBF5]" : ""} ${hasSearched ? "" : "mb-[280px] items-center justify-center"}`}
         >
-          <div className="flex space-x-2 w-full">
-            <div className="relative w-full">
-              <div
-                className={`flex items-center w-full ${hasSearched ? "bg-[#F0F4F7]" : "bg-white"} ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"} border border-[#AEBAD3] h-[52px] shadow-sm`}
-              >
-                <Search className="text-[#AEBAD3] ml-4 mr-2" size={18} />
-                <input
-                  ref={inputRef}
-                  placeholder="Search anything across connected apps..."
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value)
-                    setAutocompleteQuery(e.target.value)
-                    setOffset(0)
-                  }}
-                  className={`w-full focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] text-[16px] leading-[24px] focus:outline-none ${hasSearched ? "bg-[#F0F4F7]" : ""}`}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleSearch()
-                      handleAnswer()
-                    }
-                  }}
-                />
-                {!hasSearched ? (
-                  <Button
-                    onClick={(e) => handleSearch()}
-                    className="mr-2 bg-[#464B53] text-white p-2 hover:bg-[#5a5f66] rounded-full"
-                  >
-                    <ArrowRight className="text-white" size={20} />
-                  </Button>
-                ) : (
-                  <X
-                    className="text-[#ACB8D1] cursor-pointer mr-[16px]"
-                    size={20}
-                    onClick={(e) => {
-                      setQuery("")
-                      inputRef.current?.focus()
+          <div
+            className={`flex flex-col max-w-3xl ${hasSearched ? "ml-[186px]" : ""} w-full`}
+          >
+            <div className="flex space-x-2 w-full">
+              <div className="relative w-full">
+                <div
+                  className={`flex w-full items-center ${hasSearched ? "bg-[#F0F4F7]" : "bg-white"} ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"} border border-[#AEBAD3] h-[52px] shadow-sm`}
+                >
+                  <Search className="text-[#AEBAD3] ml-4 mr-2" size={18} />
+                  <input
+                    ref={inputRef}
+                    placeholder="Search anything across connected apps..."
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value)
+                      setAutocompleteQuery(e.target.value)
+                      setOffset(0)
+                    }}
+                    className={`text-[#1C1D1F] w-full text-[15px] focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] leading-[24px] focus:outline-none ${hasSearched ? "bg-[#F0F4F7]" : ""}`}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSearch()
+                        handleAnswer()
+                      }
                     }}
                   />
-                )}
-                {!!autocompleteResults?.length && (
-                  <div
-                    ref={autocompleteRef}
-                    className="absolute top-full left-0 w-full bg-white rounded-b-lg border border-t-0 border-[#AEBAD3] shadow-md"
-                  >
-                    {autocompleteResults.map((result, index) => (
-                      <AutocompleteElement
-                        key={index}
-                        onClick={() => {
-                          if (result.type === "file") {
-                            setQuery(result.title)
-                          }
-                          setAutocompleteResults([])
-                        }}
-                        result={result}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-        {hasSearched && answer && (
-          <div className="mt-4 p-4 bg-gray-100 border border-gray-200 rounded-lg">
-            <h2 className="text-lg font-semibold">Answer</h2>
-            <p>{answer}</p>
-          </div>
-        )}
-
-        {!!results?.length && (
-          <div className="flex flex-row">
-            <div className="mt-4 w-full pr-10 space-y-3">
-              {results?.length > 0 ? (
-                results.map((result, index) => (
-                  <SearchResult result={result} index={index} />
-                ))
-              ) : (
-                <p></p>
-              )}
-            </div>
-            {groups && (
-              <div className="bg-slate-100 rounded-md mt-4 mr-20 max-h-fit h-fit border border-gray-100">
-                <div
-                  onClick={(e) => {
-                    handleFilterChange(null)
-                  }}
-                  className={`${filter ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
-                >
-                  <div className="flex items-center">
-                    <p>All</p>
-                  </div>
-                  {searchMeta && (
-                    <p className="text-blue-500 ml-7">
-                      {searchMeta.totalCount}
-                    </p>
+                  {!hasSearched ? (
+                    <Button
+                      onClick={(e) => handleSearch()}
+                      className="mr-2 bg-[#464B53] text-white p-2 hover:bg-[#5a5f66] rounded-full"
+                    >
+                      <ArrowRight className="text-white" size={20} />
+                    </Button>
+                  ) : (
+                    <X
+                      className="text-[#ACB8D1] cursor-pointer mr-[16px]"
+                      size={20}
+                      onClick={(e) => {
+                        setQuery("")
+                        inputRef.current?.focus()
+                      }}
+                    />
+                  )}
+                  {!!autocompleteResults?.length && (
+                    <div
+                      ref={autocompleteRef}
+                      className="absolute top-full w-full left-0 bg-white rounded-b-lg border border-t-0 border-[#AEBAD3] shadow-md"
+                    >
+                      {autocompleteResults.map((result, index) => (
+                        <AutocompleteElement
+                          key={index}
+                          onClick={() => {
+                            if (result.type === "file") {
+                              setQuery(result.title)
+                            }
+                            setAutocompleteResults([])
+                          }}
+                          result={result}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
-                {flattenGroups(groups).map(({ app, entity, count }, index) => {
-                  return (
-                    <div
-                      key={index}
-                      onClick={(e) => {
-                        handleFilterChange({ app, entity })
-                      }}
-                      className={`${filter && filter.app === app && filter.entity === entity ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
-                    >
-                      <div className="flex items-center">
-                        {getIcon(app, entity)}
-                        <p>{entity}</p>
-                      </div>
-                      <p className="text-blue-500 ml-7">
-                        {groups[app][entity]}
-                      </p>
-                    </div>
-                  )
-                })}
               </div>
+            </div>
+          </div>
+          {/* search filters */}
+          {hasSearched && (
+            <div className="ml-[230px] text-[13px]">
+              <SearchFilters />
+            </div>
+          )}
+        </div>
+        {hasSearched && (
+          <div className="h-full flex flex-row">
+            {answer && (
+              <div className="h-full flex flex-col">
+                <div className="flex-grow flex mt-[24px] overflow-hidden max-h-[242px]">
+                  <img
+                    className="ml-[186px] mr-[20px] w-[24px] h-[24px]"
+                    src={answerSparkle}
+                  />
+                  <div className="flex-grow overflow-hidden text-ellipsis whitespace-nowrap max-w-2xl">
+                    <MarkdownPreview
+                      source={answer}
+                      style={{
+                        padding: 0,
+                        backgroundColor: "#ffffff",
+                        color: "#464B53",
+                      }}
+                    />
+                  </div>
+                </div>
+                {!!results?.length && (
+                  <div className="flex flex-row ml-[186px] max-w-4xl">
+                    <div className="mt-4 pr-10">
+                      {results?.length > 0 ? (
+                        results.map((result, index) => (
+                          <SearchResult result={result} index={index} />
+                        ))
+                      ) : (
+                        <p></p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {groups && (
+              <GroupFilter
+                groups={groups}
+                handleFilterChange={handleFilterChange}
+                filter={filter}
+                total={searchMeta?.totalCount!}
+              />
             )}
           </div>
         )}

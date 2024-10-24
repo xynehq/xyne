@@ -30,3 +30,8 @@ export type Connectors = {
 }
 
 export type Groups = Record<Apps, Record<Entity, number>>
+
+export type Filter = {
+  app: Apps
+  entity: Entity
+}
