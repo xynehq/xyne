@@ -95,7 +95,7 @@ const DriveParentSchema = z.object({
 
 const SpreadsheetMetadata = z.object({
   spreadsheetId: z.string(),
-  allSheetIds: z.array(z.number()),
+  totalSheets: z.number(),
 })
 
 export const VespaFileSchema = z.object({

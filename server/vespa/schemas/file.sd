@@ -161,7 +161,7 @@ schema file {
 
   struct spreadsheet_struct {
     field spreadsheetId type string {}
-    field allSheetIds type array<int> {}
+    field totalSheets type int {}
   }
 
   struct metadata_struct {

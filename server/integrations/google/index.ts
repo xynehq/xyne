@@ -575,7 +575,7 @@ export const getAllSheetsFromSpreadSheet = async (
   return allSheets
 }
 
-export const cleanSheetAndGetValidRows = async (allRows: string[][]) => {
+export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
   const rowsWithData = allRows?.filter((row) =>
     row.some((r) => r.trim() !== ""),
   )
@@ -648,8 +648,13 @@ const googleSheetsVespa = async (
         spreadsheet.id!,
       )
 
-      for (const sheet of allSheetsFromSpreadSheet) {
-        const finalRows = await cleanSheetAndGetValidRows(sheet.valueRanges)
+      for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
+        const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
+
+        if (finalRows.length === 0) {
+          Logger.info(`${spreadsheet.name} -> ${sheet.sheetTitle} found no rows`)
+          continue
+        }
 
         // Get the headers/col names
         const headers = finalRows[0]
@@ -664,20 +669,18 @@ const googleSheetsVespa = async (
 
         const parentForMetadata = { folderId: "", folderName: "" }
 
-        if (sheet.sheetId === 0) {
+        if (sheetIndex === 0) {
           const metadataOfSpreadsheet = {
             spreadsheetId: spreadsheet.id!,
-            allSheetIds: spreadSheetData.data.sheets?.map(
-              (sheet) => sheet.properties?.sheetId!,
-            )!,
+            totalSheets: spreadSheetData.data.sheets?.length!
           }
           sheetsList.push({
             title: spreadsheet.name!,
             url: spreadsheet.webViewLink ?? "",
             app: Apps.GoogleDrive,
             // TODO Document it eveyrwhere
-            // Combining spreadsheetId and sheetId as single spreadsheet can have multiple sheets inside it
-            docId: `${spreadsheet?.id}_${sheet?.sheetId}`,
+            // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
+            docId: `${spreadsheet?.id}_${sheetIndex}`,
             owner: spreadsheet.owners
               ? (spreadsheet.owners[0].displayName ?? "")
               : "",
@@ -704,8 +707,8 @@ const googleSheetsVespa = async (
             url: spreadsheet.webViewLink ?? "",
             app: Apps.GoogleDrive,
             // TODO Document it eveyrwhere
-            // Combining spreadsheetId and sheetId as single spreadsheet can have multiple sheets inside it
-            docId: `${spreadsheet?.id}_${sheet?.sheetId}`,
+            // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
+            docId: `${spreadsheet?.id}_${sheetIndex}`,
             owner: spreadsheet.owners
               ? (spreadsheet.owners[0].displayName ?? "")
               : "",
@@ -1131,7 +1134,7 @@ export const listFiles = async (
         q: "trashed = false",
         pageSize: 100,
         fields:
-          "nextPageToken, files(id, webViewLink, size, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
+          "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
         pageToken: nextPageToken,
       })
 

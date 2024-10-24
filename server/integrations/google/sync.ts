@@ -109,7 +109,7 @@ const handleGoogleDriveChange = async (
           // Special case for Google Sheets
           // If we can't get document through docId, maybe it can for be spreadsheet
           // To retrieve spreadsheets from vespa, we'll have to construct id
-          // Like the final id will be `spreadsheetId_sheetId`
+          // Like the final id will be `spreadsheetId_sheetIndex`
           const sheetsForSpreadSheet = await GetDocument(
             `${docId}_0`,
             fileSchema,
@@ -121,14 +121,14 @@ const handleGoogleDriveChange = async (
           // Get metadata from the first sheet of that spreadsheet
           // Metadata contains all sheets ids inside that specific spreadsheet
           const metadata = (sheetsForSpreadSheet.fields as VespaFile)?.metadata!
-          const sheetIdArr = metadata.spreadsheet?.allSheetIds!
+          const totalSheets = metadata.spreadsheet?.totalSheets!
 
           // A Google spreadsheet can have multiple sheets inside it
           // Admin can take away permissions from any of that sheets of the spreadsheet
           const spreadsheetId = docId
           // Remove all sheets inside that spreadsheet
-          for (const sheetId of sheetIdArr) {
-            const id = `${spreadsheetId}_${sheetId}`
+          for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
+            const id = `${spreadsheetId}_${sheetIndex}`
             const doc = await GetDocument(id, fileSchema)
             const permissions = (doc.fields as VespaFile).permissions
             if (permissions.length === 1) {
@@ -178,39 +178,38 @@ const handleGoogleDriveChange = async (
         const spreadsheetId = docId
         const sheets = google.sheets({ version: "v4", auth: client })
         const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
-        const sheetIdArr = spreadsheet.data.sheets?.map(
-          (sheet) => sheet.properties?.sheetId,
-        )!
+        const totalSheets = spreadsheet.data.sheets?.length!
 
-        // Case where the whole spreadsheet is not deleted but some sheets are deleted
-        // If the sheets in vespa don't match the current sheets, we delete the rest of them
-        // Check if the sheets we have in vespa are same as we get
-        // If not, it means maybe sheet/s can be deleted
-        const spreadSheetFromVespa = await GetDocument(
-          `${spreadsheetId}_0`,
-          fileSchema,
-        )
-        const metadata = (spreadSheetFromVespa.fields as VespaFile)?.metadata!
-        const sheetIdArrFromVespa = metadata.spreadsheet?.allSheetIds!
-        // Now compare sheetIdArr and sheetIdArrFromVespa
-        // Filter out
-        const sheetIdsToBeDeleted = sheetIdArrFromVespa.filter(
-          (id) => !sheetIdArr.includes(id),
-        )
-        // If there exists some sheets that are in vespa, but we don't get them
-        // Delete those sheets
-        if (sheetIdsToBeDeleted && sheetIdsToBeDeleted.length !== 0) {
-          for (const id of sheetIdsToBeDeleted) {
-            // todo what if the user deletes the 0th id sheet??
-            await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
-            stats.removed += 1
-            stats.summary += `${id} sheet removed\n`
-          }
-        }
+        // TODO Revisit this case, where some sheets are deleted
+        // // Case where the whole spreadsheet is not deleted but some sheets are deleted
+        // // If the sheets in vespa don't match the current sheets, we delete the rest of them
+        // // Check if the sheets we have in vespa are same as we get
+        // // If not, it means maybe sheet/s can be deleted
+        // const spreadSheetFromVespa = await GetDocument(
+        //   `${spreadsheetId}_0`,
+        //   fileSchema,
+        // )
+        // const metadata = (spreadSheetFromVespa.fields as VespaFile)?.metadata!
+        // const sheetIdArrFromVespa = metadata.spreadsheet?.allSheetIds!
+        // // Now compare sheetIdArr and sheetIdArrFromVespa
+        // // Filter out
+        // const sheetIdsToBeDeleted = sheetIdArrFromVespa.filter(
+        //   (id) => !sheetIdArr.includes(id),
+        // )
+        // // If there exists some sheets that are in vespa, but we don't get them
+        // // Delete those sheets
+        // if (sheetIdsToBeDeleted && sheetIdsToBeDeleted.length !== 0) {
+        //   for (const id of sheetIdsToBeDeleted) {
+        //     // todo what if the user deletes the 0th id sheet??
+        //     await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
+        //     stats.removed += 1
+        //     stats.summary += `${id} sheet removed\n`
+        //   }
+        // }
 
-        // Check for each sheetId, if that sheet if already there in vespa or not
-        for (const sheetId of sheetIdArr) {
-          const id = `${spreadsheetId}_${sheetId}`
+        // Check for each sheetIndex, if that sheet if already there in vespa or not
+        for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
+          const id = `${spreadsheetId}_${sheetIndex}`
           try {
             doc = await GetDocument(id, fileSchema)
             stats.updated += 1
