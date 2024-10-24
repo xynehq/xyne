@@ -297,10 +297,11 @@ type YqlProfile = {
   yql: string
 }
 
+type RankProfile = "default" | "cross_encoder_reranker" | "cosine_RRF"
 // TODO: it seems the owner part is complicating things
-const HybridDefaultProfile = (hits: number): YqlProfile => {
+const HybridDefaultProfile = (hits: number, profile: RankProfile = "default"): YqlProfile => {
   return {
-    profile: "default",
+    profile: profile,
     yql: `
             select docId, chunks from sources ${fileSchema}
             where ((
@@ -401,10 +402,9 @@ export const searchVespa = async (
     yql: yqlQuery,
     query,
     email,
-    "ranking.profile": 'cross_encoder_reranker',
-    // "ranking.profile": HybridDefaultProfile(limit).profile,
+    "ranking.profile": HybridDefaultProfile(limit,"cosine_RRF").profile,
     "input.query(e)": "embed(chunk_embed,@query)",
-    "input.query(q_tokens)": "embed(tokenizer, @query)",
+    // "input.query(q_tokens)": "embed(tokenizer, @query)",// pass this if ranking.profile is cross_encoder
     hits: limit,
     alpha: 0.5,
     ...(offset
@@ -687,15 +687,3 @@ const getNDocuments = async (n: number) => {
     })
   }
 }
-
-// await deleteAllDocuments()
-// const results = await searchVespa(
-//   "who wrote to kill a mockingbird?",
-//   "junaid.s@xynehq.com",
-//   "",
-//   "",
-//   10,
-//   0,
-// )
-
-// console.log(results, "rsult")
