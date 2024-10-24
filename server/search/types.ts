@@ -88,6 +88,16 @@ export const defaultVespaFieldsSchema = z.object({
   documentid: z.string(),
 })
 
+const DriveParentSchema = z.object({
+  folderId: z.string(),
+  folderName: z.string(),
+})
+
+const SpreadsheetMetadata = z.object({
+  spreadsheetId: z.string(),
+  allSheetIds: z.array(z.number()),
+})
+
 export const VespaFileSchema = z.object({
   docId: z.string(),
   app: z.nativeEnum(Apps),
@@ -100,7 +110,10 @@ export const VespaFileSchema = z.object({
   photoLink: z.string().nullable(),
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
-  metadata: z.string().optional(), // Optional metadata prop, used for Google spreadsheets for now
+  metadata: z.object({
+    parent: DriveParentSchema,
+    spreadsheet: SpreadsheetMetadata.optional()
+  }),
 })
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({

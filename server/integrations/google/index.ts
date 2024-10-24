@@ -662,12 +662,14 @@ const googleSheetsVespa = async (
             .join(", ")
         })
 
+        const parentForMetadata = { folderId: "", folderName: "" }
+
         if (sheet.sheetId === 0) {
           const metadataOfSpreadsheet = {
-            spreadsheetId: spreadsheet.id,
+            spreadsheetId: spreadsheet.id!,
             allSheetIds: spreadSheetData.data.sheets?.map(
-              (sheet) => sheet.properties?.sheetId,
-            ),
+              (sheet) => sheet.properties?.sheetId!,
+            )!,
           }
           sheetsList.push({
             title: spreadsheet.name!,
@@ -689,7 +691,10 @@ const googleSheetsVespa = async (
             chunks,
             permissions: spreadsheet.permissions ?? [],
             mimeType: spreadsheet.mimeType ?? "",
-            metadata: JSON.stringify(metadataOfSpreadsheet),
+            metadata: {
+              parent: parentForMetadata,
+              spreadsheet: metadataOfSpreadsheet
+            },
           })
         } else {
           // TODO: remove ts-ignore and fix correctly

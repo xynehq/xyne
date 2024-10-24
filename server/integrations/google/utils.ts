@@ -230,13 +230,13 @@ export const getSheetsFromSpreadSheet = async (
       const chunks = rows.map((row) => {
         return row.map((cell, index) => `${headers[index]}: ${cell}`).join(", ")
       })
-
+      const parentForMetadata = { folderId: "", folderName: "" }
       if (sheet.sheetId === 0) {
         const metadataOfSpreadsheet = {
-          spreadsheetId: spreadsheet.id,
+          spreadsheetId: spreadsheet.id!,
           allSheetIds: spreadSheetData.data.sheets?.map(
-            (sheet) => sheet.properties?.sheetId,
-          ),
+            (sheet) => sheet.properties?.sheetId!,
+          )!,
         }
         sheetsList.push({
           title: spreadsheet.name!,
@@ -258,7 +258,10 @@ export const getSheetsFromSpreadSheet = async (
           chunks,
           permissions: spreadsheet.permissions ?? [],
           mimeType: spreadsheet.mimeType ?? "",
-          metadata: JSON.stringify(metadataOfSpreadsheet),
+          metadata: {
+            parent: parentForMetadata,
+            spreadsheet: metadataOfSpreadsheet,
+          },
         })
       } else {
         // TODO: remove ts-ignore and fix correctly
@@ -286,6 +289,7 @@ export const getSheetsFromSpreadSheet = async (
         })
       }
     }
+    // @ts-ignore
     return sheetsList
   } catch (err) {
     Logger.error(`Error in catch of getSheetsFromSpreadSheet`, err)

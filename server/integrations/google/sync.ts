@@ -121,7 +121,7 @@ const handleGoogleDriveChange = async (
           // Get metadata from the first sheet of that spreadsheet
           // Metadata contains all sheets ids inside that specific spreadsheet
           const metadata = (sheetsForSpreadSheet.fields as VespaFile)?.metadata!
-          const sheetIdArr = JSON.parse(metadata)?.allSheetIds
+          const sheetIdArr = metadata.spreadsheet?.allSheetIds!;
 
           // A Google spreadsheet can have multiple sheets inside it
           // Admin can take away permissions from any of that sheets of the spreadsheet
@@ -170,7 +170,6 @@ const handleGoogleDriveChange = async (
     // or user got access to a completely new doc
     let doc = null
     try {
-      // todo here there will be a diff call to get doc for sheets as docId is not just spreadsheetId
       if (
         file.mimeType &&
         MimeMapForContent[file.mimeType] &&
