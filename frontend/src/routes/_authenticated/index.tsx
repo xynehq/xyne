@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 const page = 8
 
-import { ArrowRight, Cross, Search, X } from "lucide-react"
+import { ArrowRight, Search, X } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
 
 import { useEffect, useRef, useState } from "react"
@@ -190,7 +190,7 @@ export const Index = () => {
 
     // Handle error events
     eventSource.onerror = (error) => {
-      // console.error("Error with SSE:", error, error.stack, error.message)
+      console.error("Error with SSE:", error, error.stack, error.message)
       eventSource.close() // Close the connection on error
     }
   }
@@ -331,12 +331,14 @@ export const Index = () => {
   }
 
   return (
-    <div className="h-screen w-full flex">
+    <div className="h-full w-full flex">
       <Sidebar />
       <div
-        className={`flex flex-grow h-full ${hasSearched ? "ml-[186px] pt-[12px]" : "items-center justify-center"}`}
+        className={`flex flex-col flex-grow h-full ${hasSearched ? "ml-[186px] pt-[12px]" : "items-center justify-center"}`}
       >
-        <div className="flex flex-col items-center w-full max-w-3xl mb-[280px]">
+        <div
+          className={`flex flex-col items-center w-full max-w-3xl ${hasSearched ? "" : "mb-[280px]"}`}
+        >
           <div className="flex space-x-2 w-full">
             <div className="relative w-full">
               <div
@@ -400,7 +402,7 @@ export const Index = () => {
             </div>
           </div>
         </div>
-        {answer && (
+        {hasSearched && answer && (
           <div className="mt-4 p-4 bg-gray-100 border border-gray-200 rounded-lg">
             <h2 className="text-lg font-semibold">Answer</h2>
             <p>{answer}</p>
