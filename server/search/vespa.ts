@@ -390,7 +390,7 @@ export const searchVespa = async (
   limit = config.page,
   offset?: number,
 ): Promise<VespaSearchResponse> => {
-  const url = `${vespaEndpoint}/search/?timeout=2000`
+  const url = `${vespaEndpoint}/search/`
 
   let yqlQuery = HybridDefaultProfile(limit).yql
 
