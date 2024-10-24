@@ -121,7 +121,7 @@ const handleGoogleDriveChange = async (
           // Get metadata from the first sheet of that spreadsheet
           // Metadata contains all sheets ids inside that specific spreadsheet
           const metadata = (sheetsForSpreadSheet.fields as VespaFile)?.metadata!
-          const sheetIdArr = metadata.spreadsheet?.allSheetIds!;
+          const sheetIdArr = metadata.spreadsheet?.allSheetIds!
 
           // A Google spreadsheet can have multiple sheets inside it
           // Admin can take away permissions from any of that sheets of the spreadsheet
@@ -181,6 +181,32 @@ const handleGoogleDriveChange = async (
         const sheetIdArr = spreadsheet.data.sheets?.map(
           (sheet) => sheet.properties?.sheetId,
         )!
+
+        // Case where the whole spreadsheet is not deleted but some sheets are deleted
+        // If the sheets in vespa don't match the current sheets, we delete the rest of them
+        // Check if the sheets we have in vespa are same as we get
+        // If not, it means maybe sheet/s can be deleted
+        const spreadSheetFromVespa = await GetDocument(
+          `${spreadsheetId}_0`,
+          fileSchema,
+        )
+        const metadata = (spreadSheetFromVespa.fields as VespaFile)?.metadata!
+        const sheetIdArrFromVespa = metadata.spreadsheet?.allSheetIds!
+        // Now compare sheetIdArr and sheetIdArrFromVespa
+        // Filter out
+        const sheetIdsToBeDeleted = sheetIdArrFromVespa.filter(
+          (id) => !sheetIdArr.includes(id),
+        )
+        // If there exists some sheets that are in vespa, but we don't get them
+        // Delete those sheets
+        if (sheetIdsToBeDeleted && sheetIdsToBeDeleted.length !== 0) {
+          for (const id of sheetIdsToBeDeleted) {
+            // todo what if the user deletes the 0th id sheet??
+            await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
+            stats.removed += 1
+            stats.summary += `${id} sheet removed\n`
+          }
+        }
 
         // Check for each sheetId, if that sheet if already there in vespa or not
         for (const sheetId of sheetIdArr) {
