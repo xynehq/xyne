@@ -43,6 +43,13 @@
       "when": 1729340901092,
       "tag": "0005_military_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1729680173733,
+      "tag": "0006_fat_infant_terrible",
+      "breakpoints": true
     }
   ]
 }

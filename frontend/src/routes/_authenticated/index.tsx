@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 const page = 8
 
-import { ArrowRight, Search } from "lucide-react"
+import { ArrowRight, Cross, Search, X } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
 
 import { useEffect, useRef, useState } from "react"
@@ -80,6 +80,8 @@ export const Index = () => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
+  const [hasSearched, setHasSearched] = useState<boolean>(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
   const navigate = useNavigate({ from: "/search" })
 
@@ -195,6 +197,7 @@ export const Index = () => {
 
   const handleSearch = async (newOffset = offset, newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
+    setHasSearched(true)
 
     // setAutocompleteResults([])
     try {
@@ -330,23 +333,26 @@ export const Index = () => {
   return (
     <div className="h-screen w-full flex">
       <Sidebar />
-      <div className="p-4 flex flex-grow h-full items-center justify-center">
-        <div className="flex flex-col items-center w-full max-w-4xl mb-[300px]">
-          <div className="flex space-x-2 w-full items-center justify-center">
+      <div
+        className={`flex flex-grow h-full ${hasSearched ? "ml-[186px] pt-[12px]" : "items-center justify-center"}`}
+      >
+        <div className="flex flex-col items-center w-full max-w-3xl mb-[280px]">
+          <div className="flex space-x-2 w-full">
             <div className="relative w-full">
               <div
-                className={`flex items-center w-full bg-white ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"} border border-[#AEBAD3] h-[52px] shadow-sm`}
+                className={`flex items-center w-full ${hasSearched ? "bg-[#F0F4F7]" : "bg-white"} ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"} border border-[#AEBAD3] h-[52px] shadow-sm`}
               >
                 <Search className="text-[#AEBAD3] ml-4 mr-2" size={18} />
                 <input
-                  placeholder="Search workspace"
+                  ref={inputRef}
+                  placeholder="Search anything across connected apps..."
                   value={query}
                   onChange={(e) => {
                     setQuery(e.target.value)
                     setAutocompleteQuery(e.target.value)
                     setOffset(0)
                   }}
-                  className="w-full border- focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] text-[16px] leading-[24px] focus:outline-none"
+                  className={`w-full focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] text-[16px] leading-[24px] focus:outline-none ${hasSearched ? "bg-[#F0F4F7]" : ""}`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       handleSearch()
@@ -354,12 +360,23 @@ export const Index = () => {
                     }
                   }}
                 />
-                <Button
-                  onClick={(e) => handleSearch()}
-                  className="mr-2 bg-[#464B53] text-white p-2 hover:bg-[#5a5f66] rounded-full"
-                >
-                  <ArrowRight className="text-white" size={20} />
-                </Button>
+                {!hasSearched ? (
+                  <Button
+                    onClick={(e) => handleSearch()}
+                    className="mr-2 bg-[#464B53] text-white p-2 hover:bg-[#5a5f66] rounded-full"
+                  >
+                    <ArrowRight className="text-white" size={20} />
+                  </Button>
+                ) : (
+                  <X
+                    className="text-[#ACB8D1] cursor-pointer mr-[16px]"
+                    size={20}
+                    onClick={(e) => {
+                      setQuery("")
+                      inputRef.current?.focus()
+                    }}
+                  />
+                )}
                 {!!autocompleteResults?.length && (
                   <div
                     ref={autocompleteRef}
@@ -407,7 +424,7 @@ export const Index = () => {
                   onClick={(e) => {
                     handleFilterChange(null)
                   }}
-                  className={`${filter == null ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
+                  className={`${filter ? "bg-white" : ""} flex flex-row items-center justify-between cursor-pointer hover:bg-white p-3 pr-5`}
                 >
                   <div className="flex items-center">
                     <p>All</p>

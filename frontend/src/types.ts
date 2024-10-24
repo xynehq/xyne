@@ -2,7 +2,7 @@ import { Apps, AuthType, Entity } from "shared/types"
 import { z } from "zod"
 
 export const searchSchema = z.object({
-  query: z.string(),
+  query: z.string().optional(),
   groupCount: z
     .union([z.string(), z.undefined(), z.null()])
     .transform((x) => (x ? x === "true" : false))

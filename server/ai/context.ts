@@ -1,4 +1,5 @@
 // aim is to build context based on the internal types
+// translate the company to the AI
 import {
   fileSchema,
   mailSchema,
@@ -27,6 +28,7 @@ ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary ? `Content: ${fields.chunks_summary.join("\n")}` : ""}}`
 }
 
+// TODO: tell if workspace that this is an employee
 const constructUserContext = (fields: VespaUser): string => {
   return `
 App: ${fields.app}

@@ -39,7 +39,6 @@ export const askQuestion = async (
     return
   }
   try {
-    // console.log("final prompt\n", question)
     const command = new ConverseStreamCommand({
       modelId,
       system: [{ text: "You are a helpful assistant." }],
