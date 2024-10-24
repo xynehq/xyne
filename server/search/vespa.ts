@@ -303,7 +303,7 @@ const HybridDefaultProfile = (hits: number, profile: RankProfile = "default"): Y
   return {
     profile: profile,
     yql: `
-            select docId, chunks from sources ${fileSchema}
+            select * from sources ${AllSources}
             where ((
                 ({targetHits:${hits}}userInput(@query))
                 or
