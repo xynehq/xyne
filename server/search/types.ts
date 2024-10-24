@@ -100,6 +100,7 @@ export const VespaFileSchema = z.object({
   photoLink: z.string().nullable(),
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
+  metadata: z.string().optional(), // Optional metadata prop, used for Google spreadsheets for now
 })
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({

@@ -231,29 +231,60 @@ export const getSheetsFromSpreadSheet = async (
         return row.map((cell, index) => `${headers[index]}: ${cell}`).join(", ")
       })
 
-      // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
-      sheetsList.push({
-        title: spreadsheet.name!,
-        url: spreadsheet.webViewLink ?? "",
-        app: Apps.GoogleDrive,
-        // TODO Document it eveyrwhere
-        // Combining spreadsheetId and sheetId as single spreadsheet can have multiple sheets inside it
-        docId: `${spreadsheet?.id}_${sheet?.sheetId}`,
-        owner: spreadsheet.owners
-          ? (spreadsheet.owners[0].displayName ?? "")
-          : "",
-        photoLink: spreadsheet.owners
-          ? (spreadsheet.owners[0].photoLink ?? "")
-          : "",
-        ownerEmail: spreadsheet.owners
-          ? (spreadsheet.owners[0]?.emailAddress ?? "")
-          : "",
-        entity,
-        chunks,
-        permissions: spreadsheet.permissions ?? [],
-        mimeType: spreadsheet.mimeType ?? "",
-      })
+      if (sheet.sheetId === 0) {
+        const metadataOfSpreadsheet = {
+          spreadsheetId: spreadsheet.id,
+          allSheetIds: spreadSheetData.data.sheets?.map(
+            (sheet) => sheet.properties?.sheetId,
+          ),
+        }
+        sheetsList.push({
+          title: spreadsheet.name!,
+          url: spreadsheet.webViewLink ?? "",
+          app: Apps.GoogleDrive,
+          // TODO Document it eveyrwhere
+          // Combining spreadsheetId and sheetId as single spreadsheet can have multiple sheets inside it
+          docId: `${spreadsheet?.id}_${sheet?.sheetId}`,
+          owner: spreadsheet.owners
+            ? (spreadsheet.owners[0].displayName ?? "")
+            : "",
+          photoLink: spreadsheet.owners
+            ? (spreadsheet.owners[0].photoLink ?? "")
+            : "",
+          ownerEmail: spreadsheet.owners
+            ? (spreadsheet.owners[0]?.emailAddress ?? "")
+            : "",
+          entity: DriveEntity.Sheets,
+          chunks,
+          permissions: spreadsheet.permissions ?? [],
+          mimeType: spreadsheet.mimeType ?? "",
+          metadata: JSON.stringify(metadataOfSpreadsheet),
+        })
+      } else {
+        // TODO: remove ts-ignore and fix correctly
+        // @ts-ignore
+        sheetsList.push({
+          title: spreadsheet.name!,
+          url: spreadsheet.webViewLink ?? "",
+          app: Apps.GoogleDrive,
+          // TODO Document it eveyrwhere
+          // Combining spreadsheetId and sheetId as single spreadsheet can have multiple sheets inside it
+          docId: `${spreadsheet?.id}_${sheet?.sheetId}`,
+          owner: spreadsheet.owners
+            ? (spreadsheet.owners[0].displayName ?? "")
+            : "",
+          photoLink: spreadsheet.owners
+            ? (spreadsheet.owners[0].photoLink ?? "")
+            : "",
+          ownerEmail: spreadsheet.owners
+            ? (spreadsheet.owners[0]?.emailAddress ?? "")
+            : "",
+          entity: DriveEntity.Sheets,
+          chunks,
+          permissions: spreadsheet.permissions ?? [],
+          mimeType: spreadsheet.mimeType ?? "",
+        })
+      }
     }
     return sheetsList
   } catch (err) {

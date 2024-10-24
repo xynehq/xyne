@@ -49,6 +49,9 @@ schema file {
     field mimeType type string {
       indexing: attribute | summary
     }
+    field metadata type string {
+      indexing: attribute | summary
+    }
   }
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[768])  {

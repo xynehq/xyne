@@ -105,10 +105,62 @@ const handleGoogleDriveChange = async (
           stats.summary += `user lost permission for doc: ${docId}\n`
         }
       } catch (err) {
-        Logger.error(
-          `Trying to delete document that doesnt exist in Vespa`,
-          err,
-        )
+        try {
+          // Special case for Google Sheets
+          // If we can't get document through docId, maybe it can for be spreadsheet
+          // To retrieve spreadsheets from vespa, we'll have to construct id
+          // Like the final id will be `spreadsheetId_sheetId`
+          const sheetsForSpreadSheet = await GetDocument(
+            `${docId}_0`,
+            fileSchema,
+          )
+          console.log("sheetsForSpreadSheet")
+          console.log(sheetsForSpreadSheet)
+          console.log("sheetsForSpreadSheet")
+
+          // Get metadata from the first sheet of that spreadsheet
+          // Metadata contains all sheets ids inside that specific spreadsheet
+          const metadata = (sheetsForSpreadSheet.fields as VespaFile)?.metadata!
+          const sheetIdArr = JSON.parse(metadata)?.allSheetIds
+
+          // A Google spreadsheet can have multiple sheets inside it
+          // Admin can take away permissions from any of that sheets of the spreadsheet
+          const spreadsheetId = docId
+          // Remove all sheets inside that spreadsheet
+          for (const sheetId of sheetIdArr) {
+            const id = `${spreadsheetId}_${sheetId}`
+            const doc = await GetDocument(id, fileSchema)
+            const permissions = (doc.fields as VespaFile).permissions
+            if (permissions.length === 1) {
+              // remove it
+              try {
+                // also ensure that we are that permission
+                if (!(permissions[0] === email)) {
+                  throw new Error(
+                    "We got a change for us that we didn't have access to in Vespa",
+                  )
+                }
+                await DeleteDocument(id, fileSchema)
+                stats.removed += 1
+                stats.summary += `${id} sheet removed\n`
+              } catch (e) {
+                // TODO: detect vespa 404 and only ignore for that case
+                // otherwise throw it further
+              }
+            } else {
+              // remove our user's permission from the email
+              const newPermissions = permissions.filter((v) => v !== email)
+              await UpdateDocumentPermissions(fileSchema, id, newPermissions)
+              stats.updated += 1
+              stats.summary += `user lost permission for sheet: ${id}\n`
+            }
+          }
+        } catch (err) {
+          Logger.error(
+            `Trying to delete document that doesnt exist in Vespa`,
+            err,
+          )
+        }
       }
     }
   } else if (docId && change.file) {
