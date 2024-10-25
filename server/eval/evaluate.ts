@@ -32,8 +32,11 @@ if (path.extname(outputPath) !== ".tsv") {
 import fs from "node:fs"
 import PQueue from "p-queue"
 import { searchVespa } from "@/search/vespa"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 const readline = require("readline")
 
+const Logger = getLogger(Subsystem.Eval)
 const start = performance.now()
 const processedResultsData: string[] = []
 let counts = 0
@@ -88,7 +91,7 @@ try {
   evaluate(path.resolve(import.meta.dirname, queriesPath)).then(() => {
     const end = performance.now()
     const timeTaken = (end - start) / 1000
-    console.log(`Evaluation completed in ${timeTaken.toFixed(2)} seconds`)
+    Logger.info(`Evaluation completed in ${timeTaken.toFixed(2)} seconds`)
   })
 } catch (error) {
   console.error(error)
