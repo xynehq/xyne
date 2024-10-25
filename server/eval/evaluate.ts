@@ -34,6 +34,7 @@ import PQueue from "p-queue"
 import { searchVespa } from "@/search/vespa"
 const readline = require("readline")
 
+const start = performance.now()
 const processedResultsData: string[] = []
 let counts = 0
 const user = "junaid.s@xynehq.com"
@@ -85,7 +86,9 @@ const evaluate = async (queriesListPath: string) => {
 
 try {
   evaluate(path.resolve(import.meta.dirname, queriesPath)).then(() => {
-    console.log("Evaluation completed")
+    const end = performance.now()
+    const timeTaken = (end - start) / 1000
+    console.log(`Evaluation completed in ${timeTaken.toFixed(2)} seconds`)
   })
 } catch (error) {
   console.error(error)

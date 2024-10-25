@@ -292,7 +292,7 @@ export const autocomplete = async (
   }
 }
 
-type RankProfile = "default" | "cross_encoder_reranker" | "cosine_RRF"
+type RankProfile = "default" | "cosine_RRF"
 type YqlProfile = {
   profile: RankProfile
   yql: string
