@@ -14,7 +14,11 @@ import {
 import { chunkDocument } from "@/chunks"
 import { Apps, DriveEntity } from "@/shared/types"
 import { JWT } from "google-auth-library"
-import { MAX_GD_PDF_SIZE, scopes } from "@/integrations/google/config"
+import {
+  MAX_GD_PDF_SIZE,
+  MAX_GD_SHEET_ROWS,
+  scopes,
+} from "@/integrations/google/config"
 import type { VespaFileWithDrivePermission } from "@/search/types"
 import { DownloadDocumentError } from "@/errors"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
@@ -255,18 +259,32 @@ export const getSheetsFromSpreadSheet = async (
       const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
 
       if (finalRows.length === 0) {
-        Logger.info(`${spreadsheet.name} -> ${sheet.sheetTitle} found no rows`)
+        Logger.info(
+          `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
+        )
         continue
       }
 
-      // Get the headers/col names
-      const headers = finalRows[0]
-      const rows = finalRows.slice(1)
-      // Generate chunks such that every value has col name before the value hence context abt itself
-      // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
-      const chunks = rows.map((row) => {
-        return row.map((cell, index) => `${headers[index]}: ${cell}`).join(", ")
-      })
+      let chunks: string[] = []
+
+      // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+      if (finalRows.length > MAX_GD_SHEET_ROWS) {
+        Logger.info(
+          `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+        )
+        chunks = []
+      } else {
+        // Get the headers/col names
+        const headers = finalRows[0]
+        const rows = finalRows.slice(1)
+        // Generate chunks such that every value has col name before the value hence context abt itself
+        // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
+        chunks = rows.map((row) => {
+          return row
+            .map((cell, index) => `${headers[index]}: ${cell}`)
+            .join(", ")
+        })
+      }
       if (sheetIndex === 0) {
         const metadataOfSpreadsheet = {
           spreadsheetId: spreadsheet.id!,

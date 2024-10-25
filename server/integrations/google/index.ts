@@ -68,7 +68,10 @@ import path from "node:path"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
-import { MAX_GD_PDF_SIZE } from "@/integrations/google/config"
+import {
+  MAX_GD_PDF_SIZE,
+  MAX_GD_SHEET_ROWS,
+} from "@/integrations/google/config"
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
@@ -581,8 +584,7 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
 
   if (!rowsWithData || rowsWithData.length === 0) {
     // If no row is filled, no data is there
-    //todo Throw error
-    Logger.error("No data in any row")
+    Logger.error("No data in any row. Skipping it")
     return []
   }
 
@@ -602,15 +604,10 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
   )
 
   if (processedRows.length < 2) {
-    // One rows is assumed to be headers/column names
+    // One row is assumed to be headers/column names
     // Atleast one additional row for the data should be there
     // So there should be atleast two rows to continue further
-    return []
-  }
-
-  if (processedRows.length > 50000) {
-    // todo Add this const in config
-    // todo log error here
+    Logger.error("Not enough data to process further. Skipping it")
     return []
   }
 
@@ -665,21 +662,31 @@ const googleSheetsVespa = async (
 
         if (finalRows.length === 0) {
           Logger.info(
-            `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows`,
+            `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
           )
           continue
         }
 
-        // Get the headers/col names
-        const headers = finalRows[0]
-        const rows = finalRows.slice(1)
-        // Generate chunks such that every value has col name before the value hence context abt itself
-        // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
-        const chunks = rows.map((row) => {
-          return row
-            .map((cell, index) => `${headers[index]}: ${cell}`)
-            .join(", ")
-        })
+        let chunks: string[] = []
+
+        if (finalRows.length > MAX_GD_SHEET_ROWS) {
+          // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+          Logger.info(
+            `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+          )
+          chunks = []
+        } else {
+          // Get the headers/col names
+          const headers = finalRows[0]
+          const rows = finalRows.slice(1)
+          // Generate chunks such that every value has col name before the value hence context abt itself
+          // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
+          chunks = rows.map((row) => {
+            return row
+              .map((cell, index) => `${headers[index]}: ${cell}`)
+              .join(", ")
+          })
+        }
 
         if (sheetIndex === 0) {
           const metadataOfSpreadsheet = {
