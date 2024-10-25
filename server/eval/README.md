@@ -2,11 +2,9 @@
 
 ## search evaluation
 
-Currently we can run eval locally for [FiQA](https://sites.google.com/view/fiqa/home) (Financial Question Answering)  and [SciFact](https://leaderboard.allenai.org/scifact/submissions/about).
-for both eval the steps are same except the data processing for vespa.
+Currently we can run eval locally for [FiQA](https://sites.google.com/view/fiqa/home) (Financial Question Answering) , [SciFact](https://leaderboard.allenai.org/scifact/submissions/about) and [NFCorpus](https://www.cl.uni-heidelberg.de/statnlpgroup/nfcorpus/) .
 
-The [FiQA](https://sites.google.com/view/fiqa/home) (Financial Question Answering) and [SciFact](https://leaderboard.allenai.org/scifact/submissions/about) datasets is a valuable resource for evaluation, 
- This README walks through downloading the datasets, processing it for Vespa, feeding it into the Vespa search engine, and evaluating the results using `pytrec_eval`.
+The [FiQA](https://sites.google.com/view/fiqa/home) (Financial Question Answering) , [SciFact](https://leaderboard.allenai.org/scifact/submissions/about)  and [NFCorpus](https://www.cl.uni-heidelberg.de/statnlpgroup/nfcorpus/) datasets is a valuable resource for evaluation, This README walks through downloading the datasets, processing it for Vespa, feeding it into the Vespa search engine, and evaluating the results using `pytrec_eval`.
 
 you can easily download the dataset from [BeIR](https://github.com/beir-cellar/beir?tab=readme-ov-file) or just hit the below commands
 		
@@ -22,24 +20,25 @@ or
 
      unzip data/fiqa.zip -d data
 
-same steps for the SciFact
-
-    cd server/eval && wget https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip -P data
-   or
-  
+same steps for the SciFact and NFCorpus
 
      cd server/eval && curl -o data/scifact.zip https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip
+_
 
-    
+    cd server/eval && curl -o data/nfcorpus.zip https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip
+
+_
+
+     unzip data/scifact.zip -d data | unzip data/nfcorpus.zip -d data
 Before proceeding, we also need to convert the qrels (query relevance) file into TREC format
 
     bun run qrelsToTrecFormat.ts --file path/to/qrels/.tsv --output path/to/trec_qrels/.tsv
 
-Next, we need to make the documents compatible with Vespa. The processing step can take some time (depending on your machine), as vespa inside generating embeddings for each document chunk. 
+Next, we need to make the documents compatible with Vespa. 
 
-    bun run processFiqaForVespa.ts or bun run processScifactForVespa.ts
+    bun run processDataForVespa.ts --corpus path/to/corpus.jsonl --output path/to/processedData.json
    
-once processed it will create a json file in respective dataset folder
+once processed it will create a json file at `--output` specified path. The ingesting step can take some time (depending on your machine), as vespa inside generating embeddings for each document chunk. 
 
     vespa feed -t http://localhost:8080 path/to/processedData.json
    
