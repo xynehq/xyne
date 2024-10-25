@@ -225,7 +225,7 @@ export const handleGoogleOAuthIngestion = async (
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
-    // await insertContactsToVespa(contacts, otherContacts, userEmail)
+    await insertContactsToVespa(contacts, otherContacts, userEmail)
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -234,12 +234,9 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [
-      _,
-      // historyId
-    ] = await Promise.all([
+    const [_, historyId] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
-      // handleGmailIngestion(oauth2Client, userEmail),
+      handleGmailIngestion(oauth2Client, userEmail),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -266,17 +263,17 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      // await insertSyncJob(trx, {
-      //   workspaceId: connector.workspaceId,
-      //   workspaceExternalId: connector.workspaceExternalId,
-      //   app: Apps.Gmail,
-      //   connectorId: connector.id,
-      //   authType: AuthType.OAuth,
-      //   config: { historyId, lastSyncedAt: new Date().toISOString() },
-      //   email: userEmail,
-      //   type: SyncCron.ChangeToken,
-      //   status: SyncJobStatus.NotStarted,
-      // })
+      await insertSyncJob(trx, {
+        workspaceId: connector.workspaceId,
+        workspaceExternalId: connector.workspaceExternalId,
+        app: Apps.Gmail,
+        connectorId: connector.id,
+        authType: AuthType.OAuth,
+        config: { historyId, lastSyncedAt: new Date().toISOString() },
+        email: userEmail,
+        type: SyncCron.ChangeToken,
+        status: SyncJobStatus.NotStarted,
+      })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
@@ -727,11 +724,8 @@ const googleSheetsVespa = async (
 
   for (const spreadsheet of spreadsheetsMetadata) {
     try {
-      const sheetsListFromOneSpreadsheet = await getSheetsListFromOneSpreadsheet(
-        sheets,
-        client,
-        spreadsheet,
-      )
+      const sheetsListFromOneSpreadsheet =
+        await getSheetsListFromOneSpreadsheet(sheets, client, spreadsheet)
       sheetsList.push(...sheetsListFromOneSpreadsheet)
       count += 1
 

@@ -70,9 +70,6 @@ const handleGoogleDriveChange = async (
   client: GoogleClient,
   email: string,
 ): Promise<ChangeStats> => {
-  console.log("Change")
-  console.log(change)
-  console.log("Change")
   const stats = newStats()
   const docId = change.fileId
   // remove item
@@ -114,9 +111,6 @@ const handleGoogleDriveChange = async (
             `${docId}_0`,
             fileSchema,
           )
-          console.log("sheetsForSpreadSheet")
-          console.log(sheetsForSpreadSheet)
-          console.log("sheetsForSpreadSheet")
 
           // Get metadata from the first sheet of that spreadsheet
           // Metadata contains all sheets ids inside that specific spreadsheet

@@ -237,7 +237,6 @@ export const getSheetsFromSpreadSheet = async (
     return sheetsListFromOneSpreadsheet
   } catch (err) {
     Logger.error(`Error in catch of getSheetsFromSpreadSheet`, err)
-    // todo throw error here
     return []
   }
 }

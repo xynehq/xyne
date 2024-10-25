@@ -22,7 +22,7 @@ export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthTyp
 export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`
 export const CheckDownloadsFolderQueue = `check-downloads-folder`
 
-const Every10Minutes = `*/1 * * * *`
+const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
 const EveryWeek = `0 0 */7 * *`
