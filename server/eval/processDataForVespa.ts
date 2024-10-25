@@ -44,7 +44,7 @@ import readline from "readline"
 const user = "junaid.s@xynehq.com"
 
 type Doc = {
-  _id : number
+  _id: number
   title: string
   text: string
 }
@@ -68,9 +68,7 @@ const processVespaDoc = (data: Doc) => {
 
 const processData = async (filePath: string) => {
   let totalProcessed = 0
-  let writeStream = fs.createWriteStream(
-    outputPath
-  )
+  let writeStream = fs.createWriteStream(outputPath)
 
   const fileStream = fs.createReadStream(filePath)
   const rl = readline.createInterface({

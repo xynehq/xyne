@@ -1,12 +1,9 @@
 <services version="1.0">
     <container id="my_container" version="1.0">
     <!-- https://docs.vespa.ai/en/onnx.html#using-optimum-to-export-models-to-onnx-format -->
-        <component id="chunk_embed" type="hugging-face-embedder">
+        <component id="hf-embedder" type="hugging-face-embedder">
             <transformer-model path="models/model_quantized.onnx"/>
             <tokenizer-model path="models/tokenizer.json"/>
-        </component>
-         <component id="tokenizer" type="hugging-face-tokenizer">
-            <model path="models/cross_encoder_tokenizer.json"/>
         </component>
         <search />
         <document-api />

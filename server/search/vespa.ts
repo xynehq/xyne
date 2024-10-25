@@ -299,7 +299,10 @@ type YqlProfile = {
 }
 
 // TODO: it seems the owner part is complicating things
-const HybridDefaultProfile = (hits: number, profile: RankProfile = "default"): YqlProfile => {
+const HybridDefaultProfile = (
+  hits: number,
+  profile: RankProfile = "default",
+): YqlProfile => {
   return {
     profile: profile,
     yql: `
@@ -354,7 +357,7 @@ export const groupVespaSearch = async (
     query,
     email,
     "ranking.profile": HybridDefaultProfileAppEntityCounts(limit).profile,
-    "input.query(e)": "embed(chunk_embed,@query)",
+    "input.query(e)": "embed(@query)",
   }
   try {
     const response = await fetch(url, {
@@ -402,9 +405,8 @@ export const searchVespa = async (
     yql: yqlQuery,
     query,
     email,
-    "ranking.profile": HybridDefaultProfile(limit,"cosine_RRF").profile,
-    "input.query(e)": "embed(chunk_embed,@query)",
-    // "input.query(q_tokens)": "embed(tokenizer, @query)",// pass this if ranking.profile is cross_encoder
+    "ranking.profile": HybridDefaultProfile(limit, "cosine_RRF").profile,
+    "input.query(e)": "embed(@query)",
     hits: limit,
     alpha: 0.5,
     ...(offset
