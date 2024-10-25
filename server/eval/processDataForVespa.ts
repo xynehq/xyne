@@ -1,5 +1,39 @@
-import fs from "node:fs"
 import path from "node:path"
+const args = process.argv.slice(2)
+
+const expectedArgsLen = 4
+const requiredArgs = ["--corpus", "--output"]
+let corpusPath = "",
+  outputPath = ""
+
+if (!args || args.length < expectedArgsLen) {
+  throw new Error(
+    "path not provided, this script requires --corpus path/to/corpus.jsonl --output path/to/output/.json",
+  )
+}
+
+const argMap: { [key: string]: string } = {}
+args.forEach((arg, idx) => {
+  if (requiredArgs.includes(arg)) {
+    argMap[arg] = args[idx + 1]
+  }
+})
+
+corpusPath = argMap["--corpus"]
+outputPath = argMap["--output"]
+if (!corpusPath || !outputPath) {
+  throw new Error("invalid arguments: --corpus and --output are required")
+}
+
+if (path.extname(corpusPath) !== ".jsonl") {
+  throw new Error("corpus file must be a .jsonl file.")
+}
+
+if (path.extname(outputPath) !== ".json") {
+  throw new Error("Output file must be a .json file.")
+}
+
+import fs from "node:fs"
 import { chunkDocument } from "@/chunks"
 
 const SCHEMA = "file" // Replace with your actual schema name
@@ -7,16 +41,21 @@ const NAMESPACE = "namespace"
 
 import readline from "readline"
 
-const corpusPath = path.resolve(import.meta.dirname, "data/fiqa/corpus.jsonl")
 const user = "junaid.s@xynehq.com"
 
-const processVespaDoc = (data: any) => {
+type Doc = {
+  _id : number
+  title: string
+  text: string
+}
+const processVespaDoc = (data: Doc) => {
   const chunks = chunkDocument(data.text)
   return {
     put: `id:${NAMESPACE}:${SCHEMA}::${data._id}`,
     fields: {
       docId: data._id,
-      title: "",
+      title: data.title ? data.title : "",
+      // dummy url
       url: "https://example.com/vespa-hybrid-search",
       // Clean up the ASCII characters
       chunks: chunks.map((v) =>
@@ -30,7 +69,7 @@ const processVespaDoc = (data: any) => {
 const processData = async (filePath: string) => {
   let totalProcessed = 0
   let writeStream = fs.createWriteStream(
-    filePath.replace("corpus.jsonl", "fiqaCorpus.json"),
+    outputPath
   )
 
   const fileStream = fs.createReadStream(filePath)

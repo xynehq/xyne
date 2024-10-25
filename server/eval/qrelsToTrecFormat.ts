@@ -44,7 +44,7 @@ const modify = async () => {
     for await (const line of rl) {
       const columns = line.split("\t")
       // if contains header skip
-      if (!parseInt(columns[0])) continue
+      if (columns[0] === 'query-id') continue
 
       // TREC format for qrels query_id 0 document_id relevance_score
       processedResultsData.push(
