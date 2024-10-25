@@ -500,31 +500,29 @@ const insertFilesForUser = async (
         v.mimeType !== DriveMime.Sheets,
     )
 
-    const [
-      // documents,
-      // pdfDocuments,
-      sheets,
-    ]: [
-      // VespaFileWithDrivePermission[],
-      // VespaFileWithDrivePermission[],
+    const [documents, pdfDocuments, sheets]: [
+      VespaFileWithDrivePermission[],
+      VespaFileWithDrivePermission[],
       VespaFileWithDrivePermission[],
     ] = await Promise.all([
-      // googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
-      // googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+      googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
+      googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
       googleSheetsVespa(
         googleClient,
         googleSheetsMetadata,
         connector.externalId,
       ),
     ])
-    // const driveFiles: VespaFileWithDrivePermission[] =
-    //   await driveFilesToDoc(rest)
+    const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
+      googleClient,
+      rest,
+    )
 
     sendWebsocketMessage("generating embeddings", connector.externalId)
     let allFiles: VespaFileWithDrivePermission[] = [
-      // ...driveFiles,
-      // ...documents,
-      // ...pdfDocuments,
+      ...driveFiles,
+      ...documents,
+      ...pdfDocuments,
       ...sheets,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
@@ -652,10 +650,14 @@ const googleSheetsVespa = async (
       // There can be multiple parents
       // Element of parents array contains folderId and folderName
       const parentsForMetadata = []
-      for (const parentId of spreadsheet?.parents!) {
-        const parentData = await getFile(client, parentId)
-        const folderName = parentData.name!
-        parentsForMetadata.push({ folderName, folderId: parentId })
+      // Shared files cannot have parents
+      // There can be some files that user has access to may not have parents as they are shared
+      if (spreadsheet?.parents) {
+        for (const parentId of spreadsheet?.parents!) {
+          const parentData = await getFile(client, parentId)
+          const folderName = parentData.name!
+          parentsForMetadata.push({ folderName, folderId: parentId })
+        }
       }
 
       for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
@@ -732,6 +734,9 @@ const googleSheetsVespa = async (
             chunks,
             permissions: spreadsheet.permissions ?? [],
             mimeType: spreadsheet.mimeType ?? "",
+            metadata: {
+              parents: parentsForMetadata,
+            },
           })
         }
       }
@@ -836,6 +841,15 @@ export const googlePDFsVespa = async (
         continue
       }
       const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+
+      const parentsForMetadata = []
+      if (pdf?.parents) {
+        for (const parentId of pdf.parents!) {
+          const parentData = await getFile(client, parentId)
+          const folderName = parentData.name!
+          parentsForMetadata.push({ folderName, folderId: parentId })
+        }
+      }
       // TODO: remove ts-ignore and fix correctly
       // @ts-ignore
       pdfsList.push({
@@ -850,6 +864,7 @@ export const googlePDFsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: pdf.permissions ?? [],
         mimeType: pdf.mimeType ?? "",
+        metadata: { parents: parentsForMetadata },
       })
       count += 1
 
@@ -1203,6 +1218,17 @@ export const googleDocsVespa = async (
 
       const chunks = chunkDocument(cleanedTextContent)
 
+      const parentsForMetadata = []
+      // Shared files cannot have parents
+      // There can be some files that user has access to may not have parents as they are shared
+      if (doc?.parents) {
+        for (const parentId of doc?.parents!) {
+          const parentData = await getFile(client, parentId)
+          const folderName = parentData.name!
+          parentsForMetadata.push({ folderName, folderId: parentId })
+        }
+      }
+
       docsList.push({
         title: doc.name!,
         url: doc.webViewLink ?? "",
@@ -1215,6 +1241,7 @@ export const googleDocsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: doc.permissions ?? [],
         mimeType: doc.mimeType ?? "",
+        metadata: { parents: parentsForMetadata },
       })
       count += 1
 
@@ -1231,11 +1258,12 @@ export const googleDocsVespa = async (
 }
 
 export const driveFilesToDoc = async (
+  client: GoogleClient,
   rest: drive_v3.Schema$File[],
 ): Promise<VespaFileWithDrivePermission[]> => {
   let results: VespaFileWithDrivePermission[] = []
   for (const doc of rest) {
-    results.push(driveFileToIndexed(doc))
+    results.push(await driveFileToIndexed(client, doc))
   }
   return results
 }

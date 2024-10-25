@@ -256,7 +256,7 @@ const handleGoogleDriveChange = async (
         stats.summary += `added new file ${docId}\n`
       }
       // just update it as is
-      vespaData = driveFileToIndexed(file)
+      vespaData = await driveFileToIndexed(client, file)
     }
     if (vespaData) {
       // If vespaData is of array type containing multiple things

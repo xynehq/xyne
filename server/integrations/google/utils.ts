@@ -125,6 +125,15 @@ export const getFileContent = async (
 
   const chunks = chunkDocument(cleanedTextContent)
 
+  const parentsForMetadata = []
+  if (file?.parents) {
+    for (const parentId of file.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
+
   // TODO: fix this correctly
   // @ts-ignore
   return {
@@ -139,6 +148,7 @@ export const getFileContent = async (
     chunks: chunks.map((v) => v.chunk),
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
+    metadata: { parents: parentsForMetadata },
   }
 }
 
@@ -171,6 +181,16 @@ export const getPDFContent = async (
     }
 
     const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+
+    const parentsForMetadata = []
+    if (pdfFile?.parents) {
+      for (const parentId of pdfFile.parents!) {
+        const parentData = await getFile(client, parentId)
+        const folderName = parentData.name!
+        parentsForMetadata.push({ folderName, folderId: parentId })
+      }
+    }
+
     // Deleting document
     await deleteDocument(pdfPath)
     // TODO: remove ts-ignore and fix correctly
@@ -187,6 +207,7 @@ export const getPDFContent = async (
       chunks: chunks.map((v) => v.chunk),
       permissions: pdfFile.permissions ?? [],
       mimeType: pdfFile.mimeType ?? "",
+      metadata: { parents: parentsForMetadata },
     }
   } catch (error) {
     Logger.error(
@@ -222,10 +243,12 @@ export const getSheetsFromSpreadSheet = async (
     // There can be multiple parents
     // Element of parents array contains folderId and folderName
     const parentsForMetadata = []
-    for (const parentId of spreadsheet?.parents!) {
-      const parentData = await getFile(client, parentId)
-      const folderName = parentData.name!
-      parentsForMetadata.push({ folderName, folderId: parentId })
+    if (spreadsheet?.parents) {
+      for (const parentId of spreadsheet?.parents!) {
+        const parentData = await getFile(client, parentId)
+        const folderName = parentData.name!
+        parentsForMetadata.push({ folderName, folderId: parentId })
+      }
     }
 
     for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
@@ -297,6 +320,9 @@ export const getSheetsFromSpreadSheet = async (
           chunks,
           permissions: spreadsheet.permissions ?? [],
           mimeType: spreadsheet.mimeType ?? "",
+          metadata: {
+            parents: parentsForMetadata,
+          },
         })
       }
     }
@@ -309,10 +335,20 @@ export const getSheetsFromSpreadSheet = async (
   }
 }
 
-export const driveFileToIndexed = (
+export const driveFileToIndexed = async (
+  client: GoogleClient,
   file: drive_v3.Schema$File,
-): VespaFileWithDrivePermission => {
+): Promise<VespaFileWithDrivePermission> => {
   let entity = mimeTypeMap[file.mimeType!] ?? DriveEntity.Misc
+
+  const parentsForMetadata = []
+  if (file?.parents) {
+    for (const parentId of file.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
 
   // TODO: fix this correctly
   // @ts-ignore
@@ -328,6 +364,7 @@ export const driveFileToIndexed = (
     ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
+    metadata: { parents: parentsForMetadata },
   }
 }
 
