@@ -87,7 +87,7 @@ export const getFile = async (
 ): Promise<drive_v3.Schema$File> => {
   const drive = google.drive({ version: "v3", auth: client })
   const fields =
-    "id, webViewLink, createdTime, modifiedTime, name, size, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
+    "id, webViewLink, createdTime, modifiedTime, name, size, parents, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
   const file: GaxiosResponse<drive_v3.Schema$File> = await drive.files.get({
     fileId,
     fields,
@@ -219,6 +219,15 @@ export const getSheetsFromSpreadSheet = async (
       spreadsheet.id!,
     )
 
+    // There can be multiple parents
+    // Element of parents array contains folderId and folderName
+    const parentsForMetadata = []
+    for (const parentId of spreadsheet?.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+
     for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
       const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
 
@@ -235,7 +244,6 @@ export const getSheetsFromSpreadSheet = async (
       const chunks = rows.map((row) => {
         return row.map((cell, index) => `${headers[index]}: ${cell}`).join(", ")
       })
-      const parentForMetadata = { folderId: "", folderName: "" }
       if (sheetIndex === 0) {
         const metadataOfSpreadsheet = {
           spreadsheetId: spreadsheet.id!,
@@ -262,7 +270,7 @@ export const getSheetsFromSpreadSheet = async (
           permissions: spreadsheet.permissions ?? [],
           mimeType: spreadsheet.mimeType ?? "",
           metadata: {
-            parent: parentForMetadata,
+            parents: parentsForMetadata,
             spreadsheet: metadataOfSpreadsheet,
           },
         })

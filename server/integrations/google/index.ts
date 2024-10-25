@@ -49,6 +49,7 @@ import {
   DocsParsingError,
   driveFileToIndexed,
   DriveMime,
+  getFile,
   toPermissionsList,
 } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
@@ -648,11 +649,22 @@ const googleSheetsVespa = async (
         spreadsheet.id!,
       )
 
+      // There can be multiple parents
+      // Element of parents array contains folderId and folderName
+      const parentsForMetadata = []
+      for (const parentId of spreadsheet?.parents!) {
+        const parentData = await getFile(client, parentId)
+        const folderName = parentData.name!
+        parentsForMetadata.push({ folderName, folderId: parentId })
+      }
+
       for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
         const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
 
         if (finalRows.length === 0) {
-          Logger.info(`${spreadsheet.name} -> ${sheet.sheetTitle} found no rows`)
+          Logger.info(
+            `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows`,
+          )
           continue
         }
 
@@ -667,12 +679,10 @@ const googleSheetsVespa = async (
             .join(", ")
         })
 
-        const parentForMetadata = { folderId: "", folderName: "" }
-
         if (sheetIndex === 0) {
           const metadataOfSpreadsheet = {
             spreadsheetId: spreadsheet.id!,
-            totalSheets: spreadSheetData.data.sheets?.length!
+            totalSheets: spreadSheetData.data.sheets?.length!,
           }
           sheetsList.push({
             title: spreadsheet.name!,
@@ -695,8 +705,8 @@ const googleSheetsVespa = async (
             permissions: spreadsheet.permissions ?? [],
             mimeType: spreadsheet.mimeType ?? "",
             metadata: {
-              parent: parentForMetadata,
-              spreadsheet: metadataOfSpreadsheet
+              parents: parentsForMetadata,
+              spreadsheet: metadataOfSpreadsheet,
             },
           })
         } else {

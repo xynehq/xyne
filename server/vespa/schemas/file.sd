@@ -165,7 +165,7 @@ schema file {
   }
 
   struct metadata_struct {
-    field parent type parent_struct {}
+    field parents type array<parent_struct> {}
     field spreadsheet type spreadsheet_struct {}
   }
 }
