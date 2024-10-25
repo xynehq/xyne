@@ -182,6 +182,11 @@ export const Index = () => {
       eventSource.close() // Close the connection on error
     }
   }
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [])
 
   const handleSearch = async (newOffset = offset, newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
