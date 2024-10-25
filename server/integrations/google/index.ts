@@ -619,6 +619,98 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
 export const getSpreadsheet = (sheets: sheets_v4.Sheets, id: string) =>
   sheets.spreadsheets.get({ spreadsheetId: id })
 
+export const getSheetsListFromOneSpreadsheet = async (
+  sheets: sheets_v4.Sheets,
+  client: GoogleClient,
+  spreadsheet: drive_v3.Schema$File,
+): Promise<VespaFileWithDrivePermission[]> => {
+  const sheetsArr = []
+  const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
+
+  // Now we should get all sheets inside this spreadsheet using the spreadSheetData
+  const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
+    sheets,
+    spreadSheetData.data,
+    spreadsheet.id!,
+  )
+
+  // There can be multiple parents
+  // Element of parents array contains folderId and folderName
+  const parentsForMetadata = []
+  // Shared files cannot have parents
+  // There can be some files that user has access to may not have parents as they are shared
+  if (spreadsheet?.parents) {
+    for (const parentId of spreadsheet?.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
+
+  for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
+    const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
+
+    if (finalRows.length === 0) {
+      Logger.info(
+        `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
+      )
+      continue
+    }
+
+    let chunks: string[] = []
+
+    if (finalRows.length > MAX_GD_SHEET_ROWS) {
+      // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+      Logger.info(
+        `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+      )
+      chunks = []
+    } else {
+      // Get the headers/col names
+      const headers = finalRows[0]
+      const rows = finalRows.slice(1)
+      // Generate chunks such that every value has col name before the value hence context abt itself
+      // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
+      chunks = rows.map((row) => {
+        return row.map((cell, index) => `${headers[index]}: ${cell}`).join(", ")
+      })
+    }
+
+    const sheetDataToBeIngested = {
+      title: spreadsheet.name!,
+      url: spreadsheet.webViewLink ?? "",
+      app: Apps.GoogleDrive,
+      // TODO Document it eveyrwhere
+      // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
+      docId: `${spreadsheet?.id}_${sheetIndex}`,
+      owner: spreadsheet.owners
+        ? (spreadsheet.owners[0].displayName ?? "")
+        : "",
+      photoLink: spreadsheet.owners
+        ? (spreadsheet.owners[0].photoLink ?? "")
+        : "",
+      ownerEmail: spreadsheet.owners
+        ? (spreadsheet.owners[0]?.emailAddress ?? "")
+        : "",
+      entity: DriveEntity.Sheets,
+      chunks,
+      permissions: spreadsheet.permissions ?? [],
+      mimeType: spreadsheet.mimeType ?? "",
+      metadata: {
+        parents: parentsForMetadata,
+        ...(sheetIndex === 0 && {
+          spreadsheet: {
+            spreadsheetId: spreadsheet.id!,
+            totalSheets: spreadSheetData.data.sheets?.length!,
+          },
+        }),
+      },
+    }
+    sheetsArr.push(sheetDataToBeIngested)
+  }
+  return sheetsArr
+}
+
 const googleSheetsVespa = async (
   client: GoogleClient,
   spreadsheetsMetadata: drive_v3.Schema$File[],
@@ -635,119 +727,12 @@ const googleSheetsVespa = async (
 
   for (const spreadsheet of spreadsheetsMetadata) {
     try {
-      const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
-
-      // Now we should get all sheets inside this spreadsheet using the spreadSheetData
-      const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
+      const sheetsListFromOneSpreadsheet = await getSheetsListFromOneSpreadsheet(
         sheets,
-        spreadSheetData.data,
-        spreadsheet.id!,
+        client,
+        spreadsheet,
       )
-
-      // There can be multiple parents
-      // Element of parents array contains folderId and folderName
-      const parentsForMetadata = []
-      // Shared files cannot have parents
-      // There can be some files that user has access to may not have parents as they are shared
-      if (spreadsheet?.parents) {
-        for (const parentId of spreadsheet?.parents!) {
-          const parentData = await getFile(client, parentId)
-          const folderName = parentData.name!
-          parentsForMetadata.push({ folderName, folderId: parentId })
-        }
-      }
-
-      for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
-        const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
-
-        if (finalRows.length === 0) {
-          Logger.info(
-            `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
-          )
-          continue
-        }
-
-        let chunks: string[] = []
-
-        if (finalRows.length > MAX_GD_SHEET_ROWS) {
-          // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-          Logger.info(
-            `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-          )
-          chunks = []
-        } else {
-          // Get the headers/col names
-          const headers = finalRows[0]
-          const rows = finalRows.slice(1)
-          // Generate chunks such that every value has col name before the value hence context abt itself
-          // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
-          chunks = rows.map((row) => {
-            return row
-              .map((cell, index) => `${headers[index]}: ${cell}`)
-              .join(", ")
-          })
-        }
-
-        if (sheetIndex === 0) {
-          const metadataOfSpreadsheet = {
-            spreadsheetId: spreadsheet.id!,
-            totalSheets: spreadSheetData.data.sheets?.length!,
-          }
-          sheetsList.push({
-            title: spreadsheet.name!,
-            url: spreadsheet.webViewLink ?? "",
-            app: Apps.GoogleDrive,
-            // TODO Document it eveyrwhere
-            // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
-            docId: `${spreadsheet?.id}_${sheetIndex}`,
-            owner: spreadsheet.owners
-              ? (spreadsheet.owners[0].displayName ?? "")
-              : "",
-            photoLink: spreadsheet.owners
-              ? (spreadsheet.owners[0].photoLink ?? "")
-              : "",
-            ownerEmail: spreadsheet.owners
-              ? (spreadsheet.owners[0]?.emailAddress ?? "")
-              : "",
-            entity: DriveEntity.Sheets,
-            chunks,
-            permissions: spreadsheet.permissions ?? [],
-            mimeType: spreadsheet.mimeType ?? "",
-            metadata: {
-              parents: parentsForMetadata,
-              spreadsheet: metadataOfSpreadsheet,
-            },
-          })
-        } else {
-          // TODO: remove ts-ignore and fix correctly
-          // @ts-ignore
-          sheetsList.push({
-            title: spreadsheet.name!,
-            url: spreadsheet.webViewLink ?? "",
-            app: Apps.GoogleDrive,
-            // TODO Document it eveyrwhere
-            // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
-            docId: `${spreadsheet?.id}_${sheetIndex}`,
-            owner: spreadsheet.owners
-              ? (spreadsheet.owners[0].displayName ?? "")
-              : "",
-            photoLink: spreadsheet.owners
-              ? (spreadsheet.owners[0].photoLink ?? "")
-              : "",
-            ownerEmail: spreadsheet.owners
-              ? (spreadsheet.owners[0]?.emailAddress ?? "")
-              : "",
-            entity: DriveEntity.Sheets,
-            chunks,
-            permissions: spreadsheet.permissions ?? [],
-            mimeType: spreadsheet.mimeType ?? "",
-            metadata: {
-              parents: parentsForMetadata,
-            },
-          })
-        }
-      }
-
+      sheetsList.push(...sheetsListFromOneSpreadsheet)
       count += 1
 
       if (count % 5 === 0) {

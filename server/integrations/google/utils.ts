@@ -14,22 +14,16 @@ import {
 import { chunkDocument } from "@/chunks"
 import { Apps, DriveEntity } from "@/shared/types"
 import { JWT } from "google-auth-library"
-import {
-  MAX_GD_PDF_SIZE,
-  MAX_GD_SHEET_ROWS,
-  scopes,
-} from "@/integrations/google/config"
+import { MAX_GD_PDF_SIZE, scopes } from "@/integrations/google/config"
 import type { VespaFileWithDrivePermission } from "@/search/types"
 import { DownloadDocumentError } from "@/errors"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
 import {
-  cleanSheetAndGetValidRows,
   deleteDocument,
   downloadDir,
   downloadPDF,
-  getAllSheetsFromSpreadSheet,
-  getSpreadsheet,
+  getSheetsListFromOneSpreadsheet,
 } from "."
 import { getLogger } from "@/logger"
 import type PgBoss from "pg-boss"
@@ -232,120 +226,15 @@ export const getSheetsFromSpreadSheet = async (
   spreadsheet: drive_v3.Schema$File,
   entity: DriveEntity,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  const sheetsList = []
   try {
     const sheets = google.sheets({ version: "v4", auth: client })
-    const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
-
-    // Now we should get all sheets inside this spreadsheet using the spreadSheetData
-    const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
+    const sheetsListFromOneSpreadsheet = await getSheetsListFromOneSpreadsheet(
       sheets,
-      spreadSheetData.data,
-      spreadsheet.id!,
+      client,
+      spreadsheet,
     )
 
-    // There can be multiple parents
-    // Element of parents array contains folderId and folderName
-    const parentsForMetadata = []
-    if (spreadsheet?.parents) {
-      for (const parentId of spreadsheet?.parents!) {
-        const parentData = await getFile(client, parentId)
-        const folderName = parentData.name!
-        parentsForMetadata.push({ folderName, folderId: parentId })
-      }
-    }
-
-    for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
-      const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
-
-      if (finalRows.length === 0) {
-        Logger.info(
-          `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
-        )
-        continue
-      }
-
-      let chunks: string[] = []
-
-      // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-      if (finalRows.length > MAX_GD_SHEET_ROWS) {
-        Logger.info(
-          `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-        )
-        chunks = []
-      } else {
-        // Get the headers/col names
-        const headers = finalRows[0]
-        const rows = finalRows.slice(1)
-        // Generate chunks such that every value has col name before the value hence context abt itself
-        // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
-        chunks = rows.map((row) => {
-          return row
-            .map((cell, index) => `${headers[index]}: ${cell}`)
-            .join(", ")
-        })
-      }
-      if (sheetIndex === 0) {
-        const metadataOfSpreadsheet = {
-          spreadsheetId: spreadsheet.id!,
-          totalSheets: spreadSheetData.data.sheets?.length!,
-        }
-        sheetsList.push({
-          title: spreadsheet.name!,
-          url: spreadsheet.webViewLink ?? "",
-          app: Apps.GoogleDrive,
-          // TODO Document it eveyrwhere
-          // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
-          docId: `${spreadsheet?.id}_${sheetIndex}`,
-          owner: spreadsheet.owners
-            ? (spreadsheet.owners[0].displayName ?? "")
-            : "",
-          photoLink: spreadsheet.owners
-            ? (spreadsheet.owners[0].photoLink ?? "")
-            : "",
-          ownerEmail: spreadsheet.owners
-            ? (spreadsheet.owners[0]?.emailAddress ?? "")
-            : "",
-          entity: DriveEntity.Sheets,
-          chunks,
-          permissions: spreadsheet.permissions ?? [],
-          mimeType: spreadsheet.mimeType ?? "",
-          metadata: {
-            parents: parentsForMetadata,
-            spreadsheet: metadataOfSpreadsheet,
-          },
-        })
-      } else {
-        // TODO: remove ts-ignore and fix correctly
-        // @ts-ignore
-        sheetsList.push({
-          title: spreadsheet.name!,
-          url: spreadsheet.webViewLink ?? "",
-          app: Apps.GoogleDrive,
-          // TODO Document it eveyrwhere
-          // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
-          docId: `${spreadsheet?.id}_${sheetIndex}`,
-          owner: spreadsheet.owners
-            ? (spreadsheet.owners[0].displayName ?? "")
-            : "",
-          photoLink: spreadsheet.owners
-            ? (spreadsheet.owners[0].photoLink ?? "")
-            : "",
-          ownerEmail: spreadsheet.owners
-            ? (spreadsheet.owners[0]?.emailAddress ?? "")
-            : "",
-          entity: DriveEntity.Sheets,
-          chunks,
-          permissions: spreadsheet.permissions ?? [],
-          mimeType: spreadsheet.mimeType ?? "",
-          metadata: {
-            parents: parentsForMetadata,
-          },
-        })
-      }
-    }
-    // @ts-ignore
-    return sheetsList
+    return sheetsListFromOneSpreadsheet
   } catch (err) {
     Logger.error(`Error in catch of getSheetsFromSpreadSheet`, err)
     // todo throw error here
