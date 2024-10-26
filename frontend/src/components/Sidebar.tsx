@@ -23,9 +23,12 @@ export const Sidebar = ({ className = "" }: { className?: string }) => {
             : { className: "hover:text-blue-600" })}
         />
       </Link>
-      <Link to="/notifications" className="hover:text-blue-500">
-        <Bell size={18} />
-      </Link>
+      {
+        // @ts-ignore
+        <Link to="/notifications" className="hover:text-blue-500">
+          <Bell size={18} />
+        </Link>
+      }
       <Link to="/admin/integrations">
         <Plug
           size={18}
@@ -34,12 +37,18 @@ export const Sidebar = ({ className = "" }: { className?: string }) => {
             : { className: "hover:text-blue-600" })}
         />
       </Link>
-      <Link to="/profile" className="hover:text-blue-500">
-        <User size={18} />
-      </Link>
-      <Link to="/settings" className="hover:text-blue-500 mt-auto">
-        <Settings size={18} />
-      </Link>
+      {
+        // @ts-ignore
+        <Link to="/profile" className="hover:text-blue-500">
+          <User size={18} />
+        </Link>
+      }
+      {
+        // @ts-ignore
+        <Link to="/settings" className="hover:text-blue-500 mt-auto">
+          <Settings size={18} />
+        </Link>
+      }
     </div>
   )
 }

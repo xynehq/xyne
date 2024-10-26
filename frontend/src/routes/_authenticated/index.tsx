@@ -18,11 +18,9 @@ import {
 import { api } from "@/api"
 import {
   AnswerSSEEvents,
-  Apps,
   Autocomplete,
   AutocompleteResults,
   AutocompleteResultsSchema,
-  Entity,
   SearchResponse,
   SearchResultDiscriminatedUnion,
 } from "shared/types"
@@ -66,7 +64,7 @@ export const Index = () => {
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter | null>(null)
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
-  const [pageNumber, setPageNumber] = useState(1)
+  const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -178,7 +176,7 @@ export const Index = () => {
 
     // Handle error events
     eventSource.onerror = (error) => {
-      console.error("Error with SSE:", error, error.stack, error.message)
+      // console.error("Error with SSE:", error, error.stack, error.message)
       eventSource.close() // Close the connection on error
     }
   }
@@ -285,23 +283,23 @@ export const Index = () => {
     }
   }
 
-  const handleNext = () => {
-    const newOffset = offset + page
-    setOffset(newOffset)
-    handleSearch(newOffset) // Trigger search with the updated offset
-  }
+  // const handleNext = () => {
+  //   const newOffset = offset + page
+  //   setOffset(newOffset)
+  //   handleSearch(newOffset) // Trigger search with the updated offset
+  // }
 
-  const goToPage = (pageNumber: number) => {
-    const newOffset = pageNumber * page
-    setOffset(newOffset)
-    handleSearch(newOffset) // Trigger search with the updated offset
-  }
+  // const goToPage = (pageNumber: number) => {
+  //   const newOffset = pageNumber * page
+  //   setOffset(newOffset)
+  //   handleSearch(newOffset) // Trigger search with the updated offset
+  // }
 
-  const handlePrev = () => {
-    const newOffset = Math.max(0, offset - page)
-    setOffset(newOffset)
-    handleSearch(newOffset) // Trigger search with the updated offset
-  }
+  // const handlePrev = () => {
+  //   const newOffset = Math.max(0, offset - page)
+  //   setOffset(newOffset)
+  //   handleSearch(newOffset) // Trigger search with the updated offset
+  // }
 
   const handleFilterChange = (appEntity: Filter | null) => {
     setPageNumber(0)
