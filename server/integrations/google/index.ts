@@ -616,6 +616,40 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
 export const getSpreadsheet = (sheets: sheets_v4.Sheets, id: string) =>
   sheets.spreadsheets.get({ spreadsheetId: id })
 
+const chunkFinalRows = (allRows: string[][]): string[] => {
+  const chunks: string[] = []
+  let currentChunk = ""
+
+  for (const row of allRows) {
+    // Filter out numerical cells and empty strings
+    const textualCells = row.filter(
+      (cell) => isNaN(Number(cell)) && cell.trim().length > 0,
+    )
+
+    if (textualCells.length === 0) continue // Skip if no textual data
+
+    const rowText = textualCells.join(" ")
+
+    if ((currentChunk + " " + rowText).trim().length > 512) {
+      // Add the current chunk to the list and start a new chunk
+      if (currentChunk.trim().length > 0) {
+        chunks.push(currentChunk.trim())
+      }
+      currentChunk = rowText
+    } else {
+      // Append the row text to the current chunk
+      currentChunk += " " + rowText
+    }
+  }
+
+  if (currentChunk.trim().length > 0) {
+    // Add any remaining text as the last chunk
+    chunks.push(currentChunk.trim())
+  }
+
+  return chunks
+}
+
 export const getSheetsListFromOneSpreadsheet = async (
   sheets: sheets_v4.Sheets,
   client: GoogleClient,
@@ -663,14 +697,7 @@ export const getSheetsListFromOneSpreadsheet = async (
       )
       chunks = []
     } else {
-      // Get the headers/col names
-      const headers = finalRows[0]
-      const rows = finalRows.slice(1)
-      // Generate chunks such that every value has col name before the value hence context abt itself
-      // Each chunk now contains a string like "Name: John Doe, Age: 30, Occupation: Engineer".
-      chunks = rows.map((row) => {
-        return row.map((cell, index) => `${headers[index]}: ${cell}`).join(", ")
-      })
+      chunks = chunkFinalRows(finalRows)
     }
 
     const sheetDataToBeIngested = {
