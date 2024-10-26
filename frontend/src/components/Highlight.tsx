@@ -32,7 +32,7 @@ const parseHighlight = (text: string): ReactNode[] => {
 
 // Component that renders chunk summary with parsing
 const HighlightedText = ({ chunk_summary }: { chunk_summary: string }) => (
-  <p className="text-left text-sm mt-1 line-clamp-[2.5] text-ellipsis overflow-hidden">
+  <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden">
     {chunk_summary ? parseHighlight(chunk_summary) : " "}
   </p>
 )

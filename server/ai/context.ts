@@ -1,4 +1,5 @@
 // aim is to build context based on the internal types
+// translate the company to the AI
 import {
   fileSchema,
   mailSchema,
@@ -6,9 +7,9 @@ import {
   VespaSearchResultsSchema,
   type VespaFileSearch,
   type VespaMailSearch,
-  type VespaSearchResponse,
   type VespaUser,
 } from "@/search/types"
+import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 
 // Utility to capitalize the first letter of a string
@@ -20,6 +21,8 @@ const constructFileContext = (fields: VespaFileSearch): string => {
 App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
+Created: ${getRelativeTime(fields.createdAt)}
+Updated At: ${getRelativeTime(fields.updatedAt)}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
@@ -27,10 +30,12 @@ ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary ? `Content: ${fields.chunks_summary.join("\n")}` : ""}}`
 }
 
+// TODO: tell if workspace that this is an employee
 const constructUserContext = (fields: VespaUser): string => {
   return `
 App: ${fields.app}
 Entity: ${fields.entity}
+Added: ${getRelativeTime(fields.creationTime)}
 ${fields.name ? `Name: ${fields.name}` : ""}
 ${fields.email ? `Email: ${fields.email}` : ""}
 ${fields.gender ? `Gender: ${fields.gender}` : ""}
@@ -44,6 +49,7 @@ const constructMailContext = (fields: VespaMailSearch): string => {
   return `
 App: ${fields.app}
 Entity: ${fields.entity}
+Sent: ${getRelativeTime(fields.timestamp)}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}

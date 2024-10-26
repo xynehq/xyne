@@ -120,6 +120,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
   owner: true,
   ownerEmail: true,
   photoLink: true,
+  updatedAt: true,
 })
   .extend({
     type: z.literal(fileSchema),

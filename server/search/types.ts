@@ -108,6 +108,8 @@ export const VespaFileSchema = z.object({
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
   metadata: Metadata,
+  createdAt: z.number(),
+  updatedAt: z.number(),
 })
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({
@@ -171,8 +173,8 @@ export const MailSchema = z.object({
   subject: z.string(),
   chunks: z.array(z.string()),
   timestamp: z.number(),
-  app: z.string(),
-  entity: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: z.nativeEnum(MailEntity),
   permissions: z.array(z.string()),
   from: z.string(),
   to: z.array(z.string()),
@@ -424,6 +426,7 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
   subject: true,
   from: true,
   relevance: true,
+  timestamp: true,
 })
   .strip()
   .extend({

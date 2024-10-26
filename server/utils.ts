@@ -67,3 +67,22 @@ export const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message
   return String(error)
 }
+
+// we want LLM to have a better understanding of time
+export const getRelativeTime = (oldTimestamp: number) => {
+  const now = Math.floor(Date.now() / 1000)
+  const difference = now - oldTimestamp
+
+  const formatter = new Intl.RelativeTimeFormat("en", { style: "narrow" })
+
+  if (difference < 60) return formatter.format(-difference, "second")
+  if (difference < 3600)
+    return formatter.format(-Math.floor(difference / 60), "minute")
+  if (difference < 86400)
+    return formatter.format(-Math.floor(difference / 3600), "hour")
+  if (difference < 2620800)
+    return formatter.format(-Math.floor(difference / 86400), "day")
+  if (difference < 31449600)
+    return formatter.format(-Math.floor(difference / 2620800), "month")
+  return formatter.format(-Math.floor(difference / 31449600), "year")
+}

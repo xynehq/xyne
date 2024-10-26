@@ -744,6 +744,8 @@ export const getSheetsListFromOneSpreadsheet = async (
           totalSheets: spreadSheetData.data.sheets?.length!,
         }),
       }),
+      createdAt: new Date(spreadsheet.createdTime!).getTime(),
+      updatedAt: new Date(spreadsheet.modifiedTime!).getTime(),
     }
     sheetsArr.push(sheetDataToBeIngested)
   }
@@ -893,6 +895,8 @@ export const googlePDFsVespa = async (
         permissions: pdf.permissions ?? [],
         mimeType: pdf.mimeType ?? "",
         metadata: JSON.stringify({ parents: parentsForMetadata }),
+        createdAt: new Date(pdf.createdTime!).getTime(),
+        updatedAt: new Date(pdf.modifiedTime!).getTime(),
       })
       count += 1
 
@@ -1270,6 +1274,8 @@ export const googleDocsVespa = async (
         permissions: doc.permissions ?? [],
         mimeType: doc.mimeType ?? "",
         metadata: JSON.stringify({ parents: parentsForMetadata }),
+        createdAt: new Date(doc.createdTime!).getTime(),
+        updatedAt: new Date(doc.modifiedTime!).getTime(),
       })
       count += 1
 
