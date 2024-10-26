@@ -616,6 +616,12 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
 export const getSpreadsheet = (sheets: sheets_v4.Sheets, id: string) =>
   sheets.spreadsheets.get({ spreadsheetId: id })
 
+// Function to chunk rows of text data into manageable batches
+// Excludes numerical data, assuming users do not typically search by numbers
+// Concatenates all textual cells in a row into a single string
+// Adds rows' string data to a chunk until the 512-character limit is exceeded
+// If adding a row exceeds the limit, the chunk is added to the next chunk
+// Otherwise, the row is added to the current chunk
 const chunkFinalRows = (allRows: string[][]): string[] => {
   const chunks: string[] = []
   let currentChunk = ""
