@@ -37,17 +37,31 @@ schema file {
     field owner type string {
       indexing: attribute | summary
     }
+
     field ownerEmail type string {
       indexing: attribute | summary
     }
+
     field photoLink type string {
       indexing: attribute | summary
     }
+
     field permissions type array<string> {
       indexing: attribute | summary
     }
+
     field mimeType type string {
       indexing: attribute | summary
+    }
+
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
     }
   }
 

@@ -20,6 +20,7 @@ const GroupFilterItem = ({
   filter,
   isFilter,
   Image,
+  className,
 }: {
   title: string
   onClick: any
@@ -27,12 +28,13 @@ const GroupFilterItem = ({
   filter: Filter | null
   isFilter: any
   Image: JSX.Element
+  className?: string
 }) => {
   return (
-    <div className="rounded-md mt-4 h-[32px] ml-[40px]">
+    <div className={`rounded-md h-[32px] ml-[40px] ${className}`}>
       <div
         onClick={onClick}
-        className={`${isFilter(filter) ? "bg-[#F0F4F7]" : ""} flex flex-row rounded-[6px] items-center justify-between cursor-pointer hover:bg-[#e6eaed] pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
+        className={`${isFilter(filter) ? "bg-[#F0F4F7]" : ""} flex flex-row rounded-[6px] items-center justify-between cursor-pointer  pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
       >
         <div className="flex items-center">
           {Image}
@@ -89,6 +91,7 @@ export const GroupFilter = ({
     <div className="flex border-l-[1px] border-[#E6EBF5] flex-col">
       <p className="text-[11.5px] font-medium text-[#97A6C4] ml-[40px] mt-[28px]">{`FOUND ${total} RESULTS`}</p>
       <GroupFilterItem
+        className={"mt-4"}
         title={"All"}
         filter={filter}
         isFilter={(filter: Filter | null) => !filter}

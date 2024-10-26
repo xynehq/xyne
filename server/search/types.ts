@@ -100,6 +100,8 @@ export const VespaFileSchema = z.object({
   photoLink: z.string().nullable(),
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
 })
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({
@@ -416,6 +418,7 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
   subject: true,
   from: true,
   relevance: true,
+  timestamp: true,
 })
   .strip()
   .extend({

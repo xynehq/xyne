@@ -117,8 +117,6 @@ export const getFileContent = async (
 
   const chunks = chunkDocument(cleanedTextContent)
 
-  // TODO: fix this correctly
-  // @ts-ignore
   return {
     title: file.name!,
     url: file.webViewLink ?? "",
@@ -131,6 +129,8 @@ export const getFileContent = async (
     chunks: chunks.map((v) => v.chunk),
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
+    createdAt: new Date(file.createdTime!).getTime(),
+    updatedAt: new Date(file.modifiedTime!).getTime(),
   }
 }
 
@@ -179,6 +179,8 @@ export const getPDFContent = async (
       chunks: chunks.map((v) => v.chunk),
       permissions: pdfFile.permissions ?? [],
       mimeType: pdfFile.mimeType ?? "",
+      createdAt: new Date(pdfFile.createdTime!).getTime(),
+      updatedAt: new Date(pdfFile.modifiedTime!).getTime(),
     }
   } catch (error) {
     Logger.error(
@@ -199,8 +201,6 @@ export const driveFileToIndexed = (
 ): VespaFileWithDrivePermission => {
   let entity = mimeTypeMap[file.mimeType!] ?? DriveEntity.Misc
 
-  // TODO: fix this correctly
-  // @ts-ignore
   return {
     title: file.name!,
     url: file.webViewLink ?? "",
@@ -213,6 +213,8 @@ export const driveFileToIndexed = (
     ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
+    createdAt: new Date(file.createdTime!).getTime(),
+    updatedAt: new Date(file.modifiedTime!).getTime(),
   }
 }
 

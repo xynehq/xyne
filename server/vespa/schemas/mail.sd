@@ -26,6 +26,7 @@ schema mail {
 
     field timestamp type long {
       indexing: attribute | summary
+      attribute: fast-search
     }
 
     field app type string {

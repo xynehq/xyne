@@ -407,9 +407,9 @@ export const Index = () => {
         </div>
         {hasSearched && (
           <div className="h-full flex flex-row">
-            {answer && (
-              <div className="h-full flex flex-col">
-                <div className="flex-grow flex mt-[24px] overflow-hidden max-h-[242px]">
+            <div className="h-full flex flex-col">
+              {answer && answer.length > 0 && (
+                <div className="flex-grow flex mt-[24px] max-h-[242px]">
                   <img
                     className="ml-[186px] mr-[20px] w-[24px] h-[24px]"
                     src={answerSparkle}
@@ -425,21 +425,21 @@ export const Index = () => {
                     />
                   </div>
                 </div>
-                {!!results?.length && (
-                  <div className="flex flex-row ml-[186px] max-w-4xl">
-                    <div className="mt-4 pr-10">
-                      {results?.length > 0 ? (
-                        results.map((result, index) => (
-                          <SearchResult result={result} index={index} />
-                        ))
-                      ) : (
-                        <p></p>
-                      )}
-                    </div>
+              )}
+              {!!results?.length && (
+                <div className="flex flex-row ml-[186px] max-w-4xl">
+                  <div className=" max-w-3xl">
+                    {results?.length > 0 ? (
+                      results.map((result, index) => (
+                        <SearchResult result={result} index={index} />
+                      ))
+                    ) : (
+                      <p></p>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
             {groups && (
               <GroupFilter
                 groups={groups}

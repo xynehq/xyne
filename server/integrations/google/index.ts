@@ -614,6 +614,8 @@ export const googlePDFsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: pdf.permissions ?? [],
         mimeType: pdf.mimeType ?? "",
+        createdAt: new Date(pdf.createdTime!).getTime(),
+        updatedAt: new Date(pdf.modifiedTime!).getTime(),
       })
       count += 1
 
@@ -979,6 +981,8 @@ export const googleDocsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: doc.permissions ?? [],
         mimeType: doc.mimeType ?? "",
+        createdAt: new Date(doc.createdTime!).getTime(),
+        updatedAt: new Date(doc.modifiedTime!).getTime(),
       })
       count += 1
 

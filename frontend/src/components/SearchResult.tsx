@@ -17,7 +17,7 @@ export const SearchResult = ({
             rel="noopener noreferrer"
             className="flex items-center text-blue-800 space-x-2"
           >
-            {getIcon(result.app, result.entity)}
+            {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
             {result.title}
           </a>
         </div>
