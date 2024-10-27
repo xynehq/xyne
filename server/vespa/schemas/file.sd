@@ -118,6 +118,43 @@ schema file {
     }
   }
 
+ 
+  rank-profile cosine_RRF inherits default {
+    
+    function cos_sim() {
+      expression: cos(distance(field, chunk_embeddings))
+    }
+
+    # First phase combines BM25 (title and chunks) and vector similarity (chunks)
+    first-phase {
+      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) + bm25(title)))
+    }
+
+    second-phase {
+      expression: cos_sim
+      rerank-count: 2000
+    }
+
+    global-phase {
+      expression {
+        reciprocal_rank_fusion(
+                chunk_vector_score,
+                bm25(chunks),
+                bm25(title),
+                cos_sim
+            )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      chunk_vector_score
+      bm25(chunks)
+      bm25(title)
+      cos_sim
+    }
+  }
+
   document-summary matched-fields {
     summary chunks_summary {
       bolding: on

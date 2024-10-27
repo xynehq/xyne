@@ -7,13 +7,13 @@ def main():
     parser = argparse.ArgumentParser(description='Evaluate TREC QREL results.')
     parser.add_argument(
         '--qrel_file', 
-        default='data/fiqa/dev_trec_qrels.tsv', 
-        help='Path to the qrel file (default: data/output/dev_trec_qrels.tsv)'
+        required=True, 
+        help='Path to the qrel file (--qrels_file path/to/qrels/.tsv)'
     )
     parser.add_argument(
         '--run_file', 
-        default='data/output/fiqa_result_qrels.tsv', 
-        help='Path to the run file (default: data/output/fiqa_result_qrels.tsv)'
+        required=True,
+        help='Path to the run file (--qrels_file path/to/run_file/.tsv)'
     )
     
     args = parser.parse_args()
@@ -52,7 +52,25 @@ def main():
             measure,
             [query_measures[measure] for query_measures in results.values()]
         )
-        print_line(measure, 'all', avg_value)
+        # this line will print all the results
+        # print_line(measure, 'all', avg_value)
+
+        if measure == "P_10":
+            precision_at_10 = avg_value
+        if measure == "recall_10":
+            recall_at_10 = avg_value
+        if measure == "ndcg_cut_10":
+            print("NDCG@10:", f"{avg_value:.4f}")
+        if measure == "map_cut_10":
+            print("Map@10:", f"{avg_value:.4f}")
+        if measure == "recip_rank":
+            print("MRR@10:", f"{avg_value:.4f}")
+    if precision_at_10 is not None and recall_at_10 is not None:
+        f1_score = 2 * (precision_at_10 * recall_at_10) / (precision_at_10 + recall_at_10) if (precision_at_10 + recall_at_10) != 0 else 0
+        print(f"Precision@10: {precision_at_10:.4f}")
+        print(f"Recall@10: {recall_at_10:.4f}")
+        print(f"F1-Score: {f1_score}")
+
 
 if __name__ == "__main__":
     sys.exit(main())

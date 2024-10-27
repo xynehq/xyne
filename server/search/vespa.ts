@@ -292,15 +292,19 @@ export const autocomplete = async (
   }
 }
 
+type RankProfile = "default" | "cosine_RRF"
 type YqlProfile = {
-  profile: string
+  profile: RankProfile
   yql: string
 }
 
 // TODO: it seems the owner part is complicating things
-const HybridDefaultProfile = (hits: number): YqlProfile => {
+const HybridDefaultProfile = (
+  hits: number,
+  profile: RankProfile = "default",
+): YqlProfile => {
   return {
-    profile: "default",
+    profile: profile,
     yql: `
             select * from sources ${AllSources}
             where ((
@@ -401,7 +405,7 @@ export const searchVespa = async (
     yql: yqlQuery,
     query,
     email,
-    "ranking.profile": HybridDefaultProfile(limit).profile,
+    "ranking.profile": HybridDefaultProfile(limit, "cosine_RRF").profile,
     "input.query(e)": "embed(@query)",
     hits: limit,
     alpha: 0.5,
