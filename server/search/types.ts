@@ -93,10 +93,7 @@ const SpreadsheetMetadata = z.object({
   totalSheets: z.number(),
 })
 
-const Metadata = z.union([
-  z.object({}),
-  z.object({ spreadsheet: SpreadsheetMetadata }).optional(),
-])
+const Metadata = z.union([z.object({}), SpreadsheetMetadata.optional()])
 
 export const VespaFileSchema = z.object({
   docId: z.string(),

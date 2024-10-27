@@ -729,10 +729,8 @@ export const getSheetsListFromOneSpreadsheet = async (
       metadata: {
         parents: parentsForMetadata,
         ...(sheetIndex === 0 && {
-          spreadsheet: {
-            spreadsheetId: spreadsheet.id!,
-            totalSheets: spreadSheetData.data.sheets?.length!,
-          },
+          spreadsheetId: spreadsheet.id!,
+          totalSheets: spreadSheetData.data.sheets?.length!,
         }),
       },
     }

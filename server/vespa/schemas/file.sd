@@ -159,13 +159,9 @@ schema file {
     field folderName type string {}
   }
 
-  struct spreadsheet {
-    field spreadsheetId type string {}
-    field totalSheets type int {}
-  }
-
   struct metadata {
     field parents type array<parent> {}
-    field spreadsheet type spreadsheet {}
+    field spreadsheetId type string {}
+    field totalSheets type int {}
   }
 }
