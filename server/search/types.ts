@@ -88,17 +88,15 @@ export const defaultVespaFieldsSchema = z.object({
   documentid: z.string(),
 })
 
-const DriveParentsSchema = z.array(
-  z.object({
-    folderId: z.string(),
-    folderName: z.string(),
-  }),
-)
-
 const SpreadsheetMetadata = z.object({
   spreadsheetId: z.string(),
   totalSheets: z.number(),
 })
+
+const Metadata = z.union([
+  z.object({}),
+  z.object({ spreadsheet: SpreadsheetMetadata }).optional(),
+])
 
 export const VespaFileSchema = z.object({
   docId: z.string(),
@@ -112,10 +110,7 @@ export const VespaFileSchema = z.object({
   photoLink: z.string().nullable(),
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
-  metadata: z.object({
-    parents: DriveParentsSchema,
-    spreadsheet: SpreadsheetMetadata.optional(),
-  }),
+  metadata: Metadata,
 })
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({

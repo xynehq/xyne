@@ -49,7 +49,7 @@ schema file {
     field mimeType type string {
       indexing: attribute | summary
     }
-    field metadata type metadata_struct {
+    field metadata type metadata {
       indexing: summary
     }
   }
@@ -154,18 +154,18 @@ schema file {
     }
   }
 
-  struct parent_struct {
+  struct parent {
     field folderId type string {}
     field folderName type string {}
   }
 
-  struct spreadsheet_struct {
+  struct spreadsheet {
     field spreadsheetId type string {}
     field totalSheets type int {}
   }
 
-  struct metadata_struct {
-    field parents type array<parent_struct> {}
-    field spreadsheet type spreadsheet_struct {}
+  struct metadata {
+    field parents type array<parent> {}
+    field spreadsheet type spreadsheet {}
   }
 }
