@@ -4,6 +4,7 @@ import {
   drive_v3,
   google,
   people_v1,
+  sheets_v4,
 } from "googleapis"
 import {
   extractFootnotes,
@@ -48,6 +49,7 @@ import {
   DocsParsingError,
   driveFileToIndexed,
   DriveMime,
+  getFile,
   toPermissionsList,
 } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
@@ -66,7 +68,11 @@ import path from "node:path"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import fileSys from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
-import { MAX_GD_PDF_SIZE } from "@/integrations/google/config"
+import {
+  MAX_GD_PDF_SIZE,
+  MAX_GD_SHEET_ROWS,
+  MAX_GD_SHEET_TEXT_LEN,
+} from "@/integrations/google/config"
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
@@ -489,24 +495,36 @@ const insertFilesForUser = async (
       (v) => v.mimeType === DriveMime.Slides,
     )
     const rest = fileMetadata.filter(
-      (v) => v.mimeType !== DriveMime.Docs && v.mimeType !== DriveMime.PDF,
+      (v) =>
+        v.mimeType !== DriveMime.Docs &&
+        v.mimeType !== DriveMime.PDF &&
+        v.mimeType !== DriveMime.Sheets,
     )
 
-    const [documents, pdfDocuments]: [
+    const [documents, pdfDocuments, sheets]: [
+      VespaFileWithDrivePermission[],
       VespaFileWithDrivePermission[],
       VespaFileWithDrivePermission[],
     ] = await Promise.all([
       googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
       googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+      googleSheetsVespa(
+        googleClient,
+        googleSheetsMetadata,
+        connector.externalId,
+      ),
     ])
-    const driveFiles: VespaFileWithDrivePermission[] =
-      await driveFilesToDoc(rest)
+    const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
+      googleClient,
+      rest,
+    )
 
     sendWebsocketMessage("generating embeddings", connector.externalId)
     let allFiles: VespaFileWithDrivePermission[] = [
       ...driveFiles,
       ...documents,
       ...pdfDocuments,
+      ...sheets,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
       return v
@@ -521,6 +539,257 @@ const insertFilesForUser = async (
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
   }
+}
+
+export const getAllSheetsFromSpreadSheet = async (
+  sheets: sheets_v4.Sheets,
+  spreadsheet: sheets_v4.Schema$Spreadsheet,
+  spreadsheetId: string,
+) => {
+  const allSheets = []
+  for (const sheet of spreadsheet.sheets!) {
+    const sheetProp = sheet.properties
+    const sheetTitle = sheetProp?.title
+    const sheetType = sheetProp?.sheetType
+
+    // If sheetType is GRID meaning table like structure, then only go further
+    // Other sheetType includes OBJECT which represent charts, graphs, etc. Ignoring them for now
+    if (sheetType !== "GRID") {
+      continue
+    }
+
+    const sheetRanges = await sheets.spreadsheets.values.get({
+      range: `'${sheetTitle}'`,
+      spreadsheetId,
+      valueRenderOption: "FORMATTED_VALUE",
+    })
+
+    const valueRanges = sheetRanges?.data?.values!
+    // Making a object of one sheet info here to specify sheet data with sheet info
+    allSheets.push({
+      sheetId: sheetProp?.sheetId,
+      sheetTitle,
+      valueRanges,
+    })
+  }
+  return allSheets
+}
+
+export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
+  const rowsWithData = allRows?.filter((row) =>
+    row.some((r) => r.trim() !== ""),
+  )
+
+  if (!rowsWithData || rowsWithData.length === 0) {
+    // If no row is filled, no data is there
+    Logger.error("No data in any row. Skipping it")
+    return []
+  }
+
+  let noOfCols = 0
+  for (const row of rowsWithData) {
+    if (row.length > noOfCols) {
+      noOfCols = row.length
+    }
+  }
+
+  // If some cells are empty in a row, and there are less values compared to the noOfCols
+  // Put "" string in them
+  const processedRows: string[][] = rowsWithData.map((row) =>
+    row.length < noOfCols
+      ? row.concat(Array(noOfCols - row.length).fill(""))
+      : row,
+  )
+
+  if (processedRows.length < 2) {
+    // One row is assumed to be headers/column names
+    // Atleast one additional row for the data should be there
+    // So there should be atleast two rows to continue further
+    Logger.error("Not enough data to process further. Skipping it")
+    return []
+  }
+
+  return processedRows
+}
+
+// Function to get the whole spreadsheet
+// One spreadsheet can contain multiple sheets like Sheet1, Sheet2
+export const getSpreadsheet = (sheets: sheets_v4.Sheets, id: string) =>
+  sheets.spreadsheets.get({ spreadsheetId: id })
+
+// Function to chunk rows of text data into manageable batches
+// Excludes numerical data, assuming users do not typically search by numbers
+// Concatenates all textual cells in a row into a single string
+// Adds rows' string data to a chunk until the 512-character limit is exceeded
+// If adding a row exceeds the limit, the chunk is added to the next chunk
+// Otherwise, the row is added to the current chunk
+const chunkFinalRows = (allRows: string[][]): string[] => {
+  const chunks: string[] = []
+  let currentChunk = ""
+  let totalTextLength = 0
+
+  for (const row of allRows) {
+    // Filter out numerical cells and empty strings
+    const textualCells = row.filter(
+      (cell) => isNaN(Number(cell)) && cell.trim().length > 0,
+    )
+
+    if (textualCells.length === 0) continue // Skip if no textual data
+
+    const rowText = textualCells.join(" ")
+
+    // Check if adding this rowText would exceed the maximum text length
+    if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
+      Logger.error(`Text length excedded, indexing with empty content`)
+      // Return an empty array if the total text length exceeds the limit
+      return []
+    }
+
+    totalTextLength += rowText.length
+
+    if ((currentChunk + " " + rowText).trim().length > 512) {
+      // Add the current chunk to the list and start a new chunk
+      if (currentChunk.trim().length > 0) {
+        chunks.push(currentChunk.trim())
+      }
+      currentChunk = rowText
+    } else {
+      // Append the row text to the current chunk
+      currentChunk += " " + rowText
+    }
+  }
+
+  if (currentChunk.trim().length > 0) {
+    // Add any remaining text as the last chunk
+    chunks.push(currentChunk.trim())
+  }
+
+  return chunks
+}
+
+export const getSheetsListFromOneSpreadsheet = async (
+  sheets: sheets_v4.Sheets,
+  client: GoogleClient,
+  spreadsheet: drive_v3.Schema$File,
+): Promise<VespaFileWithDrivePermission[]> => {
+  const sheetsArr = []
+  const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
+
+  // Now we should get all sheets inside this spreadsheet using the spreadSheetData
+  const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
+    sheets,
+    spreadSheetData.data,
+    spreadsheet.id!,
+  )
+
+  // There can be multiple parents
+  // Element of parents array contains folderId and folderName
+  const parentsForMetadata = []
+  // Shared files cannot have parents
+  // There can be some files that user has access to may not have parents as they are shared
+  if (spreadsheet?.parents) {
+    for (const parentId of spreadsheet?.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
+
+  for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
+    const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
+
+    if (finalRows.length === 0) {
+      Logger.info(
+        `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
+      )
+      continue
+    }
+
+    let chunks: string[] = []
+
+    if (finalRows.length > MAX_GD_SHEET_ROWS) {
+      // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+      Logger.info(
+        `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+      )
+      chunks = []
+    } else {
+      chunks = chunkFinalRows(finalRows)
+    }
+
+    const sheetDataToBeIngested = {
+      title: spreadsheet.name!,
+      url: spreadsheet.webViewLink ?? "",
+      app: Apps.GoogleDrive,
+      // TODO Document it eveyrwhere
+      // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
+      docId: `${spreadsheet?.id}_${sheetIndex}`,
+      owner: spreadsheet.owners
+        ? (spreadsheet.owners[0].displayName ?? "")
+        : "",
+      photoLink: spreadsheet.owners
+        ? (spreadsheet.owners[0].photoLink ?? "")
+        : "",
+      ownerEmail: spreadsheet.owners
+        ? (spreadsheet.owners[0]?.emailAddress ?? "")
+        : "",
+      entity: DriveEntity.Sheets,
+      chunks,
+      permissions: spreadsheet.permissions ?? [],
+      mimeType: spreadsheet.mimeType ?? "",
+      metadata: JSON.stringify({
+        parents: parentsForMetadata,
+        ...(sheetIndex === 0 && {
+          spreadsheetId: spreadsheet.id!,
+          totalSheets: spreadSheetData.data.sheets?.length!,
+        }),
+      }),
+    }
+    sheetsArr.push(sheetDataToBeIngested)
+  }
+  return sheetsArr
+}
+
+const googleSheetsVespa = async (
+  client: GoogleClient,
+  spreadsheetsMetadata: drive_v3.Schema$File[],
+  connectorId: string,
+): Promise<VespaFileWithDrivePermission[]> => {
+  sendWebsocketMessage(
+    `Scanning ${spreadsheetsMetadata.length} Google Sheets`,
+    connectorId,
+  )
+  const sheetsList: VespaFileWithDrivePermission[] = []
+  const sheets = google.sheets({ version: "v4", auth: client })
+  const total = spreadsheetsMetadata.length
+  let count = 0
+
+  for (const spreadsheet of spreadsheetsMetadata) {
+    try {
+      const sheetsListFromOneSpreadsheet =
+        await getSheetsListFromOneSpreadsheet(sheets, client, spreadsheet)
+      sheetsList.push(...sheetsListFromOneSpreadsheet)
+      count += 1
+
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+    } catch (error) {
+      Logger.error(
+        `Error getting sheet files: ${error} ${(error as Error).stack}`,
+        error,
+      )
+      throw new DownloadDocumentError({
+        message: "Error in the catch of getting sheet files",
+        cause: error as Error,
+        integration: Apps.GoogleDrive,
+        entity: DriveEntity.Sheets,
+      })
+    }
+  }
+  return sheetsList
 }
 
 export const downloadDir = path.resolve(__dirname, "../../downloads")
@@ -600,6 +869,15 @@ export const googlePDFsVespa = async (
         continue
       }
       const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+
+      const parentsForMetadata = []
+      if (pdf?.parents) {
+        for (const parentId of pdf.parents!) {
+          const parentData = await getFile(client, parentId)
+          const folderName = parentData.name!
+          parentsForMetadata.push({ folderName, folderId: parentId })
+        }
+      }
       // TODO: remove ts-ignore and fix correctly
       // @ts-ignore
       pdfsList.push({
@@ -614,6 +892,7 @@ export const googlePDFsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: pdf.permissions ?? [],
         mimeType: pdf.mimeType ?? "",
+        metadata: JSON.stringify({ parents: parentsForMetadata }),
       })
       count += 1
 
@@ -908,7 +1187,7 @@ export const listFiles = async (
         q: "trashed = false",
         pageSize: 100,
         fields:
-          "nextPageToken, files(id, webViewLink, size, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
+          "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
         pageToken: nextPageToken,
       })
 
@@ -967,6 +1246,17 @@ export const googleDocsVespa = async (
 
       const chunks = chunkDocument(cleanedTextContent)
 
+      const parentsForMetadata = []
+      // Shared files cannot have parents
+      // There can be some files that user has access to may not have parents as they are shared
+      if (doc?.parents) {
+        for (const parentId of doc?.parents!) {
+          const parentData = await getFile(client, parentId)
+          const folderName = parentData.name!
+          parentsForMetadata.push({ folderName, folderId: parentId })
+        }
+      }
+
       docsList.push({
         title: doc.name!,
         url: doc.webViewLink ?? "",
@@ -979,6 +1269,7 @@ export const googleDocsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: doc.permissions ?? [],
         mimeType: doc.mimeType ?? "",
+        metadata: JSON.stringify({ parents: parentsForMetadata }),
       })
       count += 1
 
@@ -995,11 +1286,12 @@ export const googleDocsVespa = async (
 }
 
 export const driveFilesToDoc = async (
+  client: GoogleClient,
   rest: drive_v3.Schema$File[],
 ): Promise<VespaFileWithDrivePermission[]> => {
   let results: VespaFileWithDrivePermission[] = []
   for (const doc of rest) {
-    results.push(driveFileToIndexed(doc))
+    results.push(await driveFileToIndexed(client, doc))
   }
   return results
 }

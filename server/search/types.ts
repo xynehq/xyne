@@ -88,6 +88,13 @@ export const defaultVespaFieldsSchema = z.object({
   documentid: z.string(),
 })
 
+const SpreadsheetMetadata = z.object({
+  spreadsheetId: z.string(),
+  totalSheets: z.number(),
+})
+
+const Metadata = z.union([z.object({}), SpreadsheetMetadata])
+
 export const VespaFileSchema = z.object({
   docId: z.string(),
   app: z.nativeEnum(Apps),
@@ -100,6 +107,7 @@ export const VespaFileSchema = z.object({
   photoLink: z.string().nullable(),
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
+  metadata: Metadata,
 })
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({

@@ -37,6 +37,7 @@ import {
   getFile,
   getFileContent,
   getPDFContent,
+  getSheetsFromSpreadSheet,
   MimeMapForContent,
   toPermissionsList,
 } from "./utils"
@@ -49,8 +50,9 @@ import {
   type VespaFile,
   type VespaMail,
 } from "@/search/types"
-import { insertContact } from "@/integrations/google"
+import { getSpreadsheet, insertContact } from "@/integrations/google"
 import { parseMail } from "./gmail"
+import { type VespaFileWithDrivePermission } from "@/search/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -61,6 +63,120 @@ type ChangeStats = {
   removed: number
   updated: number
   summary: string
+}
+
+const getDocumentOrSpreadsheet = async (docId: string) => {
+  try {
+    const doc = await GetDocument(docId, fileSchema)
+    return doc
+  } catch (err: any) {
+    const errMessage = getErrorMessage(err?.cause)
+    if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
+      Logger.error(
+        `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
+      )
+      const sheetsForSpreadSheet = await GetDocument(`${docId}_0`, fileSchema)
+      return sheetsForSpreadSheet
+    } else {
+      Logger.error(`Error getting document: ${err.message}`)
+      throw err
+    }
+  }
+}
+
+const deleteUpdateStatsForGoogleSheets = async (
+  docId: string,
+  client: GoogleClient,
+  stats: ChangeStats,
+) => {
+  const spreadsheetId = docId
+  const sheets = google.sheets({ version: "v4", auth: client })
+  const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
+  const totalSheets = spreadsheet.data.sheets?.length!
+
+  // Case where the whole spreadsheet is not deleted but some sheets are deleted
+  // If the sheets in vespa don't match the current sheets, we delete the rest of them
+  // Check if the sheets we have in vespa are same as we get
+  // If not, it means maybe sheet/s can be deleted
+  const spreadSheetFromVespa = await GetDocument(
+    `${spreadsheetId}_0`,
+    fileSchema,
+  )
+  const metadata = JSON.parse(
+    //@ts-ignore
+    (spreadSheetFromVespa.fields as VespaFile)?.metadata,
+  )!
+  const totalSheetsFromVespa = metadata?.totalSheets!
+
+  if (
+    totalSheets !== totalSheetsFromVespa &&
+    totalSheets < totalSheetsFromVespa
+  ) {
+    // Condition will be true, if some sheets are deleted and not whole spreadsheet
+    for (let id = totalSheets; id < totalSheetsFromVespa; id++) {
+      await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
+      stats.removed += 1
+      stats.summary += `${spreadsheetId}_${id} sheet removed\n`
+    }
+  }
+
+  // Check for each sheetIndex, if that sheet if already there in vespa or not
+  for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
+    const id = `${spreadsheetId}_${sheetIndex}`
+    try {
+      await GetDocument(id, fileSchema)
+      stats.updated += 1
+      continue
+    } catch (e) {
+      stats.added += 1
+      continue
+    }
+  }
+}
+
+const deleteWholeSpreadsheet = async (
+  docFields: VespaFile,
+  docId: string,
+  stats: ChangeStats,
+  email: string,
+) => {
+  // Get metadata from the first sheet of that spreadsheet
+  // Metadata contains all sheets ids inside that specific spreadsheet
+  // @ts-ignore
+  const metadata = JSON.parse(docFields?.metadata)!
+  const totalSheets = metadata.totalSheets!
+  // A Google spreadsheet can have multiple sheets inside it
+  // Admin can take away permissions from any of that sheets of the spreadsheet
+  const spreadsheetId = docId
+  // Remove all sheets inside that spreadsheet
+  for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
+    const id = `${spreadsheetId}_${sheetIndex}`
+    const doc = await GetDocument(id, fileSchema)
+    const permissions = (doc.fields as VespaFile).permissions
+    if (permissions.length === 1) {
+      // remove it
+      try {
+        // also ensure that we are that permission
+        if (!(permissions[0] === email)) {
+          throw new Error(
+            "We got a change for us that we didn't have access to in Vespa",
+          )
+        }
+        await DeleteDocument(id, fileSchema)
+        stats.removed += 1
+        stats.summary += `${id} sheet removed\n`
+      } catch (e) {
+        // TODO: detect vespa 404 and only ignore for that case
+        // otherwise throw it further
+      }
+    } else {
+      // remove our user's permission from the email
+      const newPermissions = permissions.filter((v) => v !== email)
+      await UpdateDocumentPermissions(fileSchema, id, newPermissions)
+      stats.updated += 1
+      stats.summary += `user lost permission for sheet: ${id}\n`
+    }
+  }
 }
 
 const handleGoogleDriveChange = async (
@@ -74,30 +190,40 @@ const handleGoogleDriveChange = async (
   if (change.removed) {
     if (docId) {
       try {
-        const doc = await GetDocument(docId, fileSchema)
-        const permissions = (doc.fields as VespaFile).permissions
-        if (permissions.length === 1) {
-          // remove it
-          try {
-            // also ensure that we are that permission
-            if (!(permissions[0] === email)) {
-              throw new Error(
-                "We got a change for us that we didn't have access to in Vespa",
-              )
-            }
-            await DeleteDocument(docId, fileSchema)
-            stats.removed += 1
-            stats.summary += `${docId} removed\n`
-          } catch (e) {
-            // TODO: detect vespa 404 and only ignore for that case
-            // otherwise throw it further
-          }
+        const doc = await getDocumentOrSpreadsheet(docId)
+        // Check if its spreadsheet
+        if ((doc.fields as VespaFile).mimeType === DriveMime.Sheets) {
+          await deleteWholeSpreadsheet(
+            doc.fields as VespaFile,
+            docId,
+            stats,
+            email,
+          )
         } else {
-          // remove our user's permission from the email
-          const newPermissions = permissions.filter((v) => v !== email)
-          await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
-          stats.updated += 1
-          stats.summary += `user lost permission for doc: ${docId}\n`
+          const permissions = (doc.fields as VespaFile).permissions
+          if (permissions.length === 1) {
+            // remove it
+            try {
+              // also ensure that we are that permission
+              if (!(permissions[0] === email)) {
+                throw new Error(
+                  "We got a change for us that we didn't have access to in Vespa",
+                )
+              }
+              await DeleteDocument(docId, fileSchema)
+              stats.removed += 1
+              stats.summary += `${docId} removed\n`
+            } catch (e) {
+              // TODO: detect vespa 404 and only ignore for that case
+              // otherwise throw it further
+            }
+          } else {
+            // remove our user's permission from the email
+            const newPermissions = permissions.filter((v) => v !== email)
+            await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
+            stats.updated += 1
+            stats.summary += `user lost permission for doc: ${docId}\n`
+          }
         }
       } catch (err) {
         Logger.error(
@@ -113,8 +239,16 @@ const handleGoogleDriveChange = async (
     // or user got access to a completely new doc
     let doc = null
     try {
-      doc = await GetDocument(docId, fileSchema)
-      stats.updated += 1
+      if (
+        file.mimeType &&
+        MimeMapForContent[file.mimeType] &&
+        file.mimeType === DriveMime.Sheets
+      ) {
+        await deleteUpdateStatsForGoogleSheets(docId, client, stats)
+      } else {
+        doc = await GetDocument(docId, fileSchema)
+        stats.updated += 1
+      }
     } catch (e) {
       // catch the 404 error
       Logger.warn(
@@ -130,6 +264,13 @@ const handleGoogleDriveChange = async (
       if (file.mimeType === DriveMime.PDF) {
         vespaData = await getPDFContent(client, file, DriveEntity.PDF)
         stats.summary += `indexed new content ${docId}\n`
+      } else if (file.mimeType === DriveMime.Sheets) {
+        vespaData = await getSheetsFromSpreadSheet(
+          client,
+          file,
+          DriveEntity.Sheets,
+        )
+        stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
       } else {
         vespaData = await getFileContent(client, file, DriveEntity.Docs)
         if (doc) {
@@ -145,11 +286,24 @@ const handleGoogleDriveChange = async (
         stats.summary += `added new file ${docId}\n`
       }
       // just update it as is
-      vespaData = driveFileToIndexed(file)
+      vespaData = await driveFileToIndexed(client, file)
     }
     if (vespaData) {
-      vespaData.permissions = toPermissionsList(vespaData.permissions, email)
-      insertDocument(vespaData)
+      // If vespaData is of array type containing multiple things
+      if (Array.isArray(vespaData)) {
+        let allData: VespaFileWithDrivePermission[] = [...vespaData].map(
+          (v) => {
+            v.permissions = toPermissionsList(v.permissions, email)
+            return v
+          },
+        )
+        for (const data of allData) {
+          insertDocument(data)
+        }
+      } else {
+        vespaData.permissions = toPermissionsList(vespaData.permissions, email)
+        insertDocument(vespaData)
+      }
     }
   } else if (change.driveId) {
     // TODO: handle this once we support multiple drives

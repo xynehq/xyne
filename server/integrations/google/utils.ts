@@ -19,7 +19,12 @@ import type { VespaFileWithDrivePermission } from "@/search/types"
 import { DownloadDocumentError } from "@/errors"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
-import { deleteDocument, downloadDir, downloadPDF } from "."
+import {
+  deleteDocument,
+  downloadDir,
+  downloadPDF,
+  getSheetsListFromOneSpreadsheet,
+} from "."
 import { getLogger } from "@/logger"
 import type PgBoss from "pg-boss"
 import fs from "node:fs/promises"
@@ -69,6 +74,7 @@ export enum DriveMime {
 export const MimeMapForContent: Record<string, boolean> = {
   [DriveMime.Docs]: true,
   [DriveMime.PDF]: true,
+  [DriveMime.Sheets]: true,
 }
 
 export class DocsParsingError extends Error {}
@@ -79,7 +85,7 @@ export const getFile = async (
 ): Promise<drive_v3.Schema$File> => {
   const drive = google.drive({ version: "v3", auth: client })
   const fields =
-    "id, webViewLink, createdTime, modifiedTime, name, size, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
+    "id, webViewLink, createdTime, modifiedTime, name, size, parents, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
   const file: GaxiosResponse<drive_v3.Schema$File> = await drive.files.get({
     fileId,
     fields,
@@ -117,6 +123,15 @@ export const getFileContent = async (
 
   const chunks = chunkDocument(cleanedTextContent)
 
+  const parentsForMetadata = []
+  if (file?.parents) {
+    for (const parentId of file.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
+
   // TODO: fix this correctly
   // @ts-ignore
   return {
@@ -131,6 +146,7 @@ export const getFileContent = async (
     chunks: chunks.map((v) => v.chunk),
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
+    metadata: JSON.stringify({ parents: parentsForMetadata }),
   }
 }
 
@@ -163,6 +179,16 @@ export const getPDFContent = async (
     }
 
     const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+
+    const parentsForMetadata = []
+    if (pdfFile?.parents) {
+      for (const parentId of pdfFile.parents!) {
+        const parentData = await getFile(client, parentId)
+        const folderName = parentData.name!
+        parentsForMetadata.push({ folderName, folderId: parentId })
+      }
+    }
+
     // Deleting document
     await deleteDocument(pdfPath)
     // TODO: remove ts-ignore and fix correctly
@@ -179,6 +205,7 @@ export const getPDFContent = async (
       chunks: chunks.map((v) => v.chunk),
       permissions: pdfFile.permissions ?? [],
       mimeType: pdfFile.mimeType ?? "",
+      metadata: JSON.stringify({ parents: parentsForMetadata }),
     }
   } catch (error) {
     Logger.error(
@@ -194,10 +221,40 @@ export const getPDFContent = async (
   }
 }
 
-export const driveFileToIndexed = (
+export const getSheetsFromSpreadSheet = async (
+  client: GoogleClient,
+  spreadsheet: drive_v3.Schema$File,
+  entity: DriveEntity,
+): Promise<VespaFileWithDrivePermission[]> => {
+  try {
+    const sheets = google.sheets({ version: "v4", auth: client })
+    const sheetsListFromOneSpreadsheet = await getSheetsListFromOneSpreadsheet(
+      sheets,
+      client,
+      spreadsheet,
+    )
+
+    return sheetsListFromOneSpreadsheet
+  } catch (err) {
+    Logger.error(`Error in catch of getSheetsFromSpreadSheet`, err)
+    return []
+  }
+}
+
+export const driveFileToIndexed = async (
+  client: GoogleClient,
   file: drive_v3.Schema$File,
-): VespaFileWithDrivePermission => {
+): Promise<VespaFileWithDrivePermission> => {
   let entity = mimeTypeMap[file.mimeType!] ?? DriveEntity.Misc
+
+  const parentsForMetadata = []
+  if (file?.parents) {
+    for (const parentId of file.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
 
   // TODO: fix this correctly
   // @ts-ignore
@@ -213,6 +270,7 @@ export const driveFileToIndexed = (
     ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
+    metadata: JSON.stringify({ parents: parentsForMetadata }),
   }
 }
 
