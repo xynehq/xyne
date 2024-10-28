@@ -49,8 +49,8 @@ schema file {
     field mimeType type string {
       indexing: attribute | summary
     }
-    field metadata type metadata {
-      indexing: summary
+    field metadata type string {
+      indexing: attribute | summary
     }
   }
 
@@ -152,16 +152,5 @@ schema file {
     match-features {
       bm25(title_fuzzy)
     }
-  }
-
-  struct parent {
-    field folderId type string {}
-    field folderName type string {}
-  }
-
-  struct metadata {
-    field parents type array<parent> {}
-    field spreadsheetId type string {}
-    field totalSheets type int {}
   }
 }

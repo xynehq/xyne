@@ -102,8 +102,10 @@ const deleteUpdateStatsForGoogleSheets = async (
     `${spreadsheetId}_0`,
     fileSchema,
   )
-  const metadata = (spreadSheetFromVespa.fields as VespaFile)?.metadata!
-  // @ts-ignore
+  const metadata = JSON.parse(
+    //@ts-ignore
+    (spreadSheetFromVespa.fields as VespaFile)?.metadata,
+  )!
   const totalSheetsFromVespa = metadata?.totalSheets!
 
   if (
@@ -140,8 +142,8 @@ const deleteWholeSpreadsheet = async (
 ) => {
   // Get metadata from the first sheet of that spreadsheet
   // Metadata contains all sheets ids inside that specific spreadsheet
-  const metadata = docFields?.metadata!
-  //@ts-ignore
+  // @ts-ignore
+  const metadata = JSON.parse(docFields?.metadata)!
   const totalSheets = metadata.totalSheets!
   // A Google spreadsheet can have multiple sheets inside it
   // Admin can take away permissions from any of that sheets of the spreadsheet

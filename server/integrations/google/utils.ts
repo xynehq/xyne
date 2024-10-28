@@ -146,7 +146,7 @@ export const getFileContent = async (
     chunks: chunks.map((v) => v.chunk),
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
-    metadata: { parents: parentsForMetadata },
+    metadata: JSON.stringify({ parents: parentsForMetadata }),
   }
 }
 
@@ -205,7 +205,7 @@ export const getPDFContent = async (
       chunks: chunks.map((v) => v.chunk),
       permissions: pdfFile.permissions ?? [],
       mimeType: pdfFile.mimeType ?? "",
-      metadata: { parents: parentsForMetadata },
+      metadata: JSON.stringify({ parents: parentsForMetadata }),
     }
   } catch (error) {
     Logger.error(
@@ -270,7 +270,7 @@ export const driveFileToIndexed = async (
     ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
-    metadata: { parents: parentsForMetadata },
+    metadata: JSON.stringify({ parents: parentsForMetadata }),
   }
 }
 

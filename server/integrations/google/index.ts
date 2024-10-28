@@ -737,13 +737,13 @@ export const getSheetsListFromOneSpreadsheet = async (
       chunks,
       permissions: spreadsheet.permissions ?? [],
       mimeType: spreadsheet.mimeType ?? "",
-      metadata: {
+      metadata: JSON.stringify({
         parents: parentsForMetadata,
         ...(sheetIndex === 0 && {
           spreadsheetId: spreadsheet.id!,
           totalSheets: spreadSheetData.data.sheets?.length!,
         }),
-      },
+      }),
     }
     sheetsArr.push(sheetDataToBeIngested)
   }
@@ -892,7 +892,7 @@ export const googlePDFsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: pdf.permissions ?? [],
         mimeType: pdf.mimeType ?? "",
-        metadata: { parents: parentsForMetadata },
+        metadata: JSON.stringify({ parents: parentsForMetadata }),
       })
       count += 1
 
@@ -1269,7 +1269,7 @@ export const googleDocsVespa = async (
         chunks: chunks.map((v) => v.chunk),
         permissions: doc.permissions ?? [],
         mimeType: doc.mimeType ?? "",
-        metadata: { parents: parentsForMetadata },
+        metadata: JSON.stringify({ parents: parentsForMetadata }),
       })
       count += 1
 
