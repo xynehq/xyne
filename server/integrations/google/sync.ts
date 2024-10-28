@@ -84,6 +84,99 @@ const getDocumentOrSpreadsheet = async (docId: string) => {
   }
 }
 
+const deleteUpdateStatsForGoogleSheets = async (
+  docId: string,
+  client: GoogleClient,
+  stats: ChangeStats,
+) => {
+  const spreadsheetId = docId
+  const sheets = google.sheets({ version: "v4", auth: client })
+  const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
+  const totalSheets = spreadsheet.data.sheets?.length!
+
+  // Case where the whole spreadsheet is not deleted but some sheets are deleted
+  // If the sheets in vespa don't match the current sheets, we delete the rest of them
+  // Check if the sheets we have in vespa are same as we get
+  // If not, it means maybe sheet/s can be deleted
+  const spreadSheetFromVespa = await GetDocument(
+    `${spreadsheetId}_0`,
+    fileSchema,
+  )
+  const metadata = (spreadSheetFromVespa.fields as VespaFile)?.metadata!
+  // @ts-ignore
+  const totalSheetsFromVespa = metadata?.totalSheets!
+
+  if (
+    totalSheets !== totalSheetsFromVespa &&
+    totalSheets < totalSheetsFromVespa
+  ) {
+    // Condition will be true, if some sheets are deleted and not whole spreadsheet
+    for (let id = totalSheets; id < totalSheetsFromVespa; id++) {
+      await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
+      stats.removed += 1
+      stats.summary += `${spreadsheetId}_${id} sheet removed\n`
+    }
+  }
+
+  // Check for each sheetIndex, if that sheet if already there in vespa or not
+  for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
+    const id = `${spreadsheetId}_${sheetIndex}`
+    try {
+      await GetDocument(id, fileSchema)
+      stats.updated += 1
+      continue
+    } catch (e) {
+      stats.added += 1
+      continue
+    }
+  }
+}
+
+const deleteWholeSpreadsheet = async (
+  docFields: VespaFile,
+  docId: string,
+  stats: ChangeStats,
+  email: string,
+) => {
+  // Get metadata from the first sheet of that spreadsheet
+  // Metadata contains all sheets ids inside that specific spreadsheet
+  const metadata = docFields?.metadata!
+  //@ts-ignore
+  const totalSheets = metadata.totalSheets!
+  // A Google spreadsheet can have multiple sheets inside it
+  // Admin can take away permissions from any of that sheets of the spreadsheet
+  const spreadsheetId = docId
+  // Remove all sheets inside that spreadsheet
+  for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
+    const id = `${spreadsheetId}_${sheetIndex}`
+    const doc = await GetDocument(id, fileSchema)
+    const permissions = (doc.fields as VespaFile).permissions
+    if (permissions.length === 1) {
+      // remove it
+      try {
+        // also ensure that we are that permission
+        if (!(permissions[0] === email)) {
+          throw new Error(
+            "We got a change for us that we didn't have access to in Vespa",
+          )
+        }
+        await DeleteDocument(id, fileSchema)
+        stats.removed += 1
+        stats.summary += `${id} sheet removed\n`
+      } catch (e) {
+        // TODO: detect vespa 404 and only ignore for that case
+        // otherwise throw it further
+      }
+    } else {
+      // remove our user's permission from the email
+      const newPermissions = permissions.filter((v) => v !== email)
+      await UpdateDocumentPermissions(fileSchema, id, newPermissions)
+      stats.updated += 1
+      stats.summary += `user lost permission for sheet: ${id}\n`
+    }
+  }
+}
+
 const handleGoogleDriveChange = async (
   change: drive_v3.Schema$Change,
   client: GoogleClient,
@@ -98,43 +191,12 @@ const handleGoogleDriveChange = async (
         const doc = await getDocumentOrSpreadsheet(docId)
         // Check if its spreadsheet
         if ((doc.fields as VespaFile).mimeType === DriveMime.Sheets) {
-          // Get metadata from the first sheet of that spreadsheet
-          // Metadata contains all sheets ids inside that specific spreadsheet
-          const metadata = (doc.fields as VespaFile)?.metadata!
-          //@ts-ignore
-          const totalSheets = metadata.totalSheets!
-          // A Google spreadsheet can have multiple sheets inside it
-          // Admin can take away permissions from any of that sheets of the spreadsheet
-          const spreadsheetId = docId
-          // Remove all sheets inside that spreadsheet
-          for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
-            const id = `${spreadsheetId}_${sheetIndex}`
-            const doc = await GetDocument(id, fileSchema)
-            const permissions = (doc.fields as VespaFile).permissions
-            if (permissions.length === 1) {
-              // remove it
-              try {
-                // also ensure that we are that permission
-                if (!(permissions[0] === email)) {
-                  throw new Error(
-                    "We got a change for us that we didn't have access to in Vespa",
-                  )
-                }
-                await DeleteDocument(id, fileSchema)
-                stats.removed += 1
-                stats.summary += `${id} sheet removed\n`
-              } catch (e) {
-                // TODO: detect vespa 404 and only ignore for that case
-                // otherwise throw it further
-              }
-            } else {
-              // remove our user's permission from the email
-              const newPermissions = permissions.filter((v) => v !== email)
-              await UpdateDocumentPermissions(fileSchema, id, newPermissions)
-              stats.updated += 1
-              stats.summary += `user lost permission for sheet: ${id}\n`
-            }
-          }
+          await deleteWholeSpreadsheet(
+            doc.fields as VespaFile,
+            docId,
+            stats,
+            email,
+          )
         } else {
           const permissions = (doc.fields as VespaFile).permissions
           if (permissions.length === 1) {
@@ -180,47 +242,7 @@ const handleGoogleDriveChange = async (
         MimeMapForContent[file.mimeType] &&
         file.mimeType === DriveMime.Sheets
       ) {
-        const spreadsheetId = docId
-        const sheets = google.sheets({ version: "v4", auth: client })
-        const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
-        const totalSheets = spreadsheet.data.sheets?.length!
-
-        // Case where the whole spreadsheet is not deleted but some sheets are deleted
-        // If the sheets in vespa don't match the current sheets, we delete the rest of them
-        // Check if the sheets we have in vespa are same as we get
-        // If not, it means maybe sheet/s can be deleted
-        const spreadSheetFromVespa = await GetDocument(
-          `${spreadsheetId}_0`,
-          fileSchema,
-        )
-        const metadata = (spreadSheetFromVespa.fields as VespaFile)?.metadata!
-        // @ts-ignore
-        const totalSheetsFromVespa = metadata?.totalSheets!
-
-        // Condition will be true, if some sheets are deleted and not whole spreadsheet
-        if (
-          totalSheets !== totalSheetsFromVespa &&
-          totalSheets < totalSheetsFromVespa
-        ) {
-          for (let id = totalSheets; id < totalSheetsFromVespa; id++) {
-            await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
-            stats.removed += 1
-            stats.summary += `${id} sheet removed\n`
-          }
-        }
-
-        // Check for each sheetIndex, if that sheet if already there in vespa or not
-        for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
-          const id = `${spreadsheetId}_${sheetIndex}`
-          try {
-            doc = await GetDocument(id, fileSchema)
-            stats.updated += 1
-            continue
-          } catch (e) {
-            stats.added += 1
-            continue
-          }
-        }
+        await deleteUpdateStatsForGoogleSheets(docId, client, stats)
       } else {
         doc = await GetDocument(docId, fileSchema)
         stats.updated += 1
