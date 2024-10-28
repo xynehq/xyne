@@ -69,12 +69,18 @@ const getDocumentOrSpreadsheet = async (docId: string) => {
   try {
     const doc = await GetDocument(docId, fileSchema)
     return doc
-  } catch (err) {
-    Logger.error(
-      `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
-    )
-    const sheetsForSpreadSheet = await GetDocument(`${docId}_0`, fileSchema)
-    return sheetsForSpreadSheet
+  } catch (err: any) {
+    const errMessage = getErrorMessage(err?.cause)
+    if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
+      Logger.error(
+        `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
+      )
+      const sheetsForSpreadSheet = await GetDocument(`${docId}_0`, fileSchema)
+      return sheetsForSpreadSheet
+    } else {
+      Logger.error(`Error getting document: ${err.message}`)
+      throw err
+    }
   }
 }
 
