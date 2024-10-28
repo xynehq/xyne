@@ -15,5 +15,6 @@ export const scopes = [
 
 export const MAX_GD_PDF_SIZE = 20 // In MB
 export const MAX_GD_SHEET_ROWS = 3000
+export const MAX_GD_SHEET_TEXT_LEN = 300000
 export const GoogleDocsConcurrency = 10
 export const GmailConcurrency = 15

@@ -71,6 +71,7 @@ import type { Document } from "@langchain/core/documents"
 import {
   MAX_GD_PDF_SIZE,
   MAX_GD_SHEET_ROWS,
+  MAX_GD_SHEET_TEXT_LEN,
 } from "@/integrations/google/config"
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
@@ -625,6 +626,7 @@ export const getSpreadsheet = (sheets: sheets_v4.Sheets, id: string) =>
 const chunkFinalRows = (allRows: string[][]): string[] => {
   const chunks: string[] = []
   let currentChunk = ""
+  let totalTextLength = 0
 
   for (const row of allRows) {
     // Filter out numerical cells and empty strings
@@ -635,6 +637,15 @@ const chunkFinalRows = (allRows: string[][]): string[] => {
     if (textualCells.length === 0) continue // Skip if no textual data
 
     const rowText = textualCells.join(" ")
+
+    // Check if adding this rowText would exceed the maximum text length
+    if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
+      Logger.error(`Text length excedded, indexing with empty content`)
+      // Return an empty array if the total text length exceeds the limit
+      return []
+    }
+
+    totalTextLength += rowText.length
 
     if ((currentChunk + " " + rowText).trim().length > 512) {
       // Add the current chunk to the list and start a new chunk
