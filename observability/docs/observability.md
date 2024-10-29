@@ -1,15 +1,9 @@
 ## Steps to run the metrics dashboard
 
-1. Since we have our metrics and vespa in two separate files communicating with each other, we need to create an external network connection for them to communicate. For this we run the command : 
-    ```
-    docker network create xyne
-    ```
-2. Execute the docker-compose in the deployment folder
-3. Execute the docker-compose for the metrics dashboard. First navigate to the observability folder, then use the command 
-    ```
-    docker-compose -f metrics/docker-compose.metrics.yml up
-    ```
-    This is set up your metrics dashboard using Prometheus and Grafana
+To run the metrics, from the root folder run this command in the terminal 
+```sh
+docker-compose -f deployment/docker-compose.metrics.yml up
+``` 
 
 ### Ensure Prometheus is up and running
  To ensure **Prometheus** is up and running 
