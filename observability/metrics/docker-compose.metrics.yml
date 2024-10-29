@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  prometheus:
+    image: "prom/prometheus"
+    container_name: xyne-prometheus
+    volumes:
+      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
+    ports:
+    - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+    networks:
+      - xyne
+  grafana:
+    image: grafana/grafana
+    container_name: xyne-grafana
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3002:3000"
+    networks:
+      - xyne
+
+networks:
+  xyne:
+    driver: bridge
+    external: true
+
