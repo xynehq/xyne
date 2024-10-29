@@ -1,22 +1,26 @@
 version: "3.9"
 
 services:
-  # app:
-  # image: xyne
-  # container_name: xyne-app
-  # build:
-  #   context: .
-  #   dockerfile: Dockerfile
-  # ports:
-  #   - "3000:3000"
-  # depends_on:
-  #   - xyne-db
-  #   - vespa
-  # env_file:
-  #   - .env
-  # networks:
-  #   - xyne
-  # restart: always
+  prometheus:
+    image: "prom/prometheus"
+    container_name: xyne-prometheus
+    volumes:
+      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
+    ports:
+    - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+    networks:
+      - xyne
+  grafana:
+    image: grafana/grafana
+    container_name: xyne-grafana
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3002:3000"
+    networks:
+      - xyne
   vespa:
     image: vespaengine/vespa
     container_name: vespa
@@ -48,10 +52,11 @@ services:
       - ../server/xyne-data:/var/lib/postgresql/data
     networks:
       - xyne
-    restart: always
+    restart: always 
 networks:
   xyne:
     driver: bridge
 volumes:
   vespa-data:
     driver: local
+

@@ -208,7 +208,7 @@ export const handleGoogleOAuthIngestion = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
-  Logger.info("handleGoogleServiceAccountIngestion", job.data)
+  Logger.info("handleGoogleOauthIngestion", job.data)
   const data: SaaSOAuthJob = job.data as SaaSOAuthJob
   try {
     // we will first fetch the change token
