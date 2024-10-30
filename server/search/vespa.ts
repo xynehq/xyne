@@ -393,7 +393,7 @@ export const searchVespa = async (
   limit = config.page,
   offset?: number,
 ): Promise<VespaSearchResponse> => {
-  const url = `${vespaEndpoint}/search/`
+  const url = `${vespaEndpoint}/search/?timeout=2000`
 
   let yqlQuery = HybridDefaultProfile(limit).yql
 
@@ -405,8 +405,10 @@ export const searchVespa = async (
     yql: yqlQuery,
     query,
     email,
-    "ranking.profile": HybridDefaultProfile(limit, "cosine_RRF").profile,
-    "input.query(e)": "embed(@query)",
+    // "ranking.profile": HybridDefaultProfile(limit, "cosine_RRF").profile,
+    "ranking.profile": "colbert_max_sim",
+    "input.query(e)": "embed(chunk_embed,@query)",
+    "input.query(qt)": "embed(colbert,@query)",
     hits: limit,
     alpha: 0.5,
     ...(offset
@@ -689,3 +691,7 @@ const getNDocuments = async (n: number) => {
     })
   }
 }
+
+// await deleteAllDocuments()
+
+// console.log((await searchVespa('BC1 RNA, the transcript from a master gene for ID', 'junaid.s@xynehq.com', "", "", 10, 0)).root.children[0].fields)

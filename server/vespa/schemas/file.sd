@@ -52,12 +52,17 @@ schema file {
   }
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[768])  {
-    indexing: input chunks | embed | attribute | index | summary
+    indexing: input chunks | embed chunk_embed | attribute | index | summary
     attribute {
         distance-metric: angular
     }
   }
   
+  field colbert_tokens type tensor<int8>(p{}, token{}, v[16]) {
+    indexing: input chunks | embed colbert p | attribute
+    attribute: paged 
+  }
+
   field title_fuzzy type string {
     indexing: input title | index
     index {
@@ -152,6 +157,56 @@ schema file {
       bm25(chunks)
       bm25(title)
       cos_sim
+    }
+  }
+
+  rank-profile colbert_max_sim inherits default {
+    inputs {
+        query(qt) tensor<float>(querytoken{}, v[128])
+    }
+
+    function unpack() {
+      expression: unpack_bits(attribute(colbert_tokens))
+    }
+
+    function cos_sim() {
+      expression: cos(distance(field, chunk_embeddings))
+    }
+
+   function max_sim() {
+      expression {
+          sum(
+              reduce(
+                  sum(
+                      query(qt) * unpack() , v
+                  ),
+                  max, token, p
+              ),
+              querytoken
+          )
+      }
+    }
+
+    second-phase {
+      rerank-count: 400 
+      expression: max_sim
+    }
+
+    global-phase {
+      expression {
+        reciprocal_rank_fusion(
+                chunk_vector_score,
+                max_sim,
+                cos_sim
+            )
+      }
+      rerank-count: 300
+    }
+    match-features {
+      bm25(title)
+      bm25(chunks)
+      chunk_vector_score
+      max_sim
     }
   }
 
