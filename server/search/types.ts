@@ -183,6 +183,7 @@ export const MailSchema = z.object({
   mimeType: z.string(),
   attachmentFilenames: z.array(z.string()),
   attachments: z.array(AttachmentSchema),
+  labels: z.array(z.string()),
 })
 export const VespaMailSchema = MailSchema.extend({
   docId: z.string().min(1),

@@ -166,8 +166,10 @@ export type SearchResponse = z.infer<typeof SearchResponseSchema>
 
 export const AnswerResponseSchema = z.object({})
 
+// kept it minimal to prevent
+// unnecessary data transfer
 export enum AnswerSSEEvents {
-  Start = "start",
-  AnswerUpdate = "answer-update",
-  End = "end",
+  Start = "s",
+  AnswerUpdate = "u",
+  End = "e",
 }

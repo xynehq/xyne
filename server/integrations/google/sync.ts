@@ -15,6 +15,7 @@ import {
   GetDocument,
   insert,
   insertDocument,
+  UpdateDocument,
   UpdateDocumentPermissions,
 } from "@/search/vespa"
 import { db } from "@/db/client"
@@ -633,6 +634,7 @@ const handleGmailChanges = async (
     if (res.data.history) {
       for (const history of res.data.history) {
         if (history.messagesAdded) {
+          Logger.info("gmail messages added op")
           for (const { message } of history.messagesAdded) {
             const msgResp = await gmail.users.messages.get({
               userId: "me",
@@ -644,8 +646,9 @@ const handleGmailChanges = async (
             changesExist = true
           }
         } else if (history.messagesDeleted) {
+          Logger.info("gmail messages deleted op")
           for (const { message } of history.messagesDeleted) {
-            const mailMsg = await GetDocument(message?.id!, mailSchema)
+            const mailMsg = await GetDocument(mailSchema, message?.id!)
             const permissions = (mailMsg.fields as VespaMail).permissions
             if (permissions.length === 1) {
               await DeleteDocument(message?.id!, mailSchema)
@@ -660,10 +663,28 @@ const handleGmailChanges = async (
             stats.removed += 1
             changesExist = true
           }
+        } else if (history.labelsAdded) {
+          Logger.info("gmail labels added op")
+          for (const { message, labelIds } of history.labelsAdded) {
+            const mailMsg = await GetDocument(mailSchema, message?.id!)
+            let labels = (mailMsg.fields as VespaMail).labels
+            labels = labels.concat(labelIds ?? [])
+            await UpdateDocument(mailSchema, message?.id!, { labels })
+          }
+        } else if (history.labelsRemoved) {
+          Logger.info("gmail labels removed op")
+          for (const { message, labelIds } of history.labelsRemoved) {
+            const mailMsg = await GetDocument(mailSchema, message?.id!)
+            let labels = (mailMsg.fields as VespaMail).labels
+            labels = labels.filter((v) => !labelIds?.includes(v))
+            await UpdateDocument(mailSchema, message?.id!, { labels })
+          }
         } else {
-          Logger.warn(
-            `Invalid operation, we only support add, remove messages. history: ${history.id} for syncJob: ${syncJobId}`,
-          )
+          if (!history.messages) {
+            Logger.warn(
+              `Invalid operation, we only support add, remove messages and add, remove labels. history: ${history.id} for syncJob: ${syncJobId}`,
+            )
+          }
         }
       }
     }

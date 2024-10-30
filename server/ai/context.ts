@@ -1,5 +1,6 @@
 // aim is to build context based on the internal types
 // translate the company to the AI
+import type { PublicUserWorkspace } from "@/db/schema"
 import {
   fileSchema,
   mailSchema,
@@ -16,9 +17,11 @@ import type { z } from "zod"
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
 // Function for handling file context
-const constructFileContext = (fields: VespaFileSearch): string => {
-  return `
-App: ${fields.app}
+const constructFileContext = (
+  fields: VespaFileSearch,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
 Created: ${getRelativeTime(fields.createdAt)}
@@ -27,13 +30,13 @@ ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
-${fields.chunks_summary ? `Content: ${fields.chunks_summary.join("\n")}` : ""}}`
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.join("\n")}` : ""}
+vespa relevance score: ${relevance}`
 }
 
 // TODO: tell if workspace that this is an employee
-const constructUserContext = (fields: VespaUser): string => {
-  return `
-App: ${fields.app}
+const constructUserContext = (fields: VespaUser, relevance: number): string => {
+  return `App: ${fields.app}
 Entity: ${fields.entity}
 Added: ${getRelativeTime(fields.creationTime)}
 ${fields.name ? `Name: ${fields.name}` : ""}
@@ -42,12 +45,14 @@ ${fields.gender ? `Gender: ${fields.gender}` : ""}
 ${fields.orgJobTitle ? `Job Title: ${fields.orgJobTitle}` : ""}
 ${fields.orgDepartment ? `Department: ${fields.orgDepartment}` : ""}
 ${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}
-`
+vespa relevance score: ${relevance}`
 }
 
-const constructMailContext = (fields: VespaMailSearch): string => {
-  return `
-App: ${fields.app}
+const constructMailContext = (
+  fields: VespaMailSearch,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
@@ -55,7 +60,83 @@ ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
-${fields.chunks_summary ? `Content: ${fields.chunks_summary.join("\n")}` : ""}}`
+${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.join("\n")}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+// Function for handling file context
+const constructFileMetadataContext = (
+  fields: VespaFileSearch,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
+Entity: ${fields.entity}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}
+Created: ${getRelativeTime(fields.createdAt)}
+Updated At: ${getRelativeTime(fields.updatedAt)}
+${fields.owner ? `Owner: ${fields.owner}` : ""}
+${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
+${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
+${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+// TODO: tell if workspace that this is an employee
+const constructUserMetadataContext = (
+  fields: VespaUser,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
+Entity: ${fields.entity}
+Added: ${getRelativeTime(fields.creationTime)}
+${fields.name ? `Name: ${fields.name}` : ""}
+${fields.email ? `Email: ${fields.email}` : ""}
+${fields.gender ? `Gender: ${fields.gender}` : ""}
+${fields.orgJobTitle ? `Job Title: ${fields.orgJobTitle}` : ""}
+${fields.orgDepartment ? `Department: ${fields.orgDepartment}` : ""}
+${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+const constructMailMetadataContext = (
+  fields: VespaMailSearch,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
+Entity: ${fields.entity}
+Sent: ${getRelativeTime(fields.timestamp)}
+${fields.subject ? `Subject: ${fields.subject}` : ""}
+${fields.from ? `From: ${fields.from}` : ""}
+${fields.to ? `To: ${fields.to.join(", ")}` : ""}
+${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
+${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
+${fields.labels ? `Mailbox Labels: ${fields.labels.join(", ")}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+type AiMetadataContext = string
+export const answerMetadataContextMap = (
+  searchResult: z.infer<typeof VespaSearchResultsSchema>,
+): AiMetadataContext => {
+  if (searchResult.fields.sddocname === fileSchema) {
+    return constructFileMetadataContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === userSchema) {
+    return constructUserMetadataContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === mailSchema) {
+    return constructMailMetadataContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else {
+    throw new Error("Invalid search result type")
+  }
 }
 
 type AiContext = string
@@ -63,12 +144,48 @@ export const answerContextMap = (
   searchResult: z.infer<typeof VespaSearchResultsSchema>,
 ): AiContext => {
   if (searchResult.fields.sddocname === fileSchema) {
-    return constructFileContext(searchResult.fields)
+    return constructFileContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === userSchema) {
-    return constructUserContext(searchResult.fields)
+    return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
-    return constructMailContext(searchResult.fields)
+    return constructMailContext(searchResult.fields, searchResult.relevance)
   } else {
     throw new Error("Invalid search result type")
   }
+}
+
+export const cleanContext = (text: string): string => {
+  return cleanDocs(cleanVespaHighlights(text))
+}
+
+const cleanVespaHighlights = (text: string): string => {
+  const hiTagPattern = /<\/?hi>/g
+  return text.replace(hiTagPattern, "").trim()
+}
+
+// google docs need lots of cleanup
+const cleanDocs = (text: string): string => {
+  const urlPattern =
+    /!\[.*?\]\(https:\/\/lh7-rt\.googleusercontent\.com\/docsz\/[a-zA-Z0-9-_?=&]+\)/g
+  let cleanedText = text.replace(urlPattern, "")
+
+  // ........
+  const extendedEllipsisPattern = /[…\.\s]{2,}/g
+  cleanedText = cleanedText.replace(extendedEllipsisPattern, " ")
+  // .0.0.0.0.0.0.0.0
+  const repetitiveDotZeroPattern = /(?:\.0)+(\.\d+)?/g
+  cleanedText = cleanedText.replace(repetitiveDotZeroPattern, "")
+
+  cleanedText = cleanedText.trim()
+
+  return cleanedText
+}
+
+export const userContext = ({
+  user,
+  workspace,
+}: PublicUserWorkspace): string => {
+  return `name: ${user.name}
+email: ${user.email}
+company: ${workspace.name}`
 }

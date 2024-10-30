@@ -1,9 +1,13 @@
+import llama3Tokenizer from "llama3-tokenizer-js"
+import { encode } from "gpt-tokenizer"
+
 import type { Context, ValidationTargets } from "hono"
 import {
   autocomplete,
   deduplicateAutocomplete,
   groupVespaSearch,
   searchVespa,
+  searchUsersByNamesAndEmails,
   type AppEntityCounts,
 } from "@/search/vespa"
 import { z } from "zod"
@@ -12,22 +16,45 @@ import { HTTPException } from "hono/http-exception"
 import {
   Apps,
   GooglePeopleEntity,
+  mailSchema,
+  userSchema,
   type VespaSearchResponse,
+  type VespaSearchResult,
+  type VespaUser,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
 } from "@/search/mappers"
-import { askQuestion } from "@/ai/provider/bedrock"
-import { answerContextMap } from "@/ai/context"
+import {
+  analyzeQuery,
+  analyzeQueryForNamesAndEmails,
+  analyzeQueryMetadata,
+  askQuestion,
+  askQuestionInputTokenCount,
+  calculateCost,
+  modelDetailsMap,
+  Models,
+  QueryCategory,
+  type QueryContextRank,
+} from "@/ai/provider/bedrock"
+import {
+  answerContextMap,
+  answerMetadataContextMap,
+  cleanContext,
+  userContext,
+} from "@/ai/context"
 import { VespaSearchResultsSchema } from "@/search/types"
 import { AnswerSSEEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { db } from "@/db/client"
+import type { PublicUserWorkspace } from "@/db/schema"
 const Logger = getLogger(Subsystem.Api)
 
-const { JwtPayloadKey } = config
+const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
@@ -84,99 +111,164 @@ export const SearchApi = async (c: Context) => {
 }
 
 export const AnswerApi = async (c: Context) => {
-  const { sub } = c.get(JwtPayloadKey)
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
   // @ts-ignore
   const { query, app, entity } = c.req.valid("query")
   const decodedQuery = decodeURIComponent(query)
-  let results: VespaSearchResponse = await searchVespa(
-    decodedQuery,
-    email,
-    app,
-    entity,
-    config.page,
-    0,
+  const [userAndWorkspace, results]: [
+    PublicUserWorkspace,
+    VespaSearchResponse,
+  ] = await Promise.all([
+    getUserAndWorkspaceByEmail(db, workspaceId, email),
+    searchVespa(decodedQuery, email, app, entity, config.answerPage, 0),
+  ])
+
+  const costArr = []
+
+  const ctx = userContext(userAndWorkspace)
+  const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${query}`
+  // could be called parallely if not for userAndWorkspace
+  let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
+    modelId: Models.Llama_3_1_8B,
+    stream: false,
+    json: true,
+  })
+  if (cost) {
+    costArr.push(cost)
+  }
+  const initialContext = cleanContext(
+    results.root.children
+      .map((v) =>
+        answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
+      )
+      .join("\n"),
   )
 
+  const tokenLimit = maxTokenBeforeMetadataCleanup
+  let useMetadata = false
+  Logger.info(`User Asked: ${decodedQuery}`)
+  // if we don't use this, 3.4 seems like a good approx value
+  if (
+    llama3Tokenizer.encode(initialContext).length > tokenLimit ||
+    encode(initialContext).length > tokenLimit
+  ) {
+    useMetadata = true
+  }
+
+  let users: z.infer<typeof VespaSearchResultsSchema>[] = []
+  if (result.category === QueryCategory.Self) {
+    // here too I can talk about myself and others
+    // eg: when did I send xyz person their offer letter
+    const { mentionedNames, mentionedEmails } = result
+    users = (
+      await searchUsersByNamesAndEmails(
+        mentionedNames,
+        mentionedEmails,
+        mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
+      )
+    ).root.children as z.infer<typeof VespaSearchResultsSchema>[]
+  } else if (
+    result.category === QueryCategory.InternalPerson ||
+    result.category === QueryCategory.ExternalPerson
+  ) {
+    const { mentionedNames, mentionedEmails } = result
+    users = (
+      await searchUsersByNamesAndEmails(
+        mentionedNames,
+        mentionedEmails,
+        mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
+      )
+    ).root.children as z.infer<typeof VespaSearchResultsSchema>[]
+  }
+
+  let existingUserIds = new Set<string>()
+  if (users.length) {
+    existingUserIds = new Set(
+      results.root.children
+        .filter(
+          (v): v is z.infer<typeof VespaSearchResultsSchema> =>
+            (v.fields as VespaUser).sddocname === userSchema,
+        )
+        .map((v) => v.fields.docId),
+    )
+  }
+
+  const newUsers = users.filter(
+    (user: z.infer<typeof VespaSearchResultsSchema>) =>
+      !existingUserIds.has(user.fields.docId),
+  )
+  if (newUsers.length) {
+    newUsers.forEach((user) => {
+      results.root.children.push(user)
+    })
+  }
+  const metadataContext = results.root.children
+    .map((v, i) =>
+      cleanContext(
+        `Index ${i} \n ${answerMetadataContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+      ),
+    )
+    .join("\n\n")
+
+  const analyseRes = await analyzeQueryMetadata(decodedQuery, metadataContext, {
+    modelId: Models.Llama_3_1_8B,
+    stream: true,
+    json: true,
+  })
+  let output = analyseRes[0]
+  cost = analyseRes[1]
+  if (cost) {
+    costArr.push(cost)
+  }
+
+  const finalContext = cleanContext(
+    results.root.children
+      .filter((v, i) => output?.contextualChunks.includes(i))
+      .map((v) =>
+        answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
+      )
+      .join("\n"),
+  )
+
+  Logger.info(
+    `costArr: ${costArr} \n Total Cost: ${costArr.reduce((prev, curr) => prev + curr, 0)}`,
+  )
   return streamSSE(c, async (stream) => {
+    Logger.info("SSE stream started")
     // Stream the initial context information
     await stream.writeSSE({
       data: `Starting response for query: ${query}`,
       event: AnswerSSEEvents.Start,
     })
-
-    const contextData = results.root.children
-      .map(
-        (v, i) =>
-          `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
-      )
-      .join("\n\n")
-
-    await askQuestion(
-      `Based on this context from search engine ${contextData}. Only use the relevant chunks, ignore the rest. Answer if it is a question or summarize. Do not give any unnecessary details. Also respond with the index of the chunk that helped you answer the query the most. ${query}`,
-      { temperature: 0 },
-      async (chunk) => {
-        await stream.writeSSE({
-          data: chunk,
-          event: AnswerSSEEvents.AnswerUpdate,
-        })
-      },
-    )
-
+    if (output?.canBeAnswered && output.contextualChunks.length) {
+      const interator = askQuestion(decodedQuery, finalContext, {
+        modelId: Models.Llama_3_1_70B,
+        userCtx: ctx,
+        stream: true,
+        json: true,
+      })
+      for await (const { text, metadata, cost } of interator) {
+        if (text) {
+          await stream.writeSSE({
+            data: text,
+            event: AnswerSSEEvents.AnswerUpdate,
+          })
+        }
+        if (cost) {
+          console.log(metadata, `Cost for this call: $${cost}`)
+          costArr.push(cost)
+        }
+      }
+    }
     await stream.writeSSE({
       data: "Answer complete",
       event: AnswerSSEEvents.End,
     })
 
+    Logger.info("SSE stream ended")
     stream.onAbort(() => {
       Logger.error("SSE stream aborted")
     })
   })
 }
-
-// temporaryly pausing this since contact is a
-// separate data source it does make sense for to be separate
-//
-// const postProcess = (
-//   resp: VespaSearchResponse,
-//   groupCount: AppEntityCounts,
-// ): VespaSearchResponse => {
-//   const { root } = resp
-//   if (!root.children) {
-//     return resp
-//   }
-//   // if group data is available it will be
-//   // more performant to pre-check
-//   if (groupCount) {
-//     // first drive and workspace data both has to be present
-//     if (!(groupCount[Apps.GoogleDrive] && groupCount[Apps.GoogleWorkspace])) {
-//       return resp
-//     }
-//     if (
-//       !(
-//         (groupCount[Apps.GoogleDrive][GooglePeopleEntity.Contacts] ||
-//           groupCount[Apps.GoogleDrive][GooglePeopleEntity.OtherContacts]) &&
-//         groupCount[Apps.GoogleWorkspace][GooglePeopleEntity.AdminDirectory]
-//       )
-//     ) {
-//       return resp
-//     }
-//     // we have to manage the group counts ourself now
-//     // one issue here is that you can give incorrect counts
-//     // because for this page we are deduplicating
-//     // but if next few pages has duplicates then the count will
-//     // be shown more than the results we send back
-//     const uniqueResults = []
-//     const emails = new Set()
-//     for (const child of root.children) {
-//       // @ts-ignore
-//       const email = child.fields.email
-//       if (email && !emails.has(email)) {
-//         emails.add(email)
-//         uniqueResults.push(child)
-//       } else if (!email) {
-//         uniqueResults.push(child)
-//       }
-//     }
-//   }
-// }

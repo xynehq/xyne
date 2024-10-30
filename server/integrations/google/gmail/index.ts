@@ -93,6 +93,7 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)
+  const labels = email.labelIds
 
   const payload: gmail_v1.Schema$MessagePart | undefined = email.payload
   const headers = payload?.headers || []
@@ -173,6 +174,7 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
     mimeType: payload?.mimeType ?? "text/plain",
     attachmentFilenames: filenames,
     attachments,
+    labels: labels ?? [],
   }
 
   return emailData

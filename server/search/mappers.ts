@@ -44,7 +44,6 @@ export const VespaSearchResponseToSearchResult = (
         ;(child.fields as any).chunks_summary = (
           child.fields as VespaFileSearch
         ).chunks_summary
-        // child.fields.relevance = child.relevance
         return FileResponseSchema.parse(child.fields)
       } else if ((child.fields as VespaUser).sddocname === userSchema) {
         ;(child.fields as any).type = userSchema

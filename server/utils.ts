@@ -68,10 +68,12 @@ export const getErrorMessage = (error: unknown) => {
   return String(error)
 }
 
-// we want LLM to have a better understanding of time
+// // we want LLM to have a better understanding of time
 export const getRelativeTime = (oldTimestamp: number) => {
+  // Convert `oldTimestamp` to seconds if it is in milliseconds
+  const oldTimestampInSeconds = Math.floor(oldTimestamp / 1000)
   const now = Math.floor(Date.now() / 1000)
-  const difference = now - oldTimestamp
+  const difference = now - oldTimestampInSeconds
 
   const formatter = new Intl.RelativeTimeFormat("en", { style: "narrow" })
 

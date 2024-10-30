@@ -88,7 +88,12 @@ schema mail {
     }
 
     field attachments type array<attachment> {
+
     }
+    field labels type array<string> {
+    indexing: attribute | summary | index
+    attribute: fast-search
+  }
   }
   field chunk_embeddings type tensor<bfloat16>(x[768]) {
     indexing: guard { input chunks } | embed | attribute | index
@@ -108,7 +113,7 @@ schema mail {
   }
 
   fieldset default {
-    fields: subject, app, entity, chunks, attachmentFilenames
+    fields: subject, app, entity, chunks, attachmentFilenames, from, to, cc, bcc, labels
   }
 
   fieldset autocomplete {
