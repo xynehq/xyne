@@ -235,9 +235,12 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [_, historyId] = await Promise.all([
+    const [
+      _,
+      // historyId
+    ] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
-      handleGmailIngestion(oauth2Client, userEmail),
+      // handleGmailIngestion(oauth2Client, userEmail),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -264,17 +267,17 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      await insertSyncJob(trx, {
-        workspaceId: connector.workspaceId,
-        workspaceExternalId: connector.workspaceExternalId,
-        app: Apps.Gmail,
-        connectorId: connector.id,
-        authType: AuthType.OAuth,
-        config: { historyId, lastSyncedAt: new Date().toISOString() },
-        email: userEmail,
-        type: SyncCron.ChangeToken,
-        status: SyncJobStatus.NotStarted,
-      })
+      // await insertSyncJob(trx, {
+      //   workspaceId: connector.workspaceId,
+      //   workspaceExternalId: connector.workspaceExternalId,
+      //   app: Apps.Gmail,
+      //   connectorId: connector.id,
+      //   authType: AuthType.OAuth,
+      //   config: { historyId, lastSyncedAt: new Date().toISOString() },
+      //   email: userEmail,
+      //   type: SyncCron.ChangeToken,
+      //   status: SyncJobStatus.NotStarted,
+      // })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
@@ -465,6 +468,117 @@ export const deleteDocument = async (filePath: string) => {
   }
 }
 
+const googleSlidesVespa = async (
+  client: GoogleClient,
+  presentationMetadata: drive_v3.Schema$File[],
+  connectorId: string,
+): Promise<VespaFileWithDrivePermission[]> => {
+  sendWebsocketMessage(
+    `Scanning ${presentationMetadata.length} Google Slides`,
+    connectorId,
+  )
+  const presentationsList: VespaFileWithDrivePermission[] = []
+  const slides = google.slides({ version: "v1", auth: client })
+  const total = presentationMetadata.length
+  let count = 0
+
+  for (const presentation of presentationMetadata) {
+    try {
+      const presentationData = await slides.presentations.get({
+        presentationId: presentation.id!,
+      })
+      const slidesData = presentationData.data.slides!
+      const chunks: string[] = []
+      let currentChunk = ""
+
+      slidesData.forEach((slide, index) => {
+        console.log(`Slide ${index + 1}:`)
+        slide.pageElements!.forEach((element) => {
+          if (
+            element.shape &&
+            element.shape.text &&
+            element.shape.text.textElements
+          ) {
+            element.shape.text.textElements.forEach((textElement) => {
+              if (textElement.textRun) {
+                const textContent = textElement.textRun.content!.trim()
+
+                if ((currentChunk + " " + textContent).trim().length > 512) {
+                  // Check if adding this text would exceed the maximum chunk length
+                  // Add the current chunk to the list and start a new chunk
+                  if (currentChunk.trim().length > 0) {
+                    chunks.push(currentChunk.trim())
+                  }
+                  currentChunk = textContent
+                } else {
+                  // Append the text to the current chunk
+                  currentChunk += " " + textContent
+                }
+              }
+            })
+          }
+        })
+      })
+
+      if (currentChunk.trim().length > 0) {
+        // Add any remaining text as the last chunk
+        chunks.push(currentChunk.trim())
+      }
+
+      const parentsForMetadata = []
+      if (presentation?.parents) {
+        for (const parentId of presentation.parents!) {
+          const parentData = await getFile(client, parentId)
+          const folderName = parentData.name!
+          parentsForMetadata.push({ folderName, folderId: parentId })
+        }
+      }
+
+      const presentationToBeIngested = {
+        title: presentation.name!,
+        url: presentation.webViewLink ?? "",
+        app: Apps.GoogleDrive,
+        docId: presentation.id!,
+        owner: presentation.owners
+          ? (presentation.owners[0].displayName ?? "")
+          : "",
+        photoLink: presentation.owners
+          ? (presentation.owners[0].photoLink ?? "")
+          : "",
+        ownerEmail: presentation.owners
+          ? (presentation.owners[0]?.emailAddress ?? "")
+          : "",
+        entity: DriveEntity.Slides,
+        chunks,
+        permissions: presentation.permissions ?? [],
+        mimeType: presentation.mimeType ?? "",
+        metadata: JSON.stringify({ parents: parentsForMetadata }),
+      }
+      
+      presentationsList.push(presentationToBeIngested)
+      count += 1
+
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google Slides scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+    } catch (error) {
+      Logger.error(
+        `Error getting slides: ${error} ${(error as Error).stack}`,
+        error,
+      )
+      throw new DownloadDocumentError({
+        message: "Error in the catch of getting slides",
+        cause: error as Error,
+        integration: Apps.GoogleDrive,
+        entity: DriveEntity.Slides,
+      })
+    }
+  }
+  return presentationsList
+}
+
 const insertFilesForUser = async (
   googleClient: GoogleClient,
   userEmail: string,
@@ -498,33 +612,44 @@ const insertFilesForUser = async (
       (v) =>
         v.mimeType !== DriveMime.Docs &&
         v.mimeType !== DriveMime.PDF &&
-        v.mimeType !== DriveMime.Sheets,
+        v.mimeType !== DriveMime.Sheets &&
+        v.mimeType !== DriveMime.Slides,
     )
 
-    const [documents, pdfDocuments, sheets]: [
+    const [
+      // documents, pdfDocuments, sheets,
+      slides,
+    ]: [
       VespaFileWithDrivePermission[],
-      VespaFileWithDrivePermission[],
-      VespaFileWithDrivePermission[],
+      // VespaFileWithDrivePermission[],
+      // VespaFileWithDrivePermission[],
+      // VespaFileWithDrivePermission[],
     ] = await Promise.all([
-      googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
-      googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
-      googleSheetsVespa(
+      // googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
+      // googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+      // googleSheetsVespa(
+      //   googleClient,
+      //   googleSheetsMetadata,
+      //   connector.externalId,
+      // ),
+      googleSlidesVespa(
         googleClient,
-        googleSheetsMetadata,
+        googleSlidesMetadata,
         connector.externalId,
       ),
     ])
-    const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
-      googleClient,
-      rest,
-    )
+    // const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
+    //   googleClient,
+    //   rest,
+    // )
 
     sendWebsocketMessage("generating embeddings", connector.externalId)
     let allFiles: VespaFileWithDrivePermission[] = [
-      ...driveFiles,
-      ...documents,
-      ...pdfDocuments,
-      ...sheets,
+      // ...driveFiles,
+      // ...documents,
+      // ...pdfDocuments,
+      // ...sheets,
+      ...slides
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
       return v
