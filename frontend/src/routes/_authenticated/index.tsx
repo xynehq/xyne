@@ -336,7 +336,7 @@ export const Index = () => {
             <div className="flex space-x-2 w-full">
               <div className="relative w-full">
                 <div
-                  className={`flex w-full items-center ${hasSearched ? "bg-[#F0F4F7]" : "bg-white"} ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"} border border-[#AEBAD3] h-[52px] shadow-sm`}
+                  className={`flex w-full items-center ${hasSearched ? "bg-[#F0F4F7]" : "bg-white"} ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"}  ${hasSearched ? "" : "border border-[#AEBAD3]"} h-[52px] shadow-sm`}
                 >
                   <Search className="text-[#AEBAD3] ml-4 mr-2" size={18} />
                   <input
@@ -352,7 +352,11 @@ export const Index = () => {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         handleSearch()
-                        handleAnswer()
+                        // we only want to look for answer if atleast
+                        // 3 works are there in the query
+                        if (query.split(" ").length > 2) {
+                          handleAnswer()
+                        }
                       }
                     }}
                   />

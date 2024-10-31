@@ -439,12 +439,6 @@ const BigModel = Models.Llama_3_1_70B
 const askQuestionSystemPrompt =
   "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
 
-// const askQuestionUserPrompt = (query: string, context: string): string =>
-//   `User query: ${query}
-// If the question is not related to promotional content then ignore those chunks.
-// Based on the following context, prioritize the most recent and relevant information to answer the query accurately. Ignore outdated or irrelevant data.
-// Context:
-// ${context}`
 const askQuestionUserPrompt = (
   query: string,
   context: string,
@@ -454,11 +448,6 @@ Based on the following context, provide an accurate and concise answer.
 Ignore any promotional content or irrelevant data.
 Context:
 ${context}`
-
-// const askQuestionSystemPrompt =
-//   "You are a helpful assistant. Answer the user's query based on the context"
-// const askQuestionUserPrompt = (query: string, context: string): string =>
-//   `User query: ${query}\nBased on this context from search engine ${context}. Only use the relevant chunks, ignore the rest. Answer if it is a question or summarize. Do not give any unnecessary details. Always choose more recent info`
 
 type TokenCount = number
 // this will be a few tokens less than the output of bedrock
@@ -550,16 +539,6 @@ export const askQuestion = (
   }
 }
 
-// export const AnalyzeUserQuerySystemPrompt = `You are an advanced assistant analyzing user query and context chunks to identify essential information. Return a JSON structure with the following fields:
-
-// - **canBeAnswered**: Boolean indicating if the query can be sufficiently answered using the provided context.
-// - **contextualChunks**: A numeric array of indexes that represent only the chunks containing information necessary to answer the query or that add valuable context (e.g., [1, 2, 3]).
-//   If the question is not related to any promotional content then ignore those chunks.
-
-// Sahebjot is an employee of Xyne.
-// Prioritize selecting only the chunks that contain relevant information for answering the user's query. Do not include any chunks that are repetitive, irrelevant, or that do not contribute meaningfully to the response.
-
-// Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`
 export const AnalyzeUserQuerySystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are relevant to the user's query. Based only on the provided metadata, determine whether each chunk is likely to contribute meaningfully to answering the query.
 Return a JSON structure with:
 - **canBeAnswered**: Boolean indicating if the query can be sufficiently answered using the relevant chunks.
@@ -680,93 +659,6 @@ When reviewing, use these guidelines:
 
 Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
 
-// export const metadataAnalysisSystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are most relevant to the user's query.
-
-// Your task:
-// - Review the metadata provided for each chunk.
-// - Decide if the user’s query can be answered with the available information.
-// - If recent information is likely to be more valuable based on the query, prioritize more recent chunks.
-
-// Return a JSON structure with:
-//   - **canBeAnswered**: Boolean indicating if the query can likely be answered.
-//   - **contextualChunks**: A list of numeric indexes for chunks that seem useful, relevant, or recent (e.g., [0, 1, 3]).
-
-// Metadata includes details like:
-// - **App**: The data source.
-// - **Entity**: Type of document (e.g., File, User, Email).
-// - **Title, Subject, To, From, Owner**: Key fields describing the chunk.
-// - **Permissions**: Sharing settings.
-// - **Relevance score**: An initial relevance rating.
-// - **Timestamp**: Indicates when the chunk was created or last updated.
-
-// When reviewing, use these guidelines:
-// - Include chunks that appear helpful or relevant, especially if they contain recent information in response to time-sensitive queries.
-// - If the **Entity** is **Mail**, consider the **Labels** field to gauge its relevance.
-
-// Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
-
-// export const metadataAnalysisSystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to help identify which chunks are most relevant to the user's query.
-
-// Your task:
-// - Review the metadata provided for each chunk.
-// - Decide if the user’s query can be answered with the available information.
-// - Return a JSON structure with:
-//   - **canBeAnswered**: Boolean indicating if the query can likely be answered.
-//   - **contextualChunks**: A list of numeric indexes for chunks that seem useful or relevant to the query (e.g., [0, 1, 3]).
-
-// Metadata includes details like:
-// - **App**: The data source.
-// - **Entity**: Type of document (e.g., File, User, Email).
-// - **Title, Subject, To, From, Owner**: Key fields describing the chunk.
-// - **Permissions**: Sharing settings.
-// - **Relevance score**: An initial relevance rating.
-
-// When reviewing, use these guidelines:
-// - Include chunks that appear helpful or relevant, even if they're only partially related.
-// - If the **Entity** is **Email**, consider the **Labels** field to gauge its relevance.
-
-// Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
-
-// export const metadataAnalysisSystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are relevant to the user's query. Based only on the provided metadata, determine whether each chunk is likely to contribute meaningfully to answering the query.
-
-// Return a JSON structure with:
-// - **canBeAnswered**: Boolean indicating if the query can be sufficiently answered using the relevant chunks.
-// - **contextualChunks**: A numeric array of indexes representing only the chunks containing valuable information or context to answer the query.
-
-// Each chunk's metadata includes details such as:
-// - **App**: The application source of the data.
-// - **Entity**: Type or category of the document (e.g., File, User, Email).
-// - **Title, Subject, To, From, Owner**: Key fields summarizing the content or origin of the chunk.
-// - **Permissions**: Visibility or sharing settings.
-// - **Relevance score**: Initial relevance rating provided by the system.
-
-// Note: If the entity is **Email**, the metadata will also include **Labels**. Use this field to help determine the relevance of the email.
-
-// Prioritize selecting only the chunks that contain relevant information for answering the user's query. Do not include any chunks that are repetitive, irrelevant, or that do not contribute meaningfully to the response.
-
-// Use these metadata fields to determine relevance. Avoid selecting chunks that appear unrelated, repetitive, or without valuable context.
-
-// Keep chunks that you think can be relevant or useful to the query.
-
-// Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`
-// const metadataAnalysisSystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are relevant to the user's query. Based only on the provided metadata, determine whether each chunk is likely to contribute meaningfully to answering the query.
-
-// Return a JSON structure with:
-// - **canBeAnswered**: Boolean indicating if the query can be sufficiently answered using the relevant chunks.
-// - **contextualChunks**: A numeric array of indexes representing only the chunks containing valuable information or context to answer the query (e.g., [1, 2, 3]).
-
-// Each chunk's metadata includes details such as:
-// - **App**: The application source of the data.
-// - **Entity**: Type or category of the document (e.g., File, User, Email).
-// - **Title, Subject, To, From, Owner**: Key fields summarizing the content or origin of the chunk.
-// - **Permissions**: Visibility or sharing settings.
-// - **Relevance score**: Initial relevance rating provided by the system.
-// Prioritize selecting only the chunks that contain relevant information for answering the user's query. Do not include any chunks that are repetitive, irrelevant, or that do not contribute meaningfully to the response.
-
-// Use these metadata fields to determine relevance. Avoid selecting chunks that appear unrelated, repetitive, or without valuable context.
-
-// Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`
-
 export const analyzeQueryMetadata = async (
   userQuery: string,
   context: string,
@@ -808,7 +700,6 @@ export const analyzeQueryMetadata = async (
       // a lot of the times the json is in ```
       // TODO: check with startOf before hand itself to prevent doing this in catch only
       try {
-        console.log(text)
         structuredResponse = JSON.parse(text.trim().split("```")[1].trim())
       } catch (parseError) {
         try {
@@ -829,49 +720,6 @@ export const analyzeQueryMetadata = async (
     throw error
   }
 }
-
-// export const askQuestionOllama = async (
-//   question: string,
-//   params: ModelParams = {},
-//   onChunk?: (text: string) => void,
-// ) => {
-//   try {
-//     const systemPrompt = `
-//     You are an assistant that analyzes user queries and retrieved contexts to produce a JSON structure with the following fields:
-
-//     - **isQuestion**: Boolean indicating if the query is a question.
-//     - **hasContextToAnswer**: Boolean indicating if the context contains the necessary information.
-//     - **canBeAnswered**: Boolean indicating if the query deserves an answer based on context.
-//     - **removeChunks**: Array of chunk IDs that should be excluded.
-//     - **retrievedChunks**: Array of indexes, numeric, that are relevant. eg: [1,2,3]
-//     - **queryExpansion**: Suggest a new query based on the chunks that is more complete.
-//     - **ambiguous**: Boolean indicating if the query and chunks together are ambiguous.
-//     - **entities**: List of entities identified in the query.
-
-//     Please analyze the user's query and the provided contexts, and return **only** the JSON structure with the specified fields. Do not include any explanations or additional text.
-
-//     Ensure that the JSON output is valid and parsable.`
-//     // Prepare the request options
-//     const requestOptions = {
-//       model: "llama3.1:8b", //"aya-expanse:latest",
-//       prompt: question,
-//       system: systemPrompt,
-//       // stream: true,
-//       format: "json",
-//     }
-
-//     const fullResponse = await ollama.generate(requestOptions)
-//     // let fullResponse = ""
-//     // for await (const chunk of stream) {
-//     //   const text = chunk.response
-//     //   if (text) {
-//     //     fullResponse += text
-//     //     if (onChunk) onChunk(text)
-//     //   }
-//     // }
-//     return fullResponse
-//   } catch (e) {}
-// }
 
 export enum QueryCategory {
   Self = "Self",
@@ -908,24 +756,7 @@ Notes:
 - If the user mentions someone outside the company, set "category" to "ExternalPerson".
 - If no person is mentioned or the query is about other topics, set "category" to "Other".
 - Extract any names or emails mentioned in the user query, and include them in the respective lists.`
-// const peopleQueryAnalysisSystemPrompt = `
-// You are an assistant that analyzes user queries to categorize them and extract any names or emails mentioned.
 
-// Return a JSON object with the following structure:
-// {
-//   "category": "Self" | "InternalPerson" | "ExternalPerson" | "Other",
-//   "mentionedNames": [list of names mentioned in the user query],
-//   "mentionedEmails": [list of emails mentioned in the user query]
-// }
-
-// Do not include any additional text or explanations. Only return the JSON object.
-
-// Notes:
-// - If the user is asking about themselves, set "category" to "Self".
-// - If the user mentions another employee or internal person, set "category" to "InternalPerson".
-// - If the user mentions someone outside the company, set "category" to "ExternalPerson".
-// - If no person is mentioned or the query is about other topics, set "category" to "Other"
-// - Extract any names or emails mentioned in the user query, not just the user context and include them in the respective lists.`
 export const analyzeQueryForNamesAndEmails = async (
   userQuery: string,
   params: ModelParams,
@@ -936,7 +767,6 @@ export const analyzeQueryForNamesAndEmails = async (
   if (!params.systemPrompt) {
     params.systemPrompt = peopleQueryAnalysisSystemPrompt
   }
-  console.log(peopleQueryAnalysisSystemPrompt, userQuery)
   const messages: Message[] = [
     {
       role: "user",
@@ -954,7 +784,6 @@ export const analyzeQueryForNamesAndEmails = async (
   )
 
   if (text) {
-    console.log(text)
     let jsonVal
     try {
       jsonVal = JSON.parse(text.trim())
@@ -981,33 +810,3 @@ export const analyzeQueryForNamesAndEmails = async (
     throw new Error("Could not get json response")
   }
 }
-
-// console.log(
-//   JSON.stringify(
-//     await analyzeQueryForNamesAndEmails("Sahebjot's salary", {}),
-//     null,
-//     2,
-//   ),
-// )
-
-//   if (response.stream) {
-//     for await (const chunk of response.stream) {
-//       const text = chunk.contentBlockDelta?.delta?.text
-//       if (text) {
-//         fullResponse += text
-//         if (onChunk) onChunk(text)
-//       }
-//       if (chunk.metadata && onChunk) {
-//         const metadata = chunk.metadata
-//         if (metadata.usage) {
-//           const { inputTokens, outputTokens } = metadata.usage
-//           console.log(modelDetailsMap[modelId].cost)
-//           const cost = calculateCost(
-//             { inputTokens: inputTokens!, outputTokens: outputTokens! },
-//             modelDetailsMap[modelId].cost.onDemand,
-//           )
-//           onChunk("", metadata, cost)
-//         }
-//       }
-//     }
-// }

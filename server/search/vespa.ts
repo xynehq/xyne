@@ -7,6 +7,7 @@ import type {
   VespaSearchResponse,
   VespaUser,
   VespaGetResult,
+  Entity,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -292,7 +293,7 @@ export const autocomplete = async (
   }
 }
 
-type RankProfile = "default" | "cosine_RRF"
+type RankProfile = "default"
 type YqlProfile = {
   profile: RankProfile
   yql: string
@@ -301,8 +302,13 @@ type YqlProfile = {
 // TODO: it seems the owner part is complicating things
 const HybridDefaultProfile = (
   hits: number,
+  app: Apps | null,
+  entity: Entity | null,
   profile: RankProfile = "default",
 ): YqlProfile => {
+  let hasAppOrEntity = !!(app || entity)
+  let appOrEntityFilter =
+    `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
   return {
     profile: profile,
     yql: `
@@ -312,11 +318,11 @@ const HybridDefaultProfile = (
                 or
                 ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            and permissions contains @email)
+            and permissions contains @email ${appOrEntityFilter})
             or
-            (({targetHits:${hits}}userInput(@query)) and app contains "${Apps.GoogleWorkspace}")
+            (({targetHits:${hits}}userInput(@query)) ${!hasAppOrEntity ? ' and app contains "${Apps.GoogleWorkspace}"' : appOrEntityFilter})
             or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email)
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${appOrEntityFilter})
         `,
     // the last 2 are due to the 2 types of users, contacts and admin directory present in the same schema
   }
@@ -350,13 +356,13 @@ export const groupVespaSearch = async (
   limit = config.page,
 ): Promise<AppEntityCounts> => {
   const url = `${vespaEndpoint}/search/`
-  let yqlQuery = HybridDefaultProfileAppEntityCounts(limit).yql
+  let { yql, profile } = HybridDefaultProfileAppEntityCounts(limit)
 
   const hybridDefaultPayload = {
-    yql: yqlQuery,
+    yql,
     query,
     email,
-    "ranking.profile": HybridDefaultProfileAppEntityCounts(limit).profile,
+    "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
   }
   try {
@@ -388,24 +394,20 @@ export const groupVespaSearch = async (
 export const searchVespa = async (
   query: string,
   email: string,
-  app?: string,
-  entity?: string,
+  app: Apps | null,
+  entity: Entity | null,
   limit = config.page,
   offset?: number,
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
-  let yqlQuery = HybridDefaultProfile(limit).yql
-
-  if (app && entity) {
-    yqlQuery += ` and app contains @app and entity contains @entity`
-  }
+  let { yql, profile } = HybridDefaultProfile(limit, app, entity)
 
   const hybridDefaultPayload = {
-    yql: yqlQuery,
+    yql,
     query,
     email,
-    "ranking.profile": HybridDefaultProfile(limit, "cosine_RRF").profile,
+    "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     hits: limit,
     alpha: 0.5,
@@ -414,12 +416,8 @@ export const searchVespa = async (
           offset,
         }
       : {}),
-    ...(app && entity ? { app, entity } : {}),
-    variables: {
-      query,
-      app,
-      entity,
-    },
+    ...(app ? { app } : {}),
+    ...(entity ? { entity } : {}),
   }
   try {
     const response = await fetch(url, {

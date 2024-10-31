@@ -176,7 +176,13 @@ const cleanDocs = (text: string): string => {
   const repetitiveDotZeroPattern = /(?:\.0)+(\.\d+)?/g
   cleanedText = cleanedText.replace(repetitiveDotZeroPattern, "")
 
-  cleanedText = cleanedText.trim()
+  // Remove control characters
+  const controlCharsPattern = /[\x00-\x1F\x7F-\x9F]/g
+  cleanedText = cleanedText.replace(controlCharsPattern, "")
+  // Remove invalid or incomplete UTF characters
+  //  and �
+  const invalidUtfPattern = /[\uE907\uFFFD]/g
+  cleanedText = cleanedText.replace(invalidUtfPattern, "")
 
   return cleanedText
 }

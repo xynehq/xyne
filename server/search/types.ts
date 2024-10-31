@@ -288,6 +288,13 @@ type VespaGroupType = {
   children?: VespaGroupType[] // Recursive type definition
 }
 
+const VespaErrorSchema = z.object({
+  code: z.number(),
+  summary: z.string(),
+  source: z.string(),
+  message: z.string(),
+})
+
 const VespaRootBaseSchema = z.object({
   root: z.object({
     id: z.string(),
@@ -305,6 +312,7 @@ const VespaRootBaseSchema = z.object({
       results: z.number(),
       resultsFull: z.number(),
     }),
+    errors: z.array(VespaErrorSchema).optional(),
   }),
 })
 

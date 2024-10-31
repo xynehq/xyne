@@ -50,7 +50,7 @@ const evaluate = async (queriesListPath: string) => {
     query_id,
   }: { query: string; query_id: number }) => {
     try {
-      const results = await searchVespa(query, user, "", "", k, 0)
+      const results = await searchVespa(query, user, null, null, k, 0)
       if ("children" in results.root) {
         const hits = results.root.children
         console.log(hits.length, ": result length")

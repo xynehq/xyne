@@ -16,6 +16,7 @@ import { HTTPException } from "hono/http-exception"
 import {
   Apps,
   GooglePeopleEntity,
+  MailEntity,
   mailSchema,
   userSchema,
   type VespaSearchResponse,
@@ -52,6 +53,7 @@ import { Subsystem } from "@/types"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import type { PublicUserWorkspace } from "@/db/schema"
+import { getErrorMessage } from "@/utils"
 const Logger = getLogger(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
@@ -74,8 +76,9 @@ export const AutocompleteApi = async (c: Context) => {
     results = deduplicateAutocomplete(results)
     const newResults = VespaAutocompleteResponseToResult(results)
     return c.json(newResults)
-  } catch (e) {
-    console.error(e)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Autocomplete Error: ${errMsg} ${(error as Error).stack}`)
     throw new HTTPException(500, {
       message: "Could not fetch autocomplete results",
     })
@@ -98,7 +101,7 @@ export const SearchApi = async (c: Context) => {
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
-    groupCount = await groupVespaSearch(query, email)
+    groupCount = await groupVespaSearch(decodedQuery, email)
     results = await searchVespa(decodedQuery, email, app, entity, page, offset)
   } else {
     results = await searchVespa(decodedQuery, email, app, entity, page, offset)
@@ -124,7 +127,7 @@ export const AnswerApi = async (c: Context) => {
     searchVespa(decodedQuery, email, app, entity, config.answerPage, 0),
   ])
 
-  const costArr = []
+  const costArr: number[] = []
 
   const ctx = userContext(userAndWorkspace)
   const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${query}`
@@ -231,9 +234,6 @@ export const AnswerApi = async (c: Context) => {
       .join("\n"),
   )
 
-  Logger.info(
-    `costArr: ${costArr} \n Total Cost: ${costArr.reduce((prev, curr) => prev + curr, 0)}`,
-  )
   return streamSSE(c, async (stream) => {
     Logger.info("SSE stream started")
     // Stream the initial context information
@@ -243,7 +243,7 @@ export const AnswerApi = async (c: Context) => {
     })
     if (output?.canBeAnswered && output.contextualChunks.length) {
       const interator = askQuestion(decodedQuery, finalContext, {
-        modelId: Models.Llama_3_1_70B,
+        modelId: Models.Llama_3_1_8B,
         userCtx: ctx,
         stream: true,
         json: true,
@@ -256,10 +256,13 @@ export const AnswerApi = async (c: Context) => {
           })
         }
         if (cost) {
-          console.log(metadata, `Cost for this call: $${cost}`)
           costArr.push(cost)
         }
       }
+
+      Logger.info(
+        `costArr: ${costArr} \n Total Cost: ${costArr.reduce((prev, curr) => prev + curr, 0)}`,
+      )
     }
     await stream.writeSSE({
       data: "Answer complete",

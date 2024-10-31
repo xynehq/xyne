@@ -3,7 +3,7 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
-import { ConnectorType, type SaaSJob } from "@/types"
+import { ConnectorType, Subsystem, type SaaSJob } from "@/types"
 import PgBoss from "pg-boss"
 import config from "@/config"
 import { Apps, AuthType } from "@/shared/types"
@@ -12,6 +12,10 @@ import {
   handleGoogleServiceAccountChanges,
 } from "@/integrations/google/sync"
 import { checkDownloadsFolder } from "@/integrations/google/utils"
+import { getLogger } from "@/logger"
+import { getErrorMessage } from "@/utils"
+
+const Logger = getLogger(Subsystem.Queue)
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss(url)
@@ -79,7 +83,14 @@ const initWorkers = async () => {
   await setupServiceAccountCronjobs()
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
-    await handleGoogleOAuthChanges(boss, job)
+    try {
+      await handleGoogleOAuthChanges(boss, job)
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
+      )
+    }
   })
 
   // Any Service account related SaaS jobs

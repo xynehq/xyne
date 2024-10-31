@@ -606,6 +606,11 @@ export const handleGoogleOAuthChanges = async (
 }
 
 // TODO: handle the error case more deeply, systematically store these
+// https://developers.google.com/gmail/api/reference/rest/v1/users.history/list
+// "History IDs increase chronologically but are not contiguous with random gaps in between valid IDs.
+// Supplying an invalid or out of date startHistoryId typically returns an HTTP 404 error code.
+// A historyId is typically valid for at least a week, but in some rare circumstances may be valid for only a few hours.
+// If you receive an HTTP 404 error response, your application should perform a full sync."
 // errors in gmail history:
 // Requested entity was not found. Error: Requested entity was not found.
 // it seems history id can expire? or some issue is there hence we put multiple

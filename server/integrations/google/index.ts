@@ -911,12 +911,14 @@ export const googlePDFsVespa = async (
         `Error getting PDF files: ${error} ${(error as Error).stack}`,
         error,
       )
-      throw new DownloadDocumentError({
-        message: "Error in the catch of getting PDF files",
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: DriveEntity.PDF,
-      })
+      // we cannot break the whole pdf pipeline for one error
+      continue
+      // throw new DownloadDocumentError({
+      //   message: "Error in the catch of getting PDF files",
+      //   cause: error as Error,
+      //   integration: Apps.GoogleDrive,
+      //   entity: DriveEntity.PDF,
+      // })
     }
   }
   return pdfsList
