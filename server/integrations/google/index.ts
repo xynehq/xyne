@@ -850,7 +850,11 @@ export const googlePDFsVespa = async (
   const drive = google.drive({ version: "v3", auth: client })
   const total = pdfsMetadata.length
   let count = 0
+  // a flag just for the error to know
+  // if the file was downloaded or not
+  let wasDownloaded = false
   for (const pdf of pdfsMetadata) {
+    wasDownloaded = false
     const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
     // Ignore the PDF files larger than Max PDF Size
     if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
@@ -860,6 +864,7 @@ export const googlePDFsVespa = async (
     try {
       await downloadPDF(drive, pdf.id!, pdf.name!)
       const pdfPath = `${downloadDir}/${pdf?.name}`
+      wasDownloaded = true
       let docs: Document[] = []
 
       const loader = new PDFLoader(pdfPath)
@@ -911,6 +916,10 @@ export const googlePDFsVespa = async (
         `Error getting PDF files: ${error} ${(error as Error).stack}`,
         error,
       )
+      if (wasDownloaded) {
+        const pdfPath = `${downloadDir}/${pdf?.name}`
+        await deleteDocument(pdfPath)
+      }
       // we cannot break the whole pdf pipeline for one error
       continue
       // throw new DownloadDocumentError({
