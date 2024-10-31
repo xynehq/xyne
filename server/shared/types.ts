@@ -120,6 +120,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
   owner: true,
   ownerEmail: true,
   photoLink: true,
+  updatedAt: true,
 })
   .extend({
     type: z.literal(fileSchema),
@@ -127,6 +128,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
     chunkIndex: z.number().optional(),
     mimeType: z.string(),
     chunks_summary: z.array(z.string()).optional(),
+    relevance: z.number(),
   })
   .strip()
 
@@ -140,6 +142,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
   .strip()
   .extend({
     type: z.literal(userSchema),
+    relevance: z.number(),
   })
 
 // Search Response Schema
@@ -160,3 +163,13 @@ export const SearchResponseSchema = z.object({
 export type FileResponse = z.infer<typeof FileResponseSchema>
 
 export type SearchResponse = z.infer<typeof SearchResponseSchema>
+
+export const AnswerResponseSchema = z.object({})
+
+// kept it minimal to prevent
+// unnecessary data transfer
+export enum AnswerSSEEvents {
+  Start = "s",
+  AnswerUpdate = "u",
+  End = "e",
+}

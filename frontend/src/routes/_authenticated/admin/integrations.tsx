@@ -24,6 +24,7 @@ import { cn, getErrorMessage } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { Connectors } from "@/types"
 import { OAuthModal } from "@/oauth"
+import { Sidebar } from "@/components/Sidebar"
 
 const logger = console
 
@@ -511,69 +512,72 @@ const AdminLayout = () => {
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
-    <div className="w-full h-full flex items-center justify-center">
-      <Tabs
-        defaultValue="upload"
-        className={`w-[400px] min-h-[${minHeight}px]`}
-      >
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="upload">Service Account</TabsTrigger>
-          <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
-        </TabsList>
-        <TabsContent value="upload">
-          {isPending ? (
-            <LoaderContent />
-          ) : (
-            <ServiceAccountTab
-              connectors={data}
-              updateStatus={updateStatus}
-              isIntegrating={isIntegratingSA}
-              onSuccess={() => setIsIntegratingSA(true)}
-            />
-          )}
-        </TabsContent>
-        <TabsContent value="oauth">
-          {oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
-            <OAuthForm
-              onSuccess={() =>
-                setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-              }
-            />
-          ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Google OAuth</CardTitle>
-                <CardDescription>
-                  Connect using Google OAuth here.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <OAuthButton
-                  app={Apps.GoogleDrive}
-                  setOAuthIntegrationStatus={setOAuthIntegrationStatus}
-                  text="Connect with Google OAuth"
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Google OAuth</CardTitle>
-                {oauthIntegrationStatus ===
-                  OAuthIntegrationStatus.OAuthConnecting && (
-                  <CardDescription>status: {updateStatus} </CardDescription>
-                )}
-              </CardHeader>
-              <CardContent>
-                {oauthIntegrationStatus ===
-                OAuthIntegrationStatus.OAuthConnected
-                  ? "Connected"
-                  : "Connecting"}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-      </Tabs>
+    <div className="flex w-full h-full">
+      <Sidebar />
+      <div className="w-full h-full flex items-center justify-center">
+        <Tabs
+          defaultValue="upload"
+          className={`w-[400px] min-h-[${minHeight}px]`}
+        >
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="upload">Service Account</TabsTrigger>
+            <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
+          </TabsList>
+          <TabsContent value="upload">
+            {isPending ? (
+              <LoaderContent />
+            ) : (
+              <ServiceAccountTab
+                connectors={data}
+                updateStatus={updateStatus}
+                isIntegrating={isIntegratingSA}
+                onSuccess={() => setIsIntegratingSA(true)}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="oauth">
+            {oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
+              <OAuthForm
+                onSuccess={() =>
+                  setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+                }
+              />
+            ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Google OAuth</CardTitle>
+                  <CardDescription>
+                    Connect using Google OAuth here.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <OAuthButton
+                    app={Apps.GoogleDrive}
+                    setOAuthIntegrationStatus={setOAuthIntegrationStatus}
+                    text="Connect with Google OAuth"
+                  />
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Google OAuth</CardTitle>
+                  {oauthIntegrationStatus ===
+                    OAuthIntegrationStatus.OAuthConnecting && (
+                    <CardDescription>status: {updateStatus} </CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {oauthIntegrationStatus ===
+                  OAuthIntegrationStatus.OAuthConnected
+                    ? "Connected"
+                    : "Connecting"}
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   )
 }

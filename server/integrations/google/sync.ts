@@ -15,6 +15,7 @@ import {
   GetDocument,
   insert,
   insertDocument,
+  UpdateDocument,
   UpdateDocumentPermissions,
 } from "@/search/vespa"
 import { db } from "@/db/client"
@@ -604,6 +605,16 @@ export const handleGoogleOAuthChanges = async (
   }
 }
 
+// TODO: handle the error case more deeply, systematically store these
+// https://developers.google.com/gmail/api/reference/rest/v1/users.history/list
+// "History IDs increase chronologically but are not contiguous with random gaps in between valid IDs.
+// Supplying an invalid or out of date startHistoryId typically returns an HTTP 404 error code.
+// A historyId is typically valid for at least a week, but in some rare circumstances may be valid for only a few hours.
+// If you receive an HTTP 404 error response, your application should perform a full sync."
+// errors in gmail history:
+// Requested entity was not found. Error: Requested entity was not found.
+// it seems history id can expire? or some issue is there hence we put multiple
+// try catch internally
 const handleGmailChanges = async (
   gmail: gmail_v1.Gmail,
   historyId: string,
@@ -617,57 +628,132 @@ const handleGmailChanges = async (
   let changesExist = false
   const stats = newStats()
   let nextPageToken = ""
-  let newHistoryId = ""
-  do {
-    const res = await gmail.users.history.list({
-      userId: "me",
-      startHistoryId: historyId,
-      maxResults: 100,
-      pageToken: nextPageToken,
-    })
-    newHistoryId = res.data.historyId ?? historyId
-    // if nothing has changed, then return early
-    if (newHistoryId === historyId) {
-      return { stats, historyId, changesExist }
-    }
-    if (res.data.history) {
-      for (const history of res.data.history) {
-        if (history.messagesAdded) {
-          for (const { message } of history.messagesAdded) {
-            const msgResp = await gmail.users.messages.get({
-              userId: "me",
-              id: message?.id!, // The message ID from history
-              format: "full", // To get the full message content
-            })
-            await insert(parseMail(msgResp.data), mailSchema)
-            stats.added += 1
-            changesExist = true
+  let newHistoryId = historyId
+
+  try {
+    do {
+      const res = await gmail.users.history.list({
+        userId: "me",
+        startHistoryId: historyId,
+        maxResults: 100,
+        pageToken: nextPageToken,
+      })
+      newHistoryId = res.data.historyId ?? historyId
+
+      // Check if there are no new changes
+      if (newHistoryId === historyId) {
+        return { stats, historyId: newHistoryId, changesExist }
+      }
+
+      if (res.data.history) {
+        // Sort the history records by historyId in ascending order
+        res.data.history.sort((a, b) => {
+          if (a.id && b.id) {
+            return parseInt(a.id) - parseInt(b.id)
           }
-        } else if (history.messagesDeleted) {
-          for (const { message } of history.messagesDeleted) {
-            const mailMsg = await GetDocument(message?.id!, mailSchema)
-            const permissions = (mailMsg.fields as VespaMail).permissions
-            if (permissions.length === 1) {
-              await DeleteDocument(message?.id!, mailSchema)
-            } else {
-              const newPermissions = permissions.filter((v) => v !== userEmail)
-              await UpdateDocumentPermissions(
-                mailSchema,
-                message?.id!,
-                newPermissions,
-              )
+          return 0
+        })
+
+        for (const history of res.data.history) {
+          if (history.messagesAdded) {
+            for (const { message } of history.messagesAdded) {
+              try {
+                const msgResp = await gmail.users.messages.get({
+                  userId: "me",
+                  id: message?.id!,
+                  format: "full",
+                })
+                await insert(parseMail(msgResp.data), mailSchema)
+                stats.added += 1
+                changesExist = true
+              } catch (e) {
+                // Handle errors if the message no longer exists
+                Logger.error(
+                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${e}`,
+                )
+              }
             }
-            stats.removed += 1
-            changesExist = true
           }
-        } else {
-          Logger.warn(
-            `Invalid history: ${history.id} for syncJob: ${syncJobId}`,
-          )
+          if (history.messagesDeleted) {
+            for (const { message } of history.messagesDeleted) {
+              try {
+                const mailMsg = await GetDocument(mailSchema, message?.id!)
+                const permissions = (mailMsg.fields as VespaMail).permissions
+                if (permissions.length === 1) {
+                  await DeleteDocument(message?.id!, mailSchema)
+                } else {
+                  const newPermissions = permissions.filter(
+                    (v) => v !== userEmail,
+                  )
+                  await UpdateDocumentPermissions(
+                    mailSchema,
+                    message?.id!,
+                    newPermissions,
+                  )
+                }
+                stats.removed += 1
+                changesExist = true
+              } catch (e) {
+                // Handle errors if the document no longer exists
+                Logger.error(
+                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${e}`,
+                )
+              }
+            }
+          }
+          if (history.labelsAdded) {
+            for (const { message, labelIds } of history.labelsAdded) {
+              try {
+                const mailMsg = await GetDocument(mailSchema, message?.id!)
+                let labels = (mailMsg.fields as VespaMail).labels || []
+                labels = labels.concat(labelIds || [])
+                await UpdateDocument(mailSchema, message?.id!, { labels })
+                stats.updated += 1
+                changesExist = true
+              } catch (e) {
+                Logger.error(
+                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${e}`,
+                )
+              }
+            }
+          }
+          if (history.labelsRemoved) {
+            for (const { message, labelIds } of history.labelsRemoved) {
+              try {
+                const mailMsg = await GetDocument(mailSchema, message?.id!)
+                let labels = (mailMsg.fields as VespaMail).labels || []
+                labels = labels.filter(
+                  (label) => !(labelIds || []).includes(label),
+                )
+                await UpdateDocument(mailSchema, message?.id!, { labels })
+                stats.updated += 1
+                changesExist = true
+              } catch (e) {
+                Logger.error(
+                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${e}`,
+                )
+              }
+            }
+          }
         }
       }
+      nextPageToken = res.data.nextPageToken || ""
+    } while (nextPageToken)
+  } catch (error) {
+    if (
+      (error as any).code === 404 ||
+      (error as any).message.includes("Requested entity was not found")
+    ) {
+      // Log the error and return without updating the historyId
+      Logger.error(
+        `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
+      )
+      return { stats, historyId: newHistoryId, changesExist }
+    } else {
+      throw error
     }
-  } while (nextPageToken)
+  }
+
   return { historyId: newHistoryId, stats, changesExist }
 }
 

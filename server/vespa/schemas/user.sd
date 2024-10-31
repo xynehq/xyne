@@ -188,12 +188,14 @@ schema user {
     }
 
     rank-profile default {
-        first-phase {
-            expression: bm25(name) + bm25(email)
-        }
         match-features {
             bm25(name)
             bm25(email)
+        }
+        global-phase {
+            expression {
+                normalize_linear(bm25(name))+ normalize_linear(bm25(email))
+            }
         }
     }
 

@@ -9,7 +9,7 @@ export const SearchResult = ({
   let content = <></>
   if (result.type === "file") {
     content = (
-      <div className="flex flex-col mt-2" key={index}>
+      <div className="flex flex-col mt-[28px]" key={index}>
         <div className="flex items-center justify-start space-x-2">
           <a
             href={result.url ?? ""}
@@ -17,7 +17,7 @@ export const SearchResult = ({
             rel="noopener noreferrer"
             className="flex items-center text-blue-800 space-x-2"
           >
-            {getIcon(result.app, result.entity)}
+            {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
             {result.title}
           </a>
         </div>
@@ -29,10 +29,11 @@ export const SearchResult = ({
           ></img>
           <a
             target="_blank"
+            className="text-[#2067F5]"
             rel="noopener noreferrer"
             href={`https://contacts.google.com/${result.ownerEmail}`}
           >
-            <p className="text-left text-sm pt-1 text-gray-500">
+            <p className="text-left text-sm pt-1 text-[#464B53]">
               {result.owner}
             </p>
           </a>
@@ -46,13 +47,13 @@ export const SearchResult = ({
     )
   } else if (result.type === "user") {
     content = (
-      <div className="flex flex-col mt-2" key={index}>
+      <div className="flex flex-col mt-[28px]" key={index}>
         <div className="flex items-center justify-start space-x-2">
           <a
             href={`https://contacts.google.com/${result.email}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-blue-800 space-x-2"
+            className="flex items-center text-[#2067F5] space-x-2"
           >
             {/* TODO: if photoLink doesn't exist then show icon */}
             <img
@@ -67,13 +68,14 @@ export const SearchResult = ({
     )
   } else if (result.type === "mail") {
     content = (
-      <div className="flex flex-col mt-2" key={index}>
-        <div className="flex items-center justify-start space-x-2">
+      <div className="flex flex-col mt-[28px]" key={index}>
+        <div className="flex items-center justify-start">
+          {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
           <a
             href={`https://mail.google.com/mail/u/0/#inbox/${result.docId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-blue-800 space-x-2"
+            className="flex items-center text-[#2067F5] space-x-2"
           >
             {/* TODO: if photoLink doesn't exist then show icon */}
             {/* <img

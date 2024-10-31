@@ -1,14 +1,29 @@
-import { Folder } from "lucide-react"
+import { Folder, Users } from "lucide-react"
 import DocsSvg from "@/assets/docs.svg"
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
 import DriveSvg from "@/assets/drive.svg"
-import NotionPageSvg from "../assets/notionPage.svg"
+import NotionPageSvg from "@/assets/notionPage.svg"
+import Gmail from "@/assets/gmail.svg"
 import type { Entity } from "shared/types"
-import { Apps, DriveEntity, NotionEntity } from "shared/types"
+import {
+  Apps,
+  DriveEntity,
+  GooglePeopleEntity,
+  NotionEntity,
+} from "shared/types"
 
-export const getIcon = (app: Apps, entity: Entity) => {
-  const classNameVal = "h-[16px] w-[16px] mr-2"
+export const getIcon = (
+  app: Apps,
+  entity: Entity,
+  size?: { w: number; h: number; mr: number },
+) => {
+  let classNameVal = ""
+  if (size) {
+    classNameVal = `h-[${size.h}px] w-[${size.w}px] mr-[${size.mr}px]`
+  } else {
+    classNameVal = "h-[12px] w-[12px] mr-[10px]"
+  }
   if (app === Apps.GoogleDrive) {
     if (entity === DriveEntity.Docs) {
       return <img className={classNameVal} src={DocsSvg} />
@@ -24,14 +39,23 @@ export const getIcon = (app: Apps, entity: Entity) => {
           stroke="none"
         />
       )
+    } else if (
+      entity === GooglePeopleEntity.Contacts ||
+      entity === GooglePeopleEntity.OtherContacts
+    ) {
+      return <Users stroke="#464B53" size={12} className="mr-[10px]" />
     } else {
       return <img className={classNameVal} src={DriveSvg} />
     }
   } else if (app === Apps.GoogleWorkspace) {
-    // TODO: add default
+    return <Users size={12} className="mr-[10px]" />
+  } else if (app === Apps.Gmail) {
+    return <img className={classNameVal} src={Gmail} />
   } else if (app === Apps.Notion) {
     if (entity === NotionEntity.Page) {
       return <img className={classNameVal} src={NotionPageSvg} />
     }
+  } else {
+    throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
 }

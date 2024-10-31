@@ -132,8 +132,6 @@ export const getFileContent = async (
     }
   }
 
-  // TODO: fix this correctly
-  // @ts-ignore
   return {
     title: file.name!,
     url: file.webViewLink ?? "",
@@ -147,6 +145,8 @@ export const getFileContent = async (
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
     metadata: JSON.stringify({ parents: parentsForMetadata }),
+    createdAt: new Date(file.createdTime!).getTime(),
+    updatedAt: new Date(file.modifiedTime!).getTime(),
   }
 }
 
@@ -191,8 +191,6 @@ export const getPDFContent = async (
 
     // Deleting document
     await deleteDocument(pdfPath)
-    // TODO: remove ts-ignore and fix correctly
-    // @ts-ignore
     return {
       title: pdfFile.name!,
       url: pdfFile.webViewLink ?? "",
@@ -206,6 +204,8 @@ export const getPDFContent = async (
       permissions: pdfFile.permissions ?? [],
       mimeType: pdfFile.mimeType ?? "",
       metadata: JSON.stringify({ parents: parentsForMetadata }),
+      createdAt: new Date(pdfFile.createdTime!).getTime(),
+      updatedAt: new Date(pdfFile.modifiedTime!).getTime(),
     }
   } catch (error) {
     Logger.error(
@@ -271,6 +271,8 @@ export const driveFileToIndexed = async (
     permissions: file.permissions ?? [],
     mimeType: file.mimeType ?? "",
     metadata: JSON.stringify({ parents: parentsForMetadata }),
+    createdAt: new Date(file.createdTime!).getTime(),
+    updatedAt: new Date(file.modifiedTime!).getTime(),
   }
 }
 
