@@ -10,7 +10,7 @@ docker-compose -f deployment/docker-compose.metrics.yml up
    - Navigate to `http://localhost:9090/`.
    - If Prometheus is running correctly you'll land in the dashboard.
    - Then Navigate to Status > Targets.
-   - This will take to the lost of targets from which metrics is getting scraped. In our case you should see `xyne-data-ingest` table having an `up` state. 
+   - This will take to the list of targets from which metrics is getting scraped. In our case you should see `xyne-data-ingest` table having an `up` state. 
    - This confirms that prometheus is able to scrape vespa's data correctly.
 
 

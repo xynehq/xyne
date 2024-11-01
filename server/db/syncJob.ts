@@ -41,7 +41,7 @@ export const getAppSyncJobs = async (
     .select()
     .from(syncJobs)
     .where(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)))
-  return jobs //z.array(selectSyncJobSchema).parse(jobs)
+  return z.array(selectSyncJobSchema).parse(jobs)
 }
 
 export const updateSyncJob = async (
