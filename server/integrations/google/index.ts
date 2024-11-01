@@ -5,6 +5,7 @@ import {
   google,
   people_v1,
   sheets_v4,
+  slides_v1,
 } from "googleapis"
 import {
   extractFootnotes,
@@ -468,6 +469,84 @@ export const deleteDocument = async (filePath: string) => {
   }
 }
 
+const getPresentationToBeIngested = async (
+  slides: slides_v1.Slides,
+  presentation: drive_v3.Schema$File,
+  client: GoogleClient,
+) => {
+  const presentationData = await slides.presentations.get({
+    presentationId: presentation.id!,
+  })
+  const slidesData = presentationData.data.slides!
+  const chunks: string[] = []
+  let currentChunk = ""
+
+  slidesData.forEach((slide) => {
+    slide.pageElements!.forEach((element) => {
+      if (
+        element.shape &&
+        element.shape.text &&
+        element.shape.text.textElements
+      ) {
+        element.shape.text.textElements.forEach((textElement) => {
+          if (textElement.textRun) {
+            const textContent = textElement.textRun.content!.trim()
+
+            if ((currentChunk + " " + textContent).trim().length > 512) {
+              // Check if adding this text would exceed the maximum chunk length
+              // Add the current chunk to the list and start a new chunk
+              if (currentChunk.trim().length > 0) {
+                chunks.push(currentChunk.trim())
+              }
+              currentChunk = textContent
+            } else {
+              // Append the text to the current chunk
+              currentChunk += " " + textContent
+            }
+          }
+        })
+      }
+    })
+  })
+
+  if (currentChunk.trim().length > 0) {
+    // Add any remaining text as the last chunk
+    chunks.push(currentChunk.trim())
+  }
+
+  const parentsForMetadata = []
+  if (presentation?.parents) {
+    for (const parentId of presentation.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
+
+  const presentationToBeIngested = {
+    title: presentation.name!,
+    url: presentation.webViewLink ?? "",
+    app: Apps.GoogleDrive,
+    docId: presentation.id!,
+    owner: presentation.owners
+      ? (presentation.owners[0].displayName ?? "")
+      : "",
+    photoLink: presentation.owners
+      ? (presentation.owners[0].photoLink ?? "")
+      : "",
+    ownerEmail: presentation.owners
+      ? (presentation.owners[0]?.emailAddress ?? "")
+      : "",
+    entity: DriveEntity.Slides,
+    chunks,
+    permissions: presentation.permissions ?? [],
+    mimeType: presentation.mimeType ?? "",
+    metadata: JSON.stringify({ parents: parentsForMetadata }),
+  }
+
+  return presentationToBeIngested
+}
+
 const googleSlidesVespa = async (
   client: GoogleClient,
   presentationMetadata: drive_v3.Schema$File[],
@@ -484,77 +563,11 @@ const googleSlidesVespa = async (
 
   for (const presentation of presentationMetadata) {
     try {
-      const presentationData = await slides.presentations.get({
-        presentationId: presentation.id!,
-      })
-      const slidesData = presentationData.data.slides!
-      const chunks: string[] = []
-      let currentChunk = ""
-
-      slidesData.forEach((slide, index) => {
-        console.log(`Slide ${index + 1}:`)
-        slide.pageElements!.forEach((element) => {
-          if (
-            element.shape &&
-            element.shape.text &&
-            element.shape.text.textElements
-          ) {
-            element.shape.text.textElements.forEach((textElement) => {
-              if (textElement.textRun) {
-                const textContent = textElement.textRun.content!.trim()
-
-                if ((currentChunk + " " + textContent).trim().length > 512) {
-                  // Check if adding this text would exceed the maximum chunk length
-                  // Add the current chunk to the list and start a new chunk
-                  if (currentChunk.trim().length > 0) {
-                    chunks.push(currentChunk.trim())
-                  }
-                  currentChunk = textContent
-                } else {
-                  // Append the text to the current chunk
-                  currentChunk += " " + textContent
-                }
-              }
-            })
-          }
-        })
-      })
-
-      if (currentChunk.trim().length > 0) {
-        // Add any remaining text as the last chunk
-        chunks.push(currentChunk.trim())
-      }
-
-      const parentsForMetadata = []
-      if (presentation?.parents) {
-        for (const parentId of presentation.parents!) {
-          const parentData = await getFile(client, parentId)
-          const folderName = parentData.name!
-          parentsForMetadata.push({ folderName, folderId: parentId })
-        }
-      }
-
-      const presentationToBeIngested = {
-        title: presentation.name!,
-        url: presentation.webViewLink ?? "",
-        app: Apps.GoogleDrive,
-        docId: presentation.id!,
-        owner: presentation.owners
-          ? (presentation.owners[0].displayName ?? "")
-          : "",
-        photoLink: presentation.owners
-          ? (presentation.owners[0].photoLink ?? "")
-          : "",
-        ownerEmail: presentation.owners
-          ? (presentation.owners[0]?.emailAddress ?? "")
-          : "",
-        entity: DriveEntity.Slides,
-        chunks,
-        permissions: presentation.permissions ?? [],
-        mimeType: presentation.mimeType ?? "",
-        metadata: JSON.stringify({ parents: parentsForMetadata }),
-      }
-      
+      const presentationToBeIngested = await getPresentationToBeIngested(
+        slides,
+        presentation,
+        client,
+      )
       presentationsList.push(presentationToBeIngested)
       count += 1
 
@@ -568,12 +581,7 @@ const googleSlidesVespa = async (
         `Error getting slides: ${error} ${(error as Error).stack}`,
         error,
       )
-      throw new DownloadDocumentError({
-        message: "Error in the catch of getting slides",
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: DriveEntity.Slides,
-      })
+      continue
     }
   }
   return presentationsList
@@ -649,7 +657,7 @@ const insertFilesForUser = async (
       // ...documents,
       // ...pdfDocuments,
       // ...sheets,
-      ...slides
+      ...slides,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
       return v
