@@ -479,9 +479,9 @@ const getPresentationToBeIngested = async (
   })
   const slidesData = presentationData.data.slides!
   const chunks: string[] = []
-  let currentChunk = ""
 
   slidesData.forEach((slide) => {
+    let slideText = ""
     slide.pageElements!.forEach((element) => {
       if (
         element.shape &&
@@ -491,28 +491,15 @@ const getPresentationToBeIngested = async (
         element.shape.text.textElements.forEach((textElement) => {
           if (textElement.textRun) {
             const textContent = textElement.textRun.content!.trim()
-
-            if ((currentChunk + " " + textContent).trim().length > 512) {
-              // Check if adding this text would exceed the maximum chunk length
-              // Add the current chunk to the list and start a new chunk
-              if (currentChunk.trim().length > 0) {
-                chunks.push(currentChunk.trim())
-              }
-              currentChunk = textContent
-            } else {
-              // Append the text to the current chunk
-              currentChunk += " " + textContent
-            }
+            slideText += textContent + " "
           }
         })
       }
     })
-  })
 
-  if (currentChunk.trim().length > 0) {
-    // Add any remaining text as the last chunk
-    chunks.push(currentChunk.trim())
-  }
+    const slideChunks = chunkDocument(slideText)
+    chunks.push(...slideChunks.map((c) => c.chunk))
+  })
 
   const parentsForMetadata = []
   if (presentation?.parents) {
