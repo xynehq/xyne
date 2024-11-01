@@ -18,12 +18,15 @@ import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
 } from "@/search/mappers"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 const { JwtPayloadKey } = config
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
 })
 
+const Logger = getLogger(Subsystem.Search)
 export const AutocompleteApi = async (c: Context) => {
   try {
     const { sub } = c.get(JwtPayloadKey)
@@ -39,7 +42,7 @@ export const AutocompleteApi = async (c: Context) => {
     const newResults = VespaAutocompleteResponseToResult(results)
     return c.json(newResults)
   } catch (e) {
-    console.error(e)
+    Logger.error(`Autocomplete error: ${(e as Error).message} ${(e as Error).stack}`)
     throw new HTTPException(500, {
       message: "Could not fetch autocomplete results",
     })

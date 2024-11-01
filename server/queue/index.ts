@@ -3,7 +3,7 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
-import { ConnectorType, type SaaSJob } from "@/types"
+import { ConnectorType, Subsystem, type SaaSJob } from "@/types"
 import PgBoss from "pg-boss"
 import config from "@/config"
 import { Apps, AuthType } from "@/shared/types"
@@ -12,6 +12,7 @@ import {
   handleGoogleServiceAccountChanges,
 } from "@/integrations/google/sync"
 import { checkDownloadsFolder } from "@/integrations/google/utils"
+import { getLogger } from "@/logger"
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss(url)
@@ -27,6 +28,7 @@ const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
 const EveryWeek = `0 0 */7 * *`
 const EveryMin = `*/1 * * * *`
+const Logger = getLogger(Subsystem.Server).child({module: 'queue'})
 
 export const init = async () => {
   await boss.start()
@@ -100,5 +102,5 @@ const initWorkers = async () => {
 export const ProgressEvent = "progress-event"
 
 boss.on("error", (error) => {
-  console.error(`Queue error: ${error}`)
+  console.error(`Queue error: ${error} ${(error as Error).stack}`)
 })

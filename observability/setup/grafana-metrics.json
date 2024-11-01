@@ -1340,7 +1340,10 @@
     "preload": false,
     "refresh": "1m",
     "schemaVersion": 40,
-    "tags": [],
+    "tags": [
+      "prometheus",
+      "grafana"
+    ],
     "templating": {
       "list": []
     },
