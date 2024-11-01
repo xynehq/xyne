@@ -814,17 +814,24 @@ export const downloadPDF = async (
     )
     return new Promise<void>((resolve, reject) => {
       res.data
-        .on("end", () => {
-          Logger.info(`Downloaded ${fileName}`)
-          resolve()
-        })
         .on("error", async (err) => {
-          Logger.error("Error downloading file.", err)
+          Logger.error("Error during download stream.", err)
           // Deleting document here if downloading fails
           await deleteDocument(`${downloadDir}/${fileName}`)
           reject(err)
         })
         .pipe(dest)
+      dest
+        .on("finish", () => {
+          Logger.info(`Downloaded ${fileName}`)
+          resolve()
+        })
+        .on("error", async (err) => {
+          Logger.error("Error writing file to disk.", err)
+          // Deleting document here if writing fails
+          await deleteDocument(`${downloadDir}/${fileName}`)
+          reject(err)
+        })
     })
   } catch (error) {
     Logger.error(`Error fetching the file stream:`, error)
@@ -885,8 +892,6 @@ export const googlePDFsVespa = async (
           parentsForMetadata.push({ folderName, folderId: parentId })
         }
       }
-      // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
       pdfsList.push({
         title: pdf.name!,
         url: pdf.webViewLink ?? "",

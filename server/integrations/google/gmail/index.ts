@@ -37,7 +37,7 @@ export const handleGmailIngestion = async (
   do {
     const resp = await gmail.users.messages.list({
       userId: "me",
-      maxResults: 100,
+      maxResults: 500,
       pageToken: nextPageToken,
     })
     nextPageToken = resp.data.nextPageToken ?? ""
