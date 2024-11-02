@@ -72,6 +72,7 @@ import {
   MAX_GD_PDF_SIZE,
   MAX_GD_SHEET_ROWS,
   MAX_GD_SHEET_TEXT_LEN,
+  MAX_GD_SLIDES_TEXT_LEN,
 } from "@/integrations/google/config"
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
@@ -477,7 +478,8 @@ export const getPresentationToBeIngested = async (
     presentationId: presentation.id!,
   })
   const slidesData = presentationData.data.slides!
-  const chunks: string[] = []
+  let chunks: string[] = []
+  let totalTextLen = 0
 
   slidesData.forEach((slide) => {
     let slideText = ""
@@ -491,14 +493,26 @@ export const getPresentationToBeIngested = async (
           if (textElement.textRun) {
             const textContent = textElement.textRun.content!.trim()
             slideText += textContent + " "
+            totalTextLen += textContent.length
           }
         })
       }
     })
 
-    const slideChunks = chunkDocument(slideText)
-    chunks.push(...slideChunks.map((c) => c.chunk))
+    if (totalTextLen <= MAX_GD_SLIDES_TEXT_LEN) {
+      // Only chunk if the total text length is within the limit
+      const slideChunks = chunkDocument(slideText)
+      chunks.push(...slideChunks.map((c) => c.chunk))
+    }
   })
+
+  // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
+  if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
+    Logger.error(
+      `Text Length excedded for ${presentation.name}, indexing with empty content`,
+    )
+    chunks = []
+  }
 
   const parentsForMetadata = []
   if (presentation?.parents) {
