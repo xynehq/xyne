@@ -236,12 +236,9 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [
-      _,
-      // historyId
-    ] = await Promise.all([
+    const [_, historyId] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
-      // handleGmailIngestion(oauth2Client, userEmail),
+      handleGmailIngestion(oauth2Client, userEmail),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -268,17 +265,17 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      // await insertSyncJob(trx, {
-      //   workspaceId: connector.workspaceId,
-      //   workspaceExternalId: connector.workspaceExternalId,
-      //   app: Apps.Gmail,
-      //   connectorId: connector.id,
-      //   authType: AuthType.OAuth,
-      //   config: { historyId, lastSyncedAt: new Date().toISOString() },
-      //   email: userEmail,
-      //   type: SyncCron.ChangeToken,
-      //   status: SyncJobStatus.NotStarted,
-      // })
+      await insertSyncJob(trx, {
+        workspaceId: connector.workspaceId,
+        workspaceExternalId: connector.workspaceExternalId,
+        app: Apps.Gmail,
+        connectorId: connector.id,
+        authType: AuthType.OAuth,
+        config: { historyId, lastSyncedAt: new Date().toISOString() },
+        email: userEmail,
+        type: SyncCron.ChangeToken,
+        status: SyncJobStatus.NotStarted,
+      })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
@@ -623,39 +620,36 @@ const insertFilesForUser = async (
         v.mimeType !== DriveMime.Slides,
     )
 
-    const [
-      // documents, pdfDocuments, sheets,
-      slides,
-    ]: [
+    const [documents, pdfDocuments, sheets, slides]: [
       VespaFileWithDrivePermission[],
-      // VespaFileWithDrivePermission[],
-      // VespaFileWithDrivePermission[],
-      // VespaFileWithDrivePermission[],
+      VespaFileWithDrivePermission[],
+      VespaFileWithDrivePermission[],
+      VespaFileWithDrivePermission[],
     ] = await Promise.all([
-      // googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
-      // googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
-      // googleSheetsVespa(
-      //   googleClient,
-      //   googleSheetsMetadata,
-      //   connector.externalId,
-      // ),
+      googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
+      googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+      googleSheetsVespa(
+        googleClient,
+        googleSheetsMetadata,
+        connector.externalId,
+      ),
       googleSlidesVespa(
         googleClient,
         googleSlidesMetadata,
         connector.externalId,
       ),
     ])
-    // const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
-    //   googleClient,
-    //   rest,
-    // )
+    const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
+      googleClient,
+      rest,
+    )
 
     sendWebsocketMessage("generating embeddings", connector.externalId)
     let allFiles: VespaFileWithDrivePermission[] = [
-      // ...driveFiles,
-      // ...documents,
-      // ...pdfDocuments,
-      // ...sheets,
+      ...driveFiles,
+      ...documents,
+      ...pdfDocuments,
+      ...sheets,
       ...slides,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
