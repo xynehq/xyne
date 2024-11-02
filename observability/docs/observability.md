@@ -21,7 +21,7 @@ To set up **Grafana** dashboad :
 - To log in use the default username and password (admin)
 - Once you see the dashboard, Navigate to Connections using the Nav bar to the left.
 - Under Connections you will find a tab for `Data Sources`. Navigate to that and look for `Prometheus`.
-- In the `Settings` section of the Prometheus Data Source,  paste the connection URL `http://xyne-prometheus:9090`. This is URL for the prometheus instance running in docker.
+- In the `Settings` section of the Prometheus Data Source,  paste the connection URL `http://xyne-prometheus:9090`. This is URL for the prometheus instance running in docker. Also ensure that the `name` property is set to `prometheusSource`, if it isn't already present.
 - Now scroll down to Save and Test your connection. It should show a `Successful` message.
 - Now using the same Nav bar to the left, navigate to `Dashboards`.
 - Once on the dashboard page you will see the `New` button in the top right corner. Click on that button and select the `import` option.
