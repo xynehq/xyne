@@ -72,6 +72,7 @@ import {
   MAX_GD_PDF_SIZE,
   MAX_GD_SHEET_ROWS,
   MAX_GD_SHEET_TEXT_LEN,
+  MAX_GD_SLIDES_TEXT_LEN,
 } from "@/integrations/google/config"
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
@@ -173,7 +174,9 @@ export const syncGoogleWorkspace = async (
     })
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error(`Could not sync Google workspace: , ${errorMessage} ${(error as Error).stack}`)
+    Logger.error(
+      `Could not sync Google workspace: , ${errorMessage} ${(error as Error).stack}`,
+    )
     if (error instanceof SyncJobsCountError) {
       boss.fail(job.name, job.id)
       return
@@ -465,6 +468,125 @@ export const deleteDocument = async (filePath: string) => {
   }
 }
 
+export const getPresentationToBeIngested = async (
+  presentation: drive_v3.Schema$File,
+  client: GoogleClient,
+) => {
+  const slides = google.slides({ version: "v1", auth: client })
+  const presentationData = await slides.presentations.get({
+    presentationId: presentation.id!,
+  })
+  const slidesData = presentationData.data.slides!
+  let chunks: string[] = []
+  let totalTextLen = 0
+
+  slidesData.forEach((slide) => {
+    let slideText = ""
+    slide.pageElements!.forEach((element) => {
+      if (
+        element.shape &&
+        element.shape.text &&
+        element.shape.text.textElements
+      ) {
+        element.shape.text.textElements.forEach((textElement) => {
+          if (textElement.textRun) {
+            const textContent = textElement.textRun.content!.trim()
+            slideText += textContent + " "
+            totalTextLen += textContent.length
+          }
+        })
+      }
+    })
+
+    if (totalTextLen <= MAX_GD_SLIDES_TEXT_LEN) {
+      // Only chunk if the total text length is within the limit
+      const slideChunks = chunkDocument(slideText)
+      chunks.push(...slideChunks.map((c) => c.chunk))
+    }
+  })
+
+  // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
+  if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
+    Logger.error(
+      `Text Length excedded for ${presentation.name}, indexing with empty content`,
+    )
+    chunks = []
+  }
+
+  const parentsForMetadata = []
+  if (presentation?.parents) {
+    for (const parentId of presentation.parents!) {
+      const parentData = await getFile(client, parentId)
+      const folderName = parentData.name!
+      parentsForMetadata.push({ folderName, folderId: parentId })
+    }
+  }
+
+  const presentationToBeIngested = {
+    title: presentation.name!,
+    url: presentation.webViewLink ?? "",
+    app: Apps.GoogleDrive,
+    docId: presentation.id!,
+    owner: presentation.owners
+      ? (presentation.owners[0].displayName ?? "")
+      : "",
+    photoLink: presentation.owners
+      ? (presentation.owners[0].photoLink ?? "")
+      : "",
+    ownerEmail: presentation.owners
+      ? (presentation.owners[0]?.emailAddress ?? "")
+      : "",
+    entity: DriveEntity.Slides,
+    chunks,
+    permissions: presentation.permissions ?? [],
+    mimeType: presentation.mimeType ?? "",
+    metadata: JSON.stringify({ parents: parentsForMetadata }),
+    createdAt: new Date(presentation.createdTime!).getTime(),
+    updatedAt: new Date(presentation.modifiedTime!).getTime(),
+  }
+
+  return presentationToBeIngested
+}
+
+const googleSlidesVespa = async (
+  client: GoogleClient,
+  presentationMetadata: drive_v3.Schema$File[],
+  connectorId: string,
+): Promise<VespaFileWithDrivePermission[]> => {
+  sendWebsocketMessage(
+    `Scanning ${presentationMetadata.length} Google Slides`,
+    connectorId,
+  )
+  const presentationsList: VespaFileWithDrivePermission[] = []
+
+  const total = presentationMetadata.length
+  let count = 0
+
+  for (const presentation of presentationMetadata) {
+    try {
+      const presentationToBeIngested = await getPresentationToBeIngested(
+        presentation,
+        client,
+      )
+      presentationsList.push(presentationToBeIngested)
+      count += 1
+
+      if (count % 5 === 0) {
+        sendWebsocketMessage(`${count} Google Slides scanned`, connectorId)
+        process.stdout.write(`${Math.floor((count / total) * 100)}`)
+        process.stdout.write("\n")
+      }
+    } catch (error) {
+      Logger.error(
+        `Error getting slides: ${error} ${(error as Error).stack}`,
+        error,
+      )
+      continue
+    }
+  }
+  return presentationsList
+}
+
 const insertFilesForUser = async (
   googleClient: GoogleClient,
   userEmail: string,
@@ -498,10 +620,12 @@ const insertFilesForUser = async (
       (v) =>
         v.mimeType !== DriveMime.Docs &&
         v.mimeType !== DriveMime.PDF &&
-        v.mimeType !== DriveMime.Sheets,
+        v.mimeType !== DriveMime.Sheets &&
+        v.mimeType !== DriveMime.Slides,
     )
 
-    const [documents, pdfDocuments, sheets]: [
+    const [documents, pdfDocuments, sheets, slides]: [
+      VespaFileWithDrivePermission[],
       VespaFileWithDrivePermission[],
       VespaFileWithDrivePermission[],
       VespaFileWithDrivePermission[],
@@ -511,6 +635,11 @@ const insertFilesForUser = async (
       googleSheetsVespa(
         googleClient,
         googleSheetsMetadata,
+        connector.externalId,
+      ),
+      googleSlidesVespa(
+        googleClient,
+        googleSlidesMetadata,
         connector.externalId,
       ),
     ])
@@ -525,6 +654,7 @@ const insertFilesForUser = async (
       ...documents,
       ...pdfDocuments,
       ...sheets,
+      ...slides,
     ].map((v) => {
       v.permissions = toPermissionsList(v.permissions, userEmail)
       return v
@@ -834,7 +964,9 @@ export const downloadPDF = async (
         })
     })
   } catch (error) {
-    Logger.error(`Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`)
+    Logger.error(
+      `Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`,
+    )
     throw new DownloadDocumentError({
       message: "Error in downloading file",
       cause: error as Error,
@@ -1170,7 +1302,7 @@ const insertContactsToVespa = async (
   } catch (error) {
     // error is related to vespa and not mapping
     if (error instanceof ErrorInsertingDocument) {
-      Logger.error(`Could not insert contact: ${(error as Error).stack}` )
+      Logger.error(`Could not insert contact: ${(error as Error).stack}`)
       throw error
     } else {
       Logger.error(

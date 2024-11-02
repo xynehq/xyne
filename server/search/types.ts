@@ -34,6 +34,7 @@ export enum MailEntity {
 export enum DriveEntity {
   Docs = "docs",
   Sheets = "sheets",
+  Slides = "slides",
   Presentation = "presentation",
   PDF = "pdf",
   Folder = "folder",
