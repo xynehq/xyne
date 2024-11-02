@@ -204,7 +204,7 @@ export const AddServiceConnection = async (c: Context) => {
     } catch (error) {
       const errMessage = getErrorMessage(error)
       Logger.error(
-        `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage}`,
+        `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
       )
       // Rollback the transaction in case of any error
       throw new HTTPException(500, {

@@ -18,4 +18,4 @@ export const MAX_GD_SHEET_ROWS = 3000
 export const MAX_GD_SHEET_TEXT_LEN = 300000
 export const MAX_GD_SLIDES_TEXT_LEN = 300000
 export const GoogleDocsConcurrency = 10
-export const GmailConcurrency = 15
+export const GmailConcurrency = 25

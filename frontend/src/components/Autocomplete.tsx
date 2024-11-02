@@ -73,7 +73,8 @@ export const AutocompleteElement = forwardRef(
       <div
         ref={ref}
         onClick={onClick}
-        className="cursor-pointer hover:bg-gray-100 px-4 py-2"
+        // className="cursor-pointer hover:bg-gray-100 px-4 py-2"
+        className="p-3 hover:bg-gray-100 cursor-pointer"
       >
         {content}
       </div>

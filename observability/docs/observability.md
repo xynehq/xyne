@@ -10,7 +10,7 @@ docker-compose -f deployment/docker-compose.metrics.yml up
    - Navigate to `http://localhost:9090/`.
    - If Prometheus is running correctly you'll land in the dashboard.
    - Then Navigate to Status > Targets.
-   - This will take to the lost of targets from which metrics is getting scraped. In our case you should see `xyne-data-ingest` table having an `up` state. 
+   - This will take to the list of targets from which metrics is getting scraped. In our case you should see `xyne-data-ingest` table having an `up` state. 
    - This confirms that prometheus is able to scrape vespa's data correctly.
 
 
@@ -21,7 +21,7 @@ To set up **Grafana** dashboad :
 - To log in use the default username and password (admin)
 - Once you see the dashboard, Navigate to Connections using the Nav bar to the left.
 - Under Connections you will find a tab for `Data Sources`. Navigate to that and look for `Prometheus`.
-- In the `Settings` section of the Prometheus Data Source,  paste the connection URL `http://xyne-prometheus:9090`. This is URL for the prometheus instance running in docker.
+- In the `Settings` section of the Prometheus Data Source,  paste the connection URL `http://xyne-prometheus:9090`. This is URL for the prometheus instance running in docker. Also ensure that the `name` property is set to `prometheusSource`, if it isn't already present.
 - Now scroll down to Save and Test your connection. It should show a `Successful` message.
 - Now using the same Nav bar to the left, navigate to `Dashboards`.
 - Once on the dashboard page you will see the `New` button in the top right corner. Click on that button and select the `import` option.
@@ -34,4 +34,3 @@ To set up **Grafana** dashboad :
     - In the `Queries` tab select the **prometheus** datasource which you've just added.
     - Click on `Run Queries` to get the results.
     - Follow the same steps for the rest of the panels.
-

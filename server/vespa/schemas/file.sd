@@ -37,25 +37,40 @@ schema file {
     field owner type string {
       indexing: attribute | summary
     }
+
     field ownerEmail type string {
       indexing: attribute | summary
     }
+
     field photoLink type string {
       indexing: attribute | summary
     }
+
     field permissions type array<string> {
       indexing: attribute | summary
     }
+
     field mimeType type string {
       indexing: attribute | summary
     }
+
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
     field metadata type string {
       indexing: attribute | summary
     }
   }
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[768])  {
-    indexing: input chunks | embed | attribute | index | summary
+    indexing: input chunks | embed | attribute | index
     attribute {
         distance-metric: angular
     }
@@ -81,7 +96,7 @@ schema file {
   }
 
   # Hybrid search rank profile combining BM25 for title and chunks, and vector search for chunk embeddings
-  rank-profile default {
+  rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
       query(e) tensor<bfloat16>(v[768])  # Query embedding
@@ -100,7 +115,7 @@ schema file {
 
     # First phase combines BM25 (title and chunks) and vector similarity (chunks)
     first-phase {
-      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) + bm25(title)))
+      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) +bm25(title)))
     }
 
     # Global phase (optional if more complex reranking is needed)
@@ -122,8 +137,12 @@ schema file {
   }
 
  
-  rank-profile cosine_RRF inherits default {
+  rank-profile default inherits initial {
     
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embeddings)
+    }
+
     function cos_sim() {
       expression: cos(distance(field, chunk_embeddings))
     }
@@ -158,12 +177,11 @@ schema file {
     }
   }
 
-  document-summary matched-fields {
+  document-summary default {
     summary chunks_summary {
       bolding: on
       source: chunks
     }
-    summary docId {}
   }
 
   document-summary autocomplete {

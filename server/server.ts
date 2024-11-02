@@ -1,8 +1,14 @@
 import { type Context, Hono, type Next } from "hono"
-import { AutocompleteApi, autocompleteSchema, SearchApi } from "@/api/search"
+import {
+  AnswerApi,
+  AutocompleteApi,
+  autocompleteSchema,
+  SearchApi,
+} from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
   addServiceConnectionSchema,
+  answerSchema,
   createOAuthProvider,
   oauthStartQuerySchema,
   searchSchema,
@@ -75,7 +81,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     // Verify the token if available
     await AuthMiddleware(c, next)
   } catch (err) {
-    Logger.error(`${new AuthRedirectError({ cause: err as Error })}`)
+    Logger.error(`${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`)
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
     return c.redirect(`${frontendBaseURL}/auth`)
@@ -123,6 +129,7 @@ export const AppRoutes = app
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
+  .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema

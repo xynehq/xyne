@@ -46,7 +46,7 @@ const seed = async () => {
 
     Logger.info("Seeding completed successfully.")
   } catch (error) {
-    Logger.error(`Error during seeding:, ${error}`)
+    Logger.error(`Error during seeding:, ${error} : ${(error as Error).stack}`)
     throw new Error("Error while seeding")
   }
 }

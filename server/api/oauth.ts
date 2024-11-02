@@ -76,7 +76,7 @@ export const OAuthCallback = async (c: Context) => {
     // Commit the transaction if everything is successful
     return c.redirect(`${config.host}/oauth/success`)
   } catch (error) {
-    Logger.error(`${new OAuthCallbackError({ cause: error as Error })}`)
+    Logger.error(`${new OAuthCallbackError({ cause: error as Error })} \n ${(error as Error).stack}`)
     throw new HTTPException(500, { message: "Error in OAuthCallback" })
   }
 }

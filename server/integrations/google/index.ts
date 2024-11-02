@@ -104,7 +104,7 @@ const listUsers = async (
     } while (nextPageToken)
     return users
   } catch (error) {
-    Logger.error(`Error listing users:", ${error}`)
+    Logger.error(`Error listing users: ${error} ${(error as Error).stack}`)
     throw new UserListingError({
       cause: error as Error,
       integration: Apps.GoogleWorkspace,
@@ -174,7 +174,7 @@ export const syncGoogleWorkspace = async (
     })
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error("Could not sync Google workspace: ", errorMessage)
+    Logger.error(`Could not sync Google workspace: , ${errorMessage} ${(error as Error).stack}`)
     if (error instanceof SyncJobsCountError) {
       boss.fail(job.name, job.id)
       return
@@ -870,6 +870,8 @@ export const getSheetsListFromOneSpreadsheet = async (
           totalSheets: spreadSheetData.data.sheets?.length!,
         }),
       }),
+      createdAt: new Date(spreadsheet.createdTime!).getTime(),
+      updatedAt: new Date(spreadsheet.modifiedTime!).getTime(),
     }
     sheetsArr.push(sheetDataToBeIngested)
   }
@@ -938,20 +940,27 @@ export const downloadPDF = async (
     )
     return new Promise<void>((resolve, reject) => {
       res.data
-        .on("end", () => {
-          Logger.info(`Downloaded ${fileName}`)
-          resolve()
-        })
         .on("error", async (err) => {
-          Logger.error("Error downloading file.", err)
+          Logger.error("Error during download stream.", err)
           // Deleting document here if downloading fails
           await deleteDocument(`${downloadDir}/${fileName}`)
           reject(err)
         })
         .pipe(dest)
+      dest
+        .on("finish", () => {
+          Logger.info(`Downloaded ${fileName}`)
+          resolve()
+        })
+        .on("error", async (err) => {
+          Logger.error("Error writing file to disk.", err)
+          // Deleting document here if writing fails
+          await deleteDocument(`${downloadDir}/${fileName}`)
+          reject(err)
+        })
     })
   } catch (error) {
-    Logger.error(`Error fetching the file stream:`, error)
+    Logger.error(`Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`)
     throw new DownloadDocumentError({
       message: "Error in downloading file",
       cause: error as Error,
@@ -974,7 +983,11 @@ export const googlePDFsVespa = async (
   const drive = google.drive({ version: "v3", auth: client })
   const total = pdfsMetadata.length
   let count = 0
+  // a flag just for the error to know
+  // if the file was downloaded or not
+  let wasDownloaded = false
   for (const pdf of pdfsMetadata) {
+    wasDownloaded = false
     const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
     // Ignore the PDF files larger than Max PDF Size
     if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
@@ -984,6 +997,7 @@ export const googlePDFsVespa = async (
     try {
       await downloadPDF(drive, pdf.id!, pdf.name!)
       const pdfPath = `${downloadDir}/${pdf?.name}`
+      wasDownloaded = true
       let docs: Document[] = []
 
       const loader = new PDFLoader(pdfPath)
@@ -1004,8 +1018,6 @@ export const googlePDFsVespa = async (
           parentsForMetadata.push({ folderName, folderId: parentId })
         }
       }
-      // TODO: remove ts-ignore and fix correctly
-      // @ts-ignore
       pdfsList.push({
         title: pdf.name!,
         url: pdf.webViewLink ?? "",
@@ -1019,6 +1031,8 @@ export const googlePDFsVespa = async (
         permissions: pdf.permissions ?? [],
         mimeType: pdf.mimeType ?? "",
         metadata: JSON.stringify({ parents: parentsForMetadata }),
+        createdAt: new Date(pdf.createdTime!).getTime(),
+        updatedAt: new Date(pdf.modifiedTime!).getTime(),
       })
       count += 1
 
@@ -1033,12 +1047,18 @@ export const googlePDFsVespa = async (
         `Error getting PDF files: ${error} ${(error as Error).stack}`,
         error,
       )
-      throw new DownloadDocumentError({
-        message: "Error in the catch of getting PDF files",
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: DriveEntity.PDF,
-      })
+      if (wasDownloaded) {
+        const pdfPath = `${downloadDir}/${pdf?.name}`
+        await deleteDocument(pdfPath)
+      }
+      // we cannot break the whole pdf pipeline for one error
+      continue
+      // throw new DownloadDocumentError({
+      //   message: "Error in the catch of getting PDF files",
+      //   cause: error as Error,
+      //   integration: Apps.GoogleDrive,
+      //   entity: DriveEntity.PDF,
+      // })
     }
   }
   return pdfsList
@@ -1276,7 +1296,7 @@ const insertContactsToVespa = async (
   } catch (error) {
     // error is related to vespa and not mapping
     if (error instanceof ErrorInsertingDocument) {
-      Logger.error("Could not insert contact: ", error)
+      Logger.error(`Could not insert contact: ${(error as Error).stack}` )
       throw error
     } else {
       Logger.error(
@@ -1396,6 +1416,8 @@ export const googleDocsVespa = async (
         permissions: doc.permissions ?? [],
         mimeType: doc.mimeType ?? "",
         metadata: JSON.stringify({ parents: parentsForMetadata }),
+        createdAt: new Date(doc.createdTime!).getTime(),
+        updatedAt: new Date(doc.modifiedTime!).getTime(),
       })
       count += 1
 

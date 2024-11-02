@@ -15,7 +15,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 4,
+  "id": 1,
   "links": [
     {
       "icon": "info",
@@ -37,7 +37,7 @@
   ],
   "panels": [
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -127,20 +127,24 @@
       "targets": [
         {
           "datasource": "$prometheusSource",
-          "editorMode": "code",
+          "disableTextWrap": false,
+          "editorMode": "builder",
           "expr": "content_proton_documentdb_documents_total_max",
           "format": "time_series",
+          "fullMetaSearch": false,
           "hide": false,
+          "includeNullMetadata": true,
           "interval": "",
           "intervalFactor": 2,
-          "legendFormat": "documents_ingested",
+          "legendFormat": "{{documenttype}}",
           "metric": "",
           "range": true,
           "refId": "A",
-          "step": 20
+          "step": 20,
+          "useBackend": false
         }
       ],
-      "title": "Documents ingested in total vs time",
+      "title": "Documents ingested in total",
       "type": "bargauge"
     },
     {
@@ -225,12 +229,14 @@
       "targets": [
         {
           "datasource": "$prometheusSource",
+          "editorMode": "builder",
           "expr": "topk(5, max(scrape_duration_seconds) by (job))",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 2,
           "legendFormat": "{{job}}",
           "metric": "",
+          "range": true,
           "refId": "A",
           "step": 20
         }
@@ -239,7 +245,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -335,7 +341,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -443,7 +449,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -529,7 +535,7 @@
           "format": "time_series",
           "interval": "",
           "intervalFactor": 2,
-          "legendFormat": "active_appenders",
+          "legendFormat": "{{instance}}",
           "metric": "",
           "range": true,
           "refId": "A",
@@ -540,7 +546,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -666,7 +672,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -753,17 +759,17 @@
           "format": "time_series",
           "interval": "",
           "intervalFactor": 2,
-          "legendFormat": "queries",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A",
           "step": 20
         }
       ],
-      "title": "Document Query Rate",
+      "title": "Document Summary Query Rate",
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -862,7 +868,7 @@
           "expr": "jdisc_gc_ms_average{}",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "duration-p99",
+          "legendFormat": "{{instance}} {{gcName}} {{vespa_service}}",
           "range": true,
           "refId": "A",
           "step": 20
@@ -872,7 +878,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -968,13 +974,13 @@
       "targets": [
         {
           "datasource": "$prometheusSource",
-          "editorMode": "code",
+          "editorMode": "builder",
           "expr": "rate(http_status_2xx_rate[1m])",
           "format": "time_series",
           "hide": false,
           "interval": "",
           "intervalFactor": 2,
-          "legendFormat": "duration-{{p99}}",
+          "legendFormat": "{{vespa_service}}",
           "range": true,
           "refId": "A",
           "step": 20
@@ -984,7 +990,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1069,7 +1075,7 @@
           "expr": "cluster_controller_resource_usage_max_disk_utilization_max{}",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "disk_space",
+          "legendFormat": "{{clusterId}} {{hostname}}",
           "range": true,
           "refId": "A",
           "step": 20
@@ -1079,7 +1085,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1164,7 +1170,7 @@
           "expr": "cpu_util{}",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "data_files",
+          "legendFormat": "{{serviceId}} {{vespa_service}}",
           "range": true,
           "refId": "A",
           "step": 20
@@ -1174,7 +1180,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1227,7 +1233,7 @@
           "instant": false,
           "interval": "",
           "intervalFactor": 1,
-          "legendFormat": "free-heap-meme",
+          "legendFormat": "{{serviceId}} {{vespa_service}}",
           "range": true,
           "refId": "A",
           "step": 10
@@ -1238,7 +1244,7 @@
       "type": "piechart"
     },
     {
-      "datasource": "$prometheusSource",
+       "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1323,7 +1329,7 @@
           "expr": "content_proton_resource_usage_disk_average{}",
           "format": "time_series",
           "intervalFactor": 2,
-          "legendFormat": "__auto",
+          "legendFormat": "{{hostname}} {{instance}}",
           "range": true,
           "refId": "B",
           "step": 10
@@ -1341,13 +1347,13 @@
     "list": []
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Xyne Metrics",
   "uid": "de25akpxochkwd",
-  "version": 18,
+  "version": 26,
   "weekStart": ""
 }
