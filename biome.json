@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": []
+    "ignore": ["./frontend/src/routeTree.gen.ts"]
   },
   "formatter": {
     "enabled": true,
