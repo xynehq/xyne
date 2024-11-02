@@ -1,5 +1,13 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Home, Search, Settings, Bell, User, Plug, MessageSquarePlus } from "lucide-react"
+import {
+  Home,
+  Search,
+  Settings,
+  Bell,
+  User,
+  Plug,
+  MessageSquarePlus,
+} from "lucide-react"
 
 export const Sidebar = ({ className = "" }: { className?: string }) => {
   const location = useLocation()

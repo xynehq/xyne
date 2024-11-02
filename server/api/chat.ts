@@ -73,24 +73,24 @@ export const MessageApi = async (c: Context) => {
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
-              workspaceId: workspace.id,
-              workspaceExternalId: workspace.externalId,
-              userId: user.id,
-              email: user.email,
-              title,
-            })
+            workspaceId: workspace.id,
+            workspaceExternalId: workspace.externalId,
+            userId: user.id,
+            email: user.email,
+            title,
+          })
           const insertedMsg = await insertMessage(tx, {
-              chatId: chat.id,
-              userId: user.id,
-              workspaceExternalId: workspace.externalId,
-              messageRole: MessageRole.User,
-              email: user.email,
-              sources: [],
-              message,
-              modelId,
-            })
-            return [chat, insertedMsg]
-        }
+            chatId: chat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+          })
+          return [chat, insertedMsg]
+        },
       )
       chat = insertedChat
       messages.push(insertedMsg)

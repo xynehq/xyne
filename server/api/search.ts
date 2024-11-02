@@ -63,22 +63,22 @@ export const autocompleteSchema = z.object({
 })
 
 export const chatSchema = z.object({
-  chatId: z.string()
+  chatId: z.string(),
 })
 
 export const chatBookmarkSchema = z.object({
   chatId: z.string(),
-  bookmark: z.boolean()
+  bookmark: z.boolean(),
 })
 
 export const chatRenameSchema = z.object({
-  title: z.string()
+  title: z.string(),
 })
 
 export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
-  modelId: z.string().min(1)
+  modelId: z.string().min(1),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 

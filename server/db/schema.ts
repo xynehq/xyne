@@ -14,7 +14,13 @@ import {
 } from "drizzle-orm/pg-core"
 import { encryptedText } from "./customType"
 import { Encryption } from "@/utils/encryption"
-import { ConnectorType, MessageRole, SyncConfigSchema, SyncCron, UserRole } from "@/types"
+import {
+  ConnectorType,
+  MessageRole,
+  SyncConfigSchema,
+  SyncCron,
+  UserRole,
+} from "@/types"
 import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -262,30 +268,33 @@ export const syncHistory = pgTable("sync_history", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 })
 
-export const chats = pgTable("chats", {
-  id: serial("id").notNull().primaryKey(),
-  workspaceId: integer("workspace_id")
-    .notNull()
-    .references(() => workspaces.id),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id),
-  externalId: text("external_id").unique().notNull(),
-  workspaceExternalId: text("workspace_external_id").notNull(),
-  isBookmarked: boolean("is_bookmarked").notNull().default(false),
-  email: text("email").notNull(),
-  title: text("title").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  deletedAt: timestamp("deleted_at", { withTimezone: true }),
-}, (table) => ({
-  isBookmarkedIndex: index("is_bookmarked_index").on(table.isBookmarked),
-}))
-
+export const chats = pgTable(
+  "chats",
+  {
+    id: serial("id").notNull().primaryKey(),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    externalId: text("external_id").unique().notNull(),
+    workspaceExternalId: text("workspace_external_id").notNull(),
+    isBookmarked: boolean("is_bookmarked").notNull().default(false),
+    email: text("email").notNull(),
+    title: text("title").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => ({
+    isBookmarkedIndex: index("is_bookmarked_index").on(table.isBookmarked),
+  }),
+)
 
 const messageRoleField = "message_role"
 export const messageRoleEnum = pgEnum(
@@ -293,30 +302,38 @@ export const messageRoleEnum = pgEnum(
   Object.values(MessageRole) as [string, ...string[]],
 )
 
-export const messages = pgTable("messages", {
-  id: serial("id").notNull().primaryKey(),
-  chatId: integer("chat_id").notNull().references(() => chats.id),
-  userId: integer("user_id").notNull().references(() => users.id),
-  externalId: text("external_id").unique().notNull(),
-  workspaceExternalId: text("workspace_external_id").notNull(),
-  chatExternalId: text("chat_external_id").unique().notNull(),
-  message: text("message").notNull(),
-  messageRole: messageRoleEnum(messageRoleField).notNull(),
-  // model id is present in the app itself
-  // <provider><modelId>
-  modelId: text("modelId").notNull(),
-  email: text("email").notNull(),
-  sources: jsonb("sources").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  deletedAt: timestamp("deleted_at", { withTimezone: true }),
-}, (table) => ({
-  chatIdIndex: index("chat_id_index").on(table.chatId),
-}))
+export const messages = pgTable(
+  "messages",
+  {
+    id: serial("id").notNull().primaryKey(),
+    chatId: integer("chat_id")
+      .notNull()
+      .references(() => chats.id),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    externalId: text("external_id").unique().notNull(),
+    workspaceExternalId: text("workspace_external_id").notNull(),
+    chatExternalId: text("chat_external_id").unique().notNull(),
+    message: text("message").notNull(),
+    messageRole: messageRoleEnum(messageRoleField).notNull(),
+    // model id is present in the app itself
+    // <provider><modelId>
+    modelId: text("modelId").notNull(),
+    email: text("email").notNull(),
+    sources: jsonb("sources").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => ({
+    chatIdIndex: index("chat_id_index").on(table.chatId),
+  }),
+)
 
 export const insertProviderSchema = createInsertSchema(oauthProviders, {
   // added to prevent type error
@@ -401,7 +418,6 @@ export type InternalUserWorkspace = {
   user: SelectUser
   workspace: SelectWorkspace
 }
-
 
 export const insertChatSchema = createInsertSchema(chats).omit({
   id: true,

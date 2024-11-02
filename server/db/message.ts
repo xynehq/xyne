@@ -64,7 +64,10 @@ export const getChatByExternalId = async (
   trx: TxnOrClient,
   chatId: string,
 ): Promise<SelectChat> => {
-  const chatArr = await trx.select().from(chats).where(eq(chats.externalId, chatId))
+  const chatArr = await trx
+    .select()
+    .from(chats)
+    .where(eq(chats.externalId, chatId))
   if (!chatArr || !chatArr.length) {
     throw new Error("Chat not found")
   }

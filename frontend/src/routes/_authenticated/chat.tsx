@@ -1,6 +1,6 @@
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, useRouter } from "@tanstack/react-router"
 import {
   ArrowRight,
   Bookmark,
@@ -21,10 +21,14 @@ type CurrentResp = {
   messageId?: string
 }
 
-const ChatPage = () => {
+export const ChatPage = () => {
+  const params = Route.useParams()
+  const router = useRouter()
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>([])
-  const [chatId, setChatId] = useState<string | null>(null)
+  const [chatId, setChatId] = useState<string | null>(
+    (params as any).chatId || null,
+  )
   const [chatTitle, setChatTitle] = useState<string | null>(null)
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
   const currentRespRef = useRef<CurrentResp | null>(null)
@@ -74,6 +78,13 @@ const ChatPage = () => {
     eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
       const { chatId, messageId } = JSON.parse(event.data)
       setChatId(chatId)
+
+      if (chatId) {
+        router.navigate({
+          to: "/chat/$chatId",
+          params: { chatId },
+        })
+      }
       setCurrentResp((resp) => {
         const updatedResp = resp || { resp: "" }
         updatedResp.chatId = chatId
