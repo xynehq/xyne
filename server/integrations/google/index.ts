@@ -174,7 +174,9 @@ export const syncGoogleWorkspace = async (
     })
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error(`Could not sync Google workspace: , ${errorMessage} ${(error as Error).stack}`)
+    Logger.error(
+      `Could not sync Google workspace: , ${errorMessage} ${(error as Error).stack}`,
+    )
     if (error instanceof SyncJobsCountError) {
       boss.fail(job.name, job.id)
       return
@@ -539,6 +541,8 @@ export const getPresentationToBeIngested = async (
     permissions: presentation.permissions ?? [],
     mimeType: presentation.mimeType ?? "",
     metadata: JSON.stringify({ parents: parentsForMetadata }),
+    createdAt: new Date(presentation.createdTime!).getTime(),
+    updatedAt: new Date(presentation.modifiedTime!).getTime(),
   }
 
   return presentationToBeIngested
@@ -960,7 +964,9 @@ export const downloadPDF = async (
         })
     })
   } catch (error) {
-    Logger.error(`Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`)
+    Logger.error(
+      `Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`,
+    )
     throw new DownloadDocumentError({
       message: "Error in downloading file",
       cause: error as Error,
@@ -1296,7 +1302,7 @@ const insertContactsToVespa = async (
   } catch (error) {
     // error is related to vespa and not mapping
     if (error instanceof ErrorInsertingDocument) {
-      Logger.error(`Could not insert contact: ${(error as Error).stack}` )
+      Logger.error(`Could not insert contact: ${(error as Error).stack}`)
       throw error
     } else {
       Logger.error(
