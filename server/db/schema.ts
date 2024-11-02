@@ -41,15 +41,14 @@ export const workspaces = pgTable("workspaces", {
   // email
   createdBy: text("created_by").notNull().unique(),
   externalId: text("external_id").unique().notNull(),
+  photoLink: text("photoLink"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
-  deletedAt: timestamp("deleted_at", { withTimezone: true })
-    .notNull()
-    .default(sql`'1970-01-01T00:00:00Z'`),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 })
 
 export const userRoleEnum = pgEnum(

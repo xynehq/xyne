@@ -26,6 +26,7 @@ schema mail {
 
     field timestamp type long {
       indexing: attribute | summary
+      attribute: fast-search
     }
 
     field app type string {
@@ -87,10 +88,15 @@ schema mail {
     }
 
     field attachments type array<attachment> {
+
     }
+    field labels type array<string> {
+    indexing: attribute | summary | index
+    attribute: fast-search
   }
-  field chunk_embeddings type tensor<bfloat16>(x[768]) {
-    indexing: guard { input chunks } | embed | attribute | index | summary
+  }
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[768])  {
+    indexing: guard { input chunks } | embed | attribute | index
     attribute {
       distance-metric: angular
     }
@@ -107,7 +113,7 @@ schema mail {
   }
 
   fieldset default {
-    fields: subject, app, entity, chunks, attachmentFilenames
+    fields: subject, app, entity, chunks, attachmentFilenames, from, to, cc, bcc, labels
   }
 
   fieldset autocomplete {
@@ -115,7 +121,7 @@ schema mail {
   }
 
   # Hybrid search rank profile combining BM25 for subject and chunks, and vector search for chunk embeddings
-  rank-profile default {
+  rank-profile initial {
     inputs {
       query(e) tensor<bfloat16>(v[768])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
@@ -151,6 +157,45 @@ schema mail {
       bm25(subject)
       bm25(chunks)
       closeness(field, chunk_embeddings)
+    }
+  }
+    rank-profile default inherits initial {
+    
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embeddings)
+    }
+
+    function cos_sim() {
+      expression: cos(distance(field, chunk_embeddings))
+    }
+
+    # First phase combines BM25 (subject and chunks) and vector similarity (chunks)
+    first-phase {
+      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) +bm25(subject)))
+    }
+
+    second-phase {
+      expression: cos_sim
+      rerank-count: 2000
+    }
+
+    global-phase {
+      expression {
+        reciprocal_rank_fusion(
+                chunk_vector_score,
+                bm25(chunks),
+                bm25(subject),
+                cos_sim
+            )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      chunk_vector_score
+      bm25(chunks)
+      bm25(subject)
+      cos_sim
     }
   }
 

@@ -108,11 +108,17 @@ export const VespaFileSchema = z.object({
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
   metadata: Metadata,
+  createdAt: z.number(),
+  updatedAt: z.number(),
 })
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({
   sddocname: z.literal(fileSchema),
-}).merge(defaultVespaFieldsSchema)
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.string()),
+  })
 
 // basically GetDocument doesn't return sddocname
 // in search it's always present
@@ -167,8 +173,8 @@ export const MailSchema = z.object({
   subject: z.string(),
   chunks: z.array(z.string()),
   timestamp: z.number(),
-  app: z.string(),
-  entity: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: z.nativeEnum(MailEntity),
   permissions: z.array(z.string()),
   from: z.string(),
   to: z.array(z.string()),
@@ -177,6 +183,7 @@ export const MailSchema = z.object({
   mimeType: z.string(),
   attachmentFilenames: z.array(z.string()),
   attachments: z.array(AttachmentSchema),
+  labels: z.array(z.string()),
 })
 export const VespaMailSchema = MailSchema.extend({
   docId: z.string().min(1),
@@ -184,17 +191,54 @@ export const VespaMailSchema = MailSchema.extend({
 
 export const VespaMailSearchSchema = VespaMailSchema.extend({
   sddocname: z.literal("mail"),
-}).merge(defaultVespaFieldsSchema)
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    // attachment won't have this
+    chunks_summary: z.array(z.string()).optional(),
+  })
 
 export const VespaMailGetSchema = VespaMailSchema.merge(
   defaultVespaFieldsSchema,
 )
 
-export const VespaSearchFieldsSchema = z.discriminatedUnion("sddocname", [
+export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
   VespaMailSearchSchema,
 ])
+
+// Match features for file schema
+const FileMatchFeaturesSchema = z.object({
+  "bm25(title)": z.number().optional(),
+  "bm25(chunks)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+})
+
+// Match features for user schema
+const UserMatchFeaturesSchema = z.object({
+  "bm25(name)": z.number().optional(),
+  "bm25(email)": z.number().optional(),
+})
+
+// Match features for mail schema
+const MailMatchFeaturesSchema = z.object({
+  "bm25(subject)": z.number().optional(),
+  "bm25(chunks)": z.number().optional(),
+  "bm25(attachmentFilenames)": z.number().optional(),
+})
+
+const SearchMatchFeaturesSchema = z.union([
+  FileMatchFeaturesSchema,
+  UserMatchFeaturesSchema,
+  MailMatchFeaturesSchema,
+])
+const VespaSearchFieldsSchema = z
+  .object({
+    matchfeatures: SearchMatchFeaturesSchema,
+    sddocname: Schemas,
+  })
+  .and(VespaSearchFieldsUnionSchema)
 
 export const VespaGetFieldsSchema = z.union([
   VespaUserSchema,
@@ -202,7 +246,7 @@ export const VespaGetFieldsSchema = z.union([
   VespaMailGetSchema,
 ])
 
-const VespaSearchResultsSchema = z.object({
+export const VespaSearchResultsSchema = z.object({
   id: z.string(),
   relevance: z.number(),
   fields: VespaSearchFieldsSchema,
@@ -244,6 +288,13 @@ type VespaGroupType = {
   children?: VespaGroupType[] // Recursive type definition
 }
 
+const VespaErrorSchema = z.object({
+  code: z.number(),
+  summary: z.string(),
+  source: z.string(),
+  message: z.string(),
+})
+
 const VespaRootBaseSchema = z.object({
   root: z.object({
     id: z.string(),
@@ -261,6 +312,7 @@ const VespaRootBaseSchema = z.object({
       results: z.number(),
       resultsFull: z.number(),
     }),
+    errors: z.array(VespaErrorSchema).optional(),
   }),
 })
 
@@ -288,13 +340,16 @@ export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
   permissions: any[]
 }
 
-const MatchFeaturesSchema = z.union([
+const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
     "bm25(title_fuzzy)": z.number(),
   }),
   z.object({
     "bm25(email_fuzzy)": z.number(),
     "bm25(name_fuzzy)": z.number(),
+  }),
+  z.object({
+    "bm25(subject_fuzzy)": z.number(),
   }),
 ])
 
@@ -340,7 +395,7 @@ const VespaAutocompleteSummarySchema = z.union([
 
 const VespaAutocompleteFieldsSchema = z
   .object({
-    matchfeatures: MatchFeaturesSchema,
+    matchfeatures: AutocompleteMatchFeaturesSchema,
     sddocname: Schemas,
   })
   .and(VespaAutocompleteSummarySchema)
@@ -379,6 +434,8 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
   entity: true,
   subject: true,
   from: true,
+  relevance: true,
+  timestamp: true,
 })
   .strip()
   .extend({

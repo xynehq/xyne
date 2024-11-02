@@ -7,6 +7,7 @@ import type {
   VespaSearchResponse,
   VespaUser,
   VespaGetResult,
+  Entity,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -292,7 +293,7 @@ export const autocomplete = async (
   }
 }
 
-type RankProfile = "default" | "cosine_RRF"
+type RankProfile = "default"
 type YqlProfile = {
   profile: RankProfile
   yql: string
@@ -301,8 +302,13 @@ type YqlProfile = {
 // TODO: it seems the owner part is complicating things
 const HybridDefaultProfile = (
   hits: number,
+  app: Apps | null,
+  entity: Entity | null,
   profile: RankProfile = "default",
 ): YqlProfile => {
+  let hasAppOrEntity = !!(app || entity)
+  let appOrEntityFilter =
+    `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
   return {
     profile: profile,
     yql: `
@@ -312,11 +318,11 @@ const HybridDefaultProfile = (
                 or
                 ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            and permissions contains @email)
+            and permissions contains @email ${appOrEntityFilter})
             or
-            (({targetHits:${hits}}userInput(@query)) and app contains "${Apps.GoogleWorkspace}")
+            (({targetHits:${hits}}userInput(@query)) ${!hasAppOrEntity ? ' and app contains "${Apps.GoogleWorkspace}"' : appOrEntityFilter})
             or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email)
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${appOrEntityFilter})
         `,
     // the last 2 are due to the 2 types of users, contacts and admin directory present in the same schema
   }
@@ -350,13 +356,13 @@ export const groupVespaSearch = async (
   limit = config.page,
 ): Promise<AppEntityCounts> => {
   const url = `${vespaEndpoint}/search/`
-  let yqlQuery = HybridDefaultProfileAppEntityCounts(limit).yql
+  let { yql, profile } = HybridDefaultProfileAppEntityCounts(limit)
 
   const hybridDefaultPayload = {
-    yql: yqlQuery,
+    yql,
     query,
     email,
-    "ranking.profile": HybridDefaultProfileAppEntityCounts(limit).profile,
+    "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
   }
   try {
@@ -388,24 +394,20 @@ export const groupVespaSearch = async (
 export const searchVespa = async (
   query: string,
   email: string,
-  app?: string,
-  entity?: string,
+  app: Apps | null,
+  entity: Entity | null,
   limit = config.page,
   offset?: number,
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
-  let yqlQuery = HybridDefaultProfile(limit).yql
-
-  if (app && entity) {
-    yqlQuery += ` and app contains @app and entity contains @entity`
-  }
+  let { yql, profile } = HybridDefaultProfile(limit, app, entity)
 
   const hybridDefaultPayload = {
-    yql: yqlQuery,
+    yql,
     query,
     email,
-    "ranking.profile": HybridDefaultProfile(limit, "cosine_RRF").profile,
+    "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     hits: limit,
     alpha: 0.5,
@@ -414,12 +416,8 @@ export const searchVespa = async (
           offset,
         }
       : {}),
-    ...(app && entity ? { app, entity } : {}),
-    variables: {
-      query,
-      app,
-      entity,
-    },
+    ...(app ? { app } : {}),
+    ...(entity ? { entity } : {}),
   }
   try {
     const response = await fetch(url, {
@@ -496,8 +494,8 @@ const getDocumentCount = async () => {
 }
 
 export const GetDocument = async (
-  docId: string,
   schema: string,
+  docId: string,
 ): Promise<VespaGetResult> => {
   const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
@@ -563,6 +561,59 @@ export const UpdateDocumentPermissions = async (
     const errMessage = getErrorMessage(error)
     Logger.error(
       `Error updating permissions in schema ${schema} for document ${docId}:`,
+      errMessage,
+    )
+    throw new ErrorUpdatingDocument({
+      docId,
+      cause: error as Error,
+      sources: schema,
+    })
+  }
+}
+
+export const UpdateDocument = async (
+  schema: string,
+  docId: string,
+  updatedFields: Record<string, any>,
+) => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
+  let fields: string[] = []
+  try {
+    const updateObject = Object.entries(updatedFields).reduce(
+      (prev, [key, value]) => {
+        // for logging
+        fields.push(key)
+        prev[key] = { assign: value }
+        return prev
+      },
+      {} as Record<string, any>,
+    )
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: updateObject,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new ErrorUpdatingDocument({
+        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
+        docId,
+        sources: schema,
+      })
+    }
+
+    Logger.info(
+      `Successfully updated ${fields} in schema ${schema} for document ${docId}.`,
+    )
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error updating ${fields} in schema ${schema} for document ${docId}:`,
       errMessage,
     )
     throw new ErrorUpdatingDocument({
@@ -689,3 +740,122 @@ const getNDocuments = async (n: number) => {
     })
   }
 }
+
+export const searchUsersByNamesAndEmails = async (
+  mentionedNames: string[],
+  mentionedEmails: string[],
+  limit: number = 10,
+): Promise<VespaSearchResponse> => {
+  // Construct YQL conditions for names and emails
+  const nameConditions = mentionedNames.map((name) => {
+    // For fuzzy search
+    return `(name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy("${name}")))`
+    // For exact match, use:
+    // return `(name contains "${name}")`;
+  })
+
+  const emailConditions = mentionedEmails.map((email) => {
+    // For fuzzy search
+    return `(email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy("${email}")))`
+    // For exact match, use:
+    // return `(email contains "${email}")`;
+  })
+
+  // Combine all conditions with OR operator
+  const allConditions = [...nameConditions, ...emailConditions].join(" or ")
+
+  // Build the full YQL query
+  const yqlQuery = `select * from sources ${userSchema} where (${allConditions});`
+
+  const searchPayload = {
+    yql: yqlQuery,
+    hits: limit,
+    "ranking.profile": "default",
+  }
+
+  try {
+    const response = await fetch(`${vespaEndpoint}/search/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(searchPayload),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Failed to perform user search: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    const data: VespaSearchResponse = await response.json()
+
+    // Parse and return the user results
+    // const users: VespaUser[] =
+    //   data.root.children?.map((child) => {
+    //     const fields = child.fields
+    //     return VespaUserSchema.parse(fields)
+    //   }) || []
+
+    return data
+  } catch (error) {
+    Logger.error(`Error searching users: ${error}`)
+    throw error
+  }
+}
+
+// export const searchEmployeesViaName = async (
+//   name: string,
+//   email: string,
+//   limit = config.page,
+//   offset?: number,
+// ): Promise<VespaSearchResponse> => {
+//   const url = `${vespaEndpoint}/search/`
+
+//   const yqlQuery = `
+//       select * from sources user
+//       where name contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))`
+
+//   const hybridDefaultPayload = {
+//     yql: yqlQuery,
+//     query: name,
+//     email,
+//     "ranking.profile": HybridDefaultProfile(limit).profile,
+//     "input.query(e)": "embed(@query)",
+//     hits: limit,
+//     alpha: 0.5,
+//     ...(offset
+//       ? {
+//           offset,
+//         }
+//       : {}),
+//     variables: {
+//       query,
+//     },
+//   }
+//   try {
+//     const response = await fetch(url, {
+//       method: "POST",
+//       headers: {
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify(hybridDefaultPayload),
+//     })
+//     if (!response.ok) {
+//       const errorText = await response.text()
+//       throw new Error(
+//         `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+//       )
+//     }
+
+//     const data = await response.json()
+//     return data
+//   } catch (error) {
+//     Logger.error(`Error performing search:, ${error}`)
+//     throw new ErrorPerformingSearch({
+//       cause: error as Error,
+//       sources: AllSources,
+//     })
+//   }
+// }

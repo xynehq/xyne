@@ -1,7 +1,13 @@
 import { chunkTextByParagraph } from "@/chunks"
 import { EmailParsingError } from "@/errors"
 import { getLogger } from "@/logger"
-import { Apps, mailSchema, type Attachment, type Mail } from "@/search/types"
+import {
+  Apps,
+  MailEntity,
+  mailSchema,
+  type Attachment,
+  type Mail,
+} from "@/search/types"
 import { insert } from "@/search/vespa"
 import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
@@ -31,7 +37,7 @@ export const handleGmailIngestion = async (
   do {
     const resp = await gmail.users.messages.list({
       userId: "me",
-      maxResults: 100,
+      maxResults: 500,
       pageToken: nextPageToken,
     })
     nextPageToken = resp.data.nextPageToken ?? ""
@@ -87,6 +93,7 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)
+  const labels = email.labelIds
 
   const payload: gmail_v1.Schema$MessagePart | undefined = email.payload
   const headers = payload?.headers || []
@@ -158,7 +165,7 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
     chunks: chunks,
     timestamp: timestamp,
     app: Apps.Gmail,
-    entity: "mail",
+    entity: MailEntity.Email,
     permissions: permissions,
     from: from,
     to: to,
@@ -167,6 +174,7 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
     mimeType: payload?.mimeType ?? "text/plain",
     attachmentFilenames: filenames,
     attachments,
+    labels: labels ?? [],
   }
 
   return emailData

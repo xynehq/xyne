@@ -13,6 +13,9 @@ import {
 } from "@/integrations/google/sync"
 import { checkDownloadsFolder } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
+import { getErrorMessage } from "@/utils"
+
+const Logger = getLogger(Subsystem.Queue)
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss(url)
@@ -28,7 +31,6 @@ const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
 const EveryWeek = `0 0 */7 * *`
 const EveryMin = `*/1 * * * *`
-const Logger = getLogger(Subsystem.Server).child({module: 'queue'})
 
 export const init = async () => {
   await boss.start()
@@ -81,7 +83,14 @@ const initWorkers = async () => {
   await setupServiceAccountCronjobs()
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
-    await handleGoogleOAuthChanges(boss, job)
+    try {
+      await handleGoogleOAuthChanges(boss, job)
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
+      )
+    }
   })
 
   // Any Service account related SaaS jobs

@@ -1,8 +1,14 @@
 import { type Context, Hono, type Next } from "hono"
-import { AutocompleteApi, autocompleteSchema, SearchApi } from "@/api/search"
+import {
+  AnswerApi,
+  AutocompleteApi,
+  autocompleteSchema,
+  SearchApi,
+} from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
   addServiceConnectionSchema,
+  answerSchema,
   createOAuthProvider,
   oauthStartQuerySchema,
   searchSchema,
@@ -123,6 +129,7 @@ export const AppRoutes = app
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
+  .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema
