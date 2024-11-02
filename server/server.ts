@@ -81,7 +81,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     // Verify the token if available
     await AuthMiddleware(c, next)
   } catch (err) {
-    Logger.error(`${new AuthRedirectError({ cause: err as Error })} ${err as Error}`)
+    Logger.error(`${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`)
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
     return c.redirect(`${frontendBaseURL}/auth`)
