@@ -346,7 +346,7 @@ export const checkDownloadsFolder = async (
     Logger.info("All files deleted successfully.")
   } catch (error) {
     Logger.error(
-      `Error checking or deleting files in downloads folder: ${error}`,
+      `Error checking or deleting files in downloads folder: ${error} ${(error as Error).stack}`,
     )
   }
 }

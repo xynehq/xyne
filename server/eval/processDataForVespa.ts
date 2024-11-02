@@ -25,6 +25,7 @@ if (!corpusPath || !outputPath) {
   throw new Error("invalid arguments: --corpus and --output are required")
 }
 
+const Logger = getLogger(Subsystem.Eval)
 if (path.extname(corpusPath) !== ".jsonl") {
   throw new Error("corpus file must be a .jsonl file.")
 }
@@ -40,6 +41,8 @@ const SCHEMA = "file" // Replace with your actual schema name
 const NAMESPACE = "namespace"
 
 import readline from "readline"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 
 const user = "junaid.s@xynehq.com"
 
@@ -94,7 +97,7 @@ const processData = async (filePath: string) => {
         processedDocs.push(processVespaDoc(JSON.parse(line)))
         totalProcessed++
       } catch (error) {
-        console.error(`Error processing line ${linesRead}:`, error)
+        Logger.error(`Error processing line ${linesRead}: ${(error as Error).stack}`)
         await fs.promises.appendFile(
           "error_log.txt",
           `Line ${linesRead}: ${error}\n${line}\n\n`,
@@ -121,7 +124,7 @@ const processData = async (filePath: string) => {
     console.log(`Total lines read: ${linesRead}`)
     console.log(`Total documents processed: ${totalProcessed}`)
   } catch (error) {
-    console.error("Processing failed:", error)
+    Logger.error(`Processing failed: ${(error as Error).message} ${(error as Error).stack}`)
     throw error
   }
 }

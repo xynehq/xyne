@@ -79,7 +79,7 @@ const getDocumentOrSpreadsheet = async (docId: string) => {
       const sheetsForSpreadSheet = await GetDocument(`${docId}_0`, fileSchema)
       return sheetsForSpreadSheet
     } else {
-      Logger.error(`Error getting document: ${err.message}`)
+      Logger.error(`Error getting document: ${err.message} ${err.stack}`)
       throw err
     }
   }
@@ -228,8 +228,7 @@ const handleGoogleDriveChange = async (
         }
       } catch (err) {
         Logger.error(
-          `Trying to delete document that doesnt exist in Vespa`,
-          err,
+          `Trying to delete document that doesnt exist in Vespa \n ${err}`,
         )
       }
     }
@@ -479,7 +478,7 @@ export const handleGoogleOAuthChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
-        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage}`,
+        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       const newConfig = {

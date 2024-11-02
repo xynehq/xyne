@@ -111,5 +111,5 @@ const initWorkers = async () => {
 export const ProgressEvent = "progress-event"
 
 boss.on("error", (error) => {
-  console.error(`Queue error: ${error}`)
+  console.error(`Queue error: ${error} ${(error as Error).stack}`)
 })

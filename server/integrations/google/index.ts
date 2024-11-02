@@ -103,7 +103,7 @@ const listUsers = async (
     } while (nextPageToken)
     return users
   } catch (error) {
-    Logger.error(`Error listing users:", ${error}`)
+    Logger.error(`Error listing users: ${error} ${(error as Error).stack}`)
     throw new UserListingError({
       cause: error as Error,
       integration: Apps.GoogleWorkspace,
@@ -173,7 +173,7 @@ export const syncGoogleWorkspace = async (
     })
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error("Could not sync Google workspace: ", errorMessage)
+    Logger.error(`Could not sync Google workspace: , ${errorMessage} ${(error as Error).stack}`)
     if (error instanceof SyncJobsCountError) {
       boss.fail(job.name, job.id)
       return
@@ -834,7 +834,7 @@ export const downloadPDF = async (
         })
     })
   } catch (error) {
-    Logger.error(`Error fetching the file stream:`, error)
+    Logger.error(`Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`)
     throw new DownloadDocumentError({
       message: "Error in downloading file",
       cause: error as Error,
@@ -1170,7 +1170,7 @@ const insertContactsToVespa = async (
   } catch (error) {
     // error is related to vespa and not mapping
     if (error instanceof ErrorInsertingDocument) {
-      Logger.error("Could not insert contact: ", error)
+      Logger.error(`Could not insert contact: ${(error as Error).stack}` )
       throw error
     } else {
       Logger.error(

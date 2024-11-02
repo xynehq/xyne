@@ -12,6 +12,8 @@ if (!args || args.length < expectedArgsLen) {
   )
 }
 
+const Logger = getLogger(Subsystem.Eval)
+
 const argMap: { [key: string]: string } = {}
 args.forEach((arg, idx) => {
   if (requiredArgs.includes(arg)) {
@@ -30,6 +32,8 @@ if (path.extname(filePath) !== ".tsv" || path.extname(outputPath) !== ".tsv") {
 }
 
 import fs from "node:fs"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 const readline = require("readline")
 
 const modify = async () => {
@@ -54,7 +58,7 @@ const modify = async () => {
     fs.promises.writeFile(outputPath, processedResultsData.join("\n"))
     process.stdout.write("qrels processed successfull")
   } catch (error) {
-    console.error("Error processing :" + error)
+    Logger.error(`Error processing : ${(error as Error).message} \n ${(error as Error).stack}` )
   }
 }
 

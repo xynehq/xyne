@@ -79,13 +79,13 @@ async function deleteAllDocuments() {
     if (response.ok) {
       Logger.info("All documents deleted successfully.")
     } else {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`,
       )
     }
-  } catch (error) {
-    Logger.error(`Error deleting documents:, ${error}`)
+  } catch (error) { 
+    Logger.error(`Error deleting documents:, ${error} ${(error as Error).stack}`)
     throw new ErrorDeletingDocuments({
       cause: error as Error,
       sources: AllSources,
@@ -146,7 +146,8 @@ export const insert = async (
     if (response.ok) {
       Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
-      const errorText = await response.text()
+      // Using status text since response.text() return Body Already used Error
+      const errorText = response.statusText
       Logger.error(
         `Error inserting document ${document.docId} for ${schema} ${data.message}`,
       )
@@ -273,7 +274,7 @@ export const autocomplete = async (
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText =  response.statusText
       throw new Error(
         `Failed to perform autocomplete search: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -282,7 +283,7 @@ export const autocomplete = async (
     const data = await response.json()
     return data
   } catch (error) {
-    Logger.error(`Error performing autocomplete search:, ${error} `)
+    Logger.error(`Error performing autocomplete search:, ${error} ${(error as Error).stack} `)
     throw new ErrorPerformingSearch({
       message: `Error performing autocomplete search`,
       cause: error as Error,
@@ -374,7 +375,7 @@ export const groupVespaSearch = async (
       body: JSON.stringify(hybridDefaultPayload),
     })
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -383,7 +384,7 @@ export const groupVespaSearch = async (
     const data = await response.json()
     return handleVespaGroupResponse(data)
   } catch (error) {
-    Logger.error(`Error performing search:, ${error}`)
+    Logger.error(`Error performing search:, ${error} - ${(error as Error).stack}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
@@ -428,7 +429,7 @@ export const searchVespa = async (
       body: JSON.stringify(hybridDefaultPayload),
     })
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -437,7 +438,7 @@ export const searchVespa = async (
     const data = await response.json()
     return data
   } catch (error) {
-    Logger.error(`Error performing search:, ${error}`)
+    Logger.error(`Error performing search:, ${error} ${(error as Error).stack}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
@@ -466,7 +467,7 @@ const getDocumentCount = async () => {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to fetch document count: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -507,7 +508,7 @@ export const GetDocument = async (
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to fetch document: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -546,7 +547,7 @@ export const UpdateDocumentPermissions = async (
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new ErrorUpdatingDocument({
         message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
         docId,
@@ -599,7 +600,7 @@ export const UpdateDocument = async (
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new ErrorUpdatingDocument({
         message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
         docId,
@@ -632,7 +633,7 @@ export const DeleteDocument = async (docId: string, schema: string) => {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to delete document: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -675,7 +676,7 @@ export const ifDocumentsExist = async (docIds: string[]) => {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -722,7 +723,7 @@ const getNDocuments = async (n: number) => {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to fetch document count: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -783,7 +784,7 @@ export const searchUsersByNamesAndEmails = async (
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorText = response.statusText
       throw new Error(
         `Failed to perform user search: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -843,7 +844,7 @@ export const searchUsersByNamesAndEmails = async (
 //       body: JSON.stringify(hybridDefaultPayload),
 //     })
 //     if (!response.ok) {
-//       const errorText = await response.text()
+//       const errorText = response.statusText
 //       throw new Error(
 //         `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
 //       )
