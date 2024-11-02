@@ -446,6 +446,7 @@ export const handleGoogleOAuthChanges = async (
       } while (nextPageToken)
       if (changesExist) {
         config = {
+          type: "googleDriveChangeToken",
           lastSyncedAt: new Date(),
           driveToken: newStartPageToken ?? config.driveToken,
           contactsToken,
@@ -915,6 +916,7 @@ export const handleGoogleServiceAccountChanges = async (
       } while (nextPageToken)
       if (changesExist) {
         const newConfig = {
+          type: config.type,
           driveToken: newStartPageToken ?? config.driveToken,
           contactsToken,
           otherContactsToken,

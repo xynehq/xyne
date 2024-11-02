@@ -32,7 +32,7 @@ const submitServiceAccountForm = async (
   value: ServiceAccountFormData,
   navigate: UseNavigateResult<string>,
 ) => {
-  const response = await api.api.admin.service_account.$post({
+  const response = await api.admin.service_account.$post({
     form: {
       "service-key": value.file,
       app: Apps.GoogleDrive,
@@ -57,7 +57,7 @@ const submitOAuthForm = async (
   value: OAuthFormData,
   navigate: UseNavigateResult<string>,
 ) => {
-  const response = await api.api.admin.oauth.create.$post({
+  const response = await api.admin.oauth.create.$post({
     form: {
       clientId: value.clientId,
       clientSecret: value.clientSecret,
@@ -342,7 +342,7 @@ export const LoadingSpinner = ({ className }: { className: string }) => {
 const minHeight = 320
 
 const getConnectors = async (): Promise<any> => {
-  const res = await api.api.admin.connectors.all.$get()
+  const res = await api.admin.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")

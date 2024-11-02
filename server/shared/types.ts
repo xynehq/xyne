@@ -1,4 +1,3 @@
-// we use .. because vite is not able to resolve if we use @/search/types
 import {
   entitySchema,
   VespaFileSchema,
@@ -19,6 +18,11 @@ export type { Entity } from "search/types"
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"
+
+// @ts-ignore
+export type { MessageReqType } from "@/api/search"
+// @ts-ignore
+export type { SelectPublicMessage } from "@/db/schema"
 
 export type AppType = typeof AppRoutes
 export type WebSocketApp = typeof WsApp
@@ -168,8 +172,23 @@ export const AnswerResponseSchema = z.object({})
 
 // kept it minimal to prevent
 // unnecessary data transfer
-export enum AnswerSSEEvents {
+export enum AnswerSSEvents {
   Start = "s",
   AnswerUpdate = "u",
   End = "e",
 }
+
+export enum ChatSSEvents {
+  ResponseMetadata = "rm",
+  Start = "s",
+  ResponseUpdate = "u",
+  End = "e",
+  ChatTitleUpdate = "ct",
+}
+
+const messageMetadataSchema = z.object({
+  chatId: z.string(),
+  messageId: z.string(),
+})
+
+export type MessageMetadataResponse = z.infer<typeof messageMetadataSchema>

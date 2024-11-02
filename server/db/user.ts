@@ -2,10 +2,12 @@ import { and, eq } from "drizzle-orm"
 import { db } from "./client"
 import {
   selectUserSchema,
+  selectWorkspaceSchema,
   userPublicSchema,
   users,
   workspacePublicSchema,
   workspaces,
+  type InternalUserWorkspace,
   type PublicUserWorkspace,
   type SelectUser,
 } from "./schema"
@@ -15,7 +17,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
 
-export const getUserAndWorkspaceByEmail = async (
+export const getPublicUserAndWorkspaceByEmail = async (
   trx: TxnOrClient,
   workspaceId: string,
   email: string,
@@ -43,6 +45,34 @@ export const getUserAndWorkspaceByEmail = async (
   const workspacePublic = workspacePublicSchema.parse(workspace)
 
   return { user: userPublic, workspace: workspacePublic }
+}
+
+export const getUserAndWorkspaceByEmail = async (
+  trx: TxnOrClient,
+  workspaceId: string,
+  email: string,
+): Promise<InternalUserWorkspace> => {
+  const userAndWorkspace = await trx
+    .select({
+      user: users,
+      workspace: workspaces,
+    })
+    .from(users)
+    .innerJoin(workspaces, eq(users.workspaceId, workspaces.id)) // Join workspaces on users.workspaceId
+    .where(
+      and(
+        eq(users.email, email), // Filter by user email
+        eq(users.workspaceExternalId, workspaceId), // Filter by workspaceId
+      ),
+    )
+    .limit(1)
+  if (!userAndWorkspace || userAndWorkspace.length === 0) {
+    throw new HTTPException(404, { message: "User or Workspace not found" })
+  }
+
+  const { user, workspace } = userAndWorkspace[0]
+
+  return { user, workspace }
 }
 
 export const getUserAndWorkspaceByOnlyEmail = async (

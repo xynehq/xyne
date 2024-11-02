@@ -46,11 +46,11 @@ import {
   userContext,
 } from "@/ai/context"
 import { VespaSearchResultsSchema } from "@/search/types"
-import { AnswerSSEEvents } from "@/shared/types"
+import { AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { getPublicUserAndWorkspaceByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import type { PublicUserWorkspace } from "@/db/schema"
 import { getErrorMessage } from "@/utils"
@@ -60,6 +60,31 @@ const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
+})
+
+export const chatSchema = z.object({
+  chatId: z.string()
+})
+
+export const chatBookmarkSchema = z.object({
+  chatId: z.string(),
+  bookmark: z.boolean()
+})
+
+export const chatRenameSchema = z.object({
+  title: z.string()
+})
+
+export const messageSchema = z.object({
+  message: z.string().min(1),
+  chatId: z.string().optional(),
+  modelId: z.string().min(1)
+})
+export type MessageReqType = z.infer<typeof messageSchema>
+
+export const messageRetrySchema = z.object({
+  messageId: z.string().min(1),
+  chatId: z.string().min(1),
 })
 
 export const AutocompleteApi = async (c: Context) => {
@@ -123,7 +148,7 @@ export const AnswerApi = async (c: Context) => {
     PublicUserWorkspace,
     VespaSearchResponse,
   ] = await Promise.all([
-    getUserAndWorkspaceByEmail(db, workspaceId, email),
+    getPublicUserAndWorkspaceByEmail(db, workspaceId, email),
     searchVespa(decodedQuery, email, app, entity, config.answerPage, 0),
   ])
 
@@ -238,8 +263,8 @@ export const AnswerApi = async (c: Context) => {
     Logger.info("SSE stream started")
     // Stream the initial context information
     await stream.writeSSE({
-      data: `Starting response for query: ${query}`,
-      event: AnswerSSEEvents.Start,
+      data: ``,
+      event: AnswerSSEvents.Start,
     })
     if (output?.canBeAnswered && output.contextualChunks.length) {
       const interator = askQuestion(decodedQuery, finalContext, {
@@ -251,8 +276,8 @@ export const AnswerApi = async (c: Context) => {
       for await (const { text, metadata, cost } of interator) {
         if (text) {
           await stream.writeSSE({
+            event: AnswerSSEvents.AnswerUpdate,
             data: text,
-            event: AnswerSSEEvents.AnswerUpdate,
           })
         }
         if (cost) {
@@ -266,7 +291,7 @@ export const AnswerApi = async (c: Context) => {
     }
     await stream.writeSSE({
       data: "Answer complete",
-      event: AnswerSSEEvents.End,
+      event: AnswerSSEvents.End,
     })
 
     Logger.info("SSE stream ended")

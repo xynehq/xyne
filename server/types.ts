@@ -135,6 +135,7 @@ const DefaultTokenSchema = z.object({
 // Google Drive and Contact change token
 // clubbing drive, contact and other contact tokens
 const GoogleDriveChangeTokenSchema = z.object({
+  type: z.literal("googleDriveChangeToken"),
   driveToken: z.string(),
   contactsToken: z.string(),
   otherContactsToken: z.string(),
@@ -142,6 +143,7 @@ const GoogleDriveChangeTokenSchema = z.object({
 }).passthrough()
 
 const GmailChangeTokenSchema = z.object({
+  type: z.literal("gmailChangeToken"),
   historyId: z.string(),
   lastSyncedAt: z.coerce.date(),
 }).passthrough()
@@ -154,6 +156,7 @@ const ChangeTokenSchema = z.union([
 
 // Define UpdatedAtVal schema
 const UpdatedAtValSchema = z.object({
+  type: z.literal("updatedAt"),
   updatedAt: z.coerce.date(),
 })
 
@@ -218,6 +221,7 @@ export enum Subsystem {
   Vespa = "Vespa",
   Db = "Db",
   Api = "Api",
+  Chat = "Chat",
   Utils = "Utils",
   Queue = "Queue",
   Eval = "Eval",
@@ -234,3 +238,10 @@ export type additionalMessage = Partial<{
   Status: OperationStatus
   TimeTaken: number
 }>
+
+
+export enum MessageRole {
+  System = 'system',
+  User = 'user',
+  Assistant = 'assistant',
+}

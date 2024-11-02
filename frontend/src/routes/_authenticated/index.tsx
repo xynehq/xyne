@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/tooltip"
 import { api } from "@/api"
 import {
-  AnswerSSEEvents,
+  AnswerSSEvents,
   Autocomplete,
   AutocompleteResults,
   AutocompleteResultsSchema,
@@ -114,7 +114,7 @@ export const Index = () => {
     debounceTimeout.current = window.setTimeout(() => {
       ;(async () => {
         try {
-          const response = await api.api.autocomplete.$post({
+          const response = await api.autocomplete.$post({
             json: {
               query: autocompleteQuery,
             },
@@ -154,16 +154,16 @@ export const Index = () => {
       withCredentials: true,
     })
 
-    eventSource.addEventListener(AnswerSSEEvents.AnswerUpdate, (event) => {
+    eventSource.addEventListener(AnswerSSEvents.AnswerUpdate, (event) => {
       const chunk = event.data
       setAnswer((prevAnswer) => (prevAnswer ? prevAnswer + chunk : chunk))
     })
 
-    eventSource.addEventListener(AnswerSSEEvents.Start, (event) => {
+    eventSource.addEventListener(AnswerSSEvents.Start, (event) => {
       // Handle start event if needed
     })
 
-    eventSource.addEventListener(AnswerSSEEvents.End, (event) => {
+    eventSource.addEventListener(AnswerSSEvents.End, (event) => {
       // Handle end event
       eventSource.close()
     })
@@ -241,7 +241,7 @@ export const Index = () => {
       }
 
       // Send a GET request to the backend with the search query
-      const response = await api.api.search.$get({
+      const response = await api.search.$get({
         query: params,
       })
       if (response.ok) {
