@@ -75,6 +75,7 @@ export const MimeMapForContent: Record<string, boolean> = {
   [DriveMime.Docs]: true,
   [DriveMime.PDF]: true,
   [DriveMime.Sheets]: true,
+  [DriveMime.Slides]: true,
 }
 
 export class DocsParsingError extends Error {}

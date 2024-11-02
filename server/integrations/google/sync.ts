@@ -50,7 +50,11 @@ import {
   type VespaFile,
   type VespaMail,
 } from "@/search/types"
-import { getSpreadsheet, insertContact } from "@/integrations/google"
+import {
+  getPresentationToBeIngested,
+  getSpreadsheet,
+  insertContact,
+} from "@/integrations/google"
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
 
@@ -271,6 +275,13 @@ const handleGoogleDriveChange = async (
           DriveEntity.Sheets,
         )
         stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
+      } else if (file.mimeType === DriveMime.Slides) {
+        vespaData = await getPresentationToBeIngested(file, client)
+        if (doc) {
+          stats.summary += `updated the content for ${docId}\n`
+        } else {
+          stats.summary += `indexed new content ${docId}\n`
+        }
       } else {
         vespaData = await getFileContent(client, file, DriveEntity.Docs)
         if (doc) {

@@ -5,7 +5,6 @@ import {
   google,
   people_v1,
   sheets_v4,
-  slides_v1,
 } from "googleapis"
 import {
   extractFootnotes,
@@ -469,11 +468,11 @@ export const deleteDocument = async (filePath: string) => {
   }
 }
 
-const getPresentationToBeIngested = async (
-  slides: slides_v1.Slides,
+export const getPresentationToBeIngested = async (
   presentation: drive_v3.Schema$File,
   client: GoogleClient,
 ) => {
+  const slides = google.slides({ version: "v1", auth: client })
   const presentationData = await slides.presentations.get({
     presentationId: presentation.id!,
   })
@@ -544,14 +543,13 @@ const googleSlidesVespa = async (
     connectorId,
   )
   const presentationsList: VespaFileWithDrivePermission[] = []
-  const slides = google.slides({ version: "v1", auth: client })
+
   const total = presentationMetadata.length
   let count = 0
 
   for (const presentation of presentationMetadata) {
     try {
       const presentationToBeIngested = await getPresentationToBeIngested(
-        slides,
         presentation,
         client,
       )
