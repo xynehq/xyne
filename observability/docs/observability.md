@@ -25,7 +25,7 @@ To set up **Grafana** dashboad :
 - Now scroll down to Save and Test your connection. It should show a `Successful` message.
 - Now using the same Nav bar to the left, navigate to `Dashboards`.
 - Once on the dashboard page you will see the `New` button in the top right corner. Click on that button and select the `import` option.
-- Now in the import section, either upload or paste the `grafana-metrics.json` file in the setup folder of this directory. You will notice that the name of the dataSource is written as `${prometheusSource}`, this is because when you initially create a datasource with prometheus as the endpoint, it creates a new ID for that endpoint (which will be valid as long as your application is running locally). Since we won't know what the ID turns out to be the next time we set up our dashboard we have the data source as `${prometheusSource}` and not a source with a specific ID.
+- Now in the import section, either upload or paste the `grafana-metrics.json` file in the setup folder of this directory.
 - Click on load and then import.
 - You should now have the dashboard imported successfully. Navigate back to the Dashboard section and you should see the `Xyne Metrics` dashboard up.
 - Initially you will have to: 
