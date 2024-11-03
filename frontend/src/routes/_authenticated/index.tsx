@@ -20,7 +20,6 @@ import {
   Autocomplete,
   AutocompleteResults,
   AutocompleteResultsSchema,
-  Entity,
   SearchResponse,
   SearchResultDiscriminatedUnion,
 } from "shared/types"

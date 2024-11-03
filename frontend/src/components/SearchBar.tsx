@@ -1,5 +1,5 @@
 import { Search } from "lucide-react"
-import React, { useState, useRef, useEffect } from "react"
+import React, { useRef, useEffect } from "react"
 import { SearchFilters } from "./SearchFilter"
 import { ArrowRight, X } from "lucide-react" // Assuming ArrowRight and X are imported from lucide-react
 import { AutocompleteElement } from "@/components/Autocomplete"
@@ -108,7 +108,7 @@ export const SearchBar = React.forwardRef<HTMLDivElement, any>(
                     ref={autocompleteRef}
                     className="absolute top-full w-full left-0 bg-white rounded-b-lg border border-t-0 border-[#AEBAD3] shadow-md"
                   >
-                    {autocompleteResults.map((result, index) => (
+                    {autocompleteResults.map((result: any, index: number) => (
                       <AutocompleteElement
                         key={index}
                         onClick={() => {
