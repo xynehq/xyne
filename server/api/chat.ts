@@ -201,7 +201,6 @@ export const MessageApi = async (c: Context) => {
         message: fullResponse,
         modelId,
       })
-      console.log(msg)
       await stream.writeSSE({
         data: "Answer complete",
         event: ChatSSEvents.End,

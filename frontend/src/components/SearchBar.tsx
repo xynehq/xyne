@@ -4,6 +4,7 @@ import { SearchFilters } from "./SearchFilter"
 import { ArrowRight, X } from "lucide-react" // Assuming ArrowRight and X are imported from lucide-react
 import { AutocompleteElement } from "@/components/Autocomplete"
 import { Button } from "@/components/ui/button"
+import { useNavigate } from "@tanstack/react-router"
 
 export const SearchBar = React.forwardRef<HTMLDivElement, any>(
   (
@@ -14,6 +15,7 @@ export const SearchBar = React.forwardRef<HTMLDivElement, any>(
       setAutocompleteResults,
       setAutocompleteQuery,
       setOffset,
+      setFilter,
       query,
       handleSearch,
       handleAnswer,
@@ -21,6 +23,7 @@ export const SearchBar = React.forwardRef<HTMLDivElement, any>(
     autocompleteRef,
   ) => {
     const inputRef = useRef<HTMLInputElement | null>(null)
+    const navigate = useNavigate({ from: "/search" })
 
     useEffect(() => {
       if (inputRef.current) {
@@ -69,7 +72,12 @@ export const SearchBar = React.forwardRef<HTMLDivElement, any>(
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      handleSearch()
+                      navigate({
+                        to: "/search",
+                        search: { query: encodeURIComponent(query) },
+                      })
+                      setFilter(null)
+                      handleSearch(0, null)
                       // we only want to look for answer if at least
                       // 3 words are there in the query
                       if (query.split(" ").length > 2) {

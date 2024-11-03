@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 
 const page = 8
@@ -16,9 +16,11 @@ import {
 import { api } from "@/api"
 import {
   AnswerSSEvents,
+  Apps,
   Autocomplete,
   AutocompleteResults,
   AutocompleteResultsSchema,
+  Entity,
   SearchResponse,
   SearchResultDiscriminatedUnion,
 } from "shared/types"
@@ -28,6 +30,7 @@ import answerSparkle from "@/assets/answerSparkle.svg"
 import { GroupFilter } from "@/components/GroupFilter"
 import { SearchBar } from "@/components/SearchBar"
 import { Button } from "@/components/ui/button"
+import { z } from "zod"
 
 const logger = console
 
@@ -56,7 +59,10 @@ type SearchMeta = {
 }
 
 export const Index = () => {
-  const [query, setQuery] = useState("") // State to hold the search query
+  let search: XyneSearch = useSearch({
+    from: "/_authenticated",
+  })
+  const [query, setQuery] = useState(search.query || "") // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
@@ -100,6 +106,9 @@ export const Index = () => {
   }, [autocompleteRef])
 
   useEffect(() => {
+    if (!autocompleteQuery) {
+      return
+    }
     if (query.length < 2) {
       setAutocompleteResults([])
       return
@@ -132,6 +141,14 @@ export const Index = () => {
       }
     }
   }, [autocompleteQuery])
+
+  useEffect(() => {
+    if (search && search.query) {
+      const decodedQuery = decodeURIComponent(search.query)
+      setQuery(decodedQuery)
+      handleSearch(0, filter)
+    }
+  }, [])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
@@ -178,7 +195,7 @@ export const Index = () => {
     }
   }
 
-  const handleSearch = async (newOffset = offset, newFilter = filter) => {
+  const handleSearch = async (newOffset = offset, newFilter: Filter | null) => {
     if (!query) return // If the query is empty, do nothing
     setHasSearched(true)
 
@@ -209,6 +226,29 @@ export const Index = () => {
             offset: newOffset,
             app: newFilter.app,
             entity: newFilter.entity,
+          }),
+          replace: true,
+        })
+
+        // we went directly via the url hence
+        // groups does not exist
+      } else if (filter && !groups) {
+        groupCount = true
+        params = {
+          page: page,
+          offset: newOffset,
+          query: encodeURIComponent(query),
+          groupCount,
+          app: filter.app,
+          entity: filter.entity,
+        }
+        navigate({
+          to: "/search",
+          search: (prev) => ({
+            ...prev,
+            query: query,
+            page: page,
+            offset: newOffset,
           }),
           replace: true,
         })
@@ -327,6 +367,7 @@ export const Index = () => {
           setAutocompleteResults={setAutocompleteResults}
           setAutocompleteQuery={setAutocompleteQuery}
           setOffset={setOffset}
+          setFilter={setFilter}
           query={query}
           handleSearch={handleSearch}
           handleAnswer={handleAnswer}
@@ -435,13 +476,17 @@ export const Index = () => {
   )
 }
 
+const searchParams = z.object({
+  page: z.number().optional(),
+  offset: z.number().optional(),
+  query: z.string().optional(),
+  app: z.nativeEnum(Apps).optional(),
+  entity: z.string().optional(),
+})
+
+type XyneSearch = z.infer<typeof searchParams>
+
 export const Route = createFileRoute("/_authenticated/")({
   component: Index,
-  beforeLoad: async () => {
-    console.log("beforeLoad")
-  },
-  loader: async ({ params }) => {
-    console.log("loaders")
-    console.log(params)
-  },
+  validateSearch: (search) => searchParams.parse(search),
 })
