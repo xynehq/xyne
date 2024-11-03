@@ -1,6 +1,10 @@
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
-import { createFileRoute, useRouter } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  useLoaderData,
+  useRouter,
+} from "@tanstack/react-router"
 import {
   ArrowRight,
   Bookmark,
@@ -8,7 +12,6 @@ import {
   Ellipsis,
   Globe,
   Paperclip,
-  SendIcon,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage } from "shared/types"
@@ -24,15 +27,35 @@ type CurrentResp = {
 export const ChatPage = () => {
   const params = Route.useParams()
   const router = useRouter()
+  const isWithChatId = !!(params as any).chatId
+  const data = useLoaderData({
+    from: isWithChatId
+      ? "/_authenticated/chat/$chatId"
+      : "/_authenticated/chat",
+  })
+
+  useEffect(() => {
+    if (data?.error) {
+      router.navigate({ to: "/chat" })
+    }
+  }, [data, router])
+
   const [query, setQuery] = useState("")
-  const [messages, setMessages] = useState<SelectPublicMessage[]>([])
+  const [messages, setMessages] = useState<SelectPublicMessage[]>(
+    data?.messages || [],
+  )
   const [chatId, setChatId] = useState<string | null>(
     (params as any).chatId || null,
   )
-  const [chatTitle, setChatTitle] = useState<string | null>(null)
+  const [chatTitle, setChatTitle] = useState<string | null>(
+    data?.chat.title || null,
+  )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
   const currentRespRef = useRef<CurrentResp | null>(null)
-  const [chatStarted, setChatStarted] = useState<Boolean>(false)
+  const [chatStarted, setChatStarted] = useState<boolean>(!!data?.messages)
+  const [bookmark, setBookmark] = useState<boolean>(
+    !!data?.chat.isBookmarked || false,
+  )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -80,10 +103,22 @@ export const ChatPage = () => {
       setChatId(chatId)
 
       if (chatId) {
-        router.navigate({
-          to: "/chat/$chatId",
-          params: { chatId },
-        })
+        // we are redirecting after 1 second
+        // becase the chat may not have actually been created
+        // if it's not created and redirect to that url we try to fetch it
+        // and on error we redirect back to /chat
+        // need to create an event source event on when to navigate
+        setTimeout(() => {
+          router.navigate({
+            to: "/chat/$chatId",
+            params: { chatId },
+          })
+          if (messages.length === 0) {
+            setChatTitle(query.substring(0, 10))
+          } else {
+            setChatTitle(messages[0].message.substring(0, 10))
+          }
+        }, 1000)
       }
       setCurrentResp((resp) => {
         const updatedResp = resp || { resp: "" }
@@ -128,6 +163,18 @@ export const ChatPage = () => {
     setQuery("")
   }
 
+  const handleBookmark = async () => {
+    if (chatId) {
+      await api.chat.bookmark.$post({
+        json: {
+          chatId: chatId,
+          bookmark: !bookmark,
+        },
+      })
+      setBookmark(!bookmark)
+    }
+  }
+
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar />
@@ -137,7 +184,12 @@ export const ChatPage = () => {
             <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
               {chatTitle}
             </span>
-            <Bookmark stroke="#4A4F59" className="ml-[40px]" size={18} />
+            <Bookmark
+              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+              className="ml-[40px] cursor-pointer"
+              onClick={handleBookmark}
+              size={18}
+            />
             <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
           </div>
         </div>
@@ -151,11 +203,16 @@ export const ChatPage = () => {
                 <ChatMessage
                   key={index}
                   message={message.message}
-                  isUser={message.role === "user"}
+                  isUser={message.messageRole === "user"}
+                  responseDone={true}
                 />
               ))}
               {currentResp && (
-                <ChatMessage message={currentResp.resp} isUser={false} />
+                <ChatMessage
+                  message={currentResp.resp}
+                  isUser={false}
+                  responseDone={false}
+                />
               )}
             </div>
 
@@ -205,7 +262,8 @@ export const ChatPage = () => {
 const ChatMessage = ({
   message,
   isUser,
-}: { message: string; isUser: boolean }) => {
+  responseDone,
+}: { message: string; isUser: boolean; responseDone: boolean }) => {
   return (
     <div
       className={`max-w-[75%] rounded-[16px] ${
@@ -225,10 +283,12 @@ const ChatMessage = ({
             />
             <span className="mt-[4px]">{message}</span>
           </div>
-          <div className="flex ml-[52px] mt-[24px]">
-            <Copy size={16} stroke="#9EA6B8" />
-            <img className="ml-[18px]" src={Retry} />
-          </div>
+          {responseDone && (
+            <div className="flex ml-[52px] mt-[24px]">
+              <Copy size={16} stroke="#9EA6B8" />
+              <img className="ml-[18px]" src={Retry} />
+            </div>
+          )}
         </div>
       )}
     </div>

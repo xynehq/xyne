@@ -10,116 +10,116 @@
 
 // Import Routes
 
-import { Route as rootRoute } from "./routes/__root"
-import { Route as AuthImport } from "./routes/auth"
-import { Route as AuthenticatedImport } from "./routes/_authenticated"
-import { Route as AuthenticatedIndexImport } from "./routes/_authenticated/index"
-import { Route as OauthSuccessImport } from "./routes/oauth/success"
-import { Route as AuthenticatedSearchImport } from "./routes/_authenticated/search"
-import { Route as AuthenticatedChatImport } from "./routes/_authenticated/chat"
-import { Route as AuthenticatedChatChatIdImport } from "./routes/_authenticated/chat.$chatId"
-import { Route as AuthenticatedAdminIntegrationsImport } from "./routes/_authenticated/admin/integrations"
+import { Route as rootRoute } from './routes/__root'
+import { Route as AuthImport } from './routes/auth'
+import { Route as AuthenticatedImport } from './routes/_authenticated'
+import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
+import { Route as OauthSuccessImport } from './routes/oauth/success'
+import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
+import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
+import { Route as AuthenticatedAdminIntegrationsImport } from './routes/_authenticated/admin/integrations'
 
 // Create/Update Routes
 
 const AuthRoute = AuthImport.update({
-  path: "/auth",
+  path: '/auth',
   getParentRoute: () => rootRoute,
 } as any)
 
 const AuthenticatedRoute = AuthenticatedImport.update({
-  id: "/_authenticated",
+  id: '/_authenticated',
   getParentRoute: () => rootRoute,
 } as any)
 
 const AuthenticatedIndexRoute = AuthenticatedIndexImport.update({
-  path: "/",
+  path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 const OauthSuccessRoute = OauthSuccessImport.update({
-  path: "/oauth/success",
+  path: '/oauth/success',
   getParentRoute: () => rootRoute,
 } as any)
 
 const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
-  path: "/search",
+  path: '/search',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 const AuthenticatedChatRoute = AuthenticatedChatImport.update({
-  path: "/chat",
+  path: '/chat',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdImport.update({
-  path: "/$chatId",
+  path: '/$chatId',
   getParentRoute: () => AuthenticatedChatRoute,
 } as any)
 
 const AuthenticatedAdminIntegrationsRoute =
   AuthenticatedAdminIntegrationsImport.update({
-    path: "/admin/integrations",
+    path: '/admin/integrations',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
 // Populate the FileRoutesByPath interface
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/_authenticated": {
-      id: "/_authenticated"
-      path: ""
-      fullPath: ""
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: ''
       preLoaderRoute: typeof AuthenticatedImport
       parentRoute: typeof rootRoute
     }
-    "/auth": {
-      id: "/auth"
-      path: "/auth"
-      fullPath: "/auth"
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
       preLoaderRoute: typeof AuthImport
       parentRoute: typeof rootRoute
     }
-    "/_authenticated/chat": {
-      id: "/_authenticated/chat"
-      path: "/chat"
-      fullPath: "/chat"
+    '/_authenticated/chat': {
+      id: '/_authenticated/chat'
+      path: '/chat'
+      fullPath: '/chat'
       preLoaderRoute: typeof AuthenticatedChatImport
       parentRoute: typeof AuthenticatedImport
     }
-    "/_authenticated/search": {
-      id: "/_authenticated/search"
-      path: "/search"
-      fullPath: "/search"
+    '/_authenticated/search': {
+      id: '/_authenticated/search'
+      path: '/search'
+      fullPath: '/search'
       preLoaderRoute: typeof AuthenticatedSearchImport
       parentRoute: typeof AuthenticatedImport
     }
-    "/oauth/success": {
-      id: "/oauth/success"
-      path: "/oauth/success"
-      fullPath: "/oauth/success"
+    '/oauth/success': {
+      id: '/oauth/success'
+      path: '/oauth/success'
+      fullPath: '/oauth/success'
       preLoaderRoute: typeof OauthSuccessImport
       parentRoute: typeof rootRoute
     }
-    "/_authenticated/": {
-      id: "/_authenticated/"
-      path: "/"
-      fullPath: "/"
+    '/_authenticated/': {
+      id: '/_authenticated/'
+      path: '/'
+      fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexImport
       parentRoute: typeof AuthenticatedImport
     }
-    "/_authenticated/admin/integrations": {
-      id: "/_authenticated/admin/integrations"
-      path: "/admin/integrations"
-      fullPath: "/admin/integrations"
+    '/_authenticated/admin/integrations': {
+      id: '/_authenticated/admin/integrations'
+      path: '/admin/integrations'
+      fullPath: '/admin/integrations'
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsImport
       parentRoute: typeof AuthenticatedImport
     }
-    "/_authenticated/chat/$chatId": {
-      id: "/_authenticated/chat/$chatId"
-      path: "/$chatId"
-      fullPath: "/chat/$chatId"
+    '/_authenticated/chat/$chatId': {
+      id: '/_authenticated/chat/$chatId'
+      path: '/$chatId'
+      fullPath: '/chat/$chatId'
       preLoaderRoute: typeof AuthenticatedChatChatIdImport
       parentRoute: typeof AuthenticatedChatImport
     }

@@ -1,15 +1,20 @@
 import { userContext } from "@/ai/context"
 import { Models, userChat } from "@/ai/provider/bedrock"
 import config from "@/config"
-import { insertChat } from "@/db/chat"
-import { db } from "@/db/client"
 import {
   getChatByExternalId,
-  getChatById,
-  getChatMessages,
-  insertMessage,
-} from "@/db/message"
-import type { SelectChat, SelectMessage } from "@/db/schema"
+  insertChat,
+  updateChatByExternalId,
+} from "@/db/chat"
+import { db } from "@/db/client"
+import { getChatMessages, insertMessage } from "@/db/message"
+import {
+  selectPublicChatSchema,
+  selectPublicMessageSchema,
+  selectPublicMessagesSchema,
+  type SelectChat,
+  type SelectMessage,
+} from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
@@ -19,13 +24,39 @@ import type { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
+import type { z } from "zod"
+import type { chatSchema } from "@/api/search"
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Chat)
+
+export const GetChatApi = async (c: Context) => {
+  try {
+    // @ts-ignore
+    const body: z.infer<typeof chatSchema> = c.req.valid("json")
+    const { chatId } = body
+    const [chat, messages] = await Promise.all([
+      getChatByExternalId(db, chatId),
+      getChatMessages(db, chatId),
+    ])
+    return c.json({
+      chat: selectPublicChatSchema.parse(chat),
+      messages: selectPublicMessagesSchema.parse(messages),
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(
+      `Get Chat and Messages Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not fetch chat and messages",
+    })
+  }
+}
 
 export const ChatRenameApi = async (c: Context) => {
   try {
     // @ts-ignore
-    const body = req.valid("json")
+    const body = c.req.valid("json")
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Chat Rename Error: ${errMsg} ${(error as Error).stack}`)
@@ -38,7 +69,10 @@ export const ChatRenameApi = async (c: Context) => {
 export const ChatBookmarkApi = async (c: Context) => {
   try {
     // @ts-ignore
-    const body = req.valid("json")
+    const body = c.req.valid("json")
+    const { chatId, bookmark } = body
+    await updateChatByExternalId(db, chatId, { isBookmarked: bookmark })
+    return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`)
@@ -82,6 +116,7 @@ export const MessageApi = async (c: Context) => {
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
             userId: user.id,
+            chatExternalId: chat.externalId,
             workspaceExternalId: workspace.externalId,
             messageRole: MessageRole.User,
             email: user.email,
@@ -103,6 +138,7 @@ export const MessageApi = async (c: Context) => {
             chatId: existingChat.id,
             userId: user.id,
             workspaceExternalId: workspace.externalId,
+            chatExternalId: existingChat.externalId,
             messageRole: MessageRole.User,
             email: user.email,
             sources: [],
@@ -117,6 +153,7 @@ export const MessageApi = async (c: Context) => {
     }
 
     const ctx = userContext({ user, workspace })
+    let fullResponse = ""
     return streamSSE(c, async (stream) => {
       await stream.writeSSE({
         data: "",
@@ -142,6 +179,7 @@ export const MessageApi = async (c: Context) => {
       })
       for await (const { text, metadata, cost } of iterator) {
         if (text) {
+          fullResponse += text
           await stream.writeSSE({
             event: ChatSSEvents.ResponseUpdate,
             data: text,
@@ -151,11 +189,24 @@ export const MessageApi = async (c: Context) => {
           costArr.push(cost)
         }
       }
+      const msg = await insertMessage(db, {
+        chatId: messages[messages.length - 1].chatId,
+        userId: user.id,
+        workspaceExternalId: workspace.externalId,
+        chatExternalId: messages[messages.length - 1].chatExternalId,
+        messageRole: MessageRole.Assistant,
+        email: user.email,
+        sources: [],
+        message: fullResponse,
+        modelId,
+      })
+      console.log(msg)
       await stream.writeSSE({
         data: "Answer complete",
         event: ChatSSEvents.End,
       })
     })
+    Logger.info(`Costs: ${costArr}`)
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)

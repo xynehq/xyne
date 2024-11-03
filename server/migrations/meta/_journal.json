@@ -64,6 +64,20 @@
       "when": 1730552924202,
       "tag": "0008_plain_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1730618976803,
+      "tag": "0009_crazy_madelyne_pryor",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1730621571708,
+      "tag": "0010_regular_vermin",
+      "breakpoints": true
     }
   ]
 }

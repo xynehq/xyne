@@ -283,6 +283,9 @@ export const chats = pgTable(
     isBookmarked: boolean("is_bookmarked").notNull().default(false),
     email: text("email").notNull(),
     title: text("title").notNull(),
+    // metadata for any file that is uploaded as
+    // attachment for that chat
+    attachments: jsonb("attachments").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
@@ -314,7 +317,7 @@ export const messages = pgTable(
       .references(() => users.id),
     externalId: text("external_id").unique().notNull(),
     workspaceExternalId: text("workspace_external_id").notNull(),
-    chatExternalId: text("chat_external_id").unique().notNull(),
+    chatExternalId: text("chat_external_id").notNull(),
     message: text("message").notNull(),
     messageRole: messageRoleEnum(messageRoleField).notNull(),
     // model id is present in the app itself
@@ -441,6 +444,8 @@ export const selectPublicMessageSchema = selectMessageSchema.omit({
   chatId: true,
   userId: true,
 })
+
+export const selectPublicMessagesSchema = z.array(selectPublicMessageSchema)
 export type SelectPublicMessage = z.infer<typeof selectPublicMessageSchema>
 
 export const selectPublicChatSchema = selectChatSchema.omit({

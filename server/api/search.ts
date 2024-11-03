@@ -63,7 +63,7 @@ export const autocompleteSchema = z.object({
 })
 
 export const chatSchema = z.object({
-  chatId: z.string(),
+  chatId: z.string().min(1),
 })
 
 export const chatBookmarkSchema = z.object({

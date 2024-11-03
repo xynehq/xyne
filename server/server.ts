@@ -47,6 +47,7 @@ import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ChatBookmarkApi,
   ChatRenameApi,
+  GetChatApi,
   MessageApi,
   MessageRetryApi,
 } from "./api/chat"
@@ -135,6 +136,7 @@ export const AppRoutes = app
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
+  .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",
     zValidator("json", chatBookmarkSchema),

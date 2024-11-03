@@ -1,0 +1,20 @@
+import { createFileRoute, useRouter } from "@tanstack/react-router"
+import { ChatPage } from "@/routes/_authenticated/chat"
+import { api } from "@/api"
+
+export const Route = createFileRoute("/_authenticated/chat/$chatId")({
+  component: ChatPage,
+  loader: async ({ params }) => {
+    try {
+      const res = await api.chat.$post({
+        json: {
+          chatId: params.chatId,
+        },
+      })
+
+      return await res.json()
+    } catch (error) {
+      return { error }
+    }
+  },
+})

@@ -33,3 +33,44 @@ export const getWorkspaceChats = async (
     .where(eq(chats.workspaceId, workspaceId))
   return z.array(selectChatSchema).parse(chatsArr)
 }
+
+export const getChatById = async (
+  trx: TxnOrClient,
+  chatId: number,
+): Promise<SelectChat> => {
+  const chatArr = await trx.select().from(chats).where(eq(chats.id, chatId))
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
+export const getChatByExternalId = async (
+  trx: TxnOrClient,
+  chatId: string,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .select()
+    .from(chats)
+    .where(eq(chats.externalId, chatId))
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
+export const updateChatByExternalId = async (
+  trx: TxnOrClient,
+  chatId: string,
+  chat: Partial<InsertChat>,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .update(chats)
+    .set(chat)
+    .where(eq(chats.externalId, chatId))
+    .returning()
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}

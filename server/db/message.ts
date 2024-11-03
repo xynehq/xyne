@@ -14,12 +14,11 @@ import { z } from "zod"
 
 export const insertMessage = async (
   trx: TxnOrClient,
-  message: Omit<InsertMessage, "externalId" | "chatExternalId">,
+  message: Omit<InsertMessage, "externalId">,
 ): Promise<SelectMessage> => {
   const messageWithExternalId = {
     ...message,
     externalId: createId(),
-    chatExternalId: createId(),
   }
   const messageArr = await trx
     .insert(messages)
@@ -47,29 +46,4 @@ export const getChatMessages = async (
     .where(eq(messages.chatExternalId, chatId))
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
-}
-
-export const getChatById = async (
-  trx: TxnOrClient,
-  chatId: number,
-): Promise<SelectChat> => {
-  const chatArr = await trx.select().from(chats).where(eq(messages.id, chatId))
-  if (!chatArr || !chatArr.length) {
-    throw new Error("Chat not found")
-  }
-  return selectChatSchema.parse(chatArr[0])
-}
-
-export const getChatByExternalId = async (
-  trx: TxnOrClient,
-  chatId: string,
-): Promise<SelectChat> => {
-  const chatArr = await trx
-    .select()
-    .from(chats)
-    .where(eq(chats.externalId, chatId))
-  if (!chatArr || !chatArr.length) {
-    throw new Error("Chat not found")
-  }
-  return selectChatSchema.parse(chatArr[0])
 }
