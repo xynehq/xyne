@@ -1,14 +1,12 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 
 const page = 8
 
-import { ArrowRight, Search, X } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
 
 import { useEffect, useRef, useState } from "react"
 
-import { Button } from "@/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
@@ -17,7 +15,8 @@ import {
 } from "@/components/ui/tooltip"
 import { api } from "@/api"
 import {
-  AnswerSSEEvents,
+  AnswerSSEvents,
+  Apps,
   Autocomplete,
   AutocompleteResults,
   AutocompleteResultsSchema,
@@ -25,11 +24,12 @@ import {
   SearchResultDiscriminatedUnion,
 } from "shared/types"
 import { Filter, Groups } from "@/types"
-import { AutocompleteElement } from "@/components/Autocomplete"
 import { SearchResult } from "@/components/SearchResult"
 import answerSparkle from "@/assets/answerSparkle.svg"
-import { SearchFilters } from "@/components/SearchFilter"
 import { GroupFilter } from "@/components/GroupFilter"
+import { SearchBar } from "@/components/SearchBar"
+import { Button } from "@/components/ui/button"
+import { z } from "zod"
 
 const logger = console
 
@@ -58,7 +58,10 @@ type SearchMeta = {
 }
 
 export const Index = () => {
-  const [query, setQuery] = useState("") // State to hold the search query
+  let search: XyneSearch = useSearch({
+    from: "/_authenticated",
+  })
+  const [query, setQuery] = useState(search.query || "") // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
@@ -67,7 +70,6 @@ export const Index = () => {
   const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
-  const inputRef = useRef<HTMLInputElement | null>(null)
 
   const navigate = useNavigate({ from: "/search" })
 
@@ -103,6 +105,9 @@ export const Index = () => {
   }, [autocompleteRef])
 
   useEffect(() => {
+    if (!autocompleteQuery) {
+      return
+    }
     if (query.length < 2) {
       setAutocompleteResults([])
       return
@@ -114,7 +119,7 @@ export const Index = () => {
     debounceTimeout.current = window.setTimeout(() => {
       ;(async () => {
         try {
-          const response = await api.api.autocomplete.$post({
+          const response = await api.autocomplete.$post({
             json: {
               query: autocompleteQuery,
             },
@@ -136,6 +141,14 @@ export const Index = () => {
     }
   }, [autocompleteQuery])
 
+  useEffect(() => {
+    if (search && search.query) {
+      const decodedQuery = decodeURIComponent(search.query)
+      setQuery(decodedQuery)
+      handleSearch(0, filter)
+    }
+  }, [])
+
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
 
@@ -154,16 +167,16 @@ export const Index = () => {
       withCredentials: true,
     })
 
-    eventSource.addEventListener(AnswerSSEEvents.AnswerUpdate, (event) => {
+    eventSource.addEventListener(AnswerSSEvents.AnswerUpdate, (event) => {
       const chunk = event.data
       setAnswer((prevAnswer) => (prevAnswer ? prevAnswer + chunk : chunk))
     })
 
-    eventSource.addEventListener(AnswerSSEEvents.Start, (event) => {
+    eventSource.addEventListener(AnswerSSEvents.Start, (event) => {
       // Handle start event if needed
     })
 
-    eventSource.addEventListener(AnswerSSEEvents.End, (event) => {
+    eventSource.addEventListener(AnswerSSEvents.End, (event) => {
       // Handle end event
       eventSource.close()
     })
@@ -180,13 +193,8 @@ export const Index = () => {
       eventSource.close() // Close the connection on error
     }
   }
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus()
-    }
-  }, [])
 
-  const handleSearch = async (newOffset = offset, newFilter = filter) => {
+  const handleSearch = async (newOffset = offset, newFilter: Filter | null) => {
     if (!query) return // If the query is empty, do nothing
     setHasSearched(true)
 
@@ -220,6 +228,29 @@ export const Index = () => {
           }),
           replace: true,
         })
+
+        // we went directly via the url hence
+        // groups does not exist
+      } else if (filter && !groups) {
+        groupCount = true
+        params = {
+          page: page,
+          offset: newOffset,
+          query: encodeURIComponent(query),
+          groupCount,
+          app: filter.app,
+          entity: filter.entity,
+        }
+        navigate({
+          to: "/search",
+          search: (prev) => ({
+            ...prev,
+            query: query,
+            page: page,
+            offset: newOffset,
+          }),
+          replace: true,
+        })
       } else {
         groupCount = true
         params = {
@@ -241,7 +272,7 @@ export const Index = () => {
       }
 
       // Send a GET request to the backend with the search query
-      const response = await api.api.search.$get({
+      const response = await api.search.$get({
         query: params,
       })
       if (response.ok) {
@@ -325,95 +356,29 @@ export const Index = () => {
     <div className="h-full w-full flex">
       <Sidebar />
       <div
-        className={`flex flex-col flex-grow h-full ${hasSearched ? "pt-[12px]" : "justify-center"}`}
+        className={`flex flex-col flex-grow h-full ${hasSearched ? "ml-[52px]" : "justify-center"}`}
       >
-        <div
-          className={`flex flex-col ${hasSearched ? "border-b-[1px] border-b-[#E6EBF5]" : ""} ${hasSearched ? "" : "mb-[280px] items-center justify-center"}`}
-        >
-          <div
-            className={`flex flex-col max-w-3xl ${hasSearched ? "ml-[186px]" : ""} w-full`}
-          >
-            <div className="flex space-x-2 w-full">
-              <div className="relative w-full">
-                <div
-                  className={`flex w-full items-center ${hasSearched ? "bg-[#F0F4F7]" : "bg-white"} ${autocompleteResults.length > 0 ? "rounded-t-lg border-b-0" : "rounded-full"}  ${hasSearched ? "" : "border border-[#AEBAD3]"} h-[52px] shadow-sm`}
-                >
-                  <Search className="text-[#AEBAD3] ml-4 mr-2" size={18} />
-                  <input
-                    ref={inputRef}
-                    placeholder="Search anything across connected apps..."
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value)
-                      setAutocompleteQuery(e.target.value)
-                      setOffset(0)
-                    }}
-                    className={`text-[#1C1D1F] w-full text-[15px] focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] leading-[24px] focus:outline-none ${hasSearched ? "bg-[#F0F4F7]" : ""}`}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleSearch()
-                        // we only want to look for answer if atleast
-                        // 3 works are there in the query
-                        if (query.split(" ").length > 2) {
-                          handleAnswer()
-                        }
-                      }
-                    }}
-                  />
-                  {!hasSearched ? (
-                    <Button
-                      onClick={(e) => handleSearch()}
-                      className="mr-2 bg-[#464B53] text-white p-2 hover:bg-[#5a5f66] rounded-full"
-                    >
-                      <ArrowRight className="text-white" size={20} />
-                    </Button>
-                  ) : (
-                    <X
-                      className="text-[#ACB8D1] cursor-pointer mr-[16px]"
-                      size={20}
-                      onClick={(e) => {
-                        setQuery("")
-                        inputRef.current?.focus()
-                      }}
-                    />
-                  )}
-                  {!!autocompleteResults?.length && (
-                    <div
-                      ref={autocompleteRef}
-                      className="absolute top-full w-full left-0 bg-white rounded-b-lg border border-t-0 border-[#AEBAD3] shadow-md"
-                    >
-                      {autocompleteResults.map((result, index) => (
-                        <AutocompleteElement
-                          key={index}
-                          onClick={() => {
-                            if (result.type === "file") {
-                              setQuery(result.title)
-                            }
-                            setAutocompleteResults([])
-                          }}
-                          result={result}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          {/* search filters */}
-          {hasSearched && (
-            <div className="ml-[230px] text-[13px]">
-              <SearchFilters />
-            </div>
-          )}
-        </div>
+        <SearchBar
+          ref={autocompleteRef}
+          hasSearched={hasSearched}
+          autocompleteResults={autocompleteResults}
+          setQuery={setQuery}
+          setAutocompleteResults={setAutocompleteResults}
+          setAutocompleteQuery={setAutocompleteQuery}
+          setOffset={setOffset}
+          setFilter={setFilter}
+          query={query}
+          handleSearch={handleSearch}
+          handleAnswer={handleAnswer}
+        />
+
         {hasSearched && (
-          <div className="h-full flex flex-row">
-            <div className="h-full flex flex-col">
+          <div className="h-full flex flex-row ml-[186px]">
+            <div className="h-full flex flex-col w-full max-w-3xl">
               {answer && answer.length > 0 && (
                 <div className="flex-grow flex mt-[24px] max-h-[242px]">
                   <img
-                    className="ml-[186px] mr-[20px] w-[24px] h-[24px]"
+                    className="mr-[20px] w-[24px] h-[24px]"
                     src={answerSparkle}
                   />
                   <div className="flex-grow overflow-hidden text-ellipsis whitespace-nowrap max-w-2xl">
@@ -429,8 +394,8 @@ export const Index = () => {
                 </div>
               )}
               {!!results?.length && (
-                <div className="flex flex-row ml-[186px] max-w-4xl">
-                  <div className=" max-w-3xl">
+                <div className="flex flex-row h-full w-full max-w-3xl border-r-[1px] border-[#E6EBF5] ">
+                  <div className="w-full max-w-3xl">
                     {results?.length > 0 ? (
                       results.map((result, index) => (
                         <SearchResult result={result} index={index} />
@@ -510,6 +475,17 @@ export const Index = () => {
   )
 }
 
+const searchParams = z.object({
+  page: z.number().optional(),
+  offset: z.number().optional(),
+  query: z.string().optional(),
+  app: z.nativeEnum(Apps).optional(),
+  entity: z.string().optional(),
+})
+
+type XyneSearch = z.infer<typeof searchParams>
+
 export const Route = createFileRoute("/_authenticated/")({
   component: Index,
+  validateSearch: (search) => searchParams.parse(search),
 })

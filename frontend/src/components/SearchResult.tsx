@@ -7,9 +7,10 @@ export const SearchResult = ({
   index,
 }: { result: SearchResultDiscriminatedUnion; index: number }) => {
   let content = <></>
+  let commonClassVals = "pr-[60px]"
   if (result.type === "file") {
     content = (
-      <div className="flex flex-col mt-[28px]" key={index}>
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">
           <a
             href={result.url ?? ""}
@@ -21,7 +22,7 @@ export const SearchResult = ({
             {result.title}
           </a>
         </div>
-        <div className="flex flex-row items-center mt-1">
+        <div className="flex flex-row items-center mt-1 ml-[44px]">
           <img
             referrerPolicy="no-referrer"
             className="mr-2 w-[16px] h-[16px] rounded-full"
@@ -47,13 +48,13 @@ export const SearchResult = ({
     )
   } else if (result.type === "user") {
     content = (
-      <div className="flex flex-col mt-[28px]" key={index}>
-        <div className="flex items-center justify-start space-x-2">
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start">
           <a
             href={`https://contacts.google.com/${result.email}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-[#2067F5] space-x-2"
+            className="flex items-center text-[#2067F5]"
           >
             {/* TODO: if photoLink doesn't exist then show icon */}
             <img
@@ -68,14 +69,14 @@ export const SearchResult = ({
     )
   } else if (result.type === "mail") {
     content = (
-      <div className="flex flex-col mt-[28px]" key={index}>
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start">
           {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
           <a
             href={`https://mail.google.com/mail/u/0/#inbox/${result.docId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center text-[#2067F5] space-x-2"
+            className="flex items-center text-[#2067F5]"
           >
             {/* TODO: if photoLink doesn't exist then show icon */}
             {/* <img

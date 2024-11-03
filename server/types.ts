@@ -123,28 +123,30 @@ export enum SyncCron {
   FullSync = "FullSync",
 }
 
-// TODO: the extra passthrough will need to be removed
-// it's kept because history id was getting removed
-// from gmail due to parse of selectSyncJobSchema
+// history id was getting removed if we just use union
+// and do parse of selectSyncJobSchema
+
 // Define ChangeToken schema
 const DefaultTokenSchema = z.object({
   token: z.string(),
   lastSyncedAt: z.coerce.date(),
-}).passthrough()
+})
 
 // Google Drive and Contact change token
 // clubbing drive, contact and other contact tokens
 const GoogleDriveChangeTokenSchema = z.object({
+  type: z.literal("googleDriveChangeToken"),
   driveToken: z.string(),
   contactsToken: z.string(),
   otherContactsToken: z.string(),
   lastSyncedAt: z.coerce.date(),
-}).passthrough()
+})
 
 const GmailChangeTokenSchema = z.object({
+  type: z.literal("gmailChangeToken"),
   historyId: z.string(),
   lastSyncedAt: z.coerce.date(),
-}).passthrough()
+})
 
 const ChangeTokenSchema = z.union([
   DefaultTokenSchema,
@@ -154,6 +156,7 @@ const ChangeTokenSchema = z.union([
 
 // Define UpdatedAtVal schema
 const UpdatedAtValSchema = z.object({
+  type: z.literal("updatedAt"),
   updatedAt: z.coerce.date(),
 })
 
@@ -218,6 +221,7 @@ export enum Subsystem {
   Vespa = "Vespa",
   Db = "Db",
   Api = "Api",
+  Chat = "Chat",
   Utils = "Utils",
   Queue = "Queue",
   Eval = "Eval",
@@ -234,3 +238,9 @@ export type additionalMessage = Partial<{
   Status: OperationStatus
   TimeTaken: number
 }>
+
+export enum MessageRole {
+  System = "system",
+  User = "user",
+  Assistant = "assistant",
+}

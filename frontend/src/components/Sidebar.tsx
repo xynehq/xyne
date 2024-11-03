@@ -1,11 +1,19 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Home, Search, Settings, Bell, User, Plug } from "lucide-react"
+import {
+  Home,
+  Search,
+  Settings,
+  Bell,
+  User,
+  Plug,
+  MessageSquarePlus,
+} from "lucide-react"
 
 export const Sidebar = ({ className = "" }: { className?: string }) => {
   const location = useLocation()
   return (
     <div
-      className={`h-full w-[52px] bg-gray-100 p-4 flex flex-col items-center space-y-6 ${className}`}
+      className={`h-full w-[52px] bg-gray-100 p-4 flex flex-col items-center space-y-6 fixed ${className} z-20`}
     >
       <Link to="/">
         <Home
@@ -19,6 +27,14 @@ export const Sidebar = ({ className = "" }: { className?: string }) => {
         <Search
           size={18}
           {...(location.pathname === "/search"
+            ? { className: "text-blue-500 hover:text-blue-600" }
+            : { className: "hover:text-blue-600" })}
+        />
+      </Link>
+      <Link to="/chat">
+        <MessageSquarePlus
+          size={18}
+          {...(location.pathname === "/_authenticated/chat"
             ? { className: "text-blue-500 hover:text-blue-600" }
             : { className: "hover:text-blue-600" })}
         />

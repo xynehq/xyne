@@ -6,6 +6,7 @@ import {
   ConverseStreamCommand,
   InvokeModelCommand,
   InvokeModelWithResponseStreamCommand,
+  SystemContentBlock,
   type ConverseStreamMetadataEvent,
   type Message,
   type TokenUsage,
@@ -159,6 +160,7 @@ interface ModelParams {
   userCtx?: string
   stream: boolean
   json?: boolean
+  messages?: Message[]
 }
 
 enum AIProviders {
@@ -174,6 +176,10 @@ interface ConverseResponse {
 }
 
 interface LLMProvider {
+  converseStream(
+    messages: Message[],
+    params?: ModelParams,
+  ): AsyncIterableIterator<ConverseResponse>
   converseStream(
     messages: Message[],
     params?: ModelParams,
@@ -810,3 +816,35 @@ export const analyzeQueryForNamesAndEmails = async (
     throw new Error("Could not get json response")
   }
 }
+
+export const userChat = (
+  context: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = BigModel
+    }
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = userChatSystem(context)
+    }
+
+    if (!params.messages) {
+      throw new Error("Cannot chat with empty messages")
+    }
+    return getProviderByModel(params.modelId).converseStream(
+      params.messages!,
+      params,
+    )
+  } catch (error) {
+    throw error
+  }
+}
+const userChatSystemPrompt =
+  "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
+
+const userChatSystem = (
+  userCtx: string,
+): string => `${userChatSystemPrompt}\n${userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""}
+Provide an accurate and concise answer.`

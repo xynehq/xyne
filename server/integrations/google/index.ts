@@ -151,7 +151,7 @@ export const syncGoogleWorkspace = async (
     await insertUsersForWorkspace(users)
     await db.transaction(async (trx) => {
       await updateSyncJob(trx, syncJob.id, {
-        config: { updatedAt: new Date() },
+        config: { updatedAt: new Date(), type: "updatedAt" },
         lastRanOn: new Date(),
         status: SyncJobStatus.Successful,
       })

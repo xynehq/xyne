@@ -16,6 +16,8 @@ import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as OauthSuccessImport } from './routes/oauth/success'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
+import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminIntegrationsImport } from './routes/_authenticated/admin/integrations'
 
 // Create/Update Routes
@@ -45,6 +47,16 @@ const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
+const AuthenticatedChatRoute = AuthenticatedChatImport.update({
+  path: '/chat',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+
+const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdImport.update({
+  path: '/$chatId',
+  getParentRoute: () => AuthenticatedChatRoute,
+} as any)
+
 const AuthenticatedAdminIntegrationsRoute =
   AuthenticatedAdminIntegrationsImport.update({
     path: '/admin/integrations',
@@ -68,6 +80,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth'
       preLoaderRoute: typeof AuthImport
       parentRoute: typeof rootRoute
+    }
+    '/_authenticated/chat': {
+      id: '/_authenticated/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof AuthenticatedChatImport
+      parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/search': {
       id: '/_authenticated/search'
@@ -97,6 +116,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/chat/$chatId': {
+      id: '/_authenticated/chat/$chatId'
+      path: '/$chatId'
+      fullPath: '/chat/$chatId'
+      preLoaderRoute: typeof AuthenticatedChatChatIdImport
+      parentRoute: typeof AuthenticatedChatImport
+    }
   }
 }
 
@@ -104,6 +130,9 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren({
   AuthenticatedRoute: AuthenticatedRoute.addChildren({
+    AuthenticatedChatRoute: AuthenticatedChatRoute.addChildren({
+      AuthenticatedChatChatIdRoute,
+    }),
     AuthenticatedSearchRoute,
     AuthenticatedIndexRoute,
     AuthenticatedAdminIntegrationsRoute,
@@ -128,6 +157,7 @@ export const routeTree = rootRoute.addChildren({
     "/_authenticated": {
       "filePath": "_authenticated.tsx",
       "children": [
+        "/_authenticated/chat",
         "/_authenticated/search",
         "/_authenticated/",
         "/_authenticated/admin/integrations"
@@ -135,6 +165,13 @@ export const routeTree = rootRoute.addChildren({
     },
     "/auth": {
       "filePath": "auth.tsx"
+    },
+    "/_authenticated/chat": {
+      "filePath": "_authenticated/chat.tsx",
+      "parent": "/_authenticated",
+      "children": [
+        "/_authenticated/chat/$chatId"
+      ]
     },
     "/_authenticated/search": {
       "filePath": "_authenticated/search.tsx",
@@ -150,6 +187,10 @@ export const routeTree = rootRoute.addChildren({
     "/_authenticated/admin/integrations": {
       "filePath": "_authenticated/admin/integrations.tsx",
       "parent": "/_authenticated"
+    },
+    "/_authenticated/chat/$chatId": {
+      "filePath": "_authenticated/chat.$chatId.tsx",
+      "parent": "/_authenticated/chat"
     }
   }
 }

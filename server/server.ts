@@ -3,6 +3,10 @@ import {
   AnswerApi,
   AutocompleteApi,
   autocompleteSchema,
+  chatBookmarkSchema,
+  chatRenameSchema,
+  chatSchema,
+  messageSchema,
   SearchApi,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
@@ -40,6 +44,13 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "./api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
+import {
+  ChatBookmarkApi,
+  ChatRenameApi,
+  GetChatApi,
+  MessageApi,
+  MessageRetryApi,
+} from "./api/chat"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -81,7 +92,9 @@ const AuthRedirect = async (c: Context, next: Next) => {
     // Verify the token if available
     await AuthMiddleware(c, next)
   } catch (err) {
-    Logger.error(`${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`)
+    Logger.error(
+      `${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`,
+    )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
     return c.redirect(`${frontendBaseURL}/auth`)
@@ -117,16 +130,24 @@ export const WsApp = app.get(
   }),
 )
 
-// export type WebSocketApp = typeof WsApp
-
 export const AppRoutes = app
-  .basePath("/api")
+  .basePath("/api/v1")
   .use("*", AuthMiddleware)
   .post(
     "/autocomplete",
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
+  .post("/chat", zValidator("json", chatSchema), GetChatApi)
+  .post(
+    "/chat/bookmark",
+    zValidator("json", chatBookmarkSchema),
+    ChatBookmarkApi,
+  )
+  .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
+  // this is event streaming end point
+  .get("/message/create", zValidator("query", messageSchema), MessageApi)
+  .post("/message/retry", zValidator("json", messageSchema), MessageRetryApi)
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)

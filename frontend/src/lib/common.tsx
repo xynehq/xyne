@@ -16,11 +16,14 @@ import {
 export const getIcon = (
   app: Apps,
   entity: Entity,
-  size?: { w: number; h: number; mr: number },
+  size?: { w: number; h: number; mr: number; ml?: number },
 ) => {
   let classNameVal = ""
   if (size) {
     classNameVal = `h-[${size.h}px] w-[${size.w}px] mr-[${size.mr}px]`
+    if (size.ml) {
+      classNameVal += ` ml-[${size.ml}px]`
+    }
   } else {
     classNameVal = "h-[12px] w-[12px] mr-[10px]"
   }

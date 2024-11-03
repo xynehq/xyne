@@ -52,7 +52,7 @@ export default function LoginForm() {
 
 export const Route = createFileRoute("/auth")({
   beforeLoad: async () => {
-    const res = await api.api.me.$get()
+    const res = await api.me.$get()
     if (res.ok) {
       // TODO: to type this response
       const userWorkspace = await res.json()

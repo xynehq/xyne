@@ -1,6 +1,6 @@
 {
-  "id": "9c3d117b-b791-4768-9632-36be1a7016c2",
-  "prevId": "9c04ffae-c2c5-43fe-a3e8-19b04ec49a3c",
+  "id": "b1a40aae-ced3-49fe-a225-4994078e99a2",
+  "prevId": "b82072ef-535f-481c-b1c4-88845c9f0341",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -57,6 +57,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "attachments": {
+          "name": "attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -89,7 +95,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": true,
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -402,11 +408,6 @@
           "name": "messages_external_id_unique",
           "nullsNotDistinct": false,
           "columns": ["external_id"]
-        },
-        "messages_chat_external_id_unique": {
-          "name": "messages_chat_external_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["chat_external_id"]
         }
       }
     },

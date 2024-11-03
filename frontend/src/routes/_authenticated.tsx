@@ -3,7 +3,7 @@ import { api } from "@/api"
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
-    const res = await api.api.me.$get()
+    const res = await api.me.$get()
     if (!res.ok) {
       // If user is not logged in, take user to '/auth'
       throw redirect({ to: "/auth" })

@@ -84,8 +84,10 @@ async function deleteAllDocuments() {
         `Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`,
       )
     }
-  } catch (error) { 
-    Logger.error(`Error deleting documents:, ${error} ${(error as Error).stack}`)
+  } catch (error) {
+    Logger.error(
+      `Error deleting documents:, ${error} ${(error as Error).stack}`,
+    )
     throw new ErrorDeletingDocuments({
       cause: error as Error,
       sources: AllSources,
@@ -274,7 +276,7 @@ export const autocomplete = async (
     })
 
     if (!response.ok) {
-      const errorText =  response.statusText
+      const errorText = response.statusText
       throw new Error(
         `Failed to perform autocomplete search: ${response.status} ${response.statusText} - ${errorText}`,
       )
@@ -283,7 +285,9 @@ export const autocomplete = async (
     const data = await response.json()
     return data
   } catch (error) {
-    Logger.error(`Error performing autocomplete search:, ${error} ${(error as Error).stack} `)
+    Logger.error(
+      `Error performing autocomplete search:, ${error} ${(error as Error).stack} `,
+    )
     throw new ErrorPerformingSearch({
       message: `Error performing autocomplete search`,
       cause: error as Error,
@@ -384,7 +388,9 @@ export const groupVespaSearch = async (
     const data = await response.json()
     return handleVespaGroupResponse(data)
   } catch (error) {
-    Logger.error(`Error performing search:, ${error} - ${(error as Error).stack}`)
+    Logger.error(
+      `Error performing search:, ${error} - ${(error as Error).stack}`,
+    )
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
