@@ -88,7 +88,7 @@ export const GroupFilter = ({
   total: number
 }) => {
   return (
-    <div className="flex border-l-[1px] border-[#E6EBF5] flex-col">
+    <div className="flex flex-col">
       <p className="text-[11.5px] font-medium text-[#97A6C4] ml-[40px] mt-[28px]">{`FOUND ${total} RESULTS`}</p>
       <GroupFilterItem
         className={"mt-4"}

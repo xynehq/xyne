@@ -408,7 +408,7 @@ export const Index = () => {
           )}
         </div>
         {hasSearched && (
-          <div className="h-full flex flex-row">
+          <div className="h-full flex flex-row ">
             <div className="h-full flex flex-col">
               {answer && answer.length > 0 && (
                 <div className="flex-grow flex mt-[24px] max-h-[242px]">
@@ -429,7 +429,7 @@ export const Index = () => {
                 </div>
               )}
               {!!results?.length && (
-                <div className="flex flex-row ml-[186px] max-w-4xl">
+                <div className="flex flex-row ml-[186px] max-w-4xl border-r-[1px] border-[#E6EBF5] ">
                   <div className=" max-w-3xl">
                     {results?.length > 0 ? (
                       results.map((result, index) => (
