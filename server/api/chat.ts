@@ -112,6 +112,7 @@ export const MessageApi = async (c: Context) => {
             userId: user.id,
             email: user.email,
             title,
+            attachments: [],
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
