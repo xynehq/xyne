@@ -225,6 +225,7 @@ export enum Subsystem {
   Utils = "Utils",
   Queue = "Queue",
   Eval = "Eval",
+  AI = "AI",
 }
 
 export enum OperationStatus {
