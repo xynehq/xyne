@@ -1,5 +1,9 @@
 import { userContext } from "@/ai/context"
-import { Models, userChat } from "@/ai/provider/bedrock"
+import {
+  generateTitleUsingQuery,
+  Models,
+  userChat,
+} from "@/ai/provider/bedrock"
 import config from "@/config"
 import {
   getChatByExternalId,
@@ -100,9 +104,18 @@ export const MessageApi = async (c: Context) => {
     let messages: SelectMessage[] = []
     const costArr = []
     // create chat
+    let title = ""
     if (!chatId) {
       // let llm decide a title
-      const title: string = message.slice(0, 10)
+      const titleResp = await generateTitleUsingQuery(message, {
+        modelId: Models.Llama_3_1_70B,
+        stream: false,
+      })
+      title = titleResp.title
+      const cost = titleResp.cost
+      if (cost) {
+        costArr.push(cost)
+      }
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -160,6 +173,13 @@ export const MessageApi = async (c: Context) => {
         data: "",
         event: ChatSSEvents.Start,
       })
+
+      if (!chatId) {
+        await stream.writeSSE({
+          data: title,
+          event: ChatSSEvents.ChatTitleUpdate,
+        })
+      }
       Logger.info("Chat stream started")
       await stream.writeSSE({
         event: ChatSSEvents.ResponseMetadata,

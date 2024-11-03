@@ -70,7 +70,7 @@ export const ChatPage = () => {
     // Append the user's message to the chat
     setMessages((prevMessages) => [
       ...prevMessages,
-      { role: "user", message: query },
+      { messageRole: "user", message: query },
     ])
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
@@ -113,11 +113,6 @@ export const ChatPage = () => {
             to: "/chat/$chatId",
             params: { chatId },
           })
-          if (messages.length === 0) {
-            setChatTitle(query.substring(0, 10))
-          } else {
-            setChatTitle(messages[0].message.substring(0, 10))
-          }
         }, 1000)
       }
       setCurrentResp((resp) => {
@@ -129,14 +124,16 @@ export const ChatPage = () => {
       })
     })
 
-    eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {})
+    eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
+      setChatTitle(event.data)
+    })
 
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
       const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { role: "assistant", message: currentResp.resp },
+          { messageRole: "assistant", message: currentResp.resp },
         ])
       }
       setCurrentResp(null)
@@ -151,7 +148,7 @@ export const ChatPage = () => {
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { role: "assistant", message: currentResp.resp },
+          { messageRole: "assistant", message: currentResp.resp },
         ])
       }
       setCurrentResp(null)

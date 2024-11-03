@@ -15,6 +15,11 @@ import config from "@/config"
 import { z } from "zod"
 const { AwsAccessKey, AwsSecretKey, bedrockSupport, OpenAIKey } = config
 import OpenAI from "openai"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
+
+const Logger = getLogger(Subsystem.AI)
 
 export enum Models {
   Llama_3_2_1B = "us.meta.llama3-2-1b-instruct-v1:0",
@@ -848,3 +853,74 @@ const userChatSystem = (
   userCtx: string,
 ): string => `${userChatSystemPrompt}\n${userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""}
 Provide an accurate and concise answer.`
+
+const generateTitleSystemPrompt = `
+You are an assistant tasked with generating a concise and relevant title for a chat based on the user's query.
+
+Please provide a suitable title that accurately reflects the essence of the query in JSON format as follows:
+{
+  "title": "Your generated title here"
+}
+`
+export const generateTitleUsingQuery = async (
+  query: string,
+  params: ModelParams,
+): Promise<{ title: string; cost: number }> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = BigModel
+    }
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = generateTitleSystemPrompt
+    }
+
+    params.json = true
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: query,
+            },
+          ],
+        },
+      ],
+      params,
+    )
+    if (text) {
+      let jsonVal
+      try {
+        jsonVal = JSON.parse(text.trim())
+      } catch (e) {
+        try {
+          jsonVal = JSON.parse(text.trim().split("```")[1].trim())
+        } catch (parseError) {
+          try {
+            jsonVal = JSON.parse(
+              text.trim().split("```json")[1].split("```")[0].trim(),
+            )
+          } catch (parseError) {
+            console.error("Error parsing structured response:", parseError)
+            // Handle parsing error or return the raw response
+            throw parseError
+          }
+        }
+      }
+      return {
+        title: jsonVal.title,
+        cost: cost!,
+      }
+    } else {
+      throw new Error("Could not get json response")
+    }
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error asking question: ${errMessage} ${(error as Error).stack}`,
+    )
+    throw error
+  }
+}
