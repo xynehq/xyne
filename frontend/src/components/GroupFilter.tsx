@@ -2,6 +2,7 @@ import { Apps, DriveEntity, Entity, GooglePeopleEntity } from "shared/types"
 import { Filter, Groups } from "@/types"
 import { getIcon } from "@/lib/common"
 import allFilter from "@/assets/allFilter.svg"
+import { humanizeNumbers } from "@/lib/utils"
 
 const flattenGroups = (groups: Groups) => {
   return Object.keys(groups || {}).flatMap((app) =>
@@ -21,6 +22,7 @@ const GroupFilterItem = ({
   isFilter,
   Image,
   className,
+  index,
 }: {
   title: string
   onClick: any
@@ -29,9 +31,10 @@ const GroupFilterItem = ({
   isFilter: any
   Image: JSX.Element
   className?: string
+  index: number
 }) => {
   return (
-    <div className={`rounded-md h-[32px] ml-[40px] ${className}`}>
+    <div className={`rounded-md h-[32px] ml-[40px] ${className}`} key={index}>
       <div
         onClick={onClick}
         className={`${isFilter(filter) ? "bg-[#F0F4F7]" : ""} flex flex-row rounded-[6px] items-center justify-between cursor-pointer  pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
@@ -89,7 +92,7 @@ export const GroupFilter = ({
 }) => {
   return (
     <div className="flex flex-col">
-      <p className="text-[11.5px] font-medium text-[#97A6C4] ml-[40px] mt-[28px]">{`FOUND ${total} RESULTS`}</p>
+      <p className="text-[11.5px] font-medium text-[#97A6C4] ml-[40px] mt-[28px] tracking-[0.08em]">{`FOUND ${humanizeNumbers(total)} RESULTS`}</p>
       <GroupFilterItem
         className={"mt-4"}
         title={"All"}
@@ -100,10 +103,12 @@ export const GroupFilter = ({
         }}
         total={total!}
         Image={<img src={allFilter} className="mr-[10px]" />}
+        index={0}
       />
       {flattenGroups(groups).map(({ app, entity, count }, index) => {
         return (
           <GroupFilterItem
+            index={index}
             title={getName(app, entity)}
             filter={filter}
             isFilter={(filter: Filter | null) =>

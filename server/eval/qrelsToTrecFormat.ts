@@ -58,7 +58,9 @@ const modify = async () => {
     fs.promises.writeFile(outputPath, processedResultsData.join("\n"))
     process.stdout.write("qrels processed successfull")
   } catch (error) {
-    Logger.error(`Error processing : ${(error as Error).message} \n ${(error as Error).stack}` )
+    Logger.error(
+      `Error processing : ${(error as Error).message} \n ${(error as Error).stack}`,
+    )
   }
 }
 

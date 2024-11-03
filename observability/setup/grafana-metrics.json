@@ -37,7 +37,7 @@
   ],
   "panels": [
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -245,7 +245,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -341,7 +341,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -449,7 +449,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -546,7 +546,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -672,7 +672,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -769,7 +769,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -878,7 +878,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -990,7 +990,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1085,7 +1085,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1180,7 +1180,7 @@
       "type": "timeseries"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1244,7 +1244,7 @@
       "type": "piechart"
     },
     {
-       "datasource": "$prometheusSource",
+      "datasource": "$prometheusSource",
       "fieldConfig": {
         "defaults": {
           "color": {

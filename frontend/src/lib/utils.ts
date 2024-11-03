@@ -34,3 +34,20 @@ export const replaceLinks = (text: string): string => {
     }
   })
 }
+
+export const humanizeNumbers = (num: number): string => {
+  if (num < 1000) return num.toString()
+
+  const units = ["k", "M", "B", "T"]
+  const exponent = Math.floor(Math.log10(num) / 3)
+  const unit = units[exponent - 1]
+  const scaledNum = num / Math.pow(1000, exponent)
+
+  // Use Intl.NumberFormat to format the number
+  const formatter = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: scaledNum < 10 ? 1 : 0,
+  })
+
+  return `${formatter.format(scaledNum)}${unit}`
+}

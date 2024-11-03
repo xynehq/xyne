@@ -13,7 +13,7 @@ export const Sidebar = ({ className = "" }: { className?: string }) => {
   const location = useLocation()
   return (
     <div
-      className={`h-full w-[52px] bg-gray-100 p-4 flex flex-col items-center space-y-6 fixed ${className}`}
+      className={`h-full w-[52px] bg-gray-100 p-4 flex flex-col items-center space-y-6 fixed ${className} z-20`}
     >
       <Link to="/">
         <Home

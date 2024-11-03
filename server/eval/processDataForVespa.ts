@@ -97,7 +97,9 @@ const processData = async (filePath: string) => {
         processedDocs.push(processVespaDoc(JSON.parse(line)))
         totalProcessed++
       } catch (error) {
-        Logger.error(`Error processing line ${linesRead}: ${(error as Error).stack}`)
+        Logger.error(
+          `Error processing line ${linesRead}: ${(error as Error).stack}`,
+        )
         await fs.promises.appendFile(
           "error_log.txt",
           `Line ${linesRead}: ${error}\n${line}\n\n`,
@@ -124,7 +126,9 @@ const processData = async (filePath: string) => {
     console.log(`Total lines read: ${linesRead}`)
     console.log(`Total documents processed: ${totalProcessed}`)
   } catch (error) {
-    Logger.error(`Processing failed: ${(error as Error).message} ${(error as Error).stack}`)
+    Logger.error(
+      `Processing failed: ${(error as Error).message} ${(error as Error).stack}`,
+    )
     throw error
   }
 }
