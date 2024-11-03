@@ -2,7 +2,7 @@ import { Link, useLocation } from "@tanstack/react-router"
 import {
   Home,
   Search,
-  Settings,
+  Settings2,
   Bell,
   User,
   Plug,
@@ -34,7 +34,7 @@ export const Sidebar = ({ className = "" }: { className?: string }) => {
       <Link to="/chat">
         <MessageSquarePlus
           size={18}
-          {...(location.pathname === "/_authenticated/chat"
+          {...(location.pathname.substring(0, 5) === "/chat"
             ? { className: "text-blue-500 hover:text-blue-600" }
             : { className: "hover:text-blue-600" })}
         />
@@ -62,7 +62,7 @@ export const Sidebar = ({ className = "" }: { className?: string }) => {
       {
         // @ts-ignore
         <Link to="/settings" className="hover:text-blue-500 mt-auto">
-          <Settings size={18} />
+          <Settings2 size={18} />
         </Link>
       }
     </div>
