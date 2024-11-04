@@ -167,7 +167,7 @@ export const syncGoogleWorkspace = async (
         errorMessage: "",
         app: Apps.GoogleWorkspace,
         status: SyncJobStatus.Successful,
-        config: { updatedAt: new Date().toISOString() },
+        config: { updatedAt: new Date().toISOString(), type: "updatedAt" },
         type: SyncCron.FullSync,
         lastRanOn: new Date(),
       })
@@ -194,7 +194,7 @@ export const syncGoogleWorkspace = async (
       errorMessage,
       app: Apps.GoogleWorkspace,
       status: SyncJobStatus.Failed,
-      config: { updatedAt: new Date().toISOString() },
+      config: { updatedAt: new Date().toISOString(), type: "updatedAt" },
       type: SyncCron.FullSync,
       lastRanOn: new Date(),
     })
@@ -244,6 +244,7 @@ export const handleGoogleOAuthIngestion = async (
     ])
     const changeTokens = {
       driveToken: startPageToken,
+      type: "googleDriveChangeToken",
       contactsToken,
       otherContactsToken,
       lastSyncedAt: new Date().toISOString(),
@@ -273,7 +274,11 @@ export const handleGoogleOAuthIngestion = async (
         app: Apps.Gmail,
         connectorId: connector.id,
         authType: AuthType.OAuth,
-        config: { historyId, lastSyncedAt: new Date().toISOString() },
+        config: {
+          historyId,
+          type: "gmailChangeToken",
+          lastSyncedAt: new Date().toISOString(),
+        },
         email: userEmail,
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
@@ -384,6 +389,7 @@ export const handleGoogleServiceAccountIngestion = async (
           config: {
             driveToken,
             contactsToken,
+            type: "googleDriveChangeToken",
             otherContactsToken,
             lastSyncedAt: new Date().toISOString(),
           },
@@ -398,7 +404,11 @@ export const handleGoogleServiceAccountIngestion = async (
           app: Apps.Gmail,
           connectorId: connector.id,
           authType: AuthType.ServiceAccount,
-          config: { historyId, updatedAt: new Date().toISOString() },
+          config: {
+            historyId,
+            type: "gmailChangeToken",
+            updatedAt: new Date().toISOString(),
+          },
           email,
           type: SyncCron.ChangeToken,
           status: SyncJobStatus.NotStarted,
@@ -411,7 +421,7 @@ export const handleGoogleServiceAccountIngestion = async (
         app: Apps.GoogleWorkspace,
         connectorId: connector.id,
         authType: AuthType.ServiceAccount,
-        config: { updatedAt: new Date().toISOString() },
+        config: { updatedAt: new Date().toISOString(), type: "updatedAt" },
         email: "",
         type: SyncCron.FullSync,
         status: SyncJobStatus.NotStarted,
