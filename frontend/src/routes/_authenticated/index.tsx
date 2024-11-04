@@ -73,6 +73,8 @@ export const Index = () => {
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter | null>(null)
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
+  const [filteredSearchMeta, setFilteredSearchMeta] =
+    useState<SearchMeta | null>(null)
   const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
@@ -202,9 +204,8 @@ export const Index = () => {
   }
 
   const handleSearch = async (newOffset = offset, newFilter: Filter | null) => {
-    if (!query) return // If the query is empty, do nothing
+    if (!query) return
     setHasSearched(true)
-
     setAutocompleteResults([])
     try {
       let params = {}
@@ -285,7 +286,17 @@ export const Index = () => {
       if (response.ok) {
         const data: SearchResponse = await response.json()
 
-        setResults(data.results)
+        if (newOffset > 0) {
+          setResults((prevResults) => [...prevResults, ...data.results])
+        } else {
+          setResults(data.results)
+        }
+
+        if (newFilter) {
+          setFilteredSearchMeta({ totalCount: data.count })
+        } else {
+          setSearchMeta({ totalCount: data.count })
+        }
         setAutocompleteResults([])
         // ensure even if autocomplete results came a little later we don't show right after we show
         // first set of results after a search
@@ -299,7 +310,6 @@ export const Index = () => {
         }, 1000)
 
         if (groupCount) {
-          setSearchMeta({ totalCount: data.count })
           setGroups(data.groupCount)
         }
       } else {
@@ -321,11 +331,11 @@ export const Index = () => {
     }
   }
 
-  // const handleNext = () => {
-  //   const newOffset = offset + page
-  //   setOffset(newOffset)
-  //   handleSearch(newOffset) // Trigger search with the updated offset
-  // }
+  const handleNext = () => {
+    const newOffset = offset + page
+    setOffset(newOffset)
+    handleSearch(newOffset, filter) // Trigger search with the updated offset
+  }
 
   // const goToPage = (pageNumber: number) => {
   //   const newOffset = pageNumber * page
@@ -358,6 +368,9 @@ export const Index = () => {
       handleSearch(0, { app, entity })
     }
   }
+  const totalCount = (filter
+    ? filteredSearchMeta?.totalCount
+    : searchMeta?.totalCount) || 0
 
   return (
     <div className="h-full w-full flex">
@@ -448,10 +461,19 @@ export const Index = () => {
                 </div>
               )}
 
-              <button className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]">
-                <ChevronDown className="mr-[6px]" size={18} stroke="#464B53" />
-                <span>More Results</span>
-              </button>
+              {results.length > 0 && totalCount > page && results.length < (totalCount || 0) && (
+                <button
+                  className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
+                  onClick={handleNext}
+                >
+                  <ChevronDown
+                    className="mr-[7px]"
+                    size={18}
+                    stroke="#464B53"
+                  />
+                  <span>More Results</span>
+                </button>
+              )}
             </div>
             {groups && (
               <GroupFilter
@@ -463,59 +485,6 @@ export const Index = () => {
             )}
           </div>
         )}
-        {/* <div className="mt-auto flex space-x-2 items-center justify-center w-full">
-          {offset > 0 && (
-            <Button
-              className="bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none"
-              onClick={(e) => {
-                handlePrev()
-                setPageNumber((prev) => prev - 1)
-              }}
-            >
-              <ChevronLeft />
-            </Button>
-
-          {searchMeta && (
-            <div className="flex space-x-2 items-center">
-              {Array(
-                Math.round(
-                  (filter && groups
-                    ? groups[filter.app][filter.entity]
-                    : searchMeta.totalCount) / page,
-                ) || 1,
-              )
-                .fill(0)
-                .map((count, index) => {
-                  return (
-                    <p
-                      key={index}
-                      className={`cursor-pointer hover:text-sky-700 ${index + 1 === pageNumber ? "text-blue-500" : "text-gray-700"}`}
-                      onClick={(e) => {
-                        goToPage(index)
-                        setPageNumber(index + 1)
-                      }}
-                    >
-                      {index + 1}
-                    </p>
-                  )
-                })}
-            </div>
-          {searchMeta &&
-            results?.length > 0 &&
-            pageNumber * page < searchMeta.totalCount && (
-              <Button
-                className="bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none"
-                onClick={(e) => {
-                  handleNext()
-                  setPageNumber((prev) => prev + 1)
-                }}
-              >
-                <ChevronRight />
-              </Button>
-            )} */}
-
-        {/* </div>
-        )} */}
       </div>
     </div>
   )
