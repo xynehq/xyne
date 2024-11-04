@@ -184,6 +184,7 @@ export enum ChatSSEvents {
   ResponseUpdate = "u",
   End = "e",
   ChatTitleUpdate = "ct",
+  CitationsUpdate = "cu",
 }
 
 const messageMetadataSchema = z.object({

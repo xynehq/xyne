@@ -42,21 +42,25 @@ export const ChatPage = () => {
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    data?.messages || [],
+    isWithChatId ? data?.messages || [] : [],
   )
   const [chatId, setChatId] = useState<string | null>(
     (params as any).chatId || null,
   )
   const [chatTitle, setChatTitle] = useState<string | null>(
-    data?.chat.title || null,
+    isWithChatId ? data?.chat.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
   const currentRespRef = useRef<CurrentResp | null>(null)
-  const [chatStarted, setChatStarted] = useState<boolean>(!!data?.messages)
+  const [chatStarted, setChatStarted] = useState<boolean>(
+    isWithChatId ? !!data?.messages : false,
+  )
   const [bookmark, setBookmark] = useState<boolean>(
-    !!data?.chat.isBookmarked || false,
+    isWithChatId ? !!data?.chat.isBookmarked || false : false,
   )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
 
   useEffect(() => {
     if (inputRef.current) {
@@ -172,6 +176,29 @@ export const ChatPage = () => {
     }
   }
 
+  const isScrolledToBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container) return true
+
+    const threshold = 100 // pixels from bottom to consider "at bottom"
+    return (
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      threshold
+    )
+  }
+
+  const handleScroll = () => {
+    const isAtBottom = isScrolledToBottom()
+    setUserHasScrolled(!isAtBottom)
+  }
+
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container || userHasScrolled) return
+
+    container.scrollTop = container.scrollHeight
+  }, [messages, currentResp?.resp])
+
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar />
@@ -193,9 +220,13 @@ export const ChatPage = () => {
         <div
           className={`h-full w-full flex ${chatStarted ? "items-end" : "items-center"} justify-center`}
         >
-          <div className="w-full max-w-3xl flex-grow flex flex-col p-6">
+          <div className="w-full h-full max-w-3xl flex-grow flex flex-col p-6 justify-between">
             {/* Chat Messages Container */}
-            <div className="flex flex-col space-y-4 overflow-y-auto mb-6 max-h-[60vh]">
+            <div
+              ref={messagesContainerRef}
+              onScroll={handleScroll}
+              className="flex flex-col space-y-4 overflow-y-auto mb-6 flex-grow"
+            >
               {messages.map((message, index) => (
                 <ChatMessage
                   key={index}
@@ -214,7 +245,7 @@ export const ChatPage = () => {
             </div>
 
             {/* Bottom Bar with Input and Icons */}
-            <div className="flex flex-col w-full border rounded-[20px]">
+            <div className="flex flex-col w-full border rounded-[20px] mt-auto">
               {/* Expanding Input Area */}
               <div className="relative flex items-center">
                 <textarea

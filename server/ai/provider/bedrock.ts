@@ -16,8 +16,9 @@ import { z } from "zod"
 const { AwsAccessKey, AwsSecretKey, bedrockSupport, OpenAIKey } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
+import { parse } from "partial-json"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -612,30 +613,7 @@ export const analyzeQuery = async (
       throw new Error("Invalid response")
     }
 
-    // Attempt to parse the response as JSON
-    let structuredResponse
-    try {
-      structuredResponse = JSON.parse(fullResponse.trim())
-    } catch (parseError) {
-      // try against backticks
-      // a lot of the times the json is in ```
-      // TODO: check with startOf before hand itself to prevent doing this in catch only
-      try {
-        structuredResponse = JSON.parse(
-          fullResponse.trim().split("```")[1].trim(),
-        )
-      } catch (parseError) {
-        try {
-          structuredResponse = JSON.parse(
-            fullResponse.trim().split("```json")[1].split("```")[0].trim(),
-          )
-        } catch (parseError) {
-          console.error("Error parsing structured response:", parseError)
-          // Handle parsing error or return the raw response
-          throw parseError
-        }
-      }
-    }
+    const structuredResponse = jsonParseLLMOutput(fullResponse)
 
     return [QueryContextRank.parse(structuredResponse), cost!]
   } catch (error) {
@@ -702,28 +680,7 @@ export const analyzeQueryMetadata = async (
     if (!text) {
       throw new Error("Invalid text")
     }
-    // Attempt to parse the response as JSON
-    let structuredResponse
-    try {
-      structuredResponse = JSON.parse(text.trim())
-    } catch (parseError) {
-      // try against backticks
-      // a lot of the times the json is in ```
-      // TODO: check with startOf before hand itself to prevent doing this in catch only
-      try {
-        structuredResponse = JSON.parse(text.trim().split("```")[1].trim())
-      } catch (parseError) {
-        try {
-          structuredResponse = JSON.parse(
-            text.trim().split("```json")[1].split("```")[0].trim(),
-          )
-        } catch (parseError) {
-          console.error("Error parsing structured response:", parseError)
-          // Handle parsing error or return the raw response
-          throw parseError
-        }
-      }
-    }
+    const structuredResponse = jsonParseLLMOutput(text)
 
     return [QueryContextRank.parse(structuredResponse), cost!]
   } catch (error) {
@@ -744,6 +701,22 @@ const QueryAnalysisSchema = z.object({
   mentionedNames: z.array(z.string()),
   mentionedEmails: z.array(z.string()),
 })
+
+const jsonParseLLMOutput = (text: string): any => {
+  let jsonVal
+  try {
+    jsonVal = JSON.parse(text.trim())
+  } catch (e) {
+    try {
+      jsonVal = JSON.parse(text.replace(/```(json)?/g, "").trim())
+    } catch (parseError) {
+      console.error("Error parsing structured response:", parseError)
+      // Handle parsing error or return the raw response
+      throw parseError
+    }
+  }
+  return jsonVal
+}
 
 type QueryAnalysisResult = z.infer<typeof QueryAnalysisSchema>
 
@@ -789,30 +762,13 @@ export const analyzeQueryForNamesAndEmails = async (
     },
   ]
 
-  const { text, cost } = await getProviderByModel(params.modelId).converse(
+  let { text, cost } = await getProviderByModel(params.modelId).converse(
     messages,
     params,
   )
 
   if (text) {
-    let jsonVal
-    try {
-      jsonVal = JSON.parse(text.trim())
-    } catch (e) {
-      try {
-        jsonVal = JSON.parse(text.trim().split("```")[1].trim())
-      } catch (parseError) {
-        try {
-          jsonVal = JSON.parse(
-            text.trim().split("```json")[1].split("```")[0].trim(),
-          )
-        } catch (parseError) {
-          console.error("Error parsing structured response:", parseError)
-          // Handle parsing error or return the raw response
-          throw parseError
-        }
-      }
-    }
+    const jsonVal = jsonParseLLMOutput(text)
     return {
       result: QueryAnalysisSchema.parse(jsonVal),
       cost: cost!,
@@ -891,24 +847,7 @@ export const generateTitleUsingQuery = async (
       params,
     )
     if (text) {
-      let jsonVal
-      try {
-        jsonVal = JSON.parse(text.trim())
-      } catch (e) {
-        try {
-          jsonVal = JSON.parse(text.trim().split("```")[1].trim())
-        } catch (parseError) {
-          try {
-            jsonVal = JSON.parse(
-              text.trim().split("```json")[1].split("```")[0].trim(),
-            )
-          } catch (parseError) {
-            console.error("Error parsing structured response:", parseError)
-            // Handle parsing error or return the raw response
-            throw parseError
-          }
-        }
-      }
+      const jsonVal = jsonParseLLMOutput(text)
       return {
         title: jsonVal.title,
         cost: cost!,
@@ -921,6 +860,61 @@ export const generateTitleUsingQuery = async (
     Logger.error(
       `Error asking question: ${errMessage} ${(error as Error).stack}`,
     )
+    throw error
+  }
+}
+
+// const chatWithCitationsSystemPrompt = `
+// You are an assistant that answers questions based on the provided context. Include citations by referencing the index of the context that supports each part of your answer.
+
+// Provide the answer in the following JSON format:
+// {
+//   "answer": "Your answer here",
+//   "citations": [X, Y, Z]
+// }
+
+// Do not include any additional text outside of the JSON structure.
+// `;
+const chatWithCitationsSystemPrompt = (userCtx?: string) => `
+You are an assistant that answers questions based on the provided context. Include citations by referencing the index of the context that supports each part of your answer.
+${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
+
+Provide the answer in the following JSON format:
+{
+  "answer": "Your answer here",
+  "citations": [X, Y, Z]
+}
+
+Do not include any additional text outside of the JSON structure.
+`
+
+export const askQuestionWithCitations = (
+  query: string,
+  userContext: string,
+  context: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    params.systemPrompt = chatWithCitationsSystemPrompt(userContext)
+    params.json = true // Ensure that the provider returns JSON
+    const baseMessage: Message = {
+      role: MessageRole.User as const,
+      content: [
+        {
+          text: `User query: ${query}
+Based on the following context, provide an answer in JSON format with citations.
+Context:
+${context}`,
+        },
+      ],
+    }
+
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    return getProviderByModel(params.modelId).converseStream(messages, params)
+  } catch (error) {
     throw error
   }
 }

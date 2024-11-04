@@ -245,3 +245,8 @@ export enum MessageRole {
   User = "user",
   Assistant = "assistant",
 }
+
+export const AnswerWithCitationsSchema = z.object({
+  answer: z.string(),
+  citations: z.array(z.number()),
+})
