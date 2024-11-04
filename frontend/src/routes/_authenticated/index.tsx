@@ -30,6 +30,12 @@ import { GroupFilter } from "@/components/GroupFilter"
 import { SearchBar } from "@/components/SearchBar"
 import { Button } from "@/components/ui/button"
 import { z } from "zod"
+import {
+  ChevronDown,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  MessageSquareShare,
+} from "lucide-react"
 
 const logger = console
 
@@ -70,6 +76,7 @@ export const Index = () => {
   const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
+  const [isExpanded, setIsExpanded] = useState<boolean>(false)
 
   const navigate = useNavigate({ from: "/search" })
 
@@ -373,39 +380,78 @@ export const Index = () => {
         />
 
         {hasSearched && (
-          <div className="h-full flex flex-row ml-[186px]">
-            <div className="h-full flex flex-col w-full max-w-3xl">
+          <div className="flex flex-row ml-[186px]">
+            <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5]">
               {answer && answer.length > 0 && (
-                <div className="flex-grow flex mt-[24px] max-h-[242px]">
+                <div className="flex mt-[24px]">
                   <img
                     className="mr-[20px] w-[24px] h-[24px]"
                     src={answerSparkle}
                   />
-                  <div className="flex-grow overflow-hidden text-ellipsis whitespace-nowrap max-w-2xl">
-                    <MarkdownPreview
-                      source={answer}
-                      style={{
-                        padding: 0,
-                        backgroundColor: "#ffffff",
-                        color: "#464B53",
-                      }}
-                    />
+                  <div className="flex-grow max-w-2xl">
+                    <div
+                      className={`relative transition-max-height duration-200 ease-in-out ${
+                        !isExpanded ? "max-h-[200px] overflow-hidden" : ""
+                      }`}
+                    >
+                      <MarkdownPreview
+                        source={answer}
+                        style={{
+                          padding: 0,
+                          backgroundColor: "#ffffff",
+                          color: "#464B53",
+                        }}
+                      />
+                      Gradient overlay when not expanded
+                      {!isExpanded && (
+                        <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
+                      )}
+                    </div>
+
+                    {/* Toggle Buttons */}
+                    <div className="flex flex-row mt-2">
+                      <button
+                        className="pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] rounded-full flex items-center bg-[#F0F4F7]"
+                        onClick={() => setIsExpanded(!isExpanded)}
+                      >
+                        {!isExpanded ? (
+                          <ChevronsUpDown size={16} stroke="#707F9F" />
+                        ) : (
+                          <ChevronsDownUp size={16} stroke="#707F9F" />
+                        )}
+                        {isExpanded ? (
+                          <span className="ml-2">Show less</span>
+                        ) : (
+                          <span className="ml-2">Show more</span>
+                        )}
+                      </button>
+                      <button
+                        className="ml-3 pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] rounded-full flex items-center bg-[#F0F4F7]"
+                        onClick={() => {
+                          // Your code here
+                        }}
+                      >
+                        <MessageSquareShare size={16} stroke="#707F9F" />
+                        <span className="ml-3">Turn into Chat</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
               {!!results?.length && (
-                <div className="flex flex-row h-full w-full max-w-3xl border-r-[1px] border-[#E6EBF5] ">
+                <div className="flex flex-col w-full max-w-3xl">
                   <div className="w-full max-w-3xl">
-                    {results?.length > 0 ? (
-                      results.map((result, index) => (
-                        <SearchResult result={result} index={index} />
-                      ))
-                    ) : (
-                      <p></p>
-                    )}
+                    {results.map((result, index) => (
+                      <SearchResult key={index} result={result} index={index} />
+                    ))}
                   </div>
                 </div>
               )}
+
+              <button className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]">
+                <ChevronDown className="mr-[6px]" size={18} stroke="#464B53" />
+                <span>More Results</span>
+              </button>
             </div>
             {groups && (
               <GroupFilter
