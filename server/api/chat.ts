@@ -43,10 +43,12 @@ import type { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
-import type { z } from "zod"
+import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { searchUsersByNamesAndEmails, searchVespa } from "@/search/vespa"
 import {
+  Apps,
+  entitySchema,
   userSchema,
   type VespaSearchResponse,
   type VespaSearchResultsSchema,
@@ -109,6 +111,13 @@ export const ChatBookmarkApi = async (c: Context) => {
     })
   }
 }
+
+const MinimalCitationSchema = z.object({
+  title: z.string().optional(),
+  url: z.string().optional(),
+  app: z.nativeEnum(Apps),
+  entity: entitySchema,
+})
 
 interface CitationResponse {
   answer?: string
@@ -346,7 +355,7 @@ export const MessageApi = async (c: Context) => {
         if (chunk.text) {
           buffer += chunk.text
           try {
-            parsed = parse(buffer, STR | ARR | OBJ) as CitationResponse
+            parsed = parse(buffer) as CitationResponse
 
             // Stream new answer content
             if (parsed.answer && parsed.answer !== currentAnswer) {
@@ -361,13 +370,27 @@ export const MessageApi = async (c: Context) => {
             // Stream citation updates
             if (parsed.citations) {
               currentCitations = parsed.citations
+              const minimalContextChunks = results.root.children
+                .filter((_, i) => currentCitations.includes(i))
+                .map((chunk) => {
+                  const fields = (
+                    chunk as z.infer<typeof VespaSearchResultsSchema>
+                  ).fields
+                  return {
+                    title: fields.title || fields.name,
+                    url: fields.url,
+                    app: fields.sddocname, // This indicates the type/app of the document
+                    entity: fields.entity,
+                    id: fields.docId,
+                  }
+                })
+
+              // citations count should match the minimalContext chunks
+
               await stream.writeSSE({
                 event: ChatSSEvents.CitationsUpdate,
                 data: JSON.stringify({
-                  citations: currentCitations,
-                  contextChunks: results.root.children.filter((_, i) =>
-                    currentCitations.includes(i),
-                  ),
+                  contextChunks: minimalContextChunks,
                 }),
               })
             }

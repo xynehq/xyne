@@ -414,7 +414,7 @@ export const Index = () => {
                           color: "#464B53",
                         }}
                       />
-                      Gradient overlay when not expanded
+                      {/* Gradient overlay when not expanded */}
                       {!isExpanded && (
                         <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
                       )}

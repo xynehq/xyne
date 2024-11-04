@@ -1,3 +1,4 @@
+import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -61,6 +62,7 @@ export const ChatPage = () => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const [citations, setCitations] = useState<any[]>([])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -88,8 +90,14 @@ export const ChatPage = () => {
       withCredentials: true,
     })
 
+    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+      const { contextChunks } = JSON.parse(event.data)
+      setCitations(contextChunks)
+    })
+
     eventSource.addEventListener(ChatSSEvents.Start, (event) => {
       setChatStarted(true)
+      setCitations([])
     })
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
@@ -203,29 +211,33 @@ export const ChatPage = () => {
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar />
       <div className="h-full w-full flex flex-col">
-        <div className="flex w-full h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
-          <div className="flex h-[48px] items-center max-w-2xl w-full">
-            <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
-              {chatTitle}
-            </span>
-            <Bookmark
-              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[40px] cursor-pointer"
-              onClick={handleBookmark}
-              size={18}
-            />
-            <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+        {chatStarted && (
+          <div className="flex w-full h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
+            <div className="flex h-[48px] items-center max-w-2xl w-full">
+              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+                {chatTitle}
+              </span>
+              <Bookmark
+                {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+                className="ml-[40px] cursor-pointer"
+                onClick={handleBookmark}
+                size={18}
+              />
+              <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+            </div>
           </div>
-        </div>
+        )}
         <div
           className={`h-full w-full flex ${chatStarted ? "items-end" : "items-center"} justify-center`}
         >
-          <div className="w-full h-full max-w-3xl flex-grow flex flex-col p-6 justify-between">
+          <div
+            className={`w-full h-full max-w-3xl flex-grow flex flex-col p-6 ${chatStarted ? "justify-between" : "justify-center"}`}
+          >
             {/* Chat Messages Container */}
             <div
               ref={messagesContainerRef}
               onScroll={handleScroll}
-              className="flex flex-col space-y-4 overflow-y-auto mb-6 flex-grow"
+              className="flex flex-col space-y-4 overflow-y-auto mb-6"
             >
               {messages.map((message, index) => (
                 <ChatMessage
@@ -233,6 +245,7 @@ export const ChatPage = () => {
                   message={message.message}
                   isUser={message.messageRole === "user"}
                   responseDone={true}
+                  citations={citations.map((c) => c.url)}
                 />
               ))}
               {currentResp && (
@@ -245,7 +258,7 @@ export const ChatPage = () => {
             </div>
 
             {/* Bottom Bar with Input and Icons */}
-            <div className="flex flex-col w-full border rounded-[20px] mt-auto">
+            <div className="flex flex-col w-full border rounded-[20px]">
               {/* Expanding Input Area */}
               <div className="relative flex items-center">
                 <textarea
@@ -291,7 +304,25 @@ const ChatMessage = ({
   message,
   isUser,
   responseDone,
-}: { message: string; isUser: boolean; responseDone: boolean }) => {
+  citations = [], // Add citations prop
+}: {
+  message: string
+  isUser: boolean
+  responseDone: boolean
+  citations?: string[] // Array of citation URLs
+}) => {
+  // Process message to replace citation markers with links
+  const processMessage = (text: string) => {
+    return text.replace(/\[(\d+)\]/g, (match, num) => {
+      const index = parseInt(num)
+      const url = citations[index]
+      if (url) {
+        return `[${match}](${url})`
+      }
+      return match
+    })
+  }
+
   return (
     <div
       className={`max-w-[75%] rounded-[16px] ${
@@ -309,7 +340,16 @@ const ChatMessage = ({
               className={"mr-[20px] w-[32px] self-start"}
               src={AssistantLogo}
             />
-            <span className="mt-[4px]">{message}</span>
+            <div className="mt-[4px] markdown-content">
+              <MarkdownPreview
+                source={processMessage(message)}
+                style={{
+                  padding: 0,
+                  backgroundColor: "transparent",
+                  color: "#1C1D1F",
+                }}
+              />
+            </div>
           </div>
           {responseDone && (
             <div className="flex ml-[52px] mt-[24px]">

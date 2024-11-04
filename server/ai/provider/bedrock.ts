@@ -28,6 +28,7 @@ export enum Models {
   Llama_3_1_70B = "meta.llama3-1-70b-instruct-v1:0",
   Llama_3_1_8B = "meta.llama3-1-8b-instruct-v1:0",
   Llama_3_1_405B = "meta.llama3-1-405b-instruct-v1:0",
+  Bedrock_Claude = "",
   Gpt_4o = "gpt-4o",
   Gpt_4o_mini = "gpt-4o-mini",
 }
@@ -875,15 +876,36 @@ export const generateTitleUsingQuery = async (
 
 // Do not include any additional text outside of the JSON structure.
 // `;
+// const chatWithCitationsSystemPrompt = (userCtx?: string) => `
+// You are an assistant that answers questions based on the provided context. Include citations by referencing the index of the context that supports each part of your answer.
+// ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
+
+// Provide the answer in the following JSON format:
+// {
+//   "answer": "Your answer here",
+//   "citations": [X, Y, Z]
+// }
+
+// Do not include any additional text outside of the JSON structure.
+// `
 const chatWithCitationsSystemPrompt = (userCtx?: string) => `
-You are an assistant that answers questions based on the provided context. Include citations by referencing the index of the context that supports each part of your answer.
+You are an assistant that answers questions based on the provided context. Your answer should be in Markdown format with selective inline numeric citations like [0], [1], etc.
 ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
 
 Provide the answer in the following JSON format:
 {
-  "answer": "Your answer here",
-  "citations": [X, Y, Z]
+  "answer": "Your markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent.",
+  "citations": [0]  // Array of context indices actually used in the answer
 }
+
+Rules for citations:
+- Only cite sources that directly support key facts or claims
+- Use citations sparingly - only when they add clear value
+- Citations should appear immediately after the specific claim they support
+- Use square brackets with 0-based numbers: [0], [1], etc.
+- Numbers must exactly match the index in the citations array
+- All indexing must be 0-based
+- Omit citations for general knowledge or derived conclusions
 
 Do not include any additional text outside of the JSON structure.
 `
