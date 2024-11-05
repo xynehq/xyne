@@ -1,7 +1,17 @@
-import { userContext } from "@/ai/context"
 import {
+  answerContextMap,
+  answerMetadataContextMap,
+  cleanContext,
+  userContext,
+} from "@/ai/context"
+import { parse, Allow, STR, ARR, OBJ } from "partial-json"
+import {
+  analyzeQueryForNamesAndEmails,
+  analyzeQueryMetadata,
+  askQuestionWithCitations,
   generateTitleUsingQuery,
   Models,
+  QueryCategory,
   userChat,
 } from "@/ai/provider/bedrock"
 import config from "@/config"
@@ -16,10 +26,15 @@ import {
   selectPublicChatSchema,
   selectPublicMessageSchema,
   selectPublicMessagesSchema,
+  type InternalUserWorkspace,
+  type PublicUserWorkspace,
   type SelectChat,
   type SelectMessage,
 } from "@/db/schema"
-import { getUserAndWorkspaceByEmail } from "@/db/user"
+import {
+  getPublicUserAndWorkspaceByEmail,
+  getUserAndWorkspaceByEmail,
+} from "@/db/user"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
@@ -28,9 +43,25 @@ import type { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
-import type { z } from "zod"
+import { z } from "zod"
 import type { chatSchema } from "@/api/search"
-const { JwtPayloadKey } = config
+import { searchUsersByNamesAndEmails, searchVespa } from "@/search/vespa"
+import {
+  Apps,
+  entitySchema,
+  fileSchema,
+  mailSchema,
+  userSchema,
+  type VespaFile,
+  type VespaMail,
+  type VespaSearchResponse,
+  type VespaSearchResults,
+  type VespaSearchResultsSchema,
+  type VespaUser,
+} from "@/search/types"
+import llama3Tokenizer from "llama3-tokenizer-js"
+import { encode } from "gpt-tokenizer"
+const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 const Logger = getLogger(Subsystem.Chat)
 
 export const GetChatApi = async (c: Context) => {
@@ -86,6 +117,58 @@ export const ChatBookmarkApi = async (c: Context) => {
   }
 }
 
+const MinimalCitationSchema = z.object({
+  title: z.string().optional(),
+  url: z.string().optional(),
+  app: z.nativeEnum(Apps),
+  entity: entitySchema,
+})
+
+type Citation = z.infer<typeof MinimalCitationSchema>
+
+interface CitationResponse {
+  answer?: string
+  citations?: number[]
+}
+
+const searchToCitation = (
+  results: z.infer<typeof VespaSearchResultsSchema>[],
+): Citation[] => {
+  let citations: Citation[] = []
+  if (results.length === 0) {
+    return []
+  }
+
+  for (const result of results) {
+    const fields = result.fields
+    if (result.fields.sddocname === userSchema) {
+      citations.push({
+        title: (fields as VespaUser).name,
+        url: `https://contacts.google.com/${(fields as VespaUser).email}`,
+        app: fields.app,
+        entity: fields.entity,
+      })
+    } else if (result.fields.sddocname === fileSchema) {
+      citations.push({
+        title: (fields as VespaFile).title,
+        url: (fields as VespaFile).url || "",
+        app: fields.app,
+        entity: fields.entity,
+      })
+    } else if (result.fields.sddocname === mailSchema) {
+      citations.push({
+        title: (fields as VespaMail).subject,
+        url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
+        app: fields.app,
+        entity: fields.entity,
+      })
+    } else {
+      throw new Error("Invalid search result type for citation")
+    }
+  }
+  return citations
+}
+
 export const MessageApi = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -94,21 +177,129 @@ export const MessageApi = async (c: Context) => {
     const body = c.req.valid("query")
     let { message, chatId, modelId }: MessageReqType = body
     message = decodeURIComponent(message)
-    const { user, workspace } = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceId,
-      email,
-    )
+
+    const [userAndWorkspace, results]: [
+      InternalUserWorkspace,
+      VespaSearchResponse,
+    ] = await Promise.all([
+      getUserAndWorkspaceByEmail(db, workspaceId, email),
+      searchVespa(message, email, null, null, config.answerPage, 0),
+    ])
+    const { user, workspace } = userAndWorkspace
     let insertedMsg: SelectMessage
     let chat: SelectChat
     let messages: SelectMessage[] = []
     const costArr = []
+    const ctx = userContext(userAndWorkspace)
+    const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${message}`
+    // could be called parallely if not for userAndWorkspace
+    let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
+      modelId: Models.Gpt_4o_mini,
+      stream: false,
+      json: true,
+    })
+    if (cost) {
+      costArr.push(cost)
+    }
+    const initialContext = cleanContext(
+      results.root.children
+        .map((v) =>
+          answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
+        )
+        .join("\n"),
+    )
+    const tokenLimit = maxTokenBeforeMetadataCleanup
+    let useMetadata = false
+    Logger.info(`User Asked: ${message}`)
+    // if we don't use this, 3.4 seems like a good approx value
+    if (
+      llama3Tokenizer.encode(initialContext).length > tokenLimit ||
+      encode(initialContext).length > tokenLimit
+    ) {
+      useMetadata = true
+    }
+
+    let users: z.infer<typeof VespaSearchResultsSchema>[] = []
+    if (result.category === QueryCategory.Self) {
+      // here too I can talk about myself and others
+      // eg: when did I send xyz person their offer letter
+      const { mentionedNames, mentionedEmails } = result
+      users = ((
+        await searchUsersByNamesAndEmails(
+          mentionedNames,
+          mentionedEmails,
+          mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
+        )
+      )?.root?.children ?? []) as z.infer<typeof VespaSearchResultsSchema>[]
+    } else if (
+      result.category === QueryCategory.InternalPerson ||
+      result.category === QueryCategory.ExternalPerson
+    ) {
+      const { mentionedNames, mentionedEmails } = result
+      users = ((
+        await searchUsersByNamesAndEmails(
+          mentionedNames,
+          mentionedEmails,
+          mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
+        )
+      )?.root?.children ?? []) as z.infer<typeof VespaSearchResultsSchema>[]
+    }
+
+    let existingUserIds = new Set<string>()
+    if (users.length) {
+      existingUserIds = new Set(
+        results.root.children
+          .filter(
+            (v): v is z.infer<typeof VespaSearchResultsSchema> =>
+              (v.fields as VespaUser).sddocname === userSchema,
+          )
+          .map((v) => v.fields.docId),
+      )
+    }
+
+    const newUsers = users.filter(
+      (user: z.infer<typeof VespaSearchResultsSchema>) =>
+        !existingUserIds.has(user.fields.docId),
+    )
+    if (newUsers.length) {
+      newUsers.forEach((user) => {
+        results.root.children.push(user)
+      })
+    }
+    const metadataContext = results.root.children
+      .map((v, i) =>
+        cleanContext(
+          `Index ${i} \n ${answerMetadataContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        ),
+      )
+      .join("\n\n")
+
+    const analyseRes = await analyzeQueryMetadata(message, metadataContext, {
+      modelId: Models.Gpt_4o_mini,
+      stream: true,
+      json: true,
+    })
+    let output = analyseRes[0]
+    cost = analyseRes[1]
+    if (cost) {
+      costArr.push(cost)
+    }
+
+    const finalContext = cleanContext(
+      results.root.children
+        .filter((v, i) => output?.contextualChunks.includes(i))
+        .map((v) =>
+          answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
+        )
+        .join("\n"),
+    )
     // create chat
     let title = ""
+    let messageExternalId = ""
     if (!chatId) {
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: Models.Llama_3_1_70B,
+        modelId: Models.Gpt_4o_mini,
         stream: false,
       })
       title = titleResp.title
@@ -142,7 +333,8 @@ export const MessageApi = async (c: Context) => {
         },
       )
       chat = insertedChat
-      messages.push(insertedMsg)
+      // messages.push(insertedMsg)
+      messageExternalId = insertedMsg.externalId
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
@@ -162,11 +354,11 @@ export const MessageApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
-      messages = allMessages.concat(insertedMsg)
+      // messages = allMessages.concat(insertedMsg)
       chat = existingChat
+      messageExternalId = insertedMsg.externalId
     }
 
-    const ctx = userContext({ user, workspace })
     let fullResponse = ""
     return streamSSE(c, async (stream) => {
       await stream.writeSSE({
@@ -185,11 +377,12 @@ export const MessageApi = async (c: Context) => {
         event: ChatSSEvents.ResponseMetadata,
         data: JSON.stringify({
           chatId: chat.externalId,
-          messageId: messages[messages.length - 1].externalId,
+          messageId: messageExternalId,
         }),
       })
-      const iterator = userChat(ctx, {
-        modelId: Models.Llama_3_1_8B,
+
+      const iterator = askQuestionWithCitations(message, ctx, finalContext, {
+        modelId: Models.Gpt_4o_mini,
         userCtx: ctx,
         stream: true,
         json: true,
@@ -198,26 +391,64 @@ export const MessageApi = async (c: Context) => {
           content: [{ text: m.message }],
         })),
       })
-      for await (const { text, metadata, cost } of iterator) {
-        if (text) {
-          fullResponse += text
-          await stream.writeSSE({
-            event: ChatSSEvents.ResponseUpdate,
-            data: text,
-          })
+      let buffer = ""
+      let currentAnswer = ""
+      let currentCitations: number[] = []
+      let parsed
+
+      for await (const chunk of iterator) {
+        if (chunk.text) {
+          buffer += chunk.text
+          try {
+            parsed = parse(buffer) as CitationResponse
+
+            // Stream new answer content
+            if (parsed.answer && parsed.answer !== currentAnswer) {
+              const newContent = parsed.answer.slice(currentAnswer.length)
+              currentAnswer = parsed.answer
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: newContent,
+              })
+            }
+
+            // Stream citation updates
+            if (parsed.citations) {
+              currentCitations = parsed.citations
+              const minimalContextChunks = searchToCitation(
+                results.root.children.filter((_, i) =>
+                  currentCitations.includes(i),
+                ) as z.infer<typeof VespaSearchResultsSchema>[],
+              )
+
+              // citations count should match the minimalContext chunks
+
+              await stream.writeSSE({
+                event: ChatSSEvents.CitationsUpdate,
+                data: JSON.stringify({
+                  contextChunks: minimalContextChunks,
+                }),
+              })
+            }
+          } catch (e) {
+            continue
+          }
         }
-        if (cost) {
-          costArr.push(cost)
+        if (parsed && parsed.answer) {
+          fullResponse = parsed.answer
+        }
+        if (chunk.metadata?.cost) {
+          costArr.push(chunk.metadata.cost)
         }
       }
       const msg = await insertMessage(db, {
-        chatId: messages[messages.length - 1].chatId,
+        chatId: chat.id,
         userId: user.id,
         workspaceExternalId: workspace.externalId,
-        chatExternalId: messages[messages.length - 1].chatExternalId,
+        chatExternalId: chat.externalId,
         messageRole: MessageRole.Assistant,
         email: user.email,
-        sources: [],
+        sources: currentCitations,
         message: fullResponse,
         modelId,
       })

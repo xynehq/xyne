@@ -1,9 +1,11 @@
+import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
   createFileRoute,
   useLoaderData,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router"
 import {
   ArrowRight,
@@ -17,6 +19,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
+import { PublicUser, PublicWorkspace } from "shared/types"
 
 type CurrentResp = {
   resp: string
@@ -24,7 +27,12 @@ type CurrentResp = {
   messageId?: string
 }
 
-export const ChatPage = () => {
+interface ChatPageProps {
+  user: PublicUser
+  workspace: PublicWorkspace
+}
+
+export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
   const isWithChatId = !!(params as any).chatId
@@ -42,21 +50,26 @@ export const ChatPage = () => {
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    data?.messages || [],
+    isWithChatId ? data?.messages || [] : [],
   )
   const [chatId, setChatId] = useState<string | null>(
     (params as any).chatId || null,
   )
   const [chatTitle, setChatTitle] = useState<string | null>(
-    data?.chat.title || null,
+    isWithChatId ? data?.chat.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
   const currentRespRef = useRef<CurrentResp | null>(null)
-  const [chatStarted, setChatStarted] = useState<boolean>(!!data?.messages)
+  const [chatStarted, setChatStarted] = useState<boolean>(
+    isWithChatId ? !!data?.messages : false,
+  )
   const [bookmark, setBookmark] = useState<boolean>(
-    !!data?.chat.isBookmarked || false,
+    isWithChatId ? !!data?.chat.isBookmarked || false : false,
   )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const [citations, setCitations] = useState<any[]>([])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -84,8 +97,14 @@ export const ChatPage = () => {
       withCredentials: true,
     })
 
+    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+      const { contextChunks } = JSON.parse(event.data)
+      setCitations(contextChunks)
+    })
+
     eventSource.addEventListener(ChatSSEvents.Start, (event) => {
       setChatStarted(true)
+      setCitations([])
     })
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
@@ -172,36 +191,68 @@ export const ChatPage = () => {
     }
   }
 
+  const isScrolledToBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container) return true
+
+    const threshold = 100 // pixels from bottom to consider "at bottom"
+    return (
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      threshold
+    )
+  }
+
+  const handleScroll = () => {
+    const isAtBottom = isScrolledToBottom()
+    setUserHasScrolled(!isAtBottom)
+  }
+
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container || userHasScrolled) return
+
+    container.scrollTop = container.scrollHeight
+  }, [messages, currentResp?.resp])
+
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar />
       <div className="h-full w-full flex flex-col">
-        <div className="flex w-full h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
-          <div className="flex h-[48px] items-center max-w-2xl w-full">
-            <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
-              {chatTitle}
-            </span>
-            <Bookmark
-              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[40px] cursor-pointer"
-              onClick={handleBookmark}
-              size={18}
-            />
-            <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+        {chatStarted && (
+          <div className="flex w-full h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
+            <div className="flex h-[48px] items-center max-w-2xl w-full">
+              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+                {chatTitle}
+              </span>
+              <Bookmark
+                {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+                className="ml-[40px] cursor-pointer"
+                onClick={handleBookmark}
+                size={18}
+              />
+              <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+            </div>
           </div>
-        </div>
+        )}
         <div
           className={`h-full w-full flex ${chatStarted ? "items-end" : "items-center"} justify-center`}
         >
-          <div className="w-full max-w-3xl flex-grow flex flex-col p-6">
+          <div
+            className={`w-full h-full max-w-3xl flex-grow flex flex-col p-6 ${chatStarted ? "justify-between" : "justify-center"}`}
+          >
             {/* Chat Messages Container */}
-            <div className="flex flex-col space-y-4 overflow-y-auto mb-6 max-h-[60vh]">
+            <div
+              ref={messagesContainerRef}
+              onScroll={handleScroll}
+              className="flex flex-col space-y-4 overflow-y-auto mb-6"
+            >
               {messages.map((message, index) => (
                 <ChatMessage
                   key={index}
                   message={message.message}
                   isUser={message.messageRole === "user"}
                   responseDone={true}
+                  citations={citations.map((c) => c.url)}
                 />
               ))}
               {currentResp && (
@@ -260,7 +311,25 @@ const ChatMessage = ({
   message,
   isUser,
   responseDone,
-}: { message: string; isUser: boolean; responseDone: boolean }) => {
+  citations = [], // Add citations prop
+}: {
+  message: string
+  isUser: boolean
+  responseDone: boolean
+  citations?: string[] // Array of citation URLs
+}) => {
+  // Process message to replace citation markers with links
+  const processMessage = (text: string) => {
+    return text.replace(/\[(\d+)\]/g, (match, num) => {
+      const index = parseInt(num)
+      const url = citations[index]
+      if (url) {
+        return `[${match}](${url})`
+      }
+      return match
+    })
+  }
+
   return (
     <div
       className={`max-w-[75%] rounded-[16px] ${
@@ -278,7 +347,16 @@ const ChatMessage = ({
               className={"mr-[20px] w-[32px] self-start"}
               src={AssistantLogo}
             />
-            <span className="mt-[4px]">{message}</span>
+            <div className="mt-[4px] markdown-content">
+              <MarkdownPreview
+                source={processMessage(message)}
+                style={{
+                  padding: 0,
+                  backgroundColor: "transparent",
+                  color: "#1C1D1F",
+                }}
+              />
+            </div>
           </div>
           {responseDone && (
             <div className="flex ml-[52px] mt-[24px]">
@@ -293,5 +371,15 @@ const ChatMessage = ({
 }
 
 export const Route = createFileRoute("/_authenticated/chat")({
-  component: ChatPage,
+  beforeLoad: (params) => {
+    return params
+  },
+  loader: async (params) => {
+    return params
+  },
+  component: () => {
+    const matches = useRouterState({ select: (s) => s.matches })
+    const { user, workspace } = matches[matches.length - 1].context
+    return <ChatPage user={user} workspace={workspace} />
+  },
 })

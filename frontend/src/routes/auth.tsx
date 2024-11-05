@@ -61,6 +61,7 @@ export const Route = createFileRoute("/auth")({
         throw redirect({ to: "/" })
       }
     }
+    return await res.json()
   },
   component: LoginForm,
 })

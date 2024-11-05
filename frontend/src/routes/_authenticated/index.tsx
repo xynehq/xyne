@@ -368,9 +368,8 @@ export const Index = () => {
       handleSearch(0, { app, entity })
     }
   }
-  const totalCount = (filter
-    ? filteredSearchMeta?.totalCount
-    : searchMeta?.totalCount) || 0
+  const totalCount =
+    (filter ? filteredSearchMeta?.totalCount : searchMeta?.totalCount) || 0
 
   return (
     <div className="h-full w-full flex">
@@ -415,7 +414,7 @@ export const Index = () => {
                           color: "#464B53",
                         }}
                       />
-                      Gradient overlay when not expanded
+                      {/* Gradient overlay when not expanded */}
                       {!isExpanded && (
                         <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
                       )}
@@ -461,19 +460,21 @@ export const Index = () => {
                 </div>
               )}
 
-              {results.length > 0 && totalCount > page && results.length < (totalCount || 0) && (
-                <button
-                  className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
-                  onClick={handleNext}
-                >
-                  <ChevronDown
-                    className="mr-[7px]"
-                    size={18}
-                    stroke="#464B53"
-                  />
-                  <span>More Results</span>
-                </button>
-              )}
+              {results.length > 0 &&
+                totalCount > page &&
+                results.length < (totalCount || 0) && (
+                  <button
+                    className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
+                    onClick={handleNext}
+                  >
+                    <ChevronDown
+                      className="mr-[7px]"
+                      size={18}
+                      stroke="#464B53"
+                    />
+                    <span>More Results</span>
+                  </button>
+                )}
             </div>
             {groups && (
               <GroupFilter
