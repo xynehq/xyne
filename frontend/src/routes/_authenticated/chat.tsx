@@ -219,7 +219,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       <Sidebar />
       <div className="h-full w-full flex flex-col">
         {chatStarted && (
-          <div className="flex w-full h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
+          <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
             <div className="flex h-[48px] items-center max-w-2xl w-full">
               <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
                 {chatTitle}
@@ -235,17 +235,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           </div>
         )}
         <div
-          className={`h-full w-full flex ${chatStarted ? "items-end" : "items-center"} justify-center`}
+          className={`h-full w-full flex ${chatStarted ? "items-end" : "items-center"}  overflow-y-auto justify-center`}
+          ref={messagesContainerRef}
         >
           <div
-            className={`w-full h-full max-w-3xl flex-grow flex flex-col p-6 ${chatStarted ? "justify-between" : "justify-center"}`}
+            className={`w-full h-full max-w-3xl flex-grow flex flex-col ${chatStarted ? "justify-between" : "justify-center"}`}
           >
             {/* Chat Messages Container */}
-            <div
-              ref={messagesContainerRef}
-              onScroll={handleScroll}
-              className="flex flex-col space-y-4 overflow-y-auto mb-6"
-            >
+            <div onScroll={handleScroll} className="flex flex-col mb-[60px]">
               {messages.map((message, index) => (
                 <ChatMessage
                   key={index}
@@ -262,10 +259,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   responseDone={false}
                 />
               )}
+              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
             </div>
 
             {/* Bottom Bar with Input and Icons */}
-            <div className="flex flex-col w-full border rounded-[20px]">
+            <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white">
               {/* Expanding Input Area */}
               <div className="relative flex items-center">
                 <textarea
