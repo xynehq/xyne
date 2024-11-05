@@ -22,7 +22,11 @@ import { z } from "zod"
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
 // @ts-ignore
-export type { SelectPublicMessage } from "@/db/schema"
+export type {
+  SelectPublicMessage,
+  PublicUser,
+  PublicWorkspace,
+} from "@/db/schema"
 
 export type AppType = typeof AppRoutes
 export type WebSocketApp = typeof WsApp

@@ -49,8 +49,13 @@ import { searchUsersByNamesAndEmails, searchVespa } from "@/search/vespa"
 import {
   Apps,
   entitySchema,
+  fileSchema,
+  mailSchema,
   userSchema,
+  type VespaFile,
+  type VespaMail,
   type VespaSearchResponse,
+  type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
 } from "@/search/types"
@@ -119,9 +124,49 @@ const MinimalCitationSchema = z.object({
   entity: entitySchema,
 })
 
+type Citation = z.infer<typeof MinimalCitationSchema>
+
 interface CitationResponse {
   answer?: string
   citations?: number[]
+}
+
+const searchToCitation = (
+  results: z.infer<typeof VespaSearchResultsSchema>[],
+): Citation[] => {
+  let citations: Citation[] = []
+  if (results.length === 0) {
+    return []
+  }
+
+  for (const result of results) {
+    const fields = result.fields
+    if (result.fields.sddocname === userSchema) {
+      citations.push({
+        title: (fields as VespaUser).name,
+        url: `https://contacts.google.com/${(fields as VespaUser).email}`,
+        app: fields.app,
+        entity: fields.entity,
+      })
+    } else if (result.fields.sddocname === fileSchema) {
+      citations.push({
+        title: (fields as VespaFile).title,
+        url: (fields as VespaFile).url || "",
+        app: fields.app,
+        entity: fields.entity,
+      })
+    } else if (result.fields.sddocname === mailSchema) {
+      citations.push({
+        title: (fields as VespaMail).subject,
+        url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
+        app: fields.app,
+        entity: fields.entity,
+      })
+    } else {
+      throw new Error("Invalid search result type for citation")
+    }
+  }
+  return citations
 }
 
 export const MessageApi = async (c: Context) => {
@@ -149,7 +194,7 @@ export const MessageApi = async (c: Context) => {
     const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${message}`
     // could be called parallely if not for userAndWorkspace
     let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
-      modelId: Models.Llama_3_1_8B,
+      modelId: Models.Gpt_4o_mini,
       stream: false,
       json: true,
     })
@@ -230,7 +275,7 @@ export const MessageApi = async (c: Context) => {
       .join("\n\n")
 
     const analyseRes = await analyzeQueryMetadata(message, metadataContext, {
-      modelId: Models.Llama_3_1_8B,
+      modelId: Models.Gpt_4o_mini,
       stream: true,
       json: true,
     })
@@ -254,7 +299,7 @@ export const MessageApi = async (c: Context) => {
     if (!chatId) {
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: Models.Llama_3_1_70B,
+        modelId: Models.Gpt_4o_mini,
         stream: false,
       })
       title = titleResp.title
@@ -370,20 +415,11 @@ export const MessageApi = async (c: Context) => {
             // Stream citation updates
             if (parsed.citations) {
               currentCitations = parsed.citations
-              const minimalContextChunks = results.root.children
-                .filter((_, i) => currentCitations.includes(i))
-                .map((chunk) => {
-                  const fields = (
-                    chunk as z.infer<typeof VespaSearchResultsSchema>
-                  ).fields
-                  return {
-                    title: fields.title || fields.name,
-                    url: fields.url,
-                    app: fields.sddocname, // This indicates the type/app of the document
-                    entity: fields.entity,
-                    id: fields.docId,
-                  }
-                })
+              const minimalContextChunks = searchToCitation(
+                results.root.children.filter((_, i) =>
+                  currentCitations.includes(i),
+                ) as z.infer<typeof VespaSearchResultsSchema>[],
+              )
 
               // citations count should match the minimalContext chunks
 

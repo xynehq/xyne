@@ -5,6 +5,7 @@ import {
   createFileRoute,
   useLoaderData,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router"
 import {
   ArrowRight,
@@ -18,6 +19,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
+import { PublicUser, PublicWorkspace } from "shared/types"
 
 type CurrentResp = {
   resp: string
@@ -25,7 +27,12 @@ type CurrentResp = {
   messageId?: string
 }
 
-export const ChatPage = () => {
+interface ChatPageProps {
+  user: PublicUser
+  workspace: PublicWorkspace
+}
+
+export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
   const isWithChatId = !!(params as any).chatId
@@ -364,5 +371,15 @@ const ChatMessage = ({
 }
 
 export const Route = createFileRoute("/_authenticated/chat")({
-  component: ChatPage,
+  beforeLoad: (params) => {
+    return params
+  },
+  loader: async (params) => {
+    return params
+  },
+  component: () => {
+    const matches = useRouterState({ select: (s) => s.matches })
+    const { user, workspace } = matches[matches.length - 1].context
+    return <ChatPage user={user} workspace={workspace} />
+  },
 })

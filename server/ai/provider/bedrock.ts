@@ -28,7 +28,7 @@ export enum Models {
   Llama_3_1_70B = "meta.llama3-1-70b-instruct-v1:0",
   Llama_3_1_8B = "meta.llama3-1-8b-instruct-v1:0",
   Llama_3_1_405B = "meta.llama3-1-405b-instruct-v1:0",
-  Bedrock_Claude = "",
+  // Bedrock_Claude = "",
   Gpt_4o = "gpt-4o",
   Gpt_4o_mini = "gpt-4o-mini",
 }

@@ -401,6 +401,7 @@ export const userPublicSchema = selectUserSchema.omit({
   updatedAt: true,
   deletedAt: true,
   id: true,
+  workspaceId: true,
 })
 export const workspacePublicSchema = selectWorkspaceSchema.omit({
   createdAt: true,
