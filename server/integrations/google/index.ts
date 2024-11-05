@@ -1377,76 +1377,86 @@ export const googleDocsVespa = async (
     `Scanning ${docsMetadata.length} Google Docs`,
     connectorId,
   )
-  const docsList: VespaFileWithDrivePermission[] = []
   const docs = google.docs({ version: "v1", auth: client })
   const total = docsMetadata.length
   let count = 0
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
-      const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-        await docs.documents.get({
-          documentId: doc.id as string,
-        })
-      if (!docResponse || !docResponse.data) {
-        throw new DocsParsingError(
-          `Could not get document content for file: ${doc.id}`,
-        )
-      }
-      const documentContent: docs_v1.Schema$Document = docResponse.data
-
-      const rawTextContent = documentContent?.body?.content
-        ?.map((e) => extractText(documentContent, e))
-        .join("")
-
-      const footnotes = extractFootnotes(documentContent)
-      const headerFooter = extractHeadersAndFooters(documentContent)
-
-      const cleanedTextContent = postProcessText(
-        rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
-      )
-
-      const chunks = chunkDocument(cleanedTextContent)
-
-      const parentsForMetadata = []
-      // Shared files cannot have parents
-      // There can be some files that user has access to may not have parents as they are shared
-      if (doc?.parents) {
-        for (const parentId of doc?.parents!) {
-          const parentData = await getFile(client, parentId)
-          const folderName = parentData.name!
-          parentsForMetadata.push({ folderName, folderId: parentId })
+      try {
+        const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
+          await docs.documents.get({
+            documentId: doc.id as string,
+          })
+        if (!docResponse || !docResponse.data) {
+          throw new DocsParsingError(
+            `Could not get document content for file: ${doc.id}`,
+          )
         }
-      }
+        const documentContent: docs_v1.Schema$Document = docResponse.data
 
-      docsList.push({
-        title: doc.name!,
-        url: doc.webViewLink ?? "",
-        app: Apps.GoogleDrive,
-        docId: doc.id!,
-        owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
-        photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
-        ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
-        entity: DriveEntity.Docs,
-        chunks: chunks.map((v) => v.chunk),
-        permissions: doc.permissions ?? [],
-        mimeType: doc.mimeType ?? "",
-        metadata: JSON.stringify({ parents: parentsForMetadata }),
-        createdAt: new Date(doc.createdTime!).getTime(),
-        updatedAt: new Date(doc.modifiedTime!).getTime(),
-      })
-      count += 1
+        const rawTextContent = documentContent?.body?.content
+          ?.map((e) => extractText(documentContent, e))
+          .join("")
 
-      if (count % 5 === 0) {
-        sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
-        process.stdout.write(`${Math.floor((count / total) * 100)}`)
-        process.stdout.write("\n")
+        const footnotes = extractFootnotes(documentContent)
+        const headerFooter = extractHeadersAndFooters(documentContent)
+
+        const cleanedTextContent = postProcessText(
+          rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
+        )
+
+        const chunks = chunkDocument(cleanedTextContent)
+
+        const parentsForMetadata = []
+        // Shared files cannot have parents
+        // There can be some files that user has access to may not have parents as they are shared
+        if (doc?.parents) {
+          for (const parentId of doc?.parents!) {
+            const parentData = await getFile(client, parentId)
+            const folderName = parentData.name!
+            parentsForMetadata.push({ folderName, folderId: parentId })
+          }
+        }
+
+        const result: VespaFileWithDrivePermission = {
+          title: doc.name!,
+          url: doc.webViewLink ?? "",
+          app: Apps.GoogleDrive,
+          docId: doc.id!,
+          owner: doc.owners ? (doc.owners[0].displayName ?? "") : "",
+          photoLink: doc.owners ? (doc.owners[0].photoLink ?? "") : "",
+          ownerEmail: doc.owners ? (doc.owners[0]?.emailAddress ?? "") : "",
+          entity: DriveEntity.Docs,
+          chunks: chunks.map((v) => v.chunk),
+          permissions: doc.permissions ?? [],
+          mimeType: doc.mimeType ?? "",
+          metadata: JSON.stringify({ parents: parentsForMetadata }),
+          createdAt: new Date(doc.createdTime!).getTime(),
+          updatedAt: new Date(doc.modifiedTime!).getTime(),
+        }
+        count += 1
+
+        if (count % 5 === 0) {
+          sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
+          process.stdout.write(`${Math.floor((count / total) * 100)}`)
+          process.stdout.write("\n")
+        }
+        return result
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
+        )
+        return null
       }
     }),
   )
-  await Promise.all(docsPromises)
-  // }
-  return docsList
+  const docsList: (VespaFileWithDrivePermission | null)[] =
+    await Promise.all(docsPromises)
+  return docsList.filter(
+    (doc) => doc !== null,
+  )
 }
 
 export const driveFilesToDoc = async (
