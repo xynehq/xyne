@@ -21,11 +21,11 @@ import { z } from "zod"
 
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
-// @ts-ignore
 export type {
   SelectPublicMessage,
   PublicUser,
   PublicWorkspace,
+  // @ts-ignore
 } from "@/db/schema"
 
 export type AppType = typeof AppRoutes
