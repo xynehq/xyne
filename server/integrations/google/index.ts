@@ -1,5 +1,6 @@
 import {
   admin_directory_v1,
+  calendar_v3,
   docs_v1,
   drive_v3,
   google,
@@ -23,7 +24,7 @@ import {
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
-import { insertDocument, insertUser } from "@/search/vespa"
+import { insert, insertDocument, insertUser } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
 import { wsConnections } from "@/server"
 import type { WSContext } from "hono/ws"
@@ -207,6 +208,62 @@ export const syncGoogleWorkspace = async (
   }
 }
 
+const insertCalendarEvents = async (
+  client: GoogleClient,
+  userEmail: string,
+) => {
+  let nextPageToken = ""
+  let events: calendar_v3.Schema$Event[] = []
+  const calendar = google.calendar({ version: "v3", auth: client })
+
+  const currentDateTime = new Date()
+  const nextYearDateTime = new Date(currentDateTime)
+
+  // Set the date one year later
+  // To get all events from current Date to One Year later
+  nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
+
+  do {
+    const res = await calendar.events.list({
+      calendarId: "primary", // Use 'primary' for the primary calendar
+      timeMin: currentDateTime.toISOString(), 
+      timeMax: nextYearDateTime.toISOString(),
+      maxResults: 2500, // Limit the number of results
+      // singleEvents: true, // Expands recurring events into individual occurrences
+      // orderBy: "startTime",
+      pageToken: nextPageToken,
+      fields:
+        "nextPageToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
+    })
+    if (res.data.items) {
+      events = events.concat(res.data.items)
+    }
+    nextPageToken = res.data.nextPageToken ?? ""
+  } while (nextPageToken)
+
+  if (events.length) {
+    console.log("events")
+    console.log(events.length)
+    console.log(events)
+    console.log("events")
+  } else {
+    console.log("No upcoming events found.")
+  }
+
+  // TODO Add email, app, entity here
+  // TODO We are doing only primary calendar ??
+  // TODO Also check abt the links of another video call urls like zoom
+  // TODO What abt attachments
+
+  for (const event of events) {
+    const eventToBeIngested = {}
+
+    // await insert(  , mailSchema)
+  }
+
+  return events
+}
+
 export const handleGoogleOAuthIngestion = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -229,7 +286,7 @@ export const handleGoogleOAuthIngestion = async (
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
-    await insertContactsToVespa(contacts, otherContacts, userEmail)
+    // await insertContactsToVespa(contacts, otherContacts, userEmail)
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -238,9 +295,14 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [_, historyId] = await Promise.all([
-      insertFilesForUser(oauth2Client, userEmail, connector),
-      handleGmailIngestion(oauth2Client, userEmail),
+    const [
+      // _,
+      // historyId,
+      events,
+    ] = await Promise.all([
+      // insertFilesForUser(oauth2Client, userEmail, connector),
+      // handleGmailIngestion(oauth2Client, userEmail),
+      insertCalendarEvents(oauth2Client, userEmail),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -268,21 +330,21 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      await insertSyncJob(trx, {
-        workspaceId: connector.workspaceId,
-        workspaceExternalId: connector.workspaceExternalId,
-        app: Apps.Gmail,
-        connectorId: connector.id,
-        authType: AuthType.OAuth,
-        config: {
-          historyId,
-          type: "gmailChangeToken",
-          lastSyncedAt: new Date().toISOString(),
-        },
-        email: userEmail,
-        type: SyncCron.ChangeToken,
-        status: SyncJobStatus.NotStarted,
-      })
+      // await insertSyncJob(trx, {
+      //   workspaceId: connector.workspaceId,
+      //   workspaceExternalId: connector.workspaceExternalId,
+      //   app: Apps.Gmail,
+      //   connectorId: connector.id,
+      //   authType: AuthType.OAuth,
+      //   config: {
+      //     historyId,
+      //     type: "gmailChangeToken",
+      //     lastSyncedAt: new Date().toISOString(),
+      //   },
+      //   email: userEmail,
+      //   type: SyncCron.ChangeToken,
+      //   status: SyncJobStatus.NotStarted,
+      // })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })

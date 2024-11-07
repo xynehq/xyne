@@ -1,0 +1,129 @@
+schema event {
+    document event {
+        #eventId
+        field docId type string {
+            indexing: attribute | summary
+        }
+
+        field name type string {
+            indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
+        }
+        
+        #eventDescription
+        field description type string {
+            indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
+        }
+
+        # eventLink, different from joining link
+        field url type string {
+            indexing: summary
+        }
+
+        # eventStatus
+        field status type string {
+            indexing: attribute | summary
+        }
+        
+        field location type string {
+            indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
+        }
+
+        field createdAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field updatedAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        # primary email
+        field email type string {
+            indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
+        }
+
+        field app type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+
+        field entity type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+
+        # Event creator
+        field creator type user_info {
+            indexing: summary
+        }
+        
+        # Event Organizer
+        field organizer type user_info {
+            indexing: summary
+        }
+
+        # Event Attendees
+        field attendees type array<user_info> {
+            indexing: summary
+        }
+
+        field startTime type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+        
+        field endTime type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        # represents originalStartTime of a recurring event, useful when an instance of a recurring event is modified
+        field originalStartTime type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        # Only will be there if the event is recurring
+        field recurringEventId type string {
+            indexing: attribute | summary
+        }
+
+        # An event can have attachments from Google Drive
+        field attachments type array<attachment> {
+            
+        }
+
+        # Google Meet link or any meeting link from the description
+        field joiningLink type string {
+            indexing: summary
+        }
+    }
+
+    # A user can be creator, organizer or an attendee
+    struct user_info {
+        field email type string {}
+        field displayName type string {}
+    }
+
+    struct attachment {
+        field fileId type string {}
+        field fileUrl type string {}
+        field fileName type string {}
+        field mimeType type string {}
+    }
+}
