@@ -1454,9 +1454,7 @@ export const googleDocsVespa = async (
   )
   const docsList: (VespaFileWithDrivePermission | null)[] =
     await Promise.all(docsPromises)
-  return docsList.filter(
-    (doc) => doc !== null,
-  )
+  return docsList.filter((doc) => doc !== null)
 }
 
 export const driveFilesToDoc = async (

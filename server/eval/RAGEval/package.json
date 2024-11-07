@@ -1,0 +1,16 @@
+{
+  "name": "rageval",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.2.0",
+    "autoevals": "^0.0.101",
+    "openai": "^4.71.1"
+  }
+}
