@@ -1105,7 +1105,7 @@ const insertUsersForWorkspace = async (
       gender: user.gender,
       photoLink: user.thumbnailPhotoUrl ?? "",
       aliases: user.aliases ?? [],
-      langauge: preferredLanguage,
+      language: preferredLanguage,
       includeInGlobalAddressList: user.includeInGlobalAddressList ?? false,
       isAdmin: user.isAdmin ?? false,
       isDelegatedAdmin: user.isDelegatedAdmin ?? false,
@@ -1454,9 +1454,7 @@ export const googleDocsVespa = async (
   )
   const docsList: (VespaFileWithDrivePermission | null)[] =
     await Promise.all(docsPromises)
-  return docsList.filter(
-    (doc) => doc !== null,
-  )
+  return docsList.filter((doc) => doc !== null)
 }
 
 export const driveFilesToDoc = async (

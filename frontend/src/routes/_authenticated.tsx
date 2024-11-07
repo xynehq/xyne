@@ -8,6 +8,7 @@ export const Route = createFileRoute("/_authenticated")({
       // If user is not logged in, take user to '/auth'
       throw redirect({ to: "/auth" })
     }
+
     return await res.json()
   },
   component: () => {

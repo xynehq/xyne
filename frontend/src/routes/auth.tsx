@@ -18,7 +18,6 @@ export const containerClassName =
 
 export default function LoginForm() {
   const logger = console
-  logger.info("LOGIN WITH GOOGLE CLICKED")
   return (
     <div className="flex w-full h-full justify-center">
       <div className="max-w-sm flex items-center">
@@ -60,8 +59,8 @@ export const Route = createFileRoute("/auth")({
       if (userWorkspace?.user && userWorkspace?.workspace) {
         throw redirect({ to: "/" })
       }
+      return await res.json()
     }
-    return await res.json()
   },
   component: LoginForm,
 })
