@@ -519,7 +519,7 @@ const getSearchQuery = (contacts: VespaUser[]): string => {
   } else if (person1) {
     return `What is the email of ${person1.name}`
   } else {
-    return "No contacts available"
+    throw new Error('No contacts available')
   }
 }
 
