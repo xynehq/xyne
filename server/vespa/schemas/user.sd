@@ -42,7 +42,7 @@ schema user {
             indexing: attribute | summary
         }
 
-        field langauge type string {
+        field language type string {
             indexing: attribute | summary
         }
 
