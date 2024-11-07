@@ -213,6 +213,9 @@ const insertCalendarEvents = async (
   userEmail: string,
 ) => {
   let nextPageToken = ""
+  // will be returned in the end
+  let newSyncTokenCalendarEvents: string = ""
+
   let events: calendar_v3.Schema$Event[] = []
   const calendar = google.calendar({ version: "v3", auth: client })
 
@@ -226,19 +229,20 @@ const insertCalendarEvents = async (
   do {
     const res = await calendar.events.list({
       calendarId: "primary", // Use 'primary' for the primary calendar
-      timeMin: currentDateTime.toISOString(), 
+      timeMin: currentDateTime.toISOString(),
       timeMax: nextYearDateTime.toISOString(),
       maxResults: 2500, // Limit the number of results
       // singleEvents: true, // Expands recurring events into individual occurrences
       // orderBy: "startTime",
       pageToken: nextPageToken,
       fields:
-        "nextPageToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
+        "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
     })
     if (res.data.items) {
       events = events.concat(res.data.items)
     }
     nextPageToken = res.data.nextPageToken ?? ""
+    newSyncTokenCalendarEvents = res.data.nextSyncToken ?? ""
   } while (nextPageToken)
 
   if (events.length) {
@@ -261,7 +265,16 @@ const insertCalendarEvents = async (
     // await insert(  , mailSchema)
   }
 
-  return events
+  if (!newSyncTokenCalendarEvents) {
+    // TODO Make a custom err
+    // throw new ContactListingError({
+    //   message: "Could not get sync tokens for contact",
+    //   integration: Apps.GoogleDrive,
+    //   entity: GooglePeopleEntity.Contacts,
+    // })
+  }
+
+  return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
 export const handleGoogleOAuthIngestion = async (
@@ -298,10 +311,11 @@ export const handleGoogleOAuthIngestion = async (
     const [
       // _,
       // historyId,
-      events,
+      { calendarEventsToken },
     ] = await Promise.all([
       // insertFilesForUser(oauth2Client, userEmail, connector),
       // handleGmailIngestion(oauth2Client, userEmail),
+      // TODO Also do everything same in ServiceAccountIngestion
       insertCalendarEvents(oauth2Client, userEmail),
     ])
     const changeTokens = {
@@ -345,6 +359,22 @@ export const handleGoogleOAuthIngestion = async (
       //   type: SyncCron.ChangeToken,
       //   status: SyncJobStatus.NotStarted,
       // })
+      // For inserting Google CalendarEvent Change Job
+      await insertSyncJob(trx, {
+        workspaceId: connector.workspaceId,
+        workspaceExternalId: connector.workspaceExternalId,
+        app: Apps.GoogleCalendar,
+        connectorId: connector.id,
+        authType: AuthType.OAuth,
+        config: {
+          calendarEventsToken,
+          type: "calendarEventsChangeToken",
+          lastSyncedAt: new Date().toISOString(),
+        },
+        email: userEmail,
+        type: SyncCron.ChangeToken,
+        status: SyncJobStatus.NotStarted,
+      })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })

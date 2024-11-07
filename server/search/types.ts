@@ -13,6 +13,7 @@ export enum Apps {
   Gmail = "gmail",
 
   Notion = "notion",
+  GoogleCalendar = 'google-calendar'
 }
 
 export enum GooglePeopleEntity {

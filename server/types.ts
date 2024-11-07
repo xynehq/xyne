@@ -148,10 +148,17 @@ const GmailChangeTokenSchema = z.object({
   lastSyncedAt: z.coerce.date(),
 })
 
+const CalendarEventsChangeTokenSchema = z.object({
+  type: z.literal("calendarEventsChangeToken"),
+  calendarEventsToken: z.string(),
+  lastSyncedAt: z.coerce.date(),
+})
+
 const ChangeTokenSchema = z.union([
   DefaultTokenSchema,
   GoogleDriveChangeTokenSchema,
   GmailChangeTokenSchema,
+  CalendarEventsChangeTokenSchema,
 ])
 
 // Define UpdatedAtVal schema

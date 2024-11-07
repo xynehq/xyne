@@ -78,6 +78,13 @@
       "when": 1730621571708,
       "tag": "0010_regular_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1730975375713,
+      "tag": "0011_fine_echo",
+      "breakpoints": true
     }
   ]
 }
