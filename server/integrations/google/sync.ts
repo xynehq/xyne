@@ -1,7 +1,8 @@
-import { drive_v3, gmail_v1, google, people_v1 } from "googleapis"
+import { calendar_v3, drive_v3, gmail_v1, google, people_v1 } from "googleapis"
 import {
   Subsystem,
   SyncCron,
+  type CalendarEventsChangeToken,
   type ChangeToken,
   type GmailChangeToken,
   type GoogleChangeToken,
@@ -613,6 +614,167 @@ export const handleGoogleOAuthChanges = async (
         entity: "",
       })
     }
+  }
+
+  // For Calendar Events Sync
+  const gCalEventSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.GoogleCalendar,
+    AuthType.OAuth,
+  )
+  for (const syncJob of gCalEventSyncJobs) {
+    let stats = newStats()
+    try {
+      // flag to know if there were any updates
+      const connector = await getOAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauth2Client = new google.auth.OAuth2()
+      let config: CalendarEventsChangeToken =
+        syncJob.config as CalendarEventsChangeToken
+      // we have guarantee that when we started this job access Token at least
+      // hand one hour, we should increase this time
+      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      const calendar = google.calendar({ version: "v3", auth: oauth2Client })
+
+      let { eventChanges, newCalendarEventsSyncToken, changesExist } =
+        await handleGoogleCalendarEventsChanges(
+          calendar,
+          config.calendarEventsToken,
+          syncJob.email,
+        )
+
+      if (changesExist) {
+        // update the change token
+        config.calendarEventsToken = newCalendarEventsSyncToken
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+          // make it compatible with sync history config type
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: stats.added,
+            dataDeleted: stats.removed,
+            dataUpdated: stats.updated,
+            authType: AuthType.OAuth,
+            summary: { description: stats.summary },
+            errorMessage: "",
+            app: Apps.GoogleCalendar,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+        Logger.info(
+          `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
+        )
+      } else {
+        Logger.info(`No Google Calendar Event changes to sync`)
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        `Could not successfully complete Oauth sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+      const config: CalendarEventsChangeToken =
+        syncJob.config as CalendarEventsChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.OAuth,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.GoogleCalendar,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+      throw new SyncJobFailed({
+        message: "Could not complete sync job",
+        cause: error as Error,
+        integration: Apps.GoogleCalendar,
+        entity: "",
+      })
+    }
+  }
+}
+
+const handleGoogleCalendarEventsChanges = async (
+  calendar: calendar_v3.Calendar,
+  syncToken: string,
+  userEmail: string,
+) => {
+  let changesExist = false
+  const stats = newStats()
+  let nextPageToken = ""
+  // will be returned in the end
+  let newSyncTokenCalendarEvents: string = ""
+
+  let eventChanges: calendar_v3.Schema$Event[] = []
+
+  try {
+    do {
+      const res = await calendar.events.list({
+        calendarId: "primary", // Use 'primary' for the primary calendar
+        maxResults: 2500, // Limit the number of results
+        pageToken: nextPageToken,
+        syncToken,
+        fields:
+          "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
+      })
+
+      newSyncTokenCalendarEvents = res.data.nextSyncToken ?? syncToken
+      // Check if there are no new changes
+      if (newSyncTokenCalendarEvents === syncToken) {
+        return {
+          stats,
+          newCalendarEventsSyncToken: newSyncTokenCalendarEvents,
+          changesExist,
+        }
+      }
+
+      if (res.data.items) {
+        eventChanges = eventChanges.concat(res.data.items)
+        console.log("eventChanges")
+        console.log(eventChanges)
+        console.log("eventChanges")
+      }
+
+      // todo insert/delete events accordinly
+      for (const eventChange of eventChanges) {
+        // todo after inserting/deleting
+        changesExist = true
+      }
+
+      nextPageToken = res.data.nextPageToken ?? ""
+    } while (nextPageToken)
+
+    return {
+      eventChanges,
+      newCalendarEventsSyncToken: newSyncTokenCalendarEvents,
+      changesExist
+    }
+  } catch (err) {
+    // TODO throw proper error
+    throw err
   }
 }
 
