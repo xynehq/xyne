@@ -658,7 +658,33 @@ const openAIClient = new OpenAI({
   apiKey: OpenAIKey, // This is the default and can be omitted
 })
 
-// Modify the main execution flow
+export const calculateCost = (
+  { inputTokens, outputTokens }: { inputTokens: number; outputTokens: number },
+  cost: Cost,
+): number => {
+  const inputCost = (inputTokens / 1000) * cost.pricePerThousandInputTokens
+  const outputCost = (outputTokens / 1000) * cost.pricePerThousandOutputTokens
+  return inputCost + outputCost
+}
+
+type Cost = {
+  pricePerThousandInputTokens: number
+  pricePerThousandOutputTokens: number
+}
+
+// 4o-mini
+const gptCost = {
+  onDemand: {
+    pricePerThousandInputTokens: 0.00015,
+    pricePerThousandOutputTokens: 0.0006,
+  },
+  batch: {
+    pricePerThousandInputTokens: 0.000075,
+    pricePerThousandOutputTokens: 0.0003,
+  },
+}
+
+// Modify the main execution flow to calculate and log cost
 ;(async () => {
   try {
     const runMetrics = await runSingleExperiment()
@@ -693,12 +719,28 @@ const openAIClient = new OpenAI({
         contextDocs,
       ) // Pass context as array
 
+      // Calculate cost
+      const inputTokens = prompt.split(" ").length // Example token count
+      const outputTokens = responseText.trim().split(" ").length // Example token count
+      const cost = calculateCost(
+        { inputTokens, outputTokens },
+        gptCost.onDemand,
+      )
+
+      // Log the cost
+      console.log(`LLM Response Cost: $${cost.toFixed(4)}`)
+
       // Output the LLM evaluation metrics
-      console.log(JSON.stringify(llmMetrics, null, 2))
+      llmMetrics.forEach((metric) => {
+        console.log(`Metric: ${metric.name}`)
+        console.log(`Score: ${metric.score!.toFixed(3)}`)
+        if (metric.metadata) {
+          // console.log('Metadata:', JSON.stringify(metric.metadata, null, 2));
+        }
+        console.log("---------------------------")
+      })
     }
   } catch (error) {
     console.error("Experiment failed:", error)
   }
 })()
-
-// ...existing code...
