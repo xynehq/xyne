@@ -61,10 +61,14 @@ const getName = (app: Apps, entity: Entity): string => {
       return "Folder"
     } else if (entity === DriveEntity.Sheets) {
       return "Sheets"
+    } else if (entity === DriveEntity.Slides) {
+      return "Slides"
     } else if (entity === DriveEntity.Docs) {
       return "Docs"
     } else if (entity === DriveEntity.Image) {
       return "Images"
+    }  else if (entity === DriveEntity.WordDocument) {
+      return "Docx"
     } else if (entity === DriveEntity.Presentation) {
       return "Slides"
     } else if (entity === GooglePeopleEntity.Contacts) {
