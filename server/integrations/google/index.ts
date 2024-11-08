@@ -54,7 +54,10 @@ import {
   toPermissionsList,
 } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
-import { type VespaFileWithDrivePermission } from "@/search/types"
+import {
+  CalendarEntity,
+  type VespaFileWithDrivePermission,
+} from "@/search/types"
 import {
   UserListingError,
   CouldNotFinishJobSuccessfully,
@@ -78,6 +81,7 @@ import {
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
+const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -208,6 +212,120 @@ export const syncGoogleWorkspace = async (
   }
 }
 
+const getTextFromEventDescription = (description: string) => {
+  //todo change wordwrap ??
+  return htmlToText.convert(description, { wordwrap: 130 })
+}
+
+const getBaseUrlFromUrl = (url: string) => {
+  try {
+    if (url) {
+      const parsedUrl = new URL(url)
+      return `${parsedUrl.protocol}//${parsedUrl.host}`
+    }
+  } catch (error) {
+    console.error("Invalid URL:", error)
+    return ""
+  }
+}
+
+// TODO Do this again, can't find document
+const getLinkFromDescription = (description: string): string => {
+  // Check if the description is provided and not empty
+  if (description) {
+    // Create a temporary DOM element to parse HTML
+    const tempDiv = document.createElement("div")
+    tempDiv.innerHTML = description
+
+    // Get all anchor tags from the parsed HTML
+    const links = tempDiv.getElementsByTagName("a")
+
+    // Define the Zoom link identifier
+    const zoomLinkIdentifier = "zoom.us"
+
+    // Search through each link to find a Zoom link
+    // @ts-ignore
+    for (const link of links) {
+      const href = link.href // Get the href attribute of the anchor tag
+      const url = new URL(href)
+      const hostname = url.hostname
+      if (
+        hostname.endsWith(zoomLinkIdentifier) ||
+        hostname === zoomLinkIdentifier
+      ) {
+        return href // Return the href if it contains 'zoom.us'
+      }
+    }
+  }
+  return "" // Return "" if no Zoom link is found
+}
+
+const getJoiningLink = (event: calendar_v3.Schema$Event) => {
+  const conferenceLink = event?.conferenceData?.entryPoints![0]?.uri
+  if (conferenceLink) {
+    return {
+      baseUrl: getBaseUrlFromUrl(conferenceLink) ?? "",
+      joiningUrl: conferenceLink ?? "",
+    }
+  } else {
+    // Check if any joining Link is there in description
+    // By deafult only Google meet links are there in confereneData
+    const description = event.description ?? ""
+    const linkFromDesc = getLinkFromDescription(description)
+    return {
+      baseUrl: getBaseUrlFromUrl(linkFromDesc) ?? "",
+      joiningUrl: linkFromDesc ?? "",
+    }
+  }
+}
+
+const getAttendeesOfEvent = (
+  allAttendes: calendar_v3.Schema$EventAttendee[],
+) => {
+  if (allAttendes.length === 0) {
+    return { attendeesInfo: [], attendeesNames: [] }
+  }
+
+  const attendeesInfo: { email: string; displayName: string }[] = []
+  const attendeesNames: string[] = []
+  for (const attendee of allAttendes) {
+    attendeesNames.push(attendee.displayName ?? "")
+
+    const oneAttendee = { email: "", displayName: "" }
+    oneAttendee.email = attendee.email ?? ""
+    oneAttendee.displayName = attendee.displayName ?? ""
+
+    attendeesInfo.push(oneAttendee)
+  }
+
+  return { attendeesInfo, attendeesNames }
+}
+
+const getAttachments = (
+  allAttachments: calendar_v3.Schema$EventAttachment[],
+) => {
+  if (allAttachments.length === 0) {
+    return { attachmentsInfo: [], attachmentFilenames: [] }
+  }
+
+  const attachmentsInfo = []
+  const attachmentFilenames = []
+
+  for (const attachment of allAttachments) {
+    attachmentFilenames.push(attachment.title ?? "")
+
+    const oneAttachment = { fileId: "", title: "", mimeType: "", fileUrl: "" }
+    oneAttachment.fileId = attachment.fileId ?? ""
+    oneAttachment.title = attachment.title ?? ""
+    oneAttachment.mimeType = attachment.mimeType ?? ""
+    oneAttachment.fileUrl = attachment.fileUrl ?? ""
+
+    attachmentsInfo.push(oneAttachment)
+  }
+
+  return { attachmentsInfo, attachmentFilenames }
+}
+
 const insertCalendarEvents = async (
   client: GoogleClient,
   userEmail: string,
@@ -236,7 +354,7 @@ const insertCalendarEvents = async (
       // orderBy: "startTime",
       pageToken: nextPageToken,
       fields:
-        "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
+        "nextPageToken, nextSyncToken, items(id, status, originalStartTime, recurringEventId, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
     })
     if (res.data.items) {
       events = events.concat(res.data.items)
@@ -245,24 +363,57 @@ const insertCalendarEvents = async (
     newSyncTokenCalendarEvents = res.data.nextSyncToken ?? ""
   } while (nextPageToken)
 
-  if (events.length) {
-    console.log("events")
-    console.log(events.length)
-    console.log(events)
-    console.log("events")
-  } else {
-    console.log("No upcoming events found.")
+  if (events.length === 0) {
+    return { events: [], calendarEventsToken: newSyncTokenCalendarEvents }
   }
 
-  // TODO Add email, app, entity here
-  // TODO We are doing only primary calendar ??
-  // TODO Also check abt the links of another video call urls like zoom
-  // TODO What abt attachments
-
   for (const event of events) {
-    const eventToBeIngested = {}
+    const { baseUrl, joiningUrl } = getJoiningLink(event)
+    const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
+      event.attendees ?? [],
+    )
+    const { attachmentsInfo, attachmentFilenames } = getAttachments(
+      event.attachments ?? [],
+    )
+    const eventToBeIngested = {
+      docId: event.id,
+      name: event.summary ?? "",
+      description: getTextFromEventDescription(event?.description ?? ""),
+      url: event.htmlLink, // eventLink, not joiningLink
+      status: event.status ?? "",
+      location: event.location ?? "",
+      createdAt: new Date(event.created!).getTime(),
+      updatedAt: new Date(event.updated!).getTime(),
+      email: userEmail,
+      app: Apps.GoogleCalendar,
+      entity: CalendarEntity.Event,
+      creator: {
+        email: event.creator?.email ?? "",
+        displayName: event.creator?.displayName ?? "",
+      },
+      organizer: {
+        email: event.organizer?.email ?? "",
+        displayName: event.organizer?.displayName ?? "",
+      },
+      attendees: attendeesInfo,
+      attendeesNames: attendeesNames,
+      startTime: new Date(event.start?.dateTime!).getTime(),
+      endTime: new Date(event.end?.dateTime!).getTime(),
+      attachmentFilenames,
+      attachments: attachmentsInfo,
+      recurrence: event.recurrence, // Contains recurrence metadata of recurring events like RRULE, etc
+      baseUrl,
+      joiningLink: joiningUrl,
+      // todo ?? use guestsCanModify maybe
+      permissions: [event.organizer?.email],
+    }
 
-    // await insert(  , mailSchema)
+    console.log("eventToBeIngested")
+    console.log(eventToBeIngested)
+    console.log("eventToBeIngested")
+
+    // @ts-ignore
+    await insert(eventToBeIngested, "event")
   }
 
   if (!newSyncTokenCalendarEvents) {

@@ -32,6 +32,10 @@ export enum MailEntity {
   Email = "mail",
 }
 
+export enum CalendarEntity {
+  Event = "event",
+}
+
 export enum DriveEntity {
   Docs = "docs",
   Sheets = "sheets",
