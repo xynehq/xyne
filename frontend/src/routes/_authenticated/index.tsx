@@ -72,7 +72,9 @@ export const Index = () => {
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
-  const [filter, setFilter] = useState<Filter>({ lastUpdated: search.lastUpdated as LastUpdated || "anytime" })
+  const [filter, setFilter] = useState<Filter>({
+    lastUpdated: (search.lastUpdated as LastUpdated) || "anytime",
+  })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
@@ -230,7 +232,7 @@ export const Index = () => {
         // even if group count value is lower than the page
         // if we ask for sending the page size it actually
         // finds that many even though as per groups it had less than page size
-        if(groups) {
+        if (groups) {
           pageCount = groups[filter.app][filter.entity]
           params.page = page < pageCount ? page : pageCount
         }
@@ -334,7 +336,12 @@ export const Index = () => {
   }
   const totalCount = searchMeta?.totalCount || 0
   // if filter is selected we should keep it's count to prevent showing button for pagination
-  const filterPageSize = filter.app && filter.entity ? groups ? groups[filter.app][filter.entity] : totalCount : totalCount
+  const filterPageSize =
+    filter.app && filter.entity
+      ? groups
+        ? groups[filter.app][filter.entity]
+        : totalCount
+      : totalCount
 
   return (
     <div className="h-full w-full flex">

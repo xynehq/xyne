@@ -310,13 +310,13 @@ const HybridDefaultProfile = (
   app: Apps | null,
   entity: Entity | null,
   profile: RankProfile = "default",
-  timestamp: number | null
+  timestamp: number | null,
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
-  if(timestamp) {
+  if (timestamp) {
     fileTimestamp = `updatedAt >= ${timestamp}`
     mailTimestamp = `timestamp >= ${timestamp}`
     userTimestamp = `creationTime >= ${timestamp}`
@@ -333,19 +333,22 @@ const HybridDefaultProfile = (
                 ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e)))
                 ${timestamp ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${appOrEntityFilter})
             or
-            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} `:""} ${!hasAppOrEntity ? ` and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter})
+            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} ` : ""} ${!hasAppOrEntity ? ` and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter})
             or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestamp ? `and ${userTimestamp} `:""} ${appOrEntityFilter})
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestamp ? `and ${userTimestamp} ` : ""} ${appOrEntityFilter})
         `,
     // the last 2 are due to the 2 types of users, contacts and admin directory present in the same schema
   }
 }
 
-const HybridDefaultProfileAppEntityCounts = (hits: number, timestamp: number | null): YqlProfile => {
+const HybridDefaultProfileAppEntityCounts = (
+  hits: number,
+  timestamp: number | null,
+): YqlProfile => {
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
-  if(timestamp) {
+  if (timestamp) {
     fileTimestamp = `updatedAt >= ${timestamp}`
     mailTimestamp = `timestamp >= ${timestamp}`
     userTimestamp = `creationTime >= ${timestamp}`
@@ -356,9 +359,9 @@ const HybridDefaultProfileAppEntityCounts = (hits: number, timestamp: number | n
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestamp ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email)
             or
-            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} `:""} and app contains "${Apps.GoogleWorkspace}")
+            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestamp ? `and ${userTimestamp} `:""})
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestamp ? `and ${userTimestamp} ` : ""})
             limit 0
             | all(
                 group(app) each(
@@ -427,7 +430,13 @@ export const searchVespa = async (
 
   // Determine the timestamp cutoff based on lastUpdated
   const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
-  let { yql, profile } = HybridDefaultProfile(limit, app, entity, "default", timestamp)
+  let { yql, profile } = HybridDefaultProfile(
+    limit,
+    app,
+    entity,
+    "default",
+    timestamp,
+  )
 
   const hybridDefaultPayload = {
     yql,
@@ -835,22 +844,21 @@ export const searchUsersByNamesAndEmails = async (
  * Helper function to calculate the timestamp based on LastUpdated value.
  */
 const getTimestamp = (lastUpdated: string): number | null => {
-  const now = new Date().getTime(); // Convert current time to epoch seconds
+  const now = new Date().getTime() // Convert current time to epoch seconds
   switch (lastUpdated) {
     case "pastDay":
-      return now - 24 * 60 * 60 * 1000;
+      return now - 24 * 60 * 60 * 1000
     case "pastWeek":
-      return now - 7 * 24 * 60 * 60 * 1000;
+      return now - 7 * 24 * 60 * 60 * 1000
     case "pastMonth":
-      return now - 30 * 24 * 60 * 60 * 1000;
+      return now - 30 * 24 * 60 * 60 * 1000
     case "pastYear":
-      return now - 365 * 24 * 60 * 60 * 1000;
+      return now - 365 * 24 * 60 * 60 * 1000
     case "anytime":
     default:
-      return null;
+      return null
   }
 }
-
 
 // export const searchEmployeesViaName = async (
 //   name: string,

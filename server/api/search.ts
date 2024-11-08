@@ -7,14 +7,15 @@ import {
   deduplicateAutocomplete,
   groupVespaSearch,
   searchVespa,
-  searchUsersByNamesAndEmails
+  searchUsersByNamesAndEmails,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
   userSchema,
-  type VespaSearchResponse, type VespaUser
+  type VespaSearchResponse,
+  type VespaUser,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
@@ -23,8 +24,9 @@ import {
 import {
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
-  askQuestion, Models,
-  QueryCategory
+  askQuestion,
+  Models,
+  QueryCategory,
 } from "@/ai/provider/bedrock"
 import {
   answerContextMap,
@@ -114,7 +116,12 @@ export const SearchApi = async (c: Context) => {
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
-    groupCount = await groupVespaSearch(decodedQuery, email, config.page, lastUpdated)
+    groupCount = await groupVespaSearch(
+      decodedQuery,
+      email,
+      config.page,
+      lastUpdated,
+    )
     results = await searchVespa(
       decodedQuery,
       email,

@@ -47,7 +47,7 @@ export const getIcon = (
       entity === GooglePeopleEntity.OtherContacts
     ) {
       return <Users stroke="#464B53" size={12} className="mr-[10px]" />
-    } else if(entity === DriveEntity.WordDocument) {
+    } else if (entity === DriveEntity.WordDocument) {
       return <img className={classNameVal} src={DriveSvg} />
     } else {
       return <img className={classNameVal} src={DriveSvg} />
