@@ -74,7 +74,6 @@ export const Index = () => {
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter>({ lastUpdated: search.lastUpdated as LastUpdated || "anytime" })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
-  const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
@@ -212,7 +211,9 @@ export const Index = () => {
     setHasSearched(true)
     setAutocompleteResults([])
     try {
-      const groupCount = !(filter.app && filter.entity)
+      // TODO: figure out when lastUpdated changes and only
+      // then make it true or when app,entity is not present
+      const groupCount = true
       let params: any = {
         page: page,
         offset: newOffset,
@@ -303,8 +304,6 @@ export const Index = () => {
   }
 
   const handleFilterChange = (appEntity: Filter) => {
-    setPageNumber(0)
-
     // Check if appEntity.app and appEntity.entity are defined
     if (!appEntity.app || !appEntity.entity) {
       const updatedFilter: Filter = {
@@ -352,6 +351,7 @@ export const Index = () => {
           setAutocompleteQuery={setAutocompleteQuery}
           setOffset={setOffset}
           setFilter={setFilter}
+          filter={filter}
           query={query}
           handleSearch={handleSearch}
           handleAnswer={handleAnswer}

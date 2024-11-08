@@ -19,6 +19,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
       query,
       handleSearch,
       handleAnswer,
+      filter,
       onLastUpdated,
     },
     autocompleteRef,
@@ -129,7 +130,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
         {/* search filters */}
         {hasSearched && (
           <div className="ml-[230px] text-[13px]">
-            <SearchFilters onLastUpdated={onLastUpdated} />
+            <SearchFilters onLastUpdated={onLastUpdated} filter={filter} />
           </div>
         )}
       </div>

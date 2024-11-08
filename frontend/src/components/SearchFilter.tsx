@@ -44,8 +44,11 @@ const positionValues: LastUpdated[] = [
   "custom",
 ]
 
-export const SearchFilters = ({ onLastUpdated }: { onLastUpdated: (value: LastUpdated) => void }) => {
-  const [position, setPosition] = useState<LastUpdated>("anytime")
+export const SearchFilters = ({
+  onLastUpdated,
+  filter,
+}: { onLastUpdated: (value: LastUpdated) => void; filter: any }) => {
+  const [position, setPosition] = useState<LastUpdated>(filter.lastUpdated || "anytime")
 
   return (
     <DropdownMenu>

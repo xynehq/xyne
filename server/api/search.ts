@@ -1,43 +1,30 @@
 import llama3Tokenizer from "llama3-tokenizer-js"
 import { encode } from "gpt-tokenizer"
 
-import type { Context, ValidationTargets } from "hono"
+import type { Context } from "hono"
 import {
   autocomplete,
   deduplicateAutocomplete,
   groupVespaSearch,
   searchVespa,
-  searchUsersByNamesAndEmails,
-  type AppEntityCounts,
+  searchUsersByNamesAndEmails
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
-  Apps,
-  GooglePeopleEntity,
-  MailEntity,
-  mailSchema,
   userSchema,
-  type VespaSearchResponse,
-  type VespaSearchResult,
-  type VespaUser,
+  type VespaSearchResponse, type VespaUser
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
 } from "@/search/mappers"
 import {
-  analyzeQuery,
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
-  askQuestion,
-  askQuestionInputTokenCount,
-  calculateCost,
-  modelDetailsMap,
-  Models,
-  QueryCategory,
-  type QueryContextRank,
+  askQuestion, Models,
+  QueryCategory
 } from "@/ai/provider/bedrock"
 import {
   answerContextMap,
@@ -127,7 +114,7 @@ export const SearchApi = async (c: Context) => {
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
-    groupCount = await groupVespaSearch(decodedQuery, email)
+    groupCount = await groupVespaSearch(decodedQuery, email, config.page, lastUpdated)
     results = await searchVespa(
       decodedQuery,
       email,
