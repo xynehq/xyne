@@ -14,7 +14,7 @@ import { JWT, type OAuth2Client } from "google-auth-library"
 
 // type PeopleData = GoogleWorkspacePeople
 
-export const searchSchema = z.object({
+const baseSearchSchema = z.object({
   query: z.string(),
   groupCount: z
     .union([z.string(), z.undefined(), z.null()])
@@ -26,7 +26,6 @@ export const searchSchema = z.object({
     .transform((x) => Number(x ?? 0))
     .pipe(z.number().min(0))
     .optional(),
-  // removed min page size for filters
   page: z
     .union([z.string(), z.undefined(), z.null()])
     .transform((x) => Number(x ?? config.page))
@@ -34,7 +33,16 @@ export const searchSchema = z.object({
     .optional(),
   app: z.nativeEnum(Apps).optional(),
   entity: z.string().min(1).optional(),
+  lastUpdated: z.string().default("anytime"),
 })
+
+export const searchSchema = baseSearchSchema.refine(
+  (data) => (data.app && data.entity) || (!data.app && !data.entity),
+  {
+    message: "app and entity must be provided together",
+    path: ["app", "entity"],
+  },
+)
 
 export const answerSchema = z.object({
   query: z.string(),
@@ -42,7 +50,7 @@ export const answerSchema = z.object({
   entity: z.string().min(1).optional(),
 })
 
-export const searchQuerySchema = searchSchema.extend({
+export const searchQuerySchema = baseSearchSchema.extend({
   permissions: z.array(z.string()),
 })
 
