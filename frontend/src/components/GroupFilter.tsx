@@ -27,8 +27,8 @@ const GroupFilterItem = ({
   title: string
   onClick: any
   total: number
-  filter: Filter | null
-  isFilter: any
+  filter: Filter
+  isFilter: (filter: Filter) => boolean
   Image: JSX.Element
   className?: string
   index: number
@@ -37,7 +37,9 @@ const GroupFilterItem = ({
     <div className={`rounded-md h-[32px] ml-[40px] ${className}`} key={index}>
       <div
         onClick={onClick}
-        className={`${isFilter(filter) ? "bg-[#F0F4F7]" : ""} flex flex-row rounded-[6px] items-center justify-between cursor-pointer  pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
+        className={`${
+          isFilter(filter) ? "bg-[#F0F4F7]" : ""
+        } flex flex-row rounded-[6px] items-center justify-between cursor-pointer  pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
       >
         <div className="flex items-center">
           {Image}
@@ -87,7 +89,7 @@ export const GroupFilter = ({
 }: {
   groups: Groups
   handleFilterChange: any
-  filter: Filter | null
+  filter: Filter
   total: number
 }) => {
   return (
@@ -97,9 +99,9 @@ export const GroupFilter = ({
         className={"mt-4"}
         title={"All"}
         filter={filter}
-        isFilter={(filter: Filter | null) => !filter}
+        isFilter={(filter: Filter) => !filter.app && !filter.entity}
         onClick={() => {
-          handleFilterChange(null)
+          handleFilterChange({}) // Pass an empty object instead of null
         }}
         total={total!}
         Image={<img src={allFilter} className="mr-[10px]" />}
@@ -111,8 +113,8 @@ export const GroupFilter = ({
             index={index}
             title={getName(app, entity)}
             filter={filter}
-            isFilter={(filter: Filter | null) =>
-              filter && filter.app === app && filter.entity === entity
+            isFilter={(filter: Filter) =>
+              filter.app === app && filter.entity === entity
             }
             onClick={() => {
               handleFilterChange({ app, entity })

@@ -120,16 +120,34 @@ export const SearchApi = async (c: Context) => {
     page,
     app,
     entity,
+    lastUpdated,
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const decodedQuery = decodeURIComponent(query)
+  console.log(lastUpdated)
   if (gc) {
     groupCount = await groupVespaSearch(decodedQuery, email)
-    results = await searchVespa(decodedQuery, email, app, entity, page, offset)
+    results = await searchVespa(
+      decodedQuery,
+      email,
+      app,
+      entity,
+      page,
+      offset,
+      lastUpdated,
+    )
   } else {
-    results = await searchVespa(decodedQuery, email, app, entity, page, offset)
+    results = await searchVespa(
+      decodedQuery,
+      email,
+      app,
+      entity,
+      page,
+      offset,
+      lastUpdated,
+    )
   }
 
   // TODO: deduplicate for google admin and contacts

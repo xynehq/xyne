@@ -36,6 +36,7 @@ import {
   ChevronsUpDown,
   MessageSquareShare,
 } from "lucide-react"
+import { LastUpdated } from "@/components/SearchFilter"
 
 const logger = console
 
@@ -71,7 +72,7 @@ export const Index = () => {
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
-  const [filter, setFilter] = useState<Filter | null>(null)
+  const [filter, setFilter] = useState<Filter>({ lastUpdated: "anytime" })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [filteredSearchMeta, setFilteredSearchMeta] =
     useState<SearchMeta | null>(null)
@@ -154,7 +155,7 @@ export const Index = () => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
-      handleSearch(0, filter)
+      handleSearch(0)
     }
   }, [])
 
@@ -164,12 +165,13 @@ export const Index = () => {
     setAnswer(null)
 
     const url = new URL(`/api/answer`, window.location.origin)
-    if (newFilter) {
-      url.searchParams.append("query", encodeURIComponent(query))
+    url.searchParams.append("query", encodeURIComponent(query))
+    if (newFilter && newFilter.app && newFilter.entity) {
       url.searchParams.append("app", newFilter.app)
       url.searchParams.append("entity", newFilter.entity)
-    } else {
-      url.searchParams.append("query", encodeURIComponent(query))
+    }
+    if (newFilter.lastUpdated) {
+      url.searchParams.append("lastUpdated", newFilter.lastUpdated)
     }
 
     const eventSource = new EventSource(url.toString(), {
@@ -203,81 +205,38 @@ export const Index = () => {
     }
   }
 
-  const handleSearch = async (newOffset = offset, newFilter: Filter | null) => {
+  const handleSearch = async (newOffset = offset, newFilter: Filter = {}) => {
     if (!query) return
     setHasSearched(true)
     setAutocompleteResults([])
     try {
-      let params = {}
-      let groupCount
-      if (newFilter && groups) {
-        groupCount = false
-        let pageSize =
-          page > groups[newFilter.app][newFilter.entity]
-            ? groups[newFilter.app][newFilter.entity]
-            : page
-        params = {
-          page: pageSize,
-          offset: newOffset,
-          query: encodeURIComponent(query),
-          groupCount,
-          app: newFilter.app,
-          entity: newFilter.entity,
-        }
-        navigate({
-          to: "/search",
-          search: (prev) => ({
-            ...prev,
-            query: encodeURIComponent(query),
-            page: pageSize,
-            offset: newOffset,
-            app: newFilter.app,
-            entity: newFilter.entity,
-          }),
-          replace: true,
-        })
-
-        // we went directly via the url hence
-        // groups does not exist
-      } else if (filter && !groups) {
-        groupCount = true
-        params = {
-          page: page,
-          offset: newOffset,
-          query: encodeURIComponent(query),
-          groupCount,
-          app: filter.app,
-          entity: filter.entity,
-        }
-        navigate({
-          to: "/search",
-          search: (prev) => ({
-            ...prev,
-            query: query,
-            page: page,
-            offset: newOffset,
-          }),
-          replace: true,
-        })
-      } else {
-        groupCount = true
-        params = {
-          page: page,
-          offset: newOffset,
-          query: encodeURIComponent(query),
-          groupCount,
-        }
-        navigate({
-          to: "/search",
-          search: (prev) => ({
-            ...prev,
-            query: query,
-            page: page,
-            offset: newOffset,
-          }),
-          replace: true,
-        })
+      const groupCount = !(newFilter.app && newFilter.entity)
+      let params: any = {
+        page: page,
+        offset: newOffset,
+        query: encodeURIComponent(query),
+        groupCount,
+        lastUpdated: newFilter.lastUpdated || "anytime",
       }
+
+      if (newFilter.app && newFilter.entity) {
+        params.app = newFilter.app
+        params.entity = newFilter.entity
+      }
+
+      navigate({
+        to: "/search",
+        search: (prev) => ({
+          ...prev,
+          query: encodeURIComponent(query),
+          page,
+          offset: newOffset,
+          app: params.app,
+          entity: params.entity,
+          lastUpdated: params.lastUpdated,
+        }),
+        replace: true,
+      })
 
       // Send a GET request to the backend with the search query
       const response = await api.search.$get({
@@ -337,35 +296,38 @@ export const Index = () => {
     handleSearch(newOffset, filter) // Trigger search with the updated offset
   }
 
-  // const goToPage = (pageNumber: number) => {
-  //   const newOffset = pageNumber * page
-  //   setOffset(newOffset)
-  //   handleSearch(newOffset) // Trigger search with the updated offset
-  // }
-
-  // const handlePrev = () => {
-  //   const newOffset = Math.max(0, offset - page)
-  //   setOffset(newOffset)
-  //   handleSearch(newOffset) // Trigger search with the updated offset
-  // }
-
-  const handleFilterChange = (appEntity: Filter | null) => {
+  const handleFilterChange = (appEntity: Filter) => {
     setPageNumber(0)
-    if (!appEntity) {
-      setFilter(null)
+
+    // Check if appEntity.app and appEntity.entity are defined
+    if (!appEntity.app || !appEntity.entity) {
+      const updatedFilter: Filter = {
+        lastUpdated: filter.lastUpdated || "anytime",
+      }
+      setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, null)
+      handleSearch(0, updatedFilter)
       return
     }
+
     const { app, entity } = appEntity
-    if (filter && filter.app === app && filter.entity === entity) {
-      setFilter(null)
+
+    if (filter.app === app && filter.entity === entity) {
+      const updatedFilter: Filter = {
+        lastUpdated: filter.lastUpdated || "anytime",
+      }
+      setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, null)
+      handleSearch(0, updatedFilter)
     } else {
-      setFilter({ app, entity })
+      const updatedFilter: Filter = {
+        app,
+        entity,
+        lastUpdated: filter.lastUpdated || "anytime",
+      }
+      setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, { app, entity })
+      handleSearch(0, updatedFilter)
     }
   }
   const totalCount =
@@ -389,6 +351,11 @@ export const Index = () => {
           query={query}
           handleSearch={handleSearch}
           handleAnswer={handleAnswer}
+          onLastUpdated={(value: LastUpdated) => {
+            const updatedFilter = { ...filter, lastUpdated: value }
+            setFilter(updatedFilter)
+            handleSearch(0, updatedFilter)
+          }}
         />
 
         {hasSearched && (
@@ -491,14 +458,19 @@ export const Index = () => {
   )
 }
 
-const searchParams = z.object({
-  page: z.number().optional(),
-  offset: z.number().optional(),
-  query: z.string().optional(),
-  app: z.nativeEnum(Apps).optional(),
-  entity: z.string().optional(),
-})
-
+const searchParams = z
+  .object({
+    page: z.coerce.number().optional(),
+    offset: z.coerce.number().optional(),
+    query: z.string().optional(),
+    app: z.nativeEnum(Apps).optional(),
+    entity: z.string().optional(),
+    lastUpdated: z.string().optional(),
+  })
+  .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
+    message: "app and entity must be provided together",
+    path: ["app", "entity"],
+  })
 type XyneSearch = z.infer<typeof searchParams>
 
 export const Route = createFileRoute("/_authenticated/")({

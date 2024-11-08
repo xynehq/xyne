@@ -1,12 +1,12 @@
 import { Search } from "lucide-react"
-import React, { useRef, useEffect } from "react"
+import { useRef, useEffect, forwardRef } from "react"
 import { SearchFilters } from "./SearchFilter"
 import { ArrowRight, X } from "lucide-react" // Assuming ArrowRight and X are imported from lucide-react
 import { AutocompleteElement } from "@/components/Autocomplete"
 import { Button } from "@/components/ui/button"
 import { useNavigate } from "@tanstack/react-router"
 
-export const SearchBar = React.forwardRef<HTMLDivElement, any>(
+export const SearchBar = forwardRef<HTMLDivElement, any>(
   (
     {
       hasSearched,
@@ -19,6 +19,7 @@ export const SearchBar = React.forwardRef<HTMLDivElement, any>(
       query,
       handleSearch,
       handleAnswer,
+      onLastUpdated,
     },
     autocompleteRef,
   ) => {
@@ -76,8 +77,8 @@ export const SearchBar = React.forwardRef<HTMLDivElement, any>(
                         to: "/search",
                         search: { query: encodeURIComponent(query) },
                       })
-                      setFilter(null)
-                      handleSearch(0, null)
+                      setFilter({}) // Use empty object instead of null
+                      handleSearch(0, {}) // Pass empty object instead of null
                       // we only want to look for answer if at least
                       // 3 words are there in the query
                       if (query.split(" ").length > 2) {
@@ -129,7 +130,7 @@ export const SearchBar = React.forwardRef<HTMLDivElement, any>(
         {/* search filters */}
         {hasSearched && (
           <div className="ml-[230px] text-[13px]">
-            <SearchFilters />
+            <SearchFilters onLastUpdated={onLastUpdated} />
           </div>
         )}
       </div>

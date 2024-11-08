@@ -405,6 +405,7 @@ export const searchVespa = async (
   entity: Entity | null,
   limit = config.page,
   offset?: number,
+  lastUpdated?: string,
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
