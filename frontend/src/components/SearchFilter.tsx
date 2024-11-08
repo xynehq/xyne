@@ -44,18 +44,16 @@ const positionValues: LastUpdated[] = [
   "custom",
 ]
 
-export const SearchFilters = ({ onLastUpdated }: { onLastUpdated: any }) => {
+export const SearchFilters = ({ onLastUpdated }: { onLastUpdated: (value: LastUpdated) => void }) => {
   const [position, setPosition] = useState<LastUpdated>("anytime")
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* <div className="flex flex-row items-center"> */}
         <Button className="bg-white hover:bg-white text-[#7488A8] border-none shadow-none focus-visible:ring-0">
           <Clock8 size={14} className="mr-[4px] text-[#7488A8]" />
           {positionToText(position)}
         </Button>
-        {/* </div> */}
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
         <DropdownMenuSeparator />
@@ -63,7 +61,7 @@ export const SearchFilters = ({ onLastUpdated }: { onLastUpdated: any }) => {
           value={position}
           onValueChange={(v) => {
             setPosition(v as LastUpdated)
-            onLastUpdated(position)
+            onLastUpdated(v as LastUpdated)
           }}
         >
           {positionValues.map((value) => (

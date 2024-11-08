@@ -72,7 +72,7 @@ export const Index = () => {
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
-  const [filter, setFilter] = useState<Filter>({ lastUpdated: "anytime" })
+  const [filter, setFilter] = useState<Filter>({ lastUpdated: search.lastUpdated as LastUpdated || "anytime" })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)

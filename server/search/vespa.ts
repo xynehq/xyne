@@ -310,8 +310,17 @@ const HybridDefaultProfile = (
   app: Apps | null,
   entity: Entity | null,
   profile: RankProfile = "default",
+  timestamp: number | null
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
+  let fileTimestamp = ""
+  let mailTimestamp = ""
+  let userTimestamp = ""
+  if(timestamp) {
+    fileTimestamp = ` updatedAt <= ${timestamp} `
+    mailTimestamp = ` timestamp <= ${timestamp} `
+    userTimestamp = ` creationTime <= ${timestamp} `
+  }
   let appOrEntityFilter =
     `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
   return {
@@ -322,10 +331,12 @@ const HybridDefaultProfile = (
                 ({targetHits:${hits}}userInput(@query))
                 or
                 ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+                ${timestamp ? `and
+                (${fileTimestamp} or ${mailTimestamp})` : ""}
             )
             and permissions contains @email ${appOrEntityFilter})
             or
-            (({targetHits:${hits}}userInput(@query)) ${!hasAppOrEntity ? ' and app contains "${Apps.GoogleWorkspace}"' : appOrEntityFilter})
+            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} `:""} ${!hasAppOrEntity ? ` and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter})
             or
             (({targetHits:${hits}}userInput(@query)) and owner contains @email ${appOrEntityFilter})
         `,
@@ -409,7 +420,9 @@ export const searchVespa = async (
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
-  let { yql, profile } = HybridDefaultProfile(limit, app, entity)
+  // Determine the timestamp cutoff based on lastUpdated
+  const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  let { yql, profile } = HybridDefaultProfile(limit, app, entity, "default", timestamp)
 
   const hybridDefaultPayload = {
     yql,
@@ -810,6 +823,26 @@ export const searchUsersByNamesAndEmails = async (
   } catch (error) {
     Logger.error(`Error searching users: ${error}`)
     throw error
+  }
+}
+
+/**
+ * Helper function to calculate the timestamp based on LastUpdated value.
+ */
+const getTimestamp = (lastUpdated: string): number | null => {
+  const now = Date.now();
+  switch (lastUpdated) {
+    case "pastDay":
+      return now - 24 * 60 * 60 * 1000;
+    case "pastWeek":
+      return now - 7 * 24 * 60 * 60 * 1000;
+    case "pastMonth":
+      return now - 30 * 24 * 60 * 60 * 1000;
+    case "pastYear":
+      return now - 365 * 24 * 60 * 60 * 1000;
+    case "anytime":
+    default:
+      return null;
   }
 }
 
