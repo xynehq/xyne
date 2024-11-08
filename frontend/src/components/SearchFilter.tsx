@@ -58,7 +58,6 @@ export const SearchFilters = ({ onLastUpdated }: { onLastUpdated: any }) => {
         {/* </div> */}
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
-        {/* <DropdownMenuLabel>Panel Position</DropdownMenuLabel> */}
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
           value={position}

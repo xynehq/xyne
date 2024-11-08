@@ -101,9 +101,9 @@ export const GroupFilter = ({
         filter={filter}
         isFilter={(filter: Filter) => !filter.app && !filter.entity}
         onClick={() => {
-          handleFilterChange({}) // Pass an empty object instead of null
+          handleFilterChange({})
         }}
-        total={total!}
+        total={total}
         Image={<img src={allFilter} className="mr-[10px]" />}
         index={0}
       />

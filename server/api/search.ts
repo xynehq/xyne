@@ -126,7 +126,6 @@ export const SearchApi = async (c: Context) => {
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const decodedQuery = decodeURIComponent(query)
-  console.log(lastUpdated)
   if (gc) {
     groupCount = await groupVespaSearch(decodedQuery, email)
     results = await searchVespa(

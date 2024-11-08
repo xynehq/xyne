@@ -74,8 +74,6 @@ export const Index = () => {
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter>({ lastUpdated: "anytime" })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
-  const [filteredSearchMeta, setFilteredSearchMeta] =
-    useState<SearchMeta | null>(null)
   const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
@@ -159,6 +157,10 @@ export const Index = () => {
     }
   }, [])
 
+  useEffect(() => {
+    handleSearch()
+  }, [filter, offset])
+
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
 
@@ -205,23 +207,32 @@ export const Index = () => {
     }
   }
 
-  const handleSearch = async (newOffset = offset, newFilter: Filter = {}) => {
+  const handleSearch = async (newOffset = offset) => {
     if (!query) return
     setHasSearched(true)
     setAutocompleteResults([])
     try {
-      const groupCount = !(newFilter.app && newFilter.entity)
+      const groupCount = !(filter.app && filter.entity)
       let params: any = {
         page: page,
         offset: newOffset,
         query: encodeURIComponent(query),
         groupCount,
-        lastUpdated: newFilter.lastUpdated || "anytime",
+        lastUpdated: filter.lastUpdated || "anytime",
       }
 
-      if (newFilter.app && newFilter.entity) {
-        params.app = newFilter.app
-        params.entity = newFilter.entity
+      let pageCount = page
+      if (filter.app && filter.entity) {
+        params.app = filter.app
+        params.entity = filter.entity
+        // TODO: there seems to be a bug where if we don't
+        // even if group count value is lower than the page
+        // if we ask for sending the page size it actually
+        // finds that many even though as per groups it had less than page size
+        if(groups) {
+          pageCount = groups[filter.app][filter.entity]
+          params.page = page < pageCount ? page : pageCount
+        }
       }
 
       navigate({
@@ -251,11 +262,6 @@ export const Index = () => {
           setResults(data.results)
         }
 
-        if (newFilter) {
-          setFilteredSearchMeta({ totalCount: data.count })
-        } else {
-          setSearchMeta({ totalCount: data.count })
-        }
         setAutocompleteResults([])
         // ensure even if autocomplete results came a little later we don't show right after we show
         // first set of results after a search
@@ -269,6 +275,7 @@ export const Index = () => {
         }, 1000)
 
         if (groupCount) {
+          setSearchMeta({ totalCount: data.count })
           setGroups(data.groupCount)
         }
       } else {
@@ -293,7 +300,6 @@ export const Index = () => {
   const handleNext = () => {
     const newOffset = offset + page
     setOffset(newOffset)
-    handleSearch(newOffset, filter) // Trigger search with the updated offset
   }
 
   const handleFilterChange = (appEntity: Filter) => {
@@ -306,7 +312,6 @@ export const Index = () => {
       }
       setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, updatedFilter)
       return
     }
 
@@ -318,7 +323,6 @@ export const Index = () => {
       }
       setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, updatedFilter)
     } else {
       const updatedFilter: Filter = {
         app,
@@ -327,11 +331,11 @@ export const Index = () => {
       }
       setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, updatedFilter)
     }
   }
-  const totalCount =
-    (filter ? filteredSearchMeta?.totalCount : searchMeta?.totalCount) || 0
+  const totalCount = searchMeta?.totalCount || 0
+  // if filter is selected we should keep it's count to prevent showing button for pagination
+  const filterPageSize = filter.app && filter.entity ? groups ? groups[filter.app][filter.entity] : totalCount : totalCount
 
   return (
     <div className="h-full w-full flex">
@@ -354,12 +358,11 @@ export const Index = () => {
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
             setFilter(updatedFilter)
-            handleSearch(0, updatedFilter)
           }}
         />
 
         {hasSearched && (
-          <div className="flex flex-row ml-[186px]">
+          <div className="flex flex-row ml-[186px] h-full">
             <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5]">
               {answer && answer.length > 0 && (
                 <div className="flex mt-[24px]">
@@ -428,8 +431,8 @@ export const Index = () => {
               )}
 
               {results.length > 0 &&
-                totalCount > page &&
-                results.length < (totalCount || 0) && (
+                filterPageSize > page &&
+                results.length < filterPageSize && (
                   <button
                     className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
                     onClick={handleNext}
@@ -448,7 +451,7 @@ export const Index = () => {
                 groups={groups}
                 handleFilterChange={handleFilterChange}
                 filter={filter}
-                total={searchMeta?.totalCount!}
+                total={totalCount}
               />
             )}
           </div>
