@@ -229,31 +229,42 @@ const getBaseUrlFromUrl = (url: string) => {
   }
 }
 
-// TODO Do this again, can't find document
 const getLinkFromDescription = (description: string): string => {
   // Check if the description is provided and not empty
   if (description) {
-    // Create a temporary DOM element to parse HTML
-    const tempDiv = document.createElement("div")
-    tempDiv.innerHTML = description
+    const htmlString = htmlToText.convert(description, {
+      // If html is normally parsed, an `a` tag is parsed like below:
+      // <---- Link Title [https://actualLink.com] ----> OR <---- https://actualLink.com [https://actualLink.com] ---->
+      // This gives us only => https://actualLink.com
+      selectors: [
+        {
+          selector: "a",
+          options: {
+            hideLinkHrefIfSameAsText: true, // Hide href if it's the same as text
+            linkBrackets: false, // Exclude brackets around links
+          },
+        },
+      ],
+    })
 
-    // Get all anchor tags from the parsed HTML
-    const links = tempDiv.getElementsByTagName("a")
+    // Regular expression to match URLs
+    const urlRegex = /(https?:\/\/[^\s]+)/g
+
+    // Extract all possible links from the htmlString
+    const links = htmlString.match(urlRegex)
 
     // Define the Zoom link identifier
     const zoomLinkIdentifier = "zoom.us"
 
     // Search through each link to find a Zoom link
-    // @ts-ignore
     for (const link of links) {
-      const href = link.href // Get the href attribute of the anchor tag
-      const url = new URL(href)
+      const url = new URL(link)
       const hostname = url.hostname
       if (
         hostname.endsWith(zoomLinkIdentifier) ||
         hostname === zoomLinkIdentifier
       ) {
-        return href // Return the href if it contains 'zoom.us'
+        return link // Return the href if it contains 'zoom.us'
       }
     }
   }
