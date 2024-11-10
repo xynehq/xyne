@@ -280,7 +280,7 @@ export const Index = () => {
         if (groupCount) {
           // TODO: temp solution until we resolve groupCount from
           // not always being true
-          if(!filter.app && !filter.entity) {
+          if (!filter.app && !filter.entity) {
             setSearchMeta({ totalCount: data.count })
           }
           setGroups(data.groupCount)

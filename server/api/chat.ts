@@ -6,10 +6,12 @@ import {
 } from "@/ai/context"
 import { parse, Allow, STR, ARR, OBJ } from "partial-json"
 import {
+  analyzeInitialResultsOrRewrite,
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
   askQuestionWithCitations,
   generateTitleUsingQuery,
+  jsonParseLLMOutput,
   Models,
   QueryCategory,
   userChat,
@@ -50,6 +52,7 @@ import {
   Apps,
   entitySchema,
   fileSchema,
+  MailEntity,
   mailSchema,
   userSchema,
   type VespaFile,
@@ -61,6 +64,7 @@ import {
 } from "@/search/types"
 import llama3Tokenizer from "llama3-tokenizer-js"
 import { encode } from "gpt-tokenizer"
+import { getConnInfo } from "hono/bun"
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -169,7 +173,9 @@ const searchToCitation = (
   return citations
 }
 
-export const MessageApi = async (c: Context) => {
+// this needs to be evaluated in future
+// compared against V2
+export const MessageApiV1 = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
@@ -189,7 +195,7 @@ export const MessageApi = async (c: Context) => {
     let insertedMsg: SelectMessage
     let chat: SelectChat
     let messages: SelectMessage[] = []
-    const costArr = []
+    const costArr: number[] = []
     const ctx = userContext(userAndWorkspace)
     const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${message}`
     // could be called parallely if not for userAndWorkspace
@@ -357,6 +363,7 @@ export const MessageApi = async (c: Context) => {
       // messages = allMessages.concat(insertedMsg)
       chat = existingChat
       messageExternalId = insertedMsg.externalId
+      messages = allMessages
     }
 
     let fullResponse = ""
@@ -456,8 +463,335 @@ export const MessageApi = async (c: Context) => {
         data: "Answer complete",
         event: ChatSSEvents.End,
       })
+      Logger.info(`Costs: ${costArr}`)
     })
-    Logger.info(`Costs: ${costArr}`)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not create message or Chat",
+    })
+  }
+}
+
+export const MessageApiV2 = async (c: Context) => {
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    const email = sub
+    // @ts-ignore
+    const body = c.req.valid("query")
+    let { message, chatId, modelId }: MessageReqType = body
+    message = decodeURIComponent(message)
+
+    const [userAndWorkspace, results] = await Promise.all([
+      getUserAndWorkspaceByEmail(db, workspaceId, email),
+      searchVespa(message, email, null, null, config.answerPage, 0),
+    ])
+    const { user, workspace } = userAndWorkspace
+    let messages: SelectMessage[] = []
+    const costArr: number[] = []
+    const ctx = userContext(userAndWorkspace)
+    let chat: SelectChat
+    const initialContext = cleanContext(
+      results.root.children
+        .map(
+          (v, i) =>
+            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        )
+        .join("\n"),
+    )
+
+    let title = ""
+    let messageExternalId = ""
+    if (!chatId) {
+      // let llm decide a title
+      const titleResp = await generateTitleUsingQuery(message, {
+        modelId: Models.Gpt_4o_mini,
+        stream: false,
+      })
+      title = titleResp.title
+      const cost = titleResp.cost
+      if (cost) {
+        costArr.push(cost)
+      }
+
+      let [insertedChat, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const chat = await insertChat(tx, {
+            workspaceId: workspace.id,
+            workspaceExternalId: workspace.externalId,
+            userId: user.id,
+            email: user.email,
+            title,
+            attachments: [],
+          })
+          const insertedMsg = await insertMessage(tx, {
+            chatId: chat.id,
+            userId: user.id,
+            chatExternalId: chat.externalId,
+            workspaceExternalId: workspace.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+          })
+          return [chat, insertedMsg]
+        },
+      )
+      chat = insertedChat
+      messages.push(insertedMsg) // Add the inserted message to messages array
+      messageExternalId = insertedMsg.externalId
+    } else {
+      let [existingChat, allMessages, insertedMsg] = await db.transaction(
+        async (tx) => {
+          let existingChat = await getChatByExternalId(db, chatId)
+          let allMessages = await getChatMessages(tx, chatId)
+          let insertedMsg = await insertMessage(tx, {
+            chatId: existingChat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: existingChat.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+          })
+          return [existingChat, allMessages, insertedMsg]
+        },
+      )
+      messages = allMessages.concat(insertedMsg) // Update messages array
+      chat = existingChat
+      messageExternalId = insertedMsg.externalId
+    }
+
+    return streamSSE(
+      c,
+      async (stream) => {
+        try {
+          const iterator = analyzeInitialResultsOrRewrite(
+            message,
+            initialContext,
+            ctx,
+            {
+              modelId: Models.Gpt_4o_mini,
+              stream: true,
+              json: true,
+            },
+          )
+          let currentAnswer = ""
+          let buffer = ""
+          let currentCitations: number[] = []
+          let parsed: any
+          for await (const chunk of iterator) {
+            if (chunk.text) {
+              buffer += chunk.text
+              parsed = jsonParseLLMOutput(buffer)
+              // answer is there and it is coming
+              // we will stream it to the user
+              if (parsed.answer && currentAnswer !== parsed.answer) {
+                // first time
+                if (!currentAnswer) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.Start,
+                    data: "",
+                  })
+                }
+                stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: parsed.answer.slice(currentAnswer.length),
+                })
+                currentAnswer = parsed.answer
+              }
+              if (parsed.citations) {
+                currentCitations = parsed.citations
+                const minimalContextChunks = searchToCitation(
+                  results.root.children.filter((_, i) =>
+                    currentCitations.includes(i),
+                  ) as z.infer<typeof VespaSearchResultsSchema>[],
+                )
+                await stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: minimalContextChunks,
+                  }),
+                })
+              }
+              if (chunk.metadata?.cost) {
+                costArr.push(chunk.metadata.cost)
+              }
+            }
+          }
+          if (!chatId) {
+            await stream.writeSSE({
+              data: title,
+              event: ChatSSEvents.ChatTitleUpdate,
+            })
+          }
+          if (parsed.answer) {
+            const msg = await insertMessage(db, {
+              chatId: chat.id,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chat.externalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              sources: currentCitations,
+              message: parsed.answer,
+              modelId,
+            })
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+          } else if (parsed.rewrittenQuery) {
+            let finalContext = initialContext
+            const allResults = (
+              await Promise.all(
+                parsed.rewrittenQuery.map((newQuery: string) =>
+                  searchVespa(
+                    newQuery,
+                    email,
+                    null,
+                    null,
+                    5,
+                    0,
+                    "",
+                    results.root.children.map(
+                      (v) =>
+                        (v as z.infer<typeof VespaSearchResultsSchema>).fields
+                          .docId,
+                    ),
+                  ),
+                ),
+              )
+            )
+              .map((v) => v.root.children)
+              .flat()
+            const idSet = new Set()
+            const uniqueResults = []
+            for (const res of allResults) {
+              if (!idSet.has(res.id)) {
+                idSet.add(res.id)
+                uniqueResults.push(res)
+              }
+            }
+            finalContext = cleanContext(
+              uniqueResults
+                .map(
+                  (v, i) =>
+                    `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+                )
+                .join("\n"),
+            )
+            const iterator = askQuestionWithCitations(
+              message,
+              ctx,
+              finalContext,
+              {
+                modelId: Models.Gpt_4o_mini,
+                userCtx: ctx,
+                stream: true,
+                json: true,
+                messages: messages.map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                })),
+              },
+            )
+            let buffer = ""
+            let currentAnswer = ""
+            let currentCitations: number[] = []
+
+            for await (const chunk of iterator) {
+              if (chunk.text) {
+                buffer += chunk.text
+                parsed = jsonParseLLMOutput(buffer) as CitationResponse
+
+                // Stream new answer content
+                if (parsed.answer && parsed.answer !== currentAnswer) {
+                  const newContent = parsed.answer.slice(currentAnswer.length)
+                  currentAnswer = parsed.answer
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: newContent,
+                  })
+                }
+
+                // Stream citation updates
+                if (parsed.citations) {
+                  currentCitations = parsed.citations
+                  const minimalContextChunks = searchToCitation(
+                    results.root.children.filter((_, i) =>
+                      currentCitations.includes(i),
+                    ) as z.infer<typeof VespaSearchResultsSchema>[],
+                  )
+
+                  // citations count should match the minimalContext chunks
+                  await stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: minimalContextChunks,
+                    }),
+                  })
+                }
+              }
+              if (chunk.metadata?.cost) {
+                costArr.push(chunk.metadata.cost)
+              }
+            }
+            const msg = await insertMessage(db, {
+              chatId: chat.id,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chat.externalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              sources: currentCitations,
+              message: parsed.answer,
+              modelId,
+            })
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+          } else {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: "Error while trying to answer",
+            })
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+          }
+        } catch (error) {
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: (error as Error).message,
+          })
+          await stream.writeSSE({
+            data: "",
+            event: ChatSSEvents.End,
+          })
+          Logger.error(
+            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+          )
+        }
+      },
+      async (err, stream) => {
+        await stream.writeSSE({
+          event: ChatSSEvents.Error,
+          data: err.message,
+        })
+        await stream.writeSSE({
+          data: "",
+          event: ChatSSEvents.End,
+        })
+        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+      },
+    )
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)

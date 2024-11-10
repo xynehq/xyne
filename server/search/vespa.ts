@@ -311,6 +311,7 @@ const HybridDefaultProfile = (
   entity: Entity | null,
   profile: RankProfile = "default",
   timestamp: number | null,
+  excludedIds?: string[],
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
   let fileTimestamp = ""
@@ -323,21 +324,45 @@ const HybridDefaultProfile = (
   }
   let appOrEntityFilter =
     `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+
+  let exclusionCondition = ""
+  if (excludedIds && excludedIds.length > 0) {
+    exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+  }
+
+  // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {
     profile: profile,
     yql: `
-            select * from sources ${AllSources}
-            where ((
-                ({targetHits:${hits}}userInput(@query))
-                or
-                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e)))
-                ${timestamp ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${appOrEntityFilter})
-            or
-            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} ` : ""} ${!hasAppOrEntity ? ` and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter})
-            or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestamp ? `and ${userTimestamp} ` : ""} ${appOrEntityFilter})
-        `,
-    // the last 2 are due to the 2 types of users, contacts and admin directory present in the same schema
+        select * from sources ${AllSources}
+        where ((
+          (
+            (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+            )
+            ${timestamp ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+            and permissions contains @email
+            ${appOrEntityFilter}
+          )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            ${timestamp ? `and ${userTimestamp}` : ""}
+            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter}
+          )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            and owner contains @email
+            ${timestamp ? `and ${userTimestamp}` : ""}
+            ${appOrEntityFilter}
+          )
+        )
+        ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
   }
 }
 
@@ -425,6 +450,7 @@ export const searchVespa = async (
   limit = config.page,
   offset?: number,
   lastUpdated?: string,
+  excludedIds?: string[],
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
@@ -436,6 +462,7 @@ export const searchVespa = async (
     entity,
     "default",
     timestamp,
+    excludedIds,
   )
 
   const hybridDefaultPayload = {

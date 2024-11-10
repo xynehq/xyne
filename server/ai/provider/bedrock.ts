@@ -703,13 +703,18 @@ const QueryAnalysisSchema = z.object({
   mentionedEmails: z.array(z.string()),
 })
 
-const jsonParseLLMOutput = (text: string): any => {
+export const jsonParseLLMOutput = (text: string): any => {
   let jsonVal
   try {
-    jsonVal = JSON.parse(text.trim())
+    jsonVal = parse(text.trim())
   } catch (e) {
     try {
-      jsonVal = JSON.parse(text.replace(/```(json)?/g, "").trim())
+      jsonVal = parse(
+        text
+          .replace(/```(json)?/g, "")
+          .replace(/\/\/.*$/gm, "")
+          .trim(),
+      )
     } catch (parseError) {
       console.error("Error parsing structured response:", parseError)
       // Handle parsing error or return the raw response
@@ -939,4 +944,79 @@ ${context}`,
   } catch (error) {
     throw error
   }
+}
+
+const initialResultsOrRewriteSchema = z.object({
+  answer: z.string().optional(),
+  citations: z.array(z.number()),
+  rewritten_queries: z.array(z.string()).optional(),
+  date_range: z.object({
+    start: z.string().optional(),
+    end: z.string().optional(),
+  }),
+})
+
+export const analyzeInitialResultsOrRewrite = (
+  userQuery: string,
+  context: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  const systemPrompt = `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
+
+**Context of user asking the query:**
+${userCtx}
+
+**Instructions:**
+1. **Primary Goal:** Provide a direct answer using the search results if possible, formatted in Markdown with inline numeric citations like [0], [1], etc.
+   - Citations must directly support key facts or claims, used sparingly.
+   - If there is recent information on the topic, include it just in case it could add useful context.
+   - Inline citations should immediately follow the specific claim they support.
+   - Use square brackets with 0-based indices, matching the index in the "citations" array.
+   - Do not include citations for general knowledge or derived conclusions.
+   - Do not answer if you do not have valid context and goo for better query rewrites
+2. **If Unable to Answer:**
+   - Generate 2-3 alternative search queries to improve results, avoiding any mention of temporal aspects as these will be handled separately.
+   - Rewrite the query removing the temporal nature of the user's query.
+   - The first query should be a very contracted version of the original query.
+   - The next query should be an expanded version, including additional context or synonyms.
+   - Identify any temporal expressions in the user's query (e.g., "2 months ago," "since last week").
+   - Compute a date range based on these expressions:
+     - **Start Date:** Calculate based on the temporal expression relative to the current date.
+     - **End Date:**
+       - **If the temporal expression specifies an exact period** (e.g., "2 months ago," "last quarter"): Set the end date to the current date (2024-11-10).
+       - **If the temporal expression implies an open-ended period** (e.g., "since last month," "from January 2024"): Set the end date to null.
+   - Use ISO 8601 format (YYYY-MM-DD) for dates.
+3. **Mutual Exclusivity:** Only one of "answer" or "rewritten_queries" should be present.
+   - If an answer is provided, set "rewritten_queries" to null.
+   - If an answer is not provided, set "answer" to null and provide "rewritten_queries" along with the "date_range".
+
+**Return Format:**
+{
+    "answer": "Your Markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent.",
+    "citations": number[],  // Array of context indices actually used in the answer
+    "rewrittenQueries": string[] | null,
+    "dateRange": {
+        "start": string | null,  // "YYYY-MM-DD"
+        "end": string | null     // "YYYY-MM-DD" or null
+    }
+}`
+
+  const baseMessage: Message = {
+    role: MessageRole.User as const,
+    content: [
+      {
+        text: `User query: ${userQuery}
+      Based on the following context, provide an answer in JSON format with citations
+      Context:
+      ${context}`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
 }

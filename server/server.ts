@@ -48,7 +48,8 @@ import {
   ChatBookmarkApi,
   ChatRenameApi,
   GetChatApi,
-  MessageApi,
+  MessageApiV1,
+  MessageApiV2,
   MessageRetryApi,
 } from "./api/chat"
 type Variables = JwtVariables
@@ -146,7 +147,7 @@ export const AppRoutes = app
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   // this is event streaming end point
-  .get("/message/create", zValidator("query", messageSchema), MessageApi)
+  .get("/message/create", zValidator("query", messageSchema), MessageApiV1)
   .post("/message/retry", zValidator("json", messageSchema), MessageRetryApi)
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)

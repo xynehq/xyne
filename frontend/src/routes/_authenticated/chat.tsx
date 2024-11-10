@@ -242,7 +242,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             className={`w-full h-full max-w-3xl flex-grow flex flex-col ${chatStarted ? "justify-between" : "justify-center"}`}
           >
             {/* Chat Messages Container */}
-            <div onScroll={handleScroll} className="flex flex-col mb-[60px]">
+            <div
+              onScroll={handleScroll}
+              className="flex flex-col mb-[60px] mt-[56px]"
+            >
               {messages.map((message, index) => (
                 <ChatMessage
                   key={index}
@@ -348,6 +351,9 @@ const ChatMessage = ({
             <div className="mt-[4px] markdown-content">
               <MarkdownPreview
                 source={processMessage(message)}
+                wrapperElement={{
+                  "data-color-mode": "light",
+                }}
                 style={{
                   padding: 0,
                   backgroundColor: "transparent",
