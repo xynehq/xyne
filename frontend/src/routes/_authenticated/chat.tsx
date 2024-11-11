@@ -42,12 +42,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       : "/_authenticated/chat",
   })
 
-  useEffect(() => {
-    if (data?.error) {
-      router.navigate({ to: "/chat" })
-    }
-  }, [data, router])
-
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
     isWithChatId ? data?.messages || [] : [],
@@ -77,6 +71,19 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }, [])
 
+  useEffect(() => {
+    // Reset the state when the chatId changes
+    setMessages(isWithChatId ? data?.messages || [] : [])
+    setChatId((params as any).chatId || null)
+    setChatTitle(isWithChatId ? data?.chat.title || null : null)
+    setChatStarted(isWithChatId ? !!data?.messages : false)
+    setBookmark(isWithChatId ? !!data?.chat.isBookmarked || false : false)
+    setCurrentResp(null)
+    currentRespRef.current = null
+    setCitations([])
+    setQuery("")
+  }, [(params as any).chatId])
+
   const handleSend = async () => {
     if (!query) return // Avoid empty messages
 
@@ -85,6 +92,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       ...prevMessages,
       { messageRole: "user", message: query },
     ])
+
+    // Set currentResp to an empty response to shift layout immediately
+    setCurrentResp({ resp: "" })
+    currentRespRef.current = { resp: "" }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {

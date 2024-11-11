@@ -15,6 +15,7 @@ import {
   Models,
   QueryCategory,
   userChat,
+  type ResultsOrRewrite,
 } from "@/ai/provider/bedrock"
 import config from "@/config"
 import {
@@ -570,6 +571,21 @@ export const MessageApiV2 = async (c: Context) => {
       c,
       async (stream) => {
         try {
+          if (!chatId) {
+            await stream.writeSSE({
+              data: title,
+              event: ChatSSEvents.ChatTitleUpdate,
+            })
+          }
+
+          Logger.info("Chat stream started")
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: messageExternalId,
+            }),
+          })
           const iterator = analyzeInitialResultsOrRewrite(
             message,
             initialContext,
@@ -580,54 +596,60 @@ export const MessageApiV2 = async (c: Context) => {
               json: true,
             },
           )
+          // prev response so we can find the diff
           let currentAnswer = ""
+          // accumulator
           let buffer = ""
           let currentCitations: number[] = []
-          let parsed: any
+          // will contain the streamed partial json
+          let parsed: ResultsOrRewrite = {
+            answer: "",
+            citations: [],
+            dateRange: {},
+            rewrittenQueries: [],
+          }
           for await (const chunk of iterator) {
-            if (chunk.text) {
-              buffer += chunk.text
-              parsed = jsonParseLLMOutput(buffer)
-              // answer is there and it is coming
-              // we will stream it to the user
-              if (parsed.answer && currentAnswer !== parsed.answer) {
-                // first time
-                if (!currentAnswer) {
+            try {
+              if (chunk.text) {
+                buffer += chunk.text
+                parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
+                // answer is there and it is coming
+                // we will stream it to the user
+                if (parsed.answer && currentAnswer !== parsed.answer) {
+                  // first time
+                  if (!currentAnswer) {
+                    stream.writeSSE({
+                      event: ChatSSEvents.Start,
+                      data: "",
+                    })
+                  }
                   stream.writeSSE({
-                    event: ChatSSEvents.Start,
-                    data: "",
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: parsed.answer.slice(currentAnswer.length),
+                  })
+                  currentAnswer = parsed.answer
+                }
+                if (parsed.citations) {
+                  currentCitations = parsed.citations
+                  const minimalContextChunks = searchToCitation(
+                    results.root.children.filter((_, i) =>
+                      currentCitations.includes(i),
+                    ) as z.infer<typeof VespaSearchResultsSchema>[],
+                  )
+                  await stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: minimalContextChunks,
+                    }),
                   })
                 }
-                stream.writeSSE({
-                  event: ChatSSEvents.ResponseUpdate,
-                  data: parsed.answer.slice(currentAnswer.length),
-                })
-                currentAnswer = parsed.answer
+                if (chunk.metadata?.cost) {
+                  costArr.push(chunk.metadata.cost)
+                }
               }
-              if (parsed.citations) {
-                currentCitations = parsed.citations
-                const minimalContextChunks = searchToCitation(
-                  results.root.children.filter((_, i) =>
-                    currentCitations.includes(i),
-                  ) as z.infer<typeof VespaSearchResultsSchema>[],
-                )
-                await stream.writeSSE({
-                  event: ChatSSEvents.CitationsUpdate,
-                  data: JSON.stringify({
-                    contextChunks: minimalContextChunks,
-                  }),
-                })
-              }
-              if (chunk.metadata?.cost) {
-                costArr.push(chunk.metadata.cost)
-              }
+            } catch (e) {
+              continue
             }
-          }
-          if (!chatId) {
-            await stream.writeSSE({
-              data: title,
-              event: ChatSSEvents.ChatTitleUpdate,
-            })
           }
           if (parsed.answer) {
             const msg = await insertMessage(db, {
@@ -645,11 +667,11 @@ export const MessageApiV2 = async (c: Context) => {
               data: "",
               event: ChatSSEvents.End,
             })
-          } else if (parsed.rewrittenQuery) {
+          } else if (parsed.rewrittenQueries) {
             let finalContext = initialContext
             const allResults = (
               await Promise.all(
-                parsed.rewrittenQuery.map((newQuery: string) =>
+                parsed.rewrittenQueries.map((newQuery: string) =>
                   searchVespa(
                     newQuery,
                     email,
@@ -705,40 +727,44 @@ export const MessageApiV2 = async (c: Context) => {
             let currentCitations: number[] = []
 
             for await (const chunk of iterator) {
-              if (chunk.text) {
-                buffer += chunk.text
-                parsed = jsonParseLLMOutput(buffer) as CitationResponse
+              try {
+                if (chunk.text) {
+                  buffer += chunk.text
+                  parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
 
-                // Stream new answer content
-                if (parsed.answer && parsed.answer !== currentAnswer) {
-                  const newContent = parsed.answer.slice(currentAnswer.length)
-                  currentAnswer = parsed.answer
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: newContent,
-                  })
+                  // Stream new answer content
+                  if (parsed.answer && parsed.answer !== currentAnswer) {
+                    const newContent = parsed.answer.slice(currentAnswer.length)
+                    currentAnswer = parsed.answer
+                    await stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: newContent,
+                    })
+                  }
+
+                  // Stream citation updates
+                  if (parsed.citations) {
+                    currentCitations = parsed.citations
+                    const minimalContextChunks = searchToCitation(
+                      results.root.children.filter((_, i) =>
+                        currentCitations.includes(i),
+                      ) as z.infer<typeof VespaSearchResultsSchema>[],
+                    )
+
+                    // citations count should match the minimalContext chunks
+                    await stream.writeSSE({
+                      event: ChatSSEvents.CitationsUpdate,
+                      data: JSON.stringify({
+                        contextChunks: minimalContextChunks,
+                      }),
+                    })
+                  }
                 }
-
-                // Stream citation updates
-                if (parsed.citations) {
-                  currentCitations = parsed.citations
-                  const minimalContextChunks = searchToCitation(
-                    results.root.children.filter((_, i) =>
-                      currentCitations.includes(i),
-                    ) as z.infer<typeof VespaSearchResultsSchema>[],
-                  )
-
-                  // citations count should match the minimalContext chunks
-                  await stream.writeSSE({
-                    event: ChatSSEvents.CitationsUpdate,
-                    data: JSON.stringify({
-                      contextChunks: minimalContextChunks,
-                    }),
-                  })
+                if (chunk.metadata?.cost) {
+                  costArr.push(chunk.metadata.cost)
                 }
-              }
-              if (chunk.metadata?.cost) {
-                costArr.push(chunk.metadata.cost)
+              } catch (e) {
+                continue
               }
             }
             const msg = await insertMessage(db, {
@@ -749,7 +775,7 @@ export const MessageApiV2 = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: currentCitations,
-              message: parsed.answer,
+              message: parsed.answer!,
               modelId,
             })
             await stream.writeSSE({

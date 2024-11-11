@@ -946,15 +946,17 @@ ${context}`,
   }
 }
 
-const initialResultsOrRewriteSchema = z.object({
+export const initialResultsOrRewriteSchema = z.object({
   answer: z.string().optional(),
   citations: z.array(z.number()),
-  rewritten_queries: z.array(z.string()).optional(),
-  date_range: z.object({
+  rewrittenQueries: z.array(z.string()).optional(),
+  dateRange: z.object({
     start: z.string().optional(),
     end: z.string().optional(),
   }),
 })
+
+export type ResultsOrRewrite = z.infer<typeof initialResultsOrRewriteSchema>
 
 export const analyzeInitialResultsOrRewrite = (
   userQuery: string,
@@ -974,6 +976,8 @@ ${userCtx}
    - Inline citations should immediately follow the specific claim they support.
    - Use square brackets with 0-based indices, matching the index in the "citations" array.
    - Do not include citations for general knowledge or derived conclusions.
+   - For answer based on system prompt you do not need citation
+   - Only add citation for text, don't add it to already linked text
    - Do not answer if you do not have valid context and goo for better query rewrites
 2. **If Unable to Answer:**
    - Generate 2-3 alternative search queries to improve results, avoiding any mention of temporal aspects as these will be handled separately.
@@ -1001,6 +1005,7 @@ ${userCtx}
         "end": string | null     // "YYYY-MM-DD" or null
     }
 }`
+params.systemPrompt = systemPrompt
 
   const baseMessage: Message = {
     role: MessageRole.User as const,
