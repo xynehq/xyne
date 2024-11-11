@@ -80,6 +80,7 @@ enum RagPipelineStages {
   AnswerOrRewrite = "AnswerOrRewrite",
   RewriteAndAnswer = "RewriteAndAnswer",
   UserChat = "UserChat",
+  DefaultRetrieval = "DefaultRetrieval",
 }
 const ragPipeline = [
   { stage: RagPipelineStages.NewChatTitle, modelId: Models.Gpt_4o_mini },
@@ -99,6 +100,10 @@ const ragPipelineConfig = {
   },
   [RagPipelineStages.UserChat]: {
     modelId: Models.Gpt_4o_mini,
+  },
+  [RagPipelineStages.DefaultRetrieval]: {
+    modelId: Models.Gpt_4o_mini,
+    page: 5,
   },
 }
 
@@ -536,7 +541,6 @@ export const MessageApiV2 = async (c: Context) => {
     )
 
     let title = ""
-    let messageExternalId = ""
     if (!chatId) {
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
@@ -575,7 +579,6 @@ export const MessageApiV2 = async (c: Context) => {
       )
       chat = insertedChat
       messages.push(insertedMsg) // Add the inserted message to messages array
-      messageExternalId = insertedMsg.externalId
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
@@ -597,7 +600,6 @@ export const MessageApiV2 = async (c: Context) => {
       )
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
-      messageExternalId = insertedMsg.externalId
     }
 
     return streamSSE(
@@ -612,11 +614,11 @@ export const MessageApiV2 = async (c: Context) => {
           }
 
           Logger.info("Chat stream started")
+          // we do not set the message Id as we don't have it
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
             data: JSON.stringify({
               chatId: chat.externalId,
-              messageId: messageExternalId,
             }),
           })
           const iterator = analyzeInitialResultsOrRewrite(
@@ -708,6 +710,13 @@ export const MessageApiV2 = async (c: Context) => {
               message: parsed.answer,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+            })
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: msg.externalId,
+              }),
             })
             await stream.writeSSE({
               data: "",
@@ -827,6 +836,13 @@ export const MessageApiV2 = async (c: Context) => {
                 ragPipelineConfig[RagPipelineStages.RewriteAndAnswer].modelId,
             })
             await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: msg.externalId,
+              }),
+            })
+            await stream.writeSSE({
               data: "",
               event: ChatSSEvents.End,
             })
@@ -893,8 +909,9 @@ export const MessageRetryApi = async (c: Context) => {
 
     // Fetch the chat and previous messages
     // const chat = await getChatByExternalId(db, originalMessage.chatExternalId)
-    const conversation = await getChatMessagesBefore(
+    let conversation = await getChatMessagesBefore(
       db,
+      originalMessage.chatId,
       originalMessage.createdAt,
     )
     if (!conversation || !conversation.length) {
@@ -916,9 +933,12 @@ export const MessageRetryApi = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
 
     let newCitations: Citation[] = []
-    let newMessageContent = ""
     // the last message before our assistant's message was the user's message
     const prevUserMessage = conversation[conversation.length - 1]
+    // we are trying to retry the first assistant's message
+    if (conversation.length === 1) {
+      conversation = []
+    }
     if (!prevUserMessage.message) {
       throw new HTTPException(400, {
         message: "Cannot retry the message, invalid user chat",
@@ -1026,7 +1046,7 @@ export const MessageRetryApi = async (c: Context) => {
               })
             }
             if (parsed.answer) {
-              let newMessageContent = buffer
+              let newMessageContent = parsed.answer
               // Update the assistant's message with new content and updatedAt
               await updateMessage(db, messageId, {
                 message: newMessageContent,
@@ -1139,7 +1159,7 @@ export const MessageRetryApi = async (c: Context) => {
                   continue
                 }
               }
-              let newMessageContent = buffer
+              let newMessageContent = parsed.answer
               // Update the assistant's message with new content and updatedAt
               await updateMessage(db, messageId, {
                 message: newMessageContent,
@@ -1165,13 +1185,19 @@ export const MessageRetryApi = async (c: Context) => {
             const iterator = userChat(prevUserMessage.message, {
               modelId,
               stream: true,
+              messages: conversation.map((m) => ({
+                role: m.messageRole as ConversationRole,
+                content: [{ text: m.message }],
+              })),
             })
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
             })
+            let newMessageContent = ""
             for await (const chunk of iterator) {
               if (chunk.text) {
+                newMessageContent += chunk.text
                 await stream.writeSSE({
                   event: ChatSSEvents.ResponseUpdate,
                   data: chunk.text,
@@ -1181,6 +1207,11 @@ export const MessageRetryApi = async (c: Context) => {
                 costArr.push(chunk.metadata.cost)
               }
             }
+            await updateMessage(db, messageId, {
+              message: newMessageContent,
+              updatedAt: new Date(),
+              sources: [],
+            })
             await stream.writeSSE({
               data: "",
               event: ChatSSEvents.End,

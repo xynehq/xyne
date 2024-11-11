@@ -47,12 +47,15 @@ export const getChatMessages = async (
 
 export const getChatMessagesBefore = async (
   trx: TxnOrClient,
+  chatId: number,
   createdAt: Date,
 ): Promise<SelectMessage[]> => {
   const messagesArr = await trx
     .select()
     .from(messages)
-    .where(lt(messages.createdAt, createdAt))
+    .where(
+      and(lt(messages.createdAt, createdAt), eq(messages.chatId, chatId)),
+    )
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
 }

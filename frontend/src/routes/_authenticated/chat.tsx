@@ -50,7 +50,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     (params as any).chatId || null,
   )
   const [chatTitle, setChatTitle] = useState<string | null>(
-    isWithChatId ? data?.chat.title || null : null,
+    isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
   const currentRespRef = useRef<CurrentResp | null>(null)
@@ -58,12 +58,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId ? !!data?.messages : false,
   )
   const [bookmark, setBookmark] = useState<boolean>(
-    isWithChatId ? !!data?.chat.isBookmarked || false : false,
+    isWithChatId ? !!data?.chat?.isBookmarked || false : false,
   )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const [citations, setCitations] = useState<any[]>([])
+  const [dots, setDots] = useState("")
+  const [isStreaming, setIsStreaming] = useState(false)
 
   useEffect(() => {
     if (inputRef.current) {
@@ -72,14 +74,36 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [])
 
   useEffect(() => {
+    if (isStreaming) {
+      const interval = setInterval(() => {
+        setDots((prev) => {
+          if (prev.length >= 3) {
+            return ""
+          } else {
+            return prev + "."
+          }
+        })
+      }, 500)
+
+      return () => clearInterval(interval)
+    } else {
+      setDots("")
+    }
+  }, [isStreaming])
+
+  useEffect(() => {
     // Reset the state when the chatId changes
     setMessages(isWithChatId ? data?.messages || [] : [])
     setChatId((params as any).chatId || null)
-    setChatTitle(isWithChatId ? data?.chat.title || null : null)
-    setChatStarted(isWithChatId ? !!data?.messages : false)
-    setBookmark(isWithChatId ? !!data?.chat.isBookmarked || false : false)
-    setCurrentResp(null)
-    currentRespRef.current = null
+    setChatTitle(isWithChatId ? data?.chat?.title || null : null)
+    setChatStarted(isWithChatId)
+    setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
+    // only reset explicitly
+    if (!isStreaming) {
+      setCurrentResp(null)
+      currentRespRef.current = null
+    }
+    inputRef.current?.focus()
     setCitations([])
     setQuery("")
   }, [(params as any).chatId])
@@ -101,7 +125,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
-    url.searchParams.append("modelId", "llama")
+    url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(query))
 
     const eventSource = new EventSource(url.toString(), {
@@ -145,13 +169,17 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           })
         }, 1000)
       }
-      setCurrentResp((resp) => {
-        const updatedResp = resp || { resp: "" }
-        updatedResp.chatId = chatId
-        updatedResp.messageId = messageId
-        currentRespRef.current = updatedResp // Update the ref
-        return updatedResp
-      })
+
+      // this will be optional
+      if (messageId) {
+        setCurrentResp((resp) => {
+          const updatedResp = resp || { resp: "" }
+          updatedResp.chatId = chatId
+          updatedResp.messageId = messageId
+          currentRespRef.current = updatedResp // Update the ref
+          return updatedResp
+        })
+      }
     })
 
     eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
@@ -163,12 +191,17 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { messageRole: "assistant", message: currentResp.resp },
+          {
+            messageRole: "assistant",
+            message: currentResp.resp,
+            externalId: currentResp.messageId,
+          },
         ])
       }
       setCurrentResp(null)
       currentRespRef.current = null
       eventSource.close()
+      setIsStreaming(false)
     })
 
     // Handle error events
@@ -184,14 +217,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setCurrentResp(null)
       currentRespRef.current = null
       eventSource.close()
+      setIsStreaming(false)
     }
 
     // Clear the input
     setQuery("")
+    setIsStreaming(true)
   }
 
   const handleRetry = async (messageId: string) => {
     if (!messageId) return
+
+    setIsStreaming(true) // Start streaming for retry
 
     // Update the assistant message being retried
     setMessages((prevMessages) =>
@@ -224,6 +261,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         ),
       )
       eventSource.close()
+      setIsStreaming(false) // Stop streaming after retry
     })
 
     eventSource.onerror = (error) => {
@@ -232,6 +270,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         prevMessages.filter((msg) => !msg.isRetrying),
       )
       eventSource.close()
+      setIsStreaming(false) // Stop streaming on error
     }
   }
 
@@ -270,6 +309,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     container.scrollTop = container.scrollHeight
   }, [messages, currentResp?.resp])
 
+  // if invalid chatId
+  if (data.error) {
+    return (
+      <div className="h-full w-full flex flex-col bg-white">
+        <Sidebar />
+        <div className="ml-[120px]">Error: Could not get data</div>
+      </div>
+    )
+  }
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar />
@@ -311,6 +359,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   citations={citations.map((c) => c.url)}
                   messageId={message.externalId}
                   handleRetry={handleRetry}
+                  dots={message.isRetrying ? dots : ""}
                 />
               ))}
               {currentResp && (
@@ -319,6 +368,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   isUser={false}
                   responseDone={false}
                   handleRetry={handleRetry}
+                  dots={dots}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -375,6 +425,7 @@ const ChatMessage = ({
   citations = [], // Add citations prop
   messageId,
   handleRetry,
+  dots = "", // Add dots prop
 }: {
   message: string
   isUser: boolean
@@ -382,8 +433,10 @@ const ChatMessage = ({
   isRetrying?: boolean
   citations?: string[] // Array of citation URLs
   messageId?: string
+  dots: string
   handleRetry: (messageId: string) => void
 }) => {
+  const [isCopied, setIsCopied] = useState(false)
   // Process message to replace citation markers with links
   const processMessage = (text: string) => {
     return text.replace(/\[(\d+)\]/g, (match, num) => {
@@ -410,24 +463,39 @@ const ChatMessage = ({
               src={AssistantLogo}
             />
             <div className="mt-[4px] markdown-content">
-              <MarkdownPreview
-                source={processMessage(message)}
-                wrapperElement={{
-                  "data-color-mode": "light",
-                }}
-                style={{
-                  padding: 0,
-                  backgroundColor: "transparent",
-                  color: "#1C1D1F",
-                }}
-              />
+              {message === "" ? (
+                <div className="flex-grow">
+                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                </div>
+              ) : (
+                <MarkdownPreview
+                  source={processMessage(message)}
+                  wrapperElement={{
+                    "data-color-mode": "light",
+                  }}
+                  style={{
+                    padding: 0,
+                    backgroundColor: "transparent",
+                    color: "#1C1D1F",
+                  }}
+                />
+              )}
             </div>
           </div>
           {responseDone && !isRetrying && (
             <div className="flex ml-[52px] mt-[24px]">
-              <Copy size={16} stroke="#9EA6B8" />
+              <Copy
+                size={16}
+                stroke={`${isCopied ? "#4F535C" : "#9EA6B8"}`}
+                className={`cursor-pointer`}
+                onMouseDown={(e) => setIsCopied(true)}
+                onMouseUp={(e) => setIsCopied(false)}
+                onClick={() => {
+                  navigator.clipboard.writeText(processMessage(message))
+                }}
+              />
               <img
-                className="ml-[18px] cursor-pointer"
+                className="ml-[18px] cursor-pointe"
                 src={Retry}
                 onClick={() => handleRetry(messageId!)}
               />
