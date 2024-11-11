@@ -67,7 +67,7 @@ const getName = (app: Apps, entity: Entity): string => {
       return "Docs"
     } else if (entity === DriveEntity.Image) {
       return "Images"
-    }  else if (entity === DriveEntity.WordDocument) {
+    } else if (entity === DriveEntity.WordDocument) {
       return "Docx"
     } else if (entity === DriveEntity.Presentation) {
       return "Slides"
