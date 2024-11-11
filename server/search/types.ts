@@ -2,6 +2,7 @@ import { z } from "zod"
 export const fileSchema = "file" // Replace with your actual schema name
 export const userSchema = "user"
 export const mailSchema = "mail"
+export const eventSchema = "event"
 // not using @ because of vite of frontend
 
 export enum Apps {

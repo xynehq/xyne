@@ -56,6 +56,7 @@ import {
 import { getLogger } from "@/logger"
 import {
   CalendarEntity,
+  eventSchema,
   type VespaFileWithDrivePermission,
 } from "@/search/types"
 import {
@@ -212,7 +213,7 @@ export const syncGoogleWorkspace = async (
   }
 }
 
-const getTextFromEventDescription = (description: string) => {
+export const getTextFromEventDescription = (description: string) => {
   //todo change wordwrap ??
   return htmlToText.convert(description, { wordwrap: 130 })
 }
@@ -273,7 +274,7 @@ const getLinkFromDescription = (description: string): string => {
   return "" // Return "" if no Zoom link is found
 }
 
-const getJoiningLink = (event: calendar_v3.Schema$Event) => {
+export const getJoiningLink = (event: calendar_v3.Schema$Event) => {
   const conferenceLink = event?.conferenceData?.entryPoints![0]?.uri
   if (conferenceLink) {
     return {
@@ -292,7 +293,7 @@ const getJoiningLink = (event: calendar_v3.Schema$Event) => {
   }
 }
 
-const getAttendeesOfEvent = (
+export const getAttendeesOfEvent = (
   allAttendes: calendar_v3.Schema$EventAttendee[],
 ) => {
   if (allAttendes.length === 0) {
@@ -314,7 +315,7 @@ const getAttendeesOfEvent = (
   return { attendeesInfo, attendeesNames }
 }
 
-const getAttachments = (
+export const getAttachments = (
   allAttachments: calendar_v3.Schema$EventAttachment[],
 ) => {
   if (allAttachments.length === 0) {
@@ -338,6 +339,9 @@ const getAttachments = (
 
   return { attachmentsInfo, attachmentFilenames }
 }
+
+export const eventFields =
+  "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
 
 const insertCalendarEvents = async (
   client: GoogleClient,
@@ -366,8 +370,7 @@ const insertCalendarEvents = async (
       // singleEvents: true, // Expands recurring events into individual occurrences
       // orderBy: "startTime",
       pageToken: nextPageToken,
-      fields:
-        "nextPageToken, nextSyncToken, items(id, status, originalStartTime, recurringEventId, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
+      fields: eventFields,
     })
     if (res.data.items) {
       events = events.concat(res.data.items)
@@ -418,8 +421,7 @@ const insertCalendarEvents = async (
       recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
       baseUrl,
       joiningLink: joiningUrl,
-      // todo ?? use guestsCanModify maybe
-      permissions: [event.organizer?.email],
+      permissions: [event.organizer?.email ?? ""],
     }
 
     console.log("eventToBeIngested")
@@ -427,7 +429,7 @@ const insertCalendarEvents = async (
     console.log("eventToBeIngested")
 
     // @ts-ignore
-    await insert(eventToBeIngested, "event")
+    await insert(eventToBeIngested, eventSchema)
   }
 
   if (!newSyncTokenCalendarEvents) {

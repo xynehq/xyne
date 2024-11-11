@@ -46,6 +46,8 @@ import {
 import { SyncJobFailed } from "@/errors"
 import { getLogger } from "@/logger"
 import {
+  CalendarEntity,
+  eventSchema,
   fileSchema,
   mailSchema,
   userSchema,
@@ -53,8 +55,13 @@ import {
   type VespaMail,
 } from "@/search/types"
 import {
+  eventFields,
+  getAttachments,
+  getAttendeesOfEvent,
+  getJoiningLink,
   getPresentationToBeIngested,
   getSpreadsheet,
+  getTextFromEventDescription,
   insertContact,
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
@@ -639,7 +646,7 @@ export const handleGoogleOAuthChanges = async (
       oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
       const calendar = google.calendar({ version: "v3", auth: oauth2Client })
 
-      let { eventChanges, newCalendarEventsSyncToken, changesExist } =
+      let { eventChanges, stats, newCalendarEventsSyncToken, changesExist } =
         await handleGoogleCalendarEventsChanges(
           calendar,
           config.calendarEventsToken,
@@ -717,6 +724,80 @@ export const handleGoogleOAuthChanges = async (
   }
 }
 
+const insertEventIntoVespa = async (
+  event: calendar_v3.Schema$Event,
+  userEmail: string,
+) => {
+  const { baseUrl, joiningUrl } = getJoiningLink(event)
+  // todo improve the code when nothing is in attendees & attachments, currently has empty strings in arrays
+  const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
+    event.attendees ?? [],
+  )
+  const { attachmentsInfo, attachmentFilenames } = getAttachments(
+    event.attachments ?? [],
+  )
+  const eventToBeIngested = {
+    docId: event.id,
+    name: event.summary ?? "",
+    description: getTextFromEventDescription(event?.description ?? ""),
+    url: event.htmlLink, // eventLink, not joiningLink
+    status: event.status ?? "",
+    location: event.location ?? "",
+    createdAt: new Date(event.created!).getTime(),
+    updatedAt: new Date(event.updated!).getTime(),
+    email: userEmail,
+    app: Apps.GoogleCalendar,
+    entity: CalendarEntity.Event,
+    creator: {
+      email: event.creator?.email ?? "",
+      displayName: event.creator?.displayName ?? "",
+    },
+    organizer: {
+      email: event.organizer?.email ?? "",
+      displayName: event.organizer?.displayName ?? "",
+    },
+    attendees: attendeesInfo,
+    attendeesNames: attendeesNames,
+    startTime: new Date(event.start?.dateTime!).getTime(),
+    endTime: new Date(event.end?.dateTime!).getTime(),
+    attachmentFilenames,
+    attachments: attachmentsInfo,
+    recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
+    baseUrl,
+    joiningLink: joiningUrl,
+    permissions: [event.organizer?.email],
+  }
+
+  console.log("eventToBeIngested in Change")
+  console.log(eventToBeIngested)
+  console.log("eventToBeIngested in Change")
+
+  // @ts-ignore
+  await insert(eventToBeIngested, eventSchema)
+}
+
+const getEventFromVespa = async (docId: string) => {
+  try {
+    const event = await GetDocument(eventSchema, docId)
+    return event;
+  } catch (err: any) {
+    const errMessage = getErrorMessage(err?.cause)
+    if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
+      Logger.error(
+        `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
+      )
+      const splittedId = docId.split("_")
+      // TODO Update this event and add a cancelled Instance 
+      // splittedID[1] will be the startTime ig
+      const eventFromVespa = await GetDocument(eventSchema, splittedId[0])
+      return eventFromVespa
+    } else {
+      Logger.error(`Error getting document: ${err.message} ${err.stack}`)
+      throw err
+    }
+  }
+}
+
 const handleGoogleCalendarEventsChanges = async (
   calendar: calendar_v3.Calendar,
   syncToken: string,
@@ -737,14 +818,14 @@ const handleGoogleCalendarEventsChanges = async (
         maxResults: 2500, // Limit the number of results
         pageToken: nextPageToken,
         syncToken,
-        fields:
-          "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)",
+        fields: eventFields,
       })
 
       newSyncTokenCalendarEvents = res.data.nextSyncToken ?? syncToken
       // Check if there are no new changes
       if (newSyncTokenCalendarEvents === syncToken) {
         return {
+          eventChanges: [],
           stats,
           newCalendarEventsSyncToken: newSyncTokenCalendarEvents,
           changesExist,
@@ -758,19 +839,73 @@ const handleGoogleCalendarEventsChanges = async (
         console.log("eventChanges")
       }
 
-      // todo insert/delete events accordinly
       for (const eventChange of eventChanges) {
-        // todo after inserting/deleting
-        changesExist = true
-      }
+        const docId = eventChange.id
+        // TODO Remove Event is wrong
+        if (docId && eventChange.status === "cancelled") {
+          try {
+            const event = await getEventFromVespa(docId!)
+            // todo change this
+            const permissions = (event.fields as VespaFile).permissions
+            if (permissions.length === 1) {
+              // remove it
+              try {
+                // also ensure that we are that permission
+                if (!(permissions[0] === userEmail)) {
+                  throw new Error(
+                    "We got a change for us that we didn't have access to in Vespa",
+                  )
+                }
+                await DeleteDocument(docId, eventSchema)
+                stats.removed += 1
+                stats.summary += `${docId} event removed\n`
+              } catch (e) {
+                // TODO: detect vespa 404 and only ignore for that case
+                // otherwise throw it further
+              }
+            } else {
+              // remove our user's permission to change event
+              const newPermissions = permissions.filter((v) => v !== userEmail)
+              await UpdateDocumentPermissions(eventSchema, docId, newPermissions)
+              stats.updated += 1
+              stats.summary += `user lost permission to change event info: ${docId}\n`
+            }
+          } catch (err) {
+            Logger.error(
+              `Trying to delete document that doesnt exist in Vespa \n ${err}`,
+            )
+          }
+        } else if (docId) {
+          let event = null
+          try {
+            event = await GetDocument(eventSchema, docId!)
+          } catch (e) {
+            Logger.error(`Event ${event?.id} doesn't exist in Vepsa`)
+          }
 
+          await insertEventIntoVespa(eventChange, userEmail)
+
+          if (event) {
+            stats.updated += 1
+            stats.summary += `updated event ${docId}\n`
+            changesExist = true
+          } else {
+            stats.added += 1
+            stats.summary += `added new event ${docId}`
+            changesExist = true
+          }
+        } else {
+          Logger.error("Could not handle event change: ", eventChange)
+        }
+      }
       nextPageToken = res.data.nextPageToken ?? ""
     } while (nextPageToken)
 
     return {
       eventChanges,
+      stats,
       newCalendarEventsSyncToken: newSyncTokenCalendarEvents,
-      changesExist
+      changesExist,
     }
   } catch (err) {
     // TODO throw proper error
