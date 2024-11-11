@@ -127,6 +127,10 @@ schema event {
         field permissions type array<string> {
             indexing: attribute | summary
         }
+
+        field cancelledInstances type array<string> {
+            indexing: attribute | summary
+        }
     }
 
     field chunk_embeddings type tensor<bfloat16>(v[384])  {
@@ -163,7 +167,7 @@ schema event {
         }
 
         function vector_score() {
-            expression: closeness(field, embeddings)
+            expression: closeness(field, chunk_embeddings)
         }
 
         first-phase {

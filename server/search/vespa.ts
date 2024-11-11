@@ -8,6 +8,7 @@ import type {
   VespaUser,
   VespaGetResult,
   Entity,
+  VespaEvent,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -128,7 +129,7 @@ export const insertDocument = async (document: VespaFile) => {
 
 // generic insert method
 export const insert = async (
-  document: VespaUser | VespaFile | VespaMail,
+  document: VespaUser | VespaFile | VespaMail | VespaEvent,
   schema: string,
 ) => {
   try {
@@ -568,6 +569,51 @@ export const UpdateDocumentPermissions = async (
     const errMessage = getErrorMessage(error)
     Logger.error(
       `Error updating permissions in schema ${schema} for document ${docId}:`,
+      errMessage,
+    )
+    throw new ErrorUpdatingDocument({
+      docId,
+      cause: error as Error,
+      sources: schema,
+    })
+  }
+}
+
+export const UpdateEventCancelledInstances = async (
+  schema: string,
+  docId: string,
+  updatedCancelledInstances: string[],
+) => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: {
+          cancelledInstances: { assign: updatedCancelledInstances },
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = response.statusText
+      throw new ErrorUpdatingDocument({
+        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
+        docId,
+        sources: schema,
+      })
+    }
+
+    Logger.info(
+      `Successfully updated event instances in schema ${schema} for document ${docId}.`,
+    )
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error updating event instances in schema ${schema} for document ${docId}:`,
       errMessage,
     )
     throw new ErrorUpdatingDocument({

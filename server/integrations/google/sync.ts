@@ -18,6 +18,7 @@ import {
   insertDocument,
   UpdateDocument,
   UpdateDocumentPermissions,
+  UpdateEventCancelledInstances,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -51,6 +52,7 @@ import {
   fileSchema,
   mailSchema,
   userSchema,
+  type VespaEvent,
   type VespaFile,
   type VespaMail,
 } from "@/search/types"
@@ -737,10 +739,10 @@ const insertEventIntoVespa = async (
     event.attachments ?? [],
   )
   const eventToBeIngested = {
-    docId: event.id,
+    docId: event.id ?? "",
     name: event.summary ?? "",
     description: getTextFromEventDescription(event?.description ?? ""),
-    url: event.htmlLink, // eventLink, not joiningLink
+    url: event.htmlLink ?? "", // eventLink, not joiningLink
     status: event.status ?? "",
     location: event.location ?? "",
     createdAt: new Date(event.created!).getTime(),
@@ -765,37 +767,15 @@ const insertEventIntoVespa = async (
     recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
     baseUrl,
     joiningLink: joiningUrl,
-    permissions: [event.organizer?.email],
+    permissions: [event.organizer?.email ?? ""],
+    cancelledInstances: [],
   }
 
   console.log("eventToBeIngested in Change")
   console.log(eventToBeIngested)
   console.log("eventToBeIngested in Change")
 
-  // @ts-ignore
   await insert(eventToBeIngested, eventSchema)
-}
-
-const getEventFromVespa = async (docId: string) => {
-  try {
-    const event = await GetDocument(eventSchema, docId)
-    return event;
-  } catch (err: any) {
-    const errMessage = getErrorMessage(err?.cause)
-    if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
-      Logger.error(
-        `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
-      )
-      const splittedId = docId.split("_")
-      // TODO Update this event and add a cancelled Instance 
-      // splittedID[1] will be the startTime ig
-      const eventFromVespa = await GetDocument(eventSchema, splittedId[0])
-      return eventFromVespa
-    } else {
-      Logger.error(`Error getting document: ${err.message} ${err.stack}`)
-      throw err
-    }
-  }
 }
 
 const handleGoogleCalendarEventsChanges = async (
@@ -834,19 +814,21 @@ const handleGoogleCalendarEventsChanges = async (
 
       if (res.data.items) {
         eventChanges = eventChanges.concat(res.data.items)
-        console.log("eventChanges")
-        console.log(eventChanges)
-        console.log("eventChanges")
       }
 
       for (const eventChange of eventChanges) {
+        console.log("\n\neventChange")
+        console.log(eventChange)
+        console.log("eventChange")
         const docId = eventChange.id
         // TODO Remove Event is wrong
         if (docId && eventChange.status === "cancelled") {
+          // We only delete the whole recurring event, when all instances are deleted
+          // When the whole recurring event is deleted, GetDocument will not give error
           try {
-            const event = await getEventFromVespa(docId!)
+            const event = await GetDocument(eventSchema, docId)
             // todo change this
-            const permissions = (event.fields as VespaFile).permissions
+            const permissions = (event.fields as VespaEvent).permissions
             if (permissions.length === 1) {
               // remove it
               try {
@@ -859,6 +841,7 @@ const handleGoogleCalendarEventsChanges = async (
                 await DeleteDocument(docId, eventSchema)
                 stats.removed += 1
                 stats.summary += `${docId} event removed\n`
+                changesExist = true
               } catch (e) {
                 // TODO: detect vespa 404 and only ignore for that case
                 // otherwise throw it further
@@ -866,14 +849,72 @@ const handleGoogleCalendarEventsChanges = async (
             } else {
               // remove our user's permission to change event
               const newPermissions = permissions.filter((v) => v !== userEmail)
-              await UpdateDocumentPermissions(eventSchema, docId, newPermissions)
+              await UpdateDocumentPermissions(
+                eventSchema,
+                docId,
+                newPermissions,
+              )
               stats.updated += 1
               stats.summary += `user lost permission to change event info: ${docId}\n`
+              changesExist = true
             }
-          } catch (err) {
-            Logger.error(
-              `Trying to delete document that doesnt exist in Vespa \n ${err}`,
-            )
+          } catch (err: any) {
+            // For Recurring events, when an instance/s are deleted, we just update the cancelledInstances property
+            // If GetDocument gives error then
+            const errMessage = getErrorMessage(err?.cause)
+            console.log("errMessage")
+            console.log(errMessage)
+            console.log("errMessage")
+            if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
+              // Splitting the id into eventId and instanceDataTime
+              // Breaking 5cng0k77oaakthnrr2k340lf6p_20241114T170000Z into 5cng0k77oaakthnrr2k340lf6p & 20241114T170000Z
+              const splittedId = docId.split("_")
+              const eventId = splittedId[0]
+              const instanceDateTime = splittedId[1]
+              Logger.error(
+                `Found no document with ${docId}, checking for event with ${eventId}`,
+              )
+              // Update this event and add a instanceDateTime cancelledInstances property
+              try {
+                const eventFromVespa = await GetDocument(eventSchema, eventId)
+
+                // todo fix this
+                const oldCancelledInstances =
+                  eventFromVespa.fields.cancelledInstances
+                console.log("oldCancelledInstances")
+                console.log(oldCancelledInstances)
+                console.log("oldCancelledInstances")
+
+                if (!oldCancelledInstances?.includes(instanceDateTime)) {
+                  // Do this only if instanceDateTime not already inside oldCancelledInstances
+                  const newCancelledInstances = [
+                    ...oldCancelledInstances,
+                    instanceDateTime,
+                  ]
+                  console.log("newCancelledInstances")
+                  console.log(newCancelledInstances)
+                  console.log("newCancelledInstances")
+                  if (eventFromVespa) {
+                    await UpdateEventCancelledInstances(
+                      eventSchema,
+                      eventId,
+                      newCancelledInstances,
+                    )
+                    stats.updated += 1
+                    stats.summary += `updated cancelledInstances of event: ${docId}\n`
+                  }
+                }
+              } catch (error) {
+                Logger.error(
+                  `Can't find document to delete, probably doesn't exist`,
+                )
+              }
+            } else {
+              Logger.error(
+                `Error getting document: ${err.message} ${err.stack}`,
+              )
+              throw err
+            }
           }
         } else if (docId) {
           let event = null

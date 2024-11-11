@@ -213,7 +213,7 @@ export const syncGoogleWorkspace = async (
   }
 }
 
-export const getTextFromEventDescription = (description: string) => {
+export const getTextFromEventDescription = (description: string): string => {
   //todo change wordwrap ??
   return htmlToText.convert(description, { wordwrap: 130 })
 }
@@ -393,10 +393,10 @@ const insertCalendarEvents = async (
       event.attachments ?? [],
     )
     const eventToBeIngested = {
-      docId: event.id,
+      docId: event.id ?? "",
       name: event.summary ?? "",
       description: getTextFromEventDescription(event?.description ?? ""),
-      url: event.htmlLink, // eventLink, not joiningLink
+      url: event.htmlLink ?? "", // eventLink, not joiningLink
       status: event.status ?? "",
       location: event.location ?? "",
       createdAt: new Date(event.created!).getTime(),
@@ -422,13 +422,13 @@ const insertCalendarEvents = async (
       baseUrl,
       joiningLink: joiningUrl,
       permissions: [event.organizer?.email ?? ""],
+      cancelledInstances: [], // Will be empty at the start
     }
 
     console.log("eventToBeIngested")
     console.log(eventToBeIngested)
     console.log("eventToBeIngested")
 
-    // @ts-ignore
     await insert(eventToBeIngested, eventSchema)
   }
 
