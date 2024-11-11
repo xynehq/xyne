@@ -251,20 +251,22 @@ const getLinkFromDescription = (description: string): string => {
     const urlRegex = /(https?:\/\/[^\s]+)/g
 
     // Extract all possible links from the htmlString
-    const links = htmlString.match(urlRegex)
+    const links = htmlString.match(urlRegex) || []
 
     // Define the Zoom link identifier
     const zoomLinkIdentifier = "zoom.us"
 
-    // Search through each link to find a Zoom link
-    for (const link of links) {
-      const url = new URL(link)
-      const hostname = url.hostname
-      if (
-        hostname.endsWith(zoomLinkIdentifier) ||
-        hostname === zoomLinkIdentifier
-      ) {
-        return link // Return the href if it contains 'zoom.us'
+    if (links?.length !== 0) {
+      // Search through each link to find a Zoom link
+      for (const link of links) {
+        const url = new URL(link)
+        const hostname = url.hostname
+        if (
+          hostname.endsWith(zoomLinkIdentifier) ||
+          hostname === zoomLinkIdentifier
+        ) {
+          return link // Return the href if it contains 'zoom.us'
+        }
       }
     }
   }
@@ -380,6 +382,7 @@ const insertCalendarEvents = async (
 
   for (const event of events) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
+    // todo improve the code when nothing is in attendees & attachments, currently has empty strings in arrays
     const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
       event.attendees ?? [],
     )
@@ -412,7 +415,7 @@ const insertCalendarEvents = async (
       endTime: new Date(event.end?.dateTime!).getTime(),
       attachmentFilenames,
       attachments: attachmentsInfo,
-      recurrence: event.recurrence, // Contains recurrence metadata of recurring events like RRULE, etc
+      recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
       baseUrl,
       joiningLink: joiningUrl,
       // todo ?? use guestsCanModify maybe
