@@ -234,7 +234,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setMessages((prevMessages) =>
       prevMessages.map((msg) => {
         if (msg.externalId === messageId && msg.messageRole === "assistant") {
-          return { ...msg, message: "", isRetrying: true }
+          return { ...msg, message: "", isRetrying: true, sources: [] }
         }
         return msg
       }),
@@ -249,7 +249,20 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, message: msg.message + event.data } : msg,
+          msg.externalId === messageId && msg.isRetrying
+            ? { ...msg, message: msg.message + event.data }
+            : msg,
+        ),
+      )
+    })
+
+    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+      const { contextChunks } = JSON.parse(event.data)
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.externalId === messageId && msg.isRetrying
+            ? { ...msg, sources: contextChunks }
+            : msg,
         ),
       )
     })
@@ -257,7 +270,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+          msg.externalId === messageId && msg.isRetrying
+            ? { ...msg, isRetrying: false }
+            : msg,
         ),
       )
       eventSource.close()
@@ -267,7 +282,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSource.onerror = (error) => {
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) =>
-        prevMessages.filter((msg) => !msg.isRetrying),
+        prevMessages.map((msg) =>
+          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+        ),
       )
       eventSource.close()
       setIsStreaming(false) // Stop streaming on error

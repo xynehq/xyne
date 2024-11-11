@@ -53,9 +53,7 @@ export const getChatMessagesBefore = async (
   const messagesArr = await trx
     .select()
     .from(messages)
-    .where(
-      and(lt(messages.createdAt, createdAt), eq(messages.chatId, chatId)),
-    )
+    .where(and(lt(messages.createdAt, createdAt), eq(messages.chatId, chatId)))
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
 }

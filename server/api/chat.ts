@@ -929,7 +929,6 @@ export const MessageRetryApi = async (c: Context) => {
       workspaceId,
       email,
     )
-    const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
 
     let newCitations: Citation[] = []
@@ -1051,7 +1050,7 @@ export const MessageRetryApi = async (c: Context) => {
               await updateMessage(db, messageId, {
                 message: newMessageContent,
                 updatedAt: new Date(),
-                sources: newCitations,
+                sources: minimalContextChunks,
               })
               await stream.writeSSE({
                 data: "",
@@ -1133,24 +1132,6 @@ export const MessageRetryApi = async (c: Context) => {
                         data: newContent,
                       })
                     }
-
-                    // Stream citation updates
-                    if (parsed.citations) {
-                      currentCitations = parsed.citations
-                      const minimalContextChunks = searchToCitation(
-                        results.root.children.filter((_, i) =>
-                          currentCitations.includes(i),
-                        ) as z.infer<typeof VespaSearchResultsSchema>[],
-                      )
-
-                      // citations count should match the minimalContext chunks
-                      await stream.writeSSE({
-                        event: ChatSSEvents.CitationsUpdate,
-                        data: JSON.stringify({
-                          contextChunks: minimalContextChunks,
-                        }),
-                      })
-                    }
                   }
                   if (chunk.metadata?.cost) {
                     costArr.push(chunk.metadata.cost)
@@ -1159,12 +1140,30 @@ export const MessageRetryApi = async (c: Context) => {
                   continue
                 }
               }
+              let minimalContextChunks: Citation[] = []
+              // Stream citation updates
+              if (parsed.citations) {
+                currentCitations = parsed.citations
+                minimalContextChunks = searchToCitation(
+                  results.root.children.filter((_, i) =>
+                    currentCitations.includes(i),
+                  ) as z.infer<typeof VespaSearchResultsSchema>[],
+                )
+
+                // citations count should match the minimalContext chunks
+                await stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: minimalContextChunks,
+                  }),
+                })
+              }
               let newMessageContent = parsed.answer
               // Update the assistant's message with new content and updatedAt
               await updateMessage(db, messageId, {
                 message: newMessageContent,
                 updatedAt: new Date(),
-                sources: newCitations,
+                sources: minimalContextChunks,
               })
               await stream.writeSSE({
                 data: "",
