@@ -1005,7 +1005,7 @@ ${userCtx}
         "end": string | null     // "YYYY-MM-DD" or null
     }
 }`
-params.systemPrompt = systemPrompt
+  params.systemPrompt = systemPrompt
 
   const baseMessage: Message = {
     role: MessageRole.User as const,
