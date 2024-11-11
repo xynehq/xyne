@@ -73,7 +73,6 @@ export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
-  chatId: z.string().min(1),
 })
 
 export const AutocompleteApi = async (c: Context) => {

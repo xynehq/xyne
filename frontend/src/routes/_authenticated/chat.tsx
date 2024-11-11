@@ -190,6 +190,51 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setQuery("")
   }
 
+  const handleRetry = async (messageId: string) => {
+    if (!messageId) return
+
+    // Update the assistant message being retried
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) => {
+        if (msg.externalId === messageId && msg.messageRole === "assistant") {
+          return { ...msg, message: "", isRetrying: true }
+        }
+        return msg
+      }),
+    )
+
+    const url = new URL(`/api/v1/message/retry`, window.location.origin)
+    url.searchParams.append("messageId", encodeURIComponent(messageId))
+    const eventSource = new EventSource(url.toString(), {
+      withCredentials: true,
+    })
+
+    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.isRetrying ? { ...msg, message: msg.message + event.data } : msg,
+        ),
+      )
+    })
+
+    eventSource.addEventListener(ChatSSEvents.End, (event) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+        ),
+      )
+      eventSource.close()
+    })
+
+    eventSource.onerror = (error) => {
+      console.error("Retry SSE Error:", error)
+      setMessages((prevMessages) =>
+        prevMessages.filter((msg) => !msg.isRetrying),
+      )
+      eventSource.close()
+    }
+  }
+
   const handleBookmark = async () => {
     if (chatId) {
       await api.chat.bookmark.$post({
@@ -264,6 +309,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   isUser={message.messageRole === "user"}
                   responseDone={true}
                   citations={citations.map((c) => c.url)}
+                  messageId={message.externalId}
+                  handleRetry={handleRetry}
                 />
               ))}
               {currentResp && (
@@ -271,6 +318,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   message={currentResp.resp}
                   isUser={false}
                   responseDone={false}
+                  handleRetry={handleRetry}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -323,12 +371,18 @@ const ChatMessage = ({
   message,
   isUser,
   responseDone,
+  isRetrying,
   citations = [], // Add citations prop
+  messageId,
+  handleRetry,
 }: {
   message: string
   isUser: boolean
   responseDone: boolean
+  isRetrying?: boolean
   citations?: string[] // Array of citation URLs
+  messageId?: string
+  handleRetry: (messageId: string) => void
 }) => {
   // Process message to replace citation markers with links
   const processMessage = (text: string) => {
@@ -344,11 +398,7 @@ const ChatMessage = ({
 
   return (
     <div
-      className={`max-w-[75%] rounded-[16px] ${
-        isUser
-          ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]"
-          : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"
-      }`}
+      className={`max-w-[75%] rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
         message
@@ -373,10 +423,14 @@ const ChatMessage = ({
               />
             </div>
           </div>
-          {responseDone && (
+          {responseDone && !isRetrying && (
             <div className="flex ml-[52px] mt-[24px]">
               <Copy size={16} stroke="#9EA6B8" />
-              <img className="ml-[18px]" src={Retry} />
+              <img
+                className="ml-[18px] cursor-pointer"
+                src={Retry}
+                onClick={() => handleRetry(messageId!)}
+              />
             </div>
           )}
         </div>

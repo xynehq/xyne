@@ -6,6 +6,7 @@ import {
   chatBookmarkSchema,
   chatRenameSchema,
   chatSchema,
+  messageRetrySchema,
   messageSchema,
   SearchApi,
 } from "@/api/search"
@@ -52,6 +53,7 @@ import {
   MessageApiV2,
   MessageRetryApi,
 } from "./api/chat"
+import { z } from "zod"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -148,7 +150,11 @@ export const AppRoutes = app
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
-  .post("/message/retry", zValidator("json", messageSchema), MessageRetryApi)
+  .get(
+    "/message/retry",
+    zValidator("query", messageRetrySchema),
+    MessageRetryApi,
+  )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
