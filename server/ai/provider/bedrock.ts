@@ -31,6 +31,8 @@ export enum Models {
   // Bedrock_Claude = "",
   Gpt_4o = "gpt-4o",
   Gpt_4o_mini = "gpt-4o-mini",
+
+  Cohere= "cohere.embed-english-v3"
 }
 
 type Cost = {
@@ -482,6 +484,32 @@ const BedrockClient = new BedrockRuntimeClient({
   },
 })
 
+export async function generateEmbedding(text: Array<string>) {
+  // Define the input parameters for the model invocation
+  const input = {
+    body: JSON.stringify({
+      texts: text,
+      input_type: "search_document"
+  }), // Encoding text as required
+    contentType: "application/json",
+    accept: "application/json",
+    modelId: Models.Cohere, // Use the correct model ID here
+  };
+
+  try {
+    // Invoke the model
+    const command = new InvokeModelCommand(input);
+    const response = await BedrockClient.send(command);
+
+    // Decode the response body from Uint8Array to string and parse JSON
+    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+    const embeddings = responseBody.embeddings; // Adjust based on response format
+    // console.log("Embeddings:", embeddings);
+    return embeddings;
+  } catch (error) {
+    console.error("Error invoking model:", error);
+  }
+}
 const bedrockProvider = new Provider(BedrockClient, AIProviders.AwsBedrock)
 
 const openAIClient = new OpenAI({
