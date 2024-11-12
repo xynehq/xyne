@@ -1,6 +1,7 @@
 import { getIcon } from "@/lib/common"
 import type {
   Autocomplete,
+  EventAutocomplete,
   FileAutocomplete,
   MailAutocomplete,
   UserAutocomplete,
@@ -25,6 +26,17 @@ export const MailAutocompleteElement = ({
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
       <p>{result.subject}</p>
+    </div>
+  )
+}
+
+export const EventAutocompleteElement = ({
+  result,
+}: { result: EventAutocomplete }) => {
+  return (
+    <div className="flex items-center">
+      {getIcon(result.app, result.entity)}
+      <p>{result.name}</p>
     </div>
   )
 }
@@ -66,6 +78,8 @@ export const AutocompleteElement = forwardRef(
       )
     } else if (result.type === "mail") {
       content = <MailAutocompleteElement result={result} />
+    } else if (result.type === "event") {
+      content = <EventAutocompleteElement result={result} />
     } else {
       throw new Error("invalid type")
     }

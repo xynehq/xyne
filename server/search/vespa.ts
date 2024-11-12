@@ -1,4 +1,4 @@
-import { Apps, fileSchema, mailSchema, userSchema } from "@/search/types"
+import { Apps, eventSchema, fileSchema, mailSchema, userSchema } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -225,7 +225,7 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
-const AllSources = [fileSchema, userSchema, mailSchema].join(", ")
+const AllSources = [fileSchema, userSchema, mailSchema, eventSchema].join(", ")
 
 export const autocomplete = async (
   query: string,
@@ -284,6 +284,9 @@ export const autocomplete = async (
     }
 
     const data = await response.json()
+    console.log("data")
+    console.log(data)
+    console.log("data")
     return data
   } catch (error) {
     Logger.error(

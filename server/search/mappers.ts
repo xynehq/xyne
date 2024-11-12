@@ -16,8 +16,11 @@ import {
   MailResponseSchema,
   type VespaFileSearch,
   type VespaMailSearch,
+  type VespaAutocompleteEvent,
+  eventSchema,
 } from "@/search/types"
 import {
+  AutocompleteEventSchema,
   AutocompleteFileSchema,
   AutocompleteMailSchema,
   AutocompleteUserSchema,
@@ -87,12 +90,16 @@ export const VespaAutocompleteResponseToResult = (
         ;(child.fields as any).type = userSchema
         ;(child.fields as any).relevance = child.relevance
         return AutocompleteUserSchema.parse(child.fields)
-      } else if (
-        (child.fields as VespaAutocompleteMail).sddocname === mailSchema
-      ) {
+      } else if ((child.fields as VespaAutocompleteMail).sddocname === mailSchema) {
         ;(child.fields as any).type = mailSchema
         ;(child.fields as any).relevance = child.relevance
         return AutocompleteMailSchema.parse(child.fields)
+      } else if (
+        (child.fields as VespaAutocompleteEvent).sddocname === eventSchema
+      ) {
+        ;(child.fields as any).type = eventSchema
+        ;(child.fields as any).relevance = child.relevance
+        return AutocompleteEventSchema.parse(child.fields)
       } else {
         throw new Error(
           `Unknown schema type: ${(child.fields as any)?.sddocname}`,

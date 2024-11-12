@@ -75,6 +75,7 @@ export enum NotionEntity {
 
 export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
+export const EventEntitySchema = z.nativeEnum(CalendarEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
@@ -83,9 +84,15 @@ export const entitySchema = z.union([
   FileEntitySchema,
   NotionEntitySchema,
   MailEntitySchema,
+  EventEntitySchema,
 ])
 
-export type Entity = PeopleEntity | DriveEntity | NotionEntity | MailEntity
+export type Entity =
+  | PeopleEntity
+  | DriveEntity
+  | NotionEntity
+  | MailEntity
+  | CalendarEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -447,6 +454,16 @@ const VespaAutocompleteMailSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
+const VespaAutocompleteEventSchema = z
+  .object({
+    docId: z.string(),
+    name: z.string().optional(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    sddocname: Schemas,
+  })
+  .merge(defaultVespaFieldsSchema)
+
 const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteFileSchema,
   VespaAutocompleteUserSchema,
@@ -480,6 +497,9 @@ export type VespaAutocompleteResponse = z.infer<
 export type VespaAutocompleteFile = z.infer<typeof VespaAutocompleteFileSchema>
 export type VespaAutocompleteUser = z.infer<typeof VespaAutocompleteUserSchema>
 export type VespaAutocompleteMail = z.infer<typeof VespaAutocompleteMailSchema>
+export type VespaAutocompleteEvent = z.infer<
+  typeof VespaAutocompleteEventSchema
+>
 
 export type Mail = z.infer<typeof MailSchema>
 export type Attachment = z.infer<typeof AttachmentSchema>

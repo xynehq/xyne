@@ -133,10 +133,21 @@ schema event {
         }
     }
 
-    field chunk_embeddings type tensor<bfloat16>(v[384])  {
-        indexing: (input name || "") . " " .(input description || ""). " " .(input attachmentFilenames || "") . " " .(input url || "") | embed | attribute | index
+     field chunk_embeddings type tensor<bfloat16>(v[384])  {
+        indexing: (input name || "") . " " .(input description || ""). " " .((input attachmentFilenames | for_each { _ }) . " " || ""). " " .(input url || "") | embed | attribute | index
         attribute {
             distance-metric: angular
+        }
+    }
+
+    field name_fuzzy type string {
+        indexing: input name | index
+        index {
+          enable-bm25
+        }
+        match {
+          gram
+          gram-size: 3
         }
     }
 
@@ -189,5 +200,30 @@ schema event {
           vector_score
           event_time_score
         }
+    }
+
+    document-summary autocomplete {
+        summary name {
+            source: name
+        }
+        summary app {
+            source: app
+        }
+        summary entity {
+            source: entity
+        }
+        summary docId {
+            source: docId
+        }
+    }
+
+    # Autocomplete rank profile for fuzzy prefix search
+    rank-profile autocomplete {
+      first-phase {
+        expression: bm25(name_fuzzy)
+      }
+      match-features {
+        bm25(name_fuzzy)
+      }
     }
 }
