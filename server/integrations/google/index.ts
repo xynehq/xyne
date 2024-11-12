@@ -24,7 +24,13 @@ import {
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
-import { insert, insertDocument, insertUser } from "@/search/vespa"
+import {
+  GetDocument,
+  insert,
+  insertDocument,
+  insertUser,
+  UpdateEventCancelledInstances,
+} from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
 import { wsConnections } from "@/server"
 import type { WSContext } from "hono/ws"
@@ -67,6 +73,7 @@ import {
   ErrorInsertingDocument,
   DeleteDocumentError,
   DownloadDocumentError,
+  CalendarEventsListingError,
 } from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
@@ -303,11 +310,15 @@ export const getAttendeesOfEvent = (
   const attendeesInfo: { email: string; displayName: string }[] = []
   const attendeesNames: string[] = []
   for (const attendee of allAttendes) {
-    attendeesNames.push(attendee.displayName ?? "")
+    if (attendee.displayName) {
+      attendeesNames.push(attendee.displayName ?? "")
+    }
 
     const oneAttendee = { email: "", displayName: "" }
     oneAttendee.email = attendee.email ?? ""
-    oneAttendee.displayName = attendee.displayName ?? ""
+    if (attendee.displayName) {
+      oneAttendee.displayName = attendee.displayName ?? ""
+    }
 
     attendeesInfo.push(oneAttendee)
   }
@@ -363,12 +374,10 @@ const insertCalendarEvents = async (
 
   do {
     const res = await calendar.events.list({
-      calendarId: "primary", // Use 'primary' for the primary calendar
+      calendarId: "primary",
       timeMin: currentDateTime.toISOString(),
       timeMax: nextYearDateTime.toISOString(),
       maxResults: 2500, // Limit the number of results
-      // singleEvents: true, // Expands recurring events into individual occurrences
-      // orderBy: "startTime",
       pageToken: nextPageToken,
       fields: eventFields,
     })
@@ -383,9 +392,13 @@ const insertCalendarEvents = async (
     return { events: [], calendarEventsToken: newSyncTokenCalendarEvents }
   }
 
-  for (const event of events) {
+  const confirmedEvents = events.filter((e) => e.status === "confirmed")
+  // Handle cancelledEvents separately
+  const cancelledEvents = events.filter((e) => e.status === "cancelled")
+
+  // First insert only the confirmed events
+  for (const event of confirmedEvents) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
-    // todo improve the code when nothing is in attendees & attachments, currently has empty strings in arrays
     const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
       event.attendees ?? [],
     )
@@ -422,23 +435,56 @@ const insertCalendarEvents = async (
       baseUrl,
       joiningLink: joiningUrl,
       permissions: [event.organizer?.email ?? ""],
-      cancelledInstances: [], // Will be empty at the start
+      cancelledInstances: [],
     }
-
-    console.log("eventToBeIngested")
-    console.log(eventToBeIngested)
-    console.log("eventToBeIngested")
 
     await insert(eventToBeIngested, eventSchema)
   }
 
+  // Add the cancelled events into cancelledInstances array of their respective main event
+  for (const event of cancelledEvents) {
+    // add this instance to the cancelledInstances arr of main recurring event
+    // don't add it as seperate event
+    const instanceEventId = event.id ?? ""
+    const splittedId = instanceEventId?.split("_") ?? ""
+    const mainEventId = splittedId[0]
+    const instanceDateTime = splittedId[1]
+
+    try {
+      // Get the main event from Vespa
+      // Add the new instanceDateTime to its cancelledInstances
+      const eventFromVespa = await GetDocument(eventSchema, mainEventId)
+      // todo
+      const oldCancelledInstances =
+        eventFromVespa.fields.cancelledInstances ?? []
+
+      if (!oldCancelledInstances?.includes(instanceDateTime)) {
+        // Do this only if instanceDateTime not already inside oldCancelledInstances
+        const newCancelledInstances = [
+          ...oldCancelledInstances,
+          instanceDateTime,
+        ]
+        if (eventFromVespa) {
+          await UpdateEventCancelledInstances(
+            eventSchema,
+            mainEventId,
+            newCancelledInstances,
+          )
+        }
+      }
+    } catch (e) {
+      Logger.error(
+        `Main Event not found in Vespa to update cancelled instances`,
+      )
+    }
+  }
+
   if (!newSyncTokenCalendarEvents) {
-    // TODO Make a custom err
-    // throw new ContactListingError({
-    //   message: "Could not get sync tokens for contact",
-    //   integration: Apps.GoogleDrive,
-    //   entity: GooglePeopleEntity.Contacts,
-    // })
+    throw new CalendarEventsListingError({
+      message: "Could not get sync tokens for Google Calendar Events",
+      integration: Apps.GoogleCalendar,
+      entity: CalendarEntity.Event,
+    })
   }
 
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
