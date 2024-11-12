@@ -16,7 +16,7 @@ import {
   Paperclip,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { ChatSSEvents, SelectPublicMessage } from "shared/types"
+import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -25,6 +25,7 @@ type CurrentResp = {
   resp: string
   chatId?: string
   messageId?: string
+  sources?: Citation[]
 }
 
 interface ChatPageProps {
@@ -53,6 +54,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
+
   const currentRespRef = useRef<CurrentResp | null>(null)
   const [chatStarted, setChatStarted] = useState<boolean>(
     isWithChatId ? !!data?.messages : false,
@@ -63,7 +65,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
-  const [citations, setCitations] = useState<any[]>([])
   const [dots, setDots] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
 
@@ -104,7 +105,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       currentRespRef.current = null
     }
     inputRef.current?.focus()
-    setCitations([])
     setQuery("")
   }, [(params as any).chatId])
 
@@ -119,7 +119,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     // Set currentResp to an empty response to shift layout immediately
     setCurrentResp({ resp: "" })
-    currentRespRef.current = { resp: "" }
+    currentRespRef.current = { resp: "", sources: [] }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
@@ -134,12 +134,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks } = JSON.parse(event.data)
-      setCitations(contextChunks)
+      if (currentRespRef.current) {
+        currentRespRef.current.sources = contextChunks
+      }
     })
 
     eventSource.addEventListener(ChatSSEvents.Start, (event) => {
       setChatStarted(true)
-      setCitations([])
     })
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
@@ -195,6 +196,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             messageRole: "assistant",
             message: currentResp.resp,
             externalId: currentResp.messageId,
+            sources: currentResp.sources,
           },
         ])
       }
@@ -373,7 +375,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   message={message.message}
                   isUser={message.messageRole === "user"}
                   responseDone={true}
-                  citations={citations.map((c) => c.url)}
+                  citations={message?.sources?.map((c: Citation) => c.url)}
                   messageId={message.externalId}
                   handleRetry={handleRetry}
                   dots={message.isRetrying ? dots : ""}
@@ -382,6 +384,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               {currentResp && (
                 <ChatMessage
                   message={currentResp.resp}
+                  citations={currentResp.sources?.map((c: Citation) => c.url)}
                   isUser={false}
                   responseDone={false}
                   handleRetry={handleRetry}
@@ -454,14 +457,17 @@ const ChatMessage = ({
   handleRetry: (messageId: string) => void
 }) => {
   const [isCopied, setIsCopied] = useState(false)
-  // Process message to replace citation markers with links
   const processMessage = (text: string) => {
+    let citationIndex = 0
+
     return text.replace(/\[(\d+)\]/g, (match, num) => {
-      const index = parseInt(num)
-      const url = citations[index]
+      const url = citations[citationIndex]
+
       if (url) {
-        return `[${match}](${url})`
+        citationIndex++
+        return `[[${citationIndex}]](${url})`
       }
+
       return match
     })
   }

@@ -49,7 +49,7 @@ import {
   ChatBookmarkApi,
   ChatRenameApi,
   GetChatApi,
-  MessageApiV1,
+  // MessageApiV1,
   MessageApiV2,
   MessageRetryApi,
 } from "./api/chat"
