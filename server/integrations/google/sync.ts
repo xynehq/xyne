@@ -865,7 +865,9 @@ const handleGoogleCalendarEventsChanges = async (
             console.log("errMessage")
             console.log(errMessage)
             console.log("errMessage")
-            if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
+            if (
+              errMessage.includes("Failed to fetch document: 404 Not Found")
+            ) {
               // Splitting the id into eventId and instanceDataTime
               // Breaking 5cng0k77oaakthnrr2k340lf6p_20241114T170000Z into 5cng0k77oaakthnrr2k340lf6p & 20241114T170000Z
               const splittedId = docId.split("_")
@@ -877,10 +879,13 @@ const handleGoogleCalendarEventsChanges = async (
               // Update this event and add a instanceDateTime cancelledInstances property
               try {
                 const eventFromVespa = await GetDocument(eventSchema, eventId)
+                console.log("eventFromVespa")
+                console.log(eventFromVespa)
+                console.log("eventFromVespa")
 
                 // todo fix this
                 const oldCancelledInstances =
-                  eventFromVespa.fields.cancelledInstances
+                  eventFromVespa.fields.cancelledInstances ?? []
                 console.log("oldCancelledInstances")
                 console.log(oldCancelledInstances)
                 console.log("oldCancelledInstances")
@@ -904,6 +909,13 @@ const handleGoogleCalendarEventsChanges = async (
                     stats.summary += `updated cancelledInstances of event: ${docId}\n`
                   }
                 }
+                const lastInstanceOfEvent = await GetDocument(
+                  eventSchema,
+                  eventId,
+                )
+                console.log("At last what event looks like")
+                console.log(lastInstanceOfEvent)
+                console.log("At last what event looks like")
               } catch (error) {
                 Logger.error(
                   `Can't find document to delete, probably doesn't exist`,
