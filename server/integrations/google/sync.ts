@@ -818,7 +818,6 @@ const handleGoogleCalendarEventsChanges = async (
           // When the whole recurring event is deleted, GetDocument will not give error
           try {
             const event = await GetDocument(eventSchema, docId)
-            // todo change this
             const permissions = (event.fields as VespaEvent).permissions
             if (permissions.length === 1) {
               // remove it
@@ -867,10 +866,8 @@ const handleGoogleCalendarEventsChanges = async (
               // Update this event and add a instanceDateTime cancelledInstances property
               try {
                 const eventFromVespa = await GetDocument(eventSchema, eventId)
-
-                // todo fix this
                 const oldCancelledInstances =
-                  eventFromVespa.fields.cancelledInstances ?? []
+                  (eventFromVespa.fields as VespaEvent).cancelledInstances ?? []
 
                 if (!oldCancelledInstances?.includes(instanceDateTime)) {
                   // Do this only if instanceDateTime not already inside oldCancelledInstances
@@ -935,7 +932,6 @@ const handleGoogleCalendarEventsChanges = async (
       changesExist,
     }
   } catch (err) {
-    // TODO throw proper error
     throw err
   }
 }

@@ -14,7 +14,7 @@ export enum Apps {
   Gmail = "gmail",
 
   Notion = "notion",
-  GoogleCalendar = 'google-calendar'
+  GoogleCalendar = "google-calendar",
 }
 
 export enum GooglePeopleEntity {
@@ -27,6 +27,7 @@ const Schemas = z.union([
   z.literal(fileSchema),
   z.literal(userSchema),
   z.literal(mailSchema),
+  z.literal(eventSchema),
 ])
 
 export enum MailEntity {
@@ -244,6 +245,10 @@ export const VespaMailSearchSchema = VespaMailSchema.extend({
     chunks_summary: z.array(z.string()).optional(),
   })
 
+export const VespaEventSearchSchema = VespaEventSchema.extend({
+  sddocname: z.literal("event"),
+}).merge(defaultVespaFieldsSchema)
+
 export const VespaMailGetSchema = VespaMailSchema.merge(
   defaultVespaFieldsSchema,
 )
@@ -252,6 +257,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
   VespaMailSearchSchema,
+  VespaEventSearchSchema,
 ])
 
 // Match features for file schema
@@ -274,10 +280,18 @@ const MailMatchFeaturesSchema = z.object({
   "bm25(attachmentFilenames)": z.number().optional(),
 })
 
+const EventMatchFeaturesSchema = z.object({
+  "bm25(name)": z.number().optional(),
+  "bm25(description)": z.number().optional(),
+  "bm25(attachmentFilenames)": z.number().optional(),
+  "bm25(attendeesNames)": z.number().optional(),
+})
+
 const SearchMatchFeaturesSchema = z.union([
   FileMatchFeaturesSchema,
   UserMatchFeaturesSchema,
   MailMatchFeaturesSchema,
+  EventMatchFeaturesSchema,
 ])
 const VespaSearchFieldsSchema = z
   .object({

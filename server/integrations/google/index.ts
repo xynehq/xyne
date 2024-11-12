@@ -63,6 +63,7 @@ import { getLogger } from "@/logger"
 import {
   CalendarEntity,
   eventSchema,
+  type VespaEvent,
   type VespaFileWithDrivePermission,
 } from "@/search/types"
 import {
@@ -454,9 +455,8 @@ const insertCalendarEvents = async (
       // Get the main event from Vespa
       // Add the new instanceDateTime to its cancelledInstances
       const eventFromVespa = await GetDocument(eventSchema, mainEventId)
-      // todo
       const oldCancelledInstances =
-        eventFromVespa.fields.cancelledInstances ?? []
+        (eventFromVespa.fields as VespaEvent).cancelledInstances ?? []
 
       if (!oldCancelledInstances?.includes(instanceDateTime)) {
         // Do this only if instanceDateTime not already inside oldCancelledInstances
