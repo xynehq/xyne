@@ -731,7 +731,6 @@ const insertEventIntoVespa = async (
   userEmail: string,
 ) => {
   const { baseUrl, joiningUrl } = getJoiningLink(event)
-  // todo improve the code when nothing is in attendees & attachments, currently has empty strings in arrays
   const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
     event.attendees ?? [],
   )
@@ -770,10 +769,6 @@ const insertEventIntoVespa = async (
     permissions: [event.organizer?.email ?? ""],
     cancelledInstances: [],
   }
-
-  console.log("eventToBeIngested in Change")
-  console.log(eventToBeIngested)
-  console.log("eventToBeIngested in Change")
 
   await insert(eventToBeIngested, eventSchema)
 }
@@ -817,11 +812,7 @@ const handleGoogleCalendarEventsChanges = async (
       }
 
       for (const eventChange of eventChanges) {
-        console.log("\n\neventChange")
-        console.log(eventChange)
-        console.log("eventChange")
         const docId = eventChange.id
-        // TODO Remove Event is wrong
         if (docId && eventChange.status === "cancelled") {
           // We only delete the whole recurring event, when all instances are deleted
           // When the whole recurring event is deleted, GetDocument will not give error
@@ -862,9 +853,6 @@ const handleGoogleCalendarEventsChanges = async (
             // For Recurring events, when an instance/s are deleted, we just update the cancelledInstances property
             // If GetDocument gives error then
             const errMessage = getErrorMessage(err?.cause)
-            console.log("errMessage")
-            console.log(errMessage)
-            console.log("errMessage")
             if (
               errMessage.includes("Failed to fetch document: 404 Not Found")
             ) {
@@ -879,16 +867,10 @@ const handleGoogleCalendarEventsChanges = async (
               // Update this event and add a instanceDateTime cancelledInstances property
               try {
                 const eventFromVespa = await GetDocument(eventSchema, eventId)
-                console.log("eventFromVespa")
-                console.log(eventFromVespa)
-                console.log("eventFromVespa")
 
                 // todo fix this
                 const oldCancelledInstances =
                   eventFromVespa.fields.cancelledInstances ?? []
-                console.log("oldCancelledInstances")
-                console.log(oldCancelledInstances)
-                console.log("oldCancelledInstances")
 
                 if (!oldCancelledInstances?.includes(instanceDateTime)) {
                   // Do this only if instanceDateTime not already inside oldCancelledInstances
@@ -896,9 +878,7 @@ const handleGoogleCalendarEventsChanges = async (
                     ...oldCancelledInstances,
                     instanceDateTime,
                   ]
-                  console.log("newCancelledInstances")
-                  console.log(newCancelledInstances)
-                  console.log("newCancelledInstances")
+                  
                   if (eventFromVespa) {
                     await UpdateEventCancelledInstances(
                       eventSchema,
@@ -907,15 +887,9 @@ const handleGoogleCalendarEventsChanges = async (
                     )
                     stats.updated += 1
                     stats.summary += `updated cancelledInstances of event: ${docId}\n`
+                    changesExist = true
                   }
                 }
-                const lastInstanceOfEvent = await GetDocument(
-                  eventSchema,
-                  eventId,
-                )
-                console.log("At last what event looks like")
-                console.log(lastInstanceOfEvent)
-                console.log("At last what event looks like")
               } catch (error) {
                 Logger.error(
                   `Can't find document to delete, probably doesn't exist`,
@@ -933,7 +907,7 @@ const handleGoogleCalendarEventsChanges = async (
           try {
             event = await GetDocument(eventSchema, docId!)
           } catch (e) {
-            Logger.error(`Event ${event?.id} doesn't exist in Vepsa`)
+            Logger.error(`Event doesn't exist in Vepsa`)
           }
 
           await insertEventIntoVespa(eventChange, userEmail)
