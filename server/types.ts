@@ -157,7 +157,7 @@ const GmailChangeTokenSchema = z.object({
   lastSyncedAt: z.coerce.date(),
 })
 
-const ChangeTokenSchema = z.discriminatedUnion("type",[
+const ChangeTokenSchema = z.discriminatedUnion("type", [
   DefaultTokenSchema,
   GoogleDriveChangeTokenSchema,
   GmailChangeTokenSchema,
