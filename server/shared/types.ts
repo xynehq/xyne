@@ -96,7 +96,7 @@ export const AutocompleteMailSchema = z
   })
   .strip()
 
-  export const AutocompleteEventSchema = z
+export const AutocompleteEventSchema = z
   .object({
     type: z.literal(eventSchema),
     relevance: z.number(),
@@ -152,7 +152,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
   })
   .strip()
 
-  export const EventResponseSchema = VespaEventSchema.pick({
+export const EventResponseSchema = VespaEventSchema.pick({
   docId: true,
   name: true,
   url: true,
@@ -163,6 +163,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
   .extend({
     type: z.literal(eventSchema),
     relevance: z.number(),
+    chunks_summary: z.array(z.string()).optional(),
   })
   .strip()
 

@@ -293,9 +293,6 @@ export const autocomplete = async (
     }
 
     const data = await response.json()
-    console.log("data")
-    console.log(data)
-    console.log("data")
     return data
   } catch (error) {
     Logger.error(
@@ -394,7 +391,7 @@ export const groupVespaSearch = async (
     if (!response.ok) {
       const errorText = response.statusText
       throw new Error(
-        `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+        `Failed to fetch documents in groupVespaSearch: ${response.status} ${response.statusText} - ${errorText}`,
       )
     }
 
@@ -402,7 +399,7 @@ export const groupVespaSearch = async (
     return handleVespaGroupResponse(data)
   } catch (error) {
     Logger.error(
-      `Error performing search:, ${error} - ${(error as Error).stack}`,
+      `Error performing search groupVespaSearch:, ${error} - ${(error as Error).stack}`,
     )
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -450,14 +447,16 @@ export const searchVespa = async (
     if (!response.ok) {
       const errorText = response.statusText
       throw new Error(
-        `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+        `Failed to fetch documents in searchVespa: ${response.status} ${response.statusText} - ${errorText}`,
       )
     }
 
     const data = await response.json()
     return data
   } catch (error) {
-    Logger.error(`Error performing search:, ${error} ${(error as Error).stack}`)
+    Logger.error(
+      `Error performing search in searchVespa:, ${error} ${(error as Error).stack}`,
+    )
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
