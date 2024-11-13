@@ -875,7 +875,7 @@ const handleGoogleCalendarEventsChanges = async (
                     ...oldCancelledInstances,
                     instanceDateTime,
                   ]
-                  
+
                   if (eventFromVespa) {
                     await UpdateEventCancelledInstances(
                       eventSchema,
@@ -1398,6 +1398,104 @@ export const handleGoogleServiceAccountChanges = async (
         message: "Could not complete sync job",
         cause: error as Error,
         integration: Apps.Gmail,
+        entity: "",
+      })
+    }
+  }
+
+  // For Calendar Events Sync
+  const gCalEventSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.GoogleCalendar,
+    AuthType.ServiceAccount,
+  )
+  for (const syncJob of gCalEventSyncJobs) {
+    try {
+      const connector = await getConnector(db, syncJob.connectorId)
+      const serviceAccountKey: GoogleServiceAccount = JSON.parse(
+        connector.credentials as string,
+      )
+      // const subject: string = connector.subject as string
+      let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
+
+      let config: CalendarEventsChangeToken =
+        syncJob.config as CalendarEventsChangeToken
+      // we have guarantee that when we started this job access Token at least
+      // hand one hour, we should increase this time
+      const calendar = google.calendar({ version: "v3", auth: jwtClient })
+
+      let { eventChanges, stats, newCalendarEventsSyncToken, changesExist } =
+        await handleGoogleCalendarEventsChanges(
+          calendar,
+          config.calendarEventsToken,
+          syncJob.email,
+        )
+
+      if (changesExist) {
+        // update the change token
+        config.calendarEventsToken = newCalendarEventsSyncToken
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+          // make it compatible with sync history config type
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: stats.added,
+            dataDeleted: stats.removed,
+            dataUpdated: stats.updated,
+            authType: AuthType.ServiceAccount,
+            summary: { description: stats.summary },
+            errorMessage: "",
+            app: Apps.GoogleCalendar,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+        Logger.info(
+          `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
+        )
+      } else {
+        Logger.info(`No Google Calendar Event changes to sync`)
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        `Could not successfully complete ServiceAccount sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+      const config: CalendarEventsChangeToken =
+        syncJob.config as CalendarEventsChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.ServiceAccount,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.GoogleCalendar,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+      throw new SyncJobFailed({
+        message: "Could not complete sync job",
+        cause: error as Error,
+        integration: Apps.GoogleCalendar,
         entity: "",
       })
     }

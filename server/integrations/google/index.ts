@@ -222,7 +222,6 @@ export const syncGoogleWorkspace = async (
 }
 
 export const getTextFromEventDescription = (description: string): string => {
-  //todo change wordwrap ??
   return htmlToText.convert(description, { wordwrap: 130 })
 }
 
@@ -621,6 +620,8 @@ type IngestionMetadata = {
   otherContactsToken: string
   // gmail
   historyId: string
+  // calendar events token
+  calendarEventsToken: string
 }
 
 // we make 2 sync jobs
@@ -661,9 +662,10 @@ export const handleGoogleServiceAccountIngestion = async (
         `${((index + 1) / users.length) * 100}% user's data is connected`,
         connector.externalId,
       )
-      const [_, historyId] = await Promise.all([
+      const [_, historyId, { calendarEventsToken }] = await Promise.all([
         insertFilesForUser(jwtClient, userEmail, connector),
         handleGmailIngestion(jwtClient, userEmail),
+        insertCalendarEvents(jwtClient, userEmail),
       ])
       ingestionMetadata.push({
         email: userEmail,
@@ -671,6 +673,7 @@ export const handleGoogleServiceAccountIngestion = async (
         contactsToken,
         otherContactsToken,
         historyId,
+        calendarEventsToken,
       })
     }
     // insert all the workspace users
@@ -683,6 +686,7 @@ export const handleGoogleServiceAccountIngestion = async (
         contactsToken,
         otherContactsToken,
         historyId,
+        calendarEventsToken,
       } of ingestionMetadata) {
         // drive and contacts per user
         await insertSyncJob(trx, {
@@ -713,6 +717,22 @@ export const handleGoogleServiceAccountIngestion = async (
             historyId,
             type: "gmailChangeToken",
             updatedAt: new Date().toISOString(),
+          },
+          email,
+          type: SyncCron.ChangeToken,
+          status: SyncJobStatus.NotStarted,
+        })
+        // For inserting Google CalendarEvent Change Job
+        await insertSyncJob(trx, {
+          workspaceId: connector.workspaceId,
+          workspaceExternalId: connector.workspaceExternalId,
+          app: Apps.GoogleCalendar,
+          connectorId: connector.id,
+          authType: AuthType.ServiceAccount,
+          config: {
+            calendarEventsToken,
+            type: "calendarEventsChangeToken",
+            lastSyncedAt: new Date().toISOString(),
           },
           email,
           type: SyncCron.ChangeToken,
@@ -757,7 +777,7 @@ export const handleGoogleServiceAccountIngestion = async (
       await boss.fail(job.name, job.id)
     })
     throw new CouldNotFinishJobSuccessfully({
-      message: "Could not finish Oauth ingestion",
+      message: "Could not finish Service Account ingestion",
       integration: Apps.GoogleWorkspace,
       entity: "files and users",
       cause: error as Error,
