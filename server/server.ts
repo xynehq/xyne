@@ -10,6 +10,8 @@ import {
   messageRetrySchema,
   messageSchema,
   SearchApi,
+  updateUserQueryHistory,
+  userQueryHistorySchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -143,6 +145,11 @@ export const AppRoutes = app
     "/autocomplete",
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
+  )
+  .post(
+    "/updateUserQueryHistory",
+    zValidator("json", userQueryHistorySchema),
+    updateUserQueryHistory,
   )
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
