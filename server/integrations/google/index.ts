@@ -407,7 +407,7 @@ export const handleGoogleServiceAccountIngestion = async (
           config: {
             historyId,
             type: "gmailChangeToken",
-            updatedAt: new Date().toISOString(),
+            lastSyncedAt: new Date().toISOString(),
           },
           email,
           type: SyncCron.ChangeToken,
@@ -583,8 +583,6 @@ const googleSlidesVespa = async (
 
       if (count % 5 === 0) {
         sendWebsocketMessage(`${count} Google Slides scanned`, connectorId)
-        process.stdout.write(`${Math.floor((count / total) * 100)}`)
-        process.stdout.write("\n")
       }
     } catch (error) {
       Logger.error(
@@ -722,7 +720,7 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
 
   if (!rowsWithData || rowsWithData.length === 0) {
     // If no row is filled, no data is there
-    Logger.error("No data in any row. Skipping it")
+    Logger.info("No data in any row. Skipping it")
     return []
   }
 
@@ -915,8 +913,6 @@ const googleSheetsVespa = async (
 
       if (count % 5 === 0) {
         sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
-        process.stdout.write(`${Math.floor((count / total) * 100)}`)
-        process.stdout.write("\n")
       }
     } catch (error) {
       Logger.error(
@@ -1229,7 +1225,7 @@ export const insertContact = async (
   const name = contact.names?.[0]?.displayName ?? ""
   const email = contact.emailAddresses?.[0]?.value ?? ""
   if (!email) {
-    Logger.error(`Email does not exist for ${entity}`)
+    Logger.warn(`Email does not exist for ${entity}`)
     return
     // throw new ContactMappingError({
     //   integration: Apps.GoogleDrive,
@@ -1439,8 +1435,6 @@ export const googleDocsVespa = async (
 
         if (count % 5 === 0) {
           sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
-          process.stdout.write(`${Math.floor((count / total) * 100)}`)
-          process.stdout.write("\n")
         }
         return result
       } catch (error) {

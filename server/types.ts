@@ -136,6 +136,7 @@ export enum SyncCron {
 
 // Define ChangeToken schema
 const DefaultTokenSchema = z.object({
+  type: z.literal("default"),
   token: z.string(),
   lastSyncedAt: z.coerce.date(),
 })
@@ -156,7 +157,7 @@ const GmailChangeTokenSchema = z.object({
   lastSyncedAt: z.coerce.date(),
 })
 
-const ChangeTokenSchema = z.union([
+const ChangeTokenSchema = z.discriminatedUnion("type", [
   DefaultTokenSchema,
   GoogleDriveChangeTokenSchema,
   GmailChangeTokenSchema,
