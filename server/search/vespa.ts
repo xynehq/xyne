@@ -1,4 +1,10 @@
-import { Apps, eventSchema, fileSchema, mailSchema, userSchema } from "@/search/types"
+import {
+  Apps,
+  eventSchema,
+  fileSchema,
+  mailSchema,
+  userSchema,
+} from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -257,6 +263,9 @@ export const autocomplete = async (
         )
         or
         (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and permissions contains @email)
+        or
+        (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email);`
 
   const searchPayload = {

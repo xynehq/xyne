@@ -11,6 +11,7 @@ import {
   DriveEntity,
   GooglePeopleEntity,
   NotionEntity,
+  CalendarEntity,
 } from "shared/types"
 
 export const getIcon = (
@@ -57,6 +58,10 @@ export const getIcon = (
   } else if (app === Apps.Notion) {
     if (entity === NotionEntity.Page) {
       return <img className={classNameVal} src={NotionPageSvg} />
+    }
+  } else if (app === Apps.GoogleCalendar) {
+    if (entity === CalendarEntity.Event) {
+      return <img className={classNameVal} src={DriveSvg} />
     }
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)

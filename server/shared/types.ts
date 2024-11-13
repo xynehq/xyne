@@ -14,6 +14,7 @@ export {
   GooglePeopleEntity,
   DriveEntity,
   NotionEntity,
+  CalendarEntity,
   Apps,
 } from "search/types"
 export type { Entity } from "search/types"
