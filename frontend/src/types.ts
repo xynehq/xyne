@@ -1,5 +1,6 @@
 import { Apps, AuthType, Entity } from "shared/types"
 import { z } from "zod"
+import { LastUpdated } from "@/components/SearchFilter"
 
 export const searchSchema = z.object({
   query: z.string().optional(),
@@ -32,6 +33,7 @@ export type Connectors = {
 export type Groups = Record<Apps, Record<Entity, number>>
 
 export type Filter = {
-  app: Apps
-  entity: Entity
+  app?: Apps
+  entity?: Entity
+  lastUpdated?: LastUpdated
 }

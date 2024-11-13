@@ -7,7 +7,10 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["./frontend/src/routeTree.gen.ts"]
+    "ignore": [
+      "./frontend/src/routeTree.gen.ts",
+      "./server/eval/RAGEval/dataset.json"
+    ]
   },
   "formatter": {
     "enabled": true,

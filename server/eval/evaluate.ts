@@ -53,7 +53,6 @@ const evaluate = async (queriesListPath: string) => {
       const results = await searchVespa(query, user, null, null, k, 0)
       if ("children" in results.root) {
         const hits = results.root.children
-        console.log(hits.length, ": result length")
         for (let idx = 0; idx < hits.length; idx++) {
           // TREC format query_id Q0 document_id rank score run_id
           processedResultsData.push(

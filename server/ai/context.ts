@@ -26,6 +26,7 @@ Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
 Created: ${getRelativeTime(fields.createdAt)}
 Updated At: ${getRelativeTime(fields.updatedAt)}
+${fields.url ? `Link: ${fields.url}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
@@ -187,11 +188,43 @@ const cleanDocs = (text: string): string => {
   return cleanedText
 }
 
+// TODO:
+// inform about the location
+// tell the IP of the user as well
 export const userContext = ({
   user,
   workspace,
 }: PublicUserWorkspace): string => {
-  return `name: ${user.name}
-email: ${user.email}
-company: ${workspace.name}`
+  const now = new Date()
+  const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
+  const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
+  return `My Name: ${user.name}
+Email: ${user.email}
+Company: ${workspace.name}
+Company domain: ${workspace.domain}
+Current Time: ${currentTime}
+Today is: ${currentDate}`
+}
+
+/**
+ * Matches URLs starting with 'http://' or 'https://'.
+ */
+const URL_REGEX: RegExp = /\bhttps?:\/\/[^\s/$.?#].[^\s]*\b/gi
+/**
+ * Replaces URLs in the given text with placeholders in the format '[link: domain.tld]'.
+ *
+ * @param text - The text in which to replace URLs.
+ * @returns The text with URLs replaced by placeholders.
+ */
+export const replaceLinks = (text: string): string => {
+  return text.replace(URL_REGEX, (match: string): string => {
+    try {
+      const parsedUrl: URL = new URL(match)
+      const domain: string = parsedUrl.hostname
+      return `${domain}`
+    } catch (e) {
+      // If URL parsing fails, return the original match
+      return match
+    }
+  })
 }

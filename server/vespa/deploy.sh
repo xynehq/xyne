@@ -4,8 +4,8 @@ set -e
 mkdir -p models
 
 # URLs to download
-TOKENIZER_URL="https://huggingface.co/Xenova/bge-base-en-v1.5/raw/main/tokenizer.json"
-MODEL_URL="https://huggingface.co/Xenova/bge-base-en-v1.5/resolve/main/onnx/model_quantized.onnx"
+TOKENIZER_URL="https://huggingface.co/Xenova/bge-small-en-v1.5/raw/main/tokenizer.json"
+MODEL_URL="https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/onnx/model_quantized.onnx"
 
 # File paths
 TOKENIZER_FILE="models/tokenizer.json"

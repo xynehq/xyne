@@ -5,6 +5,10 @@ import SheetsSvg from "@/assets/sheets.svg"
 import DriveSvg from "@/assets/drive.svg"
 import NotionPageSvg from "@/assets/notionPage.svg"
 import Gmail from "@/assets/gmail.svg"
+import Docx from "@/assets/docx.svg"
+import Pdf from "@/assets/pdf.svg"
+import Slides from "@/assets/slides.svg"
+import Image from "@/assets/images.svg"
 import type { Entity } from "shared/types"
 import {
   Apps,
@@ -48,6 +52,14 @@ export const getIcon = (
       entity === GooglePeopleEntity.OtherContacts
     ) {
       return <Users stroke="#464B53" size={12} className="mr-[10px]" />
+    } else if (entity === DriveEntity.WordDocument) {
+      return <img className={classNameVal} src={Docx} />
+    } else if (entity === DriveEntity.PDF) {
+      return <img className={classNameVal} src={Pdf} />
+    } else if (entity === DriveEntity.Slides) {
+      return <img className={classNameVal} src={Slides} />
+    } else if (entity === DriveEntity.Image) {
+      return <img className={classNameVal} src={Image} />
     } else {
       return <img className={classNameVal} src={DriveSvg} />
     }

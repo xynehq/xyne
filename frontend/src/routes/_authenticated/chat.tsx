@@ -1,9 +1,11 @@
+import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
   createFileRoute,
   useLoaderData,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router"
 import {
   ArrowRight,
@@ -14,17 +16,24 @@ import {
   Paperclip,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { ChatSSEvents, SelectPublicMessage } from "shared/types"
+import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
+import { PublicUser, PublicWorkspace } from "shared/types"
 
 type CurrentResp = {
   resp: string
   chatId?: string
   messageId?: string
+  sources?: Citation[]
 }
 
-export const ChatPage = () => {
+interface ChatPageProps {
+  user: PublicUser
+  workspace: PublicWorkspace
+}
+
+export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
   const isWithChatId = !!(params as any).chatId
@@ -34,35 +43,70 @@ export const ChatPage = () => {
       : "/_authenticated/chat",
   })
 
-  useEffect(() => {
-    if (data?.error) {
-      router.navigate({ to: "/chat" })
-    }
-  }, [data, router])
-
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    data?.messages || [],
+    isWithChatId ? data?.messages || [] : [],
   )
   const [chatId, setChatId] = useState<string | null>(
     (params as any).chatId || null,
   )
   const [chatTitle, setChatTitle] = useState<string | null>(
-    data?.chat.title || null,
+    isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
+
   const currentRespRef = useRef<CurrentResp | null>(null)
-  const [chatStarted, setChatStarted] = useState<boolean>(!!data?.messages)
+  const [chatStarted, setChatStarted] = useState<boolean>(
+    isWithChatId ? !!data?.messages : false,
+  )
   const [bookmark, setBookmark] = useState<boolean>(
-    !!data?.chat.isBookmarked || false,
+    isWithChatId ? !!data?.chat?.isBookmarked || false : false,
   )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const [dots, setDots] = useState("")
+  const [isStreaming, setIsStreaming] = useState(false)
 
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
     }
   }, [])
+
+  useEffect(() => {
+    if (isStreaming) {
+      const interval = setInterval(() => {
+        setDots((prev) => {
+          if (prev.length >= 3) {
+            return ""
+          } else {
+            return prev + "."
+          }
+        })
+      }, 500)
+
+      return () => clearInterval(interval)
+    } else {
+      setDots("")
+    }
+  }, [isStreaming])
+
+  useEffect(() => {
+    // Reset the state when the chatId changes
+    setMessages(isWithChatId ? data?.messages || [] : [])
+    setChatId((params as any).chatId || null)
+    setChatTitle(isWithChatId ? data?.chat?.title || null : null)
+    setChatStarted(isWithChatId)
+    setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
+    // only reset explicitly
+    if (!isStreaming) {
+      setCurrentResp(null)
+      currentRespRef.current = null
+    }
+    inputRef.current?.focus()
+    setQuery("")
+  }, [(params as any).chatId])
 
   const handleSend = async () => {
     if (!query) return // Avoid empty messages
@@ -73,15 +117,26 @@ export const ChatPage = () => {
       { messageRole: "user", message: query },
     ])
 
+    // Set currentResp to an empty response to shift layout immediately
+    setCurrentResp({ resp: "" })
+    currentRespRef.current = { resp: "", sources: [] }
+
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
-    url.searchParams.append("modelId", "llama")
+    url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(query))
 
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
+    })
+
+    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+      const { contextChunks } = JSON.parse(event.data)
+      if (currentRespRef.current) {
+        currentRespRef.current.sources = contextChunks
+      }
     })
 
     eventSource.addEventListener(ChatSSEvents.Start, (event) => {
@@ -115,13 +170,17 @@ export const ChatPage = () => {
           })
         }, 1000)
       }
-      setCurrentResp((resp) => {
-        const updatedResp = resp || { resp: "" }
-        updatedResp.chatId = chatId
-        updatedResp.messageId = messageId
-        currentRespRef.current = updatedResp // Update the ref
-        return updatedResp
-      })
+
+      // this will be optional
+      if (messageId) {
+        setCurrentResp((resp) => {
+          const updatedResp = resp || { resp: "" }
+          updatedResp.chatId = chatId
+          updatedResp.messageId = messageId
+          currentRespRef.current = updatedResp // Update the ref
+          return updatedResp
+        })
+      }
     })
 
     eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
@@ -133,12 +192,18 @@ export const ChatPage = () => {
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { messageRole: "assistant", message: currentResp.resp },
+          {
+            messageRole: "assistant",
+            message: currentResp.resp,
+            externalId: currentResp.messageId,
+            sources: currentResp.sources,
+          },
         ])
       }
       setCurrentResp(null)
       currentRespRef.current = null
       eventSource.close()
+      setIsStreaming(false)
     })
 
     // Handle error events
@@ -154,10 +219,78 @@ export const ChatPage = () => {
       setCurrentResp(null)
       currentRespRef.current = null
       eventSource.close()
+      setIsStreaming(false)
     }
 
     // Clear the input
     setQuery("")
+    setIsStreaming(true)
+  }
+
+  const handleRetry = async (messageId: string) => {
+    if (!messageId) return
+
+    setIsStreaming(true) // Start streaming for retry
+
+    // Update the assistant message being retried
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) => {
+        if (msg.externalId === messageId && msg.messageRole === "assistant") {
+          return { ...msg, message: "", isRetrying: true, sources: [] }
+        }
+        return msg
+      }),
+    )
+
+    const url = new URL(`/api/v1/message/retry`, window.location.origin)
+    url.searchParams.append("messageId", encodeURIComponent(messageId))
+    const eventSource = new EventSource(url.toString(), {
+      withCredentials: true,
+    })
+
+    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.externalId === messageId && msg.isRetrying
+            ? { ...msg, message: msg.message + event.data }
+            : msg,
+        ),
+      )
+    })
+
+    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+      const { contextChunks } = JSON.parse(event.data)
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.externalId === messageId && msg.isRetrying
+            ? { ...msg, sources: contextChunks }
+            : msg,
+        ),
+      )
+    })
+
+    eventSource.addEventListener(ChatSSEvents.End, (event) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.externalId === messageId && msg.isRetrying
+            ? { ...msg, isRetrying: false }
+            : msg,
+        ),
+      )
+      eventSource.close()
+      setIsStreaming(false) // Stop streaming after retry
+    })
+
+    eventSource.onerror = (error) => {
+      console.error("Retry SSE Error:", error)
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+        ),
+      )
+      eventSource.close()
+      setIsStreaming(false) // Stop streaming on error
+    }
   }
 
   const handleBookmark = async () => {
@@ -172,49 +305,97 @@ export const ChatPage = () => {
     }
   }
 
+  const isScrolledToBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container) return true
+
+    const threshold = 100 // pixels from bottom to consider "at bottom"
+    return (
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      threshold
+    )
+  }
+
+  const handleScroll = () => {
+    const isAtBottom = isScrolledToBottom()
+    setUserHasScrolled(!isAtBottom)
+  }
+
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container || userHasScrolled) return
+
+    container.scrollTop = container.scrollHeight
+  }, [messages, currentResp?.resp])
+
+  // if invalid chatId
+  if (data.error) {
+    return (
+      <div className="h-full w-full flex flex-col bg-white">
+        <Sidebar />
+        <div className="ml-[120px]">Error: Could not get data</div>
+      </div>
+    )
+  }
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar />
       <div className="h-full w-full flex flex-col">
-        <div className="flex w-full h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
-          <div className="flex h-[48px] items-center max-w-2xl w-full">
-            <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
-              {chatTitle}
-            </span>
-            <Bookmark
-              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[40px] cursor-pointer"
-              onClick={handleBookmark}
-              size={18}
-            />
-            <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+        {chatStarted && (
+          <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
+            <div className="flex h-[48px] items-center max-w-2xl w-full">
+              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+                {chatTitle}
+              </span>
+              <Bookmark
+                {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+                className="ml-[40px] cursor-pointer"
+                onClick={handleBookmark}
+                size={18}
+              />
+              <Ellipsis stroke="#4A4F59" className="ml-[20px]" size={18} />
+            </div>
           </div>
-        </div>
+        )}
         <div
-          className={`h-full w-full flex ${chatStarted ? "items-end" : "items-center"} justify-center`}
+          className={`h-full w-full flex ${chatStarted ? "items-end" : "items-center"}  overflow-y-auto justify-center`}
+          ref={messagesContainerRef}
         >
-          <div className="w-full max-w-3xl flex-grow flex flex-col p-6">
+          <div
+            className={`w-full h-full max-w-3xl flex-grow flex flex-col ${chatStarted ? "justify-between" : "justify-center"}`}
+          >
             {/* Chat Messages Container */}
-            <div className="flex flex-col space-y-4 overflow-y-auto mb-6 max-h-[60vh]">
+            <div
+              onScroll={handleScroll}
+              className="flex flex-col mb-[60px] mt-[56px]"
+            >
               {messages.map((message, index) => (
                 <ChatMessage
                   key={index}
                   message={message.message}
                   isUser={message.messageRole === "user"}
                   responseDone={true}
+                  citations={message?.sources?.map((c: Citation) => c.url)}
+                  messageId={message.externalId}
+                  handleRetry={handleRetry}
+                  dots={message.isRetrying ? dots : ""}
                 />
               ))}
               {currentResp && (
                 <ChatMessage
                   message={currentResp.resp}
+                  citations={currentResp.sources?.map((c: Citation) => c.url)}
                   isUser={false}
                   responseDone={false}
+                  handleRetry={handleRetry}
+                  dots={dots}
                 />
               )}
+              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
             </div>
 
             {/* Bottom Bar with Input and Icons */}
-            <div className="flex flex-col w-full border rounded-[20px]">
+            <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white">
               {/* Expanding Input Area */}
               <div className="relative flex items-center">
                 <textarea
@@ -260,14 +441,40 @@ const ChatMessage = ({
   message,
   isUser,
   responseDone,
-}: { message: string; isUser: boolean; responseDone: boolean }) => {
+  isRetrying,
+  citations = [], // Add citations prop
+  messageId,
+  handleRetry,
+  dots = "", // Add dots prop
+}: {
+  message: string
+  isUser: boolean
+  responseDone: boolean
+  isRetrying?: boolean
+  citations?: string[] // Array of citation URLs
+  messageId?: string
+  dots: string
+  handleRetry: (messageId: string) => void
+}) => {
+  const [isCopied, setIsCopied] = useState(false)
+  const processMessage = (text: string) => {
+    let citationIndex = 0
+
+    return text.replace(/\[(\d+)\]/g, (match, num) => {
+      const url = citations[citationIndex]
+
+      if (url) {
+        citationIndex++
+        return `[[${citationIndex}]](${url})`
+      }
+
+      return match
+    })
+  }
+
   return (
     <div
-      className={`max-w-[75%] rounded-[16px] ${
-        isUser
-          ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]"
-          : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"
-      }`}
+      className={`max-w-[75%] rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
         message
@@ -278,12 +485,43 @@ const ChatMessage = ({
               className={"mr-[20px] w-[32px] self-start"}
               src={AssistantLogo}
             />
-            <span className="mt-[4px]">{message}</span>
+            <div className="mt-[4px] markdown-content">
+              {message === "" ? (
+                <div className="flex-grow">
+                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                </div>
+              ) : (
+                <MarkdownPreview
+                  source={processMessage(message)}
+                  wrapperElement={{
+                    "data-color-mode": "light",
+                  }}
+                  style={{
+                    padding: 0,
+                    backgroundColor: "transparent",
+                    color: "#1C1D1F",
+                  }}
+                />
+              )}
+            </div>
           </div>
-          {responseDone && (
+          {responseDone && !isRetrying && (
             <div className="flex ml-[52px] mt-[24px]">
-              <Copy size={16} stroke="#9EA6B8" />
-              <img className="ml-[18px]" src={Retry} />
+              <Copy
+                size={16}
+                stroke={`${isCopied ? "#4F535C" : "#9EA6B8"}`}
+                className={`cursor-pointer`}
+                onMouseDown={(e) => setIsCopied(true)}
+                onMouseUp={(e) => setIsCopied(false)}
+                onClick={() => {
+                  navigator.clipboard.writeText(processMessage(message))
+                }}
+              />
+              <img
+                className="ml-[18px] cursor-pointe"
+                src={Retry}
+                onClick={() => handleRetry(messageId!)}
+              />
             </div>
           )}
         </div>
@@ -293,5 +531,15 @@ const ChatMessage = ({
 }
 
 export const Route = createFileRoute("/_authenticated/chat")({
-  component: ChatPage,
+  beforeLoad: (params) => {
+    return params
+  },
+  loader: async (params) => {
+    return params
+  },
+  component: () => {
+    const matches = useRouterState({ select: (s) => s.matches })
+    const { user, workspace } = matches[matches.length - 1].context
+    return <ChatPage user={user} workspace={workspace} />
+  },
 })

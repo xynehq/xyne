@@ -324,7 +324,7 @@ export const messages = pgTable(
     // <provider><modelId>
     modelId: text("modelId").notNull(),
     email: text("email").notNull(),
-    sources: jsonb("sources").notNull(),
+    sources: jsonb("sources").notNull().default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
@@ -401,6 +401,7 @@ export const userPublicSchema = selectUserSchema.omit({
   updatedAt: true,
   deletedAt: true,
   id: true,
+  workspaceId: true,
 })
 export const workspacePublicSchema = selectWorkspaceSchema.omit({
   createdAt: true,

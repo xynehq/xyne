@@ -25,7 +25,13 @@ import { z } from "zod"
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
 // @ts-ignore
-export type { SelectPublicMessage } from "@/db/schema"
+export type { Citation } from "@/api/chat"
+export type {
+  SelectPublicMessage,
+  PublicUser,
+  PublicWorkspace,
+  // @ts-ignore
+} from "@/db/schema"
 
 export type AppType = typeof AppRoutes
 export type WebSocketApp = typeof WsApp
@@ -216,6 +222,8 @@ export enum ChatSSEvents {
   ResponseUpdate = "u",
   End = "e",
   ChatTitleUpdate = "ct",
+  CitationsUpdate = "cu",
+  Error = "er",
 }
 
 const messageMetadataSchema = z.object({

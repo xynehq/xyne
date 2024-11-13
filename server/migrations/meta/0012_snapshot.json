@@ -1,6 +1,6 @@
 {
-  "id": "416ef8e9-c998-49ec-8da9-bb9d2f594cb9",
-  "prevId": "b1a40aae-ced3-49fe-a225-4994078e99a2",
+  "id": "0f4246ef-d953-403f-8c18-bb50824e8889",
+  "prevId": "416ef8e9-c998-49ec-8da9-bb9d2f594cb9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1097,7 +1097,8 @@
         "google-workspace",
         "google-drive",
         "gmail",
-        "notion"
+        "notion",
+        "google-calendar"
       ]
     },
     "public.auth_type": {

@@ -320,39 +320,83 @@ const HybridDefaultProfile = (
   app: Apps | null,
   entity: Entity | null,
   profile: RankProfile = "default",
+  timestamp: number | null,
+  excludedIds?: string[],
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
+  let fileTimestamp = ""
+  let mailTimestamp = ""
+  let userTimestamp = ""
+  if (timestamp) {
+    fileTimestamp = `updatedAt >= ${timestamp}`
+    mailTimestamp = `timestamp >= ${timestamp}`
+    userTimestamp = `creationTime >= ${timestamp}`
+  }
   let appOrEntityFilter =
     `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+
+  let exclusionCondition = ""
+  if (excludedIds && excludedIds.length > 0) {
+    exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+  }
+
+  // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {
     profile: profile,
     yql: `
-            select * from sources ${AllSources}
-            where ((
-                ({targetHits:${hits}}userInput(@query))
-                or
-                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+        select * from sources ${AllSources}
+        where ((
+          (
+            (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            and permissions contains @email ${appOrEntityFilter})
-            or
-            (({targetHits:${hits}}userInput(@query)) ${!hasAppOrEntity ? ' and app contains "${Apps.GoogleWorkspace}"' : appOrEntityFilter})
-            or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${appOrEntityFilter})
-        `,
-    // the last 2 are due to the 2 types of users, contacts and admin directory present in the same schema
+            ${timestamp ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+            and permissions contains @email
+            ${appOrEntityFilter}
+          )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            ${timestamp ? `and ${userTimestamp}` : ""}
+            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter}
+          )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            and owner contains @email
+            ${timestamp ? `and ${userTimestamp}` : ""}
+            ${appOrEntityFilter}
+          )
+        )
+        ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
   }
 }
 
-const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
+const HybridDefaultProfileAppEntityCounts = (
+  hits: number,
+  timestamp: number | null,
+): YqlProfile => {
+  let fileTimestamp = ""
+  let mailTimestamp = ""
+  let userTimestamp = ""
+  if (timestamp) {
+    fileTimestamp = `updatedAt >= ${timestamp}`
+    mailTimestamp = `timestamp >= ${timestamp}`
+    userTimestamp = `creationTime >= ${timestamp}`
+  }
   return {
     profile: "default",
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) and permissions contains @email)
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestamp ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email)
             or
-            (({targetHits:${hits}}userInput(@query)) and app contains "${Apps.GoogleWorkspace}")
+            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email)
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestamp ? `and ${userTimestamp} ` : ""})
             limit 0
             | all(
                 group(app) each(
@@ -366,12 +410,12 @@ const HybridDefaultProfileAppEntityCounts = (hits: number): YqlProfile => {
 export const groupVespaSearch = async (
   query: string,
   email: string,
-  app?: string,
-  entity?: string,
   limit = config.page,
+  lastUpdated?: string,
 ): Promise<AppEntityCounts> => {
   const url = `${vespaEndpoint}/search/`
-  let { yql, profile } = HybridDefaultProfileAppEntityCounts(limit)
+  const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  let { yql, profile } = HybridDefaultProfileAppEntityCounts(limit, timestamp)
 
   const hybridDefaultPayload = {
     yql,
@@ -415,10 +459,21 @@ export const searchVespa = async (
   entity: Entity | null,
   limit = config.page,
   offset?: number,
+  lastUpdated?: string,
+  excludedIds?: string[],
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
-  let { yql, profile } = HybridDefaultProfile(limit, app, entity)
+  // Determine the timestamp cutoff based on lastUpdated
+  const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  let { yql, profile } = HybridDefaultProfile(
+    limit,
+    app,
+    entity,
+    "default",
+    timestamp,
+    excludedIds,
+  )
 
   const hybridDefaultPayload = {
     yql,
@@ -866,6 +921,26 @@ export const searchUsersByNamesAndEmails = async (
   } catch (error) {
     Logger.error(`Error searching users: ${error}`)
     throw error
+  }
+}
+
+/**
+ * Helper function to calculate the timestamp based on LastUpdated value.
+ */
+const getTimestamp = (lastUpdated: string): number | null => {
+  const now = new Date().getTime() // Convert current time to epoch seconds
+  switch (lastUpdated) {
+    case "pastDay":
+      return now - 24 * 60 * 60 * 1000
+    case "pastWeek":
+      return now - 7 * 24 * 60 * 60 * 1000
+    case "pastMonth":
+      return now - 30 * 24 * 60 * 60 * 1000
+    case "pastYear":
+      return now - 365 * 24 * 60 * 60 * 1000
+    case "anytime":
+    default:
+      return null
   }
 }
 

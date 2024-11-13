@@ -1,15 +1,12 @@
 import { createId } from "@paralleldrive/cuid2"
 import {
-  chats,
   messages,
-  selectChatSchema,
   selectMessageSchema,
   type InsertMessage,
-  type SelectChat,
   type SelectMessage,
-} from "./schema"
-import type { TxnOrClient } from "@/types"
-import { asc, desc, eq } from "drizzle-orm"
+} from "@/db/schema"
+import { MessageRole, type TxnOrClient } from "@/types"
+import { and, asc, eq, lt } from "drizzle-orm"
 import { z } from "zod"
 
 export const insertMessage = async (
@@ -46,4 +43,42 @@ export const getChatMessages = async (
     .where(eq(messages.chatExternalId, chatId))
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
+}
+
+export const getChatMessagesBefore = async (
+  trx: TxnOrClient,
+  chatId: number,
+  createdAt: Date,
+): Promise<SelectMessage[]> => {
+  const messagesArr = await trx
+    .select()
+    .from(messages)
+    .where(and(lt(messages.createdAt, createdAt), eq(messages.chatId, chatId)))
+    .orderBy(asc(messages.createdAt))
+  return z.array(selectMessageSchema).parse(messagesArr)
+}
+
+export const getMessageByExternalId = async (
+  trx: TxnOrClient,
+  messageId: string,
+): Promise<SelectMessage> => {
+  const messageArr = await trx
+    .select()
+    .from(messages)
+    .where(eq(messages.externalId, messageId))
+  if (!messageArr || !messageArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectMessageSchema.parse(messageArr[0])
+}
+
+export const updateMessage = async (
+  trx: TxnOrClient,
+  messageId: string,
+  updatedFields: Partial<InsertMessage>,
+): Promise<void> => {
+  await trx
+    .update(messages)
+    .set(updatedFields)
+    .where(and(eq(messages.externalId, messageId)))
 }

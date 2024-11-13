@@ -151,7 +151,7 @@ export const VespaUserSchema = z
     gender: z.string().optional(),
     photoLink: z.string().optional(),
     aliases: z.array(z.string()).optional(),
-    langauge: z.string().optional(),
+    language: z.string().optional(),
     includeInGlobalAddressList: z.boolean().optional(),
     isAdmin: z.boolean().optional(),
     isDelegatedAdmin: z.boolean().optional(),

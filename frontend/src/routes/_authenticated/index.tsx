@@ -36,6 +36,7 @@ import {
   ChevronsUpDown,
   MessageSquareShare,
 } from "lucide-react"
+import { LastUpdated } from "@/components/SearchFilter"
 
 const logger = console
 
@@ -71,9 +72,10 @@ export const Index = () => {
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
-  const [filter, setFilter] = useState<Filter | null>(null)
+  const [filter, setFilter] = useState<Filter>({
+    lastUpdated: (search.lastUpdated as LastUpdated) || "anytime",
+  })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
-  const [_, setPageNumber] = useState(1)
   const [answer, setAnswer] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState<boolean>(false)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
@@ -152,9 +154,13 @@ export const Index = () => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
-      handleSearch(0, filter)
+      handleSearch(0)
     }
   }, [])
+
+  useEffect(() => {
+    handleSearch()
+  }, [filter, offset])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
@@ -162,12 +168,13 @@ export const Index = () => {
     setAnswer(null)
 
     const url = new URL(`/api/answer`, window.location.origin)
-    if (newFilter) {
-      url.searchParams.append("query", encodeURIComponent(query))
+    url.searchParams.append("query", encodeURIComponent(query))
+    if (newFilter && newFilter.app && newFilter.entity) {
       url.searchParams.append("app", newFilter.app)
       url.searchParams.append("entity", newFilter.entity)
-    } else {
-      url.searchParams.append("query", encodeURIComponent(query))
+    }
+    if (newFilter.lastUpdated) {
+      url.searchParams.append("lastUpdated", newFilter.lastUpdated)
     }
 
     const eventSource = new EventSource(url.toString(), {
@@ -201,82 +208,49 @@ export const Index = () => {
     }
   }
 
-  const handleSearch = async (newOffset = offset, newFilter: Filter | null) => {
-    if (!query) return // If the query is empty, do nothing
+  const handleSearch = async (newOffset = offset) => {
+    if (!query) return
     setHasSearched(true)
-
     setAutocompleteResults([])
     try {
-      let params = {}
-      let groupCount
-      if (newFilter && groups) {
-        groupCount = false
-        let pageSize =
-          page > groups[newFilter.app][newFilter.entity]
-            ? groups[newFilter.app][newFilter.entity]
-            : page
-        params = {
-          page: pageSize,
-          offset: newOffset,
-          query: encodeURIComponent(query),
-          groupCount,
-          app: newFilter.app,
-          entity: newFilter.entity,
-        }
-        navigate({
-          to: "/search",
-          search: (prev) => ({
-            ...prev,
-            query: encodeURIComponent(query),
-            page: pageSize,
-            offset: newOffset,
-            app: newFilter.app,
-            entity: newFilter.entity,
-          }),
-          replace: true,
-        })
-
-        // we went directly via the url hence
-        // groups does not exist
-      } else if (filter && !groups) {
-        groupCount = true
-        params = {
-          page: page,
-          offset: newOffset,
-          query: encodeURIComponent(query),
-          groupCount,
-          app: filter.app,
-          entity: filter.entity,
-        }
-        navigate({
-          to: "/search",
-          search: (prev) => ({
-            ...prev,
-            query: query,
-            page: page,
-            offset: newOffset,
-          }),
-          replace: true,
-        })
-      } else {
-        groupCount = true
-        params = {
-          page: page,
-          offset: newOffset,
-          query: encodeURIComponent(query),
-          groupCount,
-        }
-        navigate({
-          to: "/search",
-          search: (prev) => ({
-            ...prev,
-            query: query,
-            page: page,
-            offset: newOffset,
-          }),
-          replace: true,
-        })
+      // TODO: figure out when lastUpdated changes and only
+      // then make it true or when app,entity is not present
+      const groupCount = true
+      let params: any = {
+        page: page,
+        offset: newOffset,
+        query: encodeURIComponent(query),
+        groupCount,
+        lastUpdated: filter.lastUpdated || "anytime",
       }
+
+      let pageCount = page
+      if (filter.app && filter.entity) {
+        params.app = filter.app
+        params.entity = filter.entity
+        // TODO: there seems to be a bug where if we don't
+        // even if group count value is lower than the page
+        // if we ask for sending the page size it actually
+        // finds that many even though as per groups it had less than page size
+        if (groups) {
+          pageCount = groups[filter.app][filter.entity]
+          params.page = page < pageCount ? page : pageCount
+        }
+      }
+
+      navigate({
+        to: "/search",
+        search: (prev) => ({
+          ...prev,
+          query: encodeURIComponent(query),
+          page,
+          offset: newOffset,
+          app: params.app,
+          entity: params.entity,
+          lastUpdated: params.lastUpdated,
+        }),
+        replace: true,
+      })
 
       // Send a GET request to the backend with the search query
       const response = await api.search.$get({
@@ -285,7 +259,12 @@ export const Index = () => {
       if (response.ok) {
         const data: SearchResponse = await response.json()
 
-        setResults(data.results)
+        if (newOffset > 0) {
+          setResults((prevResults) => [...prevResults, ...data.results])
+        } else {
+          setResults(data.results)
+        }
+
         setAutocompleteResults([])
         // ensure even if autocomplete results came a little later we don't show right after we show
         // first set of results after a search
@@ -299,7 +278,11 @@ export const Index = () => {
         }, 1000)
 
         if (groupCount) {
-          setSearchMeta({ totalCount: data.count })
+          // TODO: temp solution until we resolve groupCount from
+          // not always being true
+          if (!filter.app && !filter.entity) {
+            setSearchMeta({ totalCount: data.count })
+          }
           setGroups(data.groupCount)
         }
       } else {
@@ -321,43 +304,48 @@ export const Index = () => {
     }
   }
 
-  // const handleNext = () => {
-  //   const newOffset = offset + page
-  //   setOffset(newOffset)
-  //   handleSearch(newOffset) // Trigger search with the updated offset
-  // }
+  const handleNext = () => {
+    const newOffset = offset + page
+    setOffset(newOffset)
+  }
 
-  // const goToPage = (pageNumber: number) => {
-  //   const newOffset = pageNumber * page
-  //   setOffset(newOffset)
-  //   handleSearch(newOffset) // Trigger search with the updated offset
-  // }
-
-  // const handlePrev = () => {
-  //   const newOffset = Math.max(0, offset - page)
-  //   setOffset(newOffset)
-  //   handleSearch(newOffset) // Trigger search with the updated offset
-  // }
-
-  const handleFilterChange = (appEntity: Filter | null) => {
-    setPageNumber(0)
-    if (!appEntity) {
-      setFilter(null)
+  const handleFilterChange = (appEntity: Filter) => {
+    // Check if appEntity.app and appEntity.entity are defined
+    if (!appEntity.app || !appEntity.entity) {
+      const updatedFilter: Filter = {
+        lastUpdated: filter.lastUpdated || "anytime",
+      }
+      setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, null)
       return
     }
+
     const { app, entity } = appEntity
-    if (filter && filter.app === app && filter.entity === entity) {
-      setFilter(null)
+
+    if (filter.app === app && filter.entity === entity) {
+      const updatedFilter: Filter = {
+        lastUpdated: filter.lastUpdated || "anytime",
+      }
+      setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, null)
     } else {
-      setFilter({ app, entity })
+      const updatedFilter: Filter = {
+        app,
+        entity,
+        lastUpdated: filter.lastUpdated || "anytime",
+      }
+      setFilter(updatedFilter)
       setOffset(0)
-      handleSearch(0, { app, entity })
     }
   }
+  const totalCount = searchMeta?.totalCount || 0
+  // if filter is selected we should keep it's count to prevent showing button for pagination
+  const filterPageSize =
+    filter.app && filter.entity
+      ? groups
+        ? groups[filter.app][filter.entity]
+        : totalCount
+      : totalCount
 
   return (
     <div className="h-full w-full flex">
@@ -374,13 +362,18 @@ export const Index = () => {
           setAutocompleteQuery={setAutocompleteQuery}
           setOffset={setOffset}
           setFilter={setFilter}
+          filter={filter}
           query={query}
           handleSearch={handleSearch}
           handleAnswer={handleAnswer}
+          onLastUpdated={(value: LastUpdated) => {
+            const updatedFilter = { ...filter, lastUpdated: value }
+            setFilter(updatedFilter)
+          }}
         />
 
         {hasSearched && (
-          <div className="flex flex-row ml-[186px]">
+          <div className="flex flex-row ml-[186px] h-full">
             <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5]">
               {answer && answer.length > 0 && (
                 <div className="flex mt-[24px]">
@@ -402,7 +395,7 @@ export const Index = () => {
                           color: "#464B53",
                         }}
                       />
-                      Gradient overlay when not expanded
+                      {/* Gradient overlay when not expanded */}
                       {!isExpanded && (
                         <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
                       )}
@@ -448,87 +441,50 @@ export const Index = () => {
                 </div>
               )}
 
-              <button className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]">
-                <ChevronDown className="mr-[6px]" size={18} stroke="#464B53" />
-                <span>More Results</span>
-              </button>
+              {results.length > 0 &&
+                filterPageSize > page &&
+                results.length < filterPageSize && (
+                  <button
+                    className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
+                    onClick={handleNext}
+                  >
+                    <ChevronDown
+                      className="mr-[7px]"
+                      size={18}
+                      stroke="#464B53"
+                    />
+                    <span>More Results</span>
+                  </button>
+                )}
             </div>
             {groups && (
               <GroupFilter
                 groups={groups}
                 handleFilterChange={handleFilterChange}
                 filter={filter}
-                total={searchMeta?.totalCount!}
+                total={totalCount}
               />
             )}
           </div>
         )}
-        {/* <div className="mt-auto flex space-x-2 items-center justify-center w-full">
-          {offset > 0 && (
-            <Button
-              className="bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none"
-              onClick={(e) => {
-                handlePrev()
-                setPageNumber((prev) => prev - 1)
-              }}
-            >
-              <ChevronLeft />
-            </Button>
-
-          {searchMeta && (
-            <div className="flex space-x-2 items-center">
-              {Array(
-                Math.round(
-                  (filter && groups
-                    ? groups[filter.app][filter.entity]
-                    : searchMeta.totalCount) / page,
-                ) || 1,
-              )
-                .fill(0)
-                .map((count, index) => {
-                  return (
-                    <p
-                      key={index}
-                      className={`cursor-pointer hover:text-sky-700 ${index + 1 === pageNumber ? "text-blue-500" : "text-gray-700"}`}
-                      onClick={(e) => {
-                        goToPage(index)
-                        setPageNumber(index + 1)
-                      }}
-                    >
-                      {index + 1}
-                    </p>
-                  )
-                })}
-            </div>
-          {searchMeta &&
-            results?.length > 0 &&
-            pageNumber * page < searchMeta.totalCount && (
-              <Button
-                className="bg-transparent border border-gray-100 text-black hover:bg-gray-100 shadow-none"
-                onClick={(e) => {
-                  handleNext()
-                  setPageNumber((prev) => prev + 1)
-                }}
-              >
-                <ChevronRight />
-              </Button>
-            )} */}
-
-        {/* </div>
-        )} */}
       </div>
     </div>
   )
 }
 
-const searchParams = z.object({
-  page: z.number().optional(),
-  offset: z.number().optional(),
-  query: z.string().optional(),
-  app: z.nativeEnum(Apps).optional(),
-  entity: z.string().optional(),
-})
-
+const searchParams = z
+  .object({
+    page: z.coerce.number().optional(),
+    offset: z.coerce.number().optional(),
+    query: z.string().optional(),
+    app: z.nativeEnum(Apps).optional(),
+    entity: z.string().optional(),
+    lastUpdated: z.string().optional(),
+  })
+  .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
+    message: "app and entity must be provided together",
+    path: ["app", "entity"],
+  })
 type XyneSearch = z.infer<typeof searchParams>
 
 export const Route = createFileRoute("/_authenticated/")({

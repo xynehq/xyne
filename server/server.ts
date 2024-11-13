@@ -6,6 +6,7 @@ import {
   chatBookmarkSchema,
   chatRenameSchema,
   chatSchema,
+  messageRetrySchema,
   messageSchema,
   SearchApi,
 } from "@/api/search"
@@ -48,9 +49,11 @@ import {
   ChatBookmarkApi,
   ChatRenameApi,
   GetChatApi,
-  MessageApi,
+  // MessageApiV1,
+  MessageApiV2,
   MessageRetryApi,
 } from "./api/chat"
+import { z } from "zod"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -146,8 +149,12 @@ export const AppRoutes = app
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   // this is event streaming end point
-  .get("/message/create", zValidator("query", messageSchema), MessageApi)
-  .post("/message/retry", zValidator("json", messageSchema), MessageRetryApi)
+  .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
+  .get(
+    "/message/retry",
+    zValidator("query", messageRetrySchema),
+    MessageRetryApi,
+  )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
@@ -341,5 +348,6 @@ const server = Bun.serve({
   fetch: app.fetch,
   port: config.port,
   websocket,
+  idleTimeout: 60,
 })
 Logger.info(`listening on port: ${config.port}`)

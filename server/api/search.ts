@@ -1,26 +1,20 @@
 import llama3Tokenizer from "llama3-tokenizer-js"
 import { encode } from "gpt-tokenizer"
 
-import type { Context, ValidationTargets } from "hono"
+import type { Context } from "hono"
 import {
   autocomplete,
   deduplicateAutocomplete,
   groupVespaSearch,
   searchVespa,
   searchUsersByNamesAndEmails,
-  type AppEntityCounts,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
-  Apps,
-  GooglePeopleEntity,
-  MailEntity,
-  mailSchema,
   userSchema,
   type VespaSearchResponse,
-  type VespaSearchResult,
   type VespaUser,
 } from "@/search/types"
 import {
@@ -28,16 +22,11 @@ import {
   VespaSearchResponseToSearchResult,
 } from "@/search/mappers"
 import {
-  analyzeQuery,
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
   askQuestion,
-  askQuestionInputTokenCount,
-  calculateCost,
-  modelDetailsMap,
   Models,
   QueryCategory,
-  type QueryContextRank,
 } from "@/ai/provider/bedrock"
 import {
   answerContextMap,
@@ -84,7 +73,6 @@ export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
-  chatId: z.string().min(1),
 })
 
 export const AutocompleteApi = async (c: Context) => {
@@ -120,16 +108,38 @@ export const SearchApi = async (c: Context) => {
     page,
     app,
     entity,
+    lastUpdated,
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
-    groupCount = await groupVespaSearch(decodedQuery, email)
-    results = await searchVespa(decodedQuery, email, app, entity, page, offset)
+    groupCount = await groupVespaSearch(
+      decodedQuery,
+      email,
+      config.page,
+      lastUpdated,
+    )
+    results = await searchVespa(
+      decodedQuery,
+      email,
+      app,
+      entity,
+      page,
+      offset,
+      lastUpdated,
+    )
   } else {
-    results = await searchVespa(decodedQuery, email, app, entity, page, offset)
+    results = await searchVespa(
+      decodedQuery,
+      email,
+      app,
+      entity,
+      page,
+      offset,
+      lastUpdated,
+    )
   }
 
   // TODO: deduplicate for google admin and contacts
