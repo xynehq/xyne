@@ -43,7 +43,7 @@ schema user_query {
     }
 
     global-phase {
-      expression: normalize_linear(bm25(query_text)) + (5 * freshness(timestamp))
+      expression: normalize_linear(bm25(query_text)) + ((5 * freshness(timestamp)) + attribute(count))
     }
 
     match-features {
