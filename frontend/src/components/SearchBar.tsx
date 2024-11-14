@@ -115,6 +115,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                         onClick={() => {
                           if (result.type === "file") {
                             setQuery(result.title)
+                          } else if (result.type === "user_query") {
+                            setQuery(result.query_text)
                           }
                           setAutocompleteResults([])
                         }}

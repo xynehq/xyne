@@ -5,8 +5,10 @@ import type {
   FileAutocomplete,
   MailAutocomplete,
   UserAutocomplete,
+  UserQueryHAutocomplete,
 } from "shared/types"
 import { ForwardedRef, forwardRef } from "react"
+import History from "@/assets/history.svg"
 
 export const FileAutocompleteElement = ({
   result,
@@ -55,6 +57,17 @@ export const UserAutocompleteElement = ({
     </div>
   )
 }
+export const UserQueryHistoryAutocompleteElement = ({
+  result,
+  onClick,
+}: { result: UserQueryHAutocomplete; onClick: () => void }) => {
+  return (
+    <div onClick={onClick} className="flex items-center">
+      <img className={"h-[16px] w-[16px] mr-[10px]"} src={History} />
+      <p>{result.query_text}</p>
+    </div>
+  )
+}
 
 export const AutocompleteElement = forwardRef(
   (
@@ -80,6 +93,13 @@ export const AutocompleteElement = forwardRef(
       content = <MailAutocompleteElement result={result} />
     } else if (result.type === "event") {
       content = <EventAutocompleteElement result={result} />
+    } else if (result.type === "user_query") {
+      content = (
+        <UserQueryHistoryAutocompleteElement
+          onClick={onClick}
+          result={result}
+        />
+      )
     } else {
       throw new Error("invalid type")
     }
