@@ -9,11 +9,15 @@ import {
   searchVespa,
   searchUsersByNamesAndEmails,
   getTimestamp,
+  insert,
+  GetDocument,
+  UpdateDocument,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
+  userQuerySchema,
   userSchema,
   type VespaSearchResponse,
   type VespaUser,
@@ -50,6 +54,12 @@ const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
+})
+
+export const userQueryHistorySchema = z.object({
+  docId: z.string().optional(),
+  query: z.string(),
+  timestamp: z.number().optional(),
 })
 
 export const chatSchema = z.object({
@@ -106,6 +116,49 @@ export const AutocompleteApi = async (c: Context) => {
     Logger.error(`Autocomplete Error: ${errMsg} ${(error as Error).stack}`)
     throw new HTTPException(500, {
       message: "Could not fetch autocomplete results",
+    })
+  }
+}
+
+export const updateUserQueryHistory = async (c: Context) => {
+  try {
+    // @ts-ignore
+    const body = c.req.valid("json")
+    const { query, timestamp } = body
+    const docId = `query_id-${query}`
+
+    let docExist
+    try {
+      docExist = await GetDocument(userQuerySchema, docId)
+    } catch (error) {
+      // to check if error indicates that the document does not exist
+      const errMsg = getErrorMessage(error)
+      if (errMsg.includes("404") || errMsg.includes("not found")) {
+        Logger.warn(
+          `Document ${docId} does not exist. Proceeding with insertion.`,
+        )
+      } else {
+        // If it's a different error, rethrow it
+        throw error
+      }
+    }
+    if (docExist && docExist.fields?.docId) {
+      await UpdateDocument(userQuerySchema, docId, {
+        // @ts-ignore
+        count: docExist.fields.count + 1,
+        timestamp,
+      })
+    } else {
+      await insert(
+        { docId, query_text: query, timestamp, count: 1 },
+        userQuerySchema,
+      )
+    }
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Update user query Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not update user query",
     })
   }
 }

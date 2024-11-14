@@ -3,9 +3,10 @@ import {
   CalendarEntity,
   DriveEntity,
   eventSchema,
-  fileSchema,
   MailEntity,
+  fileSchema,
   mailSchema,
+  userQuerySchema,
   userSchema,
 } from "@/search/types"
 import type {
@@ -18,6 +19,7 @@ import type {
   VespaGetResult,
   Entity,
   VespaEvent,
+  VespaUserQueryHistory,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -138,7 +140,7 @@ export const insertDocument = async (document: VespaFile) => {
 
 // generic insert method
 export const insert = async (
-  document: VespaUser | VespaFile | VespaMail | VespaEvent,
+  document: VespaUser | VespaFile | VespaMail | VespaEvent | VespaUserQueryHistory,
   schema: string,
 ) => {
   try {
@@ -269,7 +271,10 @@ export const autocomplete = async (
         and permissions contains @email)
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email);`
+        and permissions contains @email)
+        or 
+        (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)))
+        `
 
   const searchPayload = {
     yql: yqlQuery,
@@ -665,6 +670,7 @@ export const GetDocument = async (
       docId,
       cause: error as Error,
       sources: schema,
+      message: errMessage,
     })
   }
 }
