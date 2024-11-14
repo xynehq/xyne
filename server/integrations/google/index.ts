@@ -30,7 +30,7 @@ import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import { connectors, type SelectConnector } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { getWorkspaceByEmail } from "@/db/workspace"
+import { getWorkspaceById } from "@/db/workspace"
 import {
   Apps,
   AuthType,
@@ -142,7 +142,7 @@ export const syncGoogleWorkspace = async (
     let jwtClient = createJwtClient(serviceAccountKey, subject)
     const admin = google.admin({ version: "directory_v1", auth: jwtClient })
 
-    const workspace = await getWorkspaceByEmail(db, subject)
+    const workspace = await getWorkspaceById(db, connector.workspaceId)
     // TODO: handle multiple domains
     const users = await listUsers(admin, workspace.domain)
 
@@ -335,7 +335,7 @@ export const handleGoogleServiceAccountIngestion = async (
     let jwtClient = createJwtClient(serviceAccountKey, subject)
     const admin = google.admin({ version: "directory_v1", auth: jwtClient })
 
-    const workspace = await getWorkspaceByEmail(db, subject)
+    const workspace = await getWorkspaceById(db, connector.workspaceId)
     // TODO: handle multiple domains
     const users = await listUsers(admin, workspace.domain)
     const ingestionMetadata: IngestionMetadata[] = []
