@@ -354,6 +354,7 @@ export const getAttachments = (
 export const eventFields =
   "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
 
+export const maxCalendarEventResults = 2500
 const insertCalendarEvents = async (
   client: GoogleClient,
   userEmail: string,
@@ -377,7 +378,7 @@ const insertCalendarEvents = async (
       calendarId: "primary",
       timeMin: currentDateTime.toISOString(),
       timeMax: nextYearDateTime.toISOString(),
-      maxResults: 2500, // Limit the number of results
+      maxResults: maxCalendarEventResults, // Limit the number of results
       pageToken: nextPageToken,
       fields: eventFields,
     })
@@ -473,7 +474,7 @@ const insertCalendarEvents = async (
       }
     } catch (e) {
       Logger.error(
-        `Main Event not found in Vespa to update cancelled instances`,
+        `Main Event ${mainEventId} not found in Vespa to update cancelled instance ${instanceDateTime} of ${instanceEventId}`,
       )
     }
   }

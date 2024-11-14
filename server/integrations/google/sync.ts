@@ -773,6 +773,8 @@ const insertEventIntoVespa = async (
   await insert(eventToBeIngested, eventSchema)
 }
 
+const maxCalendarEventChangeResults = 2500
+
 const handleGoogleCalendarEventsChanges = async (
   calendar: calendar_v3.Calendar,
   syncToken: string,
@@ -790,7 +792,7 @@ const handleGoogleCalendarEventsChanges = async (
     do {
       const res = await calendar.events.list({
         calendarId: "primary", // Use 'primary' for the primary calendar
-        maxResults: 2500, // Limit the number of results
+        maxResults: maxCalendarEventChangeResults, // Limit the number of results
         pageToken: nextPageToken,
         syncToken,
         fields: eventFields,
