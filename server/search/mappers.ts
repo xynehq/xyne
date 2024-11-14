@@ -55,7 +55,9 @@ export const VespaSearchResponseToSearchResult = (
             ;(child.fields as any).type = userSchema
             ;(child.fields as any).relevance = child.relevance
             return UserResponseSchema.parse(child.fields)
-          } else if ((child.fields as VespaMailSearch).sddocname === mailSchema) {
+          } else if (
+            (child.fields as VespaMailSearch).sddocname === mailSchema
+          ) {
             ;(child.fields as any).type = mailSchema
             ;(child.fields as any).relevance = child.relevance
             if ((child.fields as any).chunks_summary) {
@@ -69,10 +71,10 @@ export const VespaSearchResponseToSearchResult = (
           ) {
             ;(child.fields as any).type = eventSchema
             ;(child.fields as any).relevance = child.relevance
-            if ((child.fields as any).chunks_summary) {
-              ;(child.fields as any).chunks_summary = (
+            if ((child.fields as any).description) {
+              ;(child.fields as any).description = (
                 child.fields as VespaEventSearch
-              ).chunks_summary
+              ).description
             }
             return EventResponseSchema.parse(child.fields)
           } else {

@@ -169,7 +169,7 @@ export const EventResponseSchema = VespaEventSchema.pick({
   .extend({
     type: z.literal(eventSchema),
     relevance: z.number(),
-    chunks_summary: z.array(z.string()).optional(),
+    description: z.string().optional(),
   })
   .strip()
 

@@ -114,11 +114,9 @@ export const SearchResult = ({
             {result.name}
           </a>
         </div>
-        {result.chunks_summary &&
-          result.chunks_summary?.length &&
-          result.chunks_summary
-            .slice(0, 2)
-            .map((summary) => <HighlightedText chunk_summary={summary} />)}
+        <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden ml-[44px]">
+          {result.description ?? ""}
+        </p>
       </div>
     )
   }
