@@ -1,4 +1,10 @@
-import { Apps, CalendarEntity, DriveEntity, Entity, GooglePeopleEntity } from "shared/types"
+import {
+  Apps,
+  CalendarEntity,
+  DriveEntity,
+  Entity,
+  GooglePeopleEntity,
+} from "shared/types"
 import { Filter, Groups } from "@/types"
 import { getIcon } from "@/lib/common"
 import allFilter from "@/assets/allFilter.svg"
@@ -80,10 +86,8 @@ const getName = (app: Apps, entity: Entity): string => {
     }
   } else if (app == Apps.GoogleWorkspace) {
     return "People"
-  } else if (app == Apps.GoogleCalendar) {
-    if (entity === CalendarEntity.Event) {
-      return "Event"
-    }
+  } else if (app == Apps.GoogleCalendar && entity === CalendarEntity.Event) {
+    return "Event"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

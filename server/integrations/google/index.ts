@@ -355,6 +355,7 @@ export const eventFields =
   "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
 
 export const maxCalendarEventResults = 2500
+
 const insertCalendarEvents = async (
   client: GoogleClient,
   userEmail: string,
@@ -512,7 +513,7 @@ export const handleGoogleOAuthIngestion = async (
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
-    // await insertContactsToVespa(contacts, otherContacts, userEmail)
+    await insertContactsToVespa(contacts, otherContacts, userEmail)
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -521,14 +522,9 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [
-      // _,
-      // historyId,
-      { calendarEventsToken },
-    ] = await Promise.all([
-      // insertFilesForUser(oauth2Client, userEmail, connector),
-      // handleGmailIngestion(oauth2Client, userEmail),
-      // TODO Also do everything same in ServiceAccountIngestion
+    const [_, historyId, { calendarEventsToken }] = await Promise.all([
+      insertFilesForUser(oauth2Client, userEmail, connector),
+      handleGmailIngestion(oauth2Client, userEmail),
       insertCalendarEvents(oauth2Client, userEmail),
     ])
     const changeTokens = {
@@ -557,21 +553,21 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      // await insertSyncJob(trx, {
-      //   workspaceId: connector.workspaceId,
-      //   workspaceExternalId: connector.workspaceExternalId,
-      //   app: Apps.Gmail,
-      //   connectorId: connector.id,
-      //   authType: AuthType.OAuth,
-      //   config: {
-      //     historyId,
-      //     type: "gmailChangeToken",
-      //     lastSyncedAt: new Date().toISOString(),
-      //   },
-      //   email: userEmail,
-      //   type: SyncCron.ChangeToken,
-      //   status: SyncJobStatus.NotStarted,
-      // })
+      await insertSyncJob(trx, {
+        workspaceId: connector.workspaceId,
+        workspaceExternalId: connector.workspaceExternalId,
+        app: Apps.Gmail,
+        connectorId: connector.id,
+        authType: AuthType.OAuth,
+        config: {
+          historyId,
+          type: "gmailChangeToken",
+          lastSyncedAt: new Date().toISOString(),
+        },
+        email: userEmail,
+        type: SyncCron.ChangeToken,
+        status: SyncJobStatus.NotStarted,
+      })
       // For inserting Google CalendarEvent Change Job
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,

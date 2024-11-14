@@ -185,7 +185,9 @@ export type SyncConfig = z.infer<typeof SyncConfigSchema>
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>
 export type GoogleChangeToken = z.infer<typeof GoogleDriveChangeTokenSchema>
 export type GmailChangeToken = z.infer<typeof GmailChangeTokenSchema>
-export type CalendarEventsChangeToken = z.infer<typeof CalendarEventsChangeTokenSchema>
+export type CalendarEventsChangeToken = z.infer<
+  typeof CalendarEventsChangeTokenSchema
+>
 
 namespace Google {
   export const DriveFileSchema = z.object({
