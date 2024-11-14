@@ -194,3 +194,4 @@ server/vespa/models/
 # downloads like pdfs
 server/downloads
 server/vespa/models
+build

@@ -936,6 +936,8 @@ const handleGoogleCalendarEventsChanges = async (
   }
 }
 
+const maxChangeResults = 500
+
 // TODO: handle the error case more deeply, systematically store these
 // https://developers.google.com/gmail/api/reference/rest/v1/users.history/list
 // "History IDs increase chronologically but are not contiguous with random gaps in between valid IDs.
@@ -966,7 +968,7 @@ const handleGmailChanges = async (
       const res = await gmail.users.history.list({
         userId: "me",
         startHistoryId: historyId,
-        maxResults: 100,
+        maxResults: maxChangeResults,
         pageToken: nextPageToken,
       })
       newHistoryId = res.data.historyId ?? historyId
