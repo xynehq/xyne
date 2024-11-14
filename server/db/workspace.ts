@@ -26,7 +26,23 @@ export const getWorkspaceByDomain = async (domain: string) => {
     .limit(1)
 }
 
-export const getWorkspaceByEmail = async (trx: TxnOrClient, email: string) => {
+export const getWorkspaceById = async (trx: TxnOrClient, id: number) => {
+  const res = await db
+    .select()
+    .from(workspaces)
+    .where(eq(workspaces.id, id))
+    .limit(1)
+  if (res.length) {
+    return res[0]
+  } else {
+    throw new Error("Could not find workspaces by id")
+  }
+}
+
+export const getWorkspaceByCreatedBy = async (
+  trx: TxnOrClient,
+  email: string,
+) => {
   const res = await db
     .select()
     .from(workspaces)
