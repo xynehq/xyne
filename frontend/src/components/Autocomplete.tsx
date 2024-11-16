@@ -8,7 +8,7 @@ import type {
   UserQueryHAutocomplete,
 } from "shared/types"
 import { ForwardedRef, forwardRef } from "react"
-import History from "@/assets/history.svg"
+import { History } from "lucide-react"
 
 export const FileAutocompleteElement = ({
   result,
@@ -63,7 +63,7 @@ export const UserQueryHistoryAutocompleteElement = ({
 }: { result: UserQueryHAutocomplete; onClick: () => void }) => {
   return (
     <div onClick={onClick} className="flex items-center">
-      <img className={"h-[16px] w-[16px] mr-[10px]"} src={History} />
+      <History size={16} className="mr-[10px]" />
       <p>{result.query_text}</p>
     </div>
   )
