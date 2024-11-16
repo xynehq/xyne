@@ -2,13 +2,15 @@ import {
   chats,
   insertChatSchema,
   selectChatSchema,
+  selectPublicChatSchema,
   type InsertChat,
   type SelectChat,
+  type SelectPublicChat,
 } from "./schema"
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"
-import { eq } from "drizzle-orm"
+import { asc, desc, eq } from "drizzle-orm"
 
 export const insertChat = async (
   trx: TxnOrClient,
@@ -31,6 +33,7 @@ export const getWorkspaceChats = async (
     .select()
     .from(chats)
     .where(eq(chats.workspaceId, workspaceId))
+    .orderBy(desc(chats.updatedAt))
   return z.array(selectChatSchema).parse(chatsArr)
 }
 
@@ -64,6 +67,7 @@ export const updateChatByExternalId = async (
   chatId: string,
   chat: Partial<InsertChat>,
 ): Promise<SelectChat> => {
+  chat.updatedAt = new Date()
   const chatArr = await trx
     .update(chats)
     .set(chat)
@@ -73,4 +77,20 @@ export const updateChatByExternalId = async (
     throw new Error("Chat not found")
   }
   return selectChatSchema.parse(chatArr[0])
+}
+
+export const getPublicChats = async (
+  trx: TxnOrClient,
+  email: string,
+  pageSize: number,
+  offset: number,
+): Promise<SelectPublicChat[]> => {
+  const chatsArr = await trx
+    .select()
+    .from(chats)
+    .where(eq(chats.email, email))
+    .limit(pageSize)
+    .offset(offset)
+    .orderBy(desc(chats.updatedAt))
+  return z.array(selectPublicChatSchema).parse(chatsArr)
 }

@@ -26,6 +26,7 @@ export type { Citation } from "@/api/chat"
 export type {
   SelectPublicMessage,
   PublicUser,
+  SelectPublicChat,
   PublicWorkspace,
   // @ts-ignore
 } from "@/db/schema"
