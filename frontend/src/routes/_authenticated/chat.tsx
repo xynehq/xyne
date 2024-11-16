@@ -119,7 +119,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
     // only reset explicitly
-    if (!isStreaming) {
+    // hasHandledQueryParam part was added to prevent conflict between
+    // this setting current resp to null and the handleSend trying to show
+    // the assistant as thinking when the first message comes from query param
+    if (!isStreaming && !hasHandledQueryParam.current) {
       setCurrentResp(null)
       currentRespRef.current = null
     }
@@ -137,7 +140,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       { messageRole: "user", message: messageToSend },
     ])
 
-    // Set currentResp to an empty response to shift layout immediately
+    setIsStreaming(true)
     setCurrentResp({ resp: "" })
     currentRespRef.current = { resp: "", sources: [] }
 
@@ -151,7 +154,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
     })
-    setIsStreaming(true)
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks } = JSON.parse(event.data)
@@ -243,7 +245,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     // Clear the input
     setQuery("")
-    setIsStreaming(true)
   }
 
   const handleRetry = async (messageId: string) => {
