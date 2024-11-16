@@ -9,7 +9,8 @@
     "ignoreUnknown": false,
     "ignore": [
       "./frontend/src/routeTree.gen.ts",
-      "./server/eval/RAGEval/dataset.json"
+      "./server/eval/RAGEval/dataset.json",
+      "./migrations"
     ]
   },
   "formatter": {

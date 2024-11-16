@@ -20,6 +20,7 @@ import {
 import config from "@/config"
 import {
   getChatByExternalId,
+  getPublicChats,
   insertChat,
   updateChatByExternalId,
 } from "@/db/chat"
@@ -134,12 +135,32 @@ export const GetChatApi = async (c: Context) => {
 export const ChatRenameApi = async (c: Context) => {
   try {
     // @ts-ignore
-    const body = c.req.valid("json")
+    const { title, chatId } = c.req.valid("json")
+    await updateChatByExternalId(db, chatId, { title })
+    return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Chat Rename Error: ${errMsg} ${(error as Error).stack}`)
     throw new HTTPException(500, {
       message: "Could not rename chat",
+    })
+  }
+}
+
+export const ChatHistory = async (c: Context) => {
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+    // @ts-ignore
+    const { page } = c.req.valid("query")
+    const pageSize = 20
+    const offset = page * pageSize
+    return c.json(await getPublicChats(db, email, pageSize, offset))
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Chat History Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not get chat history",
     })
   }
 }
@@ -582,7 +603,8 @@ export const MessageApiV2 = async (c: Context) => {
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
-          let existingChat = await getChatByExternalId(db, chatId)
+          // we are updating the chat and getting it's value in one call itself
+          let existingChat = await updateChatByExternalId(db, chatId, {})
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,

@@ -4,6 +4,7 @@ import {
   AutocompleteApi,
   autocompleteSchema,
   chatBookmarkSchema,
+  chatHistorySchema,
   chatRenameSchema,
   chatSchema,
   messageRetrySchema,
@@ -25,6 +26,7 @@ import {
   GetConnectors,
   StartOAuth,
 } from "@/api/admin"
+import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
 import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
@@ -43,10 +45,11 @@ import { OAuthCallback } from "./api/oauth"
 import { setCookieByEnv } from "./utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo } from "./api/auth"
+import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ChatBookmarkApi,
+  ChatHistory,
   ChatRenameApi,
   GetChatApi,
   // MessageApiV1,
@@ -148,6 +151,7 @@ export const AppRoutes = app
     ChatBookmarkApi,
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
+  .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
   .get(
@@ -157,6 +161,7 @@ export const AppRoutes = app
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
+  .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .basePath("/admin")
   // TODO: debug
@@ -327,6 +332,11 @@ app.get(
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/chat/:param",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 app.get(
   "/admin/integrations",
   AuthRedirect,
