@@ -261,7 +261,7 @@ export const VespaEventSearchSchema = VespaEventSchema.extend({
 export const VespaUserQueryHistorySchema = z.object({
   docId: z.string(),
   query_text: z.string(),
-  timestamp: z.string(),
+  timestamp: z.number(),
   count: z.number(),
 })
 
