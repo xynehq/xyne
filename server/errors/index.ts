@@ -363,3 +363,14 @@ export class DeleteDocumentError extends IntegrationsError {
     this.name = this.constructor.name
   }
 }
+
+export class CalendarEventsListingError extends IntegrationsError {
+  constructor(integrationErrOpts: IntegrationErrorPartialMsgOpts) {
+    let { message } = integrationErrOpts
+    if (!message) {
+      message = `Could not list calendar events`
+    }
+    super({ ...integrationErrOpts, message })
+    this.name = this.constructor.name
+  }
+}

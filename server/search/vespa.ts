@@ -1,4 +1,10 @@
-import { Apps, fileSchema, mailSchema, userSchema } from "@/search/types"
+import {
+  Apps,
+  eventSchema,
+  fileSchema,
+  mailSchema,
+  userSchema,
+} from "@/search/types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -8,6 +14,7 @@ import type {
   VespaUser,
   VespaGetResult,
   Entity,
+  VespaEvent,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -128,7 +135,7 @@ export const insertDocument = async (document: VespaFile) => {
 
 // generic insert method
 export const insert = async (
-  document: VespaUser | VespaFile | VespaMail,
+  document: VespaUser | VespaFile | VespaMail | VespaEvent,
   schema: string,
 ) => {
   try {
@@ -224,7 +231,7 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
-const AllSources = [fileSchema, userSchema, mailSchema].join(", ")
+const AllSources = [fileSchema, userSchema, mailSchema, eventSchema].join(", ")
 
 export const autocomplete = async (
   query: string,
@@ -256,6 +263,9 @@ export const autocomplete = async (
         )
         or
         (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and permissions contains @email)
+        or
+        (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email);`
 
   const searchPayload = {
@@ -425,7 +435,7 @@ export const groupVespaSearch = async (
     if (!response.ok) {
       const errorText = response.statusText
       throw new Error(
-        `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+        `Failed to fetch documents in groupVespaSearch: ${response.status} ${response.statusText} - ${errorText}`,
       )
     }
 
@@ -433,7 +443,7 @@ export const groupVespaSearch = async (
     return handleVespaGroupResponse(data)
   } catch (error) {
     Logger.error(
-      `Error performing search:, ${error} - ${(error as Error).stack}`,
+      `Error performing search groupVespaSearch:, ${error} - ${(error as Error).stack}`,
     )
     throw new ErrorPerformingSearch({
       cause: error as Error,
@@ -492,14 +502,16 @@ export const searchVespa = async (
     if (!response.ok) {
       const errorText = response.statusText
       throw new Error(
-        `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+        `Failed to fetch documents in searchVespa: ${response.status} ${response.statusText} - ${errorText}`,
       )
     }
 
     const data = await response.json()
     return data
   } catch (error) {
-    Logger.error(`Error performing search:, ${error} ${(error as Error).stack}`)
+    Logger.error(
+      `Error performing search in searchVespa:, ${error} ${(error as Error).stack}`,
+    )
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
@@ -623,6 +635,51 @@ export const UpdateDocumentPermissions = async (
     const errMessage = getErrorMessage(error)
     Logger.error(
       `Error updating permissions in schema ${schema} for document ${docId}:`,
+      errMessage,
+    )
+    throw new ErrorUpdatingDocument({
+      docId,
+      cause: error as Error,
+      sources: schema,
+    })
+  }
+}
+
+export const UpdateEventCancelledInstances = async (
+  schema: string,
+  docId: string,
+  updatedCancelledInstances: string[],
+) => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: {
+          cancelledInstances: { assign: updatedCancelledInstances },
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = response.statusText
+      throw new ErrorUpdatingDocument({
+        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
+        docId,
+        sources: schema,
+      })
+    }
+
+    Logger.info(
+      `Successfully updated event instances in schema ${schema} for document ${docId}.`,
+    )
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error updating event instances in schema ${schema} for document ${docId}:`,
       errMessage,
     )
     throw new ErrorUpdatingDocument({

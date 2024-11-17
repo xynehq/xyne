@@ -7,11 +7,14 @@ import {
   userSchema,
   fileSchema,
   MailResponseSchema,
+  eventSchema,
+  VespaEventSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
   DriveEntity,
   NotionEntity,
+  CalendarEntity,
   Apps,
 } from "search/types"
 export type { Entity } from "search/types"
@@ -100,10 +103,22 @@ export const AutocompleteMailSchema = z
   })
   .strip()
 
+export const AutocompleteEventSchema = z
+  .object({
+    type: z.literal(eventSchema),
+    relevance: z.number(),
+    name: z.string().optional(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
   AutocompleteMailSchema,
+  AutocompleteEventSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -118,6 +133,7 @@ export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
 export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
 export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
+export type EventAutocomplete = z.infer<typeof AutocompleteEventSchema>
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
 // search result
@@ -143,6 +159,21 @@ export const FileResponseSchema = VespaFileSchema.pick({
   })
   .strip()
 
+export const EventResponseSchema = VespaEventSchema.pick({
+  docId: true,
+  name: true,
+  url: true,
+  app: true,
+  entity: true,
+  updatedAt: true,
+})
+  .extend({
+    type: z.literal(eventSchema),
+    relevance: z.number(),
+    description: z.string().optional(),
+  })
+  .strip()
+
 export const UserResponseSchema = VespaUserSchema.pick({
   name: true,
   email: true,
@@ -161,6 +192,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
   FileResponseSchema,
   MailResponseSchema,
+  EventResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
