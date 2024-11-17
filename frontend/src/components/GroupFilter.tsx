@@ -57,7 +57,7 @@ const GroupFilterItem = ({
   )
 }
 
-const getName = (app: Apps, entity: Entity): string => {
+export const getName = (app: Apps, entity: Entity): string => {
   if (app === Apps.Gmail) {
     return "Gmail"
   } else if (app === Apps.GoogleDrive) {
