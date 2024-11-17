@@ -8,7 +8,7 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Eye, EyeOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
@@ -16,6 +16,8 @@ import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
+import { getIcon } from "@/lib/common"
+import { getName } from "@/components/GroupFilter"
 
 type CurrentResp = {
   resp: string
@@ -52,18 +54,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const hasHandledQueryParam = useRef(false)
 
-  useEffect(() => {
-    if (chatParams.q && !hasHandledQueryParam.current) {
-      handleSend(decodeURIComponent(chatParams.q))
-      hasHandledQueryParam.current = true
-      router.navigate({
-        to: "/chat",
-        search: (prev) => ({ ...prev, q: undefined }),
-        replace: true,
-      })
-    }
-  }, [chatParams.q])
-
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
     isWithChatId ? data?.messages || [] : [],
@@ -85,6 +75,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const [dots, setDots] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
+  const [showSources, setShowSources] = useState(false)
+  const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
 
   useEffect(() => {
     if (inputRef.current) {
@@ -360,7 +353,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar photoLink={user.photoLink ?? ""} />
-      <div className="h-full w-full flex flex-col">
+      <div className="h-full w-full flex flex-col relative">
         <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
           <div className="flex h-[48px] items-center max-w-2xl w-full">
             <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
@@ -377,28 +370,47 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         </div>
 
         <div
-          className={`h-full w-full flex "items-end" overflow-y-auto justify-center`}
+          className={`h-full w-full flex items-end overflow-y-auto justify-center`}
           ref={messagesContainerRef}
         >
           <div
-            className={`w-full h-full max-w-3xl flex flex-col "justify-between"`}
+            className={`w-full h-full max-w-3xl flex flex-col justify-between`}
           >
             <div
               onScroll={handleScroll}
               className="flex flex-col flex-grow mb-[60px] mt-[56px]"
             >
-              {messages.map((message, index) => (
-                <ChatMessage
-                  key={index}
-                  message={message.message}
-                  isUser={message.messageRole === "user"}
-                  responseDone={true}
-                  citations={message?.sources?.map((c: Citation) => c.url)}
-                  messageId={message.externalId}
-                  handleRetry={handleRetry}
-                  dots={message.isRetrying ? dots : ""}
-                />
-              ))}
+              {messages.map((message, index) => {
+                const isSourcesVisible =
+                  showSources && currentMessageId === message.externalId
+                return (
+                  <ChatMessage
+                    key={index}
+                    message={message.message}
+                    isUser={message.messageRole === "user"}
+                    responseDone={true}
+                    citations={message?.sources?.map((c: Citation) => c.url)}
+                    messageId={message.externalId}
+                    handleRetry={handleRetry}
+                    dots={message.isRetrying ? dots : ""}
+                    onToggleSources={() => {
+                      if (
+                        showSources &&
+                        currentMessageId === message.externalId
+                      ) {
+                        setShowSources(false)
+                        setCurrentCitations([])
+                        setCurrentMessageId(null)
+                      } else {
+                        setCurrentCitations(message?.sources || [])
+                        setShowSources(true)
+                        setCurrentMessageId(message.externalId)
+                      }
+                    }}
+                    sourcesVisible={isSourcesVisible}
+                  />
+                )
+              })}
               {currentResp && (
                 <ChatMessage
                   message={currentResp.resp}
@@ -407,6 +419,23 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   responseDone={false}
                   handleRetry={handleRetry}
                   dots={dots}
+                  onToggleSources={() => {
+                    if (
+                      showSources &&
+                      currentMessageId === currentResp.messageId
+                    ) {
+                      setShowSources(false)
+                      setCurrentCitations([])
+                      setCurrentMessageId(null)
+                    } else {
+                      setCurrentCitations(currentResp.sources || [])
+                      setShowSources(true)
+                      setCurrentMessageId(currentResp.messageId || null)
+                    }
+                  }}
+                  sourcesVisible={
+                    showSources && currentMessageId === currentResp.messageId
+                  }
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -417,10 +446,57 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               handleSend={handleSend}
             />
           </div>
+          <Sources showSources={showSources} citations={currentCitations} />
         </div>
       </div>
     </div>
   )
+}
+
+const Sources = ({
+  showSources,
+  citations,
+}: { showSources: boolean; citations: Citation }) => {
+  return showSources ? (
+    <div className="fixed right-0 top-[48px] h-full w-1/4 border-l-[1px] border-[#E6EBF5] bg-white">
+      <div className="ml-[40px] mt-[24px]">
+        <span className="text-[#929FBA] font-normal text-[11px] tracking-[0.08em]">
+          SOURCES
+        </span>
+        <ul className="mt-2">
+          {citations.map((citation: Citation, index: number) => (
+            <li
+              key={index}
+              className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] max-w-[65%]"
+            >
+              <a href={citation.url} target="_blank" rel="noopener noreferrer">
+                <div className="flex pl-[12px] pt-[12px]">
+                  <a
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    href={citation.url}
+                    className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px] mr-[8px]"
+                    style={{ fontFamily: "JetBrains Mono" }}
+                  >
+                    {index + 1}
+                  </a>
+                  <div className="flex flex-col">
+                    <span>{citation.title}</span>
+                    <div className="flex items-center pb-[12px]">
+                      {getIcon(citation.app, citation.entity)}
+                      <span className="text-[#848DA1]">
+                        {getName(citation.app, citation.entity)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  ) : null
 }
 
 const ChatMessage = ({
@@ -432,6 +508,8 @@ const ChatMessage = ({
   messageId,
   handleRetry,
   dots = "",
+  onToggleSources,
+  sourcesVisible,
 }: {
   message: string
   isUser: boolean
@@ -441,6 +519,8 @@ const ChatMessage = ({
   messageId?: string
   dots: string
   handleRetry: (messageId: string) => void
+  onToggleSources: () => void
+  sourcesVisible: boolean
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const processMessage = (text: string) => {
@@ -460,12 +540,14 @@ const ChatMessage = ({
 
   return (
     <div
-      className={`max-w-[75%] rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
+      className={`${isUser ? "max-w-[75%]" : ""} rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
         message
       ) : (
-        <div className="flex flex-col mt-[40px]">
+        <div
+          className={`flex flex-col mt-[40px] ${citations.length ? "mb-[35px]" : ""}`}
+        >
           <div className="flex flex-row">
             <img
               className={"mr-[20px] w-[32px] self-start"}
@@ -492,7 +574,7 @@ const ChatMessage = ({
             </div>
           </div>
           {responseDone && !isRetrying && (
-            <div className="flex ml-[52px] mt-[24px]">
+            <div className="flex ml-[52px] mt-[24px] items-center">
               <Copy
                 size={16}
                 stroke={`${isCopied ? "#4F535C" : "#9EA6B8"}`}
@@ -508,6 +590,34 @@ const ChatMessage = ({
                 src={Retry}
                 onClick={() => handleRetry(messageId!)}
               />
+              {!!citations.length && (
+                <div
+                  className="ml-auto flex cursor-pointer text-[#9EA6B8]"
+                  onClick={onToggleSources}
+                >
+                  {sourcesVisible ? (
+                    <div className="flex items-center bg-[#F0F2F5] rounded-[20px] pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
+                      <EyeOff stroke="#464B53" size={16} />
+                      <span
+                        className="font-light ml-[4px] select-none leading-[14px] tracking-[2%] text-[12px] text-[#464B53]"
+                        style={{ fontFamily: "JetBrains Mono" }}
+                      >
+                        HIDE SOURCES
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
+                      <Eye stroke="#9EA6B8" size={16} />
+                      <span
+                        className="font-light ml-[4px] select-none leading-[14px] tracking-[2%] text-[12px]"
+                        style={{ fontFamily: "JetBrains Mono" }}
+                      >
+                        SHOW SOURCES
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

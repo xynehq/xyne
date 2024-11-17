@@ -1,6 +1,10 @@
 @font-face {
   font-family: "Inter";
-  src: local("Inter"), url("./assets/Inter-VariableFont.woff2");
+  src: local("Inter"), url("./assets/fonts/Inter-VariableFont.woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: local("JetBrains Mono"), url("./assets/fonts/JetBrainsMono[wght].ttf");
 }
 html,
 body {
