@@ -534,6 +534,21 @@ const searchToCitation = (
 //   }
 // }
 
+const processMessage = (text: string, citations: Citation[]) => {
+  let citationIndex = 0
+
+  return text.replace(/\[(\d+)\]/g, (match, num) => {
+    const url = citations[citationIndex]
+
+    if (url) {
+      citationIndex++
+      return `[[${citationIndex}]](${url})`
+    }
+
+    return match
+  })
+}
+
 export const MessageApiV2 = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -729,7 +744,7 @@ export const MessageApiV2 = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: minimalContextChunks,
-              message: parsed.answer,
+              message: processMessage(parsed.answer, minimalContextChunks),
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
@@ -854,7 +869,7 @@ export const MessageApiV2 = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: minimalContextChunks,
-              message: parsed.answer!,
+              message: processMessage(parsed.answer!, minimalContextChunks),
               modelId:
                 ragPipelineConfig[RagPipelineStages.RewriteAndAnswer].modelId,
             })
