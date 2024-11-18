@@ -493,7 +493,12 @@ const Sources = ({
               key={index}
               className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] w-[75%]"
             >
-              <a href={citation.url} target="_blank" rel="noopener noreferrer" title={citation.title}>
+              <a
+                href={citation.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={citation.title}
+              >
                 <div className="flex pl-[12px] pt-[12px]">
                   <a
                     target="_blank"

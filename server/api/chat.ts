@@ -536,7 +536,7 @@ const searchToCitation = (
 
 const processMessage = (text: string, citationMap: Record<number, number>) => {
   return text.replace(/\[(\d+)\]/g, (match, num) => {
-    return `[${citationMap[num]+1}]`
+    return `[${citationMap[num] + 1}]`
   })
 }
 
@@ -1085,7 +1085,7 @@ export const MessageRetryApi = async (c: Context) => {
                 event: ChatSSEvents.CitationsUpdate,
                 data: JSON.stringify({
                   contextChunks: minimalContextChunks,
-                  citationMap
+                  citationMap,
                 }),
               })
             }
@@ -1204,7 +1204,7 @@ export const MessageRetryApi = async (c: Context) => {
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
                     contextChunks: minimalContextChunks,
-                    citationMap
+                    citationMap,
                   }),
                 })
               }
