@@ -20,6 +20,7 @@ import {
 import config from "@/config"
 import {
   getChatByExternalId,
+  getPublicChats,
   insertChat,
   updateChatByExternalId,
 } from "@/db/chat"
@@ -158,12 +159,32 @@ export const UploadFilesApi = async (c: Context) => {
 export const ChatRenameApi = async (c: Context) => {
   try {
     // @ts-ignore
-    const body = c.req.valid("json")
+    const { title, chatId } = c.req.valid("json")
+    await updateChatByExternalId(db, chatId, { title })
+    return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Chat Rename Error: ${errMsg} ${(error as Error).stack}`)
     throw new HTTPException(500, {
       message: "Could not rename chat",
+    })
+  }
+}
+
+export const ChatHistory = async (c: Context) => {
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+    // @ts-ignore
+    const { page } = c.req.valid("query")
+    const pageSize = 20
+    const offset = page * pageSize
+    return c.json(await getPublicChats(db, email, pageSize, offset))
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Chat History Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not get chat history",
     })
   }
 }
@@ -537,6 +558,12 @@ const searchToCitation = (
 //   }
 // }
 
+const processMessage = (text: string, citationMap: Record<number, number>) => {
+  return text.replace(/\[(\d+)\]/g, (match, num) => {
+    return `[${citationMap[num] + 1}]`
+  })
+}
+
 export const MessageApiV2 = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -606,7 +633,8 @@ export const MessageApiV2 = async (c: Context) => {
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
-          let existingChat = await getChatByExternalId(db, chatId)
+          // we are updating the chat and getting it's value in one call itself
+          let existingChat = await updateChatByExternalId(db, chatId, {})
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -702,10 +730,15 @@ export const MessageApiV2 = async (c: Context) => {
             }
           }
           let minimalContextChunks: Citation[] = []
+          const citationMap: Record<number, number> = {}
           // TODO: this is not done yet
           // we need to send all of it
           if (parsed.citations) {
             currentCitations = parsed.citations
+
+            currentCitations.forEach((v, i) => {
+              citationMap[v] = i
+            })
             minimalContextChunks = searchToCitation(
               results.root.children.filter((_, i) =>
                 currentCitations.includes(i),
@@ -715,6 +748,7 @@ export const MessageApiV2 = async (c: Context) => {
               event: ChatSSEvents.CitationsUpdate,
               data: JSON.stringify({
                 contextChunks: minimalContextChunks,
+                citationMap,
               }),
             })
           }
@@ -731,7 +765,7 @@ export const MessageApiV2 = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: minimalContextChunks,
-              message: parsed.answer,
+              message: processMessage(parsed.answer, citationMap),
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
@@ -823,9 +857,13 @@ export const MessageApiV2 = async (c: Context) => {
                   }
 
                   let minimalContextChunks: Citation[] = []
+                  const citationMap: Record<number, number> = {}
                   // Stream citation updates
                   if (parsed.citations) {
                     currentCitations = parsed.citations
+                    currentCitations.forEach((v, i) => {
+                      citationMap[v] = i
+                    })
                     minimalContextChunks = searchToCitation(
                       results.root.children.filter((_, i) =>
                         currentCitations.includes(i),
@@ -837,6 +875,7 @@ export const MessageApiV2 = async (c: Context) => {
                       event: ChatSSEvents.CitationsUpdate,
                       data: JSON.stringify({
                         contextChunks: minimalContextChunks,
+                        citationMap,
                       }),
                     })
                   }
@@ -856,7 +895,7 @@ export const MessageApiV2 = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: minimalContextChunks,
-              message: parsed.answer!,
+              message: processMessage(parsed.answer!, citationMap),
               modelId:
                 ragPipelineConfig[RagPipelineStages.RewriteAndAnswer].modelId,
             })
@@ -1053,10 +1092,14 @@ export const MessageRetryApi = async (c: Context) => {
               }
             }
             let minimalContextChunks: Citation[] = []
+            const citationMap: Record<number, number> = {}
             // TODO: this is not done yet
             // we need to send all of it
             if (parsed.citations) {
               currentCitations = parsed.citations
+              currentCitations.forEach((v, i) => {
+                citationMap[v] = i
+              })
               minimalContextChunks = searchToCitation(
                 results.root.children.filter((_, i) =>
                   currentCitations.includes(i),
@@ -1066,6 +1109,7 @@ export const MessageRetryApi = async (c: Context) => {
                 event: ChatSSEvents.CitationsUpdate,
                 data: JSON.stringify({
                   contextChunks: minimalContextChunks,
+                  citationMap,
                 }),
               })
             }
@@ -1073,7 +1117,7 @@ export const MessageRetryApi = async (c: Context) => {
               let newMessageContent = parsed.answer
               // Update the assistant's message with new content and updatedAt
               await updateMessage(db, messageId, {
-                message: newMessageContent,
+                message: processMessage(newMessageContent, citationMap),
                 updatedAt: new Date(),
                 sources: minimalContextChunks,
               })
@@ -1166,9 +1210,13 @@ export const MessageRetryApi = async (c: Context) => {
                 }
               }
               let minimalContextChunks: Citation[] = []
+              const citationMap: Record<number, number> = {}
               // Stream citation updates
               if (parsed.citations) {
                 currentCitations = parsed.citations
+                currentCitations.forEach((v, i) => {
+                  citationMap[v] = i
+                })
                 minimalContextChunks = searchToCitation(
                   results.root.children.filter((_, i) =>
                     currentCitations.includes(i),
@@ -1180,13 +1228,14 @@ export const MessageRetryApi = async (c: Context) => {
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
                     contextChunks: minimalContextChunks,
+                    citationMap,
                   }),
                 })
               }
               let newMessageContent = parsed.answer
               // Update the assistant's message with new content and updatedAt
               await updateMessage(db, messageId, {
-                message: newMessageContent,
+                message: processMessage(newMessageContent!, citationMap),
                 updatedAt: new Date(),
                 sources: minimalContextChunks,
               })

@@ -94,6 +94,31 @@ export const SearchResult = ({
             .map((summary) => <HighlightedText chunk_summary={summary} />)}
       </div>
     )
+  } else if (result.type === "event") {
+    content = (
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start">
+          {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
+          <a
+            href={result.url ?? ""}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-[#2067F5]"
+          >
+            {/* TODO: if photoLink doesn't exist then show icon */}
+            {/* <img
+              referrerPolicy="no-referrer"
+              className="mr-2 w-[16px] h-[16px] rounded-full"
+              src={result.photoLink}
+            ></img> */}
+            {result.name}
+          </a>
+        </div>
+        <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden ml-[44px]">
+          {result.description ?? ""}
+        </p>
+      </div>
+    )
   }
   return content
 }

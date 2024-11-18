@@ -15,6 +15,7 @@
             <document type="user" mode="index" />
             <document type="mail" mode="index" />
             <document type="user_query" mode="index" />
+            <document type="event" mode="index" />
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />

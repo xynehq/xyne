@@ -61,7 +61,18 @@ export const chatBookmarkSchema = z.object({
 })
 
 export const chatRenameSchema = z.object({
-  title: z.string(),
+  chatId: z.string().min(1),
+  title: z.string().min(1),
+})
+
+export const chatHistorySchema = z.object({
+  page: z
+    .string()
+    .default("0")
+    .transform((value) => parseInt(value, 10))
+    .refine((value) => !isNaN(value), {
+      message: "Page must be a valid number",
+    }),
 })
 
 export const messageSchema = z.object({

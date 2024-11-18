@@ -26,5 +26,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["."]
+  "include": ["."],
+  "exclude": ["node_modules", "build", "eval"]
 }

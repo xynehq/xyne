@@ -1,5 +1,6 @@
 import {
   admin_directory_v1,
+  calendar_v3,
   docs_v1,
   drive_v3,
   google,
@@ -23,7 +24,13 @@ import {
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
-import { insertDocument, insertUser } from "@/search/vespa"
+import {
+  GetDocument,
+  insert,
+  insertDocument,
+  insertUser,
+  UpdateEventCancelledInstances,
+} from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
 import { wsConnections } from "@/server"
 import type { WSContext } from "hono/ws"
@@ -53,7 +60,12 @@ import {
   toPermissionsList,
 } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
-import { type VespaFileWithDrivePermission } from "@/search/types"
+import {
+  CalendarEntity,
+  eventSchema,
+  type VespaEvent,
+  type VespaFileWithDrivePermission,
+} from "@/search/types"
 import {
   UserListingError,
   CouldNotFinishJobSuccessfully,
@@ -62,6 +74,7 @@ import {
   ErrorInsertingDocument,
   DeleteDocumentError,
   DownloadDocumentError,
+  CalendarEventsListingError,
 } from "@/errors"
 import fs from "node:fs"
 import path from "node:path"
@@ -77,6 +90,7 @@ import {
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
+const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -207,6 +221,276 @@ export const syncGoogleWorkspace = async (
   }
 }
 
+export const getTextFromEventDescription = (description: string): string => {
+  return htmlToText.convert(description, { wordwrap: 130 })
+}
+
+const getBaseUrlFromUrl = (url: string) => {
+  try {
+    if (url) {
+      const parsedUrl = new URL(url)
+      return `${parsedUrl.protocol}//${parsedUrl.host}`
+    }
+  } catch (error) {
+    console.error("Invalid URL:", error)
+    return ""
+  }
+}
+
+const getLinkFromDescription = (description: string): string => {
+  // Check if the description is provided and not empty
+  if (description) {
+    const htmlString = htmlToText.convert(description, {
+      // If html is normally parsed, an `a` tag is parsed like below:
+      // <---- Link Title [https://actualLink.com] ----> OR <---- https://actualLink.com [https://actualLink.com] ---->
+      // This gives us only => https://actualLink.com
+      selectors: [
+        {
+          selector: "a",
+          options: {
+            hideLinkHrefIfSameAsText: true, // Hide href if it's the same as text
+            linkBrackets: false, // Exclude brackets around links
+          },
+        },
+      ],
+    })
+
+    // Regular expression to match URLs
+    const urlRegex = /(https?:\/\/[^\s]+)/g
+
+    // Extract all possible links from the htmlString
+    const links = htmlString.match(urlRegex) || []
+
+    // Define the Zoom link identifier
+    const zoomLinkIdentifier = "zoom.us"
+
+    if (links?.length !== 0) {
+      // Search through each link to find a Zoom link
+      for (const link of links) {
+        const url = new URL(link)
+        const hostname = url.hostname
+        if (
+          hostname.endsWith(zoomLinkIdentifier) ||
+          hostname === zoomLinkIdentifier
+        ) {
+          return link // Return the href if it contains 'zoom.us'
+        }
+      }
+    }
+  }
+  return "" // Return "" if no Zoom link is found
+}
+
+export const getJoiningLink = (event: calendar_v3.Schema$Event) => {
+  const conferenceLink = event?.conferenceData?.entryPoints![0]?.uri
+  if (conferenceLink) {
+    return {
+      baseUrl: getBaseUrlFromUrl(conferenceLink) ?? "",
+      joiningUrl: conferenceLink ?? "",
+    }
+  } else {
+    // Check if any joining Link is there in description
+    // By deafult only Google meet links are there in confereneData
+    const description = event.description ?? ""
+    const linkFromDesc = getLinkFromDescription(description)
+    return {
+      baseUrl: getBaseUrlFromUrl(linkFromDesc) ?? "",
+      joiningUrl: linkFromDesc ?? "",
+    }
+  }
+}
+
+export const getAttendeesOfEvent = (
+  allAttendes: calendar_v3.Schema$EventAttendee[],
+) => {
+  if (allAttendes.length === 0) {
+    return { attendeesInfo: [], attendeesNames: [] }
+  }
+
+  const attendeesInfo: { email: string; displayName: string }[] = []
+  const attendeesNames: string[] = []
+  for (const attendee of allAttendes) {
+    if (attendee.displayName) {
+      attendeesNames.push(attendee.displayName ?? "")
+    }
+
+    const oneAttendee = { email: "", displayName: "" }
+    oneAttendee.email = attendee.email ?? ""
+    if (attendee.displayName) {
+      oneAttendee.displayName = attendee.displayName ?? ""
+    }
+
+    attendeesInfo.push(oneAttendee)
+  }
+
+  return { attendeesInfo, attendeesNames }
+}
+
+export const getAttachments = (
+  allAttachments: calendar_v3.Schema$EventAttachment[],
+) => {
+  if (allAttachments.length === 0) {
+    return { attachmentsInfo: [], attachmentFilenames: [] }
+  }
+
+  const attachmentsInfo = []
+  const attachmentFilenames = []
+
+  for (const attachment of allAttachments) {
+    attachmentFilenames.push(attachment.title ?? "")
+
+    const oneAttachment = { fileId: "", title: "", mimeType: "", fileUrl: "" }
+    oneAttachment.fileId = attachment.fileId ?? ""
+    oneAttachment.title = attachment.title ?? ""
+    oneAttachment.mimeType = attachment.mimeType ?? ""
+    oneAttachment.fileUrl = attachment.fileUrl ?? ""
+
+    attachmentsInfo.push(oneAttachment)
+  }
+
+  return { attachmentsInfo, attachmentFilenames }
+}
+
+export const eventFields =
+  "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
+
+export const maxCalendarEventResults = 2500
+
+const insertCalendarEvents = async (
+  client: GoogleClient,
+  userEmail: string,
+) => {
+  let nextPageToken = ""
+  // will be returned in the end
+  let newSyncTokenCalendarEvents: string = ""
+
+  let events: calendar_v3.Schema$Event[] = []
+  const calendar = google.calendar({ version: "v3", auth: client })
+
+  const currentDateTime = new Date()
+  const nextYearDateTime = new Date(currentDateTime)
+
+  // Set the date one year later
+  // To get all events from current Date to One Year later
+  nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
+
+  do {
+    const res = await calendar.events.list({
+      calendarId: "primary",
+      timeMin: currentDateTime.toISOString(),
+      timeMax: nextYearDateTime.toISOString(),
+      maxResults: maxCalendarEventResults, // Limit the number of results
+      pageToken: nextPageToken,
+      fields: eventFields,
+    })
+    if (res.data.items) {
+      events = events.concat(res.data.items)
+    }
+    nextPageToken = res.data.nextPageToken ?? ""
+    newSyncTokenCalendarEvents = res.data.nextSyncToken ?? ""
+  } while (nextPageToken)
+
+  if (events.length === 0) {
+    return { events: [], calendarEventsToken: newSyncTokenCalendarEvents }
+  }
+
+  const confirmedEvents = events.filter((e) => e.status === "confirmed")
+  // Handle cancelledEvents separately
+  const cancelledEvents = events.filter((e) => e.status === "cancelled")
+
+  // First insert only the confirmed events
+  for (const event of confirmedEvents) {
+    const { baseUrl, joiningUrl } = getJoiningLink(event)
+    const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
+      event.attendees ?? [],
+    )
+    const { attachmentsInfo, attachmentFilenames } = getAttachments(
+      event.attachments ?? [],
+    )
+    const eventToBeIngested = {
+      docId: event.id ?? "",
+      name: event.summary ?? "",
+      description: getTextFromEventDescription(event?.description ?? ""),
+      url: event.htmlLink ?? "", // eventLink, not joiningLink
+      status: event.status ?? "",
+      location: event.location ?? "",
+      createdAt: new Date(event.created!).getTime(),
+      updatedAt: new Date(event.updated!).getTime(),
+      email: userEmail,
+      app: Apps.GoogleCalendar,
+      entity: CalendarEntity.Event,
+      creator: {
+        email: event.creator?.email ?? "",
+        displayName: event.creator?.displayName ?? "",
+      },
+      organizer: {
+        email: event.organizer?.email ?? "",
+        displayName: event.organizer?.displayName ?? "",
+      },
+      attendees: attendeesInfo,
+      attendeesNames: attendeesNames,
+      startTime: new Date(event.start?.dateTime!).getTime(),
+      endTime: new Date(event.end?.dateTime!).getTime(),
+      attachmentFilenames,
+      attachments: attachmentsInfo,
+      recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
+      baseUrl,
+      joiningLink: joiningUrl,
+      permissions: [event.organizer?.email ?? ""],
+      cancelledInstances: [],
+    }
+
+    await insert(eventToBeIngested, eventSchema)
+  }
+
+  // Add the cancelled events into cancelledInstances array of their respective main event
+  for (const event of cancelledEvents) {
+    // add this instance to the cancelledInstances arr of main recurring event
+    // don't add it as seperate event
+    const instanceEventId = event.id ?? ""
+    const splittedId = instanceEventId?.split("_") ?? ""
+    const mainEventId = splittedId[0]
+    const instanceDateTime = splittedId[1]
+
+    try {
+      // Get the main event from Vespa
+      // Add the new instanceDateTime to its cancelledInstances
+      const eventFromVespa = await GetDocument(eventSchema, mainEventId)
+      const oldCancelledInstances =
+        (eventFromVespa.fields as VespaEvent).cancelledInstances ?? []
+
+      if (!oldCancelledInstances?.includes(instanceDateTime)) {
+        // Do this only if instanceDateTime not already inside oldCancelledInstances
+        const newCancelledInstances = [
+          ...oldCancelledInstances,
+          instanceDateTime,
+        ]
+        if (eventFromVespa) {
+          await UpdateEventCancelledInstances(
+            eventSchema,
+            mainEventId,
+            newCancelledInstances,
+          )
+        }
+      }
+    } catch (e) {
+      Logger.error(
+        `Main Event ${mainEventId} not found in Vespa to update cancelled instance ${instanceDateTime} of ${instanceEventId}`,
+      )
+    }
+  }
+
+  if (!newSyncTokenCalendarEvents) {
+    throw new CalendarEventsListingError({
+      message: "Could not get sync tokens for Google Calendar Events",
+      integration: Apps.GoogleCalendar,
+      entity: CalendarEntity.Event,
+    })
+  }
+
+  return { events, calendarEventsToken: newSyncTokenCalendarEvents }
+}
+
 export const handleGoogleOAuthIngestion = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -238,9 +522,10 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [_, historyId] = await Promise.all([
+    const [_, historyId, { calendarEventsToken }] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
       handleGmailIngestion(oauth2Client, userEmail),
+      insertCalendarEvents(oauth2Client, userEmail),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -283,6 +568,22 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
+      // For inserting Google CalendarEvent Change Job
+      await insertSyncJob(trx, {
+        workspaceId: connector.workspaceId,
+        workspaceExternalId: connector.workspaceExternalId,
+        app: Apps.GoogleCalendar,
+        connectorId: connector.id,
+        authType: AuthType.OAuth,
+        config: {
+          calendarEventsToken,
+          type: "calendarEventsChangeToken",
+          lastSyncedAt: new Date().toISOString(),
+        },
+        email: userEmail,
+        type: SyncCron.ChangeToken,
+        status: SyncJobStatus.NotStarted,
+      })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
@@ -316,6 +617,8 @@ type IngestionMetadata = {
   otherContactsToken: string
   // gmail
   historyId: string
+  // calendar events token
+  calendarEventsToken: string
 }
 
 // we make 2 sync jobs
@@ -356,9 +659,10 @@ export const handleGoogleServiceAccountIngestion = async (
         `${((index + 1) / users.length) * 100}% user's data is connected`,
         connector.externalId,
       )
-      const [_, historyId] = await Promise.all([
+      const [_, historyId, { calendarEventsToken }] = await Promise.all([
         insertFilesForUser(jwtClient, userEmail, connector),
         handleGmailIngestion(jwtClient, userEmail),
+        insertCalendarEvents(jwtClient, userEmail),
       ])
       ingestionMetadata.push({
         email: userEmail,
@@ -366,6 +670,7 @@ export const handleGoogleServiceAccountIngestion = async (
         contactsToken,
         otherContactsToken,
         historyId,
+        calendarEventsToken,
       })
     }
     // insert all the workspace users
@@ -378,6 +683,7 @@ export const handleGoogleServiceAccountIngestion = async (
         contactsToken,
         otherContactsToken,
         historyId,
+        calendarEventsToken,
       } of ingestionMetadata) {
         // drive and contacts per user
         await insertSyncJob(trx, {
@@ -407,6 +713,22 @@ export const handleGoogleServiceAccountIngestion = async (
           config: {
             historyId,
             type: "gmailChangeToken",
+            lastSyncedAt: new Date().toISOString(),
+          },
+          email,
+          type: SyncCron.ChangeToken,
+          status: SyncJobStatus.NotStarted,
+        })
+        // For inserting Google CalendarEvent Change Job
+        await insertSyncJob(trx, {
+          workspaceId: connector.workspaceId,
+          workspaceExternalId: connector.workspaceExternalId,
+          app: Apps.GoogleCalendar,
+          connectorId: connector.id,
+          authType: AuthType.ServiceAccount,
+          config: {
+            calendarEventsToken,
+            type: "calendarEventsChangeToken",
             lastSyncedAt: new Date().toISOString(),
           },
           email,
@@ -452,7 +774,7 @@ export const handleGoogleServiceAccountIngestion = async (
       await boss.fail(job.name, job.id)
     })
     throw new CouldNotFinishJobSuccessfully({
-      message: "Could not finish Oauth ingestion",
+      message: "Could not finish Service Account ingestion",
       integration: Apps.GoogleWorkspace,
       entity: "files and users",
       cause: error as Error,

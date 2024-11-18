@@ -1,0 +1,229 @@
+schema event {
+    document event {
+        #eventId
+        field docId type string {
+            indexing: attribute | summary
+        }
+
+        field name type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+        
+        #eventDescription
+        field description type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        # eventLink, different from joining link
+        field url type string {
+            indexing: index | attribute | summary
+            match: exact
+        }
+
+        # baseUrl of joiningLink to know which app is the meeting on
+        field baseUrl type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            index: enable-bm25
+        }
+
+        # eventStatus
+        field status type string {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+        
+        field location type string {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field createdAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field updatedAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        # primary email
+        field email type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        field app type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+
+        field entity type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+
+        # A user can be creator, organizer or an attendee
+        struct user_info {
+            field email type string {}
+            field displayName type string {}
+        }
+        
+        # Event creator
+        field creator type user_info {
+            indexing: summary
+        }
+        
+        # Event Organizer
+        field organizer type user_info {
+            indexing: summary
+        }
+
+        # Event Attendees
+        field attendeesNames type array<string> {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        field attendees type array<user_info> {}
+
+        field startTime type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+        
+        field endTime type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field attachmentFilenames type array<string> {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        struct attachment {
+            field fileId type string {}
+            field title type string {}
+            field fileUrl type string {}
+            field mimeType type string {}
+        }
+
+        # An event can have attachments from Google Drive
+        field attachments type array<attachment> {}
+
+        field recurrence type array<string> {}
+
+        # Google Meet link or any meeting link from the description
+        field joiningLink type string {
+            indexing: attribute | summary
+        }
+
+        field permissions type array<string> {
+            indexing: attribute | summary
+        }
+
+        field cancelledInstances type array<string> {
+            indexing: attribute | summary
+        }
+    }
+
+     field chunk_embeddings type tensor<bfloat16>(v[384])  {
+        indexing: (input name || "") . " " .(input description || ""). " " .((input attachmentFilenames | for_each { _ }) . " " || ""). " " .(input url || "") | embed | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+    }
+
+    field name_fuzzy type string {
+        indexing: input name | index
+        index {
+          enable-bm25
+        }
+        match {
+          gram
+          gram-size: 3
+        }
+    }
+
+    fieldset default {
+        fields: name, description, attachmentFilenames, attendeesNames, app, email, url, baseUrl
+    }
+
+    # url, domain, attachmentFilenames, name, description, freshness,
+    rank-profile default {
+        inputs {
+            query(decay_factor) float # to reduce the weightage for attachmentFilenames and attendeesNames
+            query(e) tensor<bfloat16>(v[384])
+        }
+
+        function event_time_score() {
+            expression: if(attribute(startTime) > now(), 0.6, if(attribute(endTime) < now(), 0.2, 1.0))
+        }
+
+        function bm25_score() {
+          expression {
+            (
+                bm25(name) + 
+                bm25(description) + 
+                bm25(url)
+            ) + 
+            (query(decay_factor) - (bm25(attachmentFilenames) + bm25(attendeesNames)))
+          } 
+        }
+
+        function vector_score() {
+            expression: closeness(field, chunk_embeddings)
+        }
+
+        first-phase {
+            expression : bm25_score()
+        }
+
+        global-phase {
+          expression {
+            (normalize_linear(bm25_score) * normalize_linear(vector_score)) * event_time_score * freshness(createdAt)
+          }
+          rerank-count: 1000
+        }
+
+        match-features {
+          bm25(name)
+          bm25(description)
+          bm25(attachmentFilenames)
+          bm25(attendeesNames)
+          vector_score
+          event_time_score
+        }
+    }
+
+    document-summary autocomplete {
+        summary name {
+            source: name
+        }
+        summary app {
+            source: app
+        }
+        summary entity {
+            source: entity
+        }
+        summary docId {
+            source: docId
+        }
+    }
+
+    # Autocomplete rank profile for fuzzy prefix search
+    rank-profile autocomplete {
+      first-phase {
+        expression: bm25(name_fuzzy)
+      }
+      match-features {
+        bm25(name_fuzzy)
+      }
+    }
+}

@@ -157,10 +157,17 @@ const GmailChangeTokenSchema = z.object({
   lastSyncedAt: z.coerce.date(),
 })
 
+const CalendarEventsChangeTokenSchema = z.object({
+  type: z.literal("calendarEventsChangeToken"),
+  calendarEventsToken: z.string(),
+  lastSyncedAt: z.coerce.date(),
+})
+
 const ChangeTokenSchema = z.discriminatedUnion("type", [
   DefaultTokenSchema,
   GoogleDriveChangeTokenSchema,
   GmailChangeTokenSchema,
+  CalendarEventsChangeTokenSchema,
 ])
 
 // Define UpdatedAtVal schema
@@ -178,6 +185,9 @@ export type SyncConfig = z.infer<typeof SyncConfigSchema>
 export type ChangeToken = z.infer<typeof ChangeTokenSchema>
 export type GoogleChangeToken = z.infer<typeof GoogleDriveChangeTokenSchema>
 export type GmailChangeToken = z.infer<typeof GmailChangeTokenSchema>
+export type CalendarEventsChangeToken = z.infer<
+  typeof CalendarEventsChangeTokenSchema
+>
 
 namespace Google {
   export const DriveFileSchema = z.object({
