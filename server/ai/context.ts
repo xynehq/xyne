@@ -161,29 +161,29 @@ export const cleanContext = (text: string): string => {
 
 const cleanVespaHighlights = (text: string): string => {
   const hiTagPattern = /<\/?hi>/g
-  return text.replace(hiTagPattern, "").trim()
+  return text?.replace(hiTagPattern, "").trim()
 }
 
 // google docs need lots of cleanup
 const cleanDocs = (text: string): string => {
   const urlPattern =
     /!\[.*?\]\(https:\/\/lh7-rt\.googleusercontent\.com\/docsz\/[a-zA-Z0-9-_?=&]+\)/g
-  let cleanedText = text.replace(urlPattern, "")
+  let cleanedText = text?.replace(urlPattern, "")
 
   // ........
   const extendedEllipsisPattern = /[…\.\s]{2,}/g
-  cleanedText = cleanedText.replace(extendedEllipsisPattern, " ")
+  cleanedText = cleanedText?.replace(extendedEllipsisPattern, " ")
   // .0.0.0.0.0.0.0.0
   const repetitiveDotZeroPattern = /(?:\.0)+(\.\d+)?/g
-  cleanedText = cleanedText.replace(repetitiveDotZeroPattern, "")
+  cleanedText = cleanedText?.replace(repetitiveDotZeroPattern, "")
 
   // Remove control characters
   const controlCharsPattern = /[\x00-\x1F\x7F-\x9F]/g
-  cleanedText = cleanedText.replace(controlCharsPattern, "")
+  cleanedText = cleanedText?.replace(controlCharsPattern, "")
   // Remove invalid or incomplete UTF characters
   //  and �
   const invalidUtfPattern = /[\uE907\uFFFD]/g
-  cleanedText = cleanedText.replace(invalidUtfPattern, "")
+  cleanedText = cleanedText?.replace(invalidUtfPattern, "")
 
   return cleanedText
 }
@@ -217,7 +217,7 @@ const URL_REGEX: RegExp = /\bhttps?:\/\/[^\s/$.?#].[^\s]*\b/gi
  * @returns The text with URLs replaced by placeholders.
  */
 export const replaceLinks = (text: string): string => {
-  return text.replace(URL_REGEX, (match: string): string => {
+  return text?.replace(URL_REGEX, (match: string): string => {
     try {
       const parsedUrl: URL = new URL(match)
       const domain: string = parsedUrl.hostname

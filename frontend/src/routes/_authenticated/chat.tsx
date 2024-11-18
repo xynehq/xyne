@@ -43,6 +43,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       : "/_authenticated/chat",
   })
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
     isWithChatId ? data?.messages || [] : [],
@@ -67,6 +69,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const [dots, setDots] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
+  const [stagedFiles, setStagedFiles] = useState<File[]>([])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -110,6 +113,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleSend = async () => {
     if (!query) return // Avoid empty messages
+
+    // Upload files if any before
+    if (stagedFiles.length !== 0) {
+      await handleFileUpload()
+    }
 
     // Append the user's message to the chat
     setMessages((prevMessages) => [
@@ -337,6 +345,78 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       </div>
     )
   }
+
+  const handleFileSelection = (event) => {
+    const files = Array.from(event.target!.files)
+    setStagedFiles((prev) => [...prev, ...files])
+    event.target.value = "" // Reset input value to allow re-selecting the same file
+  }
+
+  function handleFileRemove(index: number) {
+    setStagedFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const isSupportedFileType = (fileType: string): boolean => {
+    if (fileType === "application/pdf") {
+      return true
+    } else {
+      return false
+    }
+  }
+
+  const handleFileUpload = async () => {
+    if (stagedFiles.length === 0) {
+      alert("No files selected for upload.")
+      return
+    }
+
+    const formData = new FormData()
+    // Append each file to the FormData object
+    Array.from(stagedFiles).forEach((file) => {
+      // Ignore and remove large and not supported files
+      // File size check, 20 MB is the limit
+      const fileSizeInMB = file?.size / (1024 * 1024)
+      if (fileSizeInMB > 20) {
+        // todo maybe show toast here
+        // File is too large
+        console.error(`Ignored ${file.name} as file is too large`)
+        return
+      } else if (!isSupportedFileType(file?.type)) {
+        // todo file is not supported
+        console.error(`Ignored ${file.name} as file type is not supported`)
+        return
+      } else {
+        formData.append("files", file)
+      }
+    })
+
+    try {
+      // todo change this
+      const response = await fetch("/api/v1/chat/upload", {
+        method: "POST",
+        body: formData,
+      })
+
+      // const response = await api.chat.upload.$post({
+      //   body: formData,
+      //   // headers: {
+      //   //   "Content-Type": "multipart/form-data", // Important for file uploads
+      //   // },
+      // })
+
+      const result = await response.json()
+      if (response.ok) {
+        // addFilesToChat(result.files) // Add uploaded files to chat
+        setStagedFiles([]) // Clear the staging area
+      } else {
+        alert("File upload failed. Please try again.")
+      }
+    } catch (error) {
+      console.error("Error uploading files:", error)
+      alert("An unexpected error occurred.")
+    }
+  }
+
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar />
@@ -397,7 +477,29 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             {/* Bottom Bar with Input and Icons */}
             <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white">
               {/* Expanding Input Area */}
-              <div className="relative flex items-center">
+              <div className="relative flex-col items-center">
+                <div>
+                  {/* File Staging Area */}
+                  {/* todo fix the ui */}
+                  {stagedFiles.length > 0 && (
+                    <div className="flex">
+                      {/* <h4>Selected Files:</h4> */}
+                      <ul className="flex">
+                        {stagedFiles.map((file, index) => (
+                          <li
+                            key={index}
+                            style={{ border: 2, borderColor: "black" }}
+                          >
+                            {file.name}
+                            <button onClick={() => handleFileRemove(index)}>
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
                 <textarea
                   ref={inputRef}
                   rows={1}
@@ -420,7 +522,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               </div>
               <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-2">
                 <Globe size={16} className="text-[#A9B2C5]" />
-                <Paperclip size={16} className="text-[#A9B2C5]" />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: "none" }}
+                  onChange={handleFileSelection}
+                  multiple
+                />
+                <button onClick={() => fileInputRef.current!.click()}>
+                  <Paperclip size={16} className="text-[#A9B2C5]" />
+                </button>
                 <button
                   onClick={handleSend}
                   style={{ marginLeft: "auto" }}

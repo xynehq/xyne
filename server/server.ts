@@ -6,6 +6,7 @@ import {
   chatBookmarkSchema,
   chatRenameSchema,
   chatSchema,
+  fileUploadSchema,
   messageRetrySchema,
   messageSchema,
   SearchApi,
@@ -52,6 +53,7 @@ import {
   // MessageApiV1,
   MessageApiV2,
   MessageRetryApi,
+  UploadFilesApi,
 } from "./api/chat"
 import { z } from "zod"
 type Variables = JwtVariables
@@ -154,6 +156,11 @@ export const AppRoutes = app
     "/message/retry",
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
+  )
+  .post(
+    "/chat/upload",
+    zValidator("json", fileUploadSchema),
+    UploadFilesApi,
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)

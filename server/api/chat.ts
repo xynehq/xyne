@@ -131,6 +131,30 @@ export const GetChatApi = async (c: Context) => {
   }
 }
 
+export const UploadFilesApi = async (c: Context) => {
+  try {
+    // @ts-ignore
+    // const body: z.infer<typeof chatSchema> = c.req.valid("json")
+    //todo schema
+    const formData = await c.req.formData()
+    const files = formData.getAll("files") as File[]
+
+    files.map((file) => {
+      console.log(file.type)
+      console.log(file.name)
+      console.log(file.size)
+    })
+
+    return c.json({})
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Error uploading files: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not upload files",
+    })
+  }
+}
+
 export const ChatRenameApi = async (c: Context) => {
   try {
     // @ts-ignore
@@ -532,8 +556,8 @@ export const MessageApiV2 = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
     const initialContext = cleanContext(
-      results.root.children
-        .map(
+      results?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
         )

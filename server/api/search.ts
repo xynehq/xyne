@@ -75,6 +75,11 @@ export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
 })
 
+// todo fix this
+export const fileUploadSchema = z.object({
+  // files: z.array(z.instanceof(Blob)).min(1),
+})
+
 export const AutocompleteApi = async (c: Context) => {
   try {
     const { sub } = c.get(JwtPayloadKey)
