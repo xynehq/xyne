@@ -24,6 +24,7 @@ type CurrentResp = {
   chatId?: string
   messageId?: string
   sources?: Citation[]
+  citationMap?: Record<number, number>
 }
 
 interface ChatPageProps {
@@ -123,6 +124,19 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setQuery("")
   }, [(params as any).chatId])
 
+  // New useEffect to handle query parameters
+  useEffect(() => {
+    if (chatParams.q && !hasHandledQueryParam.current) {
+      handleSend(decodeURIComponent(chatParams.q))
+      hasHandledQueryParam.current = true
+      router.navigate({
+        to: "/chat",
+        search: (prev) => ({ ...prev, q: undefined }),
+        replace: true,
+      })
+    }
+  }, [chatParams.q])
+
   const handleSend = async (messageToSend: string) => {
     if (!messageToSend) return
 
@@ -149,9 +163,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks } = JSON.parse(event.data)
+      const { contextChunks, citationMap } = JSON.parse(event.data)
       if (currentRespRef.current) {
         currentRespRef.current.sources = contextChunks
+        currentRespRef.current.citationMap = citationMap
+        setCurrentResp((prevResp) => ({
+          ...prevResp,
+          resp: prevResp?.resp || "",
+          sources: contextChunks,
+          citationMap,
+        }))
       }
     })
 
@@ -211,6 +232,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             message: currentResp.resp,
             externalId: currentResp.messageId,
             sources: currentResp.sources,
+            citationMap: currentResp.citationMap,
           },
         ])
       }
@@ -272,11 +294,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks } = JSON.parse(event.data)
+      const { contextChunks, citationMap } = JSON.parse(event.data)
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, sources: contextChunks }
+            ? { ...msg, sources: contextChunks, citationMap }
             : msg,
         ),
       )
@@ -392,6 +414,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     citations={message?.sources?.map((c: Citation) => c.url)}
                     messageId={message.externalId}
                     handleRetry={handleRetry}
+                    citationMap={message.citationMap}
                     dots={message.isRetrying ? dots : ""}
                     onToggleSources={() => {
                       if (
@@ -419,6 +442,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   responseDone={false}
                   handleRetry={handleRetry}
                   dots={dots}
+                  citationMap={currentResp.citationMap}
                   onToggleSources={() => {
                     if (
                       showSources &&
@@ -467,21 +491,27 @@ const Sources = ({
           {citations.map((citation: Citation, index: number) => (
             <li
               key={index}
-              className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] max-w-[65%]"
+              className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] w-[75%]"
             >
-              <a href={citation.url} target="_blank" rel="noopener noreferrer">
+              <a
+                href={citation.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={citation.title}
+              >
                 <div className="flex pl-[12px] pt-[12px]">
                   <a
                     target="_blank"
                     rel="noopener noreferrer"
+                    title={citation.title}
                     href={citation.url}
                     className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px] mr-[8px]"
                     style={{ fontFamily: "JetBrains Mono" }}
                   >
                     {index + 1}
                   </a>
-                  <div className="flex flex-col">
-                    <span>{citation.title}</span>
+                  <div className="flex flex-col  mr-[12px] truncate">
+                    <span className="truncate">{citation.title}</span>
                     <div className="flex items-center pb-[12px]">
                       {getIcon(citation.app, citation.entity)}
                       <span className="text-[#848DA1]">
@@ -509,6 +539,7 @@ const ChatMessage = ({
   handleRetry,
   dots = "",
   onToggleSources,
+  citationMap,
   sourcesVisible,
 }: {
   message: string
@@ -520,22 +551,32 @@ const ChatMessage = ({
   dots: string
   handleRetry: (messageId: string) => void
   onToggleSources: () => void
+  citationMap?: Record<number, number>
   sourcesVisible: boolean
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const processMessage = (text: string) => {
-    let citationIndex = 0
+    if (citationMap) {
+      return text.replace(/\[(\d+)\]/g, (match, num) => {
+        const index = citationMap[num]
+        const url = citations[index]
+        if (url) {
+          return `[[${index + 1}]](${url})`
+        }
 
-    return text.replace(/\[(\d+)\]/g, (match, num) => {
-      const url = citations[citationIndex]
+        return match
+      })
+    } else {
+      return text.replace(/\[(\d+)\]/g, (match, num) => {
+        const url = citations[num - 1]
 
-      if (url) {
-        citationIndex++
-        return `[[${citationIndex}]](${url})`
-      }
+        if (url) {
+          return `[[${num}]](${url})`
+        }
 
-      return match
-    })
+        return match
+      })
+    }
   }
 
   return (
@@ -586,7 +627,7 @@ const ChatMessage = ({
                 }}
               />
               <img
-                className="ml-[18px] cursor-pointe"
+                className="ml-[18px] cursor-pointer"
                 src={Retry}
                 onClick={() => handleRetry(messageId!)}
               />

@@ -534,6 +534,12 @@ const searchToCitation = (
 //   }
 // }
 
+const processMessage = (text: string, citationMap: Record<number, number>) => {
+  return text.replace(/\[(\d+)\]/g, (match, num) => {
+    return `[${citationMap[num] + 1}]`
+  })
+}
+
 export const MessageApiV2 = async (c: Context) => {
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -700,10 +706,15 @@ export const MessageApiV2 = async (c: Context) => {
             }
           }
           let minimalContextChunks: Citation[] = []
+          const citationMap: Record<number, number> = {}
           // TODO: this is not done yet
           // we need to send all of it
           if (parsed.citations) {
             currentCitations = parsed.citations
+
+            currentCitations.forEach((v, i) => {
+              citationMap[v] = i
+            })
             minimalContextChunks = searchToCitation(
               results.root.children.filter((_, i) =>
                 currentCitations.includes(i),
@@ -713,6 +724,7 @@ export const MessageApiV2 = async (c: Context) => {
               event: ChatSSEvents.CitationsUpdate,
               data: JSON.stringify({
                 contextChunks: minimalContextChunks,
+                citationMap,
               }),
             })
           }
@@ -729,7 +741,7 @@ export const MessageApiV2 = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: minimalContextChunks,
-              message: parsed.answer,
+              message: processMessage(parsed.answer, citationMap),
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
@@ -821,9 +833,13 @@ export const MessageApiV2 = async (c: Context) => {
                   }
 
                   let minimalContextChunks: Citation[] = []
+                  const citationMap: Record<number, number> = {}
                   // Stream citation updates
                   if (parsed.citations) {
                     currentCitations = parsed.citations
+                    currentCitations.forEach((v, i) => {
+                      citationMap[v] = i
+                    })
                     minimalContextChunks = searchToCitation(
                       results.root.children.filter((_, i) =>
                         currentCitations.includes(i),
@@ -835,6 +851,7 @@ export const MessageApiV2 = async (c: Context) => {
                       event: ChatSSEvents.CitationsUpdate,
                       data: JSON.stringify({
                         contextChunks: minimalContextChunks,
+                        citationMap,
                       }),
                     })
                   }
@@ -854,7 +871,7 @@ export const MessageApiV2 = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: minimalContextChunks,
-              message: parsed.answer!,
+              message: processMessage(parsed.answer!, citationMap),
               modelId:
                 ragPipelineConfig[RagPipelineStages.RewriteAndAnswer].modelId,
             })
@@ -1051,10 +1068,14 @@ export const MessageRetryApi = async (c: Context) => {
               }
             }
             let minimalContextChunks: Citation[] = []
+            const citationMap: Record<number, number> = {}
             // TODO: this is not done yet
             // we need to send all of it
             if (parsed.citations) {
               currentCitations = parsed.citations
+              currentCitations.forEach((v, i) => {
+                citationMap[v] = i
+              })
               minimalContextChunks = searchToCitation(
                 results.root.children.filter((_, i) =>
                   currentCitations.includes(i),
@@ -1064,6 +1085,7 @@ export const MessageRetryApi = async (c: Context) => {
                 event: ChatSSEvents.CitationsUpdate,
                 data: JSON.stringify({
                   contextChunks: minimalContextChunks,
+                  citationMap,
                 }),
               })
             }
@@ -1071,7 +1093,7 @@ export const MessageRetryApi = async (c: Context) => {
               let newMessageContent = parsed.answer
               // Update the assistant's message with new content and updatedAt
               await updateMessage(db, messageId, {
-                message: newMessageContent,
+                message: processMessage(newMessageContent, citationMap),
                 updatedAt: new Date(),
                 sources: minimalContextChunks,
               })
@@ -1164,9 +1186,13 @@ export const MessageRetryApi = async (c: Context) => {
                 }
               }
               let minimalContextChunks: Citation[] = []
+              const citationMap: Record<number, number> = {}
               // Stream citation updates
               if (parsed.citations) {
                 currentCitations = parsed.citations
+                currentCitations.forEach((v, i) => {
+                  citationMap[v] = i
+                })
                 minimalContextChunks = searchToCitation(
                   results.root.children.filter((_, i) =>
                     currentCitations.includes(i),
@@ -1178,13 +1204,14 @@ export const MessageRetryApi = async (c: Context) => {
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
                     contextChunks: minimalContextChunks,
+                    citationMap,
                   }),
                 })
               }
               let newMessageContent = parsed.answer
               // Update the assistant's message with new content and updatedAt
               await updateMessage(db, messageId, {
-                message: newMessageContent,
+                message: processMessage(newMessageContent!, citationMap),
                 updatedAt: new Date(),
                 sources: minimalContextChunks,
               })
