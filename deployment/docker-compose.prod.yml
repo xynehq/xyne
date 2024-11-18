@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  # app:
+  #   image: xyne
+  #   container_name: xyne-app
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - xyne-db
+  #     - vespa
+  #   env_file:
+  #     - ../server/.env
+  #   networks:
+  #     - xyne
+  #   restart: always
+  vespa:
+    image: vespaengine/vespa
+    container_name: vespa
+    hostname: vespa-container
+    # sudo chown -R 1000:1000 ./server/vespa-data
+    user: "1000:1000" # Run as vespa user
+    ports:
+      - "8080:8080"
+      - "19071:19071"
+    volumes:
+      - ../server/vespa-data:/opt/vespa/var # Ensure this directory has correct permissions
+      - ../server/vespa-logs:/opt/vespa/logs # Ensure correct permissions
+    networks:
+      - xyne
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  xyne-db:
+    image: postgres
+    container_name: xyne-db
+    environment:
+      POSTGRES_USER: xyne
+      POSTGRES_PASSWORD: xyne
+      POSTGRES_DB: xyne
+    ports:
+      - "${XYNE_DB_PORT:-5432}:5432"
+    volumes:
+      - ../server/xyne-data:/var/lib/postgresql/data
+    networks:
+      - xyne
+    restart: always
+networks:
+  xyne:
+volumes:
+  vespa-data:
+    driver: local

@@ -61,9 +61,9 @@ type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
-const redirectURI = process.env.GOOGLE_REDIRECT_URI!
+const redirectURI = config.redirectUri
 
-const postOauthRedirect = process.env.POST_OAUTH_REDIRECT!
+const postOauthRedirect = config.postOauthRedirect
 const frontendBaseURL = process.env.FRONTEND_BASE_URL!
 const jwtSecret = process.env.JWT_SECRET!
 
@@ -227,6 +227,7 @@ app.get(
     client_id: clientId,
     client_secret: clientSecret,
     scope: ["openid", "email", "profile"],
+    redirect_uri: redirectURI,  
   }),
   async (c: Context) => {
     const token = c.get("token")
