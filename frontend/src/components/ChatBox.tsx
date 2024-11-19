@@ -1,4 +1,4 @@
-import { ArrowRight, Globe, Paperclip } from "lucide-react"
+import { ArrowRight, File, Trash2, Globe, Paperclip } from "lucide-react"
 import { useEffect, useRef } from "react"
 
 interface ChatBoxProps {
@@ -7,7 +7,6 @@ interface ChatBoxProps {
   handleSend: (messageToSend: string) => void
   stagedFiles: File[]
   handleFileRemove: (index: number) => void
-  fileInputRef: React.RefObject<HTMLInputElement>
   handleFileSelection: (event: any) => void // todo fix any
 }
 
@@ -17,10 +16,10 @@ export const ChatBox = ({
   handleSend,
   stagedFiles,
   handleFileRemove,
-  fileInputRef,
   handleFileSelection,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
@@ -33,14 +32,28 @@ export const ChatBox = ({
   return (
     <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white">
       <div className="relative flex-col items-center">
-        {stagedFiles.length > 0 && (
-          <div className="flex">
-            <ul className="flex">
+        {stagedFiles?.length > 0 && (
+          <div className="flex w-full">
+            <ul className="flex overflow-x-auto space-x-4 p-2">
               {stagedFiles.map((file, index) => (
-                <li key={index} style={{ border: 2, borderColor: "black" }}>
-                  {file.name}
-                  <button onClick={() => handleFileRemove(index)}>
-                    Remove
+                <li
+                  key={index}
+                  className="flex items-center p-2 border rounded border-gray-300"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 mr-2 bg-gray-100 rounded">
+                    <File className="text-black" size={16} />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 truncate max-w-[100px]">
+                    {file.name}
+                  </span>
+                  <button
+                    className="ml-4 text-sm"
+                    onClick={() => handleFileRemove(index)}
+                  >
+                    <Trash2
+                      className="text-red-500 hover:text-red-700"
+                      size={16}
+                    />
                   </button>
                 </li>
               ))}
