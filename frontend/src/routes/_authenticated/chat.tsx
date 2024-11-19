@@ -380,7 +380,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleFileSelection = (event) => {
     const files = Array.from(event.target!.files)
-    // todo prevent selection of same files again
     setStagedFiles((prev) => [...prev, ...files])
     event.target.value = "" // Reset input value to allow re-selecting the same file
   }

@@ -10,6 +10,14 @@ interface ChatBoxProps {
   handleFileSelection: (event: any) => void // todo fix any
 }
 
+const getFileTypeName = (fileType: string): string => {
+  if (fileType === "application/pdf") {
+    return "PDF"
+  } else {
+    return ""
+  }
+}
+
 export const ChatBox = ({
   query,
   setQuery,
@@ -43,9 +51,14 @@ export const ChatBox = ({
                   <div className="flex items-center justify-center w-8 h-8 mr-2 bg-gray-100 rounded">
                     <File className="text-black" size={16} />
                   </div>
-                  <span className="text-sm font-medium text-gray-700 truncate max-w-[100px]">
-                    {file.name}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-gray-700 truncate max-w-[100px]">
+                      {file.name}
+                    </span>
+                    <span className="text-xs font-medium text-gray-700 truncate max-w-[100px]">
+                      {getFileTypeName(file.type) ?? null}
+                    </span>
+                  </div>
                   <button
                     className="ml-4 text-sm"
                     onClick={() => handleFileRemove(index)}
