@@ -55,9 +55,14 @@ import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
-import { searchUsersByNamesAndEmails, searchVespa } from "@/search/vespa"
+import {
+  insertDocument,
+  searchUsersByNamesAndEmails,
+  searchVespa,
+} from "@/search/vespa"
 import {
   Apps,
+  DriveEntity,
   entitySchema,
   fileSchema,
   MailEntity,
@@ -73,6 +78,10 @@ import {
 import llama3Tokenizer from "llama3-tokenizer-js"
 import { encode } from "gpt-tokenizer"
 import { getConnInfo } from "hono/bun"
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import type { Document } from "@langchain/core/documents"
+import { chunkDocument } from "@/chunks"
+
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -132,6 +141,45 @@ export const GetChatApi = async (c: Context) => {
   }
 }
 
+const handlePDFFile = async (file: Blob) => {
+  try {
+    let docs: Document[] = []
+    const loader = new PDFLoader(file)
+    docs = await loader.load()
+
+    if (!docs || docs.length === 0) {
+      Logger.error(`Could not get content for file: ${file.name}. Skipping it`)
+    }
+    const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+
+    const dateTime = new Date().getTime()
+
+    const pdfToIngest = {
+      title: file.name!,
+      url: "",
+      app: Apps.GoogleDrive, // todo what here
+      docId: `${file.name}-upload-PDF`, // create id here, maybe??
+      owner: "kalp.a@xynehq.com", // todo how to get userEmail
+      photoLink: "https://google.com",
+      ownerEmail: "kalp.a@xynehq.com",
+      entity: DriveEntity.PDF, // todo change
+      chunks: chunks.map((v) => v.chunk),
+      permissions: ["kalp.a@xynehq.com"],
+      mimeType: "application/pdf",
+      metadata: "",
+      createdAt: dateTime,
+      updatedAt: dateTime,
+    }
+
+    await insertDocument(pdfToIngest)
+  } catch (err) {
+    Logger.error(
+      `Error handling PDF ${file.name}: ${err} ${(err as Error).stack}`,
+      err,
+    )
+  }
+}
+
 export const UploadFilesApi = async (c: Context) => {
   try {
     // @ts-ignore
@@ -140,10 +188,13 @@ export const UploadFilesApi = async (c: Context) => {
     const formData = await c.req.formData()
     const files = formData.getAll("files") as File[]
 
-    files.map((file) => {
-      console.log(file.type)
-      console.log(file.name)
-      console.log(file.size)
+    files.forEach(async (file) => {
+      // Parse file according to its type
+      if (file.type === "application/pdf") {
+        await handlePDFFile(file)
+      } else {
+        Logger.error(`File type not supported yet`)
+      }
     })
 
     return c.json({})
