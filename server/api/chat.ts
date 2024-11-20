@@ -81,6 +81,9 @@ import { getConnInfo } from "hono/bun"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
 import { chunkDocument } from "@/chunks"
+import { deleteDocument, downloadDir } from "@/integrations/google"
+import fs from "node:fs"
+import path from "node:path"
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 const Logger = getLogger(Subsystem.Chat)
@@ -141,22 +144,57 @@ export const GetChatApi = async (c: Context) => {
   }
 }
 
-const handlePDFFile = async (file: Blob) => {
+const blobToBuffer = async (blob: Blob) => {
+  const arrayBuffer = await blob.arrayBuffer() // Convert Blob to ArrayBuffer
+  return Buffer.from(arrayBuffer) // Convert ArrayBuffer to Buffer
+}
+
+const saveToDownloads = async (file: Blob) => {
+  if (!fs.existsSync(downloadDir)) {
+    fs.mkdirSync(downloadDir, { recursive: true })
+  }
+
+  // Define the file path
+  const filePath = path.join(downloadDir, file?.name)
+
+  // Convert the Blob to a Buffer
+  const fileBuffer = await blobToBuffer(file)
+
+  // Save the file
   try {
+    await fs.promises.writeFile(filePath, fileBuffer)
+    Logger.info(`File saved successfully to ${filePath}`)
+  } catch (err) {
+    console.error("Error saving file:", err)
+    await deleteDocument(filePath)
+  }
+}
+
+const handlePDFFile = async (file: Blob) => {
+  let wasDownloaded = false
+  try {
+    // saving the uploaded file in downloads folder
+    await saveToDownloads(file)
+    wasDownloaded = true
+
     let docs: Document[] = []
-    const loader = new PDFLoader(file)
+    const filePath = `${downloadDir}/${file?.name}`
+    const loader = new PDFLoader(filePath)
     docs = await loader.load()
 
     if (!docs || docs.length === 0) {
       Logger.error(`Could not get content for file: ${file.name}. Skipping it`)
+      await deleteDocument(filePath)
+      return
     }
+
     const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
 
     const dateTime = new Date().getTime()
 
     const pdfToIngest = {
       title: file.name!,
-      url: "",
+      url: "https://google.com",
       app: Apps.GoogleDrive, // todo what here
       docId: `${file.name}-upload-PDF`, // create id here, maybe??
       owner: "kalp.a@xynehq.com", // todo how to get userEmail
@@ -166,13 +204,20 @@ const handlePDFFile = async (file: Blob) => {
       chunks: chunks.map((v) => v.chunk),
       permissions: ["kalp.a@xynehq.com"],
       mimeType: "application/pdf",
-      metadata: "",
+      metadata: "Metadata",
       createdAt: dateTime,
       updatedAt: dateTime,
     }
 
     await insertDocument(pdfToIngest)
+
+    // Delete the file here
+    await deleteDocument(filePath)
   } catch (err) {
+    if (wasDownloaded) {
+      const filePath = `${downloadDir}/${file?.name}`
+      await deleteDocument(filePath)
+    }
     Logger.error(
       `Error handling PDF ${file.name}: ${err} ${(err as Error).stack}`,
       err,
