@@ -157,6 +157,7 @@ const Index = () => {
                 setAutocompleteQuery={setAutocompleteQuery}
                 setOffset={setOffset}
                 setFilter={setFilter}
+                handleAnswer={() => {}}
                 ref={autocompleteRef}
                 pathname={location.pathname}
                 filter={filter}
