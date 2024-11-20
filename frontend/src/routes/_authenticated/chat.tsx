@@ -143,8 +143,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     setQuery("")
 
+    let uploadedFilesMetadata = []
+
     if (stagedFiles.length !== 0) {
-      await handleFileUpload()
+      uploadedFilesMetadata = await handleFileUpload()
     }
     // Append the user's message to the chat
     setMessages((prevMessages) => [
@@ -160,8 +162,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
-    url.searchParams.append("modelId", "gpt-4o-mini")
+    url.searchParams.append("modelId", "meta-llama/Llama-3-8b-chat-hf")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
+    url.searchParams.append(
+      "attachments",
+      JSON.stringify(uploadedFilesMetadata),
+    )
 
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
@@ -440,6 +446,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       if (response.ok) {
         // addFilesToChat(result.files) // Add uploaded files to chat
         setStagedFiles([]) // Clear the staging area
+        return result.attachmentsMetadata
       } else {
         alert("File upload failed. Please try again.")
       }

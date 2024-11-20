@@ -232,17 +232,24 @@ export const UploadFilesApi = async (c: Context) => {
     //todo schema
     const formData = await c.req.formData()
     const files = formData.getAll("files") as File[]
+    const metadata: any[] = []
 
     files.forEach(async (file) => {
+      const fileMetadata: any = {}
       // Parse file according to its type
       if (file.type === "application/pdf") {
+        fileMetadata.name = file?.name
+        fileMetadata.size = file?.size
+        fileMetadata.type = file?.type
+        metadata.push(fileMetadata)
+
         await handlePDFFile(file)
       } else {
         Logger.error(`File type not supported yet`)
       }
     })
 
-    return c.json({})
+    return c.json({ attachmentsMetadata: metadata })
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Error uploading files: ${errMsg} ${(error as Error).stack}`)
@@ -666,7 +673,7 @@ export const MessageApiV2 = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId }: MessageReqType = body
+    let { message, chatId, modelId, attachments }: MessageReqType = body
     message = decodeURIComponent(message)
 
     const [userAndWorkspace, results] = await Promise.all([
@@ -708,7 +715,7 @@ export const MessageApiV2 = async (c: Context) => {
             userId: user.id,
             email: user.email,
             title,
-            attachments: [],
+            attachments: JSON.parse(attachments),
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
@@ -730,7 +737,15 @@ export const MessageApiV2 = async (c: Context) => {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
           // we are updating the chat and getting it's value in one call itself
-          let existingChat = await updateChatByExternalId(db, chatId, {})
+          const oldChat = await getChatByExternalId(db, chatId)
+          const oldAttachments = oldChat.attachments || []
+          const newAttachments = JSON.parse(attachments)
+
+          const allAttachments = newAttachments ? oldAttachments?.concat(newAttachments) : []
+
+          let existingChat = await updateChatByExternalId(db, chatId, {
+            attachments: allAttachments,
+          })
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,

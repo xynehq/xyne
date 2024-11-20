@@ -79,6 +79,7 @@ export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
   modelId: z.string().min(1),
+  attachments: z.string(),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
