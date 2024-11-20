@@ -336,6 +336,7 @@ class Provider implements LLMProvider {
       ],
       model: params.modelId,
       stream: true,
+      stream_options: { include_usage: true },
       max_tokens: params.max_new_tokens,
       temperature: params.temperature,
       top_p: params.top_p,
@@ -351,10 +352,18 @@ class Provider implements LLMProvider {
           modelDetailsMap[params.modelId].cost.onDemand,
         )
       }
-      yield {
-        text: chunk.choices[0].delta.content!,
-        metadata: chunk.choices[0].finish_reason,
-        cost,
+      if (chunk.choices && chunk.choices.length) {
+        yield {
+          text: chunk.choices[0].delta.content!,
+          metadata: chunk.choices[0].finish_reason,
+          cost,
+        }
+      } else {
+        yield {
+          text: "",
+          metadata: "",
+          cost,
+        }
       }
     }
   }
@@ -706,12 +715,25 @@ const QueryAnalysisSchema = z.object({
 export const jsonParseLLMOutput = (text: string): any => {
   let jsonVal
   try {
+    text = text.trim()
+    // first it has to exist
+    if (text.indexOf("{") !== -1) {
+      if (text.indexOf("{") !== 0) {
+        text = text.substring(text.indexOf("{"))
+      }
+    }
+    if (text.lastIndexOf("}") !== -1) {
+      if (text.lastIndexOf("}") !== text.length - 1) {
+        text = text.substring(0, text.lastIndexOf("}") + 1)
+      }
+    }
     jsonVal = parse(text.trim())
   } catch (e) {
     try {
       jsonVal = parse(
         text
           .replace(/```(json)?/g, "")
+          .replace(/```/g, "")
           .replace(/\/\/.*$/gm, "")
           .trim(),
       )

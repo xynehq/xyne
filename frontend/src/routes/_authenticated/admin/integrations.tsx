@@ -3,6 +3,7 @@ import {
   createFileRoute,
   useNavigate,
   UseNavigateResult,
+  useRouterState,
 } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
@@ -25,6 +26,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Connectors } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
+import { PublicUser, PublicWorkspace } from "shared/types"
 
 const logger = console
 
@@ -412,8 +414,12 @@ enum OAuthIntegrationStatus {
   OAuthConnecting = "OAuthConnecting",
   OAuthConnected = "OAuthConnected",
 }
+interface AdminPageProps {
+  user: PublicUser
+  workspace: PublicWorkspace
+}
 
-const AdminLayout = () => {
+const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
   const { isPending, error, data } = useQuery<any[]>({
     queryKey: ["all-connectors"],
@@ -513,7 +519,7 @@ const AdminLayout = () => {
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
-      <Sidebar />
+      <Sidebar photoLink={user.photoLink ?? ""} />
       <div className="w-full h-full flex items-center justify-center">
         <Tabs
           defaultValue="upload"
@@ -583,5 +589,17 @@ const AdminLayout = () => {
 }
 
 export const Route = createFileRoute("/_authenticated/admin/integrations")({
-  component: AdminLayout,
+  // component: AdminLayout,
+
+  beforeLoad: (params) => {
+    return params
+  },
+  loader: async (params) => {
+    return params
+  },
+  component: () => {
+    const matches = useRouterState({ select: (s) => s.matches })
+    const { user, workspace } = matches[matches.length - 1].context
+    return <AdminLayout user={user} workspace={workspace} />
+  },
 })

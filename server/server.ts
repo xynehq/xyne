@@ -64,7 +64,6 @@ const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
 
 const postOauthRedirect = config.postOauthRedirect
-const frontendBaseURL = process.env.FRONTEND_BASE_URL!
 const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = "auth-token"
@@ -91,7 +90,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
   if (!authToken) {
     Logger.warn("Redirected by server - No AuthToken")
     // Redirect to login page if no token found
-    return c.redirect(`${frontendBaseURL}/auth`)
+    return c.redirect(`/auth`)
   }
 
   try {
@@ -103,7 +102,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
-    return c.redirect(`${frontendBaseURL}/auth`)
+    return c.redirect(`/auth`)
   }
 }
 
@@ -227,7 +226,7 @@ app.get(
     client_id: clientId,
     client_secret: clientSecret,
     scope: ["openid", "email", "profile"],
-    redirect_uri: redirectURI,  
+    redirect_uri: redirectURI,
   }),
   async (c: Context) => {
     const token = c.get("token")
