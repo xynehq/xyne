@@ -3,5 +3,8 @@
   "[typescript]": {
     "editor.defaultFormatter": "biomejs.biome"
   },
-  "biome.lspBin": "./server/node_modules/@biomejs/biome/bin/biome"
+  "biome.lspBin": "./server/node_modules/@biomejs/biome/bin/biome",
+  "yaml.schemas": {
+    "https://www.artillery.io/schema.json": []
+  }
 }
