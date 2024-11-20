@@ -227,7 +227,7 @@ app.get(
     client_id: clientId,
     client_secret: clientSecret,
     scope: ["openid", "email", "profile"],
-    redirect_uri: redirectURI,  
+    redirect_uri: redirectURI,
   }),
   async (c: Context) => {
     const token = c.get("token")

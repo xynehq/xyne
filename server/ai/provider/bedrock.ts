@@ -352,7 +352,7 @@ class Provider implements LLMProvider {
           modelDetailsMap[params.modelId].cost.onDemand,
         )
       }
-      if(chunk.choices && chunk.choices.length) {
+      if (chunk.choices && chunk.choices.length) {
         yield {
           text: chunk.choices[0].delta.content!,
           metadata: chunk.choices[0].finish_reason,
@@ -362,7 +362,7 @@ class Provider implements LLMProvider {
         yield {
           text: "",
           metadata: "",
-          cost
+          cost,
         }
       }
     }

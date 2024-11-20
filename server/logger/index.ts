@@ -3,10 +3,10 @@ import { Subsystem } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
-import { existsSync, mkdirSync } from 'fs';
-import { resolve } from 'path';
+import { existsSync, mkdirSync } from "fs"
+import { resolve } from "path"
 
-const logsFolderPath = resolve(process.cwd(), 'server','logs');
+const logsFolderPath = resolve(process.cwd(), "server", "logs")
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
@@ -153,13 +153,11 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   }
 }
 
-
-
 const checkLogsFolder = () => {
   if (!existsSync(logsFolderPath)) {
-    mkdirSync(logsFolderPath, {recursive:true});
-    console.log('Logs folder created.');
+    mkdirSync(logsFolderPath, { recursive: true })
+    console.log("Logs folder created.")
   } else {
-    console.log('Logs folder already exists.');
+    console.log("Logs folder already exists.")
   }
 }
