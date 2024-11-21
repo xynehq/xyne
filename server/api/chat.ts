@@ -709,13 +709,14 @@ export const MessageApiV2 = async (c: Context) => {
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const attachmentsToBeInserted = JSON.parse(attachments)
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
             title,
-            attachments: JSON.parse(attachments),
+            attachments: attachmentsToBeInserted,
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
@@ -724,7 +725,7 @@ export const MessageApiV2 = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: [],
+            sources: attachmentsToBeInserted, // Adding attachmentMetadata to sources
             message,
             modelId,
           })
@@ -736,13 +737,19 @@ export const MessageApiV2 = async (c: Context) => {
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
-          // we are updating the chat and getting it's value in one call itself
+          const newAttachments = JSON.parse(attachments) || []
+
           const oldChat = await getChatByExternalId(db, chatId)
           const oldAttachments = oldChat.attachments || []
-          const newAttachments = JSON.parse(attachments)
 
-          const allAttachments = newAttachments ? oldAttachments?.concat(newAttachments) : []
+          let allAttachments = oldAttachments
 
+          // If there are some new attachments, we need to update chat and add only those new while adding message
+          if (newAttachments.length !== 0) {
+            allAttachments = allAttachments?.concat(newAttachments)
+          }
+
+          // we are updating the chat and getting it's value in one call itself
           let existingChat = await updateChatByExternalId(db, chatId, {
             attachments: allAttachments,
           })
@@ -754,7 +761,7 @@ export const MessageApiV2 = async (c: Context) => {
             chatExternalId: existingChat.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: [],
+            sources: newAttachments, // Adding new attachments metadata
             message,
             modelId,
           })
