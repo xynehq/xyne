@@ -18,6 +18,7 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
+import { useToast } from "@/hooks/use-toast"
 
 type CurrentResp = {
   resp: string
@@ -80,6 +81,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
   const [stagedFiles, setStagedFiles] = useState<File[]>([])
+  const { toast } = useToast()
 
   useEffect(() => {
     if (inputRef.current) {
@@ -385,9 +387,44 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }
 
   const handleFileSelection = (event) => {
-    const files = Array.from(event.target!.files)
-    setStagedFiles((prev) => [...prev, ...files])
-    event.target.value = "" // Reset input value to allow re-selecting the same file
+    const files = Array.from(event.target!.files) as File[]
+    const validFiles: File[] = [] // Array to hold files that pass validation
+
+    files.forEach((file: File) => {
+      // File size check: 20 MB limit
+      const fileSizeInMB = file.size / (1024 * 1024)
+      if (fileSizeInMB > 20) {
+        toast({
+          title: `File Too Large`,
+          description: `The file "${file.name}" exceeds the 20MB size limit. Please choose a smaller file.`,
+          variant: "destructive",
+        })
+      } else if (!isSupportedFileType(file.type)) {
+        // Check for unsupported file types
+        toast({
+          title: "File Type not supported",
+          description: `The file "${file.name}" is of type "${file.type}", which is not supported. Please upload a valid file type.`,
+          variant: "destructive",
+        })
+      } else {
+        // If valid, add the file to the validFiles array
+        validFiles.push(file)
+      }
+    })
+
+    setStagedFiles((prev) => {
+      if (prev.length + validFiles.length > 5) {
+        toast({
+          title: "File Limit Exceeded",
+          description: "You can only select up to 5 files.",
+          variant: "destructive",
+        })
+        return prev // Keep the current files unchanged
+      }
+      return [...prev, ...validFiles]
+    })
+
+    event.target.value = ""
   }
 
   function handleFileRemove(index: number) {
@@ -403,29 +440,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }
 
   const handleFileUpload = async () => {
-    if (stagedFiles.length === 0) {
-      alert("No files selected for upload.")
-      return
-    }
-
     const formData = new FormData()
     // Append each file to the FormData object
-    Array.from(stagedFiles).forEach((file) => {
-      // Ignore and remove large and not supported files
-      // File size check, 20 MB is the limit
-      const fileSizeInMB = file?.size / (1024 * 1024)
-      if (fileSizeInMB > 20) {
-        // todo maybe show toast here
-        // File is too large
-        console.error(`Ignored ${file.name} as file is too large`)
-        return
-      } else if (!isSupportedFileType(file?.type)) {
-        // todo file is not supported
-        console.error(`Ignored ${file.name} as file type is not supported`)
-        return
-      } else {
-        formData.append("files", file)
-      }
+    stagedFiles.forEach((file) => {
+      formData.append("files", file)
     })
 
     try {
@@ -444,15 +462,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
       const result = await response.json()
       if (response.ok) {
-        // addFilesToChat(result.files) // Add uploaded files to chat
         setStagedFiles([]) // Clear the staging area
         return result.attachmentsMetadata
       } else {
-        alert("File upload failed. Please try again.")
+        console.error("File upload failed:")
       }
     } catch (error) {
       console.error("Error uploading files:", error)
-      alert("An unexpected error occurred.")
+      throw error
     }
   }
 
