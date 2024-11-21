@@ -87,7 +87,7 @@ const Index = () => {
     if (query.trim()) {
       navigate({
         to: "/search",
-        search: { query: encodeURIComponent(query.trim()) },
+        search: { query: encodeURIComponent(decodeURIComponent(query.trim())) },
       })
     }
   }

@@ -79,7 +79,15 @@ export const Search = ({ user, workspace }: IndexProps) => {
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
-  const [query, setQuery] = useState(search.query || "") // State to hold the search query
+  const navigate = useNavigate({ from: "/search" })
+  // TODO: debug the react warning
+  // Cannot update a component (`MatchesInner`)
+  if(!search.query) {
+    navigate({
+      to: "/",
+    })
+  }
+  const [query, setQuery] = useState(decodeURIComponent(search.query || "")) // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
@@ -90,7 +98,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
 
-  const navigate = useNavigate({ from: "/search" })
 
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
