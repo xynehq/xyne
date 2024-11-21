@@ -1,5 +1,3 @@
-// aim is to build context based on the internal types
-// translate the company to the AI
 import type { PublicUserWorkspace } from "@/db/schema"
 import {
   fileSchema,

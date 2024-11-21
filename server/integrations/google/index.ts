@@ -1356,7 +1356,9 @@ export const googlePDFsVespa = async (
         docs = await loader.load()
 
         if (!docs || docs.length === 0) {
-          Logger.error(`Could not get content for file: ${pdf.name}. Skipping it`)
+          Logger.error(
+            `Could not get content for file: ${pdf.name}. Skipping it`,
+          )
           await deleteDocument(pdfPath)
           return null
         }

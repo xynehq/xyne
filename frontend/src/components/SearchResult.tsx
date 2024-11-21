@@ -42,7 +42,7 @@ export const SearchResult = ({
         {result.chunks_summary &&
           result.chunks_summary?.length &&
           result.chunks_summary
-            .slice(0, 2)
+            .slice(0, 1)
             .map((summary) => <HighlightedText chunk_summary={summary} />)}
       </div>
     )
