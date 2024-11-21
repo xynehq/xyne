@@ -10,7 +10,7 @@ interface ChatBoxProps {
   handleFileSelection: (event: any) => void // todo fix any
 }
 
-const getFileTypeName = (fileType: string): string => {
+export const getFileTypeName = (fileType: string): string => {
   if (fileType === "application/pdf") {
     return "PDF"
   } else {
@@ -46,7 +46,7 @@ export const ChatBox = ({
               {stagedFiles.map((file, index) => (
                 <li
                   key={index}
-                  className="flex items-center p-2 border rounded border-gray-300"
+                  className="flex items-center p-2 border rounded border-gray-300 min-w-[200px] max-w-[200px]"
                 >
                   <div className="flex items-center justify-center w-8 h-8 mr-2 bg-gray-100 rounded">
                     <File className="text-black" size={16} />
@@ -60,7 +60,7 @@ export const ChatBox = ({
                     </span>
                   </div>
                   <button
-                    className="ml-4 text-sm"
+                    className="ml-auto text-sm"
                     onClick={() => handleFileRemove(index)}
                   >
                     <Trash2

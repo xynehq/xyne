@@ -8,13 +8,13 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Eye, EyeOff } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Eye, EyeOff, File } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
-import { ChatBox } from "@/components/ChatBox"
+import { ChatBox, getFileTypeName } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
@@ -153,7 +153,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     // Append the user's message to the chat
     setMessages((prevMessages) => [
       ...prevMessages,
-      { messageRole: "user", message: messageToSend },
+      {
+        messageRole: "user",
+        message: messageToSend,
+        attachments: uploadedFilesMetadata,
+      },
     ])
 
     setIsStreaming(true)
@@ -510,6 +514,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   <ChatMessage
                     key={index}
                     message={message.message}
+                    attachments={message.attachments}
                     isUser={message.messageRole === "user"}
                     responseDone={true}
                     citations={message?.sources?.map((c: Citation) => c.url)}
@@ -635,6 +640,7 @@ const Sources = ({
 
 const ChatMessage = ({
   message,
+  attachments,
   isUser,
   responseDone,
   isRetrying,
@@ -647,6 +653,7 @@ const ChatMessage = ({
   sourcesVisible,
 }: {
   message: string
+  attachments: any
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -688,7 +695,33 @@ const ChatMessage = ({
       className={`${isUser ? "max-w-[75%]" : ""} rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
-        message
+        <>
+          {attachments?.length > 0 && (
+            <div className="flex-col w-full">
+              <ul className="flex flex-col space-y-2 pb-2">
+                {attachments.map((attachment, index) => (
+                  <li
+                    key={index}
+                    className="flex items-center p-2 border rounded border-gray-300 min-w-[200px] max-w-[300px]"
+                  >
+                    <div className="flex items-center justify-center w-8 h-8 mr-2 bg-gray-100 rounded">
+                      <File className="text-black" size={16} />
+                    </div>
+                    <div className="flex flex-col flex-1">
+                      <span className="text-sm font-medium text-gray-700 truncate max-w-[100px]">
+                        {attachment.name}
+                      </span>
+                      <span className="text-xs font-medium text-gray-700 truncate max-w-[100px]">
+                        {getFileTypeName(attachment.type) ?? null}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {message}
+        </>
       ) : (
         <div
           className={`flex flex-col mt-[40px] ${citations.length ? "mb-[35px]" : ""}`}
