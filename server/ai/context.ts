@@ -1,18 +1,23 @@
 import type { PublicUserWorkspace } from "@/db/schema"
 import {
+  eventSchema,
   fileSchema,
   mailSchema,
   userSchema,
   VespaSearchResultsSchema,
+  type VespaEventSearch,
   type VespaFileSearch,
   type VespaMailSearch,
   type VespaUser,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
+import pc from "picocolors"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
+
+const maxSummaryChunks = 3
 
 // Function for handling file context
 const constructFileContext = (
@@ -24,13 +29,12 @@ Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
 Created: ${getRelativeTime(fields.createdAt)}
 Updated At: ${getRelativeTime(fields.updatedAt)}
-${fields.url ? `Link: ${fields.url}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.join("\n")}` : ""}
-vespa relevance score: ${relevance}`
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+\nvespa relevance score: ${relevance}\n`
 }
 
 // TODO: tell if workspace that this is an employee
@@ -60,7 +64,42 @@ ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.join("\n")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+const constructEventContext = (
+  fields: VespaEventSearch,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
+Entity: ${fields.entity}
+Event Name: ${fields.name ? `Name: ${fields.name}` : ""}
+Description: ${fields.description ? fields.description : ""}
+Base URL: ${fields.baseUrl ? fields.baseUrl : "No base URL"}
+Status: ${fields.status ? fields.status : "Status unknown"}
+Location: ${fields.location ? fields.location : "No location specified"}
+Created: ${getRelativeTime(fields.createdAt)}
+Updated: ${getRelativeTime(fields.updatedAt)}
+Start Time: ${fields.startTime && getRelativeTime(fields.startTime)}
+End Time: ${fields.endTime && getRelativeTime(fields.endTime)}
+Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
+Attendees: ${
+    fields.attendeesNames && fields.attendeesNames.length
+      ? fields.attendeesNames.join(", ")
+      : "No attendees listed"
+  }
+Recurrence: ${
+    fields.recurrence && fields.recurrence.length
+      ? fields.recurrence.join(", ")
+      : "No recurrence pattern specified"
+  }
+Joining Link: ${fields.joiningLink ? fields.joiningLink : "No meeting link available"}
+Cancelled Instances: ${
+    fields.cancelledInstances && fields.cancelledInstances.length
+      ? fields.cancelledInstances.join(", ")
+      : "No cancelled instances"
+  }
 vespa relevance score: ${relevance}`
 }
 
@@ -114,6 +153,57 @@ ${fields.labels ? `Mailbox Labels: ${fields.labels.join(", ")}` : ""}
 vespa relevance score: ${relevance}`
 }
 
+const constructFileColoredContext = (
+  fields: VespaFileSearch,
+  relevance: number,
+): string => {
+  return `${pc.green("App")}: ${fields.app}
+${pc.green("Entity")}: ${fields.entity}
+${fields.title ? `${pc.green("Title")}: ${fields.title}` : ""}
+${pc.green("Created")}: ${getRelativeTime(fields.createdAt)}
+${pc.green("Updated At")}: ${getRelativeTime(fields.updatedAt)}
+${fields.url ? `${pc.green("Link")}: ${pc.cyan(fields.url)}` : ""}
+${fields.owner ? `${pc.green("Owner")}: ${fields.owner}` : ""}
+${fields.ownerEmail ? `${pc.green("Owner Email")}: ${fields.ownerEmail}` : ""}
+${fields.mimeType ? `${pc.green("Mime Type")}: ${fields.mimeType}` : ""}
+${fields.permissions ? `${pc.green("Permissions")}: ${fields.permissions.join(", ")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}
+\n${pc.green("vespa relevance score")}: ${relevance}`
+}
+
+const constructUserColoredContext = (
+  fields: VespaUser,
+  relevance: number,
+): string => {
+  return `${pc.green("App")}: ${fields.app}
+${pc.green("Entity")}: ${fields.entity}
+${pc.green("Added")}: ${getRelativeTime(fields.creationTime)}
+${fields.name ? `${pc.green("Name")}: ${fields.name}` : ""}
+${fields.email ? `${pc.green("Email")}: ${fields.email}` : ""}
+${fields.gender ? `${pc.green("Gender")}: ${fields.gender}` : ""}
+${fields.orgJobTitle ? `${pc.green("Job Title")}: ${fields.orgJobTitle}` : ""}
+${fields.orgDepartment ? `${pc.green("Department")}: ${fields.orgDepartment}` : ""}
+${fields.orgLocation ? `${pc.green("Location")}: ${fields.orgLocation}` : ""}
+\n${pc.green("vespa relevance score")}: ${relevance}`
+}
+
+const constructMailColoredContext = (
+  fields: VespaMailSearch,
+  relevance: number,
+): string => {
+  return `${pc.green("App")}: ${fields.app}
+${pc.green("Entity")}: ${fields.entity}
+${pc.green("Sent")}: ${getRelativeTime(fields.timestamp)}
+${fields.subject ? `${pc.green("Subject")}: ${fields.subject}` : ""}
+${fields.from ? `${pc.green("From")}: ${fields.from}` : ""}
+${fields.to ? `${pc.green("To")}: ${fields.to.join(", ")}` : ""}
+${fields.cc ? `${pc.green("Cc")}: ${fields.cc.join(", ")}` : ""}
+${fields.bcc ? `${pc.green("Bcc")}: ${fields.bcc.join(", ")}` : ""}
+${fields.labels ? `${pc.green("Labels")}: ${fields.labels.join(", ")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}
+\n${pc.green("vespa relevance score")}: ${relevance}`
+}
+
 type AiMetadataContext = string
 export const answerMetadataContextMap = (
   searchResult: z.infer<typeof VespaSearchResultsSchema>,
@@ -138,6 +228,29 @@ export const answerMetadataContextMap = (
   }
 }
 
+export const answerColoredContextMap = (
+  searchResult: z.infer<typeof VespaSearchResultsSchema>,
+): string => {
+  if (searchResult.fields.sddocname === fileSchema) {
+    return constructFileColoredContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === userSchema) {
+    return constructUserColoredContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === mailSchema) {
+    return constructMailColoredContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
+  } else {
+    throw new Error("Invalid search result type")
+  }
+}
+
 type AiContext = string
 export const answerContextMap = (
   searchResult: z.infer<typeof VespaSearchResultsSchema>,
@@ -148,6 +261,8 @@ export const answerContextMap = (
     return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
     return constructMailContext(searchResult.fields, searchResult.relevance)
+  } else if (searchResult.fields.sddocname === eventSchema) {
+    return constructEventContext(searchResult.fields, searchResult.relevance)
   } else {
     throw new Error("Invalid search result type")
   }
@@ -157,9 +272,36 @@ export const cleanContext = (text: string): string => {
   return cleanDocs(cleanVespaHighlights(text))
 }
 
+export const cleanColoredContext = (text: string): string => {
+  return cleanColoredDocs(cleanVespaHighlights(text))
+}
+
 const cleanVespaHighlights = (text: string): string => {
   const hiTagPattern = /<\/?hi>/g
   return text.replace(hiTagPattern, "").trim()
+}
+const cleanColoredDocs = (text: string): string => {
+  const urlPattern =
+    /!\[.*?\]\(https:\/\/lh7-rt\.googleusercontent\.com\/docsz\/[a-zA-Z0-9-_?=&]+\)/g
+  let cleanedText = text.replace(urlPattern, "")
+
+  // ........
+  const extendedEllipsisPattern = /[…\.\s]{2,}/g
+  cleanedText = cleanedText.replace(extendedEllipsisPattern, " ")
+  // .0.0.0.0.0.0.0.0
+  const repetitiveDotZeroPattern = /(?:\.0)+(\.\d+)?/g
+  cleanedText = cleanedText.replace(repetitiveDotZeroPattern, "")
+
+  // Remove control characters
+  // Adjusted control characters pattern to exclude ANSI escape codes (\x1B)
+  const controlCharsPattern = /[\x00-\x08\x0E-\x1A\x1C-\x1F\x7F-\x9F]/g
+  cleanedText = cleanedText.replace(controlCharsPattern, "")
+  // Remove invalid or incomplete UTF characters
+  //  and �
+  const invalidUtfPattern = /[\uE907\uFFFD]/g
+  cleanedText = cleanedText.replace(invalidUtfPattern, "")
+
+  return cleanedText
 }
 
 // google docs need lots of cleanup

@@ -52,6 +52,7 @@
     "partial-json": "^0.1.7",
     "pdf-parse": "^1.1.1",
     "pg-boss": "^10.1.3",
+    "picocolors": "^1.1.1",
     "pino": "^9.4.0",
     "pino-http": "^10.3.0",
     "pino-pretty": "^11.2.2",
