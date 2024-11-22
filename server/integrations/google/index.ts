@@ -1192,7 +1192,7 @@ export const getSheetsListFromOneSpreadsheet = async (
     }
 
     const sheetDataToBeIngested = {
-      title: spreadsheet.name!,
+      title: `/ ${sheet?.sheetTitle}`,
       url: spreadsheet.webViewLink ?? "",
       app: Apps.GoogleDrive,
       // TODO Document it eveyrwhere
