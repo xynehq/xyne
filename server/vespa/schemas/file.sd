@@ -143,37 +143,42 @@ schema file {
       expression: closeness(field, chunk_embeddings)
     }
 
-    function cos_sim() {
-      expression: cos(distance(field, chunk_embeddings))
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
+    }
+
+    function scaled_bm25_chunks() {
+      expression: scale(bm25(chunks))
+    }
+
+    function scaled_bm25_title() {
+      expression: scale(bm25(title))
+    }
+
+    function combined_bm25() {
+      expression: 0.3*scaled_bm25_chunks + 0.8*scaled_bm25_title
     }
 
     # First phase combines BM25 (title and chunks) and vector similarity (chunks)
     first-phase {
-      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) + bm25(title)))
+      expression: (0.5 * chunk_vector_score) + combined_bm25
     }
 
-    second-phase {
-      expression: cos_sim
-      rerank-count: 2000
-    }
 
     global-phase {
       expression {
-        reciprocal_rank_fusion(
-                chunk_vector_score,
-                bm25(chunks),
-                bm25(title),
-                cos_sim
-            )
+        (
+          (0.5 * normalize_linear(chunk_vector_score)) +
+          (max(scaled_bm25_title,scaled_bm25_chunks))
+        )
       }
       rerank-count: 1000
     }
 
     match-features {
       chunk_vector_score
-      bm25(chunks)
-      bm25(title)
-      cos_sim
+      scaled_bm25_chunks
+      scaled_bm25_title
     }
   }
 
