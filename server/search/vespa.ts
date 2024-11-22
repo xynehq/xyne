@@ -380,7 +380,7 @@ const HybridDefaultProfile = (
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
             ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-            and permissions contains @email
+            and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS')
             ${appOrEntityFilter}
           )
           or
@@ -442,7 +442,7 @@ const HybridDefaultProfileAppEntityCounts = (
     profile: "default",
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email)
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS'))
             or
             (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
@@ -513,6 +513,7 @@ export const searchVespa = async (
   offset?: number,
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
+  mailLabels?: string[],
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
