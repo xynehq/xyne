@@ -5,7 +5,7 @@ services:
   # image: xyne
   # container_name: xyne-app
   # build:
-  #   context: .
+  #   context: ..
   #   dockerfile: Dockerfile
   # ports:
   #   - "3000:3000"
