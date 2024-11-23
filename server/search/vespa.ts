@@ -320,18 +320,43 @@ const HybridDefaultProfile = (
   app: Apps | null,
   entity: Entity | null,
   profile: RankProfile = "default",
-  timestamp: number | null,
+  timestampRange?: { to: number; from: number } | null,
   excludedIds?: string[],
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
-  if (timestamp) {
-    fileTimestamp = `updatedAt >= ${timestamp}`
-    mailTimestamp = `timestamp >= ${timestamp}`
-    userTimestamp = `creationTime >= ${timestamp}`
+
+  if (timestampRange && !timestampRange.from && !timestampRange.to) {
+    throw new Error("Invalid timestamp range")
   }
+
+  let fileTimestampConditions: string[] = []
+  let mailTimestampConditions: string[] = []
+  let userTimestampConditions: string[] = []
+
+  if (timestampRange && timestampRange.from) {
+    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
+    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
+    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
+  }
+  if (timestampRange && timestampRange.to) {
+    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
+    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
+    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
+  }
+
+  if (timestampRange && timestampRange.from && timestampRange.to) {
+    fileTimestamp = fileTimestampConditions.join(" and ")
+    mailTimestamp = mailTimestampConditions.join(" and ")
+    userTimestamp = userTimestampConditions.join(" and ")
+  } else {
+    fileTimestamp = fileTimestampConditions.join("")
+    mailTimestamp = mailTimestampConditions.join("")
+    userTimestamp = userTimestampConditions.join("")
+  }
+
   let appOrEntityFilter =
     `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
 
@@ -354,21 +379,21 @@ const HybridDefaultProfile = (
               or
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            ${timestamp ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-            and permissions contains @email
+            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+            and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS')
             ${appOrEntityFilter}
           )
           or
           (
             ({targetHits:${hits}}userInput(@query))
-            ${timestamp ? `and ${userTimestamp}` : ""}
+            ${timestampRange ? `and ${userTimestamp}` : ""}
             ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter}
           )
           or
           (
             ({targetHits:${hits}}userInput(@query))
             and owner contains @email
-            ${timestamp ? `and ${userTimestamp}` : ""}
+            ${timestampRange ? `and ${userTimestamp}` : ""}
             ${appOrEntityFilter}
           )
         )
@@ -378,25 +403,50 @@ const HybridDefaultProfile = (
 
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
-  timestamp: number | null,
+  timestampRange: { to: number; from: number } | null,
 ): YqlProfile => {
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
-  if (timestamp) {
-    fileTimestamp = `updatedAt >= ${timestamp}`
-    mailTimestamp = `timestamp >= ${timestamp}`
-    userTimestamp = `creationTime >= ${timestamp}`
+
+  if (timestampRange && !timestampRange.from && !timestampRange.to) {
+    throw new Error("Invalid timestamp range")
   }
+
+  let fileTimestampConditions: string[] = []
+  let mailTimestampConditions: string[] = []
+  let userTimestampConditions: string[] = []
+
+  if (timestampRange && timestampRange.from) {
+    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
+    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
+    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
+  }
+  if (timestampRange && timestampRange.to) {
+    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
+    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
+    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
+  }
+
+  if (timestampRange && timestampRange.from && timestampRange.to) {
+    fileTimestamp = fileTimestampConditions.join(" and ")
+    mailTimestamp = mailTimestampConditions.join(" and ")
+    userTimestamp = userTimestampConditions.join(" and ")
+  } else {
+    fileTimestamp = fileTimestampConditions.join("")
+    mailTimestamp = mailTimestampConditions.join("")
+    userTimestamp = userTimestampConditions.join("")
+  }
+
   return {
     profile: "default",
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestamp ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email)
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS'))
             or
-            (({targetHits:${hits}}userInput(@query)) ${timestamp ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
+            (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestamp ? `and ${userTimestamp} ` : ""})
+            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestampRange ? `and ${userTimestamp} ` : ""})
             limit 0
             | all(
                 group(app) each(
@@ -411,11 +461,13 @@ export const groupVespaSearch = async (
   query: string,
   email: string,
   limit = config.page,
-  lastUpdated?: string,
+  timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
   const url = `${vespaEndpoint}/search/`
-  const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
-  let { yql, profile } = HybridDefaultProfileAppEntityCounts(limit, timestamp)
+  let { yql, profile } = HybridDefaultProfileAppEntityCounts(
+    limit,
+    timestampRange ?? null,
+  )
 
   const hybridDefaultPayload = {
     yql,
@@ -459,19 +511,20 @@ export const searchVespa = async (
   entity: Entity | null,
   limit = config.page,
   offset?: number,
-  lastUpdated?: string,
+  timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
+  mailLabels?: string[],
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
   // Determine the timestamp cutoff based on lastUpdated
-  const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
     entity,
     "default",
-    timestamp,
+    timestampRange,
     excludedIds,
   )
 
@@ -927,7 +980,7 @@ export const searchUsersByNamesAndEmails = async (
 /**
  * Helper function to calculate the timestamp based on LastUpdated value.
  */
-const getTimestamp = (lastUpdated: string): number | null => {
+export const getTimestamp = (lastUpdated: string): number | null => {
   const now = new Date().getTime() // Convert current time to epoch seconds
   switch (lastUpdated) {
     case "pastDay":

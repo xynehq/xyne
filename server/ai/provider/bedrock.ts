@@ -31,6 +31,11 @@ export enum Models {
   // Bedrock_Claude = "",
   Gpt_4o = "gpt-4o",
   Gpt_4o_mini = "gpt-4o-mini",
+
+  CohereCmdRPlus = "cohere.command-r-plus-v1:0",
+  CohereCmdR = "cohere.command-r-v1:0",
+  Claude_3_5_SonnetV2 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+  Claude_3_5_Haiku = "",
 }
 
 type Cost = {
@@ -40,7 +45,7 @@ type Cost = {
 
 export const modelDetailsMap: Record<
   string,
-  { name: string; cost: { onDemand: Cost; batch: Cost } }
+  { name: string; cost: { onDemand: Cost; batch?: Cost } }
 > = {
   [Models.Llama_3_2_1B]: {
     name: "Llama 3.2 Instruct (1B)",
@@ -133,6 +138,50 @@ export const modelDetailsMap: Record<
       },
     },
   },
+  [Models.CohereCmdRPlus]: {
+    name: "Command R+",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0025,
+        pricePerThousandOutputTokens: 0.01,
+      },
+    },
+  },
+  [Models.CohereCmdR]: {
+    name: "Command R",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.00015,
+        pricePerThousandOutputTokens: 0.0006,
+      },
+    },
+  },
+  [Models.Claude_3_5_SonnetV2]: {
+    name: "Claude 3.5 Sonnet v2",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.0015,
+        pricePerThousandOutputTokens: 0.0075,
+      },
+    },
+  },
+  [Models.Claude_3_5_Haiku]: {
+    name: "Claude 3.5 Haiku",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.001,
+        pricePerThousandOutputTokens: 0.005,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.0005,
+        pricePerThousandOutputTokens: 0.0025,
+      },
+    },
+  },
 }
 
 export const calculateCost = (
@@ -176,7 +225,7 @@ enum AIProviders {
   Ollama = "ollama",
 }
 
-interface ConverseResponse {
+export interface ConverseResponse {
   text?: string
   metadata?: any
   cost?: number
@@ -494,7 +543,7 @@ const BedrockClient = new BedrockRuntimeClient({
 const bedrockProvider = new Provider(BedrockClient, AIProviders.AwsBedrock)
 
 const openAIClient = new OpenAI({
-  apiKey: OpenAIKey, // This is the default and can be omitted
+  apiKey: OpenAIKey,
 })
 
 const openaiProvider = new Provider(openAIClient, AIProviders.OpenAI)
@@ -515,6 +564,10 @@ const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Llama_3_1_8B]: AIProviders.AwsBedrock,
   [Models.Gpt_4o]: AIProviders.OpenAI,
   [Models.Gpt_4o_mini]: AIProviders.OpenAI,
+  [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
+  [Models.CohereCmdR]: AIProviders.AwsBedrock,
+  [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
+  [Models.Claude_3_5_Haiku]: AIProviders.AwsBedrock,
 }
 
 const getProviderByModel = (modelId: Models): LLMProvider => {
@@ -1046,4 +1099,239 @@ ${userCtx}
     : [baseMessage]
 
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const analyzeInitialResultsOrRewriteV2 = (
+  userQuery: string,
+  context: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  const systemPrompt = `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
+
+**Context of user asking the query:**
+${userCtx}
+
+**Instructions:**
+1. **Primary Goal:** Provide a direct answer using the search results if possible, formatted in Markdown with inline numeric citations like [0], [1], etc.
+   - Citations must directly support key facts or claims, used sparingly.
+   - If there is recent information on the topic, include it just in case it could add useful context.
+   - Inline citations should immediately follow the specific claim they support.
+   - Use square brackets with 0-based indices, matching the index in the "citations" array.
+   - Do not include citations for general knowledge or derived conclusions.
+   - For answer based on system prompt you do not need citation
+   - Only add citation for text, don't add it to already linked text
+   - Do not answer if you do not have valid context and goo for better query rewrites
+2. **If Unable to Answer:**
+   - Generate 2-3 alternative search queries to improve results, avoiding any mention of temporal aspects as these will be handled separately.
+   - Rewrite the query removing the temporal nature of the user's query.
+   - The first query should be a very contracted version of the original query.
+   - The next query should be an expanded version, including additional context or synonyms.
+   - Identify any temporal expressions in the user's query (e.g., "2 months ago," "since last week").
+   - Compute a date range based on these expressions:
+     - **Start Date:** Calculate based on the temporal expression relative to the current date.
+     - **End Date:**
+       - **If the temporal expression specifies an exact period** (e.g., "2 months ago," "last quarter"): Set the end date to the current date (2024-11-10).
+       - **If the temporal expression implies an open-ended period** (e.g., "since last month," "from January 2024"): Set the end date to null.
+   - Use ISO 8601 format (YYYY-MM-DD) for dates.
+3. **Mutual Exclusivity:** Only one of "answer" or "rewritten_queries" should be present.
+   - If an answer is provided, set "rewritten_queries" to null.
+   - If an answer is not provided, set "answer" to null and provide "rewritten_queries" along with the "date_range".
+
+**Return Format:**
+{
+    "answer": "Your Markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent.",
+    "citations": number[],  // Array of context indices actually used in the answer
+    "rewrittenQueries": string[] | null,
+    "dateRange": {
+        "start": string | null,  // "YYYY-MM-DD"
+        "end": string | null     // "YYYY-MM-DD" or null
+    }
+}`
+  params.systemPrompt = systemPrompt
+
+  const baseMessage: Message = {
+    role: MessageRole.User as const,
+    content: [
+      {
+        text: `User query: ${userQuery}
+      Based on the following context, provide an answer in JSON format with citations
+      Context:
+      ${context}`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+const rewriteQuerySystemPrompt = (hasContext: boolean) => `
+You are an assistant that rewrites user queries into concise statements suitable for search. Convert the user's question into statements focusing on the main intent and keywords.
+
+Instructions:
+- Generate multiple possible rewritten queries that capture different interpretations.
+- When the user refers to themselves using first-person pronouns like "I", "my", or "me", create rewritten queries by replacing these pronouns with the user's name or email from the user context. Ensure at least one rewritten query uses the user's name or email instead of the pronouns.
+- Focus on the core intent and important keywords.
+- Remove any unnecessary words or phrases.
+${hasContext ? `- Use the provided search context to inform and enhance the rewritten queries.` : ""}
+
+Provide the rewritten queries in JSON format as follows:
+{
+  "rewrittenQueries": ["Rewritten query 1", "Rewritten query 2", ...]
+}
+`
+
+export const rewriteQuery = async (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+  searchContext?: string,
+): Promise<{ rewrittenQueries: string[]; cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  if (!params.systemPrompt) {
+    params.systemPrompt = rewriteQuerySystemPrompt(!!searchContext)
+  }
+
+  params.json = true
+
+  const messages: Message[] = [
+    {
+      role: MessageRole.User as const,
+      content: [
+        {
+          text: `User Query: "${query}"
+User Context: "${userCtx}"${searchContext ? `\nSearch Context:\n${searchContext}` : ""}`,
+        },
+      ],
+    },
+  ]
+
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+
+  if (text) {
+    const jsonVal = jsonParseLLMOutput(text)
+    return {
+      rewrittenQueries: jsonVal.rewrittenQueries.map((q: string) => q.trim()),
+      cost: cost!,
+    }
+  } else {
+    throw new Error("Failed to rewrite query")
+  }
+}
+
+function getDateForAI() {
+  const today = new Date()
+  const options: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }
+  return today.toLocaleDateString("en-GB", options)
+}
+
+const optimizedPrompt = (ctx: string) => `
+You are an assistant that provides concise and accurate answers to a user's question by utilizing the provided context.
+
+**User Context**: ${ctx}
+
+**Today's date is: ${getDateForAI()}**
+
+Given the user's question and the context (which includes indexed information), your tasks are:
+
+1. **Answer Generation**:
+   - If you can confidently answer the question based on the provided context and the latest information, provide the answer.
+   - Only use the most recent information available.
+   - If you are not sure, do not provide an answer.
+   - Include the indices of the supporting evidence in "usefulIndex".
+
+2. **Search Refinement**:
+   - If you cannot fully answer, suggest new search queries in the "searchParams" field.
+   - Keep search queries concise and focused on key terms.
+   - Only specify a time range if it's essential.
+
+3. **Methodology**:
+   - **Analyze the User's Query** to identify key concepts.
+   - **Evaluate the Context** to check for sufficient and recent information.
+   - **Decide on Actions** based on the completeness of the answer.
+
+4. **Context Management**:
+   - Specify only the indices that are relevant.
+   - Discard irrelevant or outdated context entries.
+Provide your response in the following JSON format:
+
+{
+  "answer": "<answer or null>",
+  "citations": "<citations or null>",
+  "searchParams": [
+    {
+      "query": "<search query>",
+      "timeRange": {
+        "from": "<YYYY-MM-DD>",
+        "to": "<YYYY-MM-DD>"
+      } or null,
+      "needsNextPage": <true or false>
+    }
+  ],
+  "usefulIndex": [<index1>, <index2>]
+}
+`
+
+export const SearchAnswerResponse = z.object({
+  answer: z.string().nullable(),
+  searchParams: z.array(
+    z.object({
+      query: z.string(),
+      timeRange: z
+        .object({
+          from: z.string(), // Expected format: "YYYY-MM-DD"
+          to: z.string(),
+        })
+        .nullable()
+        .optional(),
+      needsNextPage: z.boolean().optional(),
+    }),
+  ),
+  usefulIndex: z.array(z.number()),
+})
+
+export const answerOrSearch = (
+  userQuery: string,
+  context: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = BigModel
+    }
+
+    params.systemPrompt = optimizedPrompt(userCtx)
+    params.json = true
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [
+        {
+          text: `User Query: ${userQuery}\n\nAfter searching Context:\n${context}\n it can have mistakes so be careful`,
+        },
+      ],
+    }
+
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    return getProviderByModel(params.modelId).converseStream(messages, params)
+  } catch (error) {
+    throw error
+  }
 }

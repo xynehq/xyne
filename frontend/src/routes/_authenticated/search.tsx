@@ -79,7 +79,15 @@ export const Search = ({ user, workspace }: IndexProps) => {
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
-  const [query, setQuery] = useState(search.query || "") // State to hold the search query
+  const navigate = useNavigate({ from: "/search" })
+  // TODO: debug the react warning
+  // Cannot update a component (`MatchesInner`)
+  if (!search.query) {
+    navigate({
+      to: "/",
+    })
+  }
+  const [query, setQuery] = useState(decodeURIComponent(search.query || "")) // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
   const [groups, setGroups] = useState<Groups | null>(null)
@@ -89,8 +97,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-
-  const navigate = useNavigate({ from: "/search" })
 
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
@@ -438,7 +444,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
               </div>
             )}
             {!!results?.length && (
-              <div className="flex flex-col w-full max-w-3xl">
+              <div className="flex flex-col w-full max-w-3xl mb-[52px]">
                 <div className="w-full max-w-3xl">
                   {results.map((result, index) => (
                     <SearchResult key={index} result={result} index={index} />
@@ -451,7 +457,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
               filterPageSize > page &&
               results.length < filterPageSize && (
                 <button
-                  className="flex flex-row text-[#464B53] flex-grow mr-[60px] items-center justify-center pb-[17px] mt-[32px] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
+                  className="flex flex-row text-[#464B53] mr-[60px] items-center justify-center pb-[17px] mt-[auto] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
                   onClick={handleNext}
                 >
                   <ChevronDown

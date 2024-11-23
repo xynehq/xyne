@@ -768,7 +768,7 @@ export const MessageApiV2 = async (c: Context) => {
                     null,
                     5,
                     0,
-                    "",
+                    null,
                     results.root.children.map(
                       (v) =>
                         (v as z.infer<typeof VespaSearchResultsSchema>).fields
@@ -1113,7 +1113,7 @@ export const MessageRetryApi = async (c: Context) => {
                       null,
                       5,
                       0,
-                      "",
+                      null,
                       results.root.children.map(
                         (v) =>
                           (v as z.infer<typeof VespaSearchResultsSchema>).fields
