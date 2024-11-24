@@ -728,17 +728,14 @@ export const handleGoogleOAuthChanges = async (
   }
 }
 
-const insertEventIntoVespa = async (
-  event: calendar_v3.Schema$Event,
-) => {
+const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
   const { baseUrl, joiningUrl } = getJoiningLink(event)
-  const { attendeesInfo, attendeesEmails, attendeesNames } = getAttendeesOfEvent(
-    event.attendees ?? [],
-  )
+  const { attendeesInfo, attendeesEmails, attendeesNames } =
+    getAttendeesOfEvent(event.attendees ?? [])
   const { attachmentsInfo, attachmentFilenames } = getAttachments(
     event.attachments ?? [],
   )
-  const {isDefaultStartTime, startTime} = getEventStartTime(event)
+  const { isDefaultStartTime, startTime } = getEventStartTime(event)
   const eventToBeIngested = {
     docId: event.id ?? "",
     name: event.summary ?? "",
@@ -767,14 +764,13 @@ const insertEventIntoVespa = async (
     recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
     baseUrl,
     joiningLink: joiningUrl,
-    permissions: getUniqueEmails([event.organizer?.email ?? "", ...attendeesEmails]),
+    permissions: getUniqueEmails([
+      event.organizer?.email ?? "",
+      ...attendeesEmails,
+    ]),
     cancelledInstances: [],
-    defaultStartTime: isDefaultStartTime
+    defaultStartTime: isDefaultStartTime,
   }
-
-  console.log(`EventToBeIngested`)
-  console.log(eventToBeIngested)
-  console.log(`EventToBeIngested\n`)
 
   await insert(eventToBeIngested, eventSchema)
 }
