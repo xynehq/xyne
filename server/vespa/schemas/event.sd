@@ -50,12 +50,6 @@ schema event {
             attribute: fast-search
         }
 
-        # primary email
-        field email type string {
-            indexing: index | attribute | summary
-            index: enable-bm25
-        }
-
         field app type string {
             indexing: attribute | summary
             attribute: fast-search
@@ -152,7 +146,7 @@ schema event {
     }
 
     fieldset default {
-        fields: name, description, attachmentFilenames, attendeesNames, app, email, url, baseUrl
+        fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl
     }
 
     rank-profile default {

@@ -64,6 +64,7 @@ import {
   getPresentationToBeIngested,
   getSpreadsheet,
   getTextFromEventDescription,
+  getUniqueEmails,
   insertContact,
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
@@ -728,10 +729,9 @@ export const handleGoogleOAuthChanges = async (
 
 const insertEventIntoVespa = async (
   event: calendar_v3.Schema$Event,
-  userEmail: string,
 ) => {
   const { baseUrl, joiningUrl } = getJoiningLink(event)
-  const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
+  const { attendeesInfo, attendeesEmails, attendeesNames } = getAttendeesOfEvent(
     event.attendees ?? [],
   )
   const { attachmentsInfo, attachmentFilenames } = getAttachments(
@@ -746,7 +746,6 @@ const insertEventIntoVespa = async (
     location: event.location ?? "",
     createdAt: new Date(event.created!).getTime(),
     updatedAt: new Date(event.updated!).getTime(),
-    email: userEmail,
     app: Apps.GoogleCalendar,
     entity: CalendarEntity.Event,
     creator: {
@@ -766,9 +765,13 @@ const insertEventIntoVespa = async (
     recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
     baseUrl,
     joiningLink: joiningUrl,
-    permissions: [event.organizer?.email ?? ""],
+    permissions: getUniqueEmails([event.organizer?.email ?? "", ...attendeesEmails]),
     cancelledInstances: [],
   }
+
+  console.log(`EventToBeIngested`)
+  console.log(eventToBeIngested)
+  console.log(`EventToBeIngested\n`)
 
   await insert(eventToBeIngested, eventSchema)
 }

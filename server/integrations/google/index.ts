@@ -314,14 +314,19 @@ export const getAttendeesOfEvent = (
   allAttendes: calendar_v3.Schema$EventAttendee[],
 ) => {
   if (allAttendes.length === 0) {
-    return { attendeesInfo: [], attendeesNames: [] }
+    return { attendeesInfo: [], attendeesEmails: [], attendeesNames: [] }
   }
 
   const attendeesInfo: { email: string; displayName: string }[] = []
   const attendeesNames: string[] = []
+  const attendeesEmails: string[] = []
   for (const attendee of allAttendes) {
     if (attendee.displayName) {
       attendeesNames.push(attendee.displayName ?? "")
+    }
+
+    if (attendee.email) {
+      attendeesEmails.push(attendee.email)
     }
 
     const oneAttendee = { email: "", displayName: "" }
@@ -333,7 +338,7 @@ export const getAttendeesOfEvent = (
     attendeesInfo.push(oneAttendee)
   }
 
-  return { attendeesInfo, attendeesNames }
+  return { attendeesInfo, attendeesEmails, attendeesNames }
 }
 
 export const getAttachments = (
@@ -361,6 +366,10 @@ export const getAttachments = (
   return { attachmentsInfo, attachmentFilenames }
 }
 
+export const getUniqueEmails = (permissions: string[]): string[] => {
+    return Array.from(new Set(permissions.filter(email => email.trim() !== "")));
+}
+
 export const eventFields =
   "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
 
@@ -368,7 +377,6 @@ export const maxCalendarEventResults = 2500
 
 const insertCalendarEvents = async (
   client: GoogleClient,
-  userEmail: string,
 ) => {
   let nextPageToken = ""
   // will be returned in the end
@@ -411,7 +419,7 @@ const insertCalendarEvents = async (
   // First insert only the confirmed events
   for (const event of confirmedEvents) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
-    const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
+    const { attendeesInfo, attendeesEmails, attendeesNames } = getAttendeesOfEvent(
       event.attendees ?? [],
     )
     const { attachmentsInfo, attachmentFilenames } = getAttachments(
@@ -426,7 +434,6 @@ const insertCalendarEvents = async (
       location: event.location ?? "",
       createdAt: new Date(event.created!).getTime(),
       updatedAt: new Date(event.updated!).getTime(),
-      email: userEmail,
       app: Apps.GoogleCalendar,
       entity: CalendarEntity.Event,
       creator: {
@@ -446,9 +453,13 @@ const insertCalendarEvents = async (
       recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
       baseUrl,
       joiningLink: joiningUrl,
-      permissions: [event.organizer?.email ?? ""],
+      permissions: getUniqueEmails([event.organizer?.email ?? "", ...attendeesEmails]),
       cancelledInstances: [],
     }
+
+    console.log(`EventToBeIngested`)
+    console.log(eventToBeIngested)
+    console.log(`EventToBeIngested\n`)
 
     await insert(eventToBeIngested, eventSchema)
   }
@@ -532,10 +543,12 @@ export const handleGoogleOAuthIngestion = async (
       throw new Error("Could not get start page token")
     }
 
-    const [_, historyId, { calendarEventsToken }] = await Promise.all([
-      insertFilesForUser(oauth2Client, userEmail, connector),
-      handleGmailIngestion(oauth2Client, userEmail),
-      insertCalendarEvents(oauth2Client, userEmail),
+    const [
+      // _, historyId, 
+      { calendarEventsToken }] = await Promise.all([
+      // insertFilesForUser(oauth2Client, userEmail, connector),
+      // handleGmailIngestion(oauth2Client, userEmail),
+      insertCalendarEvents(oauth2Client),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -563,21 +576,21 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      await insertSyncJob(trx, {
-        workspaceId: connector.workspaceId,
-        workspaceExternalId: connector.workspaceExternalId,
-        app: Apps.Gmail,
-        connectorId: connector.id,
-        authType: AuthType.OAuth,
-        config: {
-          historyId,
-          type: "gmailChangeToken",
-          lastSyncedAt: new Date().toISOString(),
-        },
-        email: userEmail,
-        type: SyncCron.ChangeToken,
-        status: SyncJobStatus.NotStarted,
-      })
+      // await insertSyncJob(trx, {
+      //   workspaceId: connector.workspaceId,
+      //   workspaceExternalId: connector.workspaceExternalId,
+      //   app: Apps.Gmail,
+      //   connectorId: connector.id,
+      //   authType: AuthType.OAuth,
+      //   config: {
+      //     historyId,
+      //     type: "gmailChangeToken",
+      //     lastSyncedAt: new Date().toISOString(),
+      //   },
+      //   email: userEmail,
+      //   type: SyncCron.ChangeToken,
+      //   status: SyncJobStatus.NotStarted,
+      // })
       // For inserting Google CalendarEvent Change Job
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
@@ -672,7 +685,7 @@ export const handleGoogleServiceAccountIngestion = async (
       const [_, historyId, { calendarEventsToken }] = await Promise.all([
         insertFilesForUser(jwtClient, userEmail, connector),
         handleGmailIngestion(jwtClient, userEmail),
-        insertCalendarEvents(jwtClient, userEmail),
+        insertCalendarEvents(jwtClient),
       ])
       ingestionMetadata.push({
         email: userEmail,

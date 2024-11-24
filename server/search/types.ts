@@ -225,7 +225,6 @@ export const VespaEventSchema = z.object({
   location: z.string(),
   createdAt: z.number(),
   updatedAt: z.number(),
-  email: z.string(),
   app: z.nativeEnum(Apps),
   entity: z.nativeEnum(CalendarEntity),
   creator: EventUser,
