@@ -314,14 +314,19 @@ export const getAttendeesOfEvent = (
   allAttendes: calendar_v3.Schema$EventAttendee[],
 ) => {
   if (allAttendes.length === 0) {
-    return { attendeesInfo: [], attendeesNames: [] }
+    return { attendeesInfo: [], attendeesEmails: [], attendeesNames: [] }
   }
 
   const attendeesInfo: { email: string; displayName: string }[] = []
   const attendeesNames: string[] = []
+  const attendeesEmails: string[] = []
   for (const attendee of allAttendes) {
     if (attendee.displayName) {
       attendeesNames.push(attendee.displayName ?? "")
+    }
+
+    if (attendee.email) {
+      attendeesEmails.push(attendee.email)
     }
 
     const oneAttendee = { email: "", displayName: "" }
@@ -333,7 +338,7 @@ export const getAttendeesOfEvent = (
     attendeesInfo.push(oneAttendee)
   }
 
-  return { attendeesInfo, attendeesNames }
+  return { attendeesInfo, attendeesEmails, attendeesNames }
 }
 
 export const getAttachments = (
@@ -361,15 +366,32 @@ export const getAttachments = (
   return { attachmentsInfo, attachmentFilenames }
 }
 
+export const getUniqueEmails = (permissions: string[]): string[] => {
+  return Array.from(new Set(permissions.filter((email) => email.trim() !== "")))
+}
+
+export const getEventStartTime = (event: calendar_v3.Schema$Event) => {
+  if (event?.start?.dateTime) {
+    return {
+      isDefaultStartTime: false,
+      startTime: new Date(event.start?.dateTime!).getTime(),
+    }
+  } else if (event?.start?.date) {
+    return {
+      isDefaultStartTime: true,
+      startTime: new Date(event.start.date!).getTime(),
+    }
+  } else {
+    return { isDefaultStartTime: true, startTime: new Date().getTime() }
+  }
+}
+
 export const eventFields =
   "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
 
 export const maxCalendarEventResults = 2500
 
-const insertCalendarEvents = async (
-  client: GoogleClient,
-  userEmail: string,
-) => {
+const insertCalendarEvents = async (client: GoogleClient) => {
   let nextPageToken = ""
   // will be returned in the end
   let newSyncTokenCalendarEvents: string = ""
@@ -411,12 +433,12 @@ const insertCalendarEvents = async (
   // First insert only the confirmed events
   for (const event of confirmedEvents) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
-    const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
-      event.attendees ?? [],
-    )
+    const { attendeesInfo, attendeesEmails, attendeesNames } =
+      getAttendeesOfEvent(event.attendees ?? [])
     const { attachmentsInfo, attachmentFilenames } = getAttachments(
       event.attachments ?? [],
     )
+    const { isDefaultStartTime, startTime } = getEventStartTime(event)
     const eventToBeIngested = {
       docId: event.id ?? "",
       name: event.summary ?? "",
@@ -426,7 +448,6 @@ const insertCalendarEvents = async (
       location: event.location ?? "",
       createdAt: new Date(event.created!).getTime(),
       updatedAt: new Date(event.updated!).getTime(),
-      email: userEmail,
       app: Apps.GoogleCalendar,
       entity: CalendarEntity.Event,
       creator: {
@@ -439,15 +460,19 @@ const insertCalendarEvents = async (
       },
       attendees: attendeesInfo,
       attendeesNames: attendeesNames,
-      startTime: new Date(event.start?.dateTime!).getTime(),
+      startTime: startTime,
       endTime: new Date(event.end?.dateTime!).getTime(),
       attachmentFilenames,
       attachments: attachmentsInfo,
       recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
       baseUrl,
       joiningLink: joiningUrl,
-      permissions: [event.organizer?.email ?? ""],
+      permissions: getUniqueEmails([
+        event.organizer?.email ?? "",
+        ...attendeesEmails,
+      ]),
       cancelledInstances: [],
+      defaultStartTime: isDefaultStartTime,
     }
 
     await insert(eventToBeIngested, eventSchema)
@@ -535,7 +560,7 @@ export const handleGoogleOAuthIngestion = async (
     const [_, historyId, { calendarEventsToken }] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
       handleGmailIngestion(oauth2Client, userEmail),
-      insertCalendarEvents(oauth2Client, userEmail),
+      insertCalendarEvents(oauth2Client),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -672,7 +697,7 @@ export const handleGoogleServiceAccountIngestion = async (
       const [_, historyId, { calendarEventsToken }] = await Promise.all([
         insertFilesForUser(jwtClient, userEmail, connector),
         handleGmailIngestion(jwtClient, userEmail),
-        insertCalendarEvents(jwtClient, userEmail),
+        insertCalendarEvents(jwtClient),
       ])
       ingestionMetadata.push({
         email: userEmail,

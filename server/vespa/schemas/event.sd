@@ -50,12 +50,6 @@ schema event {
             attribute: fast-search
         }
 
-        # primary email
-        field email type string {
-            indexing: index | attribute | summary
-            index: enable-bm25
-        }
-
         field app type string {
             indexing: attribute | summary
             attribute: fast-search
@@ -131,6 +125,11 @@ schema event {
         field cancelledInstances type array<string> {
             indexing: attribute | summary
         }
+
+        # To know if startTime of event available or defaultStartTime being used
+        field defaultStartTime type bool {
+            indexing: attribute | summary
+        }
     }
 
      field chunk_embeddings type tensor<bfloat16>(v[384])  {
@@ -152,7 +151,7 @@ schema event {
     }
 
     fieldset default {
-        fields: name, description, attachmentFilenames, attendeesNames, app, email, url, baseUrl
+        fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl
     }
 
     rank-profile default {

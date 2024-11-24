@@ -225,7 +225,6 @@ export const VespaEventSchema = z.object({
   location: z.string(),
   createdAt: z.number(),
   updatedAt: z.number(),
-  email: z.string(),
   app: z.nativeEnum(Apps),
   entity: z.nativeEnum(CalendarEntity),
   creator: EventUser,
@@ -241,6 +240,7 @@ export const VespaEventSchema = z.object({
   joiningLink: z.string(),
   permissions: z.array(z.string()),
   cancelledInstances: z.array(z.string()),
+  defaultStartTime: z.boolean(),
 })
 
 export const VespaMailSearchSchema = VespaMailSchema.extend({
