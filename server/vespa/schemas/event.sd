@@ -125,6 +125,11 @@ schema event {
         field cancelledInstances type array<string> {
             indexing: attribute | summary
         }
+
+        # To know if startTime of event available or defaultStartTime being used
+        field defaultStartTime type bool {
+            indexing: attribute | summary
+        }
     }
 
      field chunk_embeddings type tensor<bfloat16>(v[384])  {

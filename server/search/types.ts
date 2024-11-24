@@ -240,6 +240,7 @@ export const VespaEventSchema = z.object({
   joiningLink: z.string(),
   permissions: z.array(z.string()),
   cancelledInstances: z.array(z.string()),
+  defaultStartTime: z.boolean()
 })
 
 export const VespaMailSearchSchema = VespaMailSchema.extend({

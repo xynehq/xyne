@@ -60,6 +60,7 @@ import {
   eventFields,
   getAttachments,
   getAttendeesOfEvent,
+  getEventStartTime,
   getJoiningLink,
   getPresentationToBeIngested,
   getSpreadsheet,
@@ -737,6 +738,7 @@ const insertEventIntoVespa = async (
   const { attachmentsInfo, attachmentFilenames } = getAttachments(
     event.attachments ?? [],
   )
+  const {isDefaultStartTime, startTime} = getEventStartTime(event)
   const eventToBeIngested = {
     docId: event.id ?? "",
     name: event.summary ?? "",
@@ -758,7 +760,7 @@ const insertEventIntoVespa = async (
     },
     attendees: attendeesInfo,
     attendeesNames: attendeesNames,
-    startTime: new Date(event.start?.dateTime!).getTime(),
+    startTime: startTime,
     endTime: new Date(event.end?.dateTime!).getTime(),
     attachmentFilenames,
     attachments: attachmentsInfo,
@@ -767,6 +769,7 @@ const insertEventIntoVespa = async (
     joiningLink: joiningUrl,
     permissions: getUniqueEmails([event.organizer?.email ?? "", ...attendeesEmails]),
     cancelledInstances: [],
+    defaultStartTime: isDefaultStartTime
   }
 
   console.log(`EventToBeIngested`)
@@ -912,7 +915,7 @@ const handleGoogleCalendarEventsChanges = async (
             Logger.error(`Event doesn't exist in Vepsa`)
           }
 
-          await insertEventIntoVespa(eventChange, userEmail)
+          await insertEventIntoVespa(eventChange)
 
           if (event) {
             stats.updated += 1

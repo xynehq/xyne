@@ -370,6 +370,16 @@ export const getUniqueEmails = (permissions: string[]): string[] => {
     return Array.from(new Set(permissions.filter(email => email.trim() !== "")));
 }
 
+export const getEventStartTime = (event: calendar_v3.Schema$Event) => {
+  if (event?.start?.dateTime) {
+    return {isDefaultStartTime: false, startTime: new Date(event.start?.dateTime!).getTime()}
+  } else if (event?.start?.date) {
+    return {isDefaultStartTime: true, startTime: new Date(event.start.date!).getTime()}
+  } else {
+    return {isDefaultStartTime: true, startTime: new Date().getTime()}
+  }
+}
+
 export const eventFields =
   "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
 
@@ -425,6 +435,7 @@ const insertCalendarEvents = async (
     const { attachmentsInfo, attachmentFilenames } = getAttachments(
       event.attachments ?? [],
     )
+    const {isDefaultStartTime, startTime} = getEventStartTime(event)
     const eventToBeIngested = {
       docId: event.id ?? "",
       name: event.summary ?? "",
@@ -446,7 +457,7 @@ const insertCalendarEvents = async (
       },
       attendees: attendeesInfo,
       attendeesNames: attendeesNames,
-      startTime: new Date(event.start?.dateTime!).getTime(),
+      startTime: startTime,
       endTime: new Date(event.end?.dateTime!).getTime(),
       attachmentFilenames,
       attachments: attachmentsInfo,
@@ -455,6 +466,7 @@ const insertCalendarEvents = async (
       joiningLink: joiningUrl,
       permissions: getUniqueEmails([event.organizer?.email ?? "", ...attendeesEmails]),
       cancelledInstances: [],
+      defaultStartTime: isDefaultStartTime
     }
 
     console.log(`EventToBeIngested`)
