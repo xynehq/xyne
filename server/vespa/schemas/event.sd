@@ -160,32 +160,43 @@ schema event {
             query(e) tensor<bfloat16>(v[384])
         }
 
-        function freshness_score() {
-            expression: exp(-1 * (now() - (attribute(createdAt) / 1000)) / (3600 * 12))
-        }
-
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
         }
+        
+        function freshness_score() {
+            expression: exp(-1 * (now() - (attribute(createdAt) / 1000)) / (3600 * 24))
+        }
+        
+        function freshness_weight(){
+            expression: if(scale(bm25(name)) > 0.6, freshness_score, if(scale(bm25(description)) > 0.6, freshness_score,0))
+        }
+
 
         function vector_score() {
             expression: closeness(field, chunk_embeddings)
         }
 
-        first-phase {
+        function combined_bm25() {
             expression {
-                (
-                    scale(bm25(name)) + 
-                    scale(bm25(description)) + 
-                    scale(bm25(url))
-                ) 
-                + 
-                (0.5 * (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))
-                + 
-                (0.3 * vector_score)
-                +
-                (if(bm25(name) > 0.5 || bm25(description) > 0.5, freshness_score, 0))
+                (scale(bm25(name)) + scale(bm25(url))) +
+                (0.3 * (scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
             }
+        }
+
+        first-phase {
+            expression: (0.3 * vector_score) + combined_bm25
+        }
+
+        global-phase {
+            expression {
+              (
+                (0.3 * normalize_linear(vector_score)) +
+                combined_bm25 + 
+                freshness_weight
+              )
+            }
+            rerank-count: 1000
         }
 
         match-features {
@@ -194,7 +205,7 @@ schema event {
           scale(bm25(attachmentFilenames))
           scale(bm25(attendeesNames))
           vector_score
-          freshness_score
+          freshness_weight
         }
     }
 
