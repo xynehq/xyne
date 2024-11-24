@@ -19,6 +19,7 @@ import { getLogger } from "@/logger"
 import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
+import { Apps, entitySchema } from "@/search/types"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -1292,7 +1293,7 @@ export const SearchAnswerResponse = z.object({
       query: z.string(),
       timeRange: z
         .object({
-          from: z.string(), // Expected format: "YYYY-MM-DD"
+          from: z.string(),
           to: z.string(),
         })
         .nullable()
@@ -1334,4 +1335,235 @@ export const answerOrSearch = (
   } catch (error) {
     throw error
   }
+}
+
+// give me 10 emails
+// give me 10 emails from last 2 weeks
+// give me all emails from xyz person 2 weeks ago
+
+const queryRouter = `
+**Today's date is: ${getDateForAI()}**
+You are a retrieval-augmented generation (RAG) system. Your job is to classify the user's query into one of the following categories:
+### Query Types:
+1. **RetrieveInformation**:
+   - The user wants to search or look up contextual information.
+   - These are open-ended queries where only time filters might apply.
+   - Example Queries:
+     - "What is the company's leave policy?"
+     - "Explain the project plan from last quarter."
+   - **JSON Structure**:
+     {
+       "type": "RetrieveInformation",
+       "filters": {
+         "startTime": "<start time in YYYY-MM-DD, if applicable>",
+         "endTime": "<end time in YYYY-MM-DD, if applicable>"
+       }
+     }
+
+2. **ListItems**:
+   - The user wants to list specific items (e.g., files, emails) based on metadata like app and entity.
+   - Example Queries:
+     - "Show me all emails from last week."
+     - "List all Google Docs modified in October."
+   - **JSON Structure**:
+     {
+       "type": "ListItems",
+       "filters": {
+         "app": "<app>",
+         "entity": "<entity>",
+         "count": "<number of items to list>",
+         "startTime": "<start time in YYYY-MM-DD, if applicable>",
+         "endTime": "<end time in YYYY-MM-DD, if applicable>"
+       }
+     }
+
+3. **RetrieveMetadata**:
+   - The user wants to retrieve metadata or details about a specific document, email, or item.
+   - Example Queries:
+     - "When was the file 'Budget.xlsx' last modified?"
+     - "Who owns the document titled 'Meeting Notes'?"
+   - **JSON Structure**:
+     {
+       "type": "RetrieveMetadata",
+       "filters": {
+         "app": "<app>",
+         "entity": "<entity>",
+         "startTime": "<start time in YYYY-MM-DD, if applicable>",
+         "endTime": "<end time in YYYY-MM-DD, if applicable>"
+       }
+     }
+
+---
+
+### **Enum Values for Valid Inputs**
+
+#### type (Query Types):
+- "RetrieveInformation"
+- "ListItems"
+- "RetrieveMetadata"
+
+#### app (Valid Apps):
+- "google-workspace"
+- "google-drive"
+- "gmail"
+- "google-calendar"
+
+#### entity (Valid Entities):
+For Gmail:
+- "mail"
+
+For Drive:
+- "docs"
+- "sheets"
+- "slides"
+- "pdf"
+- "folder"
+
+For Calendar:
+- "event"
+
+---
+
+### **Rules for the LLM**
+
+1. **RetrieveInformation**:
+   - Use this type only for open-ended queries.
+   - Include only 'startTime' and 'endTime' in 'filters'.
+
+2. **ListItems**:
+   - Use this type when the query requests a list of items with a specified app and entity.
+   - Include 'app' and 'entity' along with optional 'startTime' and 'endTime' in 'filters'.
+   - Include 'count' to specify the number of items to list if present in the query.
+
+3. **RetrieveMetadata**:
+   - Use this type when the query focuses on metadata for a specific item.
+   - Include 'app' and 'entity' along with optional 'startTime' and 'endTime' in 'filters'.
+
+4. **Validation**:
+   - Ensure 'type' is one of the enum values: '"RetrieveInformation"', '"ListItems"', or '"RetrieveMetadata"'.
+   - Ensure 'app' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
+   - Ensure 'entity' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
+
+---
+
+### **Examples**
+
+#### Query: "What is the company's leave policy?"
+{
+  "type": "RetrieveInformation",
+  "filters": {
+    "startTime": null,
+    "endTime": null
+  }
+}`
+
+// Enums for Query Types, Apps, and Entities
+export enum QueryType {
+  RetrieveInformation = "RetrieveInformation",
+  ListItems = "ListItems",
+  RetrieveMetadata = "RetrieveMetadata",
+}
+// Zod schemas for filters
+const FiltersSchema = z.object({
+  app: z.nativeEnum(Apps).optional(),
+  entity: entitySchema.optional(),
+  startTime: z.string().nullable().optional(),
+  endTime: z.string().nullable().optional(),
+})
+
+export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal(QueryType.RetrieveInformation),
+    filters: z.object({
+      startTime: z.string().nullable().optional(),
+      endTime: z.string().nullable().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal(QueryType.ListItems),
+    filters: FiltersSchema.extend({
+      app: z.nativeEnum(Apps),
+      entity: entitySchema,
+      count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+    }),
+  }),
+  z.object({
+    type: z.literal(QueryType.RetrieveMetadata),
+    filters: FiltersSchema.extend({
+      app: z.nativeEnum(Apps),
+      entity: entitySchema,
+    }),
+  }),
+])
+
+export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>
+
+export const routeQuery = async (
+  userQuery: string,
+  params: ModelParams,
+): Promise<{ result: QueryRouterResponse; cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = queryRouter
+  params.json = true
+
+  const messages: Message[] = [
+    {
+      role: "user",
+      content: [
+        {
+          text: `User Query: "${userQuery}"`,
+        },
+      ],
+    },
+  ]
+
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+
+  if (text) {
+    const parsedResponse = jsonParseLLMOutput(text)
+    console.log(parsedResponse)
+    return { result: QueryRouterResponseSchema.parse(parsedResponse), cost }
+  } else {
+    throw new Error("No response from LLM")
+  }
+}
+
+export const listItems = (
+  query: string,
+  userCtx: string,
+  context: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  params.systemPrompt = `
+  **Today's date is: ${getDateForAI()}**
+
+  **Context of the user talking to you**: ${userCtx}
+
+  You are an assistant that formats data into a markdown table based on the user's query.
+
+Given the user's query and the context (data), generate a markdown table that presents the data in an easy-to-read format. Do not include any additional text.
+
+User Query: ${query}
+`
+
+  const messages: Message[] = [
+    {
+      role: MessageRole.User,
+      content: [
+        {
+          text: `Please format the following data as a markdown table:
+
+Context:
+${context}`,
+        },
+      ],
+    },
+  ]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
 }

@@ -525,7 +525,7 @@ export const handleGoogleOAuthChanges = async (
         lastRanOn: new Date(),
       })
       throw new SyncJobFailed({
-        message: "Could not complete sync job",
+        message: `Could not complete sync job: ${stats.summary}`,
         cause: error as Error,
         integration: Apps.GoogleDrive,
         entity: "",
