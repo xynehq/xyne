@@ -51,10 +51,13 @@ To extract the project, you first need to run the container with the loaded imag
 ```javascript
 docker run --name your-container-name -p 80:80 image-name
 ```
+
 - Make a directory called ```xyne``` from your root instance, use the following command :
 ```javascript
 sudo mkdir xyne
 ```
+
+Use ```docker ps -a``` to check the ID of the container.
 
 - Extract the project inside the ```xyne``` folder, use the following command : 
 ```javascript
@@ -124,7 +127,7 @@ cd xyne/search/deployment
 ```
 Once inside the ```deployment``` folder, run the following command to run vespa and postgres in docker :
 ```javascript 
-docker-compose -f deployment/docker-compose.prod.yml up
+docker-compose -f docker-compose.prod.yml up
 ```
 
 ### Deploy Vespa in your instance : 
@@ -146,6 +149,7 @@ Navigate to the server folder using ```cd server``` and run the following comman
 bun install
 ```
 This will install all the dependencies required by the server to run the application successfully.
+<Warning> If you get an ```EEXISTS``` Error it means that the dependencies already exist </Warning>
 
 ```javascript
 bun run generate
@@ -161,7 +165,21 @@ To start the client side, navigate to the frontend folder using ```cd frontend``
 ```javascript
 bun install
 ```
+<Warning> If you get an ```EEXISTS``` Error it means that the dependencies already exist </Warning>
 This installs all dependencies required by the client side to run.
+
+Create a new ```.env.production ```, use the following command : 
+```javascript
+sudo touch .env.production
+```
+Now paste the following inside the ```.env.production``` file : 
+
+```javascript
+ VITE_API_BASE_URL=http://<YOUR_AWS_INSTANCE_IPv4_DNS>
+ VITE_WS_BASE_URL=wss://<YOUR_AWS_INSTANCE_IPv4_DNS>
+```
+
+Save the file.
 
 Then start the client using the command : 
 
