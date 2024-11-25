@@ -3,6 +3,7 @@ export const fileSchema = "file" // Replace with your actual schema name
 export const userSchema = "user"
 export const mailSchema = "mail"
 export const eventSchema = "event"
+export const chatAttachmentSchema = "chatAttachment"
 // not using @ because of vite of frontend
 
 export enum Apps {
@@ -241,6 +242,17 @@ export const VespaEventSchema = z.object({
   joiningLink: z.string(),
   permissions: z.array(z.string()),
   cancelledInstances: z.array(z.string()),
+})
+
+export const VespaChatAttachmentSchema = z.object({
+  docId: z.string(),
+  title: z.string(),
+  chunks: z.array(z.string()),
+  ownerEmail: z.string().nullable(),
+  permissions: z.array(z.string()),
+  mimeType: z.string().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
 })
 
 export const VespaMailSearchSchema = VespaMailSchema.extend({
@@ -509,6 +521,8 @@ export type VespaMail = z.infer<typeof VespaMailSchema>
 export type VespaMailGet = z.infer<typeof VespaMailGetSchema>
 
 export type VespaEvent = z.infer<typeof VespaEventSchema>
+
+export type VespaChatAttachment = z.infer<typeof VespaChatAttachmentSchema>
 
 export const MailResponseSchema = VespaMailGetSchema.pick({
   docId: true,

@@ -15,6 +15,7 @@ import type {
   VespaGetResult,
   Entity,
   VespaEvent,
+  VespaChatAttachment,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -135,7 +136,7 @@ export const insertDocument = async (document: VespaFile) => {
 
 // generic insert method
 export const insert = async (
-  document: VespaUser | VespaFile | VespaMail | VespaEvent,
+  document: VespaUser | VespaFile | VespaMail | VespaEvent | VespaChatAttachment,
   schema: string,
 ) => {
   try {

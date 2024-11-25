@@ -56,12 +56,14 @@ import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import {
+  insert,
   insertDocument,
   searchUsersByNamesAndEmails,
   searchVespa,
 } from "@/search/vespa"
 import {
   Apps,
+  chatAttachmentSchema,
   DriveEntity,
   entitySchema,
   fileSchema,
@@ -170,7 +172,7 @@ const saveToDownloads = async (file: Blob) => {
   }
 }
 
-const handlePDFFile = async (file: Blob) => {
+const handlePDFFile = async (file: Blob, userEmail: string) => {
   let wasDownloaded = false
   try {
     // saving the uploaded file in downloads folder
@@ -194,22 +196,16 @@ const handlePDFFile = async (file: Blob) => {
 
     const pdfToIngest = {
       title: file.name!,
-      url: "https://google.com",
-      app: Apps.GoogleDrive, // todo what here
       docId: `${file.name}-upload-PDF`, // create id here, maybe??
-      owner: "kalp.a@xynehq.com", // todo how to get userEmail
-      photoLink: "https://google.com",
-      ownerEmail: "kalp.a@xynehq.com",
-      entity: DriveEntity.PDF, // todo change
+      ownerEmail: userEmail,
       chunks: chunks.map((v) => v.chunk),
-      permissions: ["kalp.a@xynehq.com"],
+      permissions: [userEmail],
       mimeType: "application/pdf",
-      metadata: "Metadata",
       createdAt: dateTime,
       updatedAt: dateTime,
     }
 
-    await insertDocument(pdfToIngest)
+    await insert(pdfToIngest, chatAttachmentSchema)
 
     // Delete the file here
     await deleteDocument(filePath)
@@ -227,9 +223,10 @@ const handlePDFFile = async (file: Blob) => {
 
 export const UploadFilesApi = async (c: Context) => {
   try {
-    // @ts-ignore
-    // const body: z.infer<typeof chatSchema> = c.req.valid("json")
     //todo schema
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+
     const formData = await c.req.formData()
     const files = formData.getAll("files") as File[]
     const metadata: any[] = []
@@ -243,7 +240,7 @@ export const UploadFilesApi = async (c: Context) => {
         fileMetadata.type = file?.type
         metadata.push(fileMetadata)
 
-        await handlePDFFile(file)
+        await handlePDFFile(file, email)
       } else {
         Logger.error(`File type not supported yet`)
       }

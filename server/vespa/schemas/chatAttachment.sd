@@ -1,0 +1,175 @@
+schema chatAttachment {
+  document chatAttachment {
+    field docId type string {
+      indexing: attribute | summary
+    }
+    
+    field title type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+    }
+
+    field chunks type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    field ownerEmail type string {
+      indexing: attribute | summary
+    }
+
+    field permissions type array<string> {
+      indexing: attribute | summary
+    }
+
+    field mimeType type string {
+      indexing: attribute | summary
+    }
+
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+  }
+
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
+    indexing: input chunks | embed | attribute | index
+    attribute {
+        distance-metric: angular
+    }
+  }
+  
+  field title_fuzzy type string {
+    indexing: input title | index
+    index {
+      enable-bm25
+    }
+    match {
+      gram
+      gram-size: 3
+    }
+  }
+
+  fieldset default {
+    fields: title, chunks
+  }
+
+  fieldset autocomplete {
+    fields: title
+  }
+
+  # Hybrid search rank profile combining BM25 for title and chunks, and vector search for chunk embeddings
+  rank-profile initial {
+    # Inputs for the query vector and alpha for hybrid search
+    inputs {
+      query(e) tensor<bfloat16>(v[384])  # Query embedding
+      query(alpha) double  # Alpha parameter for hybrid weight
+    }
+
+    # Compute vector similarity for chunks
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embeddings)
+    }
+
+    # Compute BM25 score for title
+    function title_bm25_score() {
+      expression: bm25(title)
+    }
+
+    # First phase combines BM25 (title and chunks) and vector similarity (chunks)
+    first-phase {
+      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) +bm25(title)))
+    }
+
+    # Global phase (optional if more complex reranking is needed)
+    global-phase {
+      expression {
+        (
+          (query(alpha) * normalize_linear(chunk_vector_score)) +
+          ((1 - query(alpha)) * (normalize_linear(bm25(chunks)) + normalize_linear(bm25(title))))
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      bm25(title)
+      bm25(chunks)
+      closeness(field, chunk_embeddings)
+    }
+  }
+
+ 
+  rank-profile default inherits initial {
+    
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embeddings)
+    }
+
+    function cos_sim() {
+      expression: cos(distance(field, chunk_embeddings))
+    }
+
+    # First phase combines BM25 (title and chunks) and vector similarity (chunks)
+    first-phase {
+      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) + bm25(title)))
+    }
+
+    second-phase {
+      expression: cos_sim
+      rerank-count: 2000
+    }
+
+    global-phase {
+      expression {
+        reciprocal_rank_fusion(
+                chunk_vector_score,
+                bm25(chunks),
+                bm25(title),
+                cos_sim
+            )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      chunk_vector_score
+      bm25(chunks)
+      bm25(title)
+      cos_sim
+    }
+  }
+
+  document-summary default {
+    summary chunks_summary {
+      bolding: on
+      source: chunks
+    }
+  }
+
+  document-summary autocomplete {
+    summary title {
+        source: title
+    }
+    summary docId {
+        source: docId
+    }
+  }
+
+  # Autocomplete rank profile for fuzzy prefix search
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(title_fuzzy)
+    }
+    match-features {
+      bm25(title_fuzzy)
+    }
+  }
+}
