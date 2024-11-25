@@ -11,6 +11,8 @@ Follow the steps listed below to get started :
 
 <Tip>We recommend using ```RSA``` Key Pair type, with the ```.pem``` file format when creating a key pair.</Tip>
 
+<img height="200" src="../images/AWS-EC2-KP.png" />
+
 
 ## Connect to the instance remotely: 
 Once you have your instance up and running, you can use your terminal to connect to your instance remotely. 
@@ -66,7 +68,7 @@ docker cp <container:id>:usr/src/app /home/your-instance-username/xyne/search
     ```
  - Remove the container :
     ```javascript
-        docker rm <container_name_or_id>
+    docker rm <container_name_or_id>
     ```
 
 ### Setup Environment variables: 
@@ -177,6 +179,6 @@ To do that, navigate back to the ```server``` folder. Once inside the server fol
 sudo NODE_ENV=production $(which bun) run server.ts
 ```
 
-
+Your application is now running and will be available in your EC2 Public IPv4 DNS address.
 
 
