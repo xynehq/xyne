@@ -1503,7 +1503,10 @@ export const routeQuery = async (
 
   if (text) {
     const parsedResponse = jsonParseLLMOutput(text)
-    return { result: QueryRouterResponseSchema.parse(parsedResponse), cost: cost! }
+    return {
+      result: QueryRouterResponseSchema.parse(parsedResponse),
+      cost: cost!,
+    }
   } else {
     throw new Error("No response from LLM")
   }

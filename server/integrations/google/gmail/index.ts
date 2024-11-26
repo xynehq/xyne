@@ -14,6 +14,7 @@ import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
 import pLimit from "p-limit"
 import { GmailConcurrency } from "../config"
+import { retryWithBackoff } from "@/utils"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
 
@@ -26,7 +27,10 @@ export const handleGmailIngestion = async (
   let nextPageToken = ""
 
   const limit = pLimit(GmailConcurrency)
-  const profile = await gmail.users.getProfile({ userId: "me" })
+  const profile = await retryWithBackoff(
+    () => gmail.users.getProfile({ userId: "me" }),
+    "Fetching Gmail user profile",
+  )
   const historyId = profile.data.historyId!
   if (!historyId) {
     // TODO: turn this into custom error
@@ -34,23 +38,40 @@ export const handleGmailIngestion = async (
       "Could not get historyId from getProfile so can't ingest Gmail",
     )
   }
+
   do {
-    const resp = await gmail.users.messages.list({
-      userId: "me",
-      maxResults: 500,
-      pageToken: nextPageToken,
-    })
+    const resp = await retryWithBackoff(
+      () =>
+        gmail.users.messages.list({
+          userId: "me",
+          maxResults: 500,
+          pageToken: nextPageToken,
+        }),
+      `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
+    )
+
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
       totalMails += resp.data.messages.length
+
       const messagePromises = resp.data.messages.map((message) =>
         limit(async () => {
-          const msgResp = await gmail.users.messages.get({
-            userId: "me",
-            id: message.id!,
-            format: "full",
-          })
-          await insert(parseMail(msgResp.data), mailSchema)
+          try {
+            const msgResp = await retryWithBackoff(
+              () =>
+                gmail.users.messages.get({
+                  userId: "me",
+                  id: message.id!,
+                  format: "full",
+                }),
+              `Fetching Gmail message (id: ${message.id})`,
+            )
+            await insert(parseMail(msgResp.data), mailSchema)
+          } catch (error) {
+            Logger.error(
+              `Failed to process message ${message.id}: ${(error as Error).message}`,
+            )
+          }
         }),
       )
       // Process messages in parallel for each page

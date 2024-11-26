@@ -50,7 +50,7 @@ import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob"
 import type { GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
-import { getErrorMessage } from "@/utils"
+import { getErrorMessage, retryWithBackoff } from "@/utils"
 import {
   createJwtClient,
   DocsParsingError,
@@ -961,6 +961,7 @@ const insertFilesForUser = async (
     const totalFiles = 0
     let processedFiles = 0
     const pdfProcessingPromises: Promise<any>[] = []
+    const sheetProcessingPromises: Promise<any>[] = []
     for await (const pageFiles of listFiles(googleClient)) {
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
@@ -988,20 +989,21 @@ const insertFilesForUser = async (
         connector.externalId,
         userEmail,
       )
+
       pdfProcessingPromises.push(pdfPromise)
-      const [documents, sheets, slides]: [
-        VespaFileWithDrivePermission[],
-        // VespaFileWithDrivePermission[],
+
+      const sheetPromise = googleSheetsVespa(
+        googleClient,
+        googleSheetsMetadata,
+        connector.externalId,
+        userEmail,
+      )
+      sheetProcessingPromises.push(sheetPromise)
+      const [documents, slides]: [
         VespaFileWithDrivePermission[],
         VespaFileWithDrivePermission[],
       ] = await Promise.all([
         googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
-        // googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
-        googleSheetsVespa(
-          googleClient,
-          googleSheetsMetadata,
-          connector.externalId,
-        ),
         googleSlidesVespa(
           googleClient,
           googleSlidesMetadata,
@@ -1016,8 +1018,6 @@ const insertFilesForUser = async (
       let allFiles: VespaFileWithDrivePermission[] = [
         ...driveFiles,
         ...documents,
-        // ...pdfDocuments,
-        ...sheets,
         ...slides,
       ].map((v) => {
         v.permissions = toPermissionsList(v.permissions, userEmail)
@@ -1028,7 +1028,8 @@ const insertFilesForUser = async (
         processedFiles += 1
         await insertDocument(doc)
       }
-      await Promise.all(pdfProcessingPromises)
+
+      await Promise.all([...pdfProcessingPromises, ...sheetProcessingPromises])
       Logger.info(`finished ${pageFiles.length} files`)
     }
   } catch (error) {
@@ -1037,40 +1038,6 @@ const insertFilesForUser = async (
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
   }
-}
-
-export const getAllSheetsFromSpreadSheet = async (
-  sheets: sheets_v4.Sheets,
-  spreadsheet: sheets_v4.Schema$Spreadsheet,
-  spreadsheetId: string,
-) => {
-  const allSheets = []
-  for (const sheet of spreadsheet.sheets!) {
-    const sheetProp = sheet.properties
-    const sheetTitle = sheetProp?.title
-    const sheetType = sheetProp?.sheetType
-
-    // If sheetType is GRID meaning table like structure, then only go further
-    // Other sheetType includes OBJECT which represent charts, graphs, etc. Ignoring them for now
-    if (sheetType !== "GRID") {
-      continue
-    }
-
-    const sheetRanges = await sheets.spreadsheets.values.get({
-      range: `'${sheetTitle}'`,
-      spreadsheetId,
-      valueRenderOption: "FORMATTED_VALUE",
-    })
-
-    const valueRanges = sheetRanges?.data?.values!
-    // Making a object of one sheet info here to specify sheet data with sheet info
-    allSheets.push({
-      sheetId: sheetProp?.sheetId,
-      sheetTitle,
-      valueRanges,
-    })
-  }
-  return allSheets
 }
 
 export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
@@ -1103,17 +1070,66 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
     // One row is assumed to be headers/column names
     // Atleast one additional row for the data should be there
     // So there should be atleast two rows to continue further
-    Logger.error("Not enough data to process further. Skipping it")
+    Logger.warn("Not enough data to process further. Skipping it")
     return []
   }
 
   return processedRows
 }
 
+export const getAllSheetsFromSpreadSheet = async (
+  sheets: sheets_v4.Sheets,
+  spreadsheet: sheets_v4.Schema$Spreadsheet,
+  spreadsheetId: string,
+) => {
+  const allSheets = []
+  for (const sheet of spreadsheet.sheets!) {
+    const sheetProp = sheet.properties
+    const sheetTitle = sheetProp?.title
+    const sheetType = sheetProp?.sheetType
+
+    // If sheetType is not GRID (table-like structure), skip
+    if (sheetType !== "GRID") {
+      continue
+    }
+
+    try {
+      const sheetRanges = await retryWithBackoff(
+        () =>
+          sheets.spreadsheets.values.get({
+            range: `'${sheetTitle}'`,
+            spreadsheetId,
+            valueRenderOption: "FORMATTED_VALUE",
+          }),
+        `Fetching sheet '${sheetTitle}' from spreadsheet`,
+      )
+
+      const valueRanges = sheetRanges?.data?.values!
+      allSheets.push({
+        sheetId: sheetProp?.sheetId,
+        sheetTitle,
+        valueRanges,
+      })
+    } catch (error) {
+      Logger.error(
+        `Failed to fetch sheet '${sheetTitle}' from spreadsheet: ${(error as Error).message}`,
+      )
+    }
+  }
+  return allSheets
+}
+
 // Function to get the whole spreadsheet
 // One spreadsheet can contain multiple sheets like Sheet1, Sheet2
-export const getSpreadsheet = (sheets: sheets_v4.Sheets, id: string) =>
-  sheets.spreadsheets.get({ spreadsheetId: id })
+export const getSpreadsheet = async (
+  sheets: sheets_v4.Sheets,
+  id: string,
+): Promise<GaxiosResponse<sheets_v4.Schema$Spreadsheet>> => {
+  return retryWithBackoff(
+    () => sheets.spreadsheets.get({ spreadsheetId: id }),
+    `Fetching spreadsheet with ID ${id}`,
+  )
+}
 
 // Function to chunk rows of text data into manageable batches
 // Excludes numerical data, assuming users do not typically search by numbers
@@ -1254,12 +1270,13 @@ const googleSheetsVespa = async (
   client: GoogleClient,
   spreadsheetsMetadata: drive_v3.Schema$File[],
   connectorId: string,
-): Promise<VespaFileWithDrivePermission[]> => {
+  userEmail: string,
+): Promise<void> => {
   sendWebsocketMessage(
     `Scanning ${spreadsheetsMetadata.length} Google Sheets`,
     connectorId,
   )
-  const sheetsList: VespaFileWithDrivePermission[] = []
+  let sheetsList: VespaFileWithDrivePermission[] = []
   const sheets = google.sheets({ version: "v4", auth: client })
   const total = spreadsheetsMetadata.length
   let count = 0
@@ -1287,7 +1304,13 @@ const googleSheetsVespa = async (
       // })
     }
   }
-  return sheetsList
+  sheetsList = sheetsList.map((v) => {
+    v.permissions = toPermissionsList(v.permissions, userEmail)
+    return v
+  })
+  for (const doc of sheetsList) {
+    await insertDocument(doc)
+  }
 }
 
 export const downloadDir = path.resolve(__dirname, "../../downloads")
