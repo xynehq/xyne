@@ -53,6 +53,7 @@ import {
   ChatRenameApi,
   GetChatApi,
   // MessageApiV1,
+  MessageApi,
   MessageApiV2,
   MessageRetryApi,
 } from "./api/chat"

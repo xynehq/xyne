@@ -1,7 +1,10 @@
 import {
   Apps,
+  CalendarEntity,
+  DriveEntity,
   eventSchema,
   fileSchema,
+  MailEntity,
   mailSchema,
   userSchema,
 } from "@/search/types"
@@ -322,6 +325,7 @@ const HybridDefaultProfile = (
   profile: RankProfile = "default",
   timestampRange?: { to: number; from: number } | null,
   excludedIds?: string[],
+  notInMailLabels?: string[],
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
   let fileTimestamp = ""
@@ -367,6 +371,11 @@ const HybridDefaultProfile = (
       .join(" or ")
   }
 
+  let mailLabelQuery = ""
+  if (notInMailLabels && notInMailLabels.length > 0) {
+    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
   // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {
     profile: profile,
@@ -380,7 +389,7 @@ const HybridDefaultProfile = (
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
             ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-            and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS')
+            and permissions contains @email ${mailLabelQuery}
             ${appOrEntityFilter}
           )
           or
@@ -404,6 +413,7 @@ const HybridDefaultProfile = (
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
+  notInMailLabels?: string[],
 ): YqlProfile => {
   let fileTimestamp = ""
   let mailTimestamp = ""
@@ -438,11 +448,16 @@ const HybridDefaultProfileAppEntityCounts = (
     userTimestamp = userTimestampConditions.join("")
   }
 
+  let mailLabelQuery = ""
+  if (notInMailLabels && notInMailLabels.length > 0) {
+    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
   return {
     profile: "default",
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS'))
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
             or
             (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
@@ -513,7 +528,7 @@ export const searchVespa = async (
   offset?: number,
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
-  mailLabels?: string[],
+  notInMailLabels?: string[],
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
@@ -526,6 +541,7 @@ export const searchVespa = async (
     "default",
     timestampRange,
     excludedIds,
+    notInMailLabels,
   )
 
   const hybridDefaultPayload = {
@@ -1051,3 +1067,132 @@ export const getTimestamp = (lastUpdated: string): number | null => {
 //     })
 //   }
 // }
+
+interface GetItemsParams {
+  schema: string
+  app?: Apps | null
+  entity?: Entity | null
+  timestampRange: { from: number | null; to: number | null } | null
+  limit?: number
+  offset?: number
+  email: string
+  // query: string
+}
+
+// TODO: this won't work for user schema
+//
+export const getItems = async (
+  params: GetItemsParams,
+): Promise<VespaSearchResponse> => {
+  const {
+    schema,
+    app,
+    entity,
+    timestampRange,
+    limit = config.page,
+    offset = 0,
+    email,
+  } = params
+
+  // Construct conditions based on parameters
+  let conditions: string[] = []
+
+  // App condition
+  if (app) {
+    conditions.push(`app contains @app`)
+  }
+
+  // Entity condition
+  if (entity) {
+    conditions.push(`entity contains @entity`)
+  }
+
+  // Permissions or owner condition based on schema
+  if (schema !== userSchema) {
+    conditions.push(`permissions contains @email`)
+  } else {
+    // For user schema
+    if (app !== Apps.GoogleWorkspace) {
+      conditions.push(`owner contains @email`)
+    }
+  }
+
+  let timestampField = ""
+
+  // Choose appropriate timestamp field based on schema
+  if (schema === mailSchema) {
+    timestampField = "timestamp"
+  } else if (schema === fileSchema) {
+    timestampField = "updatedAt"
+  } else if (schema === eventSchema) {
+    timestampField = "startTime"
+  } else if (schema === userSchema) {
+    timestampField = "creationTime"
+  } else {
+    timestampField = "updatedAt"
+  }
+
+  // Timestamp conditions
+  if (timestampRange) {
+    let timeConditions: string[] = []
+    if (timestampRange.from) {
+      timeConditions.push(
+        `${timestampField} >= ${new Date(timestampRange.from).getTime()}`,
+      )
+    }
+    if (timestampRange.to) {
+      timeConditions.push(
+        `${timestampField} <= ${new Date(timestampRange.to).getTime()}`,
+      )
+    }
+    if (timeConditions.length > 0) {
+      conditions.push(`(${timeConditions.join(" and ")})`)
+    }
+  }
+
+  // Combine conditions
+  const whereClause =
+    conditions.length > 0 ? `where ${conditions.join(" and ")}` : "where true"
+
+  const orderByClause = timestampField ? `order by ${timestampField} asc` : ""
+
+  // Construct YQL query with limit and offset
+  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
+
+  const url = `${vespaEndpoint}/search/`
+
+  const searchPayload = {
+    yql,
+    email,
+    ...(app ? { app } : {}),
+    ...(entity ? { entity } : {}),
+    "ranking.profile": "unranked",
+  }
+
+  try {
+    const response: Response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(searchPayload),
+    })
+
+    if (!response.ok) {
+      const errorText = response.statusText
+      throw new Error(
+        `Failed to fetch items: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    const data: VespaSearchResponse = await response.json()
+    return data
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(`Error fetching items: ${errMessage}`)
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: schema,
+    })
+  }
+}

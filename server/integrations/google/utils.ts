@@ -172,7 +172,7 @@ export const getPDFContent = async (
     docs = await loader.load()
 
     if (!docs || docs.length === 0) {
-      Logger.error(
+      Logger.warn(
         `Could not get content for file: ${pdfFile.name}. Skipping it`,
       )
       await deleteDocument(pdfPath)

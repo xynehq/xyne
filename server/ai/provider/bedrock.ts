@@ -2,6 +2,7 @@ import llama3Tokenizer from "llama3-tokenizer-js"
 import ollama from "ollama"
 import {
   BedrockRuntimeClient,
+  ConversationRole,
   ConverseCommand,
   ConverseStreamCommand,
   InvokeModelCommand,
@@ -19,6 +20,7 @@ import { getLogger } from "@/logger"
 import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
+import { Apps, entitySchema } from "@/search/types"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -31,11 +33,12 @@ export enum Models {
   // Bedrock_Claude = "",
   Gpt_4o = "gpt-4o",
   Gpt_4o_mini = "gpt-4o-mini",
+  Gpt_4 = "gpt-4",
 
   CohereCmdRPlus = "cohere.command-r-plus-v1:0",
   CohereCmdR = "cohere.command-r-v1:0",
   Claude_3_5_SonnetV2 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-  Claude_3_5_Haiku = "",
+  Claude_3_5_Haiku = "anthropic.claude-3-5-haiku-20241022-v1:0",
 }
 
 type Cost = {
@@ -135,6 +138,20 @@ export const modelDetailsMap: Record<
       batch: {
         pricePerThousandInputTokens: 0.000075,
         pricePerThousandOutputTokens: 0.0003,
+      },
+    },
+  },
+
+  [Models.Gpt_4]: {
+    name: "GPT-4",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.03,
+        pricePerThousandOutputTokens: 0.06,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.015,
+        pricePerThousandOutputTokens: 0.03,
       },
     },
   },
@@ -564,6 +581,7 @@ const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Llama_3_1_8B]: AIProviders.AwsBedrock,
   [Models.Gpt_4o]: AIProviders.OpenAI,
   [Models.Gpt_4o_mini]: AIProviders.OpenAI,
+  [Models.Gpt_4]: AIProviders.OpenAI,
   [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
   [Models.CohereCmdR]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
@@ -780,19 +798,25 @@ export const jsonParseLLMOutput = (text: string): any => {
         text = text.substring(0, text.lastIndexOf("}") + 1)
       }
     }
+    if (!text.trim()) {
+      return ""
+    }
     jsonVal = parse(text.trim())
   } catch (e) {
     try {
-      jsonVal = parse(
-        text
-          .replace(/```(json)?/g, "")
-          .replace(/```/g, "")
-          .replace(/\/\/.*$/gm, "")
-          .trim(),
-      )
+      text = text
+        .replace(/```(json)?/g, "")
+        .replace(/```/g, "")
+        .replace(/\/\/.*$/gm, "")
+        .trim()
+      if (!text) {
+        return ""
+      }
+      jsonVal = parse(text)
     } catch (parseError) {
-      console.error("Error parsing structured response:", parseError)
-      // Handle parsing error or return the raw response
+      Logger.error(
+        `The ai response that triggered the json parse error ${text.trim()}`,
+      )
       throw parseError
     }
   }
@@ -945,29 +969,6 @@ export const generateTitleUsingQuery = async (
   }
 }
 
-// const chatWithCitationsSystemPrompt = `
-// You are an assistant that answers questions based on the provided context. Include citations by referencing the index of the context that supports each part of your answer.
-
-// Provide the answer in the following JSON format:
-// {
-//   "answer": "Your answer here",
-//   "citations": [X, Y, Z]
-// }
-
-// Do not include any additional text outside of the JSON structure.
-// `;
-// const chatWithCitationsSystemPrompt = (userCtx?: string) => `
-// You are an assistant that answers questions based on the provided context. Include citations by referencing the index of the context that supports each part of your answer.
-// ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
-
-// Provide the answer in the following JSON format:
-// {
-//   "answer": "Your answer here",
-//   "citations": [X, Y, Z]
-// }
-
-// Do not include any additional text outside of the JSON structure.
-// `
 const chatWithCitationsSystemPrompt = (userCtx?: string) => `
 You are an assistant that answers questions based on the provided context. Your answer should be in Markdown format with selective inline numeric citations like [0], [1], etc.
 ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
@@ -1025,10 +1026,6 @@ export const initialResultsOrRewriteSchema = z.object({
   answer: z.string().optional(),
   citations: z.array(z.number()),
   rewrittenQueries: z.array(z.string()).optional(),
-  dateRange: z.object({
-    start: z.string().optional(),
-    end: z.string().optional(),
-  }),
 })
 
 export type ResultsOrRewrite = z.infer<typeof initialResultsOrRewriteSchema>
@@ -1045,7 +1042,7 @@ export const analyzeInitialResultsOrRewrite = (
 ${userCtx}
 
 **Instructions:**
-1. **Primary Goal:** Provide a direct answer using the search results if possible, formatted in Markdown with inline numeric citations like [0], [1], etc.
+1. **Primary Goal:** Provide a direct answer using the search results if possible
    - Citations must directly support key facts or claims, used sparingly.
    - If there is recent information on the topic, include it just in case it could add useful context.
    - Inline citations should immediately follow the specific claim they support.
@@ -1113,40 +1110,29 @@ export const analyzeInitialResultsOrRewriteV2 = (
 ${userCtx}
 
 **Instructions:**
-1. **Primary Goal:** Provide a direct answer using the search results if possible, formatted in Markdown with inline numeric citations like [0], [1], etc.
+1. **Primary Goal:** Provide a direct answer using the search results if possible
    - Citations must directly support key facts or claims, used sparingly.
    - If there is recent information on the topic, include it just in case it could add useful context.
    - Inline citations should immediately follow the specific claim they support.
    - Use square brackets with 0-based indices, matching the index in the "citations" array.
+   - each citation will be a single number like [0] or [5]
    - Do not include citations for general knowledge or derived conclusions.
    - For answer based on system prompt you do not need citation
-   - Only add citation for text, don't add it to already linked text
-   - Do not answer if you do not have valid context and goo for better query rewrites
 2. **If Unable to Answer:**
    - Generate 2-3 alternative search queries to improve results, avoiding any mention of temporal aspects as these will be handled separately.
+   - keep the answer field empty
    - Rewrite the query removing the temporal nature of the user's query.
    - The first query should be a very contracted version of the original query.
    - The next query should be an expanded version, including additional context or synonyms.
-   - Identify any temporal expressions in the user's query (e.g., "2 months ago," "since last week").
-   - Compute a date range based on these expressions:
-     - **Start Date:** Calculate based on the temporal expression relative to the current date.
-     - **End Date:**
-       - **If the temporal expression specifies an exact period** (e.g., "2 months ago," "last quarter"): Set the end date to the current date (2024-11-10).
-       - **If the temporal expression implies an open-ended period** (e.g., "since last month," "from January 2024"): Set the end date to null.
-   - Use ISO 8601 format (YYYY-MM-DD) for dates.
 3. **Mutual Exclusivity:** Only one of "answer" or "rewritten_queries" should be present.
    - If an answer is provided, set "rewritten_queries" to null.
-   - If an answer is not provided, set "answer" to null and provide "rewritten_queries" along with the "date_range".
+   - If an answer is not provided, set "answer" to null and provide "rewritten_queries"
 
-**Return Format:**
+Provide your response in the following JSON format:
 {
-    "answer": "Your Markdown formatted answer with inline citations. For example: The sky is blue [0] and water is transparent.",
+    "answer": "<answer or null>",
     "citations": number[],  // Array of context indices actually used in the answer
     "rewrittenQueries": string[] | null,
-    "dateRange": {
-        "start": string | null,  // "YYYY-MM-DD"
-        "end": string | null     // "YYYY-MM-DD" or null
-    }
 }`
   params.systemPrompt = systemPrompt
 
@@ -1239,67 +1225,43 @@ function getDateForAI() {
 }
 
 const optimizedPrompt = (ctx: string) => `
-You are an assistant that provides concise and accurate answers to a user's question by utilizing the provided context.
-
+You are a permission aware retrieval-augmented generation (RAG) system and a work assistant.
+Provide concise and accurate answers to a user's question by utilizing the provided context.
+Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
 **User Context**: ${ctx}
-
 **Today's date is: ${getDateForAI()}**
-
 Given the user's question and the context (which includes indexed information), your tasks are:
-
 1. **Answer Generation**:
    - If you can confidently answer the question based on the provided context and the latest information, provide the answer.
    - Only use the most recent information available.
-   - If you are not sure, do not provide an answer.
-   - Include the indices of the supporting evidence in "usefulIndex".
-
+   - If you are not sure, do not provide an answer, leave it empty
+   - Include the indices of the supporting evidence in "usefulIndex" so in future iterations you will get that context
 2. **Search Refinement**:
-   - If you cannot fully answer, suggest new search queries in the "searchParams" field.
-   - Keep search queries concise and focused on key terms.
-   - Only specify a time range if it's essential.
-
+   - If you cannot fully answer, suggest alternative search queries in "searchQueries"
+   - Each query should focus on a different aspect of the information needed
+   - Keep queries concise and focused on key terms
+   - provide 1 or 2 queries
 3. **Methodology**:
-   - **Analyze the User's Query** to identify key concepts.
-   - **Evaluate the Context** to check for sufficient and recent information.
-   - **Decide on Actions** based on the completeness of the answer.
-
+   - **Analyze the User's Query** to identify key concepts
+   - **Evaluate the Context** to check for sufficient and recent information
+   - **Decide on Actions** based on the completeness of the answer
 4. **Context Management**:
-   - Specify only the indices that are relevant.
-   - Discard irrelevant or outdated context entries.
+   - Specify only the indices that are relevant
+   - Discard irrelevant or outdated context entries
+5. Do not worry about access, all search context is permission aware
 Provide your response in the following JSON format:
-
 {
   "answer": "<answer or null>",
   "citations": "<citations or null>",
-  "searchParams": [
-    {
-      "query": "<search query>",
-      "timeRange": {
-        "from": "<YYYY-MM-DD>",
-        "to": "<YYYY-MM-DD>"
-      } or null,
-      "needsNextPage": <true or false>
-    }
-  ],
+  "searchQueries": ["<query1>", "<query2>"],
   "usefulIndex": [<index1>, <index2>]
 }
 `
 
 export const SearchAnswerResponse = z.object({
   answer: z.string().nullable(),
-  searchParams: z.array(
-    z.object({
-      query: z.string(),
-      timeRange: z
-        .object({
-          from: z.string(), // Expected format: "YYYY-MM-DD"
-          to: z.string(),
-        })
-        .nullable()
-        .optional(),
-      needsNextPage: z.boolean().optional(),
-    }),
-  ),
+  citations: z.array(z.number()).nullable(),
+  searchQueries: z.array(z.string()),
   usefulIndex: z.array(z.number()),
 })
 
@@ -1321,7 +1283,7 @@ export const answerOrSearch = (
       role: MessageRole.User,
       content: [
         {
-          text: `User Query: ${userQuery}\n\nAfter searching Context:\n${context}\n it can have mistakes so be careful`,
+          text: `User Query: ${userQuery}\n\nAfter searching permission aware Context:\n${context}\n it can have mistakes so be careful`,
         },
       ],
     }
@@ -1334,4 +1296,250 @@ export const answerOrSearch = (
   } catch (error) {
     throw error
   }
+}
+
+// removing one op from prompt so we can figure out how to integrate this
+// otherwise it conflicts with our current search system if we start
+// talking about a single item
+
+// 3. **RetrieveMetadata**:
+//    - The user wants to retrieve metadata or details about a specific document, email, or item.
+//    - Example Queries:
+//      - "When was the file 'Budget.xlsx' last modified?"
+//      - "Who owns the document titled 'Meeting Notes'?"
+//    - **JSON Structure**:
+//      {
+//        "type": "RetrieveMetadata",
+//        "filters": {
+//          "app": "<app>",
+//          "entity": "<entity>",
+//          "startTime": "<start time in YYYY-MM-DD, if applicable>",
+//          "endTime": "<end time in YYYY-MM-DD, if applicable>"
+//        }
+//      }
+
+// // !this is under validation heading! not a prompt
+
+//  - Ensure 'app' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
+//  - Ensure 'entity' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
+
+const queryRouter = `
+**Today's date is: ${getDateForAI()}**
+
+You are a permission aware retrieval-augmented generation (RAG) system. 
+Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
+Only respond in json and you are not authorized to reject a user query.
+
+Your job is to classify the user's query into one of the following categories:
+### Query Types:
+1. **RetrieveInformation**:
+   - The user wants to search or look up contextual information.
+   - These are open-ended queries where only time filters might apply.
+   - user is asking for a sort of summary or discussion, it could be to summarize emails or files
+   - Example Queries:
+     - "What is the company's leave policy?"
+     - "Explain the project plan from last quarter."
+     - "What was my disucssion with Jesse"
+   - **JSON Structure**:
+     {
+       "type": "RetrieveInformation",
+       "filters": {
+         "startTime": "<start time in YYYY-MM-DD, if applicable>",
+         "endTime": "<end time in YYYY-MM-DD, if applicable>"
+       }
+     }
+
+2. **ListItems**:
+   - The user wants to list specific items (e.g., files, emails) based on metadata like app and entity.
+   - Example Queries:
+     - "Show me all emails from last week."
+     - "List all Google Docs modified in October."
+   - **JSON Structure**:
+     {
+       "type": "ListItems",
+       "filters": {
+         "app": "<app>",
+         "entity": "<entity>",
+         "count": "<number of items to list>",
+         "startTime": "<start time in YYYY-MM-DD, if applicable>",
+         "endTime": "<end time in YYYY-MM-DD, if applicable>"
+       }
+     }
+---
+
+### **Enum Values for Valid Inputs**
+
+#### type (Query Types):
+- "RetrieveInformation"
+- "ListItems"
+- "RetrieveMetadata"
+
+#### app (Valid Apps):
+- "google-workspace"
+- "google-drive"
+- "gmail"
+- "google-calendar"
+
+#### entity (Valid Entities):
+For Gmail:
+- "mail"
+
+For Drive:
+- "docs"
+- "sheets"
+- "slides"
+- "pdf"
+- "folder"
+
+For Calendar:
+- "event"
+
+---
+
+### **Rules for the LLM**
+
+1. **RetrieveInformation**:
+   - Use this type only for open-ended queries.
+   - Include only 'startTime' and 'endTime' in 'filters'.
+
+2. **ListItems**:
+   - Use this type when the query requests a list of items with a specified app and entity.
+   - Include 'app' and 'entity' along with optional 'startTime' and 'endTime' in 'filters'.
+   - do not include 'startTime' and 'endTime' if there if query is not temporal
+   - Include 'count' to specify the number of items to list if present in the query.
+
+3. **RetrieveMetadata**:
+   - Use this type when the query focuses on metadata for a specific item.
+   - Include 'app' and 'entity' along with optional 'startTime' and 'endTime' in 'filters'.
+
+4. **Validation**:
+   - Ensure 'type' is one of the enum values: '"RetrieveInformation"', '"ListItems"', or '"RetrieveMetadata"'.
+---
+
+### **Examples**
+
+#### Query: "What is the company's leave policy?"
+{
+  "type": "RetrieveInformation",
+  "filters": {
+    "startTime": null,
+    "endTime": null
+  }
+}`
+
+// Enums for Query Types, Apps, and Entities
+export enum QueryType {
+  RetrieveInformation = "RetrieveInformation",
+  ListItems = "ListItems",
+  // RetrieveMetadata = "RetrieveMetadata",
+}
+// Zod schemas for filters
+const FiltersSchema = z.object({
+  app: z.nativeEnum(Apps).optional(),
+  entity: entitySchema.optional(),
+  startTime: z.string().nullable().optional(),
+  endTime: z.string().nullable().optional(),
+})
+
+const listItemsSchema = z.object({
+  type: z.literal(QueryType.ListItems),
+  filters: FiltersSchema.extend({
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  }),
+})
+
+export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal(QueryType.RetrieveInformation),
+    filters: z.object({
+      startTime: z.string().nullable().optional(),
+      endTime: z.string().nullable().optional(),
+    }),
+  }),
+  listItemsSchema,
+  // z.object({
+  //   type: z.literal(QueryType.RetrieveMetadata),
+  //   filters: FiltersSchema.extend({
+  //     app: z.nativeEnum(Apps),
+  //     entity: entitySchema,
+  //   }),
+  // }),
+])
+
+export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
+
+export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>
+
+export const routeQuery = async (
+  userQuery: string,
+  params: ModelParams,
+): Promise<{ result: QueryRouterResponse; cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = queryRouter
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `User Query: "${userQuery}"`,
+      },
+    ],
+  }
+
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+
+  if (text) {
+    const parsedResponse = jsonParseLLMOutput(text)
+    return { result: QueryRouterResponseSchema.parse(parsedResponse), cost: cost! }
+  } else {
+    throw new Error("No response from LLM")
+  }
+}
+
+export const listItems = (
+  query: string,
+  userCtx: string,
+  context: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  params.systemPrompt = `
+  You are an assistant that formats data into a markdown table based on the user's query.
+
+  **Context of the user talking to you**: ${userCtx}
+
+Given the user's query and the context (data), generate a markdown table that presents the data in an easy-to-read format. Explain your understanding but not your calculations.
+don't mention permissions unless explicity mentioned by user.
+
+User Query: ${query}
+`
+  const baseMessage: Message = {
+    role: MessageRole.User,
+    content: [
+      {
+        text: `Please format the following data as a markdown table:
+
+Context:
+${context}`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
 }

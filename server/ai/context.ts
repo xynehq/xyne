@@ -75,14 +75,14 @@ const constructEventContext = (
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Event Name: ${fields.name ? `Name: ${fields.name}` : ""}
-Description: ${fields.description ? fields.description : ""}
+Description: ${fields.description ? fields.description.substring(0, 50) : ""}
 Base URL: ${fields.baseUrl ? fields.baseUrl : "No base URL"}
 Status: ${fields.status ? fields.status : "Status unknown"}
 Location: ${fields.location ? fields.location : "No location specified"}
 Created: ${getRelativeTime(fields.createdAt)}
 Updated: ${getRelativeTime(fields.updatedAt)}
-Start Time: ${fields.startTime && getRelativeTime(fields.startTime)}
-End Time: ${fields.endTime && getRelativeTime(fields.endTime)}
+Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}
+End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
 Attendees: ${
     fields.attendeesNames && fields.attendeesNames.length
@@ -100,7 +100,7 @@ Cancelled Instances: ${
       ? fields.cancelledInstances.join(", ")
       : "No cancelled instances"
   }
-vespa relevance score: ${relevance}`
+${relevance ? `vespa relevance score: ${relevance}` : ""}`
 }
 
 // Function for handling file context
@@ -223,6 +223,8 @@ export const answerMetadataContextMap = (
       searchResult.fields,
       searchResult.relevance,
     )
+  } else if (searchResult.fields.sddocname === eventSchema) {
+    return constructEventContext(searchResult.fields, searchResult.relevance)
   } else {
     throw new Error("Invalid search result type")
   }
@@ -343,7 +345,8 @@ Email: ${user.email}
 Company: ${workspace.name}
 Company domain: ${workspace.domain}
 Current Time: ${currentTime}
-Today is: ${currentDate}`
+Today is: ${currentDate}
+Timezone: IST`
 }
 
 /**

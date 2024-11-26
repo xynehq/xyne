@@ -4,7 +4,6 @@ import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
 
-
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
 
@@ -148,4 +147,3 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     }
   }
 }
-

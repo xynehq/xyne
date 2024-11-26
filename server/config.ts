@@ -46,4 +46,6 @@ export default {
   OpenAIKey,
   redirectUri,
   postOauthRedirect,
+  // fastModelId: OpenAIKey ? Models.Gpt_4o_mini : Models.Llama_3_1_8B,
+  // bestModelId: Models.CohereCmdRPlus
 }
