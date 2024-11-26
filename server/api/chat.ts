@@ -732,6 +732,7 @@ export const MessageApiV2 = async (c: Context) => {
             messageRole: MessageRole.User,
             email: user.email,
             sources: attachmentsToBeInserted, // Adding attachmentMetadata to sources
+            attachments: attachmentsToBeInserted,
             message,
             modelId,
           })
@@ -768,6 +769,7 @@ export const MessageApiV2 = async (c: Context) => {
             messageRole: MessageRole.User,
             email: user.email,
             sources: newAttachments, // Adding new attachments metadata
+            attachments: newAttachments,
             message,
             modelId,
           })

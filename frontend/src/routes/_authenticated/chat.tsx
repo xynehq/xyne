@@ -148,6 +148,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     if (stagedFiles.length !== 0) {
       uploadedFilesMetadata = await handleFileUpload()
+      setStagedFiles([])
       if (uploadedFilesMetadata.length !== 0) {
         console.log(`handleFileUpload ran sucessfully...`)
       }
@@ -417,7 +418,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
       const result = await response.json()
       if (response.ok) {
-        setStagedFiles([]) // Clear the staging area
         return result.attachmentsMetadata
       } else {
         console.error("File upload failed:")
@@ -494,6 +494,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               {currentResp && (
                 <ChatMessage
                   message={currentResp.resp}
+                  attachments={currentResp.attachments}
                   citations={currentResp.sources?.map((c: Citation) => c.url)}
                   isUser={false}
                   responseDone={false}
