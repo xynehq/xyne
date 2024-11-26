@@ -325,6 +325,7 @@ const HybridDefaultProfile = (
   profile: RankProfile = "default",
   timestampRange?: { to: number; from: number } | null,
   excludedIds?: string[],
+  notInMailLabels?: string[],
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
   let fileTimestamp = ""
@@ -370,6 +371,11 @@ const HybridDefaultProfile = (
       .join(" or ")
   }
 
+  let mailLabelQuery = ""
+  if (notInMailLabels && notInMailLabels.length > 0) {
+    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
   // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {
     profile: profile,
@@ -383,7 +389,7 @@ const HybridDefaultProfile = (
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
             ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-            and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS')
+            and permissions contains @email ${mailLabelQuery}
             ${appOrEntityFilter}
           )
           or
@@ -407,6 +413,7 @@ const HybridDefaultProfile = (
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
+  notInMailLabels?: string[],
 ): YqlProfile => {
   let fileTimestamp = ""
   let mailTimestamp = ""
@@ -441,11 +448,16 @@ const HybridDefaultProfileAppEntityCounts = (
     userTimestamp = userTimestampConditions.join("")
   }
 
+  let mailLabelQuery = ""
+  if (notInMailLabels && notInMailLabels.length > 0) {
+    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
   return {
     profile: "default",
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email and !(labels contains 'CATEGORY_UPDATES' or labels contains 'CATEGORY_PROMOTIONS'))
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
             or
             (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
@@ -516,7 +528,7 @@ export const searchVespa = async (
   offset?: number,
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
-  mailLabels?: string[],
+  notInMailLabels?: string[],
 ): Promise<VespaSearchResponse> => {
   const url = `${vespaEndpoint}/search/`
 
@@ -529,6 +541,7 @@ export const searchVespa = async (
     "default",
     timestampRange,
     excludedIds,
+    notInMailLabels,
   )
 
   const hybridDefaultPayload = {
@@ -1059,7 +1072,7 @@ interface GetItemsParams {
   schema: string
   app?: Apps | null
   entity?: Entity | null
-  timestampRange?: { from?: number; to?: number } | null
+  timestampRange: { from: number | null; to: number | null } | null
   limit?: number
   offset?: number
   email: string
@@ -1146,7 +1159,6 @@ export const getItems = async (
   // Construct YQL query with limit and offset
   const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
 
-  console.log(yql)
   const url = `${vespaEndpoint}/search/`
 
   const searchPayload = {

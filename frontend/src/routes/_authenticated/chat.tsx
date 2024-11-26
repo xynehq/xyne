@@ -242,6 +242,21 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setIsStreaming(false)
     })
 
+    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+      console.error("Error with SSE:", event.data)
+      const currentResp = currentRespRef.current
+      if (currentResp) {
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          { messageRole: "assistant", message: `Error occured: ${event.data}` },
+        ])
+      }
+      setCurrentResp(null)
+      currentRespRef.current = null
+      eventSource.close()
+      setIsStreaming(false)
+    })
+
     // Handle error events
     eventSource.onerror = (error) => {
       console.error("Error with SSE:", error)
@@ -249,7 +264,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { messageRole: "assistant", message: currentResp.resp },
+          {
+            messageRole: "assistant",
+            message: `Error occured: please try again`,
+          },
         ])
       }
       setCurrentResp(null)
@@ -594,7 +612,7 @@ const ChatMessage = ({
               className={"mr-[20px] w-[32px] self-start"}
               src={AssistantLogo}
             />
-            <div className="mt-[4px] markdown-content">
+            <div className="mt-[4px] markdown-content max-w-[75%]">
               {message === "" ? (
                 <div className="flex-grow">
                   {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
@@ -609,6 +627,7 @@ const ChatMessage = ({
                     padding: 0,
                     backgroundColor: "transparent",
                     color: "#1C1D1F",
+                    maxWidth: "75%",
                   }}
                 />
               )}

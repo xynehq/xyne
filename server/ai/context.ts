@@ -345,7 +345,8 @@ Email: ${user.email}
 Company: ${workspace.name}
 Company domain: ${workspace.domain}
 Current Time: ${currentTime}
-Today is: ${currentDate}`
+Today is: ${currentDate}
+Timezone: IST`
 }
 
 /**

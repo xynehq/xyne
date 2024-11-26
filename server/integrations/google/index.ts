@@ -962,7 +962,6 @@ const insertFilesForUser = async (
     let processedFiles = 0
     const pdfProcessingPromises: Promise<any>[] = []
     for await (const pageFiles of listFiles(googleClient)) {
-      console.log(`got ${pageFiles.length} files`)
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
       )
@@ -1217,7 +1216,7 @@ export const getSheetsListFromOneSpreadsheet = async (
     }
 
     const sheetDataToBeIngested = {
-      title: `/ ${sheet?.sheetTitle}`,
+      title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
       url: spreadsheet.webViewLink ?? "",
       app: Apps.GoogleDrive,
       // TODO Document it eveyrwhere
@@ -1381,7 +1380,7 @@ export const googlePDFsVespa = async (
         docs = await loader.load()
 
         if (!docs || docs.length === 0) {
-          Logger.error(
+          Logger.warn(
             `Could not get content for file: ${pdf.name}. Skipping it`,
           )
           await deleteDocument(pdfPath)
