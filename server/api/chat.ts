@@ -231,7 +231,7 @@ export const UploadFilesApi = async (c: Context) => {
     const files = formData.getAll("files") as File[]
     const metadata: any[] = []
 
-    files.forEach(async (file) => {
+    for (const file of files) {
       const fileMetadata: any = {}
       // Parse file according to its type
       if (file.type === "application/pdf") {
@@ -241,11 +241,13 @@ export const UploadFilesApi = async (c: Context) => {
         metadata.push(fileMetadata)
 
         await handlePDFFile(file, email)
+        Logger.info(`Upload file completed`)
       } else {
         Logger.error(`File type not supported yet`)
       }
-    })
+    }
 
+    Logger.info(`Returning metadata`)
     return c.json({ attachmentsMetadata: metadata })
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -666,6 +668,7 @@ const processMessage = (text: string, citationMap: Record<number, number>) => {
 
 export const MessageApiV2 = async (c: Context) => {
   try {
+    Logger.info(`MessageApiV2 called....`)
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     // @ts-ignore
@@ -677,6 +680,12 @@ export const MessageApiV2 = async (c: Context) => {
       getUserAndWorkspaceByEmail(db, workspaceId, email),
       searchVespa(message, email, null, null, config.answerPage, 0),
     ])
+    if (results) {
+      console.log("results")
+      console.log(results)
+      console.log("results")
+      Logger.info(`Vespa search results are here...`)
+    }
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []

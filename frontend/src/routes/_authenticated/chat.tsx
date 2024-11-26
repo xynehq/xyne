@@ -148,6 +148,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     if (stagedFiles.length !== 0) {
       uploadedFilesMetadata = await handleFileUpload()
+      if (uploadedFilesMetadata.length !== 0) {
+        console.log(`handleFileUpload ran sucessfully...`)
+      } 
     }
     // Append the user's message to the chat
     setMessages((prevMessages) => [
@@ -163,11 +166,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentResp({ resp: "" })
     currentRespRef.current = { resp: "", sources: [] }
 
+    console.log(`Message Create API called...`)
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
-    url.searchParams.append("modelId", "meta-llama/Llama-3-8b-chat-hf")
+    url.searchParams.append("modelId", "meta-llama/Llama-3.2-90b-chat-hf")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
     url.searchParams.append(
       "attachments",
