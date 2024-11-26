@@ -2,6 +2,7 @@
 // translate the company to the AI
 import type { PublicUserWorkspace } from "@/db/schema"
 import {
+  chatAttachmentSchema,
   fileSchema,
   mailSchema,
   userSchema,
@@ -28,6 +29,20 @@ Created: ${getRelativeTime(fields.createdAt)}
 Updated At: ${getRelativeTime(fields.updatedAt)}
 ${fields.url ? `Link: ${fields.url}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
+${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
+${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
+${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.join("\n")}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+const constructChatAttachmentContext = (
+  fields: VespaFileSearch,
+  relevance: number,
+): string => {
+  return `Title: ${fields.title ? `Title: ${fields.title}` : ""}
+Created: ${getRelativeTime(fields.createdAt)}
+Updated At: ${getRelativeTime(fields.updatedAt)}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
@@ -150,6 +165,8 @@ export const answerContextMap = (
     return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
     return constructMailContext(searchResult.fields, searchResult.relevance)
+  } else if (searchResult.fields.sddocname === chatAttachmentSchema) {
+    return constructChatAttachmentContext(searchResult.fields, searchResult.relevance)
   } else {
     throw new Error("Invalid search result type")
   }

@@ -682,7 +682,7 @@ export const MessageApiV2 = async (c: Context) => {
     ])
     if (results) {
       console.log("results")
-      console.log(results)
+      console.log(results.root.children)
       console.log("results")
       Logger.info(`Vespa search results are here...`)
     }

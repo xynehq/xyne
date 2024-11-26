@@ -1,5 +1,6 @@
 import {
   Apps,
+  chatAttachmentSchema,
   eventSchema,
   fileSchema,
   mailSchema,
@@ -232,7 +233,7 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
-const AllSources = [fileSchema, userSchema, mailSchema, eventSchema].join(", ")
+const AllSources = [fileSchema, userSchema, mailSchema, eventSchema, chatAttachmentSchema].join(", ")
 
 export const autocomplete = async (
   query: string,
