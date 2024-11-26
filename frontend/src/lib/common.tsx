@@ -18,6 +18,8 @@ import {
   NotionEntity,
   CalendarEntity,
 } from "shared/types"
+import { useContext } from "react"
+import { StateContext } from "@/StateProvider"
 
 export const getIcon = (
   app: Apps,
@@ -78,5 +80,23 @@ export const getIcon = (
     }
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
+  }
+}
+
+export const useStateContext = () => {
+  const context = useContext(StateContext)
+  if (!context) {
+    throw new Error(
+      "useStateContext must be used within a StateContextProvider",
+    )
+  }
+  return context
+}
+
+export const isSupportedFileType = (fileType: string): boolean => {
+  if (fileType === "application/pdf") {
+    return true
+  } else {
+    return false
   }
 }

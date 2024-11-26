@@ -12,6 +12,7 @@ import {
 import { api } from "@/api"
 import { ChatBox } from "@/components/ChatBox"
 import Sparkle from "@/assets/singleSparkle.svg"
+import { useStateContext } from "@/lib/common"
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<"search" | "ask">("search")
@@ -30,6 +31,8 @@ const Index = () => {
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
   const { user } = matches[matches.length - 1].context
+  const { stagedFiles, handleFileRemove, handleFileSelection } =
+    useStateContext()
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -170,6 +173,9 @@ const Index = () => {
                 query={query}
                 setQuery={setQuery}
                 handleSend={handleAsk}
+                stagedFiles={stagedFiles}
+                handleFileSelection={handleFileSelection}
+                handleFileRemove={handleFileRemove}
               />
             </div>
           )}

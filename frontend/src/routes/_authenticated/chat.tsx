@@ -16,9 +16,8 @@ import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { ChatBox, getFileTypeName } from "@/components/ChatBox"
 import { z } from "zod"
-import { getIcon } from "@/lib/common"
+import { getIcon, useStateContext } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
-import { useToast } from "@/hooks/use-toast"
 
 type CurrentResp = {
   resp: string
@@ -80,8 +79,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
-  const [stagedFiles, setStagedFiles] = useState<File[]>([])
-  const { toast } = useToast()
+  const { stagedFiles, setStagedFiles, handleFileRemove, handleFileSelection } =
+    useStateContext()
 
   useEffect(() => {
     if (inputRef.current) {
@@ -388,59 +387,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         <div className="ml-[120px]">Error: Could not get data</div>
       </div>
     )
-  }
-
-  const handleFileSelection = (event) => {
-    const files = Array.from(event.target!.files) as File[]
-    const validFiles: File[] = [] // Array to hold files that pass validation
-
-    files.forEach((file: File) => {
-      // File size check: 20 MB limit
-      const fileSizeInMB = file.size / (1024 * 1024)
-      if (fileSizeInMB > 20) {
-        toast({
-          title: `File Too Large`,
-          description: `The file "${file.name}" exceeds the 20MB size limit. Please choose a smaller file.`,
-          variant: "destructive",
-        })
-      } else if (!isSupportedFileType(file.type)) {
-        // Check for unsupported file types
-        toast({
-          title: "File Type not supported",
-          description: `The file "${file.name}" is of type "${file.type}", which is not supported. Please upload a valid file type.`,
-          variant: "destructive",
-        })
-      } else {
-        // If valid, add the file to the validFiles array
-        validFiles.push(file)
-      }
-    })
-
-    setStagedFiles((prev) => {
-      if (prev.length + validFiles.length > 5) {
-        toast({
-          title: "File Limit Exceeded",
-          description: "You can only select up to 5 files.",
-          variant: "destructive",
-        })
-        return prev // Keep the current files unchanged
-      }
-      return [...prev, ...validFiles]
-    })
-
-    event.target.value = ""
-  }
-
-  function handleFileRemove(index: number) {
-    setStagedFiles((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const isSupportedFileType = (fileType: string): boolean => {
-    if (fileType === "application/pdf") {
-      return true
-    } else {
-      return false
-    }
   }
 
   const handleFileUpload = async () => {
