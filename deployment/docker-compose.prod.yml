@@ -2,30 +2,33 @@ version: "3.9"
 
 services:
   # app:
-  # image: xyne
-  # container_name: xyne-app
-  # build:
-  #   context: ..
-  #   dockerfile: Dockerfile
-  # ports:
-  #   - "3000:3000"
-  # depends_on:
-  #   - xyne-db
-  #   - vespa
-  # env_file:
-  #   - .env
-  # networks:
-  #   - xyne
-  # restart: always
+  #   image: xyne
+  #   container_name: xyne-app
+  #   build:
+  #     context: ..
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - xyne-db
+  #     - vespa
+  #   env_file:
+  #     - ../server/.env
+  #   networks:
+  #     - xyne
+  #   restart: always
   vespa:
     image: vespaengine/vespa
     container_name: vespa
     hostname: vespa-container
+    # sudo chown -R 1000:1000 ./server/vespa-data
+    user: "1000:1000" # Run as vespa user
     ports:
       - "8080:8080"
       - "19071:19071"
     volumes:
-      - ../server/vespa-data:/opt/vespa/var
+      - ../server/vespa-data:/opt/vespa/var # Ensure this directory has correct permissions
+      - ../server/vespa-logs:/opt/vespa/logs # Ensure correct permissions
     networks:
       - xyne
     restart: always
@@ -51,7 +54,6 @@ services:
     restart: always
 networks:
   xyne:
-    driver: bridge
 volumes:
   vespa-data:
     driver: local

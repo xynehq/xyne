@@ -95,6 +95,16 @@ const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
+type Email = string
+type WorkspaceStats = Record<Email, UserStats>
+
+type UserStats = {
+  gmailCount: number
+  driveCount: number
+  contactsCount: number
+  eventsCount: number
+}
+
 const listUsers = async (
   admin: admin_directory_v1.Admin,
   domain: string,
@@ -304,14 +314,19 @@ export const getAttendeesOfEvent = (
   allAttendes: calendar_v3.Schema$EventAttendee[],
 ) => {
   if (allAttendes.length === 0) {
-    return { attendeesInfo: [], attendeesNames: [] }
+    return { attendeesInfo: [], attendeesEmails: [], attendeesNames: [] }
   }
 
   const attendeesInfo: { email: string; displayName: string }[] = []
   const attendeesNames: string[] = []
+  const attendeesEmails: string[] = []
   for (const attendee of allAttendes) {
     if (attendee.displayName) {
       attendeesNames.push(attendee.displayName ?? "")
+    }
+
+    if (attendee.email) {
+      attendeesEmails.push(attendee.email)
     }
 
     const oneAttendee = { email: "", displayName: "" }
@@ -323,7 +338,7 @@ export const getAttendeesOfEvent = (
     attendeesInfo.push(oneAttendee)
   }
 
-  return { attendeesInfo, attendeesNames }
+  return { attendeesInfo, attendeesEmails, attendeesNames }
 }
 
 export const getAttachments = (
@@ -351,15 +366,32 @@ export const getAttachments = (
   return { attachmentsInfo, attachmentFilenames }
 }
 
+export const getUniqueEmails = (permissions: string[]): string[] => {
+  return Array.from(new Set(permissions.filter((email) => email.trim() !== "")))
+}
+
+export const getEventStartTime = (event: calendar_v3.Schema$Event) => {
+  if (event?.start?.dateTime) {
+    return {
+      isDefaultStartTime: false,
+      startTime: new Date(event.start?.dateTime!).getTime(),
+    }
+  } else if (event?.start?.date) {
+    return {
+      isDefaultStartTime: true,
+      startTime: new Date(event.start.date!).getTime(),
+    }
+  } else {
+    return { isDefaultStartTime: true, startTime: new Date().getTime() }
+  }
+}
+
 export const eventFields =
   "nextPageToken, nextSyncToken, items(id, status, htmlLink, created, updated, location, summary, description, creator(email, displayName), organizer(email, displayName), start, end, recurrence, attendees(email, displayName), conferenceData, attachments)"
 
 export const maxCalendarEventResults = 2500
 
-const insertCalendarEvents = async (
-  client: GoogleClient,
-  userEmail: string,
-) => {
+const insertCalendarEvents = async (client: GoogleClient) => {
   let nextPageToken = ""
   // will be returned in the end
   let newSyncTokenCalendarEvents: string = ""
@@ -401,12 +433,12 @@ const insertCalendarEvents = async (
   // First insert only the confirmed events
   for (const event of confirmedEvents) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
-    const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
-      event.attendees ?? [],
-    )
+    const { attendeesInfo, attendeesEmails, attendeesNames } =
+      getAttendeesOfEvent(event.attendees ?? [])
     const { attachmentsInfo, attachmentFilenames } = getAttachments(
       event.attachments ?? [],
     )
+    const { isDefaultStartTime, startTime } = getEventStartTime(event)
     const eventToBeIngested = {
       docId: event.id ?? "",
       name: event.summary ?? "",
@@ -416,7 +448,6 @@ const insertCalendarEvents = async (
       location: event.location ?? "",
       createdAt: new Date(event.created!).getTime(),
       updatedAt: new Date(event.updated!).getTime(),
-      email: userEmail,
       app: Apps.GoogleCalendar,
       entity: CalendarEntity.Event,
       creator: {
@@ -429,15 +460,19 @@ const insertCalendarEvents = async (
       },
       attendees: attendeesInfo,
       attendeesNames: attendeesNames,
-      startTime: new Date(event.start?.dateTime!).getTime(),
+      startTime: startTime,
       endTime: new Date(event.end?.dateTime!).getTime(),
       attachmentFilenames,
       attachments: attachmentsInfo,
       recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
       baseUrl,
       joiningLink: joiningUrl,
-      permissions: [event.organizer?.email ?? ""],
+      permissions: getUniqueEmails([
+        event.organizer?.email ?? "",
+        ...attendeesEmails,
+      ]),
       cancelledInstances: [],
+      defaultStartTime: isDefaultStartTime,
     }
 
     await insert(eventToBeIngested, eventSchema)
@@ -525,7 +560,7 @@ export const handleGoogleOAuthIngestion = async (
     const [_, historyId, { calendarEventsToken }] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
       handleGmailIngestion(oauth2Client, userEmail),
-      insertCalendarEvents(oauth2Client, userEmail),
+      insertCalendarEvents(oauth2Client),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -662,7 +697,7 @@ export const handleGoogleServiceAccountIngestion = async (
       const [_, historyId, { calendarEventsToken }] = await Promise.all([
         insertFilesForUser(jwtClient, userEmail, connector),
         handleGmailIngestion(jwtClient, userEmail),
-        insertCalendarEvents(jwtClient, userEmail),
+        insertCalendarEvents(jwtClient),
       ])
       ingestionMetadata.push({
         email: userEmail,
@@ -923,75 +958,78 @@ const insertFilesForUser = async (
   connector: SelectConnector,
 ) => {
   try {
-    const fileMetadata = await listFiles(googleClient)
-    const totalFiles = fileMetadata.length
-    const ws: WSContext = wsConnections.get(connector.externalId)
-    if (ws) {
-      ws.send(
-        JSON.stringify({
-          totalFiles,
-          message: `${totalFiles} metadata files ingested`,
-        }),
+    const totalFiles = 0
+    let processedFiles = 0
+    const pdfProcessingPromises: Promise<any>[] = []
+    for await (const pageFiles of listFiles(googleClient)) {
+      const googleDocsMetadata = pageFiles.filter(
+        (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
       )
-    }
-    const googleDocsMetadata = fileMetadata.filter(
-      (v) => v.mimeType === DriveMime.Docs,
-    )
-    const googlePDFsMetadata = fileMetadata.filter(
-      (v) => v.mimeType === DriveMime.PDF,
-    )
-    const googleSheetsMetadata = fileMetadata.filter(
-      (v) => v.mimeType === DriveMime.Sheets,
-    )
-    const googleSlidesMetadata = fileMetadata.filter(
-      (v) => v.mimeType === DriveMime.Slides,
-    )
-    const rest = fileMetadata.filter(
-      (v) =>
-        v.mimeType !== DriveMime.Docs &&
-        v.mimeType !== DriveMime.PDF &&
-        v.mimeType !== DriveMime.Sheets &&
-        v.mimeType !== DriveMime.Slides,
-    )
+      const googlePDFsMetadata = pageFiles.filter(
+        (v: drive_v3.Schema$File) => v.mimeType === DriveMime.PDF,
+      )
+      const googleSheetsMetadata = pageFiles.filter(
+        (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Sheets,
+      )
+      const googleSlidesMetadata = pageFiles.filter(
+        (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Slides,
+      )
+      const rest = pageFiles.filter(
+        (v: drive_v3.Schema$File) =>
+          v.mimeType !== DriveMime.Docs &&
+          v.mimeType !== DriveMime.PDF &&
+          v.mimeType !== DriveMime.Sheets &&
+          v.mimeType !== DriveMime.Slides,
+      )
 
-    const [documents, pdfDocuments, sheets, slides]: [
-      VespaFileWithDrivePermission[],
-      VespaFileWithDrivePermission[],
-      VespaFileWithDrivePermission[],
-      VespaFileWithDrivePermission[],
-    ] = await Promise.all([
-      googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
-      googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
-      googleSheetsVespa(
+      const pdfPromise = googlePDFsVespa(
         googleClient,
-        googleSheetsMetadata,
+        googlePDFsMetadata,
         connector.externalId,
-      ),
-      googleSlidesVespa(
+        userEmail,
+      )
+      pdfProcessingPromises.push(pdfPromise)
+      const [documents, sheets, slides]: [
+        VespaFileWithDrivePermission[],
+        // VespaFileWithDrivePermission[],
+        VespaFileWithDrivePermission[],
+        VespaFileWithDrivePermission[],
+      ] = await Promise.all([
+        googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
+        // googlePDFsVespa(googleClient, googlePDFsMetadata, connector.externalId),
+        googleSheetsVespa(
+          googleClient,
+          googleSheetsMetadata,
+          connector.externalId,
+        ),
+        googleSlidesVespa(
+          googleClient,
+          googleSlidesMetadata,
+          connector.externalId,
+        ),
+      ])
+      const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
         googleClient,
-        googleSlidesMetadata,
-        connector.externalId,
-      ),
-    ])
-    const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
-      googleClient,
-      rest,
-    )
+        rest,
+      )
 
-    sendWebsocketMessage("generating embeddings", connector.externalId)
-    let allFiles: VespaFileWithDrivePermission[] = [
-      ...driveFiles,
-      ...documents,
-      ...pdfDocuments,
-      ...sheets,
-      ...slides,
-    ].map((v) => {
-      v.permissions = toPermissionsList(v.permissions, userEmail)
-      return v
-    })
+      let allFiles: VespaFileWithDrivePermission[] = [
+        ...driveFiles,
+        ...documents,
+        // ...pdfDocuments,
+        ...sheets,
+        ...slides,
+      ].map((v) => {
+        v.permissions = toPermissionsList(v.permissions, userEmail)
+        return v
+      })
 
-    for (const doc of allFiles) {
-      await insertDocument(doc)
+      for (const doc of allFiles) {
+        processedFiles += 1
+        await insertDocument(doc)
+      }
+      await Promise.all(pdfProcessingPromises)
+      Logger.info(`finished ${pageFiles.length} files`)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -1178,7 +1216,7 @@ export const getSheetsListFromOneSpreadsheet = async (
     }
 
     const sheetDataToBeIngested = {
-      title: spreadsheet.name!,
+      title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
       url: spreadsheet.webViewLink ?? "",
       app: Apps.GoogleDrive,
       // TODO Document it eveyrwhere
@@ -1241,12 +1279,12 @@ const googleSheetsVespa = async (
         `Error getting sheet files: ${error} ${(error as Error).stack}`,
         error,
       )
-      throw new DownloadDocumentError({
-        message: "Error in the catch of getting sheet files",
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: DriveEntity.Sheets,
-      })
+      // throw new DownloadDocumentError({
+      //   message: "Error in the catch of getting sheet files",
+      //   cause: error as Error,
+      //   integration: Apps.GoogleDrive,
+      //   entity: DriveEntity.Sheets,
+      // })
     }
   }
   return sheetsList
@@ -1295,107 +1333,115 @@ export const downloadPDF = async (
     Logger.error(
       `Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`,
     )
-    throw new DownloadDocumentError({
-      message: "Error in downloading file",
-      cause: error as Error,
-      integration: Apps.GoogleDrive,
-      entity: DriveEntity.PDF,
-    })
+    // throw new DownloadDocumentError({
+    //   message: "Error in downloading file",
+    //   cause: error as Error,
+    //   integration: Apps.GoogleDrive,
+    //   entity: DriveEntity.PDF,
+    // })
   }
 }
+
+const PDFProcessingConcurrency = 5
 
 export const googlePDFsVespa = async (
   client: GoogleClient,
   pdfsMetadata: drive_v3.Schema$File[],
   connectorId: string,
-): Promise<VespaFileWithDrivePermission[]> => {
+  userEmail: string,
+): Promise<void> => {
   sendWebsocketMessage(
     `Scanning ${pdfsMetadata.length} Google PDFs`,
     connectorId,
   )
-  const pdfsList: VespaFileWithDrivePermission[] = []
+  // const pdfsList: VespaFileWithDrivePermission[] = []
   const drive = google.drive({ version: "v3", auth: client })
   const total = pdfsMetadata.length
-  let count = 0
   // a flag just for the error to know
   // if the file was downloaded or not
-  let wasDownloaded = false
-  for (const pdf of pdfsMetadata) {
-    wasDownloaded = false
-    const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
-    // Ignore the PDF files larger than Max PDF Size
-    if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
-      Logger.info(`Ignoring ${pdf.name} as its more than 20 MB`)
-      continue
-    }
-    try {
-      await downloadPDF(drive, pdf.id!, pdf.name!)
-      const pdfPath = `${downloadDir}/${pdf?.name}`
-      wasDownloaded = true
-      let docs: Document[] = []
-
-      const loader = new PDFLoader(pdfPath)
-      docs = await loader.load()
-
-      if (!docs || docs.length === 0) {
-        Logger.error(`Could not get content for file: ${pdf.name}. Skipping it`)
-        await deleteDocument(pdfPath)
-        continue
+  const limit = pLimit(PDFProcessingConcurrency)
+  const pdfPromises = pdfsMetadata.map((pdf) =>
+    limit(async () => {
+      let wasDownloaded = false
+      const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
+      // Ignore the PDF files larger than Max PDF Size
+      if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
+        Logger.info(`Ignoring ${pdf.name} as its more than 20 MB`)
+        return null
       }
-      const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+      const pdfFileName = `${pdf.id}_${pdf.name}`
+      const pdfPath = `${downloadDir}/${pdfFileName}`
+      try {
+        await downloadPDF(drive, pdf.id!, pdfFileName)
+        wasDownloaded = true
+        let docs: Document[] = []
 
-      const parentsForMetadata = []
-      if (pdf?.parents) {
-        for (const parentId of pdf.parents!) {
-          const parentData = await getFile(client, parentId)
-          const folderName = parentData.name!
-          parentsForMetadata.push({ folderName, folderId: parentId })
+        const loader = new PDFLoader(pdfPath)
+        docs = await loader.load()
+
+        if (!docs || docs.length === 0) {
+          Logger.warn(
+            `Could not get content for file: ${pdf.name}. Skipping it`,
+          )
+          await deleteDocument(pdfPath)
+          return null
         }
-      }
-      pdfsList.push({
-        title: pdf.name!,
-        url: pdf.webViewLink ?? "",
-        app: Apps.GoogleDrive,
-        docId: pdf.id!,
-        owner: pdf.owners ? (pdf.owners[0].displayName ?? "") : "",
-        photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
-        ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
-        entity: DriveEntity.PDF,
-        chunks: chunks.map((v) => v.chunk),
-        permissions: pdf.permissions ?? [],
-        mimeType: pdf.mimeType ?? "",
-        metadata: JSON.stringify({ parents: parentsForMetadata }),
-        createdAt: new Date(pdf.createdTime!).getTime(),
-        updatedAt: new Date(pdf.modifiedTime!).getTime(),
-      })
-      count += 1
+        const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
 
-      if (count % 5 === 0) {
-        sendWebsocketMessage(`${count} Google PDFs scanned`, connectorId)
-        process.stdout.write(`${Math.floor((count / total) * 100)}`)
-        process.stdout.write("\n")
+        const parentsForMetadata = []
+        if (pdf?.parents) {
+          for (const parentId of pdf.parents!) {
+            const parentData = await getFile(client, parentId)
+            const folderName = parentData.name!
+            parentsForMetadata.push({ folderName, folderId: parentId })
+          }
+        }
+
+        return {
+          title: pdf.name!,
+          url: pdf.webViewLink ?? "",
+          app: Apps.GoogleDrive,
+          docId: pdf.id!,
+          owner: pdf.owners ? (pdf.owners[0].displayName ?? "") : "",
+          photoLink: pdf.owners ? (pdf.owners[0].photoLink ?? "") : "",
+          ownerEmail: pdf.owners ? (pdf.owners[0]?.emailAddress ?? "") : "",
+          entity: DriveEntity.PDF,
+          chunks: chunks.map((v) => v.chunk),
+          permissions: pdf.permissions ?? [],
+          mimeType: pdf.mimeType ?? "",
+          metadata: JSON.stringify({ parents: parentsForMetadata }),
+          createdAt: new Date(pdf.createdTime!).getTime(),
+          updatedAt: new Date(pdf.modifiedTime!).getTime(),
+        }
+      } catch (error) {
+        Logger.error(
+          `Error getting PDF files: ${error} ${(error as Error).stack}`,
+          error,
+        )
+        if (pdfPath && fs.existsSync(pdfPath)) {
+          try {
+            await deleteDocument(pdfPath)
+          } catch (deleteError) {
+            Logger.warn(`Could not delete PDF file ${pdfPath}: ${deleteError}`)
+          }
+        }
+        // we cannot break the whole pdf pipeline for one error
+        return null
       }
-      await deleteDocument(pdfPath)
-    } catch (error) {
-      Logger.error(
-        `Error getting PDF files: ${error} ${(error as Error).stack}`,
-        error,
-      )
-      if (wasDownloaded) {
-        const pdfPath = `${downloadDir}/${pdf?.name}`
-        await deleteDocument(pdfPath)
-      }
-      // we cannot break the whole pdf pipeline for one error
-      continue
-      // throw new DownloadDocumentError({
-      //   message: "Error in the catch of getting PDF files",
-      //   cause: error as Error,
-      //   integration: Apps.GoogleDrive,
-      //   entity: DriveEntity.PDF,
-      // })
-    }
+    }),
+  )
+
+  let pdfs: VespaFileWithDrivePermission[] = (
+    await Promise.all(pdfPromises)
+  ).filter((v) => !!v)
+  pdfs = pdfs.map((v) => {
+    v.permissions = toPermissionsList(v.permissions, userEmail)
+    return v
+  })
+
+  for (const doc of pdfs) {
+    await insertDocument(doc)
   }
-  return pdfsList
 }
 
 type Org = { endDate: null | string }
@@ -1647,12 +1693,11 @@ const insertContactsToVespa = async (
   }
 }
 
-export const listFiles = async (
+export async function* listFiles(
   client: GoogleClient,
-): Promise<drive_v3.Schema$File[]> => {
+): AsyncIterableIterator<drive_v3.Schema$File[]> {
   const drive = google.drive({ version: "v3", auth: client })
   let nextPageToken = ""
-  let files: drive_v3.Schema$File[] = []
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await drive.files.list({
@@ -1672,11 +1717,10 @@ export const listFiles = async (
       })
 
     if (res.data.files) {
-      files = files.concat(res.data.files)
+      yield res.data.files
     }
     nextPageToken = res.data.nextPageToken ?? ""
   } while (nextPageToken)
-  return files
 }
 
 const sendWebsocketMessage = (message: string, connectorId: string) => {

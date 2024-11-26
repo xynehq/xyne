@@ -90,7 +90,7 @@ const Index = () => {
     if (query.trim()) {
       navigate({
         to: "/search",
-        search: { query: encodeURIComponent(query.trim()) },
+        search: { query: encodeURIComponent(decodeURIComponent(query.trim())) },
       })
     }
   }
@@ -160,6 +160,7 @@ const Index = () => {
                 setAutocompleteQuery={setAutocompleteQuery}
                 setOffset={setOffset}
                 setFilter={setFilter}
+                handleAnswer={() => {}}
                 ref={autocompleteRef}
                 pathname={location.pathname}
                 filter={filter}

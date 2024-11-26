@@ -74,7 +74,9 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                     if (e.key === "Enter") {
                       navigate({
                         to: "/search",
-                        search: { query: encodeURIComponent(query) },
+                        search: {
+                          query: encodeURIComponent(decodeURIComponent(query)),
+                        },
                       })
                       setFilter({}) // Use empty object instead of null
                       // we only want to look for answer if at least

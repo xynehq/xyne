@@ -54,6 +54,7 @@ import {
   ChatRenameApi,
   GetChatApi,
   // MessageApiV1,
+  MessageApi,
   MessageApiV2,
   MessageRetryApi,
   UploadFilesApi,
@@ -63,10 +64,9 @@ type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
-const redirectURI = process.env.GOOGLE_REDIRECT_URI!
+const redirectURI = config.redirectUri
 
-const postOauthRedirect = process.env.POST_OAUTH_REDIRECT!
-const frontendBaseURL = process.env.FRONTEND_BASE_URL!
+const postOauthRedirect = config.postOauthRedirect
 const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = "auth-token"
@@ -93,7 +93,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
   if (!authToken) {
     Logger.warn("Redirected by server - No AuthToken")
     // Redirect to login page if no token found
-    return c.redirect(`${frontendBaseURL}/auth`)
+    return c.redirect(`/auth`)
   }
 
   try {
@@ -105,7 +105,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
-    return c.redirect(`${frontendBaseURL}/auth`)
+    return c.redirect(`/auth`)
   }
 }
 
@@ -155,7 +155,7 @@ export const AppRoutes = app
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   // this is event streaming end point
-  .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
+  .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
     "/message/retry",
     zValidator("query", messageRetrySchema),
@@ -234,6 +234,7 @@ app.get(
     client_id: clientId,
     client_secret: clientSecret,
     scope: ["openid", "email", "profile"],
+    redirect_uri: redirectURI,
   }),
   async (c: Context) => {
     const token = c.get("token")

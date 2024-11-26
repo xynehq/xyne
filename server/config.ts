@@ -2,11 +2,15 @@ let vespaBaseHost = "0.0.0.0"
 let postgresBaseHost = "0.0.0.0"
 let port = 3000
 let host = "http://localhost:3000"
+let redirectUri = process.env.GOOGLE_REDIRECT_URI!
+let postOauthRedirect = process.env.POST_OAUTH_REDIRECT!
 if (process.env.NODE_ENV === "production") {
   postgresBaseHost = process.env.DATABASE_HOST!
   vespaBaseHost = process.env.VESPA_HOST!
   port = 80
   host = process.env.HOST!
+  redirectUri = process.env.GOOGLE_PROD_REDIRECT_URI!
+  postOauthRedirect = process.env.POST_OAUTH_PROD_REDIRECT!
 }
 
 let bedrockSupport = false
@@ -40,4 +44,8 @@ export default {
   AwsAccessKey,
   AwsSecretKey,
   OpenAIKey,
+  redirectUri,
+  postOauthRedirect,
+  // fastModelId: OpenAIKey ? Models.Gpt_4o_mini : Models.Llama_3_1_8B,
+  // bestModelId: Models.CohereCmdRPlus
 }

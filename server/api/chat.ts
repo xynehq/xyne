@@ -7,14 +7,23 @@ import {
 import { parse, Allow, STR, ARR, OBJ } from "partial-json"
 import {
   analyzeInitialResultsOrRewrite,
+  analyzeInitialResultsOrRewriteV2,
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
+  answerOrSearch,
   askQuestionWithCitations,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
+  listItems,
   Models,
   QueryCategory,
+  QueryType,
+  routeQuery,
+  SearchAnswerResponse,
   userChat,
+  type ConverseResponse,
+  type ListItemRouterResponse,
+  type QueryRouterResponse,
   type ResultsOrRewrite,
 } from "@/ai/provider/bedrock"
 import config from "@/config"
@@ -49,13 +58,14 @@ import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
-import type { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
+import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import {
+  getItems,
   insert,
   insertDocument,
   searchUsersByNamesAndEmails,
@@ -66,7 +76,9 @@ import {
   chatAttachmentSchema,
   DriveEntity,
   entitySchema,
+  eventSchema,
   fileSchema,
+  GooglePeopleEntity,
   MailEntity,
   mailSchema,
   userSchema,
@@ -80,6 +92,7 @@ import {
 import llama3Tokenizer from "llama3-tokenizer-js"
 import { encode } from "gpt-tokenizer"
 import { getConnInfo } from "hono/bun"
+import { APIError } from "openai"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
 import { chunkDocument } from "@/chunks"
@@ -90,34 +103,54 @@ import path from "node:path"
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 const Logger = getLogger(Subsystem.Chat)
 
+// this is not always the case but unless our router detects that we need
+// these we will by default remove them
+const nonWorkMailLabels = ["CATEGORY_UPDATES", "CATEGORY_PROMOTIONS"]
+
 enum RagPipelineStages {
+  QueryRouter = "QueryRouter",
   NewChatTitle = "NewChatTitle",
+  AnswerOrSearch = "AnswerOrSearch",
+  AnswerWithList = "AnswerWithList",
   AnswerOrRewrite = "AnswerOrRewrite",
   RewriteAndAnswer = "RewriteAndAnswer",
   UserChat = "UserChat",
   DefaultRetrieval = "DefaultRetrieval",
 }
-const ragPipeline = [
-  { stage: RagPipelineStages.NewChatTitle, modelId: Models.Gpt_4o_mini },
-  { stage: RagPipelineStages.AnswerOrRewrite, modelId: Models.Gpt_4o_mini },
-  { stage: RagPipelineStages.RewriteAndAnswer, modelId: Models.Gpt_4o_mini },
-]
+
+const defaultFastModel = Models.Gpt_4o_mini
+const defaultBestModel = Models.Gpt_4o_mini
+
+// const ragPipeline = [
+//   { stage: RagPipelineStages.NewChatTitle, modelId: defaultFastModel},
+//   { stage: RagPipelineStages.AnswerOrRewrite, modelId: defaultBestModel},
+//   { stage: RagPipelineStages.RewriteAndAnswer, modelId: defaultBestModel },
+// ]
 
 const ragPipelineConfig = {
+  [RagPipelineStages.QueryRouter]: {
+    modelId: defaultFastModel,
+  },
+  [RagPipelineStages.AnswerOrSearch]: {
+    modelId: defaultBestModel,
+  },
+  [RagPipelineStages.AnswerWithList]: {
+    modelId: defaultBestModel,
+  },
   [RagPipelineStages.NewChatTitle]: {
-    modelId: Models.Gpt_4o_mini,
+    modelId: defaultFastModel,
   },
   [RagPipelineStages.AnswerOrRewrite]: {
-    modelId: Models.Gpt_4o_mini,
+    modelId: defaultBestModel,
   },
   [RagPipelineStages.RewriteAndAnswer]: {
-    modelId: Models.Gpt_4o_mini,
+    modelId: defaultBestModel,
   },
   [RagPipelineStages.UserChat]: {
-    modelId: Models.Gpt_4o_mini,
+    modelId: defaultBestModel,
   },
   [RagPipelineStages.DefaultRetrieval]: {
-    modelId: Models.Gpt_4o_mini,
+    modelId: defaultBestModel,
     page: 5,
   },
 }
@@ -352,6 +385,14 @@ const searchToCitation = (
         app: fields.app,
         entity: fields.entity,
       })
+    } else if (result.fields.sddocname === chatAttachmentSchema) {
+      citations.push({
+        // todo
+        title: fields?.title,
+        url: `https://google.com`,
+        app: fields.app ?? "",
+        entity: fields.entity ?? "",
+      })
     } else {
       throw new Error("Invalid search result type for citation")
     }
@@ -359,326 +400,792 @@ const searchToCitation = (
   return citations
 }
 
-// this needs to be evaluated in future
-// compared against V2
-// export const MessageApiV1 = async (c: Context) => {
-//   try {
-//     const { sub, workspaceId } = c.get(JwtPayloadKey)
-//     const email = sub
-//     // @ts-ignore
-//     const body = c.req.valid("query")
-//     let { message, chatId, modelId }: MessageReqType = body
-//     message = decodeURIComponent(message)
-
-//     const [userAndWorkspace, results]: [
-//       InternalUserWorkspace,
-//       VespaSearchResponse,
-//     ] = await Promise.all([
-//       getUserAndWorkspaceByEmail(db, workspaceId, email),
-//       searchVespa(message, email, null, null, config.answerPage, 0),
-//     ])
-//     const { user, workspace } = userAndWorkspace
-//     let insertedMsg: SelectMessage
-//     let chat: SelectChat
-//     let messages: SelectMessage[] = []
-//     const costArr: number[] = []
-//     const ctx = userContext(userAndWorkspace)
-//     const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${message}`
-//     // could be called parallely if not for userAndWorkspace
-//     let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
-//       modelId: Models.Gpt_4o_mini,
-//       stream: false,
-//       json: true,
-//     })
-//     if (cost) {
-//       costArr.push(cost)
-//     }
-//     const initialContext = cleanContext(
-//       results.root.children
-//         .map((v) =>
-//           answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
-//         )
-//         .join("\n"),
-//     )
-//     const tokenLimit = maxTokenBeforeMetadataCleanup
-//     let useMetadata = false
-//     Logger.info(`User Asked: ${message}`)
-//     // if we don't use this, 3.4 seems like a good approx value
-//     if (
-//       llama3Tokenizer.encode(initialContext).length > tokenLimit ||
-//       encode(initialContext).length > tokenLimit
-//     ) {
-//       useMetadata = true
-//     }
-
-//     let users: z.infer<typeof VespaSearchResultsSchema>[] = []
-//     if (result.category === QueryCategory.Self) {
-//       // here too I can talk about myself and others
-//       // eg: when did I send xyz person their offer letter
-//       const { mentionedNames, mentionedEmails } = result
-//       users = ((
-//         await searchUsersByNamesAndEmails(
-//           mentionedNames,
-//           mentionedEmails,
-//           mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
-//         )
-//       )?.root?.children ?? []) as z.infer<typeof VespaSearchResultsSchema>[]
-//     } else if (
-//       result.category === QueryCategory.InternalPerson ||
-//       result.category === QueryCategory.ExternalPerson
-//     ) {
-//       const { mentionedNames, mentionedEmails } = result
-//       users = ((
-//         await searchUsersByNamesAndEmails(
-//           mentionedNames,
-//           mentionedEmails,
-//           mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
-//         )
-//       )?.root?.children ?? []) as z.infer<typeof VespaSearchResultsSchema>[]
-//     }
-
-//     let existingUserIds = new Set<string>()
-//     if (users.length) {
-//       existingUserIds = new Set(
-//         results.root.children
-//           .filter(
-//             (v): v is z.infer<typeof VespaSearchResultsSchema> =>
-//               (v.fields as VespaUser).sddocname === userSchema,
-//           )
-//           .map((v) => v.fields.docId),
-//       )
-//     }
-
-//     const newUsers = users.filter(
-//       (user: z.infer<typeof VespaSearchResultsSchema>) =>
-//         !existingUserIds.has(user.fields.docId),
-//     )
-//     if (newUsers.length) {
-//       newUsers.forEach((user) => {
-//         results.root.children.push(user)
-//       })
-//     }
-//     const metadataContext = results.root.children
-//       .map((v, i) =>
-//         cleanContext(
-//           `Index ${i} \n ${answerMetadataContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
-//         ),
-//       )
-//       .join("\n\n")
-
-//     const analyseRes = await analyzeQueryMetadata(message, metadataContext, {
-//       modelId: Models.Gpt_4o_mini,
-//       stream: true,
-//       json: true,
-//     })
-//     let output = analyseRes[0]
-//     cost = analyseRes[1]
-//     if (cost) {
-//       costArr.push(cost)
-//     }
-
-//     const finalContext = cleanContext(
-//       results.root.children
-//         .filter((v, i) => output?.contextualChunks.includes(i))
-//         .map((v) =>
-//           answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
-//         )
-//         .join("\n"),
-//     )
-//     // create chat
-//     let title = ""
-//     let messageExternalId = ""
-//     if (!chatId) {
-//       // let llm decide a title
-//       const titleResp = await generateTitleUsingQuery(message, {
-//         modelId: Models.Gpt_4o_mini,
-//         stream: false,
-//       })
-//       title = titleResp.title
-//       const cost = titleResp.cost
-//       if (cost) {
-//         costArr.push(cost)
-//       }
-
-//       let [insertedChat, insertedMsg] = await db.transaction(
-//         async (tx): Promise<[SelectChat, SelectMessage]> => {
-//           const chat = await insertChat(tx, {
-//             workspaceId: workspace.id,
-//             workspaceExternalId: workspace.externalId,
-//             userId: user.id,
-//             email: user.email,
-//             title,
-//             attachments: [],
-//           })
-//           const insertedMsg = await insertMessage(tx, {
-//             chatId: chat.id,
-//             userId: user.id,
-//             chatExternalId: chat.externalId,
-//             workspaceExternalId: workspace.externalId,
-//             messageRole: MessageRole.User,
-//             email: user.email,
-//             sources: [],
-//             message,
-//             modelId,
-//           })
-//           return [chat, insertedMsg]
-//         },
-//       )
-//       chat = insertedChat
-//       // messages.push(insertedMsg)
-//       messageExternalId = insertedMsg.externalId
-//     } else {
-//       let [existingChat, allMessages, insertedMsg] = await db.transaction(
-//         async (tx) => {
-//           let existingChat = await getChatByExternalId(db, chatId)
-//           let allMessages = await getChatMessages(tx, chatId)
-//           let insertedMsg = await insertMessage(tx, {
-//             chatId: existingChat.id,
-//             userId: user.id,
-//             workspaceExternalId: workspace.externalId,
-//             chatExternalId: existingChat.externalId,
-//             messageRole: MessageRole.User,
-//             email: user.email,
-//             sources: [],
-//             message,
-//             modelId,
-//           })
-//           return [existingChat, allMessages, insertedMsg]
-//         },
-//       )
-//       // messages = allMessages.concat(insertedMsg)
-//       chat = existingChat
-//       messageExternalId = insertedMsg.externalId
-//       messages = allMessages
-//     }
-
-//     let fullResponse = ""
-//     return streamSSE(c, async (stream) => {
-//       await stream.writeSSE({
-//         data: "",
-//         event: ChatSSEvents.Start,
-//       })
-
-//       if (!chatId) {
-//         await stream.writeSSE({
-//           data: title,
-//           event: ChatSSEvents.ChatTitleUpdate,
-//         })
-//       }
-//       Logger.info("Chat stream started")
-//       await stream.writeSSE({
-//         event: ChatSSEvents.ResponseMetadata,
-//         data: JSON.stringify({
-//           chatId: chat.externalId,
-//           messageId: messageExternalId,
-//         }),
-//       })
-
-//       const iterator = askQuestionWithCitations(message, ctx, finalContext, {
-//         modelId: Models.Gpt_4o_mini,
-//         userCtx: ctx,
-//         stream: true,
-//         json: true,
-//         messages: messages.map((m) => ({
-//           role: m.messageRole as ConversationRole,
-//           content: [{ text: m.message }],
-//         })),
-//       })
-//       let buffer = ""
-//       let currentAnswer = ""
-//       let currentCitations: number[] = []
-//       let parsed
-
-//       for await (const chunk of iterator) {
-//         if (chunk.text) {
-//           buffer += chunk.text
-//           try {
-//             parsed = parse(buffer) as CitationResponse
-
-//             // Stream new answer content
-//             if (parsed.answer && parsed.answer !== currentAnswer) {
-//               const newContent = parsed.answer.slice(currentAnswer.length)
-//               currentAnswer = parsed.answer
-//               await stream.writeSSE({
-//                 event: ChatSSEvents.ResponseUpdate,
-//                 data: newContent,
-//               })
-//             }
-
-//             // Stream citation updates
-//             if (parsed.citations) {
-//               currentCitations = parsed.citations
-//               const minimalContextChunks = searchToCitation(
-//                 results.root.children.filter((_, i) =>
-//                   currentCitations.includes(i),
-//                 ) as z.infer<typeof VespaSearchResultsSchema>[],
-//               )
-
-//               // citations count should match the minimalContext chunks
-
-//               await stream.writeSSE({
-//                 event: ChatSSEvents.CitationsUpdate,
-//                 data: JSON.stringify({
-//                   contextChunks: minimalContextChunks,
-//                 }),
-//               })
-//             }
-//           } catch (e) {
-//             continue
-//           }
-//         }
-//         if (parsed && parsed.answer) {
-//           fullResponse = parsed.answer
-//         }
-//         if (chunk.metadata?.cost) {
-//           costArr.push(chunk.metadata.cost)
-//         }
-//       }
-//       const msg = await insertMessage(db, {
-//         chatId: chat.id,
-//         userId: user.id,
-//         workspaceExternalId: workspace.externalId,
-//         chatExternalId: chat.externalId,
-//         messageRole: MessageRole.Assistant,
-//         email: user.email,
-//         sources: currentCitations,
-//         message: fullResponse,
-//         modelId,
-//       })
-//       await stream.writeSSE({
-//         data: "Answer complete",
-//         event: ChatSSEvents.End,
-//       })
-//       Logger.info(`Costs: ${costArr}`)
-//     })
-//   } catch (error) {
-//     const errMsg = getErrorMessage(error)
-//     Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
-//     throw new HTTPException(500, {
-//       message: "Could not create message or Chat",
-//     })
-//   }
-// }
-
 const processMessage = (text: string, citationMap: Record<number, number>) => {
   return text.replace(/\[(\d+)\]/g, (match, num) => {
     return `[${citationMap[num] + 1}]`
   })
 }
 
+const chunkToParsed = async <T>(
+  iterator: AsyncIterableIterator<ConverseResponse>,
+): Promise<{ parsed: T; costArr: number[] }> => {
+  let buffer = ""
+  let parsed: T = {} as T
+  const costArr: number[] = []
+
+  for await (const chunk of iterator) {
+    try {
+      if (chunk.text) {
+        buffer += chunk.text
+        if (!buffer.trim()) {
+          continue
+        }
+        parsed = jsonParseLLMOutput(buffer) as T
+      }
+      if (chunk.cost) {
+        costArr.push(chunk.cost)
+      }
+    } catch (e) {
+      continue
+    }
+  }
+  return { parsed, costArr }
+}
+
+async function* getListData(
+  email: string,
+  query: string,
+  userCtx: string,
+  result: ListItemRouterResponse,
+  messages?: Message[],
+): AsyncIterableIterator<any> {
+  let schema = ""
+  if (result.filters.app === Apps.GoogleCalendar) {
+    schema = eventSchema
+  } else if (result.filters.app === Apps.GoogleDrive) {
+    if (
+      result.filters.entity === GooglePeopleEntity.AdminDirectory ||
+      result.filters.entity === GooglePeopleEntity.Contacts ||
+      result.filters.entity === GooglePeopleEntity.OtherContacts
+    ) {
+      schema = userSchema
+    } else {
+      schema = fileSchema
+    }
+  } else if (result.filters.app === Apps.Gmail) {
+    schema = mailSchema
+  } else if (result.filters.app === Apps.GoogleWorkspace) {
+    schema = userSchema
+  }
+  if (schema) {
+    let timestampRange: { from: number | null; to: number | null } = {
+      from: null,
+      to: null,
+    }
+    if (result.filters.startTime) {
+      timestampRange.from = new Date(result.filters.startTime).getTime()
+    }
+    if (result.filters.endTime) {
+      timestampRange.to = new Date(result.filters.endTime).getTime()
+    }
+    const vespaResults = await getItems({
+      schema,
+      app: result.filters.app,
+      entity: result.filters.entity,
+      timestampRange,
+      limit: result.filters.count,
+      offset: 0,
+      email,
+    })
+    if (vespaResults.root.children) {
+      const listContext = vespaResults.root.children
+        .map((v, i) =>
+          cleanContext(
+            `Index ${i} \n ${answerMetadataContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+          ),
+        )
+        .join("\n\n")
+      yield* listItems(query, userCtx, listContext, {
+        modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+        stream: true,
+        messages,
+      })
+    } else {
+      yield { text: "Could not list, no results found" }
+    }
+  } else {
+    yield { text: "Could not list, no results found" }
+  }
+}
+
+// Function: answerUsingSearch
+async function* answerUsingSearch(
+  message: string,
+  userCtx: string,
+  results: VespaSearchResponse,
+  modelId: Models,
+): AsyncIterableIterator<{
+  text?: string
+  parsed?: ResultsOrRewrite
+  costArr?: number[]
+  initialContext?: string
+  ctx?: string
+}> {
+  let costArr: number[] = []
+  const initialContext = cleanContext(
+    results.root.children
+      .map(
+        (v, i) =>
+          `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+      )
+      .join("\n"),
+  )
+
+  const iterator = analyzeInitialResultsOrRewriteV2(
+    message,
+    initialContext,
+    userCtx,
+    {
+      modelId,
+      stream: true,
+      json: true,
+    },
+  )
+
+  let buffer = ""
+  for await (const chunk of iterator) {
+    if (chunk.text) {
+      buffer += chunk.text
+      try {
+        const parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
+        yield {
+          text: chunk.text,
+          parsed,
+          costArr,
+          initialContext,
+          ctx: userCtx,
+        }
+      } catch (e) {
+        // Handle partial JSON parsing
+        continue
+      }
+    }
+    if (chunk.cost) {
+      costArr.push(chunk.cost)
+    }
+  }
+}
+
+// Function: regularRAGPipeline
+async function* regularRAGPipeline(
+  email: string,
+  input: string,
+  userCtx: string,
+  results: VespaSearchResponse,
+  modelId: Models,
+): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
+  const message = input
+  const pageSize = 10
+  let costArr: number[] = []
+  let initialContext = ""
+  let ctx = userCtx
+  let currentAnswer = ""
+
+  // Step 1: Try to get an answer using the initial search results
+  let answerIterator = answerUsingSearch(message, userCtx, results, modelId)
+
+  let buffer = ""
+
+  for await (const chunk of answerIterator) {
+    if (chunk.text) {
+      buffer += chunk.text
+      try {
+        const parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
+
+        if (parsed.answer && currentAnswer !== parsed.answer) {
+          const newText = parsed.answer.slice(currentAnswer.length)
+          yield { text: newText }
+          currentAnswer = parsed.answer
+        }
+      } catch (e) {
+        continue
+      }
+    }
+
+    if (chunk.costArr) {
+      costArr = [...costArr, ...chunk.costArr]
+    }
+    if (chunk.initialContext) {
+      initialContext = chunk.initialContext
+    }
+    if (chunk.ctx) {
+      ctx = chunk.ctx
+    }
+  }
+
+  // Step 2: If no answer, perform additional searches and try again
+  if (!currentAnswer) {
+    for (let offsetMultiplier = 1; offsetMultiplier <= 2; offsetMultiplier++) {
+      const newResults = await searchVespa(
+        message,
+        email,
+        null,
+        null,
+        pageSize,
+        pageSize * offsetMultiplier,
+      )
+
+      answerIterator = answerUsingSearch(message, userCtx, newResults, modelId)
+
+      buffer = ""
+      currentAnswer = ""
+
+      for await (const chunk of answerIterator) {
+        if (chunk.text) {
+          buffer += chunk.text
+          try {
+            const parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
+
+            if (parsed.answer && currentAnswer !== parsed.answer) {
+              const newText = parsed.answer.slice(currentAnswer.length)
+              yield { text: newText }
+              currentAnswer = parsed.answer
+            }
+          } catch (e) {
+            continue
+          }
+        }
+
+        if (chunk.costArr) {
+          costArr = [...costArr, ...chunk.costArr]
+        }
+        if (chunk.initialContext) {
+          initialContext = chunk.initialContext
+        }
+        if (chunk.ctx) {
+          ctx = chunk.ctx
+        }
+      }
+
+      if (currentAnswer) {
+        break
+      }
+    }
+  }
+
+  // Step 3: If still no answer, handle rewritten queries
+  // You can implement additional logic here if needed
+}
+
+// Function: findAnswerWithTimeRangeExpansion
+async function* findAnswerWithTimeRangeExpansion(
+  email: string,
+  userCtx: string,
+  userQuery: string,
+  maxIterations: number = 3,
+  messages?: Message[],
+): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
+  const pageSize = 6
+  const now = new Date().getTime()
+
+  // Time range configuration (in milliseconds)
+  const monthInMs = 30 * 24 * 60 * 60 * 1000
+  const initialRange = 3 * monthInMs
+  const rangeIncrement = 3 * monthInMs
+  const maxRange = 12 * monthInMs
+
+  let context: any[] = []
+  let iterations = 0
+  let costArr: number[] = []
+  let seenDocIds = new Set<string>()
+  let currentTimeRange = initialRange
+  let currentQueries = [userQuery]
+  let currentAnswer = ""
+
+  while (iterations < maxIterations) {
+    let newResults: any[] = []
+    const timeRange = {
+      from: now - currentTimeRange,
+      to: now,
+    }
+
+    // Search with all current queries
+    for (const query of currentQueries) {
+      const results = await searchVespa(
+        query,
+        email,
+        null,
+        null,
+        pageSize,
+        0,
+        timeRange,
+        Array.from(seenDocIds),
+        nonWorkMailLabels,
+      )
+
+      if (results.root.children) {
+        results.root.children.forEach((child) => seenDocIds.add(child.id))
+        newResults.push(...results.root.children)
+      }
+    }
+
+    // Update context with new results
+    context = [...context, ...newResults]
+
+    const contextString = cleanContext(
+      context
+        .map(
+          (v, i) =>
+            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        )
+        .join("\n"),
+    )
+
+    const iterator = answerOrSearch(userQuery, contextString, userCtx, {
+      modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+      json: true,
+      stream: true,
+      messages,
+    })
+
+    let buffer = ""
+    let out: z.infer<typeof SearchAnswerResponse> | null = null
+
+    for await (const chunk of iterator) {
+      if (chunk.text) {
+        buffer += chunk.text
+        try {
+          out = jsonParseLLMOutput(buffer) as z.infer<
+            typeof SearchAnswerResponse
+          >
+
+          if (
+            out.answer &&
+            out.answer.length > 1 &&
+            currentAnswer !== out.answer
+          ) {
+            const newText = out.answer.slice(currentAnswer.length)
+            yield { text: newText }
+            currentAnswer = out.answer
+          }
+        } catch (e) {
+          continue
+        }
+      }
+      if (chunk.cost) {
+        costArr.push(chunk.cost)
+      }
+    }
+
+    if (currentAnswer) {
+      // Answer found, yield citations if any
+      yield { citations: out?.citations ?? [] }
+      break
+    }
+
+    // At 50% of max iterations, attempt regularRAGPipeline approach
+    if (iterations === Math.floor(maxIterations / 2)) {
+      const ragResults = await searchVespa(
+        userQuery,
+        email,
+        null,
+        null,
+        pageSize,
+        0,
+        null,
+        Array.from(seenDocIds),
+        nonWorkMailLabels,
+      )
+
+      const pipelineIterator = regularRAGPipeline(
+        email,
+        userQuery,
+        userCtx,
+        ragResults,
+        ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+      )
+
+      let pipelineAnswer = ""
+
+      for await (const response of pipelineIterator) {
+        if (response.text) {
+          yield { text: response.text }
+          pipelineAnswer += response.text
+        }
+        if (response.citations) {
+          yield { citations: response.citations }
+          break
+        }
+      }
+
+      if (pipelineAnswer) {
+        // Answer found via regularRAGPipeline, break out of loop
+        break
+      }
+    }
+
+    if (!out) {
+      throw new Error("Invalid object while streaming")
+    }
+
+    // Keep useful context
+    if (out.usefulIndex && out.usefulIndex.length > 0) {
+      context = context.filter((_, i) => out.usefulIndex.includes(i))
+    } else {
+      context = []
+    }
+
+    // Update queries for next iteration
+    if (out.searchQueries && out.searchQueries.length > 0) {
+      currentQueries = out.searchQueries
+    } else if (currentTimeRange < maxRange) {
+      // If no new queries suggested, expand time range and revert to original query
+      currentTimeRange += rangeIncrement
+      currentQueries = [userQuery]
+      // console.log(
+      //   `Expanding time range to ${currentTimeRange / monthInMs} months`,
+      // );
+    } else {
+      break
+    }
+
+    iterations++
+  }
+}
+
+export async function* UnderstandMessageAndAnswer(
+  email: string,
+  userCtx: string,
+  message: string,
+  routerResponse: { result: QueryRouterResponse; cost: number },
+  messages?: Message[],
+): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
+  // we are removing the most recent message that was inserted
+  // that is the user message, we will append our own
+  messages = messages?.splice(0, messages.length - 1)
+  const { result, cost } = routerResponse
+  if (result.type === QueryType.RetrieveInformation) {
+    let filters: { startTime: number | null; endTime: number | null } = {
+      startTime: null,
+      endTime: null,
+    }
+    if (result.filters && result.filters.startTime && result.filters.endTime) {
+      if (result.filters.startTime) {
+        filters.startTime = new Date(result.filters.startTime).getTime()
+      }
+      if (result.filters.endTime) {
+        filters.endTime = new Date(result.filters.endTime).getTime()
+      }
+      yield* findAnswerWithinTimeRange(email, userCtx, message, filters)
+    } else {
+      yield* findAnswerWithTimeRangeExpansion(
+        email,
+        userCtx,
+        message,
+        8,
+        messages,
+      )
+    }
+  } else if (result.type === QueryType.ListItems) {
+    yield* getListData(email, message, userCtx, result, messages)
+    // }
+    // else if (result.type === QueryType.RetrieveMetadata) {
+    //   yield {
+    //     text: "Operation to retrieve a single item's metadata is not supported yet",
+    //   }
+  } else {
+    yield { text: "Apologies I didn't understand" }
+  }
+}
+
+async function* findAnswerWithinTimeRange(
+  email: string,
+  userCtx: string,
+  userQuery: string,
+  filters: { startTime: number | null; endTime: number | null },
+): AsyncIterableIterator<ConverseResponse> {
+  return yield { text: "Not yet implemented", cost: 0 }
+}
+
 export const MessageApiV2 = async (c: Context) => {
+  // we will use this in catch
+  // if the value exists then we send the error to the frontend via it
+  let stream: any
   try {
     Logger.info(`MessageApiV2 called....`)
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     // @ts-ignore
     const body = c.req.valid("query")
+    let { message, chatId, modelId }: MessageReqType = body
+    if (!message) {
+      throw new HTTPException(400, {
+        message: "Message is required",
+      })
+    }
+    message = decodeURIComponent(message)
+
+    const [userAndWorkspace] = await Promise.all([
+      getUserAndWorkspaceByEmail(db, workspaceId, email),
+      // searchVespa(message, email, null, null, config.answerPage, 0, null, [], nonWorkMailLabels),
+    ])
+    const results = { root: { children: [] } }
+    const { user, workspace } = userAndWorkspace
+    let messages: SelectMessage[] = []
+    const costArr: number[] = []
+    const ctx = userContext(userAndWorkspace)
+    let chat: SelectChat
+    const initialContext = cleanContext(
+      results.root.children
+        .map(
+          (v, i) =>
+            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        )
+        .join("\n"),
+    )
+
+    let title = ""
+    if (!chatId) {
+      // let llm decide a title
+      const titleResp = await generateTitleUsingQuery(message, {
+        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        stream: false,
+      })
+      title = titleResp.title
+      const cost = titleResp.cost
+      if (cost) {
+        costArr.push(cost)
+      }
+
+      let [insertedChat, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const chat = await insertChat(tx, {
+            workspaceId: workspace.id,
+            workspaceExternalId: workspace.externalId,
+            userId: user.id,
+            email: user.email,
+            title,
+            attachments: [],
+          })
+          const insertedMsg = await insertMessage(tx, {
+            chatId: chat.id,
+            userId: user.id,
+            chatExternalId: chat.externalId,
+            workspaceExternalId: workspace.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+          })
+          return [chat, insertedMsg]
+        },
+      )
+      chat = insertedChat
+      messages.push(insertedMsg) // Add the inserted message to messages array
+    } else {
+      let [existingChat, allMessages, insertedMsg] = await db.transaction(
+        async (tx) => {
+          // we are updating the chat and getting it's value in one call itself
+          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let allMessages = await getChatMessages(tx, chatId)
+          let insertedMsg = await insertMessage(tx, {
+            chatId: existingChat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: existingChat.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+          })
+          return [existingChat, allMessages, insertedMsg]
+        },
+      )
+      messages = allMessages.concat(insertedMsg) // Update messages array
+      chat = existingChat
+    }
+
+    return streamSSE(
+      c,
+      async (stream) => {
+        try {
+          if (!chatId) {
+            await stream.writeSSE({
+              data: title,
+              event: ChatSSEvents.ChatTitleUpdate,
+            })
+          }
+
+          Logger.info("Chat stream started")
+          // we do not set the message Id as we don't have it
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+            }),
+          })
+
+          const routerResp = await routeQuery(message, {
+            modelId: ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
+            stream: false,
+            messages: messages
+              .map((m) => ({
+                role: m.messageRole as ConversationRole,
+                content: [{ text: m.message }],
+              }))
+              .slice(0, messages.length - 1), // removing the last one as we append ourselves inside route Query
+          })
+          const iterator = UnderstandMessageAndAnswer(
+            email,
+            ctx,
+            message,
+            routerResp,
+            messages.map((m) => ({
+              role: m.messageRole as ConversationRole,
+              content: [{ text: m.message }],
+            })),
+          )
+
+          stream.writeSSE({
+            event: ChatSSEvents.Start,
+            data: "",
+          })
+          let citations = []
+          let answer = ""
+          for await (const chunk of iterator) {
+            if (chunk.text) {
+              answer += chunk.text
+              stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: chunk.text,
+              })
+            }
+            if (chunk.cost) {
+              costArr.push(chunk.cost)
+            }
+            if (chunk.citations) {
+              citations = chunk.citations
+            }
+          }
+          // let minimalContextChunks: Citation[] = []
+          // const citationMap: Record<number, number> = {}
+          // // TODO: this is not done yet
+          // // we need to send all of it
+          // if (parsed.citations) {
+          //   currentCitations = parsed.citations
+
+          //   currentCitations.forEach((v, i) => {
+          //     citationMap[v] = i
+          //   })
+          //   minimalContextChunks = searchToCitation(
+          //     results.root.children.filter((_, i) =>
+          //       currentCitations.includes(i),
+          //     ) as z.infer<typeof VespaSearchResultsSchema>[],
+          //   )
+          //   await stream.writeSSE({
+          //     event: ChatSSEvents.CitationsUpdate,
+          //     data: JSON.stringify({
+          //       contextChunks: minimalContextChunks,
+          //       citationMap,
+          //     }),
+          //   })
+          // }
+          if (answer) {
+            // TODO: incase user loses permission
+            // to one of the citations what do we do?
+            // somehow hide that citation and change
+            // the answer to reflect that
+            const msg = await insertMessage(db, {
+              chatId: chat.id,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chat.externalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              // sources: minimalContextChunks,
+              message: answer, //processMessage(parsed.answer, citationMap),
+              modelId:
+                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+            })
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: msg.externalId,
+              }),
+            })
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+          } else {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: "Error while trying to answer",
+            })
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+          }
+        } catch (error) {
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: (error as Error).message,
+          })
+          await stream.writeSSE({
+            data: "",
+            event: ChatSSEvents.End,
+          })
+          Logger.error(
+            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+          )
+        }
+      },
+      async (err, stream) => {
+        await stream.writeSSE({
+          event: ChatSSEvents.Error,
+          data: err.message,
+        })
+        await stream.writeSSE({
+          data: "",
+          event: ChatSSEvents.End,
+        })
+        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+      },
+    )
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    // TODO: add more errors like bedrock, this is only openai
+    if (error instanceof APIError) {
+      // quota error
+      if (error.status === 429) {
+        console.error("You exceeded your current quota,")
+        if (stream) {
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: error.message,
+          })
+        }
+      }
+    } else {
+      Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
+      throw new HTTPException(500, {
+        message: "Could not create message or Chat",
+      })
+    }
+  }
+}
+
+export const MessageApi = async (c: Context) => {
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    const email = sub
+    // @ts-ignore
+    const body = c.req.valid("query")
     let { message, chatId, modelId, attachments }: MessageReqType = body
+    if (!message) {
+      throw new HTTPException(400, {
+        message: "Message is required",
+      })
+    }
     message = decodeURIComponent(message)
 
     const [userAndWorkspace, results] = await Promise.all([
       getUserAndWorkspaceByEmail(db, workspaceId, email),
-      searchVespa(message, email, null, null, config.answerPage, 0),
+      searchVespa(
+        message,
+        email,
+        null,
+        null,
+        config.answerPage,
+        0,
+        null,
+        [],
+        nonWorkMailLabels,
+      ),
     ])
     if (results) {
       console.log("results")
@@ -823,7 +1330,6 @@ export const MessageApiV2 = async (c: Context) => {
           let parsed: ResultsOrRewrite = {
             answer: "",
             citations: [],
-            dateRange: {},
             rewrittenQueries: [],
           }
           for await (const chunk of iterator) {
@@ -918,12 +1424,13 @@ export const MessageApiV2 = async (c: Context) => {
                     null,
                     5,
                     0,
-                    "",
+                    null,
                     results.root.children.map(
                       (v) =>
                         (v as z.infer<typeof VespaSearchResultsSchema>).fields
                           .docId,
                     ),
+                    nonWorkMailLabels,
                   ),
                 ),
               )
@@ -1151,6 +1658,9 @@ export const MessageRetryApi = async (c: Context) => {
               null,
               config.answerPage,
               0,
+              null,
+              [],
+              nonWorkMailLabels,
             )
             const initialContext = cleanContext(
               results.root.children
@@ -1185,7 +1695,6 @@ export const MessageRetryApi = async (c: Context) => {
             let parsed: ResultsOrRewrite = {
               answer: "",
               citations: [],
-              dateRange: {},
               rewrittenQueries: [],
             }
             for await (const chunk of iterator) {
@@ -1263,12 +1772,13 @@ export const MessageRetryApi = async (c: Context) => {
                       null,
                       5,
                       0,
-                      "",
+                      null,
                       results.root.children.map(
                         (v) =>
                           (v as z.infer<typeof VespaSearchResultsSchema>).fields
                             .docId,
                       ),
+                      nonWorkMailLabels,
                     ),
                   ),
                 )

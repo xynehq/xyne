@@ -8,6 +8,7 @@ import {
   groupVespaSearch,
   searchVespa,
   searchUsersByNamesAndEmails,
+  getTimestamp,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -130,13 +131,16 @@ export const SearchApi = async (c: Context) => {
   } = c.req.valid("query")
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
+  const timestampRange = getTimestamp(lastUpdated)
+    ? { from: getTimestamp(lastUpdated)!, to: new Date().getTime() }
+    : null
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
     groupCount = await groupVespaSearch(
       decodedQuery,
       email,
       config.page,
-      lastUpdated,
+      timestampRange,
     )
     results = await searchVespa(
       decodedQuery,
@@ -145,7 +149,7 @@ export const SearchApi = async (c: Context) => {
       entity,
       page,
       offset,
-      lastUpdated,
+      timestampRange,
     )
   } else {
     results = await searchVespa(
@@ -155,7 +159,7 @@ export const SearchApi = async (c: Context) => {
       entity,
       page,
       offset,
-      lastUpdated,
+      timestampRange,
     )
   }
 

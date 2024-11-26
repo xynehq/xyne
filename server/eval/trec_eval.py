@@ -59,8 +59,12 @@ def main():
             precision_at_10 = avg_value
         if measure == "recall_10":
             recall_at_10 = avg_value
+        if measure == "recall_5":
+            print("Recall@5:", f"{avg_value:.4f}")
         if measure == "ndcg_cut_10":
             print("NDCG@10:", f"{avg_value:.4f}")
+        if measure == "ndcg_cut_5":
+            print("NDCG@5:", f"{avg_value:.4f}")
         if measure == "map_cut_10":
             print("Map@10:", f"{avg_value:.4f}")
         if measure == "recip_rank":

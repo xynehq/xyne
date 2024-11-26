@@ -14,7 +14,7 @@ export const FileAutocompleteElement = ({
   return (
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
-      <p>{result.title}</p>
+      <p className="truncate">{result.title}</p>
     </div>
   )
 }
@@ -25,7 +25,7 @@ export const MailAutocompleteElement = ({
   return (
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
-      <p>{result.subject}</p>
+      <p className="truncate">{result.subject}</p>
     </div>
   )
 }
@@ -36,7 +36,7 @@ export const EventAutocompleteElement = ({
   return (
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
-      <p>{result.name}</p>
+      <p className="truncate">{result.name}</p>
     </div>
   )
 }
@@ -51,7 +51,7 @@ export const UserAutocompleteElement = ({
         className="mr-2 w-[16px] h-[16px] rounded-full"
         src={result.photoLink}
       ></img>
-      <p>{result.name || result.email}</p>
+      <p className="truncate">{result.name || result.email}</p>
     </div>
   )
 }

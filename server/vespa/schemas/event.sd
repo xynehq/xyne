@@ -50,12 +50,6 @@ schema event {
             attribute: fast-search
         }
 
-        # primary email
-        field email type string {
-            indexing: index | attribute | summary
-            index: enable-bm25
-        }
-
         field app type string {
             indexing: attribute | summary
             attribute: fast-search
@@ -131,6 +125,11 @@ schema event {
         field cancelledInstances type array<string> {
             indexing: attribute | summary
         }
+
+        # To know if startTime of event available or defaultStartTime being used
+        field defaultStartTime type bool {
+            indexing: attribute | summary
+        }
     }
 
      field chunk_embeddings type tensor<bfloat16>(v[384])  {
@@ -152,53 +151,60 @@ schema event {
     }
 
     fieldset default {
-        fields: name, description, attachmentFilenames, attendeesNames, app, email, url, baseUrl
+        fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl
     }
 
-    # url, domain, attachmentFilenames, name, description, freshness,
     rank-profile default {
         inputs {
-            query(decay_factor) float # to reduce the weightage for attachmentFilenames and attendeesNames
             query(e) tensor<bfloat16>(v[384])
         }
 
-        function event_time_score() {
-            expression: if(attribute(startTime) > now(), 0.6, if(attribute(endTime) < now(), 0.2, 1.0))
+        function scale(val) {
+            expression: 2*atan(val/4)/(3.14159)
+        }
+        
+        function freshness_score() {
+            expression: exp(-1 * (now() - (attribute(createdAt) / 1000)) / (3600 * 24))
+        }
+        
+        function freshness_weight(){
+            expression: if(scale(bm25(name)) > 0.6, freshness_score, if(scale(bm25(description)) > 0.6, freshness_score,0))
         }
 
-        function bm25_score() {
-          expression {
-            (
-                bm25(name) + 
-                bm25(description) + 
-                bm25(url)
-            ) + 
-            (query(decay_factor) - (bm25(attachmentFilenames) + bm25(attendeesNames)))
-          } 
-        }
 
         function vector_score() {
             expression: closeness(field, chunk_embeddings)
         }
 
+        function combined_bm25() {
+            expression {
+                (scale(bm25(name)) + scale(bm25(url))) +
+                (0.3 * (scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
+            }
+        }
+
         first-phase {
-            expression : bm25_score()
+            expression: (0.3 * vector_score) + combined_bm25
         }
 
         global-phase {
-          expression {
-            (normalize_linear(bm25_score) * normalize_linear(vector_score)) * event_time_score * freshness(createdAt)
-          }
-          rerank-count: 1000
+            expression {
+              (
+                (0.3 * normalize_linear(vector_score)) +
+                combined_bm25 + 
+                freshness_weight
+              )
+            }
+            rerank-count: 1000
         }
 
         match-features {
-          bm25(name)
-          bm25(description)
-          bm25(attachmentFilenames)
-          bm25(attendeesNames)
+          scale(bm25(name))
+          scale(bm25(description))
+          scale(bm25(attachmentFilenames))
+          scale(bm25(attendeesNames))
           vector_score
-          event_time_score
+          freshness_weight
         }
     }
 
