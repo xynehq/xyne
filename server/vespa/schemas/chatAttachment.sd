@@ -37,6 +37,14 @@ schema chatAttachment {
       indexing: attribute | summary
       attribute: fast-search
     }
+
+    field chatId type string {
+      indexing: attribute | summary
+    }
+    
+    field messageId type string {
+      indexing: attribute | summary
+    }
   }
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
@@ -46,23 +54,8 @@ schema chatAttachment {
     }
   }
   
-  field title_fuzzy type string {
-    indexing: input title | index
-    index {
-      enable-bm25
-    }
-    match {
-      gram
-      gram-size: 3
-    }
-  }
-
   fieldset default {
     fields: title, chunks
-  }
-
-  fieldset autocomplete {
-    fields: title
   }
 
   # Hybrid search rank profile combining BM25 for title and chunks, and vector search for chunk embeddings
@@ -106,15 +99,9 @@ schema chatAttachment {
     }
   }
 
- 
   rank-profile default inherits initial {
-    
     function chunk_vector_score() {
       expression: closeness(field, chunk_embeddings)
-    }
-
-    function freshness_score() {
-      expression: if(isNan(attribute(updatedAt)) == 1.0,0,exp(-1 * (now() - (attribute(updatedAt) / 1000)) / (3600 * 24)))
     }
 
     function scale(val) {
@@ -133,22 +120,16 @@ schema chatAttachment {
       expression: 0.3*scaled_bm25_chunks + 0.8*scaled_bm25_title
     }
 
-    function freshness_weight() {
-      expression: if(scaled_bm25_title > 0.6, freshness_score, if(scaled_bm25_chunks > 0.8, freshness_score,0))
-    }
-
     # First phase combines BM25 (title and chunks) and vector similarity (chunks)
     first-phase {
       expression: (0.5 * chunk_vector_score) + combined_bm25
     }
 
-
     global-phase {
       expression {
         (
           (0.5 * normalize_linear(chunk_vector_score)) +
-          (max(scaled_bm25_title,scaled_bm25_chunks)) +
-          freshness_weight
+          (max(scaled_bm25_title,scaled_bm25_chunks))
         )
       }
       rerank-count: 1000
@@ -158,7 +139,6 @@ schema chatAttachment {
       chunk_vector_score
       scaled_bm25_chunks
       scaled_bm25_title
-      freshness_weight
     }
   }
 
@@ -166,25 +146,6 @@ schema chatAttachment {
     summary chunks_summary {
       bolding: on
       source: chunks
-    }
-  }
-
-  document-summary autocomplete {
-    summary title {
-        source: title
-    }
-    summary docId {
-        source: docId
-    }
-  }
-
-  # Autocomplete rank profile for fuzzy prefix search
-  rank-profile autocomplete {
-    first-phase {
-      expression: bm25(title_fuzzy)
-    }
-    match-features {
-      bm25(title_fuzzy)
     }
   }
 }
