@@ -150,7 +150,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       uploadedFilesMetadata = await handleFileUpload()
       if (uploadedFilesMetadata.length !== 0) {
         console.log(`handleFileUpload ran sucessfully...`)
-      } 
+      }
     }
     // Append the user's message to the chat
     setMessages((prevMessages) => [
@@ -401,18 +401,19 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     try {
-      // todo change this
+      // Making POST req like this is giving errors at the server side
+      // const response = await api.chat.upload.$post({
+      //   body: formData,
+      //   headers: {
+      //     "Content-Type": "multipart/form-data",
+      //   },
+      // })
+
+      // For now using simple fetch which works fine
       const response = await fetch("/api/v1/chat/upload", {
         method: "POST",
         body: formData,
       })
-
-      // const response = await api.chat.upload.$post({
-      //   body: formData,
-      //   // headers: {
-      //   //   "Content-Type": "multipart/form-data", // Important for file uploads
-      //   // },
-      // })
 
       const result = await response.json()
       if (response.ok) {
