@@ -206,8 +206,12 @@ const saveToDownloads = async (file: Blob) => {
   }
 }
 
-const getUploadFileDocId = (fileName: string) => {
-  return `file-upload-${fileName}`
+const getUploadFileDocId = (
+  userEmail: string,
+  fileName: string,
+  dateTime: number,
+) => {
+  return `file_upload_${userEmail}_${fileName}_${dateTime}`
 }
 
 const handlePDFFile = async (file: Blob, userEmail: string) => {
@@ -232,9 +236,12 @@ const handlePDFFile = async (file: Blob, userEmail: string) => {
 
     const dateTime = new Date().getTime()
 
+    const docId = getUploadFileDocId(userEmail, file?.name, dateTime)
+    const pdfName = `${userEmail}_${file?.name}_${dateTime}`
+
     const pdfToIngest = {
-      title: file.name!,
-      docId: getUploadFileDocId(file?.name),
+      docId: docId,
+      title: pdfName,
       ownerEmail: userEmail,
       chunks: chunks.map((v) => v.chunk),
       mimeType: "application/pdf",
@@ -247,6 +254,15 @@ const handlePDFFile = async (file: Blob, userEmail: string) => {
 
     // Delete the file here
     await deleteDocument(filePath)
+
+    // Return metadata
+    // Metadata contains docId, fileName, fileType, fileSize
+    return {
+      docId: docId,
+      fileName: file?.name,
+      fileSize: file?.size,
+      fileType: file?.type,
+    }
   } catch (err) {
     if (wasDownloaded) {
       const filePath = `${downloadDir}/${file?.name}`
@@ -270,15 +286,14 @@ export const UploadFilesApi = async (c: Context) => {
     const metadata: any[] = []
 
     for (const file of files) {
-      const fileMetadata: any = {}
       // Parse file according to its type
       if (file.type === "application/pdf") {
-        fileMetadata.name = file?.name
-        fileMetadata.size = file?.size
-        fileMetadata.type = file?.type
-        metadata.push(fileMetadata)
+        const fileMetadata = await handlePDFFile(file, email)
 
-        await handlePDFFile(file, email)
+        if (fileMetadata?.docId && fileMetadata?.fileName) {
+          metadata.push(fileMetadata)
+        }
+
         Logger.info(`Upload file completed`)
       } else {
         Logger.error(`File type not supported yet`)
@@ -1228,14 +1243,14 @@ export const MessageApi = async (c: Context) => {
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
-          const attachmentsToBeInserted = JSON.parse(attachments)
+          const attachmentsToBeInserted = JSON.parse(attachments) || []
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
             title,
-            attachments: attachmentsToBeInserted,
+            attachments: [],
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
@@ -1253,7 +1268,7 @@ export const MessageApi = async (c: Context) => {
           const chatExtId = chat.externalId
           const messageExtId = insertedMsg.externalId
           for (const attachment of attachmentsToBeInserted) {
-            const attachmentId = getUploadFileDocId(attachment?.name)
+            const attachmentId = attachment?.docId
             await AddChatMessageIdToAttachment(
               chatAttachmentSchema,
               attachmentId,
@@ -1272,20 +1287,8 @@ export const MessageApi = async (c: Context) => {
         async (tx) => {
           const newAttachments = JSON.parse(attachments) || []
 
-          const oldChat = await getChatByExternalId(db, chatId)
-          const oldAttachments = oldChat.attachments || []
-
-          let allAttachments = oldAttachments
-
-          // If there are some new attachments, we need to update chat and add only those new while adding message
-          if (newAttachments.length !== 0) {
-            allAttachments = allAttachments?.concat(newAttachments)
-          }
-
           // we are updating the chat and getting it's value in one call itself
-          let existingChat = await updateChatByExternalId(db, chatId, {
-            attachments: allAttachments,
-          })
+          let existingChat = await updateChatByExternalId(db, chatId, {})
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -1304,7 +1307,7 @@ export const MessageApi = async (c: Context) => {
           const chatExtId = existingChat.externalId
           const messageExtId = insertedMsg.externalId
           for (const attachment of newAttachments) {
-            const attachmentId = getUploadFileDocId(attachment?.name)
+            const attachmentId = attachment?.docId
             await AddChatMessageIdToAttachment(
               chatAttachmentSchema,
               attachmentId,

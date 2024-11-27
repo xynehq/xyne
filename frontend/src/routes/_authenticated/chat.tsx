@@ -679,10 +679,10 @@ const ChatMessage = ({
                     </div>
                     <div className="flex flex-col flex-1">
                       <span className="text-sm font-medium text-gray-700 truncate max-w-[100px]">
-                        {attachment.name}
+                        {attachment?.fileName}
                       </span>
                       <span className="text-xs font-medium text-gray-700 truncate max-w-[100px]">
-                        {getFileTypeName(attachment.type) ?? null}
+                        {getFileTypeName(attachment?.fileType) ?? null}
                       </span>
                     </div>
                   </li>
