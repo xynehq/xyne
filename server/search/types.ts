@@ -265,11 +265,9 @@ export const VespaUserQueryHistorySchema = z.object({
   count: z.number(),
 })
 
-export const VespaUserQueryHGetSchema = VespaUserQueryHistorySchema.merge(
-  defaultVespaFieldsSchema,
-).extend({
-  sddocname: z.literal(userQuerySchema),
-})
+export const VespaUserQueryHGetSchema = VespaUserQueryHistorySchema.extend({
+  sddocname: z.literal("user_query"),
+}).merge(defaultVespaFieldsSchema)
 export const VespaMailGetSchema = VespaMailSchema.merge(
   defaultVespaFieldsSchema,
 )
@@ -471,7 +469,7 @@ const VespaAutocompleteMailSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
-  const VespaAutocompleteEventSchema = z
+const VespaAutocompleteEventSchema = z
   .object({
     docId: z.string(),
     name: z.string().optional(),
@@ -480,7 +478,7 @@ const VespaAutocompleteMailSchema = z
     sddocname: Schemas,
   })
   .merge(defaultVespaFieldsSchema)
-  
+
 const VespaAutocompleteUserQueryHSchema = z
   .object({
     docId: z.string(),
@@ -525,7 +523,8 @@ export type VespaAutocompleteFile = z.infer<typeof VespaAutocompleteFileSchema>
 export type VespaAutocompleteUser = z.infer<typeof VespaAutocompleteUserSchema>
 export type VespaAutocompleteMail = z.infer<typeof VespaAutocompleteMailSchema>
 export type VespaAutocompleteEvent = z.infer<
-  typeof VespaAutocompleteEventSchema>
+  typeof VespaAutocompleteEventSchema
+>
 export type VespaAutocompleteUserQueryHistory = z.infer<
   typeof VespaAutocompleteUserQueryHSchema
 >

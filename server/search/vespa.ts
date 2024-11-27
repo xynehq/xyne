@@ -140,7 +140,12 @@ export const insertDocument = async (document: VespaFile) => {
 
 // generic insert method
 export const insert = async (
-  document: VespaUser | VespaFile | VespaMail | VespaEvent | VespaUserQueryHistory,
+  document:
+    | VespaUser
+    | VespaFile
+    | VespaMail
+    | VespaEvent
+    | VespaUserQueryHistory,
   schema: string,
 ) => {
   try {
