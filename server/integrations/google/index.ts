@@ -658,6 +658,8 @@ type IngestionMetadata = {
 
 // we make 2 sync jobs
 // one for drive and one for google workspace
+const ServiceAccountUserConcurrency = 2
+
 export const handleGoogleServiceAccountIngestion = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -674,40 +676,57 @@ export const handleGoogleServiceAccountIngestion = async (
     const admin = google.admin({ version: "directory_v1", auth: jwtClient })
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
-    // TODO: handle multiple domains
     const users = await listUsers(admin, workspace.domain)
     const ingestionMetadata: IngestionMetadata[] = []
-    for (const [index, user] of users.entries()) {
-      const userEmail = user.primaryEmail || user.emails[0]
-      jwtClient = createJwtClient(serviceAccountKey, userEmail)
-      const driveClient = google.drive({ version: "v3", auth: jwtClient })
-      const { contacts, otherContacts, contactsToken, otherContactsToken } =
-        await listAllContacts(jwtClient)
-      await insertContactsToVespa(contacts, otherContacts, userEmail)
-      const { startPageToken }: drive_v3.Schema$StartPageToken = (
-        await driveClient.changes.getStartPageToken()
-      ).data
-      if (!startPageToken) {
-        throw new Error("Could not get start page token")
-      }
-      sendWebsocketMessage(
-        `${((index + 1) / users.length) * 100}% user's data is connected`,
-        connector.externalId,
-      )
-      const [_, historyId, { calendarEventsToken }] = await Promise.all([
-        insertFilesForUser(jwtClient, userEmail, connector),
-        handleGmailIngestion(jwtClient, userEmail),
-        insertCalendarEvents(jwtClient),
-      ])
-      ingestionMetadata.push({
-        email: userEmail,
-        driveToken: startPageToken,
-        contactsToken,
-        otherContactsToken,
-        historyId,
-        calendarEventsToken,
-      })
-    }
+
+    // Use p-limit to handle concurrency
+    const limit = pLimit(ServiceAccountUserConcurrency)
+
+    // Map each user to a promise but limit concurrent execution
+    const promises = users.map((user, index) =>
+      limit(async () => {
+        const userEmail = user.primaryEmail || user.emails[0]
+        jwtClient = createJwtClient(serviceAccountKey, userEmail)
+        const driveClient = google.drive({ version: "v3", auth: jwtClient })
+
+        const { contacts, otherContacts, contactsToken, otherContactsToken } =
+          await listAllContacts(jwtClient)
+        await insertContactsToVespa(contacts, otherContacts, userEmail)
+
+        const { startPageToken }: drive_v3.Schema$StartPageToken = (
+          await driveClient.changes.getStartPageToken()
+        ).data
+        if (!startPageToken) {
+          throw new Error("Could not get start page token")
+        }
+
+        sendWebsocketMessage(
+          `${((index + 1) / users.length) * 100}% user's data is connected`,
+          connector.externalId,
+        )
+
+        const [_, historyId, { calendarEventsToken }] = await Promise.all([
+          insertFilesForUser(jwtClient, userEmail, connector),
+          handleGmailIngestion(jwtClient, userEmail),
+          insertCalendarEvents(jwtClient),
+        ])
+
+        return {
+          email: userEmail,
+          driveToken: startPageToken,
+          contactsToken,
+          otherContactsToken,
+          historyId,
+          calendarEventsToken,
+        }
+      }),
+    )
+
+    // Wait for all promises to complete
+    const results = await Promise.all(promises)
+    ingestionMetadata.push(...results)
+
+    // Rest of the function remains the same...
     // insert all the workspace users
     await insertUsersForWorkspace(users)
 
@@ -1154,7 +1173,7 @@ const chunkFinalRows = (allRows: string[][]): string[] => {
 
     // Check if adding this rowText would exceed the maximum text length
     if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
-      Logger.error(`Text length excedded, indexing with empty content`)
+      Logger.warn(`Text length excedded, indexing with empty content`)
       // Return an empty array if the total text length exceeds the limit
       return []
     }
@@ -1392,7 +1411,7 @@ export const googlePDFsVespa = async (
         Logger.info(`Ignoring ${pdf.name} as its more than 20 MB`)
         return null
       }
-      const pdfFileName = `${pdf.id}_${pdf.name}`
+      const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
         await downloadPDF(drive, pdf.id!, pdfFileName)
