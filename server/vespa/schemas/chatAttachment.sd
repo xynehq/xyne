@@ -20,10 +20,6 @@ schema chatAttachment {
       indexing: attribute | summary
     }
 
-    field permissions type array<string> {
-      indexing: attribute | summary
-    }
-
     field mimeType type string {
       indexing: attribute | summary
     }

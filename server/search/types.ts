@@ -249,10 +249,11 @@ export const VespaChatAttachmentSchema = z.object({
   title: z.string(),
   chunks: z.array(z.string()),
   ownerEmail: z.string().nullable(),
-  permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
+  chatId: z.string(),
+  messageId: z.string(),
 })
 
 export const VespaMailSearchSchema = VespaMailSchema.extend({

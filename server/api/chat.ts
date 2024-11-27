@@ -65,6 +65,7 @@ import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import {
+  AddChatMessageIdToAttachment,
   getItems,
   insert,
   insertDocument,
@@ -205,6 +206,10 @@ const saveToDownloads = async (file: Blob) => {
   }
 }
 
+const getUploadFileDocId = (fileName: string) => {
+  return `file-upload-${fileName}`
+}
+
 const handlePDFFile = async (file: Blob, userEmail: string) => {
   let wasDownloaded = false
   try {
@@ -229,15 +234,15 @@ const handlePDFFile = async (file: Blob, userEmail: string) => {
 
     const pdfToIngest = {
       title: file.name!,
-      docId: `${file.name}-upload-PDF`, // create id here, maybe??
+      docId: getUploadFileDocId(file?.name),
       ownerEmail: userEmail,
       chunks: chunks.map((v) => v.chunk),
-      permissions: [userEmail],
       mimeType: "application/pdf",
       createdAt: dateTime,
       updatedAt: dateTime,
     }
 
+    // @ts-ignore
     await insert(pdfToIngest, chatAttachmentSchema)
 
     // Delete the file here
@@ -358,7 +363,8 @@ const searchToCitation = (
   results: z.infer<typeof VespaSearchResultsSchema>[],
 ): Citation[] => {
   let citations: Citation[] = []
-  if (results.length === 0) {
+
+  if (!results || results?.length === 0) {
     return []
   }
 
@@ -1243,6 +1249,19 @@ export const MessageApi = async (c: Context) => {
             message,
             modelId,
           })
+          // Add this to chatAttachments in vespa
+          const chatExtId = chat.externalId
+          const messageExtId = insertedMsg.externalId
+          for (const attachment of attachmentsToBeInserted) {
+            const attachmentId = getUploadFileDocId(attachment?.name)
+            await AddChatMessageIdToAttachment(
+              chatAttachmentSchema,
+              attachmentId,
+              chatExtId,
+              messageExtId,
+            )
+          }
+
           return [chat, insertedMsg]
         },
       )
@@ -1280,6 +1299,20 @@ export const MessageApi = async (c: Context) => {
             message,
             modelId,
           })
+
+          // Add this to chatAttachments in vespa
+          const chatExtId = existingChat.externalId
+          const messageExtId = insertedMsg.externalId
+          for (const attachment of newAttachments) {
+            const attachmentId = getUploadFileDocId(attachment?.name)
+            await AddChatMessageIdToAttachment(
+              chatAttachmentSchema,
+              attachmentId,
+              chatExtId,
+              messageExtId,
+            )
+          }
+
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -1372,7 +1405,7 @@ export const MessageApi = async (c: Context) => {
               citationMap[v] = i
             })
             minimalContextChunks = searchToCitation(
-              results.root.children.filter((_, i) =>
+              results?.root?.children?.filter((_, i) =>
                 currentCitations.includes(i),
               ) as z.infer<typeof VespaSearchResultsSchema>[],
             )

@@ -140,7 +140,12 @@ export const insertDocument = async (document: VespaFile) => {
 
 // generic insert method
 export const insert = async (
-  document: VespaUser | VespaFile | VespaMail | VespaEvent | VespaChatAttachment,
+  document:
+    | VespaUser
+    | VespaFile
+    | VespaMail
+    | VespaEvent
+    | VespaChatAttachment,
   schema: string,
 ) => {
   try {
@@ -236,7 +241,13 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
-const AllSources = [fileSchema, userSchema, mailSchema, eventSchema, chatAttachmentSchema].join(", ")
+const AllSources = [
+  fileSchema,
+  userSchema,
+  mailSchema,
+  eventSchema,
+  chatAttachmentSchema,
+].join(", ")
 
 export const autocomplete = async (
   query: string,
@@ -751,6 +762,55 @@ export const UpdateEventCancelledInstances = async (
     const errMessage = getErrorMessage(error)
     Logger.error(
       `Error updating event instances in schema ${schema} for document ${docId}:`,
+      errMessage,
+    )
+    throw new ErrorUpdatingDocument({
+      docId,
+      cause: error as Error,
+      sources: schema,
+    })
+  }
+}
+
+export const AddChatMessageIdToAttachment = async (
+  schema: string,
+  docId: string,
+  chatId: string,
+  messageId: string,
+) => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: {
+          chatId: { assign: chatId },
+          messageId: { assign: messageId },
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = response.statusText
+      throw new ErrorUpdatingDocument({
+        message: `Failed to add chatId and messageId to chatAttachment: ${response.status} ${response.statusText} - ${errorText}`,
+        docId,
+        sources: schema,
+      })
+    }
+
+    const data = await response.json()
+
+    Logger.info(
+      `Successfully added chatId and messageId to chatAttachment for document ${docId}.`,
+    )
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error adding chatId and messageId for document ${docId}:`,
       errMessage,
     )
     throw new ErrorUpdatingDocument({
