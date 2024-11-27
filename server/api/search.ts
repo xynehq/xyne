@@ -167,6 +167,7 @@ export const SearchApi = async (c: Context) => {
       timestampRange,
     )
   }
+
   await updateUserQueryHistory(decodedQuery)
   // TODO: deduplicate for google admin and contacts
   const newResults = VespaSearchResponseToSearchResult(results)

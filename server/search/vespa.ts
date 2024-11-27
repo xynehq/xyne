@@ -251,7 +251,7 @@ export const autocomplete = async (
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
-  const yqlQuery = `select * from sources ${AllSources}
+  const yqlQuery = `select * from sources ${AllSources}, ${userQuerySchema}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
@@ -950,7 +950,10 @@ export const updateUserQueryHistory = async (query: string) => {
     } catch (error) {
       // to check if error indicates that the document does not exist
       const errMsg = getErrorMessage(error)
-      if (errMsg.includes("404") || errMsg.includes("not found")) {
+      if (
+        errMsg.includes("404 Not Found") &&
+        errMsg.includes(`docId: ${docId}`)
+      ) {
         Logger.warn(
           `Document ${docId} does not exist. Proceeding with insertion.`,
         )
