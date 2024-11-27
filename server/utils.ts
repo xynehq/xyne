@@ -107,13 +107,12 @@ export const retryWithBackoff = async <T>(
   try {
     return await fn() // Attempt the function
   } catch (error: any) {
-    console.log(JSON.stringify(error))
     const isQuotaError =
       error.message.includes("Quota exceeded") ||
       error.code === 429 ||
       error.code === 403
     if (isQuotaError && retries < MAX_RETRIES) {
-      const baseWaitTime = Math.pow(2, retries) * 1000 // Exponential backoff
+      const baseWaitTime = Math.pow(2, retries) * 3000 // Exponential backoff
       const jitter = Math.random() * 800 // Add jitter for randomness
       const waitTime = baseWaitTime + jitter
 
