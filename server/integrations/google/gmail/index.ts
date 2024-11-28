@@ -15,6 +15,7 @@ import { parseEmailBody } from "./quote-parser"
 import pLimit from "p-limit"
 import { GmailConcurrency } from "../config"
 import { retryWithBackoff } from "@/utils"
+import { StatType, updateUserStats } from "../tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
 
@@ -25,18 +26,16 @@ export const handleGmailIngestion = async (
   const gmail = google.gmail({ version: "v1", auth: client })
   let totalMails = 0
   let nextPageToken = ""
-
+  const batchSize = 100 // Reduced from 500 to minimize quota consumption
   const limit = pLimit(GmailConcurrency)
+
   const profile = await retryWithBackoff(
     () => gmail.users.getProfile({ userId: "me" }),
     "Fetching Gmail user profile",
   )
   const historyId = profile.data.historyId!
   if (!historyId) {
-    // TODO: turn this into custom error
-    throw new Error(
-      "Could not get historyId from getProfile so can't ingest Gmail",
-    )
+    throw new Error("Could not get historyId from getProfile")
   }
 
   do {
@@ -44,7 +43,7 @@ export const handleGmailIngestion = async (
       () =>
         gmail.users.messages.list({
           userId: "me",
-          maxResults: 500,
+          maxResults: batchSize,
           pageToken: nextPageToken,
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
@@ -52,9 +51,8 @@ export const handleGmailIngestion = async (
 
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
-      totalMails += resp.data.messages.length
-
-      const messagePromises = resp.data.messages.map((message) =>
+      const messageBatch = resp.data.messages.slice(0, batchSize)
+      const batchRequests = messageBatch.map((message) =>
         limit(async () => {
           try {
             const msgResp = await retryWithBackoff(
@@ -67,6 +65,7 @@ export const handleGmailIngestion = async (
               `Fetching Gmail message (id: ${message.id})`,
             )
             await insert(parseMail(msgResp.data), mailSchema)
+            updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
               `Failed to process message ${message.id}: ${(error as Error).message}`,
@@ -74,10 +73,14 @@ export const handleGmailIngestion = async (
           }
         }),
       )
-      // Process messages in parallel for each page
-      await Promise.all(messagePromises)
+
+      // Process batch of messages in parallel
+      await Promise.all(batchRequests)
+
+      totalMails += messageBatch.length
     }
   } while (nextPageToken)
+
   Logger.info(`Inserted ${totalMails} mails`)
   return historyId
 }

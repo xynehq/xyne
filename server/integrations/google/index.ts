@@ -86,24 +86,24 @@ import {
   MAX_GD_SHEET_ROWS,
   MAX_GD_SHEET_TEXT_LEN,
   MAX_GD_SLIDES_TEXT_LEN,
+  PDFProcessingConcurrency,
+  ServiceAccountUserConcurrency,
 } from "@/integrations/google/config"
 import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
+import {
+  getProgress,
+  markUserComplete,
+  serviceAccountTracker,
+  setTotalUsers,
+  StatType,
+  updateUserStats,
+} from "./tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
-
-type Email = string
-type WorkspaceStats = Record<Email, UserStats>
-
-type UserStats = {
-  gmailCount: number
-  driveCount: number
-  contactsCount: number
-  eventsCount: number
-}
 
 const listUsers = async (
   admin: admin_directory_v1.Admin,
@@ -391,7 +391,10 @@ export const eventFields =
 
 export const maxCalendarEventResults = 2500
 
-const insertCalendarEvents = async (client: GoogleClient) => {
+const insertCalendarEvents = async (
+  client: GoogleClient,
+  userEmail: string,
+) => {
   let nextPageToken = ""
   // will be returned in the end
   let newSyncTokenCalendarEvents: string = ""
@@ -476,6 +479,7 @@ const insertCalendarEvents = async (client: GoogleClient) => {
     }
 
     await insert(eventToBeIngested, eventSchema)
+    updateUserStats(userEmail, StatType.Events, 1)
   }
 
   // Add the cancelled events into cancelledInstances array of their respective main event
@@ -560,7 +564,7 @@ export const handleGoogleOAuthIngestion = async (
     const [_, historyId, { calendarEventsToken }] = await Promise.all([
       insertFilesForUser(oauth2Client, userEmail, connector),
       handleGmailIngestion(oauth2Client, userEmail),
-      insertCalendarEvents(oauth2Client),
+      insertCalendarEvents(oauth2Client, userEmail),
     ])
     const changeTokens = {
       driveToken: startPageToken,
@@ -658,7 +662,7 @@ type IngestionMetadata = {
 
 // we make 2 sync jobs
 // one for drive and one for google workspace
-const ServiceAccountUserConcurrency = 2
+// const ServiceAccountUserConcurrency = 2
 
 export const handleGoogleServiceAccountIngestion = async (
   boss: PgBoss,
@@ -672,21 +676,32 @@ export const handleGoogleServiceAccountIngestion = async (
       connector.credentials as string,
     )
     const subject: string = connector.subject as string
-    let jwtClient = createJwtClient(serviceAccountKey, subject)
-    const admin = google.admin({ version: "directory_v1", auth: jwtClient })
+    const adminJwtClient = createJwtClient(serviceAccountKey, subject)
+    const admin = google.admin({
+      version: "directory_v1",
+      auth: adminJwtClient,
+    })
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
     const users = await listUsers(admin, workspace.domain)
+    setTotalUsers(users.length)
     const ingestionMetadata: IngestionMetadata[] = []
 
     // Use p-limit to handle concurrency
     const limit = pLimit(ServiceAccountUserConcurrency)
 
+    const interval = setInterval(() => {
+      sendWebsocketMessage(
+        `progress: ${getProgress()}\n${JSON.stringify(serviceAccountTracker.userStats, null, 2)}`,
+        connector.externalId,
+      )
+    }, 5000)
+
     // Map each user to a promise but limit concurrent execution
-    const promises = users.map((user, index) =>
+    const promises = users.map((user) =>
       limit(async () => {
         const userEmail = user.primaryEmail || user.emails[0]
-        jwtClient = createJwtClient(serviceAccountKey, userEmail)
+        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
@@ -700,17 +715,13 @@ export const handleGoogleServiceAccountIngestion = async (
           throw new Error("Could not get start page token")
         }
 
-        sendWebsocketMessage(
-          `${((index + 1) / users.length) * 100}% user's data is connected`,
-          connector.externalId,
-        )
-
         const [_, historyId, { calendarEventsToken }] = await Promise.all([
           insertFilesForUser(jwtClient, userEmail, connector),
           handleGmailIngestion(jwtClient, userEmail),
-          insertCalendarEvents(jwtClient),
+          insertCalendarEvents(jwtClient, userEmail),
         ])
 
+        markUserComplete()
         return {
           email: userEmail,
           driveToken: startPageToken,
@@ -730,6 +741,7 @@ export const handleGoogleServiceAccountIngestion = async (
     // insert all the workspace users
     await insertUsersForWorkspace(users)
 
+    clearInterval(interval)
     await db.transaction(async (trx) => {
       for (const {
         email,
@@ -939,10 +951,10 @@ const googleSlidesVespa = async (
   presentationMetadata: drive_v3.Schema$File[],
   connectorId: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  sendWebsocketMessage(
-    `Scanning ${presentationMetadata.length} Google Slides`,
-    connectorId,
-  )
+  // sendWebsocketMessage(
+  //   `Scanning ${presentationMetadata.length} Google Slides`,
+  //   connectorId,
+  // )
   const presentationsList: VespaFileWithDrivePermission[] = []
 
   const total = presentationMetadata.length
@@ -957,9 +969,9 @@ const googleSlidesVespa = async (
       presentationsList.push(presentationToBeIngested)
       count += 1
 
-      if (count % 5 === 0) {
-        sendWebsocketMessage(`${count} Google Slides scanned`, connectorId)
-      }
+      // if (count % 5 === 0) {
+      //   sendWebsocketMessage(`${count} Google Slides scanned`, connectorId)
+      // }
     } catch (error) {
       Logger.error(
         `Error getting slides: ${error} ${(error as Error).stack}`,
@@ -1046,6 +1058,7 @@ const insertFilesForUser = async (
       for (const doc of allFiles) {
         processedFiles += 1
         await insertDocument(doc)
+        updateUserStats(userEmail, StatType.Drive, 1)
       }
 
       await Promise.all([...pdfProcessingPromises, ...sheetProcessingPromises])
@@ -1102,36 +1115,47 @@ export const getAllSheetsFromSpreadSheet = async (
   spreadsheetId: string,
 ) => {
   const allSheets = []
-  for (const sheet of spreadsheet.sheets!) {
-    const sheetProp = sheet.properties
-    const sheetTitle = sheetProp?.title
-    const sheetType = sheetProp?.sheetType
 
-    // If sheetType is not GRID (table-like structure), skip
-    if (sheetType !== "GRID") {
-      continue
-    }
+  const gridSheets = spreadsheet.sheets!.filter(
+    (sheet) => sheet.properties?.sheetType === "GRID",
+  )
+
+  const batchSize = 100
+  for (let i = 0; i < gridSheets.length; i += batchSize) {
+    const batchSheets = gridSheets.slice(i, i + batchSize)
+    const ranges = batchSheets.map((sheet) => `'${sheet.properties!.title}'`)
 
     try {
-      const sheetRanges = await retryWithBackoff(
+      const response = await retryWithBackoff(
         () =>
-          sheets.spreadsheets.values.get({
-            range: `'${sheetTitle}'`,
+          sheets.spreadsheets.values.batchGet({
             spreadsheetId,
+            ranges,
             valueRenderOption: "FORMATTED_VALUE",
           }),
-        `Fetching sheet '${sheetTitle}' from spreadsheet`,
+        `Fetching sheets '${ranges.join(", ")}' from spreadsheet`,
       )
 
-      const valueRanges = sheetRanges?.data?.values!
-      allSheets.push({
-        sheetId: sheetProp?.sheetId,
-        sheetTitle,
-        valueRanges,
-      })
+      const valueRanges = response?.data?.valueRanges
+
+      if (valueRanges) {
+        for (let j = 0; j < valueRanges.length; j++) {
+          const sheet = batchSheets[j]
+          const sheetProp = sheet.properties
+          const sheetId = sheetProp?.sheetId
+          const sheetTitle = sheetProp?.title
+          const values = valueRanges[j].values
+
+          allSheets.push({
+            sheetId,
+            sheetTitle,
+            valueRanges: values,
+          })
+        }
+      }
     } catch (error) {
       Logger.error(
-        `Failed to fetch sheet '${sheetTitle}' from spreadsheet: ${(error as Error).message}`,
+        `Failed to fetch sheets '${ranges.join(", ")}' from spreadsheet: ${(error as Error).message}`,
       )
     }
   }
@@ -1229,7 +1253,7 @@ export const getSheetsListFromOneSpreadsheet = async (
   }
 
   for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
-    const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges)
+    const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges ?? [])
 
     if (finalRows.length === 0) {
       Logger.info(
@@ -1291,10 +1315,10 @@ const googleSheetsVespa = async (
   connectorId: string,
   userEmail: string,
 ): Promise<void> => {
-  sendWebsocketMessage(
-    `Scanning ${spreadsheetsMetadata.length} Google Sheets`,
-    connectorId,
-  )
+  // sendWebsocketMessage(
+  //   `Scanning ${spreadsheetsMetadata.length} Google Sheets`,
+  //   connectorId,
+  // )
   let sheetsList: VespaFileWithDrivePermission[] = []
   const sheets = google.sheets({ version: "v4", auth: client })
   const total = spreadsheetsMetadata.length
@@ -1307,9 +1331,9 @@ const googleSheetsVespa = async (
       sheetsList.push(...sheetsListFromOneSpreadsheet)
       count += 1
 
-      if (count % 5 === 0) {
-        sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
-      }
+      // if (count % 5 === 0) {
+      //   sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
+      // }
     } catch (error) {
       Logger.error(
         `Error getting sheet files: ${error} ${(error as Error).stack}`,
@@ -1329,6 +1353,7 @@ const googleSheetsVespa = async (
   })
   for (const doc of sheetsList) {
     await insertDocument(doc)
+    updateUserStats(userEmail, StatType.Drive, 1)
   }
 }
 
@@ -1384,18 +1409,16 @@ export const downloadPDF = async (
   }
 }
 
-const PDFProcessingConcurrency = 5
-
 export const googlePDFsVespa = async (
   client: GoogleClient,
   pdfsMetadata: drive_v3.Schema$File[],
   connectorId: string,
   userEmail: string,
 ): Promise<void> => {
-  sendWebsocketMessage(
-    `Scanning ${pdfsMetadata.length} Google PDFs`,
-    connectorId,
-  )
+  // sendWebsocketMessage(
+  //   `Scanning ${pdfsMetadata.length} Google PDFs`,
+  //   connectorId,
+  // )
   // const pdfsList: VespaFileWithDrivePermission[] = []
   const drive = google.drive({ version: "v3", auth: client })
   const total = pdfsMetadata.length
@@ -1483,6 +1506,7 @@ export const googlePDFsVespa = async (
 
   for (const doc of pdfs) {
     await insertDocument(doc)
+    updateUserStats(userEmail, StatType.Drive, 1)
   }
 }
 
@@ -1711,9 +1735,11 @@ const insertContactsToVespa = async (
   try {
     for (const contact of contacts) {
       await insertContact(contact, GooglePeopleEntity.Contacts, owner)
+      updateUserStats(owner, StatType.Contacts, 1)
     }
     for (const contact of otherContacts) {
       await insertContact(contact, GooglePeopleEntity.OtherContacts, owner)
+      updateUserStats(owner, StatType.Contacts, 1)
     }
   } catch (error) {
     // error is related to vespa and not mapping
@@ -1777,10 +1803,10 @@ export const googleDocsVespa = async (
   docsMetadata: drive_v3.Schema$File[],
   connectorId: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
-  sendWebsocketMessage(
-    `Scanning ${docsMetadata.length} Google Docs`,
-    connectorId,
-  )
+  // sendWebsocketMessage(
+  //   `Scanning ${docsMetadata.length} Google Docs`,
+  //   connectorId,
+  // )
   const docs = google.docs({ version: "v1", auth: client })
   const total = docsMetadata.length
   let count = 0
@@ -1841,9 +1867,9 @@ export const googleDocsVespa = async (
         }
         count += 1
 
-        if (count % 5 === 0) {
-          sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
-        }
+        // if (count % 5 === 0) {
+        //   sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
+        // }
         return result
       } catch (error) {
         const errorMessage = getErrorMessage(error)

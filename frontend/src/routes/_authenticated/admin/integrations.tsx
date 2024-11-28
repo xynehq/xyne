@@ -27,6 +27,7 @@ import { Connectors } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
+import { Progress } from "@/components/ui/progress"
 
 const logger = console
 
@@ -359,11 +360,13 @@ const ServiceAccountTab = ({
   updateStatus,
   onSuccess,
   isIntegrating,
+  progress,
 }: {
   connectors: Connectors[]
   updateStatus: string
   onSuccess: any
   isIntegrating: boolean
+  progress: number
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
@@ -388,6 +391,7 @@ const ServiceAccountTab = ({
         <CardTitle>{googleSAConnector?.app}</CardTitle>
         <CardDescription>Connecting App</CardDescription>
         <CardContent className="pt-0">
+          <Progress value={progress} className="w-[60%]" />
           <p>updates: {updateStatus}</p>
           <p>status: {googleSAConnector?.status}</p>
         </CardContent>
@@ -438,6 +442,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   })
   // const [ws, setWs] = useState(null);
   const [updateStatus, setUpateStatus] = useState("")
+  const [progress, setProgress] = useState<number>(0)
   const [isIntegratingSA, setIsIntegratingSA] = useState<boolean>(
     data
       ? !!data.find(
@@ -538,6 +543,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                 updateStatus={updateStatus}
                 isIntegrating={isIntegratingSA}
                 onSuccess={() => setIsIntegratingSA(true)}
+                progress={progress}
               />
             )}
           </TabsContent>
