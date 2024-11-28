@@ -10,6 +10,8 @@ export const StateContext = createContext<{
   handleFileSelection: (file: File) => void
   loading: boolean
   setLoading: React.Dispatch<React.SetStateAction<boolean>>
+  query: string
+  setQuery: React.Dispatch<React.SetStateAction<string>>
 } | null>(null)
 
 // Provider component
@@ -18,6 +20,7 @@ export const StateContextProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [stagedFiles, setStagedFiles] = useState<File[]>([])
   const [loading, setLoading] = useState<boolean>(false)
+  const [query, setQuery] = useState<string>("")
   const { toast } = useToast()
 
   const handleFileSelection = (event) => {
@@ -74,6 +77,8 @@ export const StateContextProvider: React.FC<{ children: React.ReactNode }> = ({
         handleFileSelection,
         loading,
         setLoading,
+        query,
+        setQuery,
       }}
     >
       {children}

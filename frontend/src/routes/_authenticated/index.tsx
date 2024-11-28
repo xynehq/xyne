@@ -16,7 +16,6 @@ import { useStateContext } from "@/lib/common"
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<"search" | "ask">("search")
-  const [query, setQuery] = useState("")
 
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
@@ -31,8 +30,14 @@ const Index = () => {
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
   const { user } = matches[matches.length - 1].context
-  const { stagedFiles, handleFileRemove, handleFileSelection, loading } =
-    useStateContext()
+  const {
+    stagedFiles,
+    handleFileRemove,
+    handleFileSelection,
+    loading,
+    query,
+    setQuery,
+  } = useStateContext()
 
   useEffect(() => {
     if (!autocompleteQuery) {

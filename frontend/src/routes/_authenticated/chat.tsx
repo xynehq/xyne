@@ -55,7 +55,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const hasHandledQueryParam = useRef(false)
 
-  const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
     isWithChatId ? data?.messages || [] : [],
   )
@@ -86,6 +85,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     handleFileSelection,
     loading,
     setLoading,
+    query,
+    setQuery,
   } = useStateContext()
 
   useEffect(() => {
@@ -129,7 +130,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       currentRespRef.current = null
     }
     inputRef.current?.focus()
-    setQuery("")
   }, [(params as any).chatId])
 
   // New useEffect to handle query parameters
