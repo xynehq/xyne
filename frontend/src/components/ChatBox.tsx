@@ -16,6 +16,7 @@ interface ChatBoxProps {
   handleFileRemove: (index: number) => void
   handleFileSelection: (event: any) => void // todo fix any
   loading: boolean
+  isStreaming?: boolean
 }
 
 export const getFileTypeName = (fileType: string): string => {
@@ -34,6 +35,7 @@ export const ChatBox = ({
   handleFileRemove,
   handleFileSelection,
   loading,
+  isStreaming = false,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -93,7 +95,9 @@ export const ChatBox = ({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
-                handleSend(query)
+                if (!isStreaming) {
+                  handleSend(query)
+                }
               }
             }}
             style={{
@@ -131,6 +135,7 @@ export const ChatBox = ({
           </span>
         ) : (
           <button
+            disabled={isStreaming}
             onClick={() => handleSend(query)}
             style={{ marginLeft: "auto" }}
             className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"

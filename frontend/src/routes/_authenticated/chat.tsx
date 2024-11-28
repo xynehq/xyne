@@ -556,6 +556,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               handleFileRemove={handleFileRemove}
               handleFileSelection={handleFileSelection}
               loading={loading}
+              isStreaming={isStreaming}
             />
           </div>
           <Sources showSources={showSources} citations={currentCitations} />
