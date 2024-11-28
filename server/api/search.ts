@@ -168,7 +168,10 @@ export const SearchApi = async (c: Context) => {
     )
   }
 
-  await updateUserQueryHistory(decodedQuery)
+  // ensure we won't update the query on filter change
+  if (!app && !entity && lastUpdated === "anytime") {
+    await updateUserQueryHistory(decodedQuery)
+  }
   // TODO: deduplicate for google admin and contacts
   const newResults = VespaSearchResponseToSearchResult(results)
   newResults.groupCount = groupCount
