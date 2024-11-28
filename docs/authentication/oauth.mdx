@@ -15,8 +15,7 @@ Navigate to the Oauth Consent Screen in the Sidebar of your Google Cloud Console
 
 Under ```OAuth Consent``` screen select either Internal or External, depending on your requirement : 
 
- - If you're have a Google Workspace, you should choose Internal
- - Otherwise choose External
+ - Since you're have a Google Workspace, you should choose ```Internal```
 Click on ```Create```
 <img height="200" src="../images/oauth-3.png" />
 
@@ -55,4 +54,35 @@ Under that select the ```OAuth client ID``` option.
 
 Click ```CREATE``` and make sure save the Client ID and Client Secret for putting it in the [```.env``` of the application](https://xyne.mintlify.app/deployment/aws/aws-deployment#setup-environment-variables)
 
+
+## Enabling APIs
+The last step is to enable the APIs is needed for the app.
+- From the menu in the side bar, under APIs and Services section select the ```Enabled APIs & Services```.
+<img height="200" src="../images/enable-apis1.png" />
+- In the ```Enabled APIs & Services``` page, click on the ```+ Enable APIs & Services```.
+<img height="200" src="../images/enable-apis2.png" />
+- You will now see a search box where you can search for the specific API that you want to enable. (For example :  Google Deive API)
+<img height="200" src="../images/enable-apis3.png" />
+- Once you search for an API, you will find a list of APIs. 
+<img height="200" src="../images/enable-apis4.png" />
+- From the list of APIs, select the API that you want to enable. And then click on ```Enable``` in the API page.
+<img height="200" src="../images/enable-apis5.png" />
+- Once the API is enabled, you will see that the Enable button noe changes to Manage. This means that the API has been enabled.
+<img height="200" src="../images/enable-apis6.png" />
+- When you go back to the ```Enabled APIs & Services``` page, you will see that the enabled API has appeared in the list.
+<img height="200" src="../images/enable-apis7.png" />
+
+Following the same steps above, enable the following APIs : 
+ - [Google Drive](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+ - [Google Calendar](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com)
+ - [Google Slides](https://console.cloud.google.com/apis/library/slides.googleapis.com)
+ - [Google Docs](https://console.cloud.google.com/apis/library/docs.googleapis.com)
+ - [Google Sheets](https://console.cloud.google.com/apis/library/sheets.googleapis.com)
+ - [Gmail] (https://console.cloud.google.com/apis/library/gmail.googleapis.com)
+ - [Contacts](https://console.cloud.google.com/apis/library/contacts.googleapis.com)
+ - [People](https://console.cloud.google.com/apis/library/people.googleapis.com)
+
+
 This concludes the set-up process of Google Oauth.
+
+
