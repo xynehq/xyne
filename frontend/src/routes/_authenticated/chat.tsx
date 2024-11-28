@@ -79,8 +79,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
-  const { stagedFiles, setStagedFiles, handleFileRemove, handleFileSelection } =
-    useStateContext()
+  const {
+    stagedFiles,
+    setStagedFiles,
+    handleFileRemove,
+    handleFileSelection,
+    loading,
+    setLoading,
+  } = useStateContext()
 
   useEffect(() => {
     if (inputRef.current) {
@@ -142,17 +148,19 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const handleSend = async (messageToSend: string) => {
     if (!messageToSend) return
 
-    setQuery("")
-
     let uploadedFilesMetadata = []
 
     if (stagedFiles.length !== 0) {
+      setLoading(true)
       uploadedFilesMetadata = await handleFileUpload()
       setStagedFiles([])
       if (uploadedFilesMetadata.length !== 0) {
         console.log(`handleFileUpload ran sucessfully...`)
       }
+      setLoading(false)
     }
+
+    setQuery("")
     // Append the user's message to the chat
     setMessages((prevMessages) => [
       ...prevMessages,
@@ -547,6 +555,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               stagedFiles={stagedFiles}
               handleFileRemove={handleFileRemove}
               handleFileSelection={handleFileSelection}
+              loading={loading}
             />
           </div>
           <Sources showSources={showSources} citations={currentCitations} />

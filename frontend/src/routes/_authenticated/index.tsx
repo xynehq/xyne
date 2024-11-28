@@ -31,7 +31,7 @@ const Index = () => {
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
   const { user } = matches[matches.length - 1].context
-  const { stagedFiles, handleFileRemove, handleFileSelection } =
+  const { stagedFiles, handleFileRemove, handleFileSelection, loading } =
     useStateContext()
 
   useEffect(() => {
@@ -177,6 +177,7 @@ const Index = () => {
                 stagedFiles={stagedFiles}
                 handleFileSelection={handleFileSelection}
                 handleFileRemove={handleFileRemove}
+                loading={loading}
               />
             </div>
           )}

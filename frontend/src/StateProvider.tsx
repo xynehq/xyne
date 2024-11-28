@@ -8,6 +8,8 @@ export const StateContext = createContext<{
   setStagedFiles: React.Dispatch<React.SetStateAction<File[]>>
   handleFileRemove: (index: number) => void
   handleFileSelection: (file: File) => void
+  loading: boolean
+  setLoading: React.Dispatch<React.SetStateAction<boolean>>
 } | null>(null)
 
 // Provider component
@@ -15,6 +17,7 @@ export const StateContextProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [stagedFiles, setStagedFiles] = useState<File[]>([])
+  const [loading, setLoading] = useState<boolean>(false)
   const { toast } = useToast()
 
   const handleFileSelection = (event) => {
@@ -69,6 +72,8 @@ export const StateContextProvider: React.FC<{ children: React.ReactNode }> = ({
         setStagedFiles,
         handleFileRemove,
         handleFileSelection,
+        loading,
+        setLoading,
       }}
     >
       {children}

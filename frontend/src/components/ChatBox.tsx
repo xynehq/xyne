@@ -1,4 +1,11 @@
-import { ArrowRight, File, Trash2, Globe, Paperclip } from "lucide-react"
+import {
+  ArrowRight,
+  LoaderCircle,
+  File,
+  Trash2,
+  Globe,
+  Paperclip,
+} from "lucide-react"
 import { useEffect, useRef } from "react"
 
 interface ChatBoxProps {
@@ -8,6 +15,7 @@ interface ChatBoxProps {
   stagedFiles: File[]
   handleFileRemove: (index: number) => void
   handleFileSelection: (event: any) => void // todo fix any
+  loading: boolean
 }
 
 export const getFileTypeName = (fileType: string): string => {
@@ -25,6 +33,7 @@ export const ChatBox = ({
   stagedFiles,
   handleFileRemove,
   handleFileSelection,
+  loading,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -113,13 +122,22 @@ export const ChatBox = ({
         />
 
         <Globe size={16} className="text-[#464D53] cursor-pointer" />
-        <button
-          onClick={() => handleSend(query)}
-          style={{ marginLeft: "auto" }}
-          className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
-        >
-          <ArrowRight className="text-white" size={16} />
-        </button>
+        {loading ? (
+          <span
+            style={{ marginLeft: "auto" }}
+            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+          >
+            <LoaderCircle className="text-white animate-spin" size={16} />
+          </span>
+        ) : (
+          <button
+            onClick={() => handleSend(query)}
+            style={{ marginLeft: "auto" }}
+            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+          >
+            <ArrowRight className="text-white" size={16} />
+          </button>
+        )}
       </div>
     </div>
   )
