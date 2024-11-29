@@ -13,50 +13,83 @@ import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
 import pLimit from "p-limit"
-import { GmailConcurrency } from "../config"
+import { GmailConcurrency } from "@/integrations/google/config"
+import { retryWithBackoff } from "@/utils"
+import { StatType, updateUserStats } from "../tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
+import {
+  batchFetchImplementation,
+} from "@jrmdayn/googleapis-batcher"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
 ): Promise<string> => {
-  const gmail = google.gmail({ version: "v1", auth: client })
+  const batchSize = 100
+  const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
+  const gmail = google.gmail({
+    version: "v1",
+    auth: client,
+    fetchImplementation: fetchImpl,
+  })
   let totalMails = 0
   let nextPageToken = ""
-
   const limit = pLimit(GmailConcurrency)
-  const profile = await gmail.users.getProfile({ userId: "me" })
+
+  const profile = await retryWithBackoff(
+    () => gmail.users.getProfile({ userId: "me" }),
+    "Fetching Gmail user profile",
+  )
   const historyId = profile.data.historyId!
   if (!historyId) {
-    // TODO: turn this into custom error
-    throw new Error(
-      "Could not get historyId from getProfile so can't ingest Gmail",
-    )
+    throw new Error("Could not get historyId from getProfile")
   }
+
   do {
-    const resp = await gmail.users.messages.list({
-      userId: "me",
-      maxResults: 500,
-      pageToken: nextPageToken,
-    })
+    const resp = await retryWithBackoff(
+      () =>
+        gmail.users.messages.list({
+          userId: "me",
+          maxResults: batchSize,
+          pageToken: nextPageToken,
+          fields: "messages(id), nextPageToken",
+        }),
+      `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
+    )
+
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
-      totalMails += resp.data.messages.length
-      const messagePromises = resp.data.messages.map((message) =>
+      const messageBatch = resp.data.messages.slice(0, batchSize)
+      const batchRequests = messageBatch.map((message) =>
         limit(async () => {
-          const msgResp = await gmail.users.messages.get({
-            userId: "me",
-            id: message.id!,
-            format: "full",
-          })
-          await insert(parseMail(msgResp.data), mailSchema)
+          try {
+            const msgResp = await retryWithBackoff(
+              () =>
+                gmail.users.messages.get({
+                  userId: "me",
+                  id: message.id!,
+                  format: "full",
+                }),
+              `Fetching Gmail message (id: ${message.id})`,
+            )
+            await insert(parseMail(msgResp.data), mailSchema)
+            updateUserStats(email, StatType.Gmail, 1)
+          } catch (error) {
+            Logger.error(
+              `Failed to process message ${message.id}: ${(error as Error).message}`,
+            )
+          }
         }),
       )
-      // Process messages in parallel for each page
-      await Promise.all(messagePromises)
+
+      // Process batch of messages in parallel
+      await Promise.all(batchRequests)
+
+      totalMails += messageBatch.length
     }
   } while (nextPageToken)
+
   Logger.info(`Inserted ${totalMails} mails`)
   return historyId
 }

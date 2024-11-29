@@ -88,3 +88,47 @@ export const getRelativeTime = (oldTimestamp: number) => {
     return formatter.format(-Math.floor(difference / 2620800), "month")
   return formatter.format(-Math.floor(difference / 31449600), "year")
 }
+
+const MAX_RETRIES = 10
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Retry logic with exponential backoff and jitter.
+ * @param fn - The function to retry.
+ * @param context - Context for logging (e.g., function name, additional info).
+ * @param retries - Number of retries attempted.
+ */
+export const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  context: string,
+  retries = 0,
+): Promise<T> => {
+  try {
+    return await fn() // Attempt the function
+  } catch (error: any) {
+    const isQuotaError =
+      error.message.includes("Quota exceeded") ||
+      error.code === 429 ||
+      error.code === 403
+    if (isQuotaError && retries < MAX_RETRIES) {
+      const baseWaitTime = Math.pow(2, retries) * 3000 // Exponential backoff
+      const jitter = Math.random() * 800 // Add jitter for randomness
+      const waitTime = baseWaitTime + jitter
+
+      Logger.info(
+        `[${context}] Quota error. Retrying after ${waitTime.toFixed(
+          0,
+        )}ms (Attempt ${retries + 1}/${MAX_RETRIES})`,
+      )
+      await delay(waitTime)
+
+      return retryWithBackoff(fn, context, retries + 1) // Retry recursively
+    } else {
+      Logger.error(
+        `[${context}] Failed after ${retries} retries: ${error.message}`,
+      )
+      throw error // Rethrow error if retries are exhausted or not quota-related
+    }
+  }
+}
