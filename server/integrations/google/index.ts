@@ -692,7 +692,10 @@ export const handleGoogleServiceAccountIngestion = async (
 
     const interval = setInterval(() => {
       sendWebsocketMessage(
-        `progress: ${getProgress()}\n${JSON.stringify(serviceAccountTracker.userStats, null, 2)}`,
+        JSON.stringify({
+          progress: getProgress(),
+          userStats: serviceAccountTracker.userStats,
+        }),
         connector.externalId,
       )
     }, 5000)
@@ -721,7 +724,7 @@ export const handleGoogleServiceAccountIngestion = async (
           insertCalendarEvents(jwtClient, userEmail),
         ])
 
-        markUserComplete()
+        markUserComplete(userEmail)
         return {
           email: userEmail,
           driveToken: startPageToken,
@@ -741,7 +744,9 @@ export const handleGoogleServiceAccountIngestion = async (
     // insert all the workspace users
     await insertUsersForWorkspace(users)
 
-    clearInterval(interval)
+    setTimeout(() => {
+      clearInterval(interval)
+    }, 8000)
     await db.transaction(async (trx) => {
       for (const {
         email,

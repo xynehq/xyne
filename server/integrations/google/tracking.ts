@@ -8,7 +8,13 @@ export enum StatType {
   Events = "eventsCount",
 }
 
-type UserStats = Record<StatType, number>
+interface StatMetadata {
+  done: boolean,
+  startedAt: number,
+  doneAt: number,
+}
+
+type UserStats = Record<StatType, number> & StatMetadata
 
 // Progress tracking types
 interface ServiceAccountProgress {
@@ -32,6 +38,9 @@ const initializeUserStats = (email: string) => {
       driveCount: 0,
       contactsCount: 0,
       eventsCount: 0,
+      done: false,
+      startedAt: new Date().getTime(),
+      doneAt: 0
     }
   }
 }
@@ -45,7 +54,9 @@ export const updateUserStats = (
   serviceAccountTracker.userStats[email][type] += count
 }
 
-export const markUserComplete = () => {
+export const markUserComplete = (email: string) => {
+  serviceAccountTracker.userStats[email].done = true
+  serviceAccountTracker.userStats[email].doneAt = new Date().getTime()
   serviceAccountTracker.completedUsers++
 }
 

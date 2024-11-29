@@ -13,20 +13,28 @@ import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
 import pLimit from "p-limit"
-import { GmailConcurrency } from "../config"
+import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 import { StatType, updateUserStats } from "../tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
+import {
+  batchFetchImplementation,
+} from "@jrmdayn/googleapis-batcher"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
 ): Promise<string> => {
-  const gmail = google.gmail({ version: "v1", auth: client })
+  const batchSize = 100
+  const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
+  const gmail = google.gmail({
+    version: "v1",
+    auth: client,
+    fetchImplementation: fetchImpl,
+  })
   let totalMails = 0
   let nextPageToken = ""
-  const batchSize = 100 // Reduced from 500 to minimize quota consumption
   const limit = pLimit(GmailConcurrency)
 
   const profile = await retryWithBackoff(
@@ -45,6 +53,7 @@ export const handleGmailIngestion = async (
           userId: "me",
           maxResults: batchSize,
           pageToken: nextPageToken,
+          fields: "messages(id), nextPageToken",
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
     )
