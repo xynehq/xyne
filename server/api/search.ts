@@ -132,6 +132,7 @@ export const SearchApi = async (c: Context) => {
     app,
     entity,
     lastUpdated,
+    isFilterChanged,
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
@@ -141,21 +142,18 @@ export const SearchApi = async (c: Context) => {
     : null
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
-    groupCount = await groupVespaSearch(
-      decodedQuery,
-      email,
-      config.page,
-      timestampRange,
-    )
-    results = await searchVespa(
-      decodedQuery,
-      email,
-      app,
-      entity,
-      page,
-      offset,
-      timestampRange,
-    )
+    ;[groupCount, results] = await Promise.all([
+      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      searchVespa(
+        decodedQuery,
+        email,
+        app,
+        entity,
+        page,
+        offset,
+        timestampRange,
+      ),
+    ])
   } else {
     results = await searchVespa(
       decodedQuery,
@@ -169,7 +167,7 @@ export const SearchApi = async (c: Context) => {
   }
 
   // ensure we won't update the query on filter change
-  if (!app && !entity && lastUpdated === "anytime") {
+  if (!app && !entity && !isFilterChanged) {
     await updateUserQueryHistory(decodedQuery)
   }
   // TODO: deduplicate for google admin and contacts

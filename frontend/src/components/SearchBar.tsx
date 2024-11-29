@@ -20,6 +20,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
       filter,
       onLastUpdated,
       pathname,
+      setIsFilterChanged,
     },
     autocompleteRef,
   ) => {
@@ -79,6 +80,9 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                         },
                       })
                       setFilter({}) // Use empty object instead of null
+                      if (setIsFilterChanged) {
+                        setIsFilterChanged(false)
+                      }
                       // we only want to look for answer if at least
                       // 3 words are there in the query
                       if (query.split(" ").length > 2) {

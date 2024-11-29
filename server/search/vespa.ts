@@ -942,7 +942,7 @@ const getNDocuments = async (n: number) => {
 }
 
 const hashQuery = (query: string) => {
-  return crypto.createHash("sha256").update(query).digest("hex")
+  return crypto.createHash("sha256").update(query.trim()).digest("hex")
 }
 
 export const updateUserQueryHistory = async (query: string) => {

@@ -94,6 +94,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [filter, setFilter] = useState<Filter>({
     lastUpdated: (search.lastUpdated as LastUpdated) || "anytime",
   })
+  const [isFilterChanged, setIsFilterChanged] = useState<boolean>(false)
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
@@ -242,6 +243,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         query: encodeURIComponent(query),
         groupCount,
         lastUpdated: filter.lastUpdated || "anytime",
+        isFilterChanged,
       }
 
       let pageCount = page
@@ -330,6 +332,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }
 
   const handleFilterChange = (appEntity: Filter) => {
+    setIsFilterChanged(true)
     // Check if appEntity.app and appEntity.entity are defined
     if (!appEntity.app || !appEntity.entity) {
       const updatedFilter: Filter = {
@@ -379,6 +382,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           setAutocompleteQuery={setAutocompleteQuery}
           setOffset={setOffset}
           setFilter={setFilter}
+          setIsFilterChanged={setIsFilterChanged}
           filter={filter}
           query={query}
           handleSearch={handleSearch}
@@ -387,6 +391,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
             setFilter(updatedFilter)
+            setIsFilterChanged(true)
           }}
         />
 
