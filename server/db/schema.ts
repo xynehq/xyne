@@ -293,6 +293,7 @@ export const chats = pgTable(
       .notNull()
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    hasAttachments: boolean("hasAttachments").notNull().default(false),
   },
   (table) => ({
     isBookmarkedIndex: index("is_bookmarked_index").on(table.isBookmarked),

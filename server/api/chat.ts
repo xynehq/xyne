@@ -1231,6 +1231,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
+            hasAttachments: attachmentsToBeInserted?.length > 0 ? true : false,
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
@@ -1267,8 +1268,16 @@ export const MessageApi = async (c: Context) => {
         async (tx) => {
           const newAttachments = JSON.parse(attachments) || []
 
+          const oldChat = await getChatByExternalId(db, chatId)
+          const alreadyHasAttachments = oldChat?.hasAttachments
+          const hasAttachmentsNow = newAttachments?.length > 0 ? true : false
+
           // we are updating the chat and getting it's value in one call itself
-          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let existingChat = await updateChatByExternalId(db, chatId, {
+            hasAttachments: alreadyHasAttachments
+              ? alreadyHasAttachments
+              : hasAttachmentsNow,
+          })
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -1303,12 +1312,37 @@ export const MessageApi = async (c: Context) => {
       chat = existingChat
     }
 
-    const results = await searchVespaWithChatAttachment(
-      message,
-      email,
-      chat?.externalId,
-      config.answerPage,
-    )
+    // Condition to decide if searchVespa function will be used to search or searchVespaWithChatAttachment
+    // If Chat has attachment then we use searchVespaWithChatAttachment, otherwise searchVespa
+
+    // Check if the current chat has attachments
+    const currentChat = await db.transaction(async (tx) => {
+      let currentChat = await getChatByExternalId(tx, chat?.externalId)
+      return currentChat
+    })
+    const currentChatHasAttachments = currentChat?.hasAttachments
+
+    let results: VespaSearchResponse
+    if (currentChatHasAttachments) {
+      results = await searchVespaWithChatAttachment(
+        message,
+        email,
+        chat?.externalId,
+        config.answerPage,
+      )
+    } else {
+      results = await searchVespa(
+        message,
+        email,
+        null,
+        null,
+        config.answerPage,
+        0,
+        null,
+        [],
+        nonWorkMailLabels,
+      )
+    }
 
     if (results) {
       console.log("results")
