@@ -1,4 +1,4 @@
-import { Folder, Users } from "lucide-react"
+import { Folder, Paperclip, Users } from "lucide-react"
 import DocsSvg from "@/assets/docs.svg"
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -25,6 +25,7 @@ export const getIcon = (
   app: Apps,
   entity: Entity,
   size?: { w: number; h: number; mr: number; ml?: number },
+  isChatAttachment?: boolean,
 ) => {
   let classNameVal = ""
   if (size) {
@@ -78,6 +79,8 @@ export const getIcon = (
     if (entity === CalendarEntity.Event) {
       return <img className={classNameVal} src={GoogleCalendarSvg} />
     }
+  } else if (!app && !entity && isChatAttachment) {
+    return <Paperclip size={12} className="text-[#464D53]" />
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

@@ -602,9 +602,18 @@ const Sources = ({
                   <div className="flex flex-col  mr-[12px] truncate">
                     <span className="truncate">{citation.title}</span>
                     <div className="flex items-center pb-[12px]">
-                      {getIcon(citation.app, citation.entity)}
+                      {citation?.sddocname === "chatAttachment"
+                        ? getIcon(
+                            citation.app,
+                            citation.entity,
+                            undefined,
+                            true,
+                          )
+                        : getIcon(citation.app, citation.entity)}
                       <span className="text-[#848DA1]">
-                        {getName(citation.app, citation.entity)}
+                        {citation?.sddocname === "chatAttachment"
+                          ? getName(citation.app, citation.entity, true)
+                          : getName(citation.app, citation.entity)}
                       </span>
                     </div>
                   </div>

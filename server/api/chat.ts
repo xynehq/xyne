@@ -366,6 +366,8 @@ const MinimalCitationSchema = z.object({
   url: z.string().optional(),
   app: z.nativeEnum(Apps),
   entity: entitySchema,
+  mimeType: z.string().optional(),
+  sddocname: z.string().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
@@ -411,9 +413,8 @@ const searchToCitation = (
       citations.push({
         // todo
         title: fields?.title,
-        url: `https://google.com`,
-        app: fields.app ?? "",
-        entity: fields.entity ?? "",
+        sddocname: fields?.sddocname,
+        mimeType: fields?.mimeType,
       })
     } else {
       throw new Error("Invalid search result type for citation")
