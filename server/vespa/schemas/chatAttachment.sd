@@ -36,10 +36,14 @@ schema chatAttachment {
 
     field chatId type string {
       indexing: attribute | summary
+      attribute: fast-search
+      match: exact
     }
     
     field messageId type string {
       indexing: attribute | summary
+      attribute: fast-search
+      match: exact
     }
   }
 

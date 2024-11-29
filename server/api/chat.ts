@@ -71,6 +71,7 @@ import {
   insertDocument,
   searchUsersByNamesAndEmails,
   searchVespa,
+  searchVespaWithChatAttachment,
 } from "@/search/vespa"
 import {
   Apps,
@@ -1194,39 +1195,17 @@ export const MessageApi = async (c: Context) => {
     }
     message = decodeURIComponent(message)
 
-    const [userAndWorkspace, results] = await Promise.all([
-      getUserAndWorkspaceByEmail(db, workspaceId, email),
-      searchVespa(
-        message,
-        email,
-        null,
-        null,
-        config.answerPage,
-        0,
-        null,
-        [],
-        nonWorkMailLabels,
-      ),
-    ])
-    if (results) {
-      console.log("results")
-      console.log(results.root.children)
-      console.log("results")
-      Logger.info(`Vespa search results are here...`)
-    }
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
-    const initialContext = cleanContext(
-      results?.root?.children
-        ?.map(
-          (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
-        )
-        .join("\n"),
-    )
 
     let title = ""
     if (!chatId) {
@@ -1322,6 +1301,30 @@ export const MessageApi = async (c: Context) => {
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
     }
+
+    const results = await searchVespaWithChatAttachment(
+      message,
+      email,
+      chat?.externalId,
+      config.answerPage,
+    )
+
+    if (results) {
+      console.log("results")
+      console.log(results)
+      console.log(results.root.children)
+      console.log("results")
+      Logger.info(`Vespa search results are here...`)
+    }
+
+    const initialContext = cleanContext(
+      results?.root?.children
+        ?.map(
+          (v, i) =>
+            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        )
+        .join("\n"),
+    )
 
     return streamSSE(
       c,

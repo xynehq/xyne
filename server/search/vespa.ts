@@ -601,6 +601,67 @@ export const searchVespa = async (
   }
 }
 
+export const searchVespaWithChatAttachment = async (
+  query: string,
+  email: string,
+  chatId: string,
+  limit = config.page,
+  offset?: number,
+): Promise<VespaSearchResponse> => {
+  const url = `${vespaEndpoint}/search/`
+
+  let yql = `select * from sources ${chatAttachmentSchema}
+        where (
+            (
+              ({targetHits:${limit}}userInput(@query))
+              or
+              ({targetHits:${limit}}nearestNeighbor(chunk_embeddings, e))
+            )
+            and chatId contains "${chatId}")`
+
+  const hybridDefaultPayload = {
+    yql,
+    query,
+    email,
+    "ranking.profile": "default",
+    "input.query(e)": "embed(@query)",
+    hits: limit,
+    alpha: 0.5,
+    ...(offset
+      ? {
+          offset,
+        }
+      : {}),
+    ...(chatId ? { chatId } : {}),
+  }
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(hybridDefaultPayload),
+    })
+    if (!response.ok) {
+      const errorText = response.statusText
+      throw new Error(
+        `Failed to fetch documents in searchVespaWithChatAttachment: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    Logger.error(
+      `Error performing search in searchVespaWithChatAttachment:, ${error} ${(error as Error).stack}`,
+    )
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: chatAttachmentSchema,
+    })
+  }
+}
+
 /**
  * Retrieves the total count of documents in the specified schema, namespace, and cluster.
  */
