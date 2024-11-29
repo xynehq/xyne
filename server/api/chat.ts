@@ -1273,11 +1273,15 @@ export const MessageApi = async (c: Context) => {
           const hasAttachmentsNow = newAttachments?.length > 0 ? true : false
 
           // we are updating the chat and getting it's value in one call itself
-          let existingChat = await updateChatByExternalId(db, chatId, {
-            hasAttachments: alreadyHasAttachments
-              ? alreadyHasAttachments
-              : hasAttachmentsNow,
-          })
+          let existingChat = await updateChatByExternalId(
+            db,
+            chatId,
+            alreadyHasAttachments
+              ? {}
+              : hasAttachmentsNow
+                ? { hasAttachments: hasAttachmentsNow }
+                : {},
+          )
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
