@@ -20,7 +20,6 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
       filter,
       onLastUpdated,
       pathname,
-      setIsFilterChanged,
     },
     autocompleteRef,
   ) => {
@@ -33,6 +32,16 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
         inputRef.current.focus()
       }
     }, [])
+
+    const navigateToSearch = () => {
+      navigate({
+        to: "/search",
+        search: {
+          query: encodeURIComponent(decodeURIComponent(query)),
+        },
+        state: { isQueryTyped: !!query.length },
+      })
+    }
 
     return (
       <div
@@ -73,16 +82,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      navigate({
-                        to: "/search",
-                        search: {
-                          query: encodeURIComponent(decodeURIComponent(query)),
-                        },
-                      })
+                      navigateToSearch()
                       setFilter({}) // Use empty object instead of null
-                      if (setIsFilterChanged) {
-                        setIsFilterChanged(false)
-                      }
                       // we only want to look for answer if at least
                       // 3 words are there in the query
                       if (query.split(" ").length > 2) {
@@ -93,7 +94,10 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                 />
                 {!hasSearched ? (
                   <button
-                    onClick={handleSearch}
+                    onClick={() => {
+                      handleSearch()
+                      navigateToSearch()
+                    }}
                     className="flex mr-2 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-[20px] w-[32px] h-[32px] items-center justify-center"
                   >
                     <ArrowRight className="text-white" size={16} />

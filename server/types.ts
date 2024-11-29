@@ -34,7 +34,7 @@ const baseSearchSchema = z.object({
   app: z.nativeEnum(Apps).optional(),
   entity: z.string().min(1).optional(),
   lastUpdated: z.string().default("anytime"),
-  isFilterChanged: z
+  isQueryTyped: z
     .union([z.string(), z.undefined(), z.null()])
     .transform((x) => (x ? x === "true" : false))
     .pipe(z.boolean())
