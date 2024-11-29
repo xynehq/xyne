@@ -278,13 +278,12 @@ const handlePDFFile = async (file: Blob, userEmail: string) => {
 
 export const UploadFilesApi = async (c: Context) => {
   try {
-    //todo schema
     const { sub } = c.get(JwtPayloadKey)
     const email = sub
 
     const formData = await c.req.formData()
     const files = formData.getAll("files") as File[]
-    const metadata: any[] = []
+    const metadata: AttachmentMetadata[] = []
 
     for (const file of files) {
       // Parse file according to its type
@@ -301,7 +300,6 @@ export const UploadFilesApi = async (c: Context) => {
       }
     }
 
-    Logger.info(`Returning metadata`)
     return c.json({ attachmentsMetadata: metadata })
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -372,6 +370,15 @@ const MinimalCitationSchema = z.object({
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
 
+const AttachmentMetadataSchema = z.object({
+  docId: z.string(),
+  fileName: z.string(),
+  fileSize: z.number(),
+  fileType: z.string(),
+})
+
+export type AttachmentMetadata = z.infer<typeof AttachmentMetadataSchema>
+
 interface CitationResponse {
   answer?: string
   citations?: number[]
@@ -411,7 +418,6 @@ const searchToCitation = (
       })
     } else if (result.fields.sddocname === chatAttachmentSchema) {
       citations.push({
-        // todo
         title: fields?.title,
         sddocname: fields?.sddocname,
         mimeType: fields?.mimeType,
@@ -915,7 +921,6 @@ export const MessageApiV2 = async (c: Context) => {
   // if the value exists then we send the error to the frontend via it
   let stream: any
   try {
-    Logger.info(`MessageApiV2 called....`)
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     // @ts-ignore

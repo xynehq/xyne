@@ -7,7 +7,7 @@ export const StateContext = createContext<{
   stagedFiles: File[]
   setStagedFiles: React.Dispatch<React.SetStateAction<File[]>>
   handleFileRemove: (index: number) => void
-  handleFileSelection: (file: File) => void
+  handleFileSelection: (event: React.ChangeEvent<HTMLInputElement>) => void
   loading: boolean
   setLoading: React.Dispatch<React.SetStateAction<boolean>>
   query: string
@@ -23,31 +23,33 @@ export const StateContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const [query, setQuery] = useState<string>("")
   const { toast } = useToast()
 
-  const handleFileSelection = (event) => {
-    const files = Array.from(event.target!.files) as File[]
+  const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event?.target?.files
     const validFiles: File[] = [] // Array to hold files that pass validation
 
-    files.forEach((file: File) => {
-      // File size check: 20 MB limit
-      const fileSizeInMB = file.size / (1024 * 1024)
-      if (fileSizeInMB > 20) {
-        toast({
-          title: `File Too Large`,
-          description: `The file "${file.name}" exceeds the 20MB size limit. Please choose a smaller file.`,
-          variant: "destructive",
-        })
-      } else if (!isSupportedFileType(file.type)) {
-        // Check for unsupported file types
-        toast({
-          title: "File Type not supported",
-          description: `The file "${file.name}" is of type "${file.type}", which is not supported. Please upload a valid file type.`,
-          variant: "destructive",
-        })
-      } else {
-        // If valid, add the file to the validFiles array
-        validFiles.push(file)
-      }
-    })
+    if (files) {
+      Array.from(files).forEach((file) => {
+        // File size check: 20 MB limit
+        const fileSizeInMB = file.size / (1024 * 1024)
+        if (fileSizeInMB > 20) {
+          toast({
+            title: `File Too Large`,
+            description: `The file "${file.name}" exceeds the 20MB size limit. Please choose a smaller file.`,
+            variant: "destructive",
+          })
+        } else if (!isSupportedFileType(file.type)) {
+          // Check for unsupported file types
+          toast({
+            title: "File Type not supported",
+            description: `The file "${file.name}" is of type "${file.type}", which is not supported. Please upload a valid file type.`,
+            variant: "destructive",
+          })
+        } else {
+          // If valid, add the file to the validFiles array
+          validFiles.push(file)
+        }
+      })
+    }
 
     setStagedFiles((prev) => {
       if (prev.length + validFiles.length > 5) {

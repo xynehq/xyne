@@ -14,7 +14,7 @@ interface ChatBoxProps {
   handleSend: (messageToSend: string) => void
   stagedFiles: File[]
   handleFileRemove: (index: number) => void
-  handleFileSelection: (event: any) => void // todo fix any
+  handleFileSelection: (event: React.ChangeEvent<HTMLInputElement>) => void
   loading: boolean
   isStreaming?: boolean
 }

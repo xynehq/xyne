@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Eye, EyeOff, File } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
+import { ChatSSEvents, SelectPublicMessage, Citation, AttachmentMetadata } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -154,9 +154,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setLoading(true)
       uploadedFilesMetadata = await handleFileUpload()
       setStagedFiles([])
-      if (uploadedFilesMetadata.length !== 0) {
-        console.log(`handleFileUpload ran sucessfully...`)
-      }
       setLoading(false)
     }
 
@@ -175,7 +172,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentResp({ resp: "" })
     currentRespRef.current = { resp: "", sources: [] }
 
-    console.log(`Message Create API called...`)
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
       url.searchParams.append("chatId", chatId)
@@ -520,7 +516,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               {currentResp && (
                 <ChatMessage
                   message={currentResp.resp}
-                  attachments={currentResp.attachments}
                   citations={currentResp.sources?.map((c: Citation) => c.url)}
                   isUser={false}
                   responseDone={false}
@@ -642,7 +637,7 @@ const ChatMessage = ({
   sourcesVisible,
 }: {
   message: string
-  attachments: any
+  attachments?: AttachmentMetadata[]
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -685,10 +680,10 @@ const ChatMessage = ({
     >
       {isUser ? (
         <>
-          {attachments?.length > 0 && (
+          {attachments && attachments?.length > 0 && (
             <div className="flex-col w-full">
               <ul className="flex flex-col space-y-2 pb-2">
-                {attachments.map((attachment, index) => (
+                {attachments?.map((attachment, index) => (
                   <li
                     key={index}
                     className="flex items-center p-2 border rounded border-gray-300 min-w-[200px] max-w-[300px]"

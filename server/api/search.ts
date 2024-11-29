@@ -163,10 +163,6 @@ export const SearchApi = async (c: Context) => {
     )
   }
 
-  console.log("\nresults")
-  console.log(results.root.children)
-  console.log("results\n")
-
   // TODO: deduplicate for google admin and contacts
   const newResults = VespaSearchResponseToSearchResult(results)
   newResults.groupCount = groupCount

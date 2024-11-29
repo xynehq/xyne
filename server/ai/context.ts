@@ -6,6 +6,7 @@ import {
   mailSchema,
   userSchema,
   VespaSearchResultsSchema,
+  type VespaChatAttachmentSearch,
   type VespaEventSearch,
   type VespaFileSearch,
   type VespaMailSearch,
@@ -39,7 +40,7 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chu
 }
 
 const constructChatAttachmentContext = (
-  fields: VespaFileSearch,
+  fields: VespaChatAttachmentSearch,
   relevance: number,
 ): string => {
   return `Title: ${fields.title ? `Title: ${fields.title}` : ""}
@@ -47,7 +48,6 @@ Created: ${getRelativeTime(fields.createdAt)}
 Updated At: ${getRelativeTime(fields.updatedAt)}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
-${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
 \nvespa relevance score: ${relevance}\n`
 }

@@ -274,7 +274,11 @@ export const VespaChatAttachmentSearchSchema = VespaChatAttachmentSchema.extend(
   {
     sddocname: z.literal("chatAttachment"),
   },
-).merge(defaultVespaFieldsSchema)
+)
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.string()).optional(),
+  })
 
 export const VespaMailGetSchema = VespaMailSchema.merge(
   defaultVespaFieldsSchema,
@@ -427,6 +431,7 @@ export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>
 
 export type VespaFileGet = z.infer<typeof VespaFileGetSchema>
 export type VespaFileSearch = z.infer<typeof VespaFileSearchSchema>
+export type VespaChatAttachmentSearch = z.infer<typeof VespaChatAttachmentSearchSchema>
 export type VespaMailSearch = z.infer<typeof VespaMailSearchSchema>
 export type VespaEventSearch = z.infer<typeof VespaEventSearchSchema>
 export type VespaFile = z.infer<typeof VespaFileSchema>
