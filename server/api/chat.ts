@@ -1501,6 +1501,9 @@ export const MessageApi = async (c: Context) => {
             const allResults = (
               await Promise.all(
                 parsed.rewrittenQueries.map((newQuery: string) =>
+                  // todo for @Saheb
+                  // Should the condition (if chat has attachments) determine
+                  // whether to use searchVespa or searchVespaWithChatAttachment here?
                   searchVespa(
                     newQuery,
                     email,

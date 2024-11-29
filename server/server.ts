@@ -161,11 +161,7 @@ export const AppRoutes = app
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
   )
-  .post(
-    "/chat/upload",
-    zValidator("json", fileUploadSchema),
-    UploadFilesApi,
-  )
+  .post("/chat/upload", zValidator("form", fileUploadSchema), UploadFilesApi)
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/proxy/:url", ProxyUrl)

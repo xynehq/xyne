@@ -88,9 +88,14 @@ export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
 })
 
-// todo fix this
+const uploadFileSchema = z.object({
+  name: z.string(),
+  size: z.number(),
+  type: z.string(),
+})
+
 export const fileUploadSchema = z.object({
-  // files: z.array(z.instanceof(Blob)).min(1),
+  files: uploadFileSchema.or(z.array(uploadFileSchema)),
 })
 
 export const AutocompleteApi = async (c: Context) => {
