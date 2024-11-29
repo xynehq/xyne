@@ -33,6 +33,7 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
+import crypto from "crypto"
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -940,34 +941,28 @@ const getNDocuments = async (n: number) => {
   }
 }
 
+const hashQuery = (query: string) => {
+  return crypto.createHash("sha256").update(query).digest("hex")
+}
+
 export const updateUserQueryHistory = async (query: string) => {
+  const docId = `query_id-${hashQuery(query)}`
+  const timestamp = new Date().getTime()
+
   try {
-    const docId = `query_id-${query}`
-    const timestamp = new Date().getTime()
-    let docExist
-    try {
-      docExist = await GetDocument(userQuerySchema, docId)
-    } catch (error) {
-      // to check if error indicates that the document does not exist
-      const errMsg = getErrorMessage(error)
-      if (
-        errMsg.includes("404 Not Found") &&
-        errMsg.includes(`docId: ${docId}`)
-      ) {
-        Logger.warn(
-          `Document ${docId} does not exist. Proceeding with insertion.`,
-        )
+    const docExist = await getDocumentOrNull(userQuerySchema, docId)
+
+    if (docExist) {
+      const docFields = docExist.fields as VespaUserQueryHistory
+      const timeSinceLastUpdate = timestamp - docFields.timestamp
+      if (timeSinceLastUpdate > config.userQueryUpdateInterval) {
+        await UpdateDocument(userQuerySchema, docId, {
+          count: docFields.count + 1,
+          timestamp,
+        })
       } else {
-        // If it's a different error, rethrow it
-        throw error
+        Logger.warn(`Skipping update for ${docId}: Under time interval`)
       }
-    }
-    if (docExist && docExist.fields?.docId) {
-      await UpdateDocument(userQuerySchema, docId, {
-        // @ts-ignore
-        count: docExist.fields.count + 1,
-        timestamp,
-      })
     } else {
       await insert(
         { docId, query_text: query, timestamp, count: 1 },
@@ -976,8 +971,26 @@ export const updateUserQueryHistory = async (query: string) => {
     }
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Update user query Error: ${errMsg} ${(error as Error).stack}`)
-    throw new Error("Could not update user query")
+    Logger.error(`Update user query error: ${errMsg}`, error)
+    throw new Error("Failed to update user query history")
+  }
+}
+
+const getDocumentOrNull = async (schema: string, docId: string) => {
+  try {
+    return await GetDocument(schema, docId)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+
+    if (
+      errMsg.includes("404 Not Found") &&
+      errMsg.includes(`docId: ${docId}`)
+    ) {
+      Logger.warn(`Document ${docId} does not exist`)
+      return null
+    }
+
+    throw error
   }
 }
 
