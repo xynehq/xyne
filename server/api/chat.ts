@@ -84,6 +84,7 @@ import {
   MailEntity,
   mailSchema,
   userSchema,
+  type VespaChatAttachment,
   type VespaFile,
   type VespaMail,
   type VespaSearchResponse,
@@ -362,8 +363,8 @@ export const ChatBookmarkApi = async (c: Context) => {
 const MinimalCitationSchema = z.object({
   title: z.string().optional(),
   url: z.string().optional(),
-  app: z.nativeEnum(Apps),
-  entity: entitySchema,
+  app: z.nativeEnum(Apps).optional(),
+  entity: entitySchema.optional(),
   mimeType: z.string().optional(),
   sddocname: z.string().optional(),
 })
@@ -399,28 +400,28 @@ const searchToCitation = (
       citations.push({
         title: (fields as VespaUser).name,
         url: `https://contacts.google.com/${(fields as VespaUser).email}`,
-        app: fields.app,
-        entity: fields.entity,
+        app: (fields as VespaUser).app,
+        entity: (fields as VespaUser).entity,
       })
     } else if (result.fields.sddocname === fileSchema) {
       citations.push({
         title: (fields as VespaFile).title,
         url: (fields as VespaFile).url || "",
-        app: fields.app,
-        entity: fields.entity,
+        app: (fields as VespaFile).app,
+        entity: (fields as VespaFile).entity,
       })
     } else if (result.fields.sddocname === mailSchema) {
       citations.push({
         title: (fields as VespaMail).subject,
         url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
-        app: fields.app,
-        entity: fields.entity,
+        app: (fields as VespaMail).app,
+        entity: (fields as VespaMail).entity,
       })
     } else if (result.fields.sddocname === chatAttachmentSchema) {
       citations.push({
-        title: fields?.title,
-        sddocname: fields?.sddocname,
-        mimeType: fields?.mimeType,
+        title: (fields as VespaChatAttachment).title,
+        sddocname: fields.sddocname,
+        mimeType: (fields as VespaChatAttachment).mimeType || "",
       })
     } else {
       throw new Error("Invalid search result type for citation")
