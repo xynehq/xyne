@@ -175,7 +175,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
-      // handleSearch(0)
     }
   }, [])
 
