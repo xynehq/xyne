@@ -279,7 +279,8 @@ export const autocomplete = async (
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
         or 
-        (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)))
+        (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and owner contains @email)
         `
 
   const searchPayload = {
@@ -945,8 +946,8 @@ const hashQuery = (query: string) => {
   return crypto.createHash("sha256").update(query.trim()).digest("hex")
 }
 
-export const updateUserQueryHistory = async (query: string) => {
-  const docId = `query_id-${hashQuery(query)}`
+export const updateUserQueryHistory = async (query: string, owner: string) => {
+  const docId = `query_id-${hashQuery(query + owner)}`
   const timestamp = new Date().getTime()
 
   try {
@@ -965,7 +966,7 @@ export const updateUserQueryHistory = async (query: string) => {
       }
     } else {
       await insert(
-        { docId, query_text: query, timestamp, count: 1 },
+        { docId, query_text: query, timestamp, count: 1, owner },
         userQuerySchema,
       )
     }

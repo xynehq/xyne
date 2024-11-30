@@ -16,10 +16,14 @@ schema user_query {
     field timestamp type long {
       indexing: summary | attribute
     }
-    
     field count type long {
       indexing: summary | attribute
     }
+
+    field owner type string {
+      indexing: attribute | summary
+    }
+
   }
 
   # Fieldset for default search

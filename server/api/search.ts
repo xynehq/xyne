@@ -157,7 +157,7 @@ export const SearchApi = async (c: Context) => {
 
     // ensure only update when query is typed
     if (isQueryTyped) {
-      tasks.push(updateUserQueryHistory(decodedQuery))
+      tasks.push(updateUserQueryHistory(decodedQuery, email))
     }
     ;[groupCount, results] = await Promise.all(tasks)
   } else {
