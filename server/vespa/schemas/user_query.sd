@@ -1,6 +1,6 @@
 schema user_query {
   document user_query {
-    field user_id type string {
+    field docId type string {
       indexing: attribute | summary
     }
     field query_text type string {
@@ -13,9 +13,17 @@ schema user_query {
         gram-size: 3
       }
     }
-    field timestamp type string {
+    field timestamp type long {
       indexing: summary | attribute
     }
+    field count type long {
+      indexing: summary | attribute
+    }
+
+    field owner type string {
+      indexing: attribute | summary
+    }
+
   }
 
   # Fieldset for default search
@@ -23,11 +31,25 @@ schema user_query {
     fields: query_text
   }
 
+  document-summary autocomplete {
+    summary query_text {
+        source: query_text
+    }
+    summary docId {
+        source: docId
+    }
+  }
+
   # Rank profile for fuzzy search on query_text
-  rank-profile default {
+  rank-profile autocomplete {
     first-phase {
       expression: bm25(query_text)
     }
+
+    global-phase {
+      expression: normalize_linear(bm25(query_text)) + ((5 * freshness(timestamp)) + attribute(count))
+    }
+
     match-features {
       bm25(query_text)
     }
