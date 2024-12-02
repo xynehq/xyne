@@ -45,7 +45,7 @@ export const handleGmailIngestion = async (
   }
 
   do {
-    let resp = await retryWithBackoff(
+    const resp = await retryWithBackoff(
       () =>
         gmail.users.messages.list({
           userId: "me",
@@ -94,8 +94,6 @@ export const handleGmailIngestion = async (
       batchRequests = []
       messageBatch = []
     }
-    // clean up explicitly
-    resp = null
   } while (nextPageToken)
 
   Logger.info(`Inserted ${totalMails} mails`)
