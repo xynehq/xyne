@@ -111,7 +111,16 @@ export const retryWithBackoff = async <T>(
       error.message.includes("Quota exceeded") ||
       error.code === 429 ||
       error.code === 403
-    if (isQuotaError && retries < MAX_RETRIES) {
+    const isGoogleTimeoutError =
+      error.code === "ETIMEDOUT" ||
+      error.code === "ECONNABORTED" ||
+      error.message.includes("timeout") ||
+      error.message.includes("deadline") ||
+      error.message.includes("The operation timed out") ||
+      // Specific Google API timeout indicators
+      error.code === 504 || // Gateway Timeout
+      error.code === 503 // Service Unavailable
+    if ((isQuotaError || isGoogleTimeoutError) && retries < MAX_RETRIES) {
       const baseWaitTime = Math.pow(2, retries) * 3000 // Exponential backoff
       const jitter = Math.random() * 800 // Add jitter for randomness
       const waitTime = baseWaitTime + jitter

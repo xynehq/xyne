@@ -18,7 +18,13 @@ import { getErrorMessage } from "@/utils"
 const Logger = getLogger(Subsystem.Queue)
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
-export const boss = new PgBoss(url)
+export const boss = new PgBoss({
+  connectionString: url,
+  monitorStateIntervalMinutes: 10, // Monitor state every minute
+})
+
+// run it if we are re-doing ingestion
+// await boss.clearStorage()
 
 export const SaaSQueue = `ingestion-${ConnectorType.SaaS}`
 export const SyncOAuthSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.OAuth}`
@@ -33,6 +39,7 @@ const EveryWeek = `0 0 */7 * *`
 const EveryMin = `*/1 * * * *`
 
 export const init = async () => {
+  Logger.info("Queue init")
   await boss.start()
   await boss.createQueue(SaaSQueue)
   await boss.createQueue(SyncOAuthSaaSQueue)
@@ -54,12 +61,16 @@ export const setupServiceAccountCronjobs = async () => {
 }
 
 const initWorkers = async () => {
+  Logger.info("initWorkers")
   await boss.work(SaaSQueue, async ([job]) => {
+    const start = new Date()
+    Logger.info(`boss.work SaaSQueue Job ${job.id} started at ${start}`)
     const jobData: SaaSJob = job.data as SaaSJob
     if (
       jobData.app === Apps.GoogleDrive &&
       jobData.authType === AuthType.ServiceAccount
     ) {
+      Logger.info("Handling Google Service Account Ingestion from Queue")
       await handleGoogleServiceAccountIngestion(boss, job)
     } else if (
       jobData.app === Apps.GoogleDrive &&
@@ -112,4 +123,8 @@ export const ProgressEvent = "progress-event"
 
 boss.on("error", (error) => {
   console.error(`Queue error: ${error} ${(error as Error).stack}`)
+})
+
+boss.on("monitor-states", (states) => {
+  Logger.info(`Queue States: ${JSON.stringify(states, null, 2)}`)
 })

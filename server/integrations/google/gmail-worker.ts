@@ -1,3 +1,7 @@
+// prevents TS errors
+declare var self: Worker
+import { scopes } from "@/integrations/google/config"
+
 import { chunkTextByParagraph } from "@/chunks"
 import { EmailParsingError } from "@/errors"
 import { getLogger } from "@/logger"
@@ -9,16 +13,75 @@ import {
   type Mail,
 } from "@/search/types"
 import { insert } from "@/search/vespa"
-import { Subsystem, type GoogleClient } from "@/types"
+import {
+  MessageTypes,
+  Subsystem,
+  WorkerResponseTypes,
+  type GoogleClient,
+  type GoogleServiceAccount,
+} from "@/types"
 import { gmail_v1, google } from "googleapis"
-import { parseEmailBody } from "./quote-parser"
+import { parseEmailBody } from "@/integrations/google/gmail/quote-parser"
 import pLimit from "p-limit"
 import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
-import { StatType, updateUserStats } from "../tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
+
+// import { createJwtClient } from "@/integrations/google/utils"
+import { z } from "zod"
+import { JWT } from "google-auth-library"
+
+const jwtValue = z.object({
+  type: z.literal(MessageTypes.JwtParams),
+  userEmail: z.string(),
+  serviceAccountKey: z.object({
+    client_email: z.string(),
+    private_key: z.string(),
+  }),
+})
+const messageTypes = z.discriminatedUnion("type", [jwtValue])
+
+type MessageType = z.infer<typeof messageTypes>
+export const createJwtClient = (
+  serviceAccountKey: GoogleServiceAccount,
+  subject: string,
+): JWT => {
+  return new JWT({
+    email: serviceAccountKey.client_email,
+    key: serviceAccountKey.private_key,
+    scopes,
+    subject,
+  })
+}
+
+// self.addEventListener('message', async (event) => {
+// })
+self.onmessage = async (event: MessageEvent<MessageType>) => {
+  try {
+    if (event.type === "message") {
+      const msg = event.data
+      if (msg.type === MessageTypes.JwtParams) {
+        const { userEmail, serviceAccountKey } = msg
+        Logger.info(`Got the jwt params: ${userEmail}`)
+        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
+        const historyId = await handleGmailIngestion(jwtClient, userEmail)
+        postMessage({
+          type: WorkerResponseTypes.HistoryId,
+          userEmail,
+          historyId,
+        })
+      }
+    }
+  } catch (error) {
+    Logger.error(`Error in Gmail worker: ${error}`)
+  }
+}
+
+self.onerror = (error) => {
+  Logger.error(`Error in Gmail worker: ${error}`)
+}
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
@@ -45,7 +108,7 @@ export const handleGmailIngestion = async (
   }
 
   do {
-    let resp = await retryWithBackoff(
+    const resp = await retryWithBackoff(
       () =>
         gmail.users.messages.list({
           userId: "me",
@@ -74,7 +137,7 @@ export const handleGmailIngestion = async (
               `Fetching Gmail message (id: ${message.id})`,
             )
             await insert(parseMail(msgResp.data), mailSchema)
-            updateUserStats(email, StatType.Gmail, 1)
+            // updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
               `Failed to process message ${message.id}: ${(error as Error).message}`,
@@ -86,16 +149,20 @@ export const handleGmailIngestion = async (
         }),
       )
 
-      // Process batch of messages in parallel
       await Promise.allSettled(batchRequests)
       totalMails += messageBatch.length
+      postMessage({
+        type: WorkerResponseTypes.Stats,
+        userEmail: email,
+        count: messageBatch.length,
+      })
 
       // clean up explicitly
       batchRequests = []
       messageBatch = []
     }
+    Bun.gc(true)
     // clean up explicitly
-    resp = null
   } while (nextPageToken)
 
   Logger.info(`Inserted ${totalMails} mails`)
