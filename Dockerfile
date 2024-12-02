@@ -1,20 +1,19 @@
 # Use the official Bun image
 FROM oven/bun:1 AS base
+# Set working directory
 WORKDIR /usr/src/app
 
-# Install backend dependencies
-WORKDIR /usr/src/app/server
-COPY server/package.json server/bun.lockb ./
-RUN bun install --frozen-lockfile
-
-# Install frontend dependencies
-WORKDIR /usr/src/app/frontend
-COPY frontend/package.json frontend/bun.lockb ./
-RUN bun install --frozen-lockfile
-
-# Copy the entire project (excluding files listed in .dockerignore)
-WORKDIR /usr/src/app
+# Copy your Bun app files
 COPY . .
+
+# Install dependencies for Bun server
+WORKDIR /usr/src/app/server
+RUN bun install
+
+# Install dependencies for Bun client
+WORKDIR /usr/src/app/frontend
+RUN bun install
+RUN bun run build
 
 # [optional] tests & build for both backend and frontend
 ENV NODE_ENV=production

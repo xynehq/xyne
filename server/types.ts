@@ -34,6 +34,7 @@ const baseSearchSchema = z.object({
   app: z.nativeEnum(Apps).optional(),
   entity: z.string().min(1).optional(),
   lastUpdated: z.string().default("anytime"),
+  isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
 })
 
 export const searchSchema = baseSearchSchema.refine(
@@ -228,6 +229,15 @@ export type GoogleClient = JWT | OAuth2Client
 export type GoogleServiceAccount = {
   client_email: string
   private_key: string
+}
+
+export enum MessageTypes {
+  JwtParams = "JwtParams",
+}
+
+export enum WorkerResponseTypes {
+  Stats = "Stats",
+  HistoryId = "HistoryId",
 }
 
 export enum Subsystem {

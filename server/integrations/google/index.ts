@@ -15,8 +15,10 @@ import {
 } from "@/doc"
 import { chunkDocument } from "@/chunks"
 import {
+  MessageTypes,
   Subsystem,
   SyncCron,
+  WorkerResponseTypes,
   type GoogleClient,
   type GoogleServiceAccount,
   type SaaSJob,
@@ -76,10 +78,10 @@ import {
   DownloadDocumentError,
   CalendarEventsListingError,
 } from "@/errors"
-import fs from "node:fs"
-import path from "node:path"
+import fs, { existsSync, mkdirSync } from "node:fs"
+import path, { join } from "node:path"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
-import fileSys from "node:fs/promises"
+import { unlink } from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import {
   MAX_GD_PDF_SIZE,
@@ -102,6 +104,7 @@ import {
 } from "./tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
@@ -660,10 +663,76 @@ type IngestionMetadata = {
   calendarEventsToken: string
 }
 
+import { z } from "zod"
+
+const stats = z.object({
+  type: z.literal(WorkerResponseTypes.Stats),
+  userEmail: z.string(),
+  count: z.number(),
+})
+
+const historyId = z.object({
+  type: z.literal(WorkerResponseTypes.HistoryId),
+  historyId: z.string(),
+  userEmail: z.string(),
+})
+const messageTypes = z.discriminatedUnion("type", [stats, historyId])
+
+type ResponseType = z.infer<typeof messageTypes>
+
+gmailWorker.onerror = (error) => {
+  Logger.error(`Error in main thread: worker: ${JSON.stringify(error)}`)
+}
+
+const pendingRequests = new Map<
+  string,
+  { resolve: Function; reject: Function }
+>()
+
+// Set up a centralized `onmessage` handler
+gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
+  const { type, userEmail } = message.data
+
+  if (type === WorkerResponseTypes.HistoryId) {
+    const { historyId } = message.data
+    const promiseHandlers = pendingRequests.get(userEmail)
+    if (promiseHandlers) {
+      promiseHandlers.resolve(historyId)
+      pendingRequests.delete(userEmail)
+    }
+  } else if (message.data.type === WorkerResponseTypes.Stats) {
+    const { userEmail, count } = message.data
+    updateUserStats(userEmail, StatType.Gmail, count)
+  }
+
+  // else if (type === WorkerResponseTypes.Error) {
+  //     const { error } = message.data;
+  //     const promiseHandlers = pendingRequests.get(userEmail);
+  //     if (promiseHandlers) {
+  //         promiseHandlers.reject(new Error(error));
+  //         pendingRequests.delete(userEmail);
+  //     }
+  // }
+}
+
+// Define a function to handle ingestion
+const handleGmailIngestionForServiceAccount = async (
+  userEmail: string,
+  serviceAccountKey: GoogleServiceAccount,
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    pendingRequests.set(userEmail, { resolve, reject })
+    gmailWorker.postMessage({
+      type: MessageTypes.JwtParams,
+      userEmail,
+      serviceAccountKey,
+    })
+    Logger.info(`Sent message to worker for ${userEmail}`)
+  })
+}
+
 // we make 2 sync jobs
 // one for drive and one for google workspace
-// const ServiceAccountUserConcurrency = 2
-
 export const handleGoogleServiceAccountIngestion = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -698,7 +767,7 @@ export const handleGoogleServiceAccountIngestion = async (
         }),
         connector.externalId,
       )
-    }, 5000)
+    }, 4000)
 
     // Map each user to a promise but limit concurrent execution
     const promises = users.map((user) =>
@@ -720,7 +789,7 @@ export const handleGoogleServiceAccountIngestion = async (
 
         const [_, historyId, { calendarEventsToken }] = await Promise.all([
           insertFilesForUser(jwtClient, userEmail, connector),
-          handleGmailIngestion(jwtClient, userEmail),
+          handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
           insertCalendarEvents(jwtClient, userEmail),
         ])
 
@@ -855,7 +924,7 @@ export const handleGoogleServiceAccountIngestion = async (
 
 export const deleteDocument = async (filePath: string) => {
   try {
-    await fileSys.unlink(filePath) // Delete the file at the provided path
+    await unlink(filePath)
     Logger.info(`File at ${filePath} deleted successfully`)
   } catch (err) {
     Logger.error(
@@ -994,11 +1063,9 @@ const insertFilesForUser = async (
   connector: SelectConnector,
 ) => {
   try {
-    const totalFiles = 0
     let processedFiles = 0
-    const pdfProcessingPromises: Promise<any>[] = []
-    const sheetProcessingPromises: Promise<any>[] = []
-    for await (const pageFiles of listFiles(googleClient)) {
+    const iterator = listFiles(googleClient)
+    for await (const pageFiles of iterator) {
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
       )
@@ -1018,24 +1085,24 @@ const insertFilesForUser = async (
           v.mimeType !== DriveMime.Sheets &&
           v.mimeType !== DriveMime.Slides,
       )
-
-      const pdfPromise = googlePDFsVespa(
-        googleClient,
-        googlePDFsMetadata,
-        connector.externalId,
-        userEmail,
-      )
-
-      pdfProcessingPromises.push(pdfPromise)
-
-      const sheetPromise = googleSheetsVespa(
-        googleClient,
-        googleSheetsMetadata,
-        connector.externalId,
-        userEmail,
-      )
-      sheetProcessingPromises.push(sheetPromise)
-      const [documents, slides]: [
+      const pdfs = (
+        await googlePDFsVespa(
+          googleClient,
+          googlePDFsMetadata,
+          connector.externalId,
+          userEmail,
+        )
+      ).map((v) => {
+        v.permissions = toPermissionsList(v.permissions, userEmail)
+        return v
+      })
+      for (const doc of pdfs) {
+        processedFiles += 1
+        await insertDocument(doc)
+        updateUserStats(userEmail, StatType.Drive, 1)
+      }
+      const [documents, slides, sheets]: [
+        VespaFileWithDrivePermission[],
         VespaFileWithDrivePermission[],
         VespaFileWithDrivePermission[],
       ] = await Promise.all([
@@ -1044,6 +1111,12 @@ const insertFilesForUser = async (
           googleClient,
           googleSlidesMetadata,
           connector.externalId,
+        ),
+        googleSheetsVespa(
+          googleClient,
+          googleSheetsMetadata,
+          connector.externalId,
+          userEmail,
         ),
       ])
       const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
@@ -1055,6 +1128,7 @@ const insertFilesForUser = async (
         ...driveFiles,
         ...documents,
         ...slides,
+        ...sheets,
       ].map((v) => {
         v.permissions = toPermissionsList(v.permissions, userEmail)
         return v
@@ -1066,8 +1140,8 @@ const insertFilesForUser = async (
         updateUserStats(userEmail, StatType.Drive, 1)
       }
 
-      await Promise.all([...pdfProcessingPromises, ...sheetProcessingPromises])
       Logger.info(`finished ${pageFiles.length} files`)
+      Bun.gc(true)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -1084,7 +1158,7 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
 
   if (!rowsWithData || rowsWithData.length === 0) {
     // If no row is filled, no data is there
-    Logger.info("No data in any row. Skipping it")
+    // Logger.warn("No data in any row. Skipping it")
     return []
   }
 
@@ -1107,7 +1181,7 @@ export const cleanSheetAndGetValidRows = (allRows: string[][]) => {
     // One row is assumed to be headers/column names
     // Atleast one additional row for the data should be there
     // So there should be atleast two rows to continue further
-    Logger.warn("Not enough data to process further. Skipping it")
+    // Logger.warn("Not enough data to process further. Skipping it")
     return []
   }
 
@@ -1202,7 +1276,7 @@ const chunkFinalRows = (allRows: string[][]): string[] => {
 
     // Check if adding this rowText would exceed the maximum text length
     if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
-      Logger.warn(`Text length excedded, indexing with empty content`)
+      // Logger.warn(`Text length excedded, indexing with empty content`)
       // Return an empty array if the total text length exceeds the limit
       return []
     }
@@ -1261,9 +1335,9 @@ export const getSheetsListFromOneSpreadsheet = async (
     const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges ?? [])
 
     if (finalRows.length === 0) {
-      Logger.info(
-        `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
-      )
+      // Logger.warn(
+      //   `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
+      // )
       continue
     }
 
@@ -1271,9 +1345,9 @@ export const getSheetsListFromOneSpreadsheet = async (
 
     if (finalRows.length > MAX_GD_SHEET_ROWS) {
       // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-      Logger.info(
-        `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-      )
+      // Logger.warn(
+      //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+      // )
       chunks = []
     } else {
       chunks = chunkFinalRows(finalRows)
@@ -1319,7 +1393,7 @@ const googleSheetsVespa = async (
   spreadsheetsMetadata: drive_v3.Schema$File[],
   connectorId: string,
   userEmail: string,
-): Promise<void> => {
+): Promise<VespaFileWithDrivePermission[]> => {
   // sendWebsocketMessage(
   //   `Scanning ${spreadsheetsMetadata.length} Google Sheets`,
   //   connectorId,
@@ -1352,65 +1426,57 @@ const googleSheetsVespa = async (
       // })
     }
   }
-  sheetsList = sheetsList.map((v) => {
-    v.permissions = toPermissionsList(v.permissions, userEmail)
-    return v
-  })
-  for (const doc of sheetsList) {
-    await insertDocument(doc)
-    updateUserStats(userEmail, StatType.Drive, 1)
-  }
+  // sheetsList = sheetsList.map((v) => {
+  //   v.permissions = toPermissionsList(v.permissions, userEmail)
+  //   return v
+  // })
+  // for (const doc of sheetsList) {
+  //   await insertDocument(doc)
+  //   updateUserStats(userEmail, StatType.Drive, 1)
+  // }
+  return sheetsList
 }
 
 export const downloadDir = path.resolve(__dirname, "../../downloads")
+
+export const init = () => {
+  if (!fs.existsSync(downloadDir)) {
+    fs.mkdirSync(downloadDir, { recursive: true })
+  }
+}
+
+init()
 
 export const downloadPDF = async (
   drive: drive_v3.Drive,
   fileId: string,
   fileName: string,
 ) => {
-  if (!fs.existsSync(downloadDir)) {
-    // Check if the downloads directory exists, create it if it doesn't
-    fs.mkdirSync(downloadDir, { recursive: true })
-  }
+  const filePath = path.join(downloadDir, fileName)
+  const file = Bun.file(filePath)
+  const writer = file.writer()
+  const res = await drive.files.get(
+    { fileId: fileId, alt: "media" },
+    { responseType: "arraybuffer" },
+  )
 
-  const dest = fs.createWriteStream(path.join(downloadDir, fileName))
+  writer.write(Buffer.from(res.data as ArrayBuffer))
+  await writer.end()
+  Bun.gc(true)
+}
+
+// Helper function for safer PDF loading
+async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
   try {
-    const res = await drive.files.get(
-      { fileId: fileId, alt: "media" },
-      { responseType: "stream" },
-    )
-    return new Promise<void>((resolve, reject) => {
-      res.data
-        .on("error", async (err) => {
-          Logger.error("Error during download stream.", err)
-          // Deleting document here if downloading fails
-          await deleteDocument(`${downloadDir}/${fileName}`)
-          reject(err)
-        })
-        .pipe(dest)
-      dest
-        .on("finish", () => {
-          Logger.info(`Downloaded ${fileName}`)
-          resolve()
-        })
-        .on("error", async (err) => {
-          Logger.error("Error writing file to disk.", err)
-          // Deleting document here if writing fails
-          await deleteDocument(`${downloadDir}/${fileName}`)
-          reject(err)
-        })
-    })
+    const loader = new PDFLoader(pdfPath)
+    return await loader.load()
   } catch (error) {
-    Logger.error(
-      `Error fetching the file stream: ${(error as Error).message} ${(error as Error).stack}`,
-    )
-    // throw new DownloadDocumentError({
-    //   message: "Error in downloading file",
-    //   cause: error as Error,
-    //   integration: Apps.GoogleDrive,
-    //   entity: DriveEntity.PDF,
-    // })
+    if ((error as Error).message.includes("PasswordException")) {
+      Logger.warn("Password protected PDF, skipping")
+    } else {
+      Logger.error(`PDF load error: ${error}`)
+    }
+    return []
   }
 }
 
@@ -1419,43 +1485,30 @@ export const googlePDFsVespa = async (
   pdfsMetadata: drive_v3.Schema$File[],
   connectorId: string,
   userEmail: string,
-): Promise<void> => {
-  // sendWebsocketMessage(
-  //   `Scanning ${pdfsMetadata.length} Google PDFs`,
-  //   connectorId,
-  // )
-  // const pdfsList: VespaFileWithDrivePermission[] = []
+): Promise<VespaFileWithDrivePermission[]> => {
   const drive = google.drive({ version: "v3", auth: client })
-  const total = pdfsMetadata.length
   // a flag just for the error to know
   // if the file was downloaded or not
   const limit = pLimit(PDFProcessingConcurrency)
   const pdfPromises = pdfsMetadata.map((pdf) =>
     limit(async () => {
-      let wasDownloaded = false
       const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
       // Ignore the PDF files larger than Max PDF Size
       if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
-        Logger.info(`Ignoring ${pdf.name} as its more than 20 MB`)
+        Logger.warn(`Ignoring ${pdf.name} as its more than 20 MB`)
         return null
       }
       const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
         await downloadPDF(drive, pdf.id!, pdfFileName)
-        wasDownloaded = true
-        let docs: Document[] = []
 
-        const loader = new PDFLoader(pdfPath)
-        docs = await loader.load()
-
+        const docs: Document[] = await safeLoadPDF(pdfPath)
         if (!docs || docs.length === 0) {
-          Logger.warn(
-            `Could not get content for file: ${pdf.name}. Skipping it`,
-          )
           await deleteDocument(pdfPath)
           return null
         }
+
         const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
 
         const parentsForMetadata = []
@@ -1466,6 +1519,9 @@ export const googlePDFsVespa = async (
             parentsForMetadata.push({ folderName, folderId: parentId })
           }
         }
+
+        // Cleanup immediately after processing
+        await deleteDocument(pdfPath)
 
         return {
           title: pdf.name!,
@@ -1492,7 +1548,7 @@ export const googlePDFsVespa = async (
           try {
             await deleteDocument(pdfPath)
           } catch (deleteError) {
-            Logger.warn(`Could not delete PDF file ${pdfPath}: ${deleteError}`)
+            // Logger.warn(`Could not delete PDF file ${pdfPath}: ${deleteError}`)
           }
         }
         // we cannot break the whole pdf pipeline for one error
@@ -1501,18 +1557,7 @@ export const googlePDFsVespa = async (
     }),
   )
 
-  let pdfs: VespaFileWithDrivePermission[] = (
-    await Promise.all(pdfPromises)
-  ).filter((v) => !!v)
-  pdfs = pdfs.map((v) => {
-    v.permissions = toPermissionsList(v.permissions, userEmail)
-    return v
-  })
-
-  for (const doc of pdfs) {
-    await insertDocument(doc)
-    updateUserStats(userEmail, StatType.Drive, 1)
-  }
+  return (await Promise.all(pdfPromises)).filter((v) => !!v)
 }
 
 type Org = { endDate: null | string }
@@ -1664,7 +1709,7 @@ export const insertContact = async (
   const name = contact.names?.[0]?.displayName ?? ""
   const email = contact.emailAddresses?.[0]?.value ?? ""
   if (!email) {
-    Logger.warn(`Email does not exist for ${entity}`)
+    // Logger.warn(`Email does not exist for ${entity}`)
     return
     // throw new ContactMappingError({
     //   integration: Apps.GoogleDrive,

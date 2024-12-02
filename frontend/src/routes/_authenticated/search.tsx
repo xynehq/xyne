@@ -87,6 +87,11 @@ export const Search = ({ user, workspace }: IndexProps) => {
       to: "/",
     })
   }
+
+  const QueryTyped = useRouterState({
+    select: (s) => s.location.state.isQueryTyped,
+  })
+
   const [query, setQuery] = useState(decodeURIComponent(search.query || "")) // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
@@ -97,7 +102,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-
+  const isInitialMountRef = useRef<boolean | null>(null)
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -170,11 +175,15 @@ export const Search = ({ user, workspace }: IndexProps) => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
-      handleSearch(0)
     }
   }, [])
 
   useEffect(() => {
+    // don't need to invoke on first mount
+    if (!isInitialMountRef.current) {
+      isInitialMountRef.current = true
+      return
+    }
     handleSearch()
   }, [filter, offset])
 
@@ -237,6 +246,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         query: encodeURIComponent(query),
         groupCount,
         lastUpdated: filter.lastUpdated || "anytime",
+        isQueryTyped: QueryTyped,
       }
 
       let pageCount = page
@@ -264,6 +274,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           entity: params.entity,
           lastUpdated: params.lastUpdated,
         }),
+        state: { isQueryTyped: QueryTyped },
         replace: true,
       })
 
@@ -291,6 +302,16 @@ export const Search = ({ user, workspace }: IndexProps) => {
         setTimeout(() => {
           setAutocompleteResults([])
         }, 1000)
+
+        // updating querytyped state to false
+        navigate({
+          to: "/search",
+          search: (prev: any) => ({
+            ...prev,
+          }),
+          state: { isQueryTyped: false },
+          replace: true,
+        })
 
         if (groupCount) {
           // TODO: temp solution until we resolve groupCount from

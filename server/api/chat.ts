@@ -245,22 +245,22 @@ const searchToCitation = (
       citations.push({
         title: (fields as VespaUser).name,
         url: `https://contacts.google.com/${(fields as VespaUser).email}`,
-        app: fields.app,
-        entity: fields.entity,
+        app: (fields as VespaUser).app,
+        entity: (fields as VespaUser).entity,
       })
     } else if (result.fields.sddocname === fileSchema) {
       citations.push({
         title: (fields as VespaFile).title,
         url: (fields as VespaFile).url || "",
-        app: fields.app,
-        entity: fields.entity,
+        app: (fields as VespaFile).app,
+        entity: (fields as VespaFile).entity,
       })
     } else if (result.fields.sddocname === mailSchema) {
       citations.push({
         title: (fields as VespaMail).subject,
         url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
-        app: fields.app,
-        entity: fields.entity,
+        app: (fields as VespaMail).app,
+        entity: (fields as VespaMail).entity,
       })
     } else {
       throw new Error("Invalid search result type for citation")
