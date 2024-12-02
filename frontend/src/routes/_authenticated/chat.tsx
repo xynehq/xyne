@@ -10,7 +10,12 @@ import {
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Eye, EyeOff, File } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { ChatSSEvents, SelectPublicMessage, Citation, AttachmentMetadata } from "shared/types"
+import {
+  ChatSSEvents,
+  SelectPublicMessage,
+  Citation,
+  AttachmentMetadata,
+} from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -176,7 +181,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
-    url.searchParams.append("modelId", "meta-llama/Llama-3.2-90b-chat-hf")
+    url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
     url.searchParams.append(
       "attachments",

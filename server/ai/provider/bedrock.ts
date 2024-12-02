@@ -32,8 +32,7 @@ export enum Models {
   Llama_3_1_405B = "meta.llama3-1-405b-instruct-v1:0",
   // Bedrock_Claude = "",
   Gpt_4o = "gpt-4o",
-  // Gpt_4o_mini = "gpt-4o-mini",
-  Gpt_4o_mini = "meta-llama/Llama-3-8b-chat-hf",
+  Gpt_4o_mini = "gpt-4o-mini",
   Gpt_4 = "gpt-4",
 
   CohereCmdRPlus = "cohere.command-r-plus-v1:0",
@@ -562,7 +561,6 @@ const bedrockProvider = new Provider(BedrockClient, AIProviders.AwsBedrock)
 
 const openAIClient = new OpenAI({
   apiKey: OpenAIKey,
-  baseURL: "https://api.together.xyz/v1",
 })
 
 const openaiProvider = new Provider(openAIClient, AIProviders.OpenAI)

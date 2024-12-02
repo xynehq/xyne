@@ -121,8 +121,8 @@ enum RagPipelineStages {
   DefaultRetrieval = "DefaultRetrieval",
 }
 
-const defaultFastModel = Models.Gpt_4o_mini
-const defaultBestModel = Models.Gpt_4o_mini
+const defaultFastModel = Models.Claude_3_5_Haiku
+const defaultBestModel = Models.Claude_3_5_SonnetV2
 
 // const ragPipeline = [
 //   { stage: RagPipelineStages.NewChatTitle, modelId: defaultFastModel},
@@ -1352,14 +1352,6 @@ export const MessageApi = async (c: Context) => {
         [],
         nonWorkMailLabels,
       )
-    }
-
-    if (results) {
-      console.log("results")
-      console.log(results)
-      console.log(results.root.children)
-      console.log("results")
-      Logger.info(`Vespa search results are here...`)
     }
 
     const initialContext = cleanContext(
