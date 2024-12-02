@@ -124,7 +124,7 @@ export const insertDocument = async (document: VespaFile) => {
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${document.docId} inserted successfully`)
+      // Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
       Logger.error(`Error inserting document ${document.docId}`)
     }
@@ -164,7 +164,7 @@ export const insert = async (
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${document.docId} inserted successfully`)
+      // Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
       // Using status text since response.text() return Body Already used Error
       const errorText = response.statusText
@@ -204,7 +204,7 @@ export const insertUser = async (user: VespaUser) => {
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${user.docId} inserted successfully:`, data)
+      // Logger.info(`Document ${user.docId} inserted successfully:`, data)
     } else {
       Logger.error(`Error inserting user ${user.docId}: ${data}`, data)
     }

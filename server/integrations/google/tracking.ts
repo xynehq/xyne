@@ -9,9 +9,9 @@ export enum StatType {
 }
 
 interface StatMetadata {
-  done: boolean,
-  startedAt: number,
-  doneAt: number,
+  done: boolean
+  startedAt: number
+  doneAt: number
 }
 
 type UserStats = Record<StatType, number> & StatMetadata
@@ -40,7 +40,7 @@ const initializeUserStats = (email: string) => {
       eventsCount: 0,
       done: false,
       startedAt: new Date().getTime(),
-      doneAt: 0
+      doneAt: 0,
     }
   }
 }
@@ -55,9 +55,11 @@ export const updateUserStats = (
 }
 
 export const markUserComplete = (email: string) => {
-  serviceAccountTracker.userStats[email].done = true
-  serviceAccountTracker.userStats[email].doneAt = new Date().getTime()
-  serviceAccountTracker.completedUsers++
+  if (!serviceAccountTracker.userStats[email].done) {
+    serviceAccountTracker.userStats[email].done = true
+    serviceAccountTracker.userStats[email].doneAt = new Date().getTime()
+    serviceAccountTracker.completedUsers++
+  }
 }
 
 export const setTotalUsers = (total: number) => {

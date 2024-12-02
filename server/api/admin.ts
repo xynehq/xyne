@@ -150,6 +150,7 @@ export const CreateOAuthProvider = async (c: Context) => {
 }
 
 export const AddServiceConnection = async (c: Context) => {
+  Logger.info("AddServiceConnection")
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
   const userRes = await getUserByEmail(db, email)
@@ -191,7 +192,11 @@ export const AddServiceConnection = async (c: Context) => {
         email: sub,
       }
       // Enqueue the background job within the same transaction
-      const jobId = await boss.send(SaaSQueue, SaasJobPayload)
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+        singletonKey: connector.externalId,
+        priority: 1,
+        retryLimit: 0,
+      })
 
       Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 

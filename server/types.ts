@@ -231,6 +231,15 @@ export type GoogleServiceAccount = {
   private_key: string
 }
 
+export enum MessageTypes {
+  JwtParams = "JwtParams",
+}
+
+export enum WorkerResponseTypes {
+  Stats = "Stats",
+  HistoryId = "HistoryId",
+}
+
 export enum Subsystem {
   Server = "Server",
   Auth = "Auth",
