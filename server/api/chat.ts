@@ -1289,7 +1289,7 @@ export const MessageApi = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, attachments }: MessageReqType = body
+    let { message, chatId, modelId }: MessageReqType = body
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1297,17 +1297,33 @@ export const MessageApi = async (c: Context) => {
     }
     message = decodeURIComponent(message)
 
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceId,
-      email,
-    )
-
+    const [userAndWorkspace, results] = await Promise.all([
+      getUserAndWorkspaceByEmail(db, workspaceId, email),
+      searchVespa(
+        message,
+        email,
+        null,
+        null,
+        config.answerPage,
+        0,
+        null,
+        [],
+        nonWorkMailLabels,
+      ),
+    ])
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
+    const initialContext = cleanContext(
+      results.root.children
+        .map(
+          (v, i) =>
+            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+        )
+        .join("\n"),
+    )
 
     let title = ""
     if (!chatId) {
@@ -1324,7 +1340,6 @@ export const MessageApi = async (c: Context) => {
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
-          const attachmentsToBeInserted = JSON.parse(attachments) || []
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
@@ -1332,7 +1347,6 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
-            hasAttachments: attachmentsToBeInserted?.length > 0 ? true : false,
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
@@ -1341,24 +1355,10 @@ export const MessageApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: attachmentsToBeInserted, // Adding attachmentMetadata to sources
-            attachments: attachmentsToBeInserted,
+            sources: [],
             message,
             modelId,
           })
-          // Add this to chatAttachments in vespa
-          const chatExtId = chat.externalId
-          const messageExtId = insertedMsg.externalId
-          for (const attachment of attachmentsToBeInserted) {
-            const attachmentId = attachment?.docId
-            await AddChatMessageIdToAttachment(
-              chatAttachmentSchema,
-              attachmentId,
-              chatExtId,
-              messageExtId,
-            )
-          }
-
           return [chat, insertedMsg]
         },
       )
@@ -1367,22 +1367,8 @@ export const MessageApi = async (c: Context) => {
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
-          const newAttachments = JSON.parse(attachments) || []
-
-          const oldChat = await getChatByExternalId(db, chatId)
-          const alreadyHasAttachments = oldChat?.hasAttachments
-          const hasAttachmentsNow = newAttachments?.length > 0 ? true : false
-
           // we are updating the chat and getting it's value in one call itself
-          let existingChat = await updateChatByExternalId(
-            db,
-            chatId,
-            alreadyHasAttachments
-              ? {}
-              : hasAttachmentsNow
-                ? { hasAttachments: hasAttachmentsNow }
-                : {},
-          )
+          let existingChat = await updateChatByExternalId(db, chatId, {})
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -1391,72 +1377,16 @@ export const MessageApi = async (c: Context) => {
             chatExternalId: existingChat.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: newAttachments, // Adding new attachments metadata
-            attachments: newAttachments,
+            sources: [],
             message,
             modelId,
           })
-
-          // Add this to chatAttachments in vespa
-          const chatExtId = existingChat.externalId
-          const messageExtId = insertedMsg.externalId
-          for (const attachment of newAttachments) {
-            const attachmentId = attachment?.docId
-            await AddChatMessageIdToAttachment(
-              chatAttachmentSchema,
-              attachmentId,
-              chatExtId,
-              messageExtId,
-            )
-          }
-
           return [existingChat, allMessages, insertedMsg]
         },
       )
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
     }
-
-    // Condition to decide if searchVespa function will be used to search or searchVespaWithChatAttachment
-    // If Chat has attachment then we use searchVespaWithChatAttachment, otherwise searchVespa
-
-    // Check if the current chat has attachments
-    const currentChat = await db.transaction(async (tx) => {
-      let currentChat = await getChatByExternalId(tx, chat?.externalId)
-      return currentChat
-    })
-    const currentChatHasAttachments = currentChat?.hasAttachments
-
-    let results: VespaSearchResponse
-    if (currentChatHasAttachments) {
-      results = await searchVespaWithChatAttachment(
-        message,
-        email,
-        chat?.externalId,
-        config.answerPage,
-      )
-    } else {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        config.answerPage,
-        0,
-        null,
-        [],
-        nonWorkMailLabels,
-      )
-    }
-
-    const initialContext = cleanContext(
-      results?.root?.children
-        ?.map(
-          (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
-        )
-        .join("\n"),
-    )
 
     return streamSSE(
       c,
@@ -1543,7 +1473,7 @@ export const MessageApi = async (c: Context) => {
               citationMap[v] = i
             })
             minimalContextChunks = searchToCitation(
-              results?.root?.children?.filter((_, i) =>
+              results.root.children.filter((_, i) =>
                 currentCitations.includes(i),
               ) as z.infer<typeof VespaSearchResultsSchema>[],
             )
@@ -1588,9 +1518,6 @@ export const MessageApi = async (c: Context) => {
             const allResults = (
               await Promise.all(
                 parsed.rewrittenQueries.map((newQuery: string) =>
-                  // todo for @Saheb
-                  // Should the condition (if chat has attachments) determine
-                  // whether to use searchVespa or searchVespaWithChatAttachment here?
                   searchVespa(
                     newQuery,
                     email,
