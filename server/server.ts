@@ -155,7 +155,7 @@ export const AppRoutes = app
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   // this is event streaming end point
-  .get("/message/create", zValidator("query", messageSchema), MessageApi)
+  .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
   .get(
     "/message/retry",
     zValidator("query", messageRetrySchema),

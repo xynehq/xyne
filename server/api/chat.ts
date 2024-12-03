@@ -593,6 +593,8 @@ async function* regularRAGPipeline(
   userCtx: string,
   results: VespaSearchResponse,
   modelId: Models,
+  chatExtId: string,
+  currentChatHasAttachments: boolean,
 ): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
   const message = input
   const pageSize = 10
@@ -636,14 +638,27 @@ async function* regularRAGPipeline(
   // Step 2: If no answer, perform additional searches and try again
   if (!currentAnswer) {
     for (let offsetMultiplier = 1; offsetMultiplier <= 2; offsetMultiplier++) {
-      const newResults = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageSize * offsetMultiplier,
-      )
+      let newResults: VespaSearchResponse
+      // todo for @Saheb
+      // Should the condition (if chat has attachments) determine
+      // whether to use searchVespa or searchVespaWithChatAttachment here?
+      if (currentChatHasAttachments) {
+        newResults = await searchVespaWithChatAttachment(
+          message,
+          email,
+          chatExtId,
+          config.answerPage,
+        )
+      } else {
+        newResults = await searchVespa(
+          message,
+          email,
+          null,
+          null,
+          pageSize,
+          pageSize * offsetMultiplier,
+        )
+      }
 
       answerIterator = answerUsingSearch(message, userCtx, newResults, modelId)
 
@@ -693,6 +708,7 @@ async function* findAnswerWithTimeRangeExpansion(
   userCtx: string,
   userQuery: string,
   maxIterations: number = 3,
+  chatExtId: string,
   messages?: Message[],
 ): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
   const pageSize = 6
@@ -719,19 +735,39 @@ async function* findAnswerWithTimeRangeExpansion(
       to: now,
     }
 
+    // Condition to decide if searchVespa function will be used to search or searchVespaWithChatAttachment
+    // If Chat has attachment then we use searchVespaWithChatAttachment, otherwise searchVespa
+
+    // Check if the current chat has attachments
+    const currentChat = await db.transaction(async (tx) => {
+      let currentChat = await getChatByExternalId(tx, chatExtId)
+      return currentChat
+    })
+    const currentChatHasAttachments = currentChat?.hasAttachments
+
     // Search with all current queries
     for (const query of currentQueries) {
-      const results = await searchVespa(
-        query,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
-        timeRange,
-        Array.from(seenDocIds),
-        nonWorkMailLabels,
-      )
+      let results: VespaSearchResponse
+      if (currentChatHasAttachments) {
+        results = await searchVespaWithChatAttachment(
+          query,
+          email,
+          chatExtId,
+          config.answerPage,
+        )
+      } else {
+        results = await searchVespa(
+          query,
+          email,
+          null,
+          null,
+          pageSize,
+          0,
+          timeRange,
+          Array.from(seenDocIds),
+          nonWorkMailLabels,
+        )
+      }
 
       if (results.root.children) {
         results.root.children.forEach((child) => seenDocIds.add(child.id))
@@ -795,17 +831,27 @@ async function* findAnswerWithTimeRangeExpansion(
 
     // At 50% of max iterations, attempt regularRAGPipeline approach
     if (iterations === Math.floor(maxIterations / 2)) {
-      const ragResults = await searchVespa(
-        userQuery,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
-        null,
-        Array.from(seenDocIds),
-        nonWorkMailLabels,
-      )
+      let ragResults: VespaSearchResponse
+      if (currentChatHasAttachments) {
+        ragResults = await searchVespaWithChatAttachment(
+          userQuery,
+          email,
+          chatExtId,
+          config.answerPage,
+        )
+      } else {
+        ragResults = await searchVespa(
+          userQuery,
+          email,
+          null,
+          null,
+          pageSize,
+          0,
+          null,
+          Array.from(seenDocIds),
+          nonWorkMailLabels,
+        )
+      }
 
       const pipelineIterator = regularRAGPipeline(
         email,
@@ -813,6 +859,8 @@ async function* findAnswerWithTimeRangeExpansion(
         userCtx,
         ragResults,
         ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+        chatExtId,
+        currentChatHasAttachments,
       )
 
       let pipelineAnswer = ""
@@ -868,6 +916,7 @@ export async function* UnderstandMessageAndAnswer(
   userCtx: string,
   message: string,
   routerResponse: { result: QueryRouterResponse; cost: number },
+  chatExtId: string,
   messages?: Message[],
 ): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
   // we are removing the most recent message that was inserted
@@ -893,6 +942,7 @@ export async function* UnderstandMessageAndAnswer(
         userCtx,
         message,
         8,
+        chatExtId,
         messages,
       )
     }
@@ -926,7 +976,7 @@ export const MessageApiV2 = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId }: MessageReqType = body
+    let { message, chatId, modelId, attachments }: MessageReqType = body
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -968,6 +1018,7 @@ export const MessageApiV2 = async (c: Context) => {
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const attachmentsToBeInserted = JSON.parse(attachments) || []
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
@@ -975,6 +1026,7 @@ export const MessageApiV2 = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
+            hasAttachments: attachmentsToBeInserted?.length > 0 ? true : false,
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
@@ -983,10 +1035,24 @@ export const MessageApiV2 = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: [],
+            sources: attachmentsToBeInserted, // Adding attachmentMetadata to sources
+            attachments: attachmentsToBeInserted,
             message,
             modelId,
           })
+
+          // Add this to chatAttachments in vespa
+          const chatExtId = chat.externalId
+          const messageExtId = insertedMsg.externalId
+          for (const attachment of attachmentsToBeInserted) {
+            const attachmentId = attachment?.docId
+            await AddChatMessageIdToAttachment(
+              chatAttachmentSchema,
+              attachmentId,
+              chatExtId,
+              messageExtId,
+            )
+          }
           return [chat, insertedMsg]
         },
       )
@@ -995,8 +1061,22 @@ export const MessageApiV2 = async (c: Context) => {
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx) => {
+          const newAttachments = JSON.parse(attachments) || []
+
+          const oldChat = await getChatByExternalId(db, chatId)
+          const alreadyHasAttachments = oldChat?.hasAttachments
+          const hasAttachmentsNow = newAttachments?.length > 0 ? true : false
+
           // we are updating the chat and getting it's value in one call itself
-          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let existingChat = await updateChatByExternalId(
+            db,
+            chatId,
+            alreadyHasAttachments
+              ? {}
+              : hasAttachmentsNow
+                ? { hasAttachments: hasAttachmentsNow }
+                : {},
+          )
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -1005,10 +1085,24 @@ export const MessageApiV2 = async (c: Context) => {
             chatExternalId: existingChat.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: [],
+            sources: newAttachments, // Adding new attachments metadata
+            attachments: newAttachments,
             message,
             modelId,
           })
+
+          // Add this to chatAttachments in vespa
+          const chatExtId = existingChat.externalId
+          const messageExtId = insertedMsg.externalId
+          for (const attachment of newAttachments) {
+            const attachmentId = attachment?.docId
+            await AddChatMessageIdToAttachment(
+              chatAttachmentSchema,
+              attachmentId,
+              chatExtId,
+              messageExtId,
+            )
+          }
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -1051,6 +1145,7 @@ export const MessageApiV2 = async (c: Context) => {
             ctx,
             message,
             routerResp,
+            chat?.externalId,
             messages.map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
