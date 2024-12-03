@@ -9,11 +9,16 @@ import {
   searchVespa,
   searchUsersByNamesAndEmails,
   getTimestamp,
+  insert,
+  GetDocument,
+  UpdateDocument,
+  updateUserQueryHistory,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
+  userQuerySchema,
   userSchema,
   type VespaSearchResponse,
   type VespaUser,
@@ -50,6 +55,12 @@ const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
+})
+
+export const userQueryHistorySchema = z.object({
+  docId: z.string().optional(),
+  query: z.string(),
+  timestamp: z.number().optional(),
 })
 
 export const chatSchema = z.object({
@@ -132,6 +143,7 @@ export const SearchApi = async (c: Context) => {
     app,
     entity,
     lastUpdated,
+    isQueryTyped,
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
@@ -141,21 +153,24 @@ export const SearchApi = async (c: Context) => {
     : null
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
-    groupCount = await groupVespaSearch(
-      decodedQuery,
-      email,
-      config.page,
-      timestampRange,
-    )
-    results = await searchVespa(
-      decodedQuery,
-      email,
-      app,
-      entity,
-      page,
-      offset,
-      timestampRange,
-    )
+    const tasks: Array<any> = [
+      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      searchVespa(
+        decodedQuery,
+        email,
+        app,
+        entity,
+        page,
+        offset,
+        timestampRange,
+      ),
+    ]
+
+    // ensure only update when query is typed
+    if (isQueryTyped) {
+      tasks.push(updateUserQueryHistory(decodedQuery, email))
+    }
+    ;[groupCount, results] = await Promise.all(tasks)
   } else {
     results = await searchVespa(
       decodedQuery,

@@ -1,4 +1,4 @@
-import { pino, type Logger } from "pino"
+import { levels, pino, type Logger } from "pino"
 import { Subsystem } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"

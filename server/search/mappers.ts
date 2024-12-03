@@ -19,11 +19,14 @@ import {
   type VespaAutocompleteEvent,
   eventSchema,
   type VespaEventSearch,
+  userQuerySchema,
+  type VespaAutocompleteUserQueryHistory,
 } from "@/search/types"
 import {
   AutocompleteEventSchema,
   AutocompleteFileSchema,
   AutocompleteMailSchema,
+  AutocompleteUserQueryHSchema,
   AutocompleteUserSchema,
   EventResponseSchema,
   FileResponseSchema,
@@ -94,36 +97,51 @@ export const VespaAutocompleteResponseToResult = (
   if (!root.children) {
     return { results: [] }
   }
+  let queryHistoryCount = 0
   return {
-    results: root.children.map((child: VespaAutocomplete) => {
-      // Narrow down the type based on `sddocname`
-      if ((child.fields as VespaAutocompleteFile).sddocname === fileSchema) {
-        ;(child.fields as any).type = fileSchema
-        ;(child.fields as any).relevance = child.relevance
-        return AutocompleteFileSchema.parse(child.fields)
-      } else if (
-        (child.fields as VespaAutocompleteUser).sddocname === userSchema
-      ) {
-        ;(child.fields as any).type = userSchema
-        ;(child.fields as any).relevance = child.relevance
-        return AutocompleteUserSchema.parse(child.fields)
-      } else if (
-        (child.fields as VespaAutocompleteMail).sddocname === mailSchema
-      ) {
-        ;(child.fields as any).type = mailSchema
-        ;(child.fields as any).relevance = child.relevance
-        return AutocompleteMailSchema.parse(child.fields)
-      } else if (
-        (child.fields as VespaAutocompleteEvent).sddocname === eventSchema
-      ) {
-        ;(child.fields as any).type = eventSchema
-        ;(child.fields as any).relevance = child.relevance
-        return AutocompleteEventSchema.parse(child.fields)
-      } else {
-        throw new Error(
-          `Unknown schema type: ${(child.fields as any)?.sddocname}`,
-        )
-      }
-    }),
+    results: root.children
+      .map((child: VespaAutocomplete) => {
+        // Narrow down the type based on `sddocname`
+        if ((child.fields as VespaAutocompleteFile).sddocname === fileSchema) {
+          ;(child.fields as any).type = fileSchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteFileSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteUser).sddocname === userSchema
+        ) {
+          ;(child.fields as any).type = userSchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteUserSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteMail).sddocname === mailSchema
+        ) {
+          ;(child.fields as any).type = mailSchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteMailSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteEvent).sddocname === eventSchema
+        ) {
+          ;(child.fields as any).type = eventSchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteEventSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteUserQueryHistory).sddocname ===
+          userQuerySchema
+        ) {
+          ;(child.fields as any).type = userQuerySchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteUserQueryHSchema.parse(child.fields)
+        } else {
+          throw new Error(
+            `Unknown schema type: ${(child.fields as any)?.sddocname}`,
+          )
+        }
+      })
+      .filter((d) => {
+        if (d.type === userQuerySchema) {
+          return queryHistoryCount++ < 3
+        }
+        return true
+      }),
   }
 }

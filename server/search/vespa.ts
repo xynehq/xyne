@@ -4,9 +4,10 @@ import {
   DriveEntity,
   chatAttachmentSchema,
   eventSchema,
-  fileSchema,
   MailEntity,
+  fileSchema,
   mailSchema,
+  userQuerySchema,
   userSchema,
 } from "@/search/types"
 import type {
@@ -19,6 +20,7 @@ import type {
   VespaGetResult,
   Entity,
   VespaEvent,
+  VespaUserQueryHistory,
   VespaChatAttachment,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
@@ -33,6 +35,7 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
+import crypto from "crypto"
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -123,7 +126,7 @@ export const insertDocument = async (document: VespaFile) => {
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${document.docId} inserted successfully`)
+      // Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
       Logger.error(`Error inserting document ${document.docId}`)
     }
@@ -145,6 +148,7 @@ export const insert = async (
     | VespaFile
     | VespaMail
     | VespaEvent
+    | VespaUserQueryHistory
     | VespaChatAttachment,
   schema: string,
 ) => {
@@ -163,7 +167,7 @@ export const insert = async (
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${document.docId} inserted successfully`)
+      // Logger.info(`Document ${document.docId} inserted successfully`)
     } else {
       // Using status text since response.text() return Body Already used Error
       const errorText = response.statusText
@@ -203,7 +207,7 @@ export const insertUser = async (user: VespaUser) => {
     const data = await response.json()
 
     if (response.ok) {
-      Logger.info(`Document ${user.docId} inserted successfully:`, data)
+      // Logger.info(`Document ${user.docId} inserted successfully:`, data)
     } else {
       Logger.error(`Error inserting user ${user.docId}: ${data}`, data)
     }
@@ -257,7 +261,7 @@ export const autocomplete = async (
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
-  const yqlQuery = `select * from sources ${AllSources}
+  const yqlQuery = `select * from sources ${AllSources}, ${userQuerySchema}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
@@ -282,7 +286,11 @@ export const autocomplete = async (
         and permissions contains @email)
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email);`
+        and permissions contains @email)
+        or 
+        (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and owner contains @email)
+        `
 
   const searchPayload = {
     yql: yqlQuery,
@@ -739,6 +747,7 @@ export const GetDocument = async (
       docId,
       cause: error as Error,
       sources: schema,
+      message: errMessage,
     })
   }
 }
@@ -1049,6 +1058,59 @@ const getNDocuments = async (n: number) => {
       cause: error as Error,
       sources: "file",
     })
+  }
+}
+
+const hashQuery = (query: string) => {
+  return crypto.createHash("sha256").update(query.trim()).digest("hex")
+}
+
+export const updateUserQueryHistory = async (query: string, owner: string) => {
+  const docId = `query_id-${hashQuery(query + owner)}`
+  const timestamp = new Date().getTime()
+
+  try {
+    const docExist = await getDocumentOrNull(userQuerySchema, docId)
+
+    if (docExist) {
+      const docFields = docExist.fields as VespaUserQueryHistory
+      const timeSinceLastUpdate = timestamp - docFields.timestamp
+      if (timeSinceLastUpdate > config.userQueryUpdateInterval) {
+        await UpdateDocument(userQuerySchema, docId, {
+          count: docFields.count + 1,
+          timestamp,
+        })
+      } else {
+        Logger.warn(`Skipping update for ${docId}: Under time interval`)
+      }
+    } else {
+      await insert(
+        { docId, query_text: query, timestamp, count: 1, owner },
+        userQuerySchema,
+      )
+    }
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Update user query error: ${errMsg}`, error)
+    throw new Error("Failed to update user query history")
+  }
+}
+
+const getDocumentOrNull = async (schema: string, docId: string) => {
+  try {
+    return await GetDocument(schema, docId)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+
+    if (
+      errMsg.includes("404 Not Found") &&
+      errMsg.includes(`docId: ${docId}`)
+    ) {
+      Logger.warn(`Document ${docId} does not exist`)
+      return null
+    }
+
+    throw error
   }
 }
 

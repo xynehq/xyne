@@ -367,26 +367,28 @@ const UserStatsTable = ({
   userStats,
 }: { userStats: { [email: string]: any } }) => {
   return (
-    <Table>
+    <Table className="ml-[20px] max-h-[400px]">
       <TableHeader>
         <TableRow>
           <TableHead>Email</TableHead>
-          <TableHead>Gmail Count</TableHead>
-          <TableHead>Drive Count</TableHead>
-          <TableHead>Contacts Count</TableHead>
-          <TableHead>Events Count</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead>Gmail</TableHead>
+          <TableHead>Drive</TableHead>
+          <TableHead>Contacts</TableHead>
+          <TableHead>Events</TableHead>
+          {/* <TableHead>Status</TableHead> */}
         </TableRow>
       </TableHeader>
       <TableBody>
         {Object.entries(userStats).map(([email, stats]) => (
           <TableRow key={email}>
-            <TableCell>{email}</TableCell>
+            <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+              {email}
+            </TableCell>
             <TableCell>{stats.gmailCount}</TableCell>
             <TableCell>{stats.driveCount}</TableCell>
             <TableCell>{stats.contactsCount}</TableCell>
             <TableCell>{stats.eventsCount}</TableCell>
-            <TableCell>{stats.done ? "Done" : "In Progress"}</TableCell>
+            {/* <TableCell className={`${stats.done ? "text-lime-600": ""}`}>{stats.done ? "Done" : "In Progress"}</TableCell> */}
           </TableRow>
         ))}
       </TableBody>
@@ -564,10 +566,10 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     <div className="flex w-full h-full">
       <Sidebar photoLink={user.photoLink ?? ""} />
       <div className="w-full h-full flex items-center justify-center">
-        <div>
+        <div className="flex flex-col h-full items-center justify-center">
           <Tabs
             defaultValue="upload"
-            className={`w-[400px] min-h-[${minHeight}px]`}
+            className={`w-[400px] min-h-[${minHeight}px] ${Object.keys(userStats).length > 0 ? "mt-[150px]" : ""}`}
           >
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="upload">Service Account</TabsTrigger>
