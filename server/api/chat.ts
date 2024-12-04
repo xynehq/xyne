@@ -32,6 +32,7 @@ import {
   getPublicChats,
   insertChat,
   updateChatByExternalId,
+  updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
 import {
@@ -885,15 +886,19 @@ export const MessageApiV2 = async (c: Context) => {
               }))
               .slice(0, messages.length - 1), // removing the last one as we append ourselves inside route Query
           })
+          // Only send those messages here which don't have error responses
+          const messagesWithNoErrResponse = messages
+            .filter((msg) => !msg?.errorMessage)
+            .map((m) => ({
+              role: m.messageRole as ConversationRole,
+              content: [{ text: m.message }],
+            }))
           const iterator = UnderstandMessageAndAnswer(
             email,
             ctx,
             message,
             routerResp,
-            messages.map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            })),
+            messagesWithNoErrResponse,
           )
 
           stream.writeSSE({
@@ -940,6 +945,7 @@ export const MessageApiV2 = async (c: Context) => {
           //     }),
           //   })
           // }
+          // answer = ""
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -973,6 +979,21 @@ export const MessageApiV2 = async (c: Context) => {
               event: ChatSSEvents.Error,
               data: "Error while trying to answer",
             })
+            // Add the error message to last user message
+            const lastMessage = messages[messages.length - 1]
+            if (lastMessage.messageRole === MessageRole.User) {
+              let existingMsg = await db.transaction(async (tx) => {
+                let existingMsg = await updateMessageByExternalId(
+                  tx,
+                  lastMessage?.externalId,
+                  {
+                    errorMessage: "Error while trying to answer",
+                  },
+                )
+                return existingMsg
+              })
+            }
+
             await stream.writeSSE({
               data: "",
               event: ChatSSEvents.End,
