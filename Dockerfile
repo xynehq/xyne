@@ -1,24 +1,21 @@
 # Use the official Bun image
 FROM oven/bun:1 AS base
-# Set working directory
 WORKDIR /usr/src/app
 
-# Copy your Bun app files
+# Install backend dependencies
 COPY . .
 
-# Install dependencies for Bun server
 WORKDIR /usr/src/app/server
 RUN bun install
 
-# Install dependencies for Bun client
+# Install dependencies for frontend
 WORKDIR /usr/src/app/frontend
 RUN bun install
 RUN bun run build
 
-# [optional] tests & build for both backend and frontend
+# Set the environment as production
 ENV NODE_ENV=production
-# RUN bun test
-# RUN bun run build
+
 
 # Expose the application port
 EXPOSE 80/tcp
