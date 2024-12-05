@@ -710,6 +710,7 @@ export async function* UnderstandMessageAndAnswer(
   routerResponse: { result: QueryRouterResponse; cost: number },
   messages?: Message[],
 ): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
+  // throw new Error("Ase hi, there's error")
   // we are removing the most recent message that was inserted
   // that is the user message, we will append our own
   messages = messages?.splice(0, messages.length - 1)
