@@ -710,7 +710,6 @@ export async function* UnderstandMessageAndAnswer(
   routerResponse: { result: QueryRouterResponse; cost: number },
   messages?: Message[],
 ): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
-  // throw new Error("Ase hi, there's error")
   // we are removing the most recent message that was inserted
   // that is the user message, we will append our own
   messages = messages?.splice(0, messages.length - 1)
@@ -758,13 +757,14 @@ async function* findAnswerWithinTimeRange(
   return yield { text: "Not yet implemented", cost: 0 }
 }
 
-const ErrorMap = {
-  DefaultError: "Something went wrong. Please try again.",
-  InternalError: "Internal error occured.",
-  StreamingError: "Error streaming response.",
-  QuotaExceddedError: "Error generating response. Quota limit excedded.",
-  AnswerNotFound:
-    "Couldn't get respone, please try again with a different query",
+const handleError = (error: any) => {
+  let errorMessage = ""
+  switch (error) {
+    default:
+      errorMessage = "Something went wrong. Please try again."
+      break
+  }
+  return errorMessage
 }
 
 export const MessageApiV2 = async (c: Context) => {
@@ -987,11 +987,14 @@ export const MessageApiV2 = async (c: Context) => {
           } else {
             await stream.writeSSE({
               event: ChatSSEvents.Error,
-              data: ErrorMap.AnswerNotFound,
+              data: "Error while trying to answer",
             })
             // Add the error message to last user message
             const lastMessage = messages[messages.length - 1]
-            await AddErrMessageToMessage(lastMessage, ErrorMap.AnswerNotFound)
+            await AddErrMessageToMessage(
+              lastMessage,
+              "Error while trying to answer",
+            )
 
             await stream.writeSSE({
               data: "",
@@ -999,14 +1002,15 @@ export const MessageApiV2 = async (c: Context) => {
             })
           }
         } catch (error) {
+          const errFomMap = handleError(error)
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: ErrorMap.InternalError,
+            data: errFomMap,
           })
 
           // Add the error message to last user message
           const lastMessage = messages[messages.length - 1]
-          await AddErrMessageToMessage(lastMessage, ErrorMap.InternalError)
+          await AddErrMessageToMessage(lastMessage, errFomMap)
 
           await stream.writeSSE({
             data: "",
@@ -1018,13 +1022,14 @@ export const MessageApiV2 = async (c: Context) => {
         }
       },
       async (err, stream) => {
+        const errFromMap = handleError(err)
         await stream.writeSSE({
           event: ChatSSEvents.Error,
-          data: ErrorMap.StreamingError,
+          data: errFromMap,
         })
         // Add the error message to last user message
         const lastMessage = messages[messages.length - 1]
-        await AddErrMessageToMessage(lastMessage, ErrorMap.StreamingError)
+        await AddErrMessageToMessage(lastMessage, errFromMap)
 
         await stream.writeSSE({
           data: "",
@@ -1040,14 +1045,15 @@ export const MessageApiV2 = async (c: Context) => {
       // quota error
       if (error.status === 429) {
         console.error("You exceeded your current quota,")
+        const errFromMap = handleError(error)
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: ErrorMap.QuotaExceddedError,
+            data: errFromMap,
           })
           // Add the error message to last user message
           const lastMessage = messages[messages.length - 1]
-          await AddErrMessageToMessage(lastMessage, ErrorMap.QuotaExceddedError)
+          await AddErrMessageToMessage(lastMessage, errFromMap)
         }
       }
     } else {
