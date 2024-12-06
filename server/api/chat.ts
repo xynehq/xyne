@@ -955,7 +955,6 @@ export const MessageApiV2 = async (c: Context) => {
           //     }),
           //   })
           // }
-          // answer = ""
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?

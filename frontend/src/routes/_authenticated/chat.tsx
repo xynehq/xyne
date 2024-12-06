@@ -8,7 +8,7 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Eye, EyeOff, Info } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Eye, EyeOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
@@ -454,7 +454,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       }}
                       sourcesVisible={isSourcesVisible}
                     />
-                    {/* // todo Make it more like an error */}
                     {userMessageWithErr && (
                       <div
                         className={`rounded-[16px] text-[#1C1D1F] text-[15px] leading-[25px] self-start`}
@@ -465,8 +464,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                               className={"mr-[20px] w-[32px] self-start"}
                               src={AssistantLogo}
                             />
-                            <div className="flex p-2 items-center mt-[4px] markdown-content max-w-[75%] border border-red-500 rounded-[16px] bg-red-100 mb-2">
-                              <Info size={20} className="mx-2 text-red-500" />
+                            <div className="mt-[4px] markdown-content max-w-[75%]">
                               <MarkdownPreview
                                 source={message.errorMessage}
                                 wrapperElement={{
@@ -475,10 +473,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                                 style={{
                                   padding: 0,
                                   backgroundColor: "transparent",
-                                  color: "#ef4444",
+                                  color: "#1C1D1F",
                                   maxWidth: "75%",
-                                  marginLeft: 2,
-                                  marginRight: 2,
                                 }}
                               />
                             </div>
