@@ -64,7 +64,6 @@ const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
 
-const postOauthRedirect = config.postOauthRedirect
 const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = "auth-token"
@@ -274,7 +273,7 @@ app.get(
         existingUser.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken)
-      return c.redirect(postOauthRedirect)
+      return c.redirect('/')
     }
 
     // check if workspace exists
@@ -298,7 +297,7 @@ app.get(
         user.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken)
-      return c.redirect(postOauthRedirect)
+      return c.redirect('/')
     }
 
     // we could not find the user and the workspace
@@ -325,7 +324,7 @@ app.get(
       userAcc.workspaceExternalId,
     )
     setCookieByEnv(c, CookieName, jwtToken)
-    return c.redirect(postOauthRedirect)
+    return c.redirect('/')
   },
 )
 
