@@ -1,8 +1,9 @@
 import { api } from "@/api"
 import { useQuery } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { MoreHorizontal, X } from "lucide-react"
+import { Trash2, MoreHorizontal, X } from "lucide-react"
 import { useRouter } from "@tanstack/react-router"
+import { useEffect, useRef, useState } from "react"
 
 const fetchChats = async () => {
   let items = []
@@ -21,6 +22,25 @@ const HistoryModal = ({
   onClose,
   pathname,
 }: { onClose: () => void; pathname: string }) => {
+  const [openModalIndex, setOpenModalIndex] = useState(null)
+  const modalRef = useRef(null)
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        setOpenModalIndex(null) // Close the modal if the click is outside
+      }
+    }
+
+    if (openModalIndex !== null) {
+      document.addEventListener("mousedown", handleOutsideClick)
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick)
+    }
+  }, [openModalIndex])
+
   const router = useRouter()
   const {
     isPending,
@@ -53,12 +73,12 @@ const HistoryModal = ({
           <X stroke="#9EB6CE" size={14} />
         </button>
       </div>
-      <div className="flex-1 overflow-auto mt-[15px]">
+      <div className="flex-1 overflow-visible mt-[15px]">
         <ul>
           {historyItems.map((item, index) => (
             <li
               key={index}
-              className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+              className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] relative`}
             >
               <span
                 className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer"
@@ -75,7 +95,30 @@ const HistoryModal = ({
               <MoreHorizontal
                 size={16}
                 className="invisible group-hover:visible mr-[10px] cursor-pointer"
+                onClick={() =>
+                  setOpenModalIndex((prev) => (prev === index ? null : index))
+                }
               />
+              {openModalIndex === index && (
+                <span
+                  ref={modalRef}
+                  className="absolute z-10 bg-white border rounded-md shadow-md"
+                  style={{
+                    top: "70%",
+                    left: "calc(100% - 10px)",
+                  }}
+                >
+                  <button
+                    className="flex text-[14px] text-red-500 py-[8px] px-[10px] w-full hover:bg-[#EBEFF2] items-center"
+                    onClick={() => {
+                      setOpenModalIndex(null)
+                    }}
+                  >
+                    <Trash2 size={16} className="mr-2" />
+                    Delete
+                  </button>
+                </span>
+              )}
             </li>
           ))}
         </ul>
