@@ -78,7 +78,7 @@ const HistoryModal = ({
           {historyItems.map((item, index) => (
             <li
               key={index}
-              className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] relative`}
+              className={`group flex justify-between items-center ${item.externalId === existingChatId || openModalIndex === index ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] relative`}
             >
               <span
                 className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer"
@@ -94,7 +94,7 @@ const HistoryModal = ({
               </span>
               <MoreHorizontal
                 size={16}
-                className="invisible group-hover:visible mr-[10px] cursor-pointer"
+                className={`${openModalIndex === index ? "visible" : "invisible group-hover:visible"} mr-[10px] cursor-pointer`}
                 onClick={() =>
                   setOpenModalIndex((prev) => (prev === index ? null : index))
                 }
