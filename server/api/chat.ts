@@ -771,7 +771,7 @@ export const MessageApiV2 = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   let stream: any
-  let messages: SelectMessage[] = []
+  let chat: SelectChat
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
@@ -791,9 +791,9 @@ export const MessageApiV2 = async (c: Context) => {
     ])
     const results = { root: { children: [] } }
     const { user, workspace } = userAndWorkspace
+    let messages: SelectMessage[] = []
     const costArr: number[] = []
     const ctx = userContext(userAndWorkspace)
-    let chat: SelectChat
     const initialContext = cleanContext(
       results.root.children
         .map(
@@ -989,7 +989,11 @@ export const MessageApiV2 = async (c: Context) => {
               data: "Error while trying to answer",
             })
             // Add the error message to last user message
-            const lastMessage = messages[messages.length - 1]
+            let allMessages = await db.transaction(async (tx) => {
+              let allMessages = await getChatMessages(tx, chat?.externalId)
+              return allMessages
+            })
+            const lastMessage = allMessages[allMessages.length - 1]
             await AddErrMessageToMessage(
               lastMessage,
               "Error while trying to answer",
@@ -1008,7 +1012,11 @@ export const MessageApiV2 = async (c: Context) => {
           })
 
           // Add the error message to last user message
-          const lastMessage = messages[messages.length - 1]
+          let allMessages = await db.transaction(async (tx) => {
+            let allMessages = await getChatMessages(tx, chat?.externalId)
+            return allMessages
+          })
+          const lastMessage = allMessages[allMessages.length - 1]
           await AddErrMessageToMessage(lastMessage, errFomMap)
 
           await stream.writeSSE({
@@ -1027,7 +1035,11 @@ export const MessageApiV2 = async (c: Context) => {
           data: errFromMap,
         })
         // Add the error message to last user message
-        const lastMessage = messages[messages.length - 1]
+        let allMessages = await db.transaction(async (tx) => {
+          let allMessages = await getChatMessages(tx, chat?.externalId)
+          return allMessages
+        })
+        const lastMessage = allMessages[allMessages.length - 1]
         await AddErrMessageToMessage(lastMessage, errFromMap)
 
         await stream.writeSSE({
@@ -1051,12 +1063,24 @@ export const MessageApiV2 = async (c: Context) => {
             data: errFromMap,
           })
           // Add the error message to last user message
-          const lastMessage = messages[messages.length - 1]
+          let allMessages = await db.transaction(async (tx) => {
+            let allMessages = await getChatMessages(tx, chat?.externalId)
+            return allMessages
+          })
+          const lastMessage = allMessages[allMessages.length - 1]
           await AddErrMessageToMessage(lastMessage, errFromMap)
         }
       }
     } else {
       Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
+      const errFromMap = handleError(error)
+      // Add the error message to last user message
+      let allMessages = await db.transaction(async (tx) => {
+        let allMessages = await getChatMessages(tx, chat?.externalId)
+        return allMessages
+      })
+      const lastMessage = allMessages[allMessages.length - 1]
+      await AddErrMessageToMessage(lastMessage, errFromMap)
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
