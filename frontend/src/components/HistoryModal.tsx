@@ -60,6 +60,28 @@ const HistoryModal = ({
   if (pathname.startsWith("/chat/")) {
     existingChatId = pathname.substring(6)
   }
+
+  const handleChatDelete = async (chatId: string) => {
+    try {
+      const res = await api.chat.delete.$post({
+        json: {
+          chatId: chatId,
+        },
+      })
+
+      if (res.ok) {
+        // const data = await res.json()
+        console.log("Chat deleted successfully")
+      } else {
+        console.error(`Error deleting chat`)
+      }
+
+      return await res.json()
+    } catch (error) {
+      console.error(`Error in deleting chat:, ${error}`)
+    }
+  }
+
   return (
     <div className="fixed left-[58px] top-0 max-w-sm w-[300px] h-[calc(100%-18px)] m-[6px] bg-[#F7FAFC] border-[0.5px] border-[#D7E0E9] rounded-[12px] flex flex-col select-none">
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
@@ -111,6 +133,7 @@ const HistoryModal = ({
                   <button
                     className="flex text-[14px] text-red-500 py-[8px] px-[10px] w-full hover:bg-[#EBEFF2] items-center"
                     onClick={() => {
+                      handleChatDelete(item?.externalId)
                       setOpenModalIndex(null)
                     }}
                   >
