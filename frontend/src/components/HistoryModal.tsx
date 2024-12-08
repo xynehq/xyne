@@ -1,5 +1,5 @@
 import { api } from "@/api"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
 import { Trash2, MoreHorizontal, X } from "lucide-react"
 import { useRouter } from "@tanstack/react-router"
@@ -24,6 +24,7 @@ const HistoryModal = ({
 }: { onClose: () => void; pathname: string }) => {
   const [openModalIndex, setOpenModalIndex] = useState(null)
   const modalRef = useRef(null)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -50,6 +51,30 @@ const HistoryModal = ({
     queryKey: ["all-connectors"],
     queryFn: fetchChats,
   })
+
+  const deleteChat = async (chatId: string): Promise<string> => {
+    const res = await api.chat.delete.$post({
+      json: { chatId },
+    })
+    if (!res.ok) throw new Error("Error deleting chat")
+    return chatId
+  }
+
+  const mutation = useMutation<string, Error, string>({
+    mutationFn: deleteChat,
+    onSuccess: (chatId: string) => {
+      // Update the UI by removing the deleted chat
+      queryClient.setQueryData<SelectPublicChat[]>(
+        ["all-connectors"],
+        (oldChats) =>
+          oldChats ? oldChats.filter((chat) => chat.externalId !== chatId) : [],
+      )
+    },
+    onError: (error: Error) => {
+      console.error("Failed to delete chat:", error)
+    },
+  })
+
   if (error) {
     return <p>Something went wrong...</p>
   }
@@ -59,27 +84,6 @@ const HistoryModal = ({
   let existingChatId = ""
   if (pathname.startsWith("/chat/")) {
     existingChatId = pathname.substring(6)
-  }
-
-  const handleChatDelete = async (chatId: string) => {
-    try {
-      const res = await api.chat.delete.$post({
-        json: {
-          chatId: chatId,
-        },
-      })
-
-      if (res.ok) {
-        // const data = await res.json()
-        console.log("Chat deleted successfully")
-      } else {
-        console.error(`Error deleting chat`)
-      }
-
-      return await res.json()
-    } catch (error) {
-      console.error(`Error in deleting chat:, ${error}`)
-    }
   }
 
   return (
@@ -133,7 +137,7 @@ const HistoryModal = ({
                   <button
                     className="flex text-[14px] text-red-500 py-[8px] px-[10px] w-full hover:bg-[#EBEFF2] items-center"
                     onClick={() => {
-                      handleChatDelete(item?.externalId)
+                      mutation.mutate(item?.externalId)
                       setOpenModalIndex(null)
                     }}
                   >
