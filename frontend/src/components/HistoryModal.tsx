@@ -2,7 +2,7 @@ import { api } from "@/api"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
 import { Trash2, MoreHorizontal, X } from "lucide-react"
-import { useRouter } from "@tanstack/react-router"
+import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,7 @@ const HistoryModal = ({
   pathname,
 }: { onClose: () => void; pathname: string }) => {
   const queryClient = useQueryClient()
+  const navigate = useNavigate({ from: "/" })
 
   const router = useRouter()
   const {
@@ -38,6 +39,11 @@ const HistoryModal = ({
     queryKey: ["all-connectors"],
     queryFn: fetchChats,
   })
+
+  let existingChatId = ""
+  if (pathname.startsWith("/chat/")) {
+    existingChatId = pathname.substring(6)
+  }
 
   const deleteChat = async (chatId: string): Promise<string> => {
     const res = await api.chat.delete.$post({
@@ -56,6 +62,11 @@ const HistoryModal = ({
         (oldChats) =>
           oldChats ? oldChats.filter((chat) => chat.externalId !== chatId) : [],
       )
+
+      // If the deleted chat is opened and it's deleted, then user should be taken back to '/'
+      if (existingChatId === chatId) {
+        navigate({ to: "/" })
+      }
     },
     onError: (error: Error) => {
       console.error("Failed to delete chat:", error)
@@ -67,10 +78,6 @@ const HistoryModal = ({
   }
   if (isPending) {
     return <p>Loading...</p>
-  }
-  let existingChatId = ""
-  if (pathname.startsWith("/chat/")) {
-    existingChatId = pathname.substring(6)
   }
 
   return (
