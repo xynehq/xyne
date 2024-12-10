@@ -189,9 +189,11 @@ export const ChatDeleteApi = async (c: Context) => {
   try {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
-    // First will have to delete all messages associated with that chat
-    await deleteMessagesByChatId(db, chatId)
-    await deleteChatByExternalId(db, chatId)
+    await db.transaction(async (tx) => {
+      // First will have to delete all messages associated with that chat
+      await deleteMessagesByChatId(tx, chatId)
+      await deleteChatByExternalId(tx, chatId)
+    })
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
