@@ -989,10 +989,7 @@ export const MessageApiV2 = async (c: Context) => {
               data: "Error while trying to answer",
             })
             // Add the error message to last user message
-            let allMessages = await db.transaction(async (tx) => {
-              let allMessages = await getChatMessages(tx, chat?.externalId)
-              return allMessages
-            })
+            const allMessages = await getChatMessages(db, chat?.externalId)
             const lastMessage = allMessages[allMessages.length - 1]
             await AddErrMessageToMessage(
               lastMessage,
@@ -1012,10 +1009,7 @@ export const MessageApiV2 = async (c: Context) => {
           })
 
           // Add the error message to last user message
-          let allMessages = await db.transaction(async (tx) => {
-            let allMessages = await getChatMessages(tx, chat?.externalId)
-            return allMessages
-          })
+          const allMessages = await getChatMessages(db, chat?.externalId)
           const lastMessage = allMessages[allMessages.length - 1]
           await AddErrMessageToMessage(lastMessage, errFomMap)
 
@@ -1035,10 +1029,7 @@ export const MessageApiV2 = async (c: Context) => {
           data: errFromMap,
         })
         // Add the error message to last user message
-        let allMessages = await db.transaction(async (tx) => {
-          let allMessages = await getChatMessages(tx, chat?.externalId)
-          return allMessages
-        })
+        const allMessages = await getChatMessages(db, chat?.externalId)
         const lastMessage = allMessages[allMessages.length - 1]
         await AddErrMessageToMessage(lastMessage, errFromMap)
 
@@ -1052,35 +1043,27 @@ export const MessageApiV2 = async (c: Context) => {
   } catch (error) {
     const errMsg = getErrorMessage(error)
     // TODO: add more errors like bedrock, this is only openai
+    const errFromMap = handleError(error)
+    // @ts-ignore
+    if (chat?.externalId) {
+      const allMessages = await getChatMessages(db, chat?.externalId)
+      // Add the error message to last user message
+      const lastMessage = allMessages[allMessages.length - 1]
+      await AddErrMessageToMessage(lastMessage, errFromMap)
+    }
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
         console.error("You exceeded your current quota,")
-        const errFromMap = handleError(error)
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
             data: errFromMap,
           })
-          // Add the error message to last user message
-          let allMessages = await db.transaction(async (tx) => {
-            let allMessages = await getChatMessages(tx, chat?.externalId)
-            return allMessages
-          })
-          const lastMessage = allMessages[allMessages.length - 1]
-          await AddErrMessageToMessage(lastMessage, errFromMap)
         }
       }
     } else {
       Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
-      const errFromMap = handleError(error)
-      // Add the error message to last user message
-      let allMessages = await db.transaction(async (tx) => {
-        let allMessages = await getChatMessages(tx, chat?.externalId)
-        return allMessages
-      })
-      const lastMessage = allMessages[allMessages.length - 1]
-      await AddErrMessageToMessage(lastMessage, errFromMap)
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
@@ -1093,15 +1076,8 @@ const AddErrMessageToMessage = async (
   errorMessage: string,
 ) => {
   if (lastMessage.messageRole === MessageRole.User) {
-    let existingMsg = await db.transaction(async (tx) => {
-      let existingMsg = await updateMessageByExternalId(
-        tx,
-        lastMessage?.externalId,
-        {
-          errorMessage,
-        },
-      )
-      return existingMsg
+    await updateMessageByExternalId(db, lastMessage?.externalId, {
+      errorMessage,
     })
   }
 }
