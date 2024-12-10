@@ -37,7 +37,6 @@ export const getLogger = (loggerType: Subsystem) => {
             "stack",
             "apiErrorHandlerCallStack",
           ],
-          destination: getLoggerDestination(loggerType),
         },
       },
     })
@@ -63,9 +62,6 @@ export const getLogger = (loggerType: Subsystem) => {
   }
 }
 
-const getLoggerDestination = (loggerType: Subsystem) => {
-  return `./logs/${loggerType}.log`
-}
 
 export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   const logger = getLogger(loggerType)

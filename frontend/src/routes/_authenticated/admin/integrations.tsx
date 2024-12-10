@@ -430,8 +430,15 @@ const ServiceAccountTab = ({
     return (
       <CardHeader>
         <CardTitle>Google Workspace</CardTitle>
-        <CardDescription>Connecting {progress}%</CardDescription>
-        <Progress value={progress} className="p-0 w-[60%]" />
+        {googleSAConnector.status === ConnectorStatus.Connecting ? (
+          <>
+          <CardDescription>Connecting {progress}%</CardDescription>
+          <Progress value={progress} className="p-0 w-[60%]" />
+          </>
+        ) : (<>
+          <CardDescription>Connected</CardDescription>
+        </>)}
+
       </CardHeader>
     )
   }
@@ -477,9 +484,11 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       }
     },
   })
+
   const [updateStatus, setUpateStatus] = useState("")
   const [progress, setProgress] = useState<number>(0)
   const [userStats, setUserStats] = useState<{ [email: string]: any }>({})
+  const [activeTab, setActiveTab] = useState<string>("upload")
   const [isIntegratingSA, setIsIntegratingSA] = useState<boolean>(
     data
       ? !!data.find(
@@ -570,6 +579,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
           <Tabs
             defaultValue="upload"
             className={`w-[400px] min-h-[${minHeight}px] ${Object.keys(userStats).length > 0 ? "mt-[150px]" : ""}`}
+            onValueChange={setActiveTab}
           >
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="upload">Service Account</TabsTrigger>
@@ -631,7 +641,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               )}
             </TabsContent>
           </Tabs>
-          {Object.keys(userStats).length > 0 && (
+          {Object.keys(userStats).length > 0 && activeTab === "upload"  && (
             <UserStatsTable userStats={userStats} />
           )}
         </div>

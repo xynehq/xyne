@@ -161,7 +161,6 @@ export const handleGmailIngestion = async (
       batchRequests = []
       messageBatch = []
     }
-    Bun.gc(true)
     // clean up explicitly
   } while (nextPageToken)
 
