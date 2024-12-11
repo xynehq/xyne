@@ -11,15 +11,13 @@ const replaceDimensions = (
 
     // Write the modified content to the output file
     fs.writeFileSync(filePath, replacedContent, 'utf8');
-
-    console.log(`Update model dimension size`);
   } catch (error) {
     console.error('Error processing Vespa schema file:', error);
     process.exit(1);
   }
 };
 
-const batchReplaceDimensions = (filePaths: Array<string>,modelDimension: number): void => {
+const replaceModelDIMS = (filePaths: Array<string>,modelDimension: number): void => {
   filePaths.forEach(p => {
     try {
       replaceDimensions(
@@ -41,8 +39,4 @@ const getDotSdpaths = (directory: string) => {
 
 const paths = getDotSdpaths("./schemas");
 
-console.log(paths); 
-
-// Uncomment to run
-batchReplaceDimensions(paths, parseInt(args[0]));
-// replaceDimensions("./schemas/file.sd",1234)
+replaceModelDIMS(paths, parseInt(args[0]));

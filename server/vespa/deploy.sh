@@ -1,12 +1,34 @@
 #!/bin/sh
 set -e
+source ../.env
 
 mkdir -p models
+TOKENIZER_URL=""
+MODEL_URL=""
+DIMS=Null
 
 # URLs to download
-TOKENIZER_URL="https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/tokenizer.json"
-MODEL_URL="https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/onnx/model.onnx"
+if [[ "$EMBEDDING_MODEL" == "bge-small-en-v1.5" || "$EMBEDDING_MODEL" == "" ]]; then
+    TOKENIZER_URL="https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/tokenizer.json"
+    MODEL_URL="https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/onnx/model_quantized.onnx"
+    DIMS=384
+    echo "Deploying embedding model: bge-small-en-v1.5"
+elif [[ "$EMBEDDING_MODEL" == "bge-base-en-v1.5" ]]; then
+    TOKENIZER_URL="https://huggingface.co/BAAI/bge-base-en-v1.5/resolve/main/tokenizer.json"
+    MODEL_URL="https://huggingface.co/BAAI/bge-base-en-v1.5/resolve/main/onnx/model_quantized.onnx"
+    DIMS=768
+    echo "Deploying embedding model: $EMBEDDING_MODEL"
+elif [[ "$EMBEDDING_MODEL" == "bge-large-en-v1.5" ]]; then
+    TOKENIZER_URL="https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/tokenizer.json"
+    MODEL_URL="https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/onnx/model.onnx"
+    DIMS=1024
+    echo "Deploying embedding model: $EMBEDDING_MODEL"
+else
+    echo "Error: Unknown EMBEDDING_MODEL value '$EMBEDDING_MODEL'. please add one of ['bge-small-en-v1.5','bge-base-en-v1.5','bge-large-en-v1.5']"
+    exit 1
+fi
 
+bun run replaceDims.ts $DIMS
 
 # File paths
 TOKENIZER_FILE="models/tokenizer.json"
