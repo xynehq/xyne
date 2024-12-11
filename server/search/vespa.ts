@@ -537,7 +537,8 @@ export const searchVespa = async (
   app: Apps | null,
   entity: Entity | null,
   limit = config.page,
-  offset?: number,
+  offset: number = 0,
+  alpha: number = 0.5,
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -563,7 +564,7 @@ export const searchVespa = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     hits: limit,
-    alpha: 0.5,
+    alpha,
     ...(offset
       ? {
           offset,
