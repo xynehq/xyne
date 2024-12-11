@@ -102,7 +102,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-  const isInitialMountRef = useRef<boolean | null>(null)
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -179,11 +178,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }, [])
 
   useEffect(() => {
-    // don't need to invoke on first mount
-    if (!isInitialMountRef.current) {
-      isInitialMountRef.current = true
-      return
-    }
     handleSearch()
   }, [filter, offset])
 
