@@ -1,10 +1,13 @@
 import {
   chats,
   insertChatSchema,
+  messages,
   selectChatSchema,
+  selectMessageSchema,
   selectPublicChatSchema,
   type InsertChat,
   type SelectChat,
+  type SelectMessage,
   type SelectPublicChat,
 } from "./schema"
 import { createId } from "@paralleldrive/cuid2"
@@ -77,6 +80,34 @@ export const updateChatByExternalId = async (
     throw new Error("Chat not found")
   }
   return selectChatSchema.parse(chatArr[0])
+}
+
+export const deleteChatByExternalId = async (
+  trx: TxnOrClient,
+  chatId: string,
+): Promise<SelectChat> => {
+  const chatArr = await trx
+    .delete(chats)
+    .where(eq(chats.externalId, chatId))
+    .returning()
+  if (!chatArr || !chatArr.length) {
+    throw new Error("Chat not found")
+  }
+  return selectChatSchema.parse(chatArr[0])
+}
+
+export const deleteMessagesByChatId = async (
+  trx: TxnOrClient,
+  chatId: string,
+): Promise<SelectMessage> => {
+  const msgArr = await trx
+    .delete(messages)
+    .where(eq(messages.chatExternalId, chatId))
+    .returning()
+  if (!msgArr || !msgArr.length) {
+    throw new Error("Messages not found")
+  }
+  return selectMessageSchema.parse(msgArr[0])
 }
 
 export const getPublicChats = async (

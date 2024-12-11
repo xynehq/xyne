@@ -4,6 +4,7 @@ import {
   AutocompleteApi,
   autocompleteSchema,
   chatBookmarkSchema,
+  chatDeleteSchema,
   chatHistorySchema,
   chatRenameSchema,
   chatSchema,
@@ -49,6 +50,7 @@ import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ChatBookmarkApi,
+  ChatDeleteApi,
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
@@ -150,6 +152,7 @@ export const AppRoutes = app
     ChatBookmarkApi,
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
+  .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
@@ -273,7 +276,7 @@ app.get(
         existingUser.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken)
-      return c.redirect('/')
+      return c.redirect("/")
     }
 
     // check if workspace exists
@@ -297,7 +300,7 @@ app.get(
         user.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken)
-      return c.redirect('/')
+      return c.redirect("/")
     }
 
     // we could not find the user and the workspace
@@ -324,7 +327,7 @@ app.get(
       userAcc.workspaceExternalId,
     )
     setCookieByEnv(c, CookieName, jwtToken)
-    return c.redirect('/')
+    return c.redirect("/")
   },
 )
 

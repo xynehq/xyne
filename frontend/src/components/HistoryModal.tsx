@@ -1,8 +1,14 @@
 import { api } from "@/api"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { MoreHorizontal, X } from "lucide-react"
-import { useRouter } from "@tanstack/react-router"
+import { Trash2, MoreHorizontal, X } from "lucide-react"
+import { useNavigate, useRouter } from "@tanstack/react-router"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 
 const fetchChats = async () => {
   let items = []
@@ -21,6 +27,9 @@ const HistoryModal = ({
   onClose,
   pathname,
 }: { onClose: () => void; pathname: string }) => {
+  const queryClient = useQueryClient()
+  const navigate = useNavigate({ from: "/" })
+
   const router = useRouter()
   const {
     isPending,
@@ -30,16 +39,47 @@ const HistoryModal = ({
     queryKey: ["all-connectors"],
     queryFn: fetchChats,
   })
+
+  let existingChatId = ""
+  if (pathname.startsWith("/chat/")) {
+    existingChatId = pathname.substring(6)
+  }
+
+  const deleteChat = async (chatId: string): Promise<string> => {
+    const res = await api.chat.delete.$post({
+      json: { chatId },
+    })
+    if (!res.ok) throw new Error("Error deleting chat")
+    return chatId
+  }
+
+  const mutation = useMutation<string, Error, string>({
+    mutationFn: deleteChat,
+    onSuccess: (chatId: string) => {
+      // Update the UI by removing the deleted chat
+      queryClient.setQueryData<SelectPublicChat[]>(
+        ["all-connectors"],
+        (oldChats) =>
+          oldChats ? oldChats.filter((chat) => chat.externalId !== chatId) : [],
+      )
+
+      // If the deleted chat is opened and it's deleted, then user should be taken back to '/'
+      if (existingChatId === chatId) {
+        navigate({ to: "/" })
+      }
+    },
+    onError: (error: Error) => {
+      console.error("Failed to delete chat:", error)
+    },
+  })
+
   if (error) {
     return <p>Something went wrong...</p>
   }
   if (isPending) {
     return <p>Loading...</p>
   }
-  let existingChatId = ""
-  if (pathname.startsWith("/chat/")) {
-    existingChatId = pathname.substring(6)
-  }
+
   return (
     <div className="fixed left-[58px] top-0 max-w-sm w-[300px] h-[calc(100%-18px)] m-[6px] bg-[#F7FAFC] border-[0.5px] border-[#D7E0E9] rounded-[12px] flex flex-col select-none">
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
@@ -72,10 +112,28 @@ const HistoryModal = ({
               >
                 {item.title}
               </span>
-              <MoreHorizontal
-                size={16}
-                className="invisible group-hover:visible mr-[10px] cursor-pointer"
-              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <MoreHorizontal
+                    size={16}
+                    className={
+                      "invisible group-hover:visible mr-[10px] cursor-pointer"
+                    }
+                  />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem
+                    key={"delete"}
+                    className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                    onClick={() => {
+                      mutation.mutate(item?.externalId)
+                    }}
+                  >
+                    <Trash2 size={16} className="text-red-500" />
+                    <span className="text-red-500">Delete</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </li>
           ))}
         </ul>

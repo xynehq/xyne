@@ -31,6 +31,8 @@ import {
 } from "@/ai/provider/bedrock"
 import config from "@/config"
 import {
+  deleteChatByExternalId,
+  deleteMessagesByChatId,
   getChatByExternalId,
   getPublicChats,
   insertChat,
@@ -185,6 +187,25 @@ export const ChatRenameApi = async (c: Context) => {
     Logger.error(`Chat Rename Error: ${errMsg} ${(error as Error).stack}`)
     throw new HTTPException(500, {
       message: "Could not rename chat",
+    })
+  }
+}
+
+export const ChatDeleteApi = async (c: Context) => {
+  try {
+    // @ts-ignore
+    const { chatId } = c.req.valid("json")
+    await db.transaction(async (tx) => {
+      // First will have to delete all messages associated with that chat
+      await deleteMessagesByChatId(tx, chatId)
+      await deleteChatByExternalId(tx, chatId)
+    })
+    return c.json({ success: true })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Chat Delete Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not delete chat",
     })
   }
 }
