@@ -8,6 +8,7 @@ import {
   type VespaEventSearch,
   type VespaFileSearch,
   type VespaMailSearch,
+  type VespaSearchResults,
   type VespaUser,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
@@ -17,13 +18,17 @@ import pc from "picocolors"
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
-const maxSummaryChunks = 3
 
 // Function for handling file context
 const constructFileContext = (
   fields: VespaFileSearch,
   relevance: number,
+  maxSummaryChunks?: number
 ): string => {
+
+  if(!maxSummaryChunks) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
@@ -54,7 +59,11 @@ vespa relevance score: ${relevance}`
 const constructMailContext = (
   fields: VespaMailSearch,
   relevance: number,
+  maxSummaryChunks?: number
 ): string => {
+  if(!maxSummaryChunks) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
@@ -255,14 +264,15 @@ export const answerColoredContextMap = (
 
 type AiContext = string
 export const answerContextMap = (
-  searchResult: z.infer<typeof VespaSearchResultsSchema>,
+  searchResult: VespaSearchResults,
+  maxSummaryChunks?: number,
 ): AiContext => {
   if (searchResult.fields.sddocname === fileSchema) {
-    return constructFileContext(searchResult.fields, searchResult.relevance)
+    return constructFileContext(searchResult.fields, searchResult.relevance, maxSummaryChunks)
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
-    return constructMailContext(searchResult.fields, searchResult.relevance)
+    return constructMailContext(searchResult.fields, searchResult.relevance, maxSummaryChunks)
   } else if (searchResult.fields.sddocname === eventSchema) {
     return constructEventContext(searchResult.fields, searchResult.relevance)
   } else {
@@ -340,7 +350,7 @@ export const userContext = ({
   const now = new Date()
   const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
   const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
-  return `My Name: ${user.name}
+  return `My Name is ${user.name}
 Email: ${user.email}
 Company: ${workspace.name}
 Company domain: ${workspace.domain}
