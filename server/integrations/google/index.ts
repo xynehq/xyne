@@ -412,6 +412,9 @@ const insertCalendarEvents = async (
   // To get all events from current Date to One Year later
   nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
 
+
+  // we will fetch from one year back
+  currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
   do {
     const res = await calendar.events.list({
       calendarId: "primary",
