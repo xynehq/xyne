@@ -141,3 +141,11 @@ export const retryWithBackoff = async <T>(
     }
   }
 }
+
+
+export const splitGroupedCitationsWithSpaces = (text: string): string => {
+  return text.replace(/\[([0-9,\s]+)\]/g, (match, group) => {
+    const numbers = group.split(',').map((n: string) => n.trim())
+    return numbers.map((num:number) => `[${num}]`).join(' ')
+  })
+}

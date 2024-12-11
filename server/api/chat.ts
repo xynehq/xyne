@@ -443,6 +443,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         null,
         latestIds,
       )
+      if(!results.root.children) {
+        results.root.children = []
+      }
       results.root.children = results.root.children.concat(latestResults)
     } else {
       results = await searchVespa(
