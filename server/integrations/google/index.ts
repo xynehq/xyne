@@ -412,6 +412,9 @@ const insertCalendarEvents = async (
   // To get all events from current Date to One Year later
   nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
 
+
+  // we will fetch from one year back
+  currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
   do {
     const res = await calendar.events.list({
       calendarId: "primary",
@@ -1141,7 +1144,6 @@ const insertFilesForUser = async (
       }
 
       Logger.info(`finished ${pageFiles.length} files`)
-      Bun.gc(true)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -1451,18 +1453,27 @@ export const downloadPDF = async (
   drive: drive_v3.Drive,
   fileId: string,
   fileName: string,
-) => {
+): Promise<void> => {
   const filePath = path.join(downloadDir, fileName)
   const file = Bun.file(filePath)
   const writer = file.writer()
   const res = await drive.files.get(
     { fileId: fileId, alt: "media" },
-    { responseType: "arraybuffer" },
+    { responseType: "stream" },
   )
-
-  writer.write(Buffer.from(res.data as ArrayBuffer))
-  await writer.end()
-  Bun.gc(true)
+  return new Promise((resolve, reject) => {
+    res.data.on("data", (chunk) => {
+      writer.write(chunk);
+    });
+    res.data.on("end", () => {
+      writer.end();
+      resolve();
+    });
+    res.data.on("error", (err) => {
+      writer.end();
+      reject(err);
+    });
+  });
 }
 
 // Helper function for safer PDF loading

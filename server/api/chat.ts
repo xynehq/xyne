@@ -4,7 +4,6 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
-import { parse, Allow, STR, ARR, OBJ } from "partial-json"
 import {
   analyzeInitialResultsOrRewrite,
   analyzeInitialResultsOrRewriteV2,
@@ -12,22 +11,28 @@ import {
   analyzeQueryMetadata,
   answerOrSearch,
   askQuestionWithCitations,
+  baselineRAGJsonStream,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
   listItems,
   Models,
   QueryCategory,
+  queryRewriter,
   QueryType,
   routeQuery,
   SearchAnswerResponse,
+  temporalEventClassification,
   userChat,
   type ConverseResponse,
   type ListItemRouterResponse,
   type QueryRouterResponse,
   type ResultsOrRewrite,
+  type TemporalClassifier,
 } from "@/ai/provider/bedrock"
 import config from "@/config"
 import {
+  deleteChatByExternalId,
+  deleteMessagesByChatId,
   getChatByExternalId,
   getPublicChats,
   insertChat,
@@ -78,9 +83,12 @@ import {
   MailEntity,
   mailSchema,
   userSchema,
+  type VespaEventSearch,
   type VespaFile,
   type VespaMail,
+  type VespaMailSearch,
   type VespaSearchResponse,
+  type VespaSearchResult,
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
@@ -183,6 +191,25 @@ export const ChatRenameApi = async (c: Context) => {
   }
 }
 
+export const ChatDeleteApi = async (c: Context) => {
+  try {
+    // @ts-ignore
+    const { chatId } = c.req.valid("json")
+    await db.transaction(async (tx) => {
+      // First will have to delete all messages associated with that chat
+      await deleteMessagesByChatId(tx, chatId)
+      await deleteChatByExternalId(tx, chatId)
+    })
+    return c.json({ success: true })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Chat Delete Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not delete chat",
+    })
+  }
+}
+
 export const ChatHistory = async (c: Context) => {
   try {
     const { sub } = c.get(JwtPayloadKey)
@@ -275,430 +302,365 @@ const processMessage = (text: string, citationMap: Record<number, number>) => {
   })
 }
 
-const chunkToParsed = async <T>(
-  iterator: AsyncIterableIterator<ConverseResponse>,
-): Promise<{ parsed: T; costArr: number[] }> => {
-  let buffer = ""
-  let parsed: T = {} as T
-  const costArr: number[] = []
-
-  for await (const chunk of iterator) {
-    try {
-      if (chunk.text) {
-        buffer += chunk.text
-        if (!buffer.trim()) {
-          continue
-        }
-        parsed = jsonParseLLMOutput(buffer) as T
-      }
-      if (chunk.cost) {
-        costArr.push(chunk.cost)
-      }
-    } catch (e) {
-      continue
-    }
-  }
-  return { parsed, costArr }
-}
-
-async function* getListData(
-  email: string,
-  query: string,
-  userCtx: string,
-  result: ListItemRouterResponse,
-  messages?: Message[],
-): AsyncIterableIterator<any> {
-  let schema = ""
-  if (result.filters.app === Apps.GoogleCalendar) {
-    schema = eventSchema
-  } else if (result.filters.app === Apps.GoogleDrive) {
-    if (
-      result.filters.entity === GooglePeopleEntity.AdminDirectory ||
-      result.filters.entity === GooglePeopleEntity.Contacts ||
-      result.filters.entity === GooglePeopleEntity.OtherContacts
-    ) {
-      schema = userSchema
-    } else {
-      schema = fileSchema
-    }
-  } else if (result.filters.app === Apps.Gmail) {
-    schema = mailSchema
-  } else if (result.filters.app === Apps.GoogleWorkspace) {
-    schema = userSchema
-  }
-  if (schema) {
-    let timestampRange: { from: number | null; to: number | null } = {
-      from: null,
-      to: null,
-    }
-    if (result.filters.startTime) {
-      timestampRange.from = new Date(result.filters.startTime).getTime()
-    }
-    if (result.filters.endTime) {
-      timestampRange.to = new Date(result.filters.endTime).getTime()
-    }
-    const vespaResults = await getItems({
-      schema,
-      app: result.filters.app,
-      entity: result.filters.entity,
-      timestampRange,
-      limit: result.filters.count,
-      offset: 0,
-      email,
-    })
-    if (vespaResults.root.children) {
-      const listContext = vespaResults.root.children
-        .map((v, i) =>
-          cleanContext(
-            `Index ${i} \n ${answerMetadataContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
-          ),
-        )
-        .join("\n\n")
-      yield* listItems(query, userCtx, listContext, {
-        modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-        stream: true,
-        messages,
-      })
-    } else {
-      yield { text: "Could not list, no results found" }
-    }
-  } else {
-    yield { text: "Could not list, no results found" }
-  }
-}
-
-// Function: answerUsingSearch
-async function* answerUsingSearch(
-  message: string,
-  userCtx: string,
-  results: VespaSearchResponse,
-  modelId: Models,
-): AsyncIterableIterator<{
-  text?: string
-  parsed?: ResultsOrRewrite
-  costArr?: number[]
-  initialContext?: string
-  ctx?: string
-}> {
-  let costArr: number[] = []
-  const initialContext = cleanContext(
-    results.root.children
-      .map(
-        (v, i) =>
-          `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
-      )
-      .join("\n"),
-  )
-
-  const iterator = analyzeInitialResultsOrRewriteV2(
-    message,
-    initialContext,
-    userCtx,
-    {
-      modelId,
-      stream: true,
-      json: true,
-    },
-  )
-
-  let buffer = ""
-  for await (const chunk of iterator) {
-    if (chunk.text) {
-      buffer += chunk.text
-      try {
-        const parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
-        yield {
-          text: chunk.text,
-          parsed,
-          costArr,
-          initialContext,
-          ctx: userCtx,
-        }
-      } catch (e) {
-        // Handle partial JSON parsing
-        continue
-      }
-    }
-    if (chunk.cost) {
-      costArr.push(chunk.cost)
-    }
-  }
-}
-
-// Function: regularRAGPipeline
-async function* regularRAGPipeline(
-  email: string,
+async function* generateIterativeTimeFilterAndQueryRewrite(
   input: string,
+  email: string,
   userCtx: string,
-  results: VespaSearchResponse,
-  modelId: Models,
-): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
+  alpha: number = 0.5,
+  pageSize: number = 10,
+  maxPageNumber: number = 3,
+  maxSummaryCount: number | undefined,
+): AsyncIterableIterator<ConverseResponse> {
+  // we are not going to do time expansion
+  // we are going to do 4 months answer
+  // if not found we go back to iterative page search
   const message = input
-  const pageSize = 10
-  let costArr: number[] = []
-  let initialContext = ""
-  let ctx = userCtx
-  let currentAnswer = ""
+  let output = { answer: "", costArr: [], retrievedItems: [] }
 
-  // Step 1: Try to get an answer using the initial search results
-  let answerIterator = answerUsingSearch(message, userCtx, results, modelId)
+  const monthInMs = 30 * 24 * 60 * 60 * 1000
+  const latestResults = (
+    await searchVespa(message, email, null, null, pageSize, 0, alpha, {
+      from: new Date().getTime() - 4 * monthInMs,
+      to: new Date().getTime(),
+    })
+  ).root.children
 
-  let buffer = ""
+  const latestIds = latestResults
+    .map((v: VespaSearchResult) => (v?.fields as any).docId)
+    .filter((v) => !!v)
 
-  for await (const chunk of answerIterator) {
-    if (chunk.text) {
-      buffer += chunk.text
-      try {
-        const parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
-
-        if (parsed.answer && currentAnswer !== parsed.answer) {
-          const newText = parsed.answer.slice(currentAnswer.length)
-          yield { text: newText }
-          currentAnswer = parsed.answer
-        }
-      } catch (e) {
-        continue
-      }
-    }
-
-    if (chunk.costArr) {
-      costArr = [...costArr, ...chunk.costArr]
-    }
-    if (chunk.initialContext) {
-      initialContext = chunk.initialContext
-    }
-    if (chunk.ctx) {
-      ctx = chunk.ctx
-    }
-  }
-
-  // Step 2: If no answer, perform additional searches and try again
-  if (!currentAnswer) {
-    for (let offsetMultiplier = 1; offsetMultiplier <= 2; offsetMultiplier++) {
-      const newResults = await searchVespa(
+  for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
+    // should only do it once
+    if (pageNumber === Math.floor(maxPageNumber / 2)) {
+      // get the first page of results
+      let results = await searchVespa(
         message,
         email,
         null,
         null,
         pageSize,
-        pageSize * offsetMultiplier,
+        0,
+        alpha,
       )
+      const initialContext = cleanContext(
+        results.root.children
+          .map(
+            (v, i) =>
+              `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+          )
+          .join("\n"),
+      )
+      const queryResp = await queryRewriter(input, userCtx, initialContext, {
+        modelId: defaultBestModel,
+        stream: false,
+      })
+      const queries = queryResp.queries
+      for (const query of queries) {
+        const latestResults: VespaSearchResult[] = (
+          await searchVespa(query, email, null, null, pageSize, 0, alpha, {
+            from: new Date().getTime() - 4 * monthInMs,
+            to: new Date().getTime(),
+          })
+        ).root.children
 
-      answerIterator = answerUsingSearch(message, userCtx, newResults, modelId)
+        let results = await searchVespa(
+          query,
+          email,
+          null,
+          null,
+          pageSize,
+          0,
+          alpha,
+          null,
+          latestResults
+            .map((v: VespaSearchResult) => (v.fields as any).docId)
+            .filter((v) => !!v),
+        )
+        const initialContext = cleanContext(
+          results.root.children
+            .concat(latestResults)
+            .map(
+              (v, i) =>
+                `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            )
+            .join("\n"),
+        )
 
-      buffer = ""
-      currentAnswer = ""
-
-      for await (const chunk of answerIterator) {
-        if (chunk.text) {
-          buffer += chunk.text
-          try {
-            const parsed = jsonParseLLMOutput(buffer) as ResultsOrRewrite
-
-            if (parsed.answer && currentAnswer !== parsed.answer) {
-              const newText = parsed.answer.slice(currentAnswer.length)
-              yield { text: newText }
-              currentAnswer = parsed.answer
+        const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
+          stream: true,
+          modelId: defaultBestModel,
+        })
+        let buffer = ""
+        let currentAnswer = ""
+        let parsed = { answer: "" }
+        for await (const chunk of iterator) {
+          if (chunk.text) {
+            buffer += chunk.text
+            try {
+              parsed = jsonParseLLMOutput(buffer)
+              if (parsed.answer === null) {
+                break
+              }
+              if (parsed.answer && currentAnswer !== parsed.answer) {
+                if (currentAnswer === "") {
+                  // First valid answer - send the whole thing
+                  yield { text: parsed.answer }
+                } else {
+                  // Subsequent chunks - send only the new part
+                  const newText = parsed.answer.slice(currentAnswer.length)
+                  yield { text: newText }
+                }
+                currentAnswer = parsed.answer
+                // const newText = parsed.answer.slice(currentAnswer.length)
+                // yield { text: newText }
+                // currentAnswer = parsed.answer
+                // return
+              }
+            } catch (e) {
+              continue
             }
-          } catch (e) {
-            continue
+          }
+          if (chunk.cost) {
+            yield { cost: chunk.cost }
           }
         }
-
-        if (chunk.costArr) {
-          costArr = [...costArr, ...chunk.costArr]
-        }
-        if (chunk.initialContext) {
-          initialContext = chunk.initialContext
-        }
-        if (chunk.ctx) {
-          ctx = chunk.ctx
+        if (parsed.answer) {
+          return
         }
       }
-
-      if (currentAnswer) {
-        break
-      }
-    }
-  }
-
-  // Step 3: If still no answer, handle rewritten queries
-  // You can implement additional logic here if needed
-}
-
-// Function: findAnswerWithTimeRangeExpansion
-async function* findAnswerWithTimeRangeExpansion(
-  email: string,
-  userCtx: string,
-  userQuery: string,
-  maxIterations: number = 3,
-  messages?: Message[],
-): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
-  const pageSize = 6
-  const now = new Date().getTime()
-
-  // Time range configuration (in milliseconds)
-  const monthInMs = 30 * 24 * 60 * 60 * 1000
-  const initialRange = 3 * monthInMs
-  const rangeIncrement = 3 * monthInMs
-  const maxRange = 12 * monthInMs
-
-  let context: any[] = []
-  let iterations = 0
-  let costArr: number[] = []
-  let seenDocIds = new Set<string>()
-  let currentTimeRange = initialRange
-  let currentQueries = [userQuery]
-  let currentAnswer = ""
-
-  while (iterations < maxIterations) {
-    let newResults: any[] = []
-    const timeRange = {
-      from: now - currentTimeRange,
-      to: now,
     }
 
-    // Search with all current queries
-    for (const query of currentQueries) {
-      const results = await searchVespa(
-        query,
+    let results: VespaSearchResponse
+    if (pageNumber === 0) {
+      results = await searchVespa(
+        message,
         email,
         null,
         null,
         pageSize,
-        0,
-        timeRange,
-        Array.from(seenDocIds),
-        nonWorkMailLabels,
+        pageNumber * pageSize,
+        alpha,
+        null,
+        latestIds,
       )
-
-      if (results.root.children) {
-        results.root.children.forEach((child) => seenDocIds.add(child.id))
-        newResults.push(...results.root.children)
-      }
+      results.root.children = results.root.children.concat(latestResults)
+    } else {
+      results = await searchVespa(
+        message,
+        email,
+        null,
+        null,
+        pageSize,
+        pageNumber * pageSize,
+        alpha,
+      )
     }
-
-    // Update context with new results
-    context = [...context, ...newResults]
-
-    const contextString = cleanContext(
-      context
+    const initialContext = cleanContext(
+      results.root.children
         .map(
           (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
+            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
         .join("\n"),
     )
 
-    const iterator = answerOrSearch(userQuery, contextString, userCtx, {
-      modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-      json: true,
+    const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
-      messages,
+      modelId: defaultBestModel,
     })
 
     let buffer = ""
-    let out: z.infer<typeof SearchAnswerResponse> | null = null
+    let currentAnswer = ""
+
+    let parsed = { answer: "" }
 
     for await (const chunk of iterator) {
       if (chunk.text) {
         buffer += chunk.text
         try {
-          out = jsonParseLLMOutput(buffer) as z.infer<
-            typeof SearchAnswerResponse
-          >
-
-          if (
-            out.answer &&
-            out.answer.length > 1 &&
-            currentAnswer !== out.answer
-          ) {
-            const newText = out.answer.slice(currentAnswer.length)
-            yield { text: newText }
-            currentAnswer = out.answer
+          parsed = jsonParseLLMOutput(buffer)
+          if (parsed.answer === null) {
+            break
+          }
+          if (parsed.answer && currentAnswer !== parsed.answer) {
+            if (currentAnswer === "") {
+              // First valid answer - send the whole thing
+              yield { text: parsed.answer }
+            } else {
+              // Subsequent chunks - send only the new part
+              const newText = parsed.answer.slice(currentAnswer.length)
+              yield { text: newText }
+            }
+            currentAnswer = parsed.answer
+            // const newText = parsed.answer.slice(currentAnswer.length)
+            // yield { text: newText }
+            // currentAnswer = parsed.answer
+            // return
           }
         } catch (e) {
           continue
         }
       }
       if (chunk.cost) {
-        costArr.push(chunk.cost)
+        yield { cost: chunk.cost }
       }
     }
+    if (parsed.answer) {
+      return
+    }
+  }
+  yield { text: "I don't know" }
+}
 
-    if (currentAnswer) {
-      // Answer found, yield citations if any
-      yield { citations: out?.citations ?? [] }
-      break
+async function* generatePointQueryTimeExpansion(
+  input: string,
+  classification: TemporalClassifier & { cost: number },
+  email: string,
+  userCtx: string,
+  alpha: number,
+  pageSize: number = 10,
+  maxSummaryCount: number | undefined,
+): AsyncIterableIterator<ConverseResponse & { retrievedItems?: any[] }> {
+  const message = input
+  const maxIterations = 10
+  const weekInMs = 12 * 24 * 60 * 60 * 1000
+  const direction = classification.direction
+  let costArr: number[] = [classification.cost]
+
+  let from = new Date().getTime()
+  let to = new Date().getTime()
+  let lastSearchedTime = direction === "prev" ? from : to
+
+  for (let iteration = 0; iteration < maxIterations; iteration++) {
+    const windowSize = (2 + iteration) * weekInMs
+
+    if (direction === "prev") {
+      to = lastSearchedTime
+      from = to - windowSize
+      lastSearchedTime = from
+    } else {
+      from = lastSearchedTime
+      to = from + windowSize
+      lastSearchedTime = to
     }
 
-    // At 50% of max iterations, attempt regularRAGPipeline approach
-    if (iterations === Math.floor(maxIterations / 2)) {
-      const ragResults = await searchVespa(
-        userQuery,
+    Logger.info(
+      `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
+    )
+
+    // Search in both calendar events and emails
+    const [eventResults, results] = await Promise.all([
+      searchVespa(
+        message,
+        email,
+        Apps.GoogleCalendar,
+        null,
+        pageSize,
+        0,
+        alpha,
+        { from, to },
+      ),
+      searchVespa(
+        message,
         email,
         null,
         null,
         pageSize,
         0,
-        null,
-        Array.from(seenDocIds),
-        nonWorkMailLabels,
-      )
+        alpha,
+        { to, from },
+        ["CATEGORY_PROMOTIONS", "UNREAD"],
+      ),
+    ])
 
-      const pipelineIterator = regularRAGPipeline(
-        email,
-        userQuery,
-        userCtx,
-        ragResults,
-        ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-      )
+    if (!results.root.children && !eventResults.root.children) {
+      continue
+    }
 
-      let pipelineAnswer = ""
+    // Combine and filter results
+    const combinedResults = {
+      root: {
+        children: [
+          ...(results.root.children || []),
+          ...(eventResults.root.children || []),
+        ].filter(
+          (v: VespaSearchResult) =>
+            (v.fields as VespaMailSearch).app === Apps.Gmail ||
+            (v.fields as VespaEventSearch).app === Apps.GoogleCalendar,
+        ),
+      },
+    }
 
-      for await (const response of pipelineIterator) {
-        if (response.text) {
-          yield { text: response.text }
-          pipelineAnswer += response.text
-        }
-        if (response.citations) {
-          yield { citations: response.citations }
-          break
+    if (!combinedResults.root.children.length) {
+      Logger.info("No gmail or calendar events found")
+      continue
+    }
+
+    // Prepare context for LLM
+    const initialContext = cleanContext(
+      combinedResults.root.children
+        .map(
+          (v, i) =>
+            `Index ${i}: \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+        )
+        .join("\n"),
+    )
+
+    // Stream LLM response
+    const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+      stream: true,
+      modelId: defaultBestModel,
+    })
+
+    let buffer = ""
+    let currentAnswer = ""
+    let parsed = { answer: "" }
+
+    for await (const chunk of iterator) {
+      if (chunk.text) {
+        buffer += chunk.text
+        try {
+          parsed = jsonParseLLMOutput(buffer)
+          // If we have a null answer, break this inner loop and continue outer loop
+          if (parsed.answer === null) {
+            break
+          }
+
+          // If we have an answer and it's different from what we've seen
+          if (parsed.answer && currentAnswer !== parsed.answer) {
+            if (currentAnswer === "") {
+              // First valid answer - send the whole thing
+              yield { text: parsed.answer }
+            } else {
+              // Subsequent chunks - send only the new part
+              const newText = parsed.answer.slice(currentAnswer.length)
+              yield { text: newText }
+            }
+            currentAnswer = parsed.answer
+            // const newText = parsed.answer.slice(currentAnswer.length)
+            // yield { text: newText }
+            // currentAnswer = parsed.answer
+          }
+        } catch (e) {
+          // If we can't parse the JSON yet, continue accumulating
+          continue
         }
       }
 
-      if (pipelineAnswer) {
-        // Answer found via regularRAGPipeline, break out of loop
-        break
+      if (chunk.cost) {
+        costArr.push(chunk.cost)
+        yield { cost: chunk.cost }
       }
     }
-
-    if (!out) {
-      throw new Error("Invalid object while streaming")
+    if (parsed.answer) {
+      return
     }
+  }
 
-    // Keep useful context
-    if (out.usefulIndex && out.usefulIndex.length > 0) {
-      context = context.filter((_, i) => out.usefulIndex.includes(i))
-    } else {
-      context = []
-    }
-
-    // Update queries for next iteration
-    if (out.searchQueries && out.searchQueries.length > 0) {
-      currentQueries = out.searchQueries
-    } else if (currentTimeRange < maxRange) {
-      // If no new queries suggested, expand time range and revert to original query
-      currentTimeRange += rangeIncrement
-      currentQueries = [userQuery]
-      // console.log(
-      //   `Expanding time range to ${currentTimeRange / monthInMs} months`,
-      // );
-    } else {
-      break
-    }
-
-    iterations++
+  // If we've exhausted all iterations without finding an answer
+  yield {
+    text: "I could not find any information to answer it, please change your query",
+    cost: costArr.reduce((a, b) => a + b, 0),
   }
 }
 
@@ -706,54 +668,32 @@ export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
   message: string,
-  routerResponse: { result: QueryRouterResponse; cost: number },
+  classification: TemporalClassifier & { cost: number },
   messages?: Message[],
 ): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
-  // we are removing the most recent message that was inserted
-  // that is the user message, we will append our own
-  messages = messages?.splice(0, messages.length - 1)
-  const { result, cost } = routerResponse
-  if (result.type === QueryType.RetrieveInformation) {
-    let filters: { startTime: number | null; endTime: number | null } = {
-      startTime: null,
-      endTime: null,
-    }
-    if (result.filters && result.filters.startTime && result.filters.endTime) {
-      if (result.filters.startTime) {
-        filters.startTime = new Date(result.filters.startTime).getTime()
-      }
-      if (result.filters.endTime) {
-        filters.endTime = new Date(result.filters.endTime).getTime()
-      }
-      yield* findAnswerWithinTimeRange(email, userCtx, message, filters)
-    } else {
-      yield* findAnswerWithTimeRangeExpansion(
-        email,
-        userCtx,
-        message,
-        8,
-        messages,
-      )
-    }
-  } else if (result.type === QueryType.ListItems) {
-    yield* getListData(email, message, userCtx, result, messages)
-    // }
-    // else if (result.type === QueryType.RetrieveMetadata) {
-    //   yield {
-    //     text: "Operation to retrieve a single item's metadata is not supported yet",
-    //   }
+  // user is talking about an event
+  if (classification.direction !== null) {
+    return yield* generatePointQueryTimeExpansion(
+      message,
+      classification,
+      email,
+      userCtx,
+      0.5,
+      20,
+      3,
+    )
   } else {
-    yield { text: "Apologies I didn't understand" }
+    // default case
+    return yield* generateIterativeTimeFilterAndQueryRewrite(
+      message,
+      email,
+      userCtx,
+      0.5,
+      20,
+      3,
+      5,
+    )
   }
-}
-
-async function* findAnswerWithinTimeRange(
-  email: string,
-  userCtx: string,
-  userQuery: string,
-  filters: { startTime: number | null; endTime: number | null },
-): AsyncIterableIterator<ConverseResponse> {
-  return yield { text: "Not yet implemented", cost: 0 }
 }
 
 export const MessageApiV2 = async (c: Context) => {
@@ -773,24 +713,16 @@ export const MessageApiV2 = async (c: Context) => {
     }
     message = decodeURIComponent(message)
 
-    const [userAndWorkspace] = await Promise.all([
-      getUserAndWorkspaceByEmail(db, workspaceId, email),
-      // searchVespa(message, email, null, null, config.answerPage, 0, null, [], nonWorkMailLabels),
-    ])
-    const results = { root: { children: [] } }
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
     const { user, workspace } = userAndWorkspace
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
-    const initialContext = cleanContext(
-      results.root.children
-        .map(
-          (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>)}`,
-        )
-        .join("\n"),
-    )
 
     let title = ""
     if (!chatId) {
@@ -833,7 +765,7 @@ export const MessageApiV2 = async (c: Context) => {
       messages.push(insertedMsg) // Add the inserted message to messages array
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
-        async (tx) => {
+        async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
           let existingChat = await updateChatByExternalId(db, chatId, {})
           let allMessages = await getChatMessages(tx, chatId)
@@ -875,21 +807,16 @@ export const MessageApiV2 = async (c: Context) => {
             }),
           })
 
-          const routerResp = await routeQuery(message, {
-            modelId: ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
-            stream: false,
-            messages: messages
-              .map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              }))
-              .slice(0, messages.length - 1), // removing the last one as we append ourselves inside route Query
-          })
+          const classification: TemporalClassifier & { cost: number } =
+            await temporalEventClassification(message, {
+              modelId: ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
+              stream: false,
+            })
           const iterator = UnderstandMessageAndAnswer(
             email,
             ctx,
             message,
-            routerResp,
+            classification,
             messages.map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
@@ -917,29 +844,6 @@ export const MessageApiV2 = async (c: Context) => {
               citations = chunk.citations
             }
           }
-          // let minimalContextChunks: Citation[] = []
-          // const citationMap: Record<number, number> = {}
-          // // TODO: this is not done yet
-          // // we need to send all of it
-          // if (parsed.citations) {
-          //   currentCitations = parsed.citations
-
-          //   currentCitations.forEach((v, i) => {
-          //     citationMap[v] = i
-          //   })
-          //   minimalContextChunks = searchToCitation(
-          //     results.root.children.filter((_, i) =>
-          //       currentCitations.includes(i),
-          //     ) as z.infer<typeof VespaSearchResultsSchema>[],
-          //   )
-          //   await stream.writeSSE({
-          //     event: ChatSSEvents.CitationsUpdate,
-          //     data: JSON.stringify({
-          //       contextChunks: minimalContextChunks,
-          //       citationMap,
-          //     }),
-          //   })
-          // }
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1050,6 +954,7 @@ export const MessageApi = async (c: Context) => {
         null,
         config.answerPage,
         0,
+        0.5,
         null,
         [],
         nonWorkMailLabels,
@@ -1269,6 +1174,7 @@ export const MessageApi = async (c: Context) => {
                     null,
                     5,
                     0,
+                    0.5,
                     null,
                     results.root.children.map(
                       (v) =>
@@ -1503,6 +1409,7 @@ export const MessageRetryApi = async (c: Context) => {
               null,
               config.answerPage,
               0,
+              0.5,
               null,
               [],
               nonWorkMailLabels,
@@ -1617,6 +1524,7 @@ export const MessageRetryApi = async (c: Context) => {
                       null,
                       5,
                       0,
+                      0.5,
                       null,
                       results.root.children.map(
                         (v) =>

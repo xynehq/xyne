@@ -333,7 +333,8 @@ export const VespaSearchResultsSchema = z.object({
   pathId: z.string().optional(),
 })
 
-export type VespaSearchResults = z.infer<typeof VespaSearchResultSchema>
+export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>
+export type VespaSearchResults = z.infer<typeof VespaSearchResultsSchema>
 
 const VespaGetResultSchema = z.object({
   id: z.string(),
@@ -400,7 +401,6 @@ const VespaSearchResultSchema = z.union([
   VespaSearchResultsSchema,
   VespaGroupSchema,
 ])
-export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>
 
 const VespaSearchResponseSchema = VespaRootBaseSchema.extend({
   root: VespaRootBaseSchema.shape.root.extend({

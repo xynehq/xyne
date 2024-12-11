@@ -21,6 +21,7 @@ import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
 import { Apps, entitySchema } from "@/search/types"
+import { userContext } from "../context"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -38,7 +39,12 @@ export enum Models {
   CohereCmdRPlus = "cohere.command-r-plus-v1:0",
   CohereCmdR = "cohere.command-r-v1:0",
   Claude_3_5_SonnetV2 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+  Claude_3_5_Sonnet = "anthropic.claude-3-5-sonnet-20240620-v1:0",
   Claude_3_5_Haiku = "anthropic.claude-3-5-haiku-20241022-v1:0",
+  Amazon_Nova_Micro = "amazon.nova-micro-v1:0",
+  Amazon_Nova_Lite = "amazon.nova-lite-v1:0",
+  Amazon_Nova_Pro = "amazon.nova-pro-v1:0",
+  Mistral_Large = "mistral.mistral-large-2402-v1:0",
 }
 
 type Cost = {
@@ -186,6 +192,19 @@ export const modelDetailsMap: Record<
       },
     },
   },
+  [Models.Claude_3_5_Sonnet]: {
+    name: "Claude 3.5 Sonnet",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.0015,
+        pricePerThousandOutputTokens: 0.0075,
+      },
+    },
+  },
   [Models.Claude_3_5_Haiku]: {
     name: "Claude 3.5 Haiku",
     cost: {
@@ -196,6 +215,54 @@ export const modelDetailsMap: Record<
       batch: {
         pricePerThousandInputTokens: 0.0005,
         pricePerThousandOutputTokens: 0.0025,
+      },
+    },
+  },
+  [Models.Amazon_Nova_Micro]: {
+    name: "Amazon Nova Micro",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.000035,
+        pricePerThousandOutputTokens: 0.00014,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.0000175,
+        pricePerThousandOutputTokens: 0.00007,
+      },
+    },
+  },
+  [Models.Amazon_Nova_Lite]: {
+    name: "Amazon Nova Lite",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.00006,
+        pricePerThousandOutputTokens: 0.00024,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.00003,
+        pricePerThousandOutputTokens: 0.00012,
+      },
+    },
+  },
+  [Models.Amazon_Nova_Pro]: {
+    name: "Amazon Nova Pro",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0008,
+        pricePerThousandOutputTokens: 0.0032,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.0004,
+        pricePerThousandOutputTokens: 0.0016,
+      },
+    },
+  },
+  [Models.Mistral_Large]: {
+    name: "Mistral Large (24.02)",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.004,
+        pricePerThousandOutputTokens: 0.012,
       },
     },
   },
@@ -585,7 +652,12 @@ const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
   [Models.CohereCmdR]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
+  [Models.Claude_3_5_Sonnet]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_Haiku]: AIProviders.AwsBedrock,
+  [Models.Amazon_Nova_Micro]: AIProviders.AwsBedrock,
+  [Models.Amazon_Nova_Lite]: AIProviders.AwsBedrock,
+  [Models.Amazon_Nova_Pro]: AIProviders.AwsBedrock,
+  [Models.Mistral_Large]: AIProviders.AwsBedrock,
 }
 
 const getProviderByModel = (modelId: Models): LLMProvider => {
@@ -1545,4 +1617,496 @@ ${context}`,
     : [baseMessage]
 
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+const baselinePrompt = (userContext: string, retrievedContext: string) => `You are an AI assistant with access to internal workspace data. You have access to the following types of data:
+1. Files (documents, spreadsheets, etc.)
+2. User profiles
+3. Emails
+4. Calendar events
+
+The context provided will be formatted with specific fields for each type:
+
+## File Context Format
+- App and Entity type
+- Title
+- Creation and update timestamps
+- Owner information
+- Mime type
+- Permissions
+- Content chunks
+- Relevance score
+
+## User Context Format
+- App and Entity type
+- Addition date
+- Name and email
+- Gender
+- Job title
+- Department
+- Location
+- Relevance score
+
+## Email Context Format
+- App and Entity type
+- Timestamp
+- Subject
+- From/To/Cc/Bcc
+- Labels
+- Content chunks
+- Relevance score
+
+## Event Context Format
+- App and Entity type
+- Event name and description
+- Location and URLs
+- Time information
+- Organizer and attendees
+- Recurrence patterns
+- Meeting links
+- Relevance score
+
+# User Context
+${userContext}
+This includes:
+- User's name and email
+- Company name and domain
+- Current time and date
+- Timezone
+
+# Retrieved Context
+${retrievedContext}
+
+# Guidelines for Response
+1. Data Interpretation:
+   - Consider the relevance scores when weighing information
+   - Pay attention to timestamps for temporal context
+   - Respect permission levels indicated in file contexts
+   - Note relationships between different content types
+
+2. Response Structure:
+   - Begin with the most relevant information
+   - Group related information from different sources
+   - Cite specific sources using their identifiers
+   - Maintain chronological order when relevant
+
+3. Privacy and Security:
+   - Do not share sensitive information marked in permissions
+   - Respect email confidentiality
+   - Handle personal information according to context
+   - Consider workspace domain restrictions
+
+4. Quality Assurance:
+   - Verify information across multiple sources when available
+   - Note any inconsistencies in the data
+   - Indicate confidence levels based on relevance scores
+   - Acknowledge any gaps in the available information
+
+# Response Format
+Analyze: [Brief analysis of the available context]
+Answer: [Direct response to the query]
+Sources: [List relevant sources with relevance scores]
+Confidence: [High/Medium/Low based on context quality]
+Suggestions: [Related queries or clarifications if needed]
+
+# Important Notes:
+- Always consider the user's role and permissions
+- Maintain professional tone appropriate for workspace context
+- Format dates relative to current user time
+- Clean and normalize any raw content as needed
+- Consider the relationship between different pieces of content
+
+# Error Handling
+If information is missing or unclear:
+1. Acknowledge the limitation
+2. Provide best available alternative
+3. Suggest ways to refine the search
+4. Note what additional context would be helpful`
+
+export const baselineRAG = async (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<{ text: string; cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = baselinePrompt(userCtx, retrievedCtx)
+  params.json = false
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+
+  if (text) {
+    return {
+      text,
+      cost: cost!,
+    }
+  } else {
+    throw new Error("No response from LLM")
+  }
+}
+
+const baselinePromptJson = (userContext: string, retrievedContext: string) => `You are an AI assistant with access to internal workspace data. You have access to the following types of data:
+1. Files (documents, spreadsheets, etc.)
+2. User profiles
+3. Emails
+4. Calendar events
+The context provided will be formatted with specific fields for each type:
+## File Context Format
+- App and Entity type
+- Title
+- Creation and update timestamps
+- Owner information
+- Mime type
+- Permissions, this field just shows who has access to what, nothing more
+- Content chunks
+- Relevance score
+## User Context Format
+- App and Entity type
+- Addition date
+- Name and email
+- Gender
+- Job title
+- Department
+- Location
+- Relevance score
+## Email Context Format
+- App and Entity type
+- Timestamp
+- Subject
+- From/To/Cc/Bcc
+- Labels
+- Content chunks
+- Relevance score
+## Event Context Format
+- App and Entity type
+- Event name and description
+- Location and URLs
+- Time information
+- Organizer and attendees
+- Recurrence patterns
+- Meeting links
+- Relevance score
+# Context of the user talking to you
+${userContext}
+This includes:
+- User's name and email
+- Company name and domain
+- Current time and date
+- Timezone
+# Retrieved Context
+${retrievedContext}
+# Guidelines for Response
+1. Data Interpretation:
+   - Consider the relevance scores when weighing information
+   - Pay attention to timestamps for temporal context
+   - Note relationships between different content types
+2. Response Structure:
+   - Begin with the most relevant information
+   - Group related information from different sources
+   - Cite specific sources using their identifiers
+   - Maintain chronological order when relevant
+3. Privacy and Security:
+   - Respect email confidentiality
+   - Handle personal information according to context
+   - Consider workspace domain restrictions
+4. Quality Assurance:
+   - Verify information across multiple sources when available
+   - Note any inconsistencies in the data
+   - Indicate confidence levels based on relevance scores
+   - Acknowledge any gaps in the available information
+# Response Format
+You must respond in valid JSON format with the following structure:
+{
+  "answer": "Direct response to the query found in context, null if not found",
+}
+# Important Notes:
+- Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
+- Maintain professional tone appropriate for workspace context
+- Format dates relative to current user time
+- Clean and normalize any raw content as needed
+- Consider the relationship between different pieces of content
+- If no clear answer is found in the retrieved context, set "answer" to null
+- Do not explain why you couldn't find the answer in the context, just set it to null
+- We want only 2 cases, either answer is found or we set it to null
+- No explanation why answer was not found in the context, just set it to null
+# Error Handling
+If information is missing or unclear: Set "answer" to null`
+
+interface AnswerResponse {
+  answer: string | null
+}
+
+export const baselineRAGJson = async (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<{ output: AnswerResponse; cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+  if (text) {
+    const parsedResponse = jsonParseLLMOutput(text)
+    return {
+      output: parsedResponse,
+      cost: cost!,
+    }
+  } else {
+    throw new Error("No response from LLM")
+  }
+}
+
+export const baselineRAGJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+interface RewrittenQueries {
+  queries: string[]
+}
+
+const queryRewritePromptJson = (
+  userContext: string,
+  retrievedContext: string,
+) => `You are an AI assistant helping to rewrite search queries to find information in a workspace. The original search was unsuccessful in finding a complete answer.
+You have access to some initial context from the first search attempt. Use any relevant keywords, names, or terminology from this context to generate alternative search queries.
+# Context of the user talking to you
+${userContext}
+This includes:
+- User's name and email
+- Company name and domain
+- Current time and date
+- Timezone
+# Initial Context Retrieved
+${retrievedContext}
+# Guidelines for Query Rewriting:
+1. Create 3 alternative queries that:
+   - Use key terms from the original query and context
+   - Are naturally written phrases/questions (good for vector search)
+   - Include specific details from context when relevant
+   - Maintain search-friendly structure (good for BM25)
+2. For personal queries (involving "my", "I", "me"):
+   - Keep one query with personal pronouns using context (e.g., "John's salary")
+   - Create variants without pronouns using role/department/other relevant context
+   - Use general terms for the third variant
+3. Each query should:
+   - Be 5-15 words long
+   - Use different combinations of key terms
+   - Focus on finding factual information
+   - Avoid complex or unusual phrasings
+4. Do not:
+   - Include timestamps or dates
+   - Use technical jargon unless in original query
+   - Make queries too vague or too specific
+   - Include explanatory text or notes
+# Response Format
+You must respond in valid JSON format with:
+{
+  "queries": [
+    "rewritten query 1",
+    "rewritten query 2",
+    "rewritten query 3"
+  ]
+}
+# Examples of Good Query Rewrites:
+Original: "What was discussed in the quarterly planning meeting?"
+Rewrites:
+- "quarterly planning meeting key discussion points agenda"
+- "quarterly planning meeting decisions outcomes notes"
+- "q1 planning meeting summary main topics"
+Original: "my salary information"
+Rewrites:
+- "John Smith salary compensation details"
+- "engineering team lead salary structure"
+- "employee compensation package information"`
+
+export const queryRewriter = async (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<RewrittenQueries & { cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = queryRewritePromptJson(userCtx, retrievedCtx)
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `query: "${userQuery}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+
+  if (text) {
+    const parsedResponse = jsonParseLLMOutput(text)
+    return {
+      queries: parsedResponse.queries || [],
+      cost: cost!,
+    }
+  } else {
+    throw new Error("No response from LLM")
+  }
+}
+
+type TimeDirection = "next" | "prev"
+export interface TemporalClassifier {
+  direction: TimeDirection | null
+}
+
+const temporalEventClassifier = (query: string) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
+
+The query: "${query}"
+
+Return in this JSON format:
+{
+  "direction": "next" | "prev" | null
+}
+
+Only return "next" if:
+- Query is specifically asking about an upcoming calendar event or scheduled interaction
+- Must be something that would be found in a calendar or email thread
+Examples:
+✓ "When is my next meeting with John?"
+✓ "Next time I present to the board"
+✓ "When's my next review?"
+✗ "Next quarter's goals"
+✗ "Next version release"
+
+Only return "prev" if:
+- Query is specifically asking about finding the last calendar event or email interaction that occurred
+- Must be something that would be found in a calendar or email thread
+Examples:
+✓ "When was my last call with Sarah?"
+✓ "Last time I had lunch with the team"
+✓ "Previous board meeting date"
+✗ "When did junaid join?"
+✗ "Last time we updated the docs"
+
+Return null for everything else, including:
+- General temporal questions about the past ("When did the project start?")
+- Questions about people/status ("When did Alice join?")
+- Questions about deadlines ("When is this due?")
+- Non-calendar events ("When was the last deployment?")
+- Historical queries ("When did we switch to React?")
+
+Test cases:
+"When's my next client meeting?" -> {"direction": "next"}
+"Last time I synced with Jane?" -> {"direction": "prev"}
+"When did we hire Mark?" -> {"direction": null}
+"When was the website launched?" -> {"direction": null}
+"Next team lunch" -> {"direction": "next"}
+"When did the office move?" -> {"direction": null}
+"Previous sprint planning" -> {"direction": "prev"}
+"When was the policy updated?" -> {"direction": null}
+
+Now classify this query:`
+
+export const temporalEventClassification = async (
+  userQuery: string,
+  params: ModelParams,
+): Promise<TemporalClassifier & { cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = temporalEventClassifier(userQuery)
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `query: "${userQuery}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+
+  if (text) {
+    const parsedResponse = jsonParseLLMOutput(text)
+    return {
+      direction: parsedResponse.direction || null,
+      cost: cost!,
+    }
+  } else {
+    throw new Error("No response from LLM")
+  }
 }

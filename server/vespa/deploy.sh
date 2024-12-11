@@ -4,12 +4,13 @@ set -e
 mkdir -p models
 
 # URLs to download
-TOKENIZER_URL="https://huggingface.co/Xenova/bge-small-en-v1.5/raw/main/tokenizer.json"
-MODEL_URL="https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/onnx/model_quantized.onnx"
+TOKENIZER_URL="https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/tokenizer.json"
+MODEL_URL="https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/onnx/model.onnx"
+
 
 # File paths
 TOKENIZER_FILE="models/tokenizer.json"
-MODEL_FILE="models/model_quantized.onnx"
+MODEL_FILE="models/model.onnx"
 
 # Download the tokenizer if it doesn't exist
 if [ -f "$TOKENIZER_FILE" ]; then
@@ -27,7 +28,7 @@ else
     curl -L -o "$MODEL_FILE" "$MODEL_URL"
 fi
 
-vespa deploy
+vespa deploy --wait 500
 docker restart vespa
 # vespa destroy
 vespa status --wait 55
