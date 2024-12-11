@@ -8,7 +8,7 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Eye, EyeOff } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Eye, EyeOff, Pencil } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
@@ -79,6 +79,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedTitle, setEditedTitle] = useState(chatTitle)
+  const spanRef = useRef(null)
 
   useEffect(() => {
     if (inputRef.current) {
@@ -390,18 +393,88 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       </div>
     )
   }
+
+  const handleChatRename = async () => {
+    // console.log("hello")
+    setIsEditing(true)
+    setTimeout(() => {
+      if (spanRef.current) {
+        spanRef.current.focus() // Focus on the span for immediate editing
+      }
+    }, 0)
+  }
+
+  const handleKeyDown = async (e) => {
+    console.log(e)
+    if (e.key === "Enter") {
+      e.preventDefault() // Prevent a new line from being created
+      setIsEditing(false)
+      if (editedTitle && editedTitle !== chatTitle) {
+        try {
+          const res = await api.chat.rename.$post({
+            json: { chatId, title: editedTitle },
+          })
+          if (res.ok) {
+            setChatTitle(editedTitle)
+          } else {
+            throw new Error("Error renaming chat")
+          }
+          // return chatId
+        } catch (error) {
+          console.error("Error renaming chat:", error)
+        }
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      setEditedTitle(chatTitle) // Revert to original title
+      setIsEditing(false)
+      if (spanRef.current) {
+        spanRef.current.textContent = chatTitle // Revert UI to original title
+      }
+    }
+  }
+
+  const handleInput = (e) => {
+    setEditedTitle(e.target.textContent) // Update state with edited content
+  }
+
+  const handleBlur = () => {
+    if (editedTitle !== chatTitle) {
+      // Revert to original title if editing is canceled
+      setEditedTitle(chatTitle)
+      if (spanRef.current) {
+        spanRef.current.textContent = chatTitle // Revert UI to original title
+      }
+    }
+    setIsEditing(false) // Exit editing mode
+  }
+
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar photoLink={user.photoLink ?? ""} />
       <div className="h-full w-full flex flex-col relative">
         <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
           <div className="flex h-[48px] items-center max-w-2xl w-full">
-            <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+            <span
+              ref={spanRef}
+              contentEditable={isEditing}
+              suppressContentEditableWarning={true}
+              className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap"
+              onInput={handleInput}
+              onKeyDown={handleKeyDown}
+              onBlur={handleBlur}
+            >
               {chatTitle}
             </span>
+            <Pencil
+              stroke="#4A4F59"
+              size={18}
+              onClick={handleChatRename}
+              className="cursor-pointer"
+            />
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[40px] cursor-pointer"
+              className="ml-[20px] cursor-pointer"
               onClick={handleBookmark}
               size={18}
             />
