@@ -96,7 +96,6 @@ const HistoryModal = ({
     { chatId: string; newTitle: string } // The type of variables passed to the mutation
   >({
     mutationFn: async ({ chatId, newTitle }) => {
-      // Call your renameChat function
       return await renameChat(chatId, newTitle)
     },
     onSuccess: ({ chatId, title }) => {
@@ -110,10 +109,10 @@ const HistoryModal = ({
               )
             : [],
       )
-
-      console.log(`Chat renamed successfully to "${title}"`)
+      setIsEditing(false)
     },
     onError: (error: Error) => {
+      setIsEditing(false)
       console.error("Failed to rename chat:", error)
     },
   })
@@ -127,15 +126,12 @@ const HistoryModal = ({
 
   const handleKeyDown = async (e, item) => {
     if (e.key === "Enter") {
-      e.preventDefault() // Prevent a new line from being created
+      e.preventDefault()
       if (editedTitle && editedTitle !== item.title) {
         renameChatMutation.mutate({
           chatId: item?.externalId,
           newTitle: editedTitle,
         })
-        setTimeout(() => {
-          setIsEditing(false)
-        }, 0)
       }
     } else if (e.key === "Escape") {
       e.preventDefault()

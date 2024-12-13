@@ -395,7 +395,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }
 
   const handleChatRename = async () => {
-    // console.log("hello")
     setIsEditing(true)
     setTimeout(() => {
       if (spanRef.current) {
@@ -406,7 +405,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleKeyDown = async (e) => {
     if (e.key === "Enter") {
-      e.preventDefault() // Prevent a new line from being created
+      e.preventDefault()
       if (editedTitle && editedTitle !== chatTitle) {
         try {
           const res = await api.chat.rename.$post({
@@ -418,7 +417,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           } else {
             throw new Error("Error renaming chat")
           }
-          // return chatId
         } catch (error) {
           console.error("Error renaming chat:", error)
         }
@@ -445,7 +443,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         spanRef.current.value = chatTitle // Revert UI to original title
       }
     }
-    setIsEditing(false) // Exit editing mode
+    setIsEditing(false)
   }
 
   return (
