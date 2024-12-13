@@ -109,7 +109,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   useEffect(() => {
     // Reset the state when the chatId changes
-    if (!hasHandledQueryParam.current) {
+    if (!hasHandledQueryParam.current || isWithChatId) {
       setMessages(isWithChatId ? data?.messages || [] : [])
     }
     setChatId((params as any).chatId || null)
