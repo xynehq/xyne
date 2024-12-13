@@ -126,10 +126,8 @@ const HistoryModal = ({
   }
 
   const handleKeyDown = async (e, item) => {
-    // e.preventDefault()
     if (e.key === "Enter") {
       e.preventDefault() // Prevent a new line from being created
-      setIsEditing(false)
       if (editedTitle && editedTitle !== item.title) {
         try {
           const res = await api.chat.rename.$post({
@@ -140,6 +138,9 @@ const HistoryModal = ({
               chatId: item?.externalId,
               newTitle: editedTitle,
             })
+            setTimeout(() => {
+              setIsEditing(false)
+            }, 0)
           } else {
             throw new Error("Error renaming chat")
           }
@@ -152,7 +153,7 @@ const HistoryModal = ({
       setEditedTitle(item.title) // Revert to original title
       setIsEditing(false)
       if (spanRef.current) {
-        spanRef.current.textContent = item.title // Revert UI to original title
+        spanRef.current.value = item.title // Revert UI to original title
       }
     }
   }
@@ -166,7 +167,7 @@ const HistoryModal = ({
       // Revert to original title if editing is canceled
       setEditedTitle(item.title)
       if (spanRef.current) {
-        spanRef.current.textContent = item.title // Revert UI to original title
+        spanRef.current.value = item.title // Revert UI to original title
       }
     }
     setIsEditing(false) // Exit editing mode

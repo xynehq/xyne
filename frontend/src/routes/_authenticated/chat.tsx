@@ -405,10 +405,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }
 
   const handleKeyDown = async (e) => {
-    console.log(e)
     if (e.key === "Enter") {
       e.preventDefault() // Prevent a new line from being created
-      setIsEditing(false)
       if (editedTitle && editedTitle !== chatTitle) {
         try {
           const res = await api.chat.rename.$post({
@@ -416,6 +414,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           })
           if (res.ok) {
             setChatTitle(editedTitle)
+            setIsEditing(false)
           } else {
             throw new Error("Error renaming chat")
           }
@@ -429,13 +428,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setEditedTitle(chatTitle) // Revert to original title
       setIsEditing(false)
       if (spanRef.current) {
-        spanRef.current.textContent = chatTitle // Revert UI to original title
+        spanRef.current.value = chatTitle // Revert UI to original title
       }
     }
   }
 
   const handleInput = (e) => {
-    setEditedTitle(e.target.textContent) // Update state with edited content
+    setEditedTitle(e.target.value) // Update state with edited content
   }
 
   const handleBlur = () => {
@@ -443,7 +442,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       // Revert to original title if editing is canceled
       setEditedTitle(chatTitle)
       if (spanRef.current) {
-        spanRef.current.textContent = chatTitle // Revert UI to original title
+        spanRef.current.value = chatTitle // Revert UI to original title
       }
     }
     setIsEditing(false) // Exit editing mode
@@ -455,17 +454,20 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       <div className="h-full w-full flex flex-col relative">
         <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
           <div className="flex h-[48px] items-center max-w-2xl w-full">
-            <span
-              ref={spanRef}
-              contentEditable={isEditing}
-              suppressContentEditableWarning={true}
-              className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap"
-              onInput={handleInput}
-              onKeyDown={handleKeyDown}
-              onBlur={handleBlur}
-            >
-              {chatTitle}
-            </span>
+            {isEditing ? (
+              <input
+                ref={spanRef}
+                className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap"
+                onInput={handleInput}
+                onKeyDown={handleKeyDown}
+                onBlur={handleBlur}
+                value={editedTitle!}
+              />
+            ) : (
+              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+                {chatTitle}
+              </span>
+            )}
             <Pencil
               stroke="#4A4F59"
               size={18}
