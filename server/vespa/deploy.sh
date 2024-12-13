@@ -1,6 +1,5 @@
 #!/bin/sh
 set -e
-source ../.env
 
 mkdir -p models
 TOKENIZER_URL=""
