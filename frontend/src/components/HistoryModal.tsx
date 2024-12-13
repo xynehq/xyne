@@ -129,24 +129,13 @@ const HistoryModal = ({
     if (e.key === "Enter") {
       e.preventDefault() // Prevent a new line from being created
       if (editedTitle && editedTitle !== item.title) {
-        try {
-          const res = await api.chat.rename.$post({
-            json: { chatId: item?.externalId, title: editedTitle },
-          })
-          if (res.ok) {
-            renameChatMutation.mutate({
-              chatId: item?.externalId,
-              newTitle: editedTitle,
-            })
-            setTimeout(() => {
-              setIsEditing(false)
-            }, 0)
-          } else {
-            throw new Error("Error renaming chat")
-          }
-        } catch (error) {
-          console.error("Error renaming chat:", error)
-        }
+        renameChatMutation.mutate({
+          chatId: item?.externalId,
+          newTitle: editedTitle,
+        })
+        setTimeout(() => {
+          setIsEditing(false)
+        }, 0)
       }
     } else if (e.key === "Escape") {
       e.preventDefault()
