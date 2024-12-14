@@ -158,7 +158,8 @@ schema event {
 
     rank-profile default {
         inputs {
-            query(e) tensor<bfloat16>(v[DIMS])
+            query(e) tensor<bfloat16>(v[1024])
+            query(alpha) double 
         }
 
         function scale(val) {
@@ -173,29 +174,45 @@ schema event {
             expression: if(scale(bm25(name)) > 0.6, freshness_score, if(scale(bm25(description)) > 0.6, freshness_score,0))
         }
 
+        function document_age() {
+            # Default document age assuming to 3 months when no updateAt timestamp is present
+            expression: max(if(isNan(attribute(createdAt)) == 1, 7890000, now() - (attribute(createdAt) / 1000)) / 31536000, 0)
+        }
+
+        # Document score decays from 1 to 0.75 as age of last updated time increases 
+        function doc_recency() {
+            expression: max(1 / (1 + 0.5 * document_age), 0.75)
+        }
 
         function vector_score() {
             expression: closeness(field, chunk_embeddings)
         }
 
+        function scaled_bm25_name(){
+            expression: scale(bm25(name))
+        }
+
+        function scaled_bm25_description(){
+            expression: scale(bm25(description))
+        }
+
         function combined_bm25() {
             expression {
-                (scale(bm25(name)) + scale(bm25(url))) +
-                ((scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
+                scale(bm25(name) + bm25(url) + bm25(description)) +
+                (0.8 * scale(bm25(attachmentFilenames) + bm25(attendeesNames)))
             }
         }
 
         first-phase {
-            expression: (vector_score) + combined_bm25
+            expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
         }
 
         global-phase {
             expression {
               (
-                (normalize_linear(vector_score)) +
-                combined_bm25 + 
-                freshness_weight
-              )
+                (query(alpha) * normalize_linear(vector_score)) +
+                ((1 - query(alpha)) * max(scaled_bm25_name,scaled_bm25_description)) 
+              ) * doc_recency
             }
             rerank-count: 1000
         }
@@ -206,7 +223,7 @@ schema event {
           scale(bm25(attachmentFilenames))
           scale(bm25(attendeesNames))
           vector_score
-          freshness_weight
+          doc_recency
         }
     }
 

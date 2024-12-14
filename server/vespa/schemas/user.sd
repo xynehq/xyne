@@ -194,7 +194,7 @@ schema user {
         }
         global-phase {
             expression {
-                normalize_linear(bm25(name))+ normalize_linear(bm25(email))
+                normalize_linear(bm25(name)) + normalize_linear(bm25(email))
             }
         }
     }

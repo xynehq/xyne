@@ -125,6 +125,7 @@ schema mail {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
+      query(bm_c_w) double 
     }
 
     function chunk_vector_score() {
@@ -165,6 +166,20 @@ schema mail {
         expression: closeness(field, chunk_embeddings)
       }
 
+      function freshness_score() {
+          expression: exp(-1 * (now() - (attribute(timestamp) / 1000)) / (3600 * 24))
+      }
+
+      function document_age() {
+        # Default document age assuming to 3 months when no updateAt timestamp is present
+        expression: max(if(isNan(attribute(timestamp)) == 1, 7890000, now() - (attribute(timestamp) / 1000)) / 31536000, 0)
+      }
+
+      # Document score decays from 1 to 0.75 as age of last updated time increases 
+      function doc_recency() {
+        expression: max(1 / (1 + 0.5 * document_age), 0.75)
+      }
+
       function scale(val) {
         expression: 2*atan(val/4)/(3.14159)
       }
@@ -177,20 +192,24 @@ schema mail {
         expression: scale(bm25(subject))
       }
 
+      function freshness_weight(){
+        expression: if(scaled_bm25_subject> 0.6, freshness_score, if(scaled_bm25_chunks > 0.8, freshness_score,0))
+      }
+
       function combined_bm25() {
-        expression: 0.3*scaled_bm25_chunks + 0.8*scaled_bm25_subject
+        expression: (query(bm_c_w) * scaled_bm25_chunks) + scaled_bm25_subject
       }
 
       first-phase {
-        expression: (0.5 * chunk_vector_score) + combined_bm25
+        expression: (query(alpha) * scale(chunk_vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
       }
 
       global-phase {
         expression {
           (
-            (0.5 * normalize_linear(chunk_vector_score)) +
-            (max(scaled_bm25_subject,scaled_bm25_chunks))
-          )
+            (query(alpha) * normalize_linear(chunk_vector_score)) +
+            ((1 - query(alpha)) * max(scaled_bm25_subject,(query(bm_c_w) * scaled_bm25_chunks)))
+          ) * doc_recency
         }
         rerank-count: 1000
       }
@@ -199,6 +218,7 @@ schema mail {
       chunk_vector_score
       scaled_bm25_chunks
       scaled_bm25_subject
+      doc_recency
     }
   }
 

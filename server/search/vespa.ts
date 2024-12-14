@@ -421,8 +421,9 @@ export const searchVespa = async (
     email,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
+    "input.query(alpha)": alpha,
+    "input.query(bm_c_w)": 0.5,
     hits: limit,
-    alpha,
     ...(offset
       ? {
           offset,
@@ -866,3 +867,7 @@ export const getItems = async (
     })
   }
 }
+
+// await deleteAllDocuments()
+
+// console.log((await searchVespa("xsafe challenge everything.",'junaid.s@xynehq.com',null,null,2)).root.children[0])
