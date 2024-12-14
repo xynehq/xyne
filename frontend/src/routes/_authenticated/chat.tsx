@@ -18,6 +18,8 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
+import { useQueryClient } from "@tanstack/react-query"
+import { SelectPublicChat } from "shared/types"
 
 type CurrentResp = {
   resp: string
@@ -44,6 +46,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       ? "/_authenticated/chat/$chatId"
       : "/_authenticated/chat",
   })
+
+  const queryClient = useQueryClient()
 
   // query and param both can't exist same time
   if (chatParams.q && isWithChatId) {
@@ -412,6 +416,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             json: { chatId, title: editedTitle },
           })
           if (res.ok) {
+            // Update the history modal cache
+            queryClient.setQueryData<SelectPublicChat[]>(
+              ["all-connectors"],
+              (oldChats) => {
+                if (!oldChats) return []
+                return oldChats.map((chat) =>
+                  chat.externalId === chatId
+                    ? { ...chat, title: editedTitle }
+                    : chat,
+                )
+              },
+            )
             setChatTitle(editedTitle)
             setIsEditing(false)
           } else {
