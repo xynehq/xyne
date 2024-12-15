@@ -421,6 +421,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         spanRef.current.focus() // Focus on the span for immediate editing
       }
     }, 0)
+    setEditedTitle(chatTitle)
   }
 
   const handleKeyDown = async (e) => {
