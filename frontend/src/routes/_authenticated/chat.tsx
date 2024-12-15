@@ -18,8 +18,9 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
+import { fetchChats } from "@/components/HistoryModal"
 
 type CurrentResp = {
   resp: string
@@ -92,6 +93,21 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       inputRef.current.focus()
     }
   }, [])
+
+  const { data: historyItems } = useQuery({
+    queryKey: ["all-connectors"],
+    queryFn: fetchChats,
+  })
+  const currentChat = historyItems?.find((item) => item.externalId === chatId)
+
+  useEffect(() => {
+    // Only update local state if we are not currently editing the title
+    // This prevents overwriting local edits while user is typing
+    if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
+      setChatTitle(currentChat.title)
+      setEditedTitle(currentChat.title)
+    }
+  }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
     if (isStreaming) {

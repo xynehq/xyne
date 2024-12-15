@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useRef, useState } from "react"
 
-const fetchChats = async () => {
+export const fetchChats = async () => {
   let items = []
   const response = await api.chat.history.$get({
     query: {
