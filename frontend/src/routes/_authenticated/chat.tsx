@@ -612,7 +612,7 @@ const ChatMessage = ({
               className={"mr-[20px] w-[32px] self-start"}
               src={AssistantLogo}
             />
-            <div className="mt-[4px] markdown-content max-w-[75%]">
+            <div className="mt-[4px] markdown-content">
               {message === "" ? (
                 <div className="flex-grow">
                   {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
