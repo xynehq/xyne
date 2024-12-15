@@ -433,16 +433,30 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             json: { chatId, title: editedTitle },
           })
           if (res.ok) {
-            // Update the history modal cache
             queryClient.setQueryData<SelectPublicChat[]>(
               ["all-connectors"],
               (oldChats) => {
                 if (!oldChats) return []
-                return oldChats.map((chat) =>
+
+                // Update the title of the targeted chat
+                const updatedChats = oldChats.map((chat) =>
                   chat.externalId === chatId
                     ? { ...chat, title: editedTitle }
                     : chat,
                 )
+
+                // Find the index of the renamed chat
+                const index = updatedChats.findIndex(
+                  (chat) => chat.externalId === chatId,
+                )
+                if (index > -1) {
+                  // Remove it from its current position
+                  const [renamedChat] = updatedChats.splice(index, 1)
+                  // Place it at the front
+                  updatedChats.unshift(renamedChat)
+                }
+
+                return updatedChats
               },
             )
             setChatTitle(editedTitle)
