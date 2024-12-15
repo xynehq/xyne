@@ -83,6 +83,7 @@ import {
   MailEntity,
   mailSchema,
   userSchema,
+  type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
   type VespaMail,
@@ -258,42 +259,48 @@ interface CitationResponse {
   citations?: number[]
 }
 
-const searchToCitation = (
+const searchToCitation = (result: VespaSearchResults): Citation => {
+  const fields = result.fields
+  if (result.fields.sddocname === userSchema) {
+    return {
+      title: (fields as VespaUser).name,
+      url: `https://contacts.google.com/${(fields as VespaUser).email}`,
+      app: (fields as VespaUser).app,
+      entity: (fields as VespaUser).entity,
+    }
+  } else if (result.fields.sddocname === fileSchema) {
+    return {
+      title: (fields as VespaFile).title,
+      url: (fields as VespaFile).url || "",
+      app: (fields as VespaFile).app,
+      entity: (fields as VespaFile).entity,
+    }
+  } else if (result.fields.sddocname === mailSchema) {
+    return {
+      title: (fields as VespaMail).subject,
+      url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
+      app: (fields as VespaMail).app,
+      entity: (fields as VespaMail).entity,
+    }
+  } else if (result.fields.sddocname === eventSchema) {
+    return {
+      title: (fields as VespaEvent).name || "No Title",
+      url: (fields as VespaEvent).url,
+      app: (fields as VespaEvent).app,
+      entity: (fields as VespaEvent).entity,
+    }
+  } else {
+    throw new Error("Invalid search result type for citation")
+  }
+}
+
+const searchToCitations = (
   results: z.infer<typeof VespaSearchResultsSchema>[],
 ): Citation[] => {
-  let citations: Citation[] = []
   if (results.length === 0) {
     return []
   }
-
-  for (const result of results) {
-    const fields = result.fields
-    if (result.fields.sddocname === userSchema) {
-      citations.push({
-        title: (fields as VespaUser).name,
-        url: `https://contacts.google.com/${(fields as VespaUser).email}`,
-        app: (fields as VespaUser).app,
-        entity: (fields as VespaUser).entity,
-      })
-    } else if (result.fields.sddocname === fileSchema) {
-      citations.push({
-        title: (fields as VespaFile).title,
-        url: (fields as VespaFile).url || "",
-        app: (fields as VespaFile).app,
-        entity: (fields as VespaFile).entity,
-      })
-    } else if (result.fields.sddocname === mailSchema) {
-      citations.push({
-        title: (fields as VespaMail).subject,
-        url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
-        app: (fields as VespaMail).app,
-        entity: (fields as VespaMail).entity,
-      })
-    } else {
-      throw new Error("Invalid search result type for citation")
-    }
-  }
-  return citations
+  return results.map((result) => searchToCitation(result as VespaSearchResults))
 }
 
 const processMessage = (text: string, citationMap: Record<number, number>) => {
@@ -310,12 +317,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
-): AsyncIterableIterator<ConverseResponse> {
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
   // we are not going to do time expansion
   // we are going to do 4 months answer
   // if not found we go back to iterative page search
   const message = input
-  let output = { answer: "", costArr: [], retrievedItems: [] }
 
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
@@ -376,9 +384,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             .map((v: VespaSearchResult) => (v.fields as any).docId)
             .filter((v) => !!v),
         )
+        const totalResults = results.root.children.concat(latestResults)
         const initialContext = cleanContext(
-          results.root.children
-            .concat(latestResults)
+          totalResults
             .map(
               (v, i) =>
                 `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
@@ -393,6 +401,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         let buffer = ""
         let currentAnswer = ""
         let parsed = { answer: "" }
+        const citationRegex = /\[(\d+)\]/g
+        let yieldedCitations = new Set<number>()
         for await (const chunk of iterator) {
           if (chunk.text) {
             buffer += chunk.text
@@ -410,13 +420,36 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                   const newText = parsed.answer.slice(currentAnswer.length)
                   yield { text: newText }
                 }
+                // Extract all citations from the parsed answer
+                let match
+                while ((match = citationRegex.exec(parsed.answer)) !== null) {
+                  const citationIndex = parseInt(match[1], 10)
+                  if (!yieldedCitations.has(citationIndex)) {
+                    const item = totalResults[citationIndex]
+                    if (item) {
+                      yield {
+                        citation: {
+                          index: citationIndex,
+                          item: searchToCitation(item as VespaSearchResults),
+                        },
+                      }
+                      yieldedCitations.add(citationIndex)
+                    } else {
+                      // TODO: we need to handle this.
+                      // either we replace the [citationIndex]
+                      Logger.error(
+                        "Found a citation index but could not find it in the search result ",
+                        citationIndex,
+                        totalResults.length,
+                      )
+                    }
+                  }
+                }
                 currentAnswer = parsed.answer
-                // const newText = parsed.answer.slice(currentAnswer.length)
-                // yield { text: newText }
-                // currentAnswer = parsed.answer
-                // return
               }
-            } catch (e) {
+            } catch (err) {
+              const errMessage = (err as Error).message
+              Logger.error(`Error while parsing LLM output ${errMessage}`)
               continue
             }
           }
@@ -443,7 +476,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         null,
         latestIds,
       )
-      if(!results.root.children) {
+      if (!results.root.children) {
         results.root.children = []
       }
       results.root.children = results.root.children.concat(latestResults)
@@ -474,9 +507,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     let buffer = ""
     let currentAnswer = ""
-
     let parsed = { answer: "" }
-
+    const citationRegex = /\[(\d+)\]/g
+    let yieldedCitations = new Set<number>()
     for await (const chunk of iterator) {
       if (chunk.text) {
         buffer += chunk.text
@@ -494,13 +527,36 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               const newText = parsed.answer.slice(currentAnswer.length)
               yield { text: newText }
             }
+            // Extract all citations from the parsed answer
+            let match
+            while ((match = citationRegex.exec(parsed.answer)) !== null) {
+              const citationIndex = parseInt(match[1], 10)
+              if (!yieldedCitations.has(citationIndex)) {
+                const item = results.root.children[citationIndex]
+                if (item) {
+                  yield {
+                    citation: {
+                      index: citationIndex,
+                      item: searchToCitation(item as VespaSearchResults),
+                    },
+                  }
+                  yieldedCitations.add(citationIndex)
+                } else {
+                  // TODO: we need to handle this.
+                  // either we replace the [citationIndex]
+                  Logger.error(
+                    "Found a citation index but could not find it in the search result ",
+                    citationIndex,
+                    results.root.children.length,
+                  )
+                }
+              }
+            }
             currentAnswer = parsed.answer
-            // const newText = parsed.answer.slice(currentAnswer.length)
-            // yield { text: newText }
-            // currentAnswer = parsed.answer
-            // return
           }
-        } catch (e) {
+        } catch (err) {
+          const errMessage = (err as Error).message
+          Logger.error(`Error while parsing LLM output ${errMessage}`)
           continue
         }
       }
@@ -512,7 +568,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       return
     }
   }
-  yield { text: "I don't know" }
+  yield {
+    text: "I could not find any information to answer it, please change your query",
+  }
 }
 
 async function* generatePointQueryTimeExpansion(
@@ -523,7 +581,9 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-): AsyncIterableIterator<ConverseResponse & { retrievedItems?: any[] }> {
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
   const message = input
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
@@ -618,6 +678,8 @@ async function* generatePointQueryTimeExpansion(
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
+    const citationRegex = /\[(\d+)\]/g
+    let yieldedCitations = new Set<number>()
 
     for await (const chunk of iterator) {
       if (chunk.text) {
@@ -639,10 +701,23 @@ async function* generatePointQueryTimeExpansion(
               const newText = parsed.answer.slice(currentAnswer.length)
               yield { text: newText }
             }
+            let match
+            while ((match = citationRegex.exec(parsed.answer)) !== null) {
+              const citationIndex = parseInt(match[1], 10)
+              if (!yieldedCitations.has(citationIndex)) {
+                const item = combinedResults.root.children[citationIndex]
+                if (item) {
+                  yield {
+                    citation: {
+                      index: citationIndex,
+                      item: searchToCitation(item as VespaSearchResults),
+                    },
+                  }
+                  yieldedCitations.add(citationIndex)
+                }
+              }
+            }
             currentAnswer = parsed.answer
-            // const newText = parsed.answer.slice(currentAnswer.length)
-            // yield { text: newText }
-            // currentAnswer = parsed.answer
           }
         } catch (e) {
           // If we can't parse the JSON yet, continue accumulating
@@ -673,7 +748,9 @@ export async function* UnderstandMessageAndAnswer(
   message: string,
   classification: TemporalClassifier & { cost: number },
   messages?: Message[],
-): AsyncIterableIterator<ConverseResponse & { citations?: number[] }> {
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
   // user is talking about an event
   if (classification.direction !== null) {
     return yield* generatePointQueryTimeExpansion(
@@ -830,8 +907,9 @@ export const MessageApiV2 = async (c: Context) => {
             event: ChatSSEvents.Start,
             data: "",
           })
-          let citations = []
           let answer = ""
+          let citations = []
+          let citationMap: Record<number, number> = {}
           for await (const chunk of iterator) {
             if (chunk.text) {
               answer += chunk.text
@@ -840,11 +918,21 @@ export const MessageApiV2 = async (c: Context) => {
                 data: chunk.text,
               })
             }
+
             if (chunk.cost) {
               costArr.push(chunk.cost)
             }
-            if (chunk.citations) {
-              citations = chunk.citations
+            if (chunk.citation) {
+              const { index, item } = chunk.citation
+              citations.push(item)
+              citationMap[index] = citations.length - 1
+              stream.writeSSE({
+                event: ChatSSEvents.CitationsUpdate,
+                data: JSON.stringify({
+                  contextChunks: citations,
+                  citationMap,
+                }),
+              })
             }
           }
           if (answer) {
@@ -859,8 +947,8 @@ export const MessageApiV2 = async (c: Context) => {
               chatExternalId: chat.externalId,
               messageRole: MessageRole.Assistant,
               email: user.email,
-              // sources: minimalContextChunks,
-              message: answer, //processMessage(parsed.answer, citationMap),
+              sources: citations,
+              message: processMessage(answer, citationMap),
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
@@ -917,7 +1005,7 @@ export const MessageApiV2 = async (c: Context) => {
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
-        console.error("You exceeded your current quota,")
+        Logger.error("You exceeded your current quota")
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
@@ -1124,7 +1212,7 @@ export const MessageApi = async (c: Context) => {
             currentCitations.forEach((v, i) => {
               citationMap[v] = i
             })
-            minimalContextChunks = searchToCitation(
+            minimalContextChunks = searchToCitations(
               results.root.children.filter((_, i) =>
                 currentCitations.includes(i),
               ) as z.infer<typeof VespaSearchResultsSchema>[],
@@ -1251,7 +1339,7 @@ export const MessageApi = async (c: Context) => {
                     currentCitations.forEach((v, i) => {
                       citationMap[v] = i
                     })
-                    minimalContextChunks = searchToCitation(
+                    minimalContextChunks = searchToCitations(
                       results.root.children.filter((_, i) =>
                         currentCitations.includes(i),
                       ) as z.infer<typeof VespaSearchResultsSchema>[],
@@ -1358,8 +1446,6 @@ export const MessageRetryApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Message not found" })
     }
 
-    // Fetch the chat and previous messages
-    // const chat = await getChatByExternalId(db, originalMessage.chatExternalId)
     let conversation = await getChatMessagesBefore(
       db,
       originalMessage.chatId,
@@ -1490,7 +1576,7 @@ export const MessageRetryApi = async (c: Context) => {
               currentCitations.forEach((v, i) => {
                 citationMap[v] = i
               })
-              minimalContextChunks = searchToCitation(
+              minimalContextChunks = searchToCitations(
                 results.root.children.filter((_, i) =>
                   currentCitations.includes(i),
                 ) as z.infer<typeof VespaSearchResultsSchema>[],
@@ -1609,7 +1695,7 @@ export const MessageRetryApi = async (c: Context) => {
                 currentCitations.forEach((v, i) => {
                   citationMap[v] = i
                 })
-                minimalContextChunks = searchToCitation(
+                minimalContextChunks = searchToCitations(
                   results.root.children.filter((_, i) =>
                     currentCitations.includes(i),
                   ) as z.infer<typeof VespaSearchResultsSchema>[],
