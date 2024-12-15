@@ -84,9 +84,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
-  const [isEditing, setIsEditing] = useState(false)
-  const [editedTitle, setEditedTitle] = useState(chatTitle)
-  const spanRef = useRef(null)
+  const [isEditing, setIsEditing] = useState<boolean>(false)
+  const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
+  const titleRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (inputRef.current) {
@@ -417,14 +417,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const handleChatRename = async () => {
     setIsEditing(true)
     setTimeout(() => {
-      if (spanRef.current) {
-        spanRef.current.focus() // Focus on the span for immediate editing
+      if (titleRef.current) {
+        titleRef.current.focus() // Focus on the span for immediate editing
       }
     }, 0)
     setEditedTitle(chatTitle)
   }
 
-  const handleKeyDown = async (e) => {
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault()
       if (editedTitle && editedTitle !== chatTitle) {
@@ -439,7 +439,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 if (!oldChats) return []
 
                 // Update the title of the targeted chat
-                const updatedChats = oldChats.map((chat) =>
+                const updatedChats: SelectPublicChat[] = oldChats.map((chat) =>
                   chat.externalId === chatId
                     ? { ...chat, title: editedTitle }
                     : chat,
@@ -472,13 +472,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       e.preventDefault()
       setEditedTitle(chatTitle) // Revert to original title
       setIsEditing(false)
-      if (spanRef.current) {
-        spanRef.current.value = chatTitle // Revert UI to original title
+      if (titleRef.current) {
+        titleRef.current.value = chatTitle! // Revert UI to original title
       }
     }
   }
 
-  const handleInput = (e) => {
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditedTitle(e.target.value) // Update state with edited content
   }
 
@@ -486,8 +486,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     if (editedTitle !== chatTitle) {
       // Revert to original title if editing is canceled
       setEditedTitle(chatTitle)
-      if (spanRef.current) {
-        spanRef.current.value = chatTitle // Revert UI to original title
+      if (titleRef.current) {
+        titleRef.current.value = chatTitle! // Revert UI to original title
       }
     }
     setIsEditing(false)
@@ -501,7 +501,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           <div className="flex h-[48px] items-center max-w-2xl w-full">
             {isEditing ? (
               <input
-                ref={spanRef}
+                ref={titleRef}
                 className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap"
                 onInput={handleInput}
                 onKeyDown={handleKeyDown}

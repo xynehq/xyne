@@ -31,10 +31,10 @@ const HistoryModal = ({
   const queryClient = useQueryClient()
   const navigate = useNavigate({ from: "/" })
 
-  const [isEditing, setIsEditing] = useState(false)
-  const [editedTitle, setEditedTitle] = useState("")
-  const [editedChatId, setEditedChatId] = useState(null)
-  const spanRef = useRef(null)
+  const [isEditing, setIsEditing] = useState<boolean>(false)
+  const [editedTitle, setEditedTitle] = useState<string>("")
+  const [editedChatId, setEditedChatId] = useState<string | null>(null)
+  const titleRef = useRef<HTMLInputElement | null>(null)
 
   const router = useRouter()
   const {
@@ -106,7 +106,7 @@ const HistoryModal = ({
           if (!oldChats) return []
 
           // Update the title of the targeted chat
-          const updatedChats = oldChats.map((chat) =>
+          const updatedChats: SelectPublicChat[] = oldChats.map((chat) =>
             chat.externalId === chatId ? { ...chat, title } : chat,
           )
 
@@ -139,7 +139,10 @@ const HistoryModal = ({
     return <p>Loading...</p>
   }
 
-  const handleKeyDown = async (e, item) => {
+  const handleKeyDown = async (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    item: SelectPublicChat,
+  ) => {
     if (e.key === "Enter") {
       e.preventDefault()
       if (editedTitle && editedTitle !== item.title) {
@@ -152,22 +155,22 @@ const HistoryModal = ({
       e.preventDefault()
       setEditedTitle(item.title) // Revert to original title
       setIsEditing(false)
-      if (spanRef.current) {
-        spanRef.current.value = item.title // Revert UI to original title
+      if (titleRef.current) {
+        titleRef.current.value = item.title // Revert UI to original title
       }
     }
   }
 
-  const handleInput = (e) => {
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditedTitle(e.target.value) // Update state with edited content
   }
 
-  const handleBlur = (item) => {
+  const handleBlur = (item: SelectPublicChat) => {
     if (editedTitle !== item.title) {
       // Revert to original title if editing is canceled
       setEditedTitle(item.title)
-      if (spanRef.current) {
-        spanRef.current.value = item.title // Revert UI to original title
+      if (titleRef.current) {
+        titleRef.current.value = item.title // Revert UI to original title
       }
     }
     setIsEditing(false) // Exit editing mode
@@ -195,7 +198,7 @@ const HistoryModal = ({
             >
               {isEditing && editedChatId === item.externalId ? (
                 <input
-                  ref={spanRef}
+                  ref={titleRef}
                   className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow"
                   type="text"
                   value={editedTitle}
@@ -245,8 +248,8 @@ const HistoryModal = ({
                       setEditedChatId(item.externalId) // Track the chat being edited
                       setIsEditing(true)
                       setTimeout(() => {
-                        if (spanRef.current) {
-                          spanRef.current.focus()
+                        if (titleRef.current) {
+                          titleRef.current.focus()
                         }
                       }, 0)
                     }}
