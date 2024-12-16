@@ -1441,13 +1441,13 @@ const googleSheetsVespa = async (
 
 export const downloadDir = path.resolve(__dirname, "../../downloads")
 
-export const init = () => {
-  if (!fs.existsSync(downloadDir)) {
-    fs.mkdirSync(downloadDir, { recursive: true })
-  }
-}
+// export const init = () => {
+//   if (!fs.existsSync(downloadDir)) {
+//     fs.mkdirSync(downloadDir, { recursive: true })
+//   }
+// }
 
-init()
+// init()
 
 export const downloadPDF = async (
   drive: drive_v3.Drive,
