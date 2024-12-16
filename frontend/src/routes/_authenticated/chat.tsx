@@ -521,12 +521,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 {chatTitle}
               </span>
             )}
-            <Pencil
-              stroke="#4A4F59"
-              size={18}
-              onClick={handleChatRename}
-              className="cursor-pointer"
-            />
+            {chatTitle && (
+              <Pencil
+                stroke="#4A4F59"
+                size={18}
+                onClick={handleChatRename}
+                className="cursor-pointer"
+              />
+            )}
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
               className="ml-[20px] cursor-pointer"
