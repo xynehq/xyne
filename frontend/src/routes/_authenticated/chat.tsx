@@ -18,9 +18,9 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats } from "@/components/HistoryModal"
+import { fetchChats, renameChat } from "@/components/HistoryModal"
 
 type CurrentResp = {
   resp: string
@@ -88,13 +88,56 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
   const titleRef = useRef<HTMLInputElement | null>(null)
 
+  const renameChatMutation = useMutation<
+    { chatId: string; title: string }, // The type of data returned from the mutation
+    Error, // The type of error
+    { chatId: string; newTitle: string } // The type of variables passed to the mutation
+  >({
+    mutationFn: async ({ chatId, newTitle }) => {
+      return await renameChat(chatId, newTitle)
+    },
+    onSuccess: ({ chatId, title }) => {
+      // Update the UI by renaming the chat
+      queryClient.setQueryData<SelectPublicChat[]>(
+        ["all-connectors"],
+        (oldChats) => {
+          if (!oldChats) return []
+
+          // Update the title of the targeted chat
+          const updatedChats: SelectPublicChat[] = oldChats.map((chat) =>
+            chat.externalId === chatId ? { ...chat, title } : chat,
+          )
+
+          // Find the index of the renamed chat
+          const index = updatedChats.findIndex(
+            (chat) => chat.externalId === chatId,
+          )
+          if (index > -1) {
+            // Remove it from its current position
+            const [renamedChat] = updatedChats.splice(index, 1)
+            // Place it at the front
+            updatedChats.unshift(renamedChat)
+          }
+
+          return updatedChats
+        },
+      )
+      setChatTitle(editedTitle)
+      setIsEditing(false)
+    },
+    onError: (error: Error) => {
+      setIsEditing(false)
+      console.error("Failed to rename chat:", error)
+    },
+  })
+
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
     }
   }, [])
 
-  const { data: historyItems } = useQuery({
+  const { data: historyItems } = useQuery<SelectPublicChat[]>({
     queryKey: ["all-connectors"],
     queryFn: fetchChats,
   })
@@ -428,45 +471,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     if (e.key === "Enter") {
       e.preventDefault()
       if (editedTitle && editedTitle !== chatTitle) {
-        try {
-          const res = await api.chat.rename.$post({
-            json: { chatId, title: editedTitle },
-          })
-          if (res.ok) {
-            queryClient.setQueryData<SelectPublicChat[]>(
-              ["all-connectors"],
-              (oldChats) => {
-                if (!oldChats) return []
-
-                // Update the title of the targeted chat
-                const updatedChats: SelectPublicChat[] = oldChats.map((chat) =>
-                  chat.externalId === chatId
-                    ? { ...chat, title: editedTitle }
-                    : chat,
-                )
-
-                // Find the index of the renamed chat
-                const index = updatedChats.findIndex(
-                  (chat) => chat.externalId === chatId,
-                )
-                if (index > -1) {
-                  // Remove it from its current position
-                  const [renamedChat] = updatedChats.splice(index, 1)
-                  // Place it at the front
-                  updatedChats.unshift(renamedChat)
-                }
-
-                return updatedChats
-              },
-            )
-            setChatTitle(editedTitle)
-            setIsEditing(false)
-          } else {
-            throw new Error("Error renaming chat")
-          }
-        } catch (error) {
-          console.error("Error renaming chat:", error)
-        }
+        renameChatMutation.mutate({
+          chatId: chatId!,
+          newTitle: editedTitle,
+        })
       }
     } else if (e.key === "Escape") {
       e.preventDefault()

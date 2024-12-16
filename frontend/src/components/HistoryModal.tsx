@@ -24,6 +24,17 @@ export const fetchChats = async () => {
   return items
 }
 
+export const renameChat = async (
+  chatId: string,
+  newTitle: string,
+): Promise<{ chatId: string; title: string }> => {
+  const res = await api.chat.rename.$post({
+    json: { chatId, title: newTitle },
+  })
+  if (!res.ok) throw new Error("Error renaming chat")
+  return { chatId, title: newTitle }
+}
+
 const HistoryModal = ({
   onClose,
   pathname,
@@ -57,17 +68,6 @@ const HistoryModal = ({
     })
     if (!res.ok) throw new Error("Error deleting chat")
     return chatId
-  }
-
-  const renameChat = async (
-    chatId: string,
-    newTitle: string,
-  ): Promise<{ chatId: string; title: string }> => {
-    const res = await api.chat.rename.$post({
-      json: { chatId, title: newTitle },
-    })
-    if (!res.ok) throw new Error("Error renaming chat")
-    return { chatId, title: newTitle }
   }
 
   const mutation = useMutation<string, Error, string>({
@@ -199,7 +199,7 @@ const HistoryModal = ({
               {isEditing && editedChatId === item.externalId ? (
                 <input
                   ref={titleRef}
-                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow"
+                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
                   type="text"
                   value={editedTitle}
                   onChange={(e) => handleInput(e)}
@@ -209,7 +209,7 @@ const HistoryModal = ({
                 />
               ) : (
                 <span
-                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer"
+                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
                   onClick={() => {
                     router.navigate({
                       to: "/chat/$chatId",
@@ -231,16 +231,6 @@ const HistoryModal = ({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuItem
-                    key={"delete"}
-                    className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                    onClick={() => {
-                      mutation.mutate(item?.externalId)
-                    }}
-                  >
-                    <Trash2 size={16} className="text-red-500" />
-                    <span className="text-red-500">Delete</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
                     key={"rename"}
                     className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
                     onClick={() => {
@@ -256,6 +246,16 @@ const HistoryModal = ({
                   >
                     <Pencil size={16} />
                     <span>Rename</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    key={"delete"}
+                    className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                    onClick={() => {
+                      mutation.mutate(item?.externalId)
+                    }}
+                  >
+                    <Trash2 size={16} className="text-red-500" />
+                    <span className="text-red-500">Delete</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
