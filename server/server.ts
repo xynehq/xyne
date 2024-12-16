@@ -54,9 +54,7 @@ import {
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
-  // MessageApiV1,
   MessageApi,
-  MessageApiV2,
   MessageRetryApi,
 } from "./api/chat"
 import { z } from "zod"
@@ -155,7 +153,7 @@ export const AppRoutes = app
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   // this is event streaming end point
-  .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
+  .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
     "/message/retry",
     zValidator("query", messageRetrySchema),

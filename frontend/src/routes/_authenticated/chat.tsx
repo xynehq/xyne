@@ -1,6 +1,6 @@
-import MarkdownPreview from "@uiw/react-markdown-preview"
-import { api } from "@/api"
-import { Sidebar } from "@/components/Sidebar"
+import MarkdownPreview from "@uiw/react-markdown-preview";
+import { api } from "@/api";
+import { Sidebar } from "@/components/Sidebar";
 import {
   createFileRoute,
   useLoaderData,
@@ -23,30 +23,30 @@ import { SelectPublicChat } from "shared/types"
 import { fetchChats, renameChat } from "@/components/HistoryModal"
 
 type CurrentResp = {
-  resp: string
-  chatId?: string
-  messageId?: string
-  sources?: Citation[]
-  citationMap?: Record<number, number>
-}
+  resp: string;
+  chatId?: string;
+  messageId?: string;
+  sources?: Citation[];
+  citationMap?: Record<number, number>;
+};
 
 interface ChatPageProps {
-  user: PublicUser
-  workspace: PublicWorkspace
+  user: PublicUser;
+  workspace: PublicWorkspace;
 }
 
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
-  const params = Route.useParams()
-  const router = useRouter()
+  const params = Route.useParams();
+  const router = useRouter();
   let chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
-  })
-  const isWithChatId = !!(params as any).chatId
+  });
+  const isWithChatId = !!(params as any).chatId;
   const data = useLoaderData({
     from: isWithChatId
       ? "/_authenticated/chat/$chatId"
       : "/_authenticated/chat",
-  })
+  });
 
   const queryClient = useQueryClient()
 
@@ -55,24 +55,24 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
-    })
+    });
   }
 
-  const hasHandledQueryParam = useRef(false)
+  const hasHandledQueryParam = useRef(false);
 
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState("");
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    isWithChatId ? data?.messages || [] : [],
-  )
+    isWithChatId ? data?.messages || [] : []
+  );
   const [chatId, setChatId] = useState<string | null>(
-    (params as any).chatId || null,
-  )
+    (params as any).chatId || null
+  );
   const [chatTitle, setChatTitle] = useState<string | null>(
-    isWithChatId && data ? data?.chat?.title || null : null,
-  )
-  const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
+    isWithChatId && data ? data?.chat?.title || null : null
+  );
+  const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null);
 
-  const currentRespRef = useRef<CurrentResp | null>(null)
+  const currentRespRef = useRef<CurrentResp | null>(null);
   const [bookmark, setBookmark] = useState<boolean>(
     isWithChatId ? !!data?.chat?.isBookmarked || false : false,
   )
@@ -127,9 +127,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   useEffect(() => {
     if (inputRef.current) {
-      inputRef.current.focus()
+      inputRef.current.focus();
     }
-  }, [])
+  }, []);
 
   const { data: historyItems } = useQuery<SelectPublicChat[]>({
     queryKey: ["all-connectors"],
@@ -151,106 +151,106 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       const interval = setInterval(() => {
         setDots((prev) => {
           if (prev.length >= 3) {
-            return ""
+            return "";
           } else {
-            return prev + "."
+            return prev + ".";
           }
-        })
-      }, 500)
+        });
+      }, 500);
 
-      return () => clearInterval(interval)
+      return () => clearInterval(interval);
     } else {
-      setDots("")
+      setDots("");
     }
-  }, [isStreaming])
+  }, [isStreaming]);
 
   useEffect(() => {
     // Reset the state when the chatId changes
     if (!hasHandledQueryParam.current || isWithChatId) {
       setMessages(isWithChatId ? data?.messages || [] : [])
     }
-    setChatId((params as any).chatId || null)
-    setChatTitle(isWithChatId ? data?.chat?.title || null : null)
-    setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
+    setChatId((params as any).chatId || null);
+    setChatTitle(isWithChatId ? data?.chat?.title || null : null);
+    setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false);
     // only reset explicitly
     // hasHandledQueryParam part was added to prevent conflict between
     // this setting current resp to null and the handleSend trying to show
     // the assistant as thinking when the first message comes from query param
     if (!isStreaming && !hasHandledQueryParam.current) {
-      setCurrentResp(null)
-      currentRespRef.current = null
+      setCurrentResp(null);
+      currentRespRef.current = null;
     }
-    inputRef.current?.focus()
-    setQuery("")
-  }, [(params as any).chatId])
+    inputRef.current?.focus();
+    setQuery("");
+  }, [(params as any).chatId]);
 
   // New useEffect to handle query parameters
   useEffect(() => {
     if (chatParams.q && !hasHandledQueryParam.current) {
-      handleSend(decodeURIComponent(chatParams.q))
-      hasHandledQueryParam.current = true
+      handleSend(decodeURIComponent(chatParams.q));
+      hasHandledQueryParam.current = true;
       router.navigate({
         to: "/chat",
         search: (prev) => ({ ...prev, q: undefined }),
         replace: true,
-      })
+      });
     }
-  }, [chatParams.q])
+  }, [chatParams.q]);
 
   const handleSend = async (messageToSend: string) => {
-    if (!messageToSend) return
+    if (!messageToSend) return;
 
-    setQuery("")
+    setQuery("");
     // Append the user's message to the chat
     setMessages((prevMessages) => [
       ...prevMessages,
       { messageRole: "user", message: messageToSend },
-    ])
+    ]);
 
-    setIsStreaming(true)
-    setCurrentResp({ resp: "" })
-    currentRespRef.current = { resp: "", sources: [] }
+    setIsStreaming(true);
+    setCurrentResp({ resp: "" });
+    currentRespRef.current = { resp: "", sources: [] };
 
-    const url = new URL(`/api/v1/message/create`, window.location.origin)
+    const url = new URL(`/api/v1/message/create`, window.location.origin);
     if (chatId) {
-      url.searchParams.append("chatId", chatId)
+      url.searchParams.append("chatId", chatId);
     }
-    url.searchParams.append("modelId", "gpt-4o-mini")
-    url.searchParams.append("message", encodeURIComponent(messageToSend))
+    url.searchParams.append("modelId", "gpt-4o-mini");
+    url.searchParams.append("message", encodeURIComponent(messageToSend));
 
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
-    })
+    });
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
+      const { contextChunks, citationMap } = JSON.parse(event.data);
       if (currentRespRef.current) {
-        currentRespRef.current.sources = contextChunks
-        currentRespRef.current.citationMap = citationMap
+        currentRespRef.current.sources = contextChunks;
+        currentRespRef.current.citationMap = citationMap;
         setCurrentResp((prevResp) => ({
           ...prevResp,
           resp: prevResp?.resp || "",
           sources: contextChunks,
           citationMap,
-        }))
+        }));
       }
-    })
+    });
 
-    eventSource.addEventListener(ChatSSEvents.Start, (event) => {})
+    eventSource.addEventListener(ChatSSEvents.Start, (event) => {});
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       setCurrentResp((prevResp) => {
         const updatedResp = prevResp
           ? { ...prevResp, resp: prevResp.resp + event.data }
-          : { resp: event.data }
-        currentRespRef.current = updatedResp // Update the ref
-        return updatedResp
-      })
-    })
+          : { resp: event.data };
+        currentRespRef.current = updatedResp; // Update the ref
+        return updatedResp;
+      });
+    });
 
     eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-      const { chatId, messageId } = JSON.parse(event.data)
-      setChatId(chatId)
+      const { chatId, messageId } = JSON.parse(event.data);
+      setChatId(chatId);
 
       if (chatId) {
         // we are redirecting after 1 second
@@ -262,28 +262,44 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           router.navigate({
             to: "/chat/$chatId",
             params: { chatId },
-          })
-        }, 1000)
+          });
+        }, 1000);
       }
 
       // this will be optional
       if (messageId) {
-        setCurrentResp((resp) => {
-          const updatedResp = resp || { resp: "" }
-          updatedResp.chatId = chatId
-          updatedResp.messageId = messageId
-          currentRespRef.current = updatedResp // Update the ref
-          return updatedResp
-        })
+        // there is a race condition between end and metadata events
+        // the message id would not reach and this would prevent the
+        // retry of just now streamed message as no message id
+        if (currentRespRef.current) {
+          setCurrentResp((resp) => {
+            const updatedResp = resp || { resp: "" };
+            updatedResp.chatId = chatId;
+            updatedResp.messageId = messageId;
+            currentRespRef.current = updatedResp;
+            return updatedResp;
+          });
+        } else {
+          setMessages((prevMessages) => {
+            const lastMessage = prevMessages[prevMessages.length - 1];
+            if (lastMessage.messageRole === "assistant") {
+              return [
+                ...prevMessages.slice(0, -1),
+                { ...lastMessage, externalId: messageId },
+              ];
+            }
+            return prevMessages;
+          });
+        }
       }
-    })
+    });
 
     eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
-      setChatTitle(event.data)
-    })
+      setChatTitle(event.data);
+    });
 
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
-      const currentResp = currentRespRef.current
+      const currentResp = currentRespRef.current;
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
@@ -294,33 +310,33 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
           },
-        ])
+        ]);
       }
-      setCurrentResp(null)
-      currentRespRef.current = null
-      eventSource.close()
-      setIsStreaming(false)
-    })
+      setCurrentResp(null);
+      currentRespRef.current = null;
+      eventSource.close();
+      setIsStreaming(false);
+    });
 
     eventSource.addEventListener(ChatSSEvents.Error, (event) => {
-      console.error("Error with SSE:", event.data)
-      const currentResp = currentRespRef.current
+      console.error("Error with SSE:", event.data);
+      const currentResp = currentRespRef.current;
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
           { messageRole: "assistant", message: `Error occured: ${event.data}` },
-        ])
+        ]);
       }
-      setCurrentResp(null)
-      currentRespRef.current = null
-      eventSource.close()
-      setIsStreaming(false)
-    })
+      setCurrentResp(null);
+      currentRespRef.current = null;
+      eventSource.close();
+      setIsStreaming(false);
+    });
 
     // Handle error events
     eventSource.onerror = (error) => {
-      console.error("Error with SSE:", error)
-      const currentResp = currentRespRef.current
+      console.error("Error with SSE:", error);
+      const currentResp = currentRespRef.current;
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
@@ -328,83 +344,83 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             messageRole: "assistant",
             message: `Error occured: please try again`,
           },
-        ])
+        ]);
       }
-      setCurrentResp(null)
-      currentRespRef.current = null
-      eventSource.close()
-      setIsStreaming(false)
-    }
+      setCurrentResp(null);
+      currentRespRef.current = null;
+      eventSource.close();
+      setIsStreaming(false);
+    };
 
     // Clear the input
-    setQuery("")
-  }
+    setQuery("");
+  };
 
   const handleRetry = async (messageId: string) => {
-    if (!messageId) return
+    if (!messageId) return;
 
-    setIsStreaming(true) // Start streaming for retry
+    setIsStreaming(true); // Start streaming for retry
 
     // Update the assistant message being retried
     setMessages((prevMessages) =>
       prevMessages.map((msg) => {
         if (msg.externalId === messageId && msg.messageRole === "assistant") {
-          return { ...msg, message: "", isRetrying: true, sources: [] }
+          return { ...msg, message: "", isRetrying: true, sources: [] };
         }
-        return msg
-      }),
-    )
+        return msg;
+      })
+    );
 
-    const url = new URL(`/api/v1/message/retry`, window.location.origin)
-    url.searchParams.append("messageId", encodeURIComponent(messageId))
+    const url = new URL(`/api/v1/message/retry`, window.location.origin);
+    url.searchParams.append("messageId", encodeURIComponent(messageId));
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
-    })
+    });
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, message: msg.message + event.data }
-            : msg,
-        ),
-      )
-    })
+            : msg
+        )
+      );
+    });
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
+      const { contextChunks, citationMap } = JSON.parse(event.data);
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, sources: contextChunks, citationMap }
-            : msg,
-        ),
-      )
-    })
+            : msg
+        )
+      );
+    });
 
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, isRetrying: false }
-            : msg,
-        ),
-      )
-      eventSource.close()
-      setIsStreaming(false) // Stop streaming after retry
-    })
+            : msg
+        )
+      );
+      eventSource.close();
+      setIsStreaming(false); // Stop streaming after retry
+    });
 
     eventSource.onerror = (error) => {
-      console.error("Retry SSE Error:", error)
+      console.error("Retry SSE Error:", error);
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-        ),
-      )
-      eventSource.close()
-      setIsStreaming(false) // Stop streaming on error
-    }
-  }
+          msg.isRetrying ? { ...msg, isRetrying: false } : msg
+        )
+      );
+      eventSource.close();
+      setIsStreaming(false); // Stop streaming on error
+    };
+  };
 
   const handleBookmark = async () => {
     if (chatId) {
@@ -413,33 +429,33 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           chatId: chatId,
           bookmark: !bookmark,
         },
-      })
-      setBookmark(!bookmark)
+      });
+      setBookmark(!bookmark);
     }
-  }
+  };
 
   const isScrolledToBottom = () => {
-    const container = messagesContainerRef.current
-    if (!container) return true
+    const container = messagesContainerRef.current;
+    if (!container) return true;
 
-    const threshold = 100 // pixels from bottom to consider "at bottom"
+    const threshold = 100; // pixels from bottom to consider "at bottom"
     return (
       container.scrollHeight - container.scrollTop - container.clientHeight <
       threshold
-    )
-  }
+    );
+  };
 
   const handleScroll = () => {
-    const isAtBottom = isScrolledToBottom()
-    setUserHasScrolled(!isAtBottom)
-  }
+    const isAtBottom = isScrolledToBottom();
+    setUserHasScrolled(!isAtBottom);
+  };
 
   useEffect(() => {
-    const container = messagesContainerRef.current
-    if (!container || userHasScrolled) return
+    const container = messagesContainerRef.current;
+    if (!container || userHasScrolled) return;
 
-    container.scrollTop = container.scrollHeight
-  }, [messages, currentResp?.resp])
+    container.scrollTop = container.scrollHeight;
+  }, [messages, currentResp?.resp]);
 
   // if invalid chatId
   if (data.error) {
@@ -448,7 +464,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         <Sidebar />
         <div className="ml-[120px]">Error: Could not get data</div>
       </div>
-    )
+    );
   }
 
   const handleChatRename = async () => {
@@ -546,7 +562,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             >
               {messages.map((message, index) => {
                 const isSourcesVisible =
-                  showSources && currentMessageId === message.externalId
+                  showSources && currentMessageId === message.externalId;
                 return (
                   <ChatMessage
                     key={index}
@@ -563,18 +579,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         showSources &&
                         currentMessageId === message.externalId
                       ) {
-                        setShowSources(false)
-                        setCurrentCitations([])
-                        setCurrentMessageId(null)
+                        setShowSources(false);
+                        setCurrentCitations([]);
+                        setCurrentMessageId(null);
                       } else {
-                        setCurrentCitations(message?.sources || [])
-                        setShowSources(true)
-                        setCurrentMessageId(message.externalId)
+                        setCurrentCitations(message?.sources || []);
+                        setShowSources(true);
+                        setCurrentMessageId(message.externalId);
                       }
                     }}
                     sourcesVisible={isSourcesVisible}
                   />
-                )
+                );
               })}
               {currentResp && (
                 <ChatMessage
@@ -584,19 +600,20 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   responseDone={false}
                   handleRetry={handleRetry}
                   dots={dots}
+                  messageId={currentResp.messageId}
                   citationMap={currentResp.citationMap}
                   onToggleSources={() => {
                     if (
                       showSources &&
                       currentMessageId === currentResp.messageId
                     ) {
-                      setShowSources(false)
-                      setCurrentCitations([])
-                      setCurrentMessageId(null)
+                      setShowSources(false);
+                      setCurrentCitations([]);
+                      setCurrentMessageId(null);
                     } else {
-                      setCurrentCitations(currentResp.sources || [])
-                      setShowSources(true)
-                      setCurrentMessageId(currentResp.messageId || null)
+                      setCurrentCitations(currentResp.sources || []);
+                      setShowSources(true);
+                      setCurrentMessageId(currentResp.messageId || null);
                     }
                   }}
                   sourcesVisible={
@@ -616,13 +633,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
 const Sources = ({
   showSources,
   citations,
-}: { showSources: boolean; citations: Citation }) => {
+}: {
+  showSources: boolean;
+  citations: Citation;
+}) => {
   return showSources ? (
     <div className="fixed right-0 top-[48px] h-full w-1/4 border-l-[1px] border-[#E6EBF5] bg-white">
       <div className="ml-[40px] mt-[24px]">
@@ -668,8 +688,8 @@ const Sources = ({
         </ul>
       </div>
     </div>
-  ) : null
-}
+  ) : null;
+};
 
 const ChatMessage = ({
   message,
@@ -684,42 +704,42 @@ const ChatMessage = ({
   citationMap,
   sourcesVisible,
 }: {
-  message: string
-  isUser: boolean
-  responseDone: boolean
-  isRetrying?: boolean
-  citations?: string[]
-  messageId?: string
-  dots: string
-  handleRetry: (messageId: string) => void
-  onToggleSources: () => void
-  citationMap?: Record<number, number>
-  sourcesVisible: boolean
+  message: string;
+  isUser: boolean;
+  responseDone: boolean;
+  isRetrying?: boolean;
+  citations?: string[];
+  messageId?: string;
+  dots: string;
+  handleRetry: (messageId: string) => void;
+  onToggleSources: () => void;
+  citationMap?: Record<number, number>;
+  sourcesVisible: boolean;
 }) => {
-  const [isCopied, setIsCopied] = useState(false)
+  const [isCopied, setIsCopied] = useState(false);
   const processMessage = (text: string) => {
     if (citationMap) {
       return text.replace(/\[(\d+)\]/g, (match, num) => {
-        const index = citationMap[num]
-        const url = citations[index]
+        const index = citationMap[num];
+        const url = citations[index];
         if (url) {
-          return `[[${index + 1}]](${url})`
+          return `[[${index + 1}]](${url})`;
         }
 
-        return match
-      })
+        return match;
+      });
     } else {
       return text.replace(/\[(\d+)\]/g, (match, num) => {
-        const url = citations[num - 1]
+        const url = citations[num - 1];
 
         if (url) {
-          return `[[${num}]](${url})`
+          return `[[${num}]](${url})`;
         }
 
-        return match
-      })
+        return match;
+      });
     }
-  }
+  };
 
   return (
     <div
@@ -766,7 +786,7 @@ const ChatMessage = ({
                 onMouseDown={(e) => setIsCopied(true)}
                 onMouseUp={(e) => setIsCopied(false)}
                 onClick={() => {
-                  navigator.clipboard.writeText(processMessage(message))
+                  navigator.clipboard.writeText(processMessage(message));
                 }}
               />
               <img
@@ -807,25 +827,25 @@ const ChatMessage = ({
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
 const chatParams = z.object({
   q: z.string(),
-})
+});
 
-type XyneChat = z.infer<typeof chatParams>
+type XyneChat = z.infer<typeof chatParams>;
 
 export const Route = createFileRoute("/_authenticated/chat")({
   beforeLoad: (params) => {
-    return params
+    return params;
   },
   loader: async (params) => {
-    return params
+    return params;
   },
   component: () => {
-    const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <ChatPage user={user} workspace={workspace} />
+    const matches = useRouterState({ select: (s) => s.matches });
+    const { user, workspace } = matches[matches.length - 1].context;
+    return <ChatPage user={user} workspace={workspace} />;
   },
-})
+});
