@@ -103,20 +103,19 @@ const HistoryModal = ({
       queryClient.setQueryData<SelectPublicChat[]>(
         ["all-connectors"],
         (oldChats) => {
-          if (!oldChats) return []
+          if (!oldChats?.length) return []
 
-          // Find the index of the targeted chat
-          const index = oldChats.findIndex((chat) => chat.externalId === chatId)
-          if (index > -1) {
-            const updatedChat: SelectPublicChat = { ...oldChats[index], title }
-            // Remove that chat at old index and add updatedChat in front
-            const newChats: SelectPublicChat[] = [
-              updatedChat,
-              ...oldChats.filter((_, i) => i !== index),
-            ]
+          // Find the chat to update
+          const chatToUpdate: SelectPublicChat = oldChats.find(
+            (chat) => chat.externalId === chatId,
+          )
+          if (!chatToUpdate) return oldChats
 
-            return newChats
-          }
+          // Create updated chat and filter out old version in one pass
+          return [
+            { ...chatToUpdate, title },
+            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          ]
         },
       )
       setIsEditing(false)
