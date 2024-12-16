@@ -62,13 +62,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    isWithChatId ? data?.messages || [] : [],
+    isWithChatId ? data?.messages || [] : []
   )
   const [chatId, setChatId] = useState<string | null>(
-    (params as any).chatId || null,
+    (params as any).chatId || null
   )
   const [chatTitle, setChatTitle] = useState<string | null>(
-    isWithChatId && data ? data?.chat?.title || null : null,
+    isWithChatId && data ? data?.chat?.title || null : null
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
 
@@ -268,13 +268,29 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
       // this will be optional
       if (messageId) {
-        setCurrentResp((resp) => {
-          const updatedResp = resp || { resp: "" }
-          updatedResp.chatId = chatId
-          updatedResp.messageId = messageId
-          currentRespRef.current = updatedResp // Update the ref
-          return updatedResp
-        })
+        // there is a race condition between end and metadata events
+        // the message id would not reach and this would prevent the
+        // retry of just now streamed message as no message id
+        if (currentRespRef.current) {
+          setCurrentResp((resp) => {
+            const updatedResp = resp || { resp: "" }
+            updatedResp.chatId = chatId
+            updatedResp.messageId = messageId
+            currentRespRef.current = updatedResp
+            return updatedResp
+          })
+        } else {
+          setMessages((prevMessages) => {
+            const lastMessage = prevMessages[prevMessages.length - 1]
+            if (lastMessage.messageRole === "assistant") {
+              return [
+                ...prevMessages.slice(0, -1),
+                { ...lastMessage, externalId: messageId },
+              ]
+            }
+            return prevMessages
+          })
+        }
       }
     })
 
@@ -352,7 +368,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           return { ...msg, message: "", isRetrying: true, sources: [] }
         }
         return msg
-      }),
+      })
     )
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
@@ -366,8 +382,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, message: msg.message + event.data }
-            : msg,
-        ),
+            : msg
+        )
       )
     })
 
@@ -377,8 +393,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, sources: contextChunks, citationMap }
-            : msg,
-        ),
+            : msg
+        )
       )
     })
 
@@ -387,8 +403,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, isRetrying: false }
-            : msg,
-        ),
+            : msg
+        )
       )
       eventSource.close()
       setIsStreaming(false) // Stop streaming after retry
@@ -398,8 +414,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-        ),
+          msg.isRetrying ? { ...msg, isRetrying: false } : msg
+        )
       )
       eventSource.close()
       setIsStreaming(false) // Stop streaming on error
@@ -584,6 +600,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   responseDone={false}
                   handleRetry={handleRetry}
                   dots={dots}
+                  messageId={currentResp.messageId}
                   citationMap={currentResp.citationMap}
                   onToggleSources={() => {
                     if (
@@ -622,7 +639,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 const Sources = ({
   showSources,
   citations,
-}: { showSources: boolean; citations: Citation }) => {
+}: {
+  showSources: boolean
+  citations: Citation
+}) => {
   return showSources ? (
     <div className="fixed right-0 top-[48px] h-full w-1/4 border-l-[1px] border-[#E6EBF5] bg-white">
       <div className="ml-[40px] mt-[24px]">
