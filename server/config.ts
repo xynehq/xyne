@@ -11,6 +11,8 @@ if (process.env.NODE_ENV === "production") {
   host = process.env.HOST!
   redirectUri = process.env.GOOGLE_PROD_REDIRECT_URI!
 }
+// Adding this since in dev mode the vite FE is hosted on localhost:5173,
+// but server does auth using localhost:3000, so we need to manually redirect to the correct address post oauth
 if (process.env.NODE_ENV !== "production") {
   postOauthRedirect = "http://localhost:5173/"
 }
