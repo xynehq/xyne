@@ -422,7 +422,7 @@ export const searchVespa = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
-    "input.query(bm_c_w)": 0.5,
+    "input.query(bm25ChunkWeight)": 0.8,
     hits: limit,
     ...(offset
       ? {

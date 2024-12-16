@@ -101,7 +101,7 @@ schema file {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
-      query(bm_c_w) double 
+      query(bm25ChunkWeight) double 
     }
 
     # Compute vector similarity for chunks
@@ -144,10 +144,6 @@ schema file {
       expression: closeness(field, chunk_embeddings)
     }
 
-    function freshness_score() {
-      expression: if(isNan(attribute(updatedAt)) == 1.0,0,exp(-1 * (now() - (attribute(updatedAt) / 1000)) / (3600 * 24)))
-    }
-
     function document_age() {
       # Default document age assuming to 3 months when no updateAt timestamp is present
       expression: max(if(isNan(attribute(updatedAt)) == 1, 7890000, now() - (attribute(updatedAt) / 1000)) / 31536000, 0)
@@ -171,11 +167,7 @@ schema file {
     }
 
     function combined_bm25() {
-      expression: (query(bm_c_w) * scaled_bm25_chunks) + scaled_bm25_title
-    }
-
-    function freshness_weight() {
-      expression: if(scaled_bm25_title > 0.6, freshness_score, if(scaled_bm25_chunks > 0.8, freshness_score,0))
+      expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_title
     }
 
     # First phase combines BM25 (title and chunks) and vector similarity (chunks)
@@ -183,12 +175,11 @@ schema file {
       expression: (query(alpha) * scale(chunk_vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
     }
 
-
     global-phase {
       expression {
         (
-          (query(alpha) * normalize_linear(chunk_vector_score)) +
-          ((1 - query(alpha)) * max(scaled_bm25_title,(query(bm_c_w) * scaled_bm25_chunks)))
+          (query(alpha) * scale(chunk_vector_score)) +
+          ((1 - query(alpha)) * max(scaled_bm25_title,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
         ) * doc_recency
       }
       rerank-count: 1000
@@ -200,7 +191,7 @@ schema file {
       scaled_bm25_title
       doc_recency
       query(alpha)
-      query(bm_c_w)
+      query(bm25ChunkWeight)
     }
   }
 

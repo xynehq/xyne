@@ -160,6 +160,7 @@ schema event {
         inputs {
             query(e) tensor<bfloat16>(v[1024])
             query(alpha) double 
+            query(bm25ChunkWeight) double 
         }
 
         function scale(val) {
@@ -210,8 +211,8 @@ schema event {
         global-phase {
             expression {
               (
-                (query(alpha) * normalize_linear(vector_score)) +
-                ((1 - query(alpha)) * max(scaled_bm25_name,scaled_bm25_description)) 
+                (query(alpha) * scale(vector_score)) +
+                ((1 - query(alpha)) * max(scale(bm25(name)),scale(bm25(description)))) 
               ) * doc_recency
             }
             rerank-count: 1000
