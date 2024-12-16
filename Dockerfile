@@ -23,5 +23,8 @@ EXPOSE 80/tcp
 # Run the backend app
 # Set the working directory to the server folder
 WORKDIR /usr/src/app/server
+
+RUN mkdir -p downloads
+
 USER bun
 ENTRYPOINT [ "bun", "run", "server.ts" ]
