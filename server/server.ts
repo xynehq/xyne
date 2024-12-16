@@ -275,7 +275,7 @@ app.get(
         existingUser.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken)
-      return c.redirect("/")
+      return c.redirect(postOauthRedirect)
     }
 
     // check if workspace exists
@@ -299,7 +299,7 @@ app.get(
         user.workspaceExternalId,
       )
       setCookieByEnv(c, CookieName, jwtToken)
-      return c.redirect("/")
+      return c.redirect(postOauthRedirect)
     }
 
     // we could not find the user and the workspace
@@ -326,7 +326,7 @@ app.get(
       userAcc.workspaceExternalId,
     )
     setCookieByEnv(c, CookieName, jwtToken)
-    return c.redirect("/")
+    return c.redirect(postOauthRedirect)
   },
 )
 
