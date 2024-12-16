@@ -103,23 +103,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         (oldChats) => {
           if (!oldChats) return []
 
-          // Update the title of the targeted chat
-          const updatedChats: SelectPublicChat[] = oldChats.map((chat) =>
-            chat.externalId === chatId ? { ...chat, title } : chat,
-          )
-
-          // Find the index of the renamed chat
-          const index = updatedChats.findIndex(
-            (chat) => chat.externalId === chatId,
-          )
+          // Find the index of the targeted chat
+          const index = oldChats.findIndex((chat) => chat.externalId === chatId)
           if (index > -1) {
-            // Remove it from its current position
-            const [renamedChat] = updatedChats.splice(index, 1)
-            // Place it at the front
-            updatedChats.unshift(renamedChat)
-          }
+            const updatedChat: SelectPublicChat = { ...oldChats[index], title }
+            // Remove that chat at old index and add updatedChat in front
+            const newChats: SelectPublicChat[] = [
+              updatedChat,
+              ...oldChats.filter((_, i) => i !== index),
+            ]
 
-          return updatedChats
+            return newChats
+          }
         },
       )
       setChatTitle(editedTitle)
