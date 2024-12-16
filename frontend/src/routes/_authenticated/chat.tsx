@@ -8,7 +8,7 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Eye, EyeOff } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Eye, EyeOff, Pencil } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
@@ -18,6 +18,9 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
+import { SelectPublicChat } from "shared/types"
+import { fetchChats, renameChat } from "@/components/HistoryModal"
 
 type CurrentResp = {
   resp: string
@@ -44,6 +47,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       ? "/_authenticated/chat/$chatId"
       : "/_authenticated/chat",
   })
+
+  const queryClient = useQueryClient()
 
   // query and param both can't exist same time
   if (chatParams.q && isWithChatId) {
@@ -79,12 +84,67 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState<boolean>(false)
+  const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
+  const titleRef = useRef<HTMLInputElement | null>(null)
+
+  const renameChatMutation = useMutation<
+    { chatId: string; title: string }, // The type of data returned from the mutation
+    Error, // The type of error
+    { chatId: string; newTitle: string } // The type of variables passed to the mutation
+  >({
+    mutationFn: async ({ chatId, newTitle }) => {
+      return await renameChat(chatId, newTitle)
+    },
+    onSuccess: ({ chatId, title }) => {
+      // Update the UI by renaming the chat
+      queryClient.setQueryData<SelectPublicChat[]>(
+        ["all-connectors"],
+        (oldChats) => {
+          if (!oldChats?.length) return []
+
+          // Find the chat to update
+          const chatToUpdate: SelectPublicChat = oldChats.find(
+            (chat) => chat.externalId === chatId,
+          )
+          if (!chatToUpdate) return oldChats
+
+          // Create updated chat and filter out old version in one pass
+          return [
+            { ...chatToUpdate, title },
+            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          ]
+        },
+      )
+      setChatTitle(editedTitle)
+      setIsEditing(false)
+    },
+    onError: (error: Error) => {
+      setIsEditing(false)
+      console.error("Failed to rename chat:", error)
+    },
+  })
 
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
     }
   }, [])
+
+  const { data: historyItems } = useQuery<SelectPublicChat[]>({
+    queryKey: ["all-connectors"],
+    queryFn: fetchChats,
+  })
+  const currentChat = historyItems?.find((item) => item.externalId === chatId)
+
+  useEffect(() => {
+    // Only update local state if we are not currently editing the title
+    // This prevents overwriting local edits while user is typing
+    if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
+      setChatTitle(currentChat.title)
+      setEditedTitle(currentChat.title)
+    }
+  }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
     if (isStreaming) {
@@ -106,7 +166,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   useEffect(() => {
     // Reset the state when the chatId changes
-    if (!hasHandledQueryParam.current) {
+    if (!hasHandledQueryParam.current || isWithChatId) {
       setMessages(isWithChatId ? data?.messages || [] : [])
     }
     setChatId((params as any).chatId || null)
@@ -390,18 +450,82 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       </div>
     )
   }
+
+  const handleChatRename = async () => {
+    setIsEditing(true)
+    setTimeout(() => {
+      if (titleRef.current) {
+        titleRef.current.focus() // Focus on the span for immediate editing
+      }
+    }, 0)
+    setEditedTitle(chatTitle)
+  }
+
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      if (editedTitle && editedTitle !== chatTitle) {
+        renameChatMutation.mutate({
+          chatId: chatId!,
+          newTitle: editedTitle,
+        })
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      setEditedTitle(chatTitle) // Revert to original title
+      setIsEditing(false)
+      if (titleRef.current) {
+        titleRef.current.value = chatTitle! // Revert UI to original title
+      }
+    }
+  }
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditedTitle(e.target.value) // Update state with edited content
+  }
+
+  const handleBlur = () => {
+    if (editedTitle !== chatTitle) {
+      // Revert to original title if editing is canceled
+      setEditedTitle(chatTitle)
+      if (titleRef.current) {
+        titleRef.current.value = chatTitle! // Revert UI to original title
+      }
+    }
+    setIsEditing(false)
+  }
+
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar photoLink={user.photoLink ?? ""} />
       <div className="h-full w-full flex flex-col relative">
         <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
           <div className="flex h-[48px] items-center max-w-2xl w-full">
-            <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
-              {chatTitle}
-            </span>
+            {isEditing ? (
+              <input
+                ref={titleRef}
+                className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap"
+                onInput={handleInput}
+                onKeyDown={handleKeyDown}
+                onBlur={handleBlur}
+                value={editedTitle!}
+              />
+            ) : (
+              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+                {chatTitle}
+              </span>
+            )}
+            {chatTitle && (
+              <Pencil
+                stroke="#4A4F59"
+                size={18}
+                onClick={handleChatRename}
+                className="cursor-pointer"
+              />
+            )}
             <Bookmark
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-              className="ml-[40px] cursor-pointer"
+              className="ml-[20px] cursor-pointer"
               onClick={handleBookmark}
               size={18}
             />

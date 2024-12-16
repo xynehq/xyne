@@ -1,7 +1,7 @@
 import { api } from "@/api"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X } from "lucide-react"
+import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
@@ -9,8 +9,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
+import { useRef, useState } from "react"
 
-const fetchChats = async () => {
+export const fetchChats = async () => {
   let items = []
   const response = await api.chat.history.$get({
     query: {
@@ -23,12 +24,28 @@ const fetchChats = async () => {
   return items
 }
 
+export const renameChat = async (
+  chatId: string,
+  newTitle: string,
+): Promise<{ chatId: string; title: string }> => {
+  const res = await api.chat.rename.$post({
+    json: { chatId, title: newTitle },
+  })
+  if (!res.ok) throw new Error("Error renaming chat")
+  return { chatId, title: newTitle }
+}
+
 const HistoryModal = ({
   onClose,
   pathname,
 }: { onClose: () => void; pathname: string }) => {
   const queryClient = useQueryClient()
   const navigate = useNavigate({ from: "/" })
+
+  const [isEditing, setIsEditing] = useState<boolean>(false)
+  const [editedTitle, setEditedTitle] = useState<string>("")
+  const [editedChatId, setEditedChatId] = useState<string | null>(null)
+  const titleRef = useRef<HTMLInputElement | null>(null)
 
   const router = useRouter()
   const {
@@ -73,11 +90,84 @@ const HistoryModal = ({
     },
   })
 
+  const renameChatMutation = useMutation<
+    { chatId: string; title: string }, // The type of data returned from the mutation
+    Error, // The type of error
+    { chatId: string; newTitle: string } // The type of variables passed to the mutation
+  >({
+    mutationFn: async ({ chatId, newTitle }) => {
+      return await renameChat(chatId, newTitle)
+    },
+    onSuccess: ({ chatId, title }) => {
+      // Update the UI by renaming the chat
+      queryClient.setQueryData<SelectPublicChat[]>(
+        ["all-connectors"],
+        (oldChats) => {
+          if (!oldChats?.length) return []
+
+          // Find the chat to update
+          const chatToUpdate: SelectPublicChat = oldChats.find(
+            (chat) => chat.externalId === chatId,
+          )
+          if (!chatToUpdate) return oldChats
+
+          // Create updated chat and filter out old version in one pass
+          return [
+            { ...chatToUpdate, title },
+            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          ]
+        },
+      )
+      setIsEditing(false)
+    },
+    onError: (error: Error) => {
+      setIsEditing(false)
+      console.error("Failed to rename chat:", error)
+    },
+  })
+
   if (error) {
     return <p>Something went wrong...</p>
   }
   if (isPending) {
     return <p>Loading...</p>
+  }
+
+  const handleKeyDown = async (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    item: SelectPublicChat,
+  ) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      if (editedTitle && editedTitle !== item.title) {
+        renameChatMutation.mutate({
+          chatId: item?.externalId,
+          newTitle: editedTitle,
+        })
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      setEditedTitle(item.title) // Revert to original title
+      setIsEditing(false)
+      if (titleRef.current) {
+        titleRef.current.value = item.title // Revert UI to original title
+      }
+    }
+  }
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditedTitle(e.target.value) // Update state with edited content
+  }
+
+  const handleBlur = (item: SelectPublicChat) => {
+    if (editedTitle !== item.title) {
+      // Revert to original title if editing is canceled
+      setEditedTitle(item.title)
+      if (titleRef.current) {
+        titleRef.current.value = item.title // Revert UI to original title
+      }
+    }
+    setIsEditing(false) // Exit editing mode
   }
 
   return (
@@ -100,18 +190,30 @@ const HistoryModal = ({
               key={index}
               className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
             >
-              <span
-                className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer"
-                onClick={() => {
-                  router.navigate({
-                    to: "/chat/$chatId",
-                    params: { chatId: item.externalId },
-                  })
-                  item.extenalId
-                }}
-              >
-                {item.title}
-              </span>
+              {isEditing && editedChatId === item.externalId ? (
+                <input
+                  ref={titleRef}
+                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                  type="text"
+                  value={editedTitle}
+                  onChange={(e) => handleInput(e)}
+                  onBlur={() => handleBlur(item)}
+                  onKeyDown={(e) => handleKeyDown(e, item)}
+                  autoFocus
+                />
+              ) : (
+                <span
+                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                  onClick={() => {
+                    router.navigate({
+                      to: "/chat/$chatId",
+                      params: { chatId: item.externalId },
+                    })
+                  }}
+                >
+                  {item.title}
+                </span>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <MoreHorizontal
@@ -122,6 +224,23 @@ const HistoryModal = ({
                   />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
+                  <DropdownMenuItem
+                    key={"rename"}
+                    className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                    onClick={() => {
+                      setEditedTitle(item.title) // Set the current title for editing
+                      setEditedChatId(item.externalId) // Track the chat being edited
+                      setIsEditing(true)
+                      setTimeout(() => {
+                        if (titleRef.current) {
+                          titleRef.current.focus()
+                        }
+                      }, 0)
+                    }}
+                  >
+                    <Pencil size={16} />
+                    <span>Rename</span>
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     key={"delete"}
                     className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
