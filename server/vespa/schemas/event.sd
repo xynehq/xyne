@@ -132,7 +132,7 @@ schema event {
         }
     }
 
-     field chunk_embeddings type tensor<bfloat16>(v[1024])  {
+     field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
         indexing: (input name || "") . " " .(input description || ""). " " .((input attachmentFilenames | for_each { _ }) . " " || ""). " " .(input url || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -156,7 +156,7 @@ schema event {
 
     rank-profile default {
         inputs {
-            query(e) tensor<bfloat16>(v[1024])
+            query(e) tensor<bfloat16>(v[DIMS])
         }
 
         function scale(val) {
