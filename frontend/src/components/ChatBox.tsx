@@ -5,9 +5,15 @@ interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void
   handleSend: (messageToSend: string) => void
+  isStreaming?: boolean
 }
 
-export const ChatBox = ({ query, setQuery, handleSend }: ChatBoxProps) => {
+export const ChatBox = ({
+  query,
+  setQuery,
+  handleSend,
+  isStreaming = false,
+}: ChatBoxProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   useEffect(() => {
     if (inputRef.current) {
@@ -31,7 +37,9 @@ export const ChatBox = ({ query, setQuery, handleSend }: ChatBoxProps) => {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
-              handleSend(query)
+              if (!isStreaming) {
+                handleSend(query)
+              }
             }
           }}
           style={{
@@ -50,6 +58,7 @@ export const ChatBox = ({ query, setQuery, handleSend }: ChatBoxProps) => {
         <Paperclip size={16} className="text-[#464D53] cursor-pointer" />
         <Globe size={16} className="text-[#464D53] cursor-pointer" />
         <button
+          disabled={isStreaming}
           onClick={() => handleSend(query)}
           style={{ marginLeft: "auto" }}
           className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
