@@ -199,6 +199,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleSend = async (messageToSend: string) => {
     if (!messageToSend) return
+    // Prevent the user from sending a query if streaming is already in progress.
     if (isStreaming) return
 
     setQuery("")
