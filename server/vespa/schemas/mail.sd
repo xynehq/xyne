@@ -95,7 +95,7 @@ schema mail {
     attribute: fast-search
   }
   }
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[1024])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: guard { input chunks } | embed | attribute | index
     attribute {
       distance-metric: angular
@@ -123,7 +123,7 @@ schema mail {
   # Hybrid search rank profile combining BM25 for subject and chunks, and vector search for chunk embeddings
   rank-profile initial {
     inputs {
-      query(e) tensor<bfloat16>(v[1024])  # Query embedding
+      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
     }
 
