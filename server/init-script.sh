@@ -1,4 +1,4 @@
-# WARNING! NOT TO BE EXECUTED IF THE APP IS RUNNING IN DOCKER, EXECUTE ONLY IF RUNNING USING SUDO
+# Warning: Do not execute if App is running in Docker
 
 #!/bin/bash
 set -e
