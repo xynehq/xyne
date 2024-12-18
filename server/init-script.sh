@@ -34,8 +34,6 @@ else
   ./deploy.sh
 fi
 
-./deploy.sh
-
 echo "Running build Command for Frontend....."
 cd ../../frontend
 
