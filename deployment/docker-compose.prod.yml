@@ -59,6 +59,7 @@ services:
     restart: always
 networks:
   xyne:
+    driver: bridge
 volumes:
   vespa-data:
     driver: local
