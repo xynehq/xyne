@@ -101,6 +101,14 @@ schema mail {
       distance-metric: angular
     }
   }
+
+  field subject_embeddings type tensor<bfloat16>(v[1024])  {
+    indexing: input subject | embed | attribute | index
+    attribute {
+        distance-metric: angular
+    }
+  }
+
   field subject_fuzzy type string {
     indexing: input subject | index
     index {
@@ -180,6 +188,13 @@ schema mail {
         expression: 2*atan(val/4)/(3.14159)
       }
 
+      function subject_vector_score() {
+        expression: closeness(field, subject_embeddings)
+      }
+      function vector_score() {
+        expression: max(chunk_vector_score,subject_vector_score)
+      }
+
       function scaled_bm25_chunks() {
         expression: scale(bm25(chunks))
       }
@@ -193,13 +208,13 @@ schema mail {
       }
 
       first-phase {
-        expression: (query(alpha) * scale(chunk_vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+        expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
       }
 
       global-phase {
         expression {
           (
-            (query(alpha) * scale(chunk_vector_score)) +
+            (query(alpha) * scale(vector_score)) +
             ((1 - query(alpha)) * max(scaled_bm25_subject,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
           ) * doc_recency
         }
@@ -208,6 +223,7 @@ schema mail {
 
     match-features {
       chunk_vector_score
+      subject_vector_score
       scaled_bm25_chunks
       scaled_bm25_subject
       doc_recency

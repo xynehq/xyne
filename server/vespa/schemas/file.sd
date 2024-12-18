@@ -76,6 +76,13 @@ schema file {
     }
   }
   
+  field title_embeddings type tensor<bfloat16>(v[1024])  {
+    indexing: input title | embed | attribute | index
+    attribute {
+        distance-metric: angular
+    }
+  }
+
   field title_fuzzy type string {
     indexing: input title | index
     index {
@@ -166,19 +173,28 @@ schema file {
       expression: scale(bm25(title))
     }
 
+    function title_vector_score() {
+      expression: closeness(field, title_embeddings)
+    }
+
+    function vector_score() {
+      # taking whichever has a good matching
+      expression: max(chunk_vector_score,title_vector_score)
+    }
+
     function combined_bm25() {
       expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_title
     }
 
     # First phase combines BM25 (title and chunks) and vector similarity (chunks)
     first-phase {
-      expression: (query(alpha) * scale(chunk_vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+      expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
     }
 
     global-phase {
       expression {
         (
-          (query(alpha) * scale(chunk_vector_score)) +
+          (query(alpha) * scale(vector_score)) +
           ((1 - query(alpha)) * max(scaled_bm25_title,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
         ) * doc_recency
       }
@@ -187,6 +203,7 @@ schema file {
 
     match-features {
       chunk_vector_score
+      title_vector_score
       scaled_bm25_chunks
       scaled_bm25_title
       doc_recency
