@@ -20,6 +20,20 @@ echo "Deploying Vespa....."
 
 cd ./vespa
 
+# Load .env variables (if any)
+if [ -f "../.env" ]; then
+  export $(grep -v '^#' ../.env | xargs)
+fi
+
+# Check if EMBEDDING_MODEL is set
+if [ -n "$EMBEDDING_MODEL" ]; then
+  echo "Using EMBEDDING_MODEL=$EMBEDDING_MODEL"
+  ./deploy.sh "$EMBEDDING_MODEL"
+else
+  echo "No EMBEDDING_MODEL provided. Using default model."
+  ./deploy.sh
+fi
+
 ./deploy.sh
 
 echo "Running build Command for Frontend....."
