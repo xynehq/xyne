@@ -62,13 +62,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    isWithChatId ? data?.messages || [] : []
+    isWithChatId ? data?.messages || [] : [],
   )
   const [chatId, setChatId] = useState<string | null>(
-    (params as any).chatId || null
+    (params as any).chatId || null,
   )
   const [chatTitle, setChatTitle] = useState<string | null>(
-    isWithChatId && data ? data?.chat?.title || null : null
+    isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
 
@@ -360,6 +360,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleRetry = async (messageId: string) => {
     if (!messageId) return
+    // Prevent retry if streaming is already happening
+    if (isStreaming) return
 
     setIsStreaming(true) // Start streaming for retry
 
@@ -370,7 +372,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           return { ...msg, message: "", isRetrying: true, sources: [] }
         }
         return msg
-      })
+      }),
     )
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
@@ -384,8 +386,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, message: msg.message + event.data }
-            : msg
-        )
+            : msg,
+        ),
       )
     })
 
@@ -395,8 +397,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, sources: contextChunks, citationMap }
-            : msg
-        )
+            : msg,
+        ),
       )
     })
 
@@ -405,8 +407,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         prevMessages.map((msg) =>
           msg.externalId === messageId && msg.isRetrying
             ? { ...msg, isRetrying: false }
-            : msg
-        )
+            : msg,
+        ),
       )
       eventSource.close()
       setIsStreaming(false) // Stop streaming after retry
@@ -416,8 +418,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg
-        )
+          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+        ),
       )
       eventSource.close()
       setIsStreaming(false) // Stop streaming on error
@@ -591,6 +593,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       }
                     }}
                     sourcesVisible={isSourcesVisible}
+                    isStreaming={isStreaming}
                   />
                 )
               })}
@@ -621,6 +624,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   sourcesVisible={
                     showSources && currentMessageId === currentResp.messageId
                   }
+                  isStreaming={isStreaming}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -706,6 +710,7 @@ const ChatMessage = ({
   onToggleSources,
   citationMap,
   sourcesVisible,
+  isStreaming = false,
 }: {
   message: string
   isUser: boolean
@@ -718,6 +723,7 @@ const ChatMessage = ({
   onToggleSources: () => void
   citationMap?: Record<number, number>
   sourcesVisible: boolean
+  isStreaming?: boolean
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const processMessage = (text: string) => {
@@ -793,7 +799,7 @@ const ChatMessage = ({
                 }}
               />
               <img
-                className="ml-[18px] cursor-pointer"
+                className={`ml-[18px] ${isStreaming ? "opacity-50" : "cursor-pointer"}`}
                 src={Retry}
                 onClick={() => handleRetry(messageId!)}
               />
