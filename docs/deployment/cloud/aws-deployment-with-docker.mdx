@@ -23,9 +23,25 @@ ssh -i ~/path/to/your-private-key-file.pem ec2-user@public-ipv4-address [or your
 Deployment of Xyne on AWS EC2 requires the following dependencies to be installed on the instance:
 
 - [Bun](https://bun.sh/docs/installation)
-- [Docker](https://docs.docker.com/engine/install/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
+   - ```javascript
+   sudo yum update -y && curl -fsSL https://bun.sh/install | bash 
+   source ~/.bashrc
+   bun --version
+   ```
+- [Docker](https://docs.docker.com/engine/install/) & [Docker Compose](https://docs.docker.com/compose/install/)
+   - ```javascript
+      sudo yum update -y && sudo yum install -y docker && sudo service docker start && sudo usermod -a -G docker $USER
+      curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
+      chmod +x docker-compose-linux-x86_64 && sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
+      docker-compose --version
+      ```
 - [Vespa CLI](https://docs.vespa.ai/en/build-install-vespa.html)
+   - ```javascript
+   wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz [ you can choose a more recent version]
+   tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz
+   sudo mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/
+   vespa version
+   ```
 
 Once you have installed the dependencies, you can use the following steps to set up the instance.
 
