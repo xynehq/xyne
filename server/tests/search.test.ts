@@ -97,7 +97,7 @@ describe("search events", () => {
     ).toBe("Their test talk face out.")
     expect(
       searchResults[correctDocIndex].type === "event" &&
-        searchResults[correctDocIndex]?.attendeesNames.includes(
+        searchResults[correctDocIndex].attendeesNames!.includes(
           "Jonathon Phillips",
         ),
     ).toBeTruthy()
@@ -227,7 +227,7 @@ describe("search files", () => {
     const searchResults = (await search(query)).results
     const doc1 = searchResults[0].type == "file" && searchResults[0].updatedAt || 0
     const doc2 = searchResults[1].type == "file" && searchResults[1].updatedAt || 0
-    
+
     expect(doc1 > doc2).toBeTrue()
   })
   
