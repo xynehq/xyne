@@ -398,7 +398,7 @@ export const searchVespa = async (
   entity: Entity | null,
   limit = config.page,
   offset: number = 0,
-  alpha: number = 0.4,
+  alpha: number = 0.5,
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -870,4 +870,4 @@ export const getItems = async (
 
 // await deleteAllDocuments()
 
-// console.log((await searchVespa("xsafe challenge everything.",'junaid.s@xynehq.com',null,null,2)).root.children[2])
+// console.log((await searchVespa("Prevent force difference kid",'junaid.s@xynehq.com',null,null,8)).root.children.map(i => i.fields))

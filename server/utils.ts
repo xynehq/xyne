@@ -208,6 +208,10 @@ export const removeStopwords = (text: string) => {
     "with",
     "some",
     "you",
+    "he",
+    "his",
+    "from",
+    "s"
   ]
   // Split the text into words using regex
   const words = text.split(/\s+/)
