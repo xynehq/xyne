@@ -5,8 +5,10 @@ import type {
   FileAutocomplete,
   MailAutocomplete,
   UserAutocomplete,
+  UserQueryHAutocomplete,
 } from "shared/types"
 import { ForwardedRef, forwardRef } from "react"
+import { History } from "lucide-react"
 
 export const FileAutocompleteElement = ({
   result,
@@ -14,7 +16,7 @@ export const FileAutocompleteElement = ({
   return (
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
-      <p>{result.title}</p>
+      <p className="truncate">{result.title}</p>
     </div>
   )
 }
@@ -25,7 +27,7 @@ export const MailAutocompleteElement = ({
   return (
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
-      <p>{result.subject}</p>
+      <p className="truncate">{result.subject}</p>
     </div>
   )
 }
@@ -36,7 +38,7 @@ export const EventAutocompleteElement = ({
   return (
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
-      <p>{result.name}</p>
+      <p className="truncate">{result.name}</p>
     </div>
   )
 }
@@ -51,7 +53,18 @@ export const UserAutocompleteElement = ({
         className="mr-2 w-[16px] h-[16px] rounded-full"
         src={result.photoLink}
       ></img>
-      <p>{result.name || result.email}</p>
+      <p className="truncate">{result.name || result.email}</p>
+    </div>
+  )
+}
+export const UserQueryHistoryAutocompleteElement = ({
+  result,
+  onClick,
+}: { result: UserQueryHAutocomplete; onClick: () => void }) => {
+  return (
+    <div onClick={onClick} className="flex items-center">
+      <History size={16} className="mr-[10px]" />
+      <p>{result.query_text}</p>
     </div>
   )
 }
@@ -80,6 +93,13 @@ export const AutocompleteElement = forwardRef(
       content = <MailAutocompleteElement result={result} />
     } else if (result.type === "event") {
       content = <EventAutocompleteElement result={result} />
+    } else if (result.type === "user_query") {
+      content = (
+        <UserQueryHistoryAutocompleteElement
+          onClick={onClick}
+          result={result}
+        />
+      )
     } else {
       throw new Error("invalid type")
     }

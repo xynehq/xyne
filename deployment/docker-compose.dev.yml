@@ -5,7 +5,7 @@ services:
   # image: xyne
   # container_name: xyne-app
   # build:
-  #   context: .
+  #   context: ..
   #   dockerfile: Dockerfile
   # ports:
   #   - "3000:3000"
@@ -21,6 +21,12 @@ services:
     image: vespaengine/vespa
     container_name: vespa
     hostname: vespa-container
+    deploy:
+      resources:
+        limits:
+          memory: 20G
+    ulimits:
+      nproc: 409600
     ports:
       - "8080:8080"
       - "19071:19071"
@@ -28,6 +34,12 @@ services:
       - ../server/vespa-data:/opt/vespa/var
     networks:
       - xyne
+    environment:
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC
+
+
+
     restart: always
     logging:
       driver: json-file

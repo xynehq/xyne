@@ -4,6 +4,7 @@ import {
   AutocompleteApi,
   autocompleteSchema,
   chatBookmarkSchema,
+  chatDeleteSchema,
   chatHistorySchema,
   chatRenameSchema,
   chatSchema,
@@ -49,11 +50,11 @@ import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ChatBookmarkApi,
+  ChatDeleteApi,
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
-  // MessageApiV1,
-  MessageApiV2,
+  MessageApi,
   MessageRetryApi,
 } from "./api/chat"
 import { z } from "zod"
@@ -62,9 +63,8 @@ type Variables = JwtVariables
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
+const postOauthRedirect = config.postOauthRedirect;
 
-const postOauthRedirect = config.postOauthRedirect
-const frontendBaseURL = process.env.FRONTEND_BASE_URL!
 const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = "auth-token"
@@ -91,7 +91,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
   if (!authToken) {
     Logger.warn("Redirected by server - No AuthToken")
     // Redirect to login page if no token found
-    return c.redirect(`${frontendBaseURL}/auth`)
+    return c.redirect(`/auth`)
   }
 
   try {
@@ -103,7 +103,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
-    return c.redirect(`${frontendBaseURL}/auth`)
+    return c.redirect(`/auth`)
   }
 }
 
@@ -151,9 +151,10 @@ export const AppRoutes = app
     ChatBookmarkApi,
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
+  .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   // this is event streaming end point
-  .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
+  .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
     "/message/retry",
     zValidator("query", messageRetrySchema),
@@ -331,6 +332,7 @@ app.get(
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/chat", AuthRedirect, (c) => c.redirect('/'))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(

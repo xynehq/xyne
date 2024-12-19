@@ -27,6 +27,15 @@ import { Connectors } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
+import { Progress } from "@/components/ui/progress"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
 const logger = console
 
@@ -354,16 +363,51 @@ const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
+const UserStatsTable = ({
+  userStats,
+}: { userStats: { [email: string]: any } }) => {
+  return (
+    <Table className="ml-[20px] max-h-[400px]">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Email</TableHead>
+          <TableHead>Gmail</TableHead>
+          <TableHead>Drive</TableHead>
+          <TableHead>Contacts</TableHead>
+          <TableHead>Events</TableHead>
+          {/* <TableHead>Status</TableHead> */}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {Object.entries(userStats).map(([email, stats]) => (
+          <TableRow key={email}>
+            <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+              {email}
+            </TableCell>
+            <TableCell>{stats.gmailCount}</TableCell>
+            <TableCell>{stats.driveCount}</TableCell>
+            <TableCell>{stats.contactsCount}</TableCell>
+            <TableCell>{stats.eventsCount}</TableCell>
+            {/* <TableCell className={`${stats.done ? "text-lime-600": ""}`}>{stats.done ? "Done" : "In Progress"}</TableCell> */}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
 const ServiceAccountTab = ({
   connectors,
-  updateStatus,
   onSuccess,
   isIntegrating,
+  progress,
 }: {
   connectors: Connectors[]
   updateStatus: string
   onSuccess: any
   isIntegrating: boolean
+  progress: number
+  userStats: any
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
@@ -385,12 +429,16 @@ const ServiceAccountTab = ({
   } else if (googleSAConnector) {
     return (
       <CardHeader>
-        <CardTitle>{googleSAConnector?.app}</CardTitle>
-        <CardDescription>Connecting App</CardDescription>
-        <CardContent className="pt-0">
-          <p>updates: {updateStatus}</p>
-          <p>status: {googleSAConnector?.status}</p>
-        </CardContent>
+        <CardTitle>Google Workspace</CardTitle>
+        {googleSAConnector.status === ConnectorStatus.Connecting ? (
+          <>
+          <CardDescription>Connecting {progress}%</CardDescription>
+          <Progress value={progress} className="p-0 w-[60%]" />
+          </>
+        ) : (<>
+          <CardDescription>Connected</CardDescription>
+        </>)}
+
       </CardHeader>
     )
   }
@@ -436,8 +484,11 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       }
     },
   })
-  // const [ws, setWs] = useState(null);
+
   const [updateStatus, setUpateStatus] = useState("")
+  const [progress, setProgress] = useState<number>(0)
+  const [userStats, setUserStats] = useState<{ [email: string]: any }>({})
+  const [activeTab, setActiveTab] = useState<string>("upload")
   const [isIntegratingSA, setIsIntegratingSA] = useState<boolean>(
     data
       ? !!data.find(
@@ -506,6 +557,9 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       socket?.addEventListener("message", (e) => {
         // const message = JSON.parse(e.data);
         const data = JSON.parse(e.data)
+        const statusJson = JSON.parse(JSON.parse(e.data).message)
+        setProgress(statusJson.progress ?? 0)
+        setUserStats(statusJson.userStats ?? {})
         setUpateStatus(data.message)
       })
     }
@@ -521,76 +575,82 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     <div className="flex w-full h-full">
       <Sidebar photoLink={user.photoLink ?? ""} />
       <div className="w-full h-full flex items-center justify-center">
-        <Tabs
-          defaultValue="upload"
-          className={`w-[400px] min-h-[${minHeight}px]`}
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="upload">Service Account</TabsTrigger>
-            <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
-          </TabsList>
-          <TabsContent value="upload">
-            {isPending ? (
-              <LoaderContent />
-            ) : (
-              <ServiceAccountTab
-                connectors={data}
-                updateStatus={updateStatus}
-                isIntegrating={isIntegratingSA}
-                onSuccess={() => setIsIntegratingSA(true)}
-              />
-            )}
-          </TabsContent>
-          <TabsContent value="oauth">
-            {oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
-              <OAuthForm
-                onSuccess={() =>
-                  setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-                }
-              />
-            ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Google OAuth</CardTitle>
-                  <CardDescription>
-                    Connect using Google OAuth here.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <OAuthButton
-                    app={Apps.GoogleDrive}
-                    setOAuthIntegrationStatus={setOAuthIntegrationStatus}
-                    text="Connect with Google OAuth"
-                  />
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Google OAuth</CardTitle>
-                  {oauthIntegrationStatus ===
-                    OAuthIntegrationStatus.OAuthConnecting && (
-                    <CardDescription>status: {updateStatus} </CardDescription>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  {oauthIntegrationStatus ===
-                  OAuthIntegrationStatus.OAuthConnected
-                    ? "Connected"
-                    : "Connecting"}
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+        <div className="flex flex-col h-full items-center justify-center">
+          <Tabs
+            defaultValue="upload"
+            className={`w-[400px] min-h-[${minHeight}px] ${Object.keys(userStats).length > 0 ? "mt-[150px]" : ""}`}
+            onValueChange={setActiveTab}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="upload">Service Account</TabsTrigger>
+              <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
+            </TabsList>
+            <TabsContent value="upload">
+              {isPending ? (
+                <LoaderContent />
+              ) : (
+                <ServiceAccountTab
+                  connectors={data}
+                  updateStatus={updateStatus}
+                  isIntegrating={isIntegratingSA}
+                  onSuccess={() => setIsIntegratingSA(true)}
+                  progress={progress}
+                  userStats={userStats}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="oauth">
+              {oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
+                <OAuthForm
+                  onSuccess={() =>
+                    setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+                  }
+                />
+              ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Google OAuth</CardTitle>
+                    <CardDescription>
+                      Connect using Google OAuth here.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <OAuthButton
+                      app={Apps.GoogleDrive}
+                      setOAuthIntegrationStatus={setOAuthIntegrationStatus}
+                      text="Connect with Google OAuth"
+                    />
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Google OAuth</CardTitle>
+                    {oauthIntegrationStatus ===
+                      OAuthIntegrationStatus.OAuthConnecting && (
+                      <CardDescription>status: {updateStatus} </CardDescription>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {oauthIntegrationStatus ===
+                    OAuthIntegrationStatus.OAuthConnected
+                      ? "Connected"
+                      : "Connecting"}
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+          {Object.keys(userStats).length > 0 && activeTab === "upload"  && (
+            <UserStatsTable userStats={userStats} />
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
 export const Route = createFileRoute("/_authenticated/admin/integrations")({
-  // component: AdminLayout,
-
   beforeLoad: (params) => {
     return params
   },

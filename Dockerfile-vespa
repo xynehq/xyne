@@ -1,0 +1,5 @@
+FROM vespaengine/vespa:latest
+COPY ./server/vespa /opt/vespa/xyne
+
+# Set the working directory to the absolute path
+WORKDIR /opt/vespa/xyne

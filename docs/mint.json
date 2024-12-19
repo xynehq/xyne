@@ -51,7 +51,7 @@
       "group": "Deployment",
       "pages": [
        "deployment/self-hosting",
-       "deployment/aws/aws-deployment"
+       "deployment/cloud"
       ]
     },
     {

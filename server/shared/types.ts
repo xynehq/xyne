@@ -9,6 +9,7 @@ import {
   MailResponseSchema,
   eventSchema,
   VespaEventSchema,
+  userQuerySchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -90,6 +91,15 @@ export const AutocompleteUserSchema = z
   })
   .strip()
 
+export const AutocompleteUserQueryHSchema = z
+  .object({
+    type: z.literal(userQuerySchema),
+    docId: z.string(),
+    query_text: z.string(),
+    timestamp: z.number().optional(),
+  })
+  .strip()
+
 export const AutocompleteMailSchema = z
   .object({
     type: z.literal(mailSchema),
@@ -119,6 +129,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteUserSchema,
   AutocompleteMailSchema,
   AutocompleteEventSchema,
+  AutocompleteUserQueryHSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -134,6 +145,9 @@ export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
 export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
 export type EventAutocomplete = z.infer<typeof AutocompleteEventSchema>
+export type UserQueryHAutocomplete = z.infer<
+  typeof AutocompleteUserQueryHSchema
+>
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
 // search result

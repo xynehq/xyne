@@ -5,7 +5,7 @@ services:
     image: xyne
     container_name: xyne-app
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
     ports:
       - "80:80"
@@ -54,6 +54,7 @@ services:
     restart: always
 networks:
   xyne:
+    driver: bridge
 volumes:
   vespa-data:
     driver: local

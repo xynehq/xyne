@@ -1,12 +1,8 @@
-import { pino, type Logger } from "pino"
+import { levels, pino, type Logger } from "pino"
 import { Subsystem } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
-import { existsSync, mkdirSync } from "fs"
-import { resolve } from "path"
-
-const logsFolderPath = resolve(process.cwd(), "server", "logs")
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
@@ -27,7 +23,6 @@ const time = (start: number) => {
 
 export const getLogger = (loggerType: Subsystem) => {
   if (process.env.NODE_ENV === "production") {
-    checkLogsFolder()
     return pino({
       name: `${loggerType}`,
       transport: {
@@ -42,7 +37,6 @@ export const getLogger = (loggerType: Subsystem) => {
             "stack",
             "apiErrorHandlerCallStack",
           ],
-          destination: getLoggerDestination(loggerType),
         },
       },
     })
@@ -66,10 +60,6 @@ export const getLogger = (loggerType: Subsystem) => {
       },
     })
   }
-}
-
-const getLoggerDestination = (loggerType: Subsystem) => {
-  return `./logs/${loggerType}.log`
 }
 
 export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
@@ -150,14 +140,5 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
         "Request completed",
       )
     }
-  }
-}
-
-const checkLogsFolder = () => {
-  if (!existsSync(logsFolderPath)) {
-    mkdirSync(logsFolderPath, { recursive: true })
-    console.log("Logs folder created.")
-  } else {
-    console.log("Logs folder already exists.")
   }
 }

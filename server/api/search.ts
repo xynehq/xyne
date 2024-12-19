@@ -8,11 +8,17 @@ import {
   groupVespaSearch,
   searchVespa,
   searchUsersByNamesAndEmails,
+  getTimestamp,
+  insert,
+  GetDocument,
+  UpdateDocument,
+  updateUserQueryHistory,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
+  userQuerySchema,
   userSchema,
   type VespaSearchResponse,
   type VespaUser,
@@ -51,6 +57,12 @@ export const autocompleteSchema = z.object({
   query: z.string().min(2),
 })
 
+export const userQueryHistorySchema = z.object({
+  docId: z.string().optional(),
+  query: z.string(),
+  timestamp: z.number().optional(),
+})
+
 export const chatSchema = z.object({
   chatId: z.string().min(1),
 })
@@ -63,6 +75,10 @@ export const chatBookmarkSchema = z.object({
 export const chatRenameSchema = z.object({
   chatId: z.string().min(1),
   title: z.string().min(1),
+})
+
+export const chatDeleteSchema = z.object({
+  chatId: z.string().min(1),
 })
 
 export const chatHistorySchema = z.object({
@@ -120,27 +136,35 @@ export const SearchApi = async (c: Context) => {
     app,
     entity,
     lastUpdated,
+    isQueryTyped,
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
+  const timestampRange = getTimestamp(lastUpdated)
+    ? { from: getTimestamp(lastUpdated)!, to: new Date().getTime() }
+    : null
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
-    groupCount = await groupVespaSearch(
-      decodedQuery,
-      email,
-      config.page,
-      lastUpdated,
-    )
-    results = await searchVespa(
-      decodedQuery,
-      email,
-      app,
-      entity,
-      page,
-      offset,
-      lastUpdated,
-    )
+    const tasks: Array<any> = [
+      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      searchVespa(
+        decodedQuery,
+        email,
+        app,
+        entity,
+        page,
+        offset,
+        0.5,
+        timestampRange,
+      ),
+    ]
+
+    // ensure only update when query is typed
+    if (isQueryTyped) {
+      tasks.push(updateUserQueryHistory(decodedQuery, email))
+    }
+    ;[groupCount, results] = await Promise.all(tasks)
   } else {
     results = await searchVespa(
       decodedQuery,
@@ -149,7 +173,8 @@ export const SearchApi = async (c: Context) => {
       entity,
       page,
       offset,
-      lastUpdated,
+      0.5,
+      timestampRange,
     )
   }
 

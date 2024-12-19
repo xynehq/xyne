@@ -3,14 +3,18 @@ let postgresBaseHost = "0.0.0.0"
 let port = 3000
 let host = "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
-let postOauthRedirect = process.env.POST_OAUTH_REDIRECT!
+let postOauthRedirect = "/"
 if (process.env.NODE_ENV === "production") {
   postgresBaseHost = process.env.DATABASE_HOST!
   vespaBaseHost = process.env.VESPA_HOST!
   port = 80
   host = process.env.HOST!
   redirectUri = process.env.GOOGLE_PROD_REDIRECT_URI!
-  postOauthRedirect = process.env.POST_OAUTH_PROD_REDIRECT!
+}
+// Adding this since in dev mode the vite FE is hosted on localhost:5173,
+// but server does auth using localhost:3000, so we need to manually redirect to the correct address post oauth
+if (process.env.NODE_ENV !== "production") {
+  postOauthRedirect = "http://localhost:5173/"
 }
 
 let bedrockSupport = false
@@ -46,4 +50,8 @@ export default {
   OpenAIKey,
   redirectUri,
   postOauthRedirect,
+  // update user query session time
+  userQueryUpdateInterval: 60000, // 1 minute in milliseconds
+  // fastModelId: OpenAIKey ? Models.Gpt_4o_mini : Models.Llama_3_1_8B,
+  // bestModelId: Models.CohereCmdRPlus
 }

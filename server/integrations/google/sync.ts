@@ -60,10 +60,12 @@ import {
   eventFields,
   getAttachments,
   getAttendeesOfEvent,
+  getEventStartTime,
   getJoiningLink,
   getPresentationToBeIngested,
   getSpreadsheet,
   getTextFromEventDescription,
+  getUniqueEmails,
   insertContact,
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
@@ -523,7 +525,7 @@ export const handleGoogleOAuthChanges = async (
         lastRanOn: new Date(),
       })
       throw new SyncJobFailed({
-        message: "Could not complete sync job",
+        message: `Could not complete sync job: ${stats.summary}`,
         cause: error as Error,
         integration: Apps.GoogleDrive,
         entity: "",
@@ -726,17 +728,14 @@ export const handleGoogleOAuthChanges = async (
   }
 }
 
-const insertEventIntoVespa = async (
-  event: calendar_v3.Schema$Event,
-  userEmail: string,
-) => {
+const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
   const { baseUrl, joiningUrl } = getJoiningLink(event)
-  const { attendeesInfo, attendeesNames } = getAttendeesOfEvent(
-    event.attendees ?? [],
-  )
+  const { attendeesInfo, attendeesEmails, attendeesNames } =
+    getAttendeesOfEvent(event.attendees ?? [])
   const { attachmentsInfo, attachmentFilenames } = getAttachments(
     event.attachments ?? [],
   )
+  const { isDefaultStartTime, startTime } = getEventStartTime(event)
   const eventToBeIngested = {
     docId: event.id ?? "",
     name: event.summary ?? "",
@@ -746,7 +745,6 @@ const insertEventIntoVespa = async (
     location: event.location ?? "",
     createdAt: new Date(event.created!).getTime(),
     updatedAt: new Date(event.updated!).getTime(),
-    email: userEmail,
     app: Apps.GoogleCalendar,
     entity: CalendarEntity.Event,
     creator: {
@@ -759,15 +757,19 @@ const insertEventIntoVespa = async (
     },
     attendees: attendeesInfo,
     attendeesNames: attendeesNames,
-    startTime: new Date(event.start?.dateTime!).getTime(),
+    startTime: startTime,
     endTime: new Date(event.end?.dateTime!).getTime(),
     attachmentFilenames,
     attachments: attachmentsInfo,
     recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
     baseUrl,
     joiningLink: joiningUrl,
-    permissions: [event.organizer?.email ?? ""],
+    permissions: getUniqueEmails([
+      event.organizer?.email ?? "",
+      ...attendeesEmails,
+    ]),
     cancelledInstances: [],
+    defaultStartTime: isDefaultStartTime,
   }
 
   await insert(eventToBeIngested, eventSchema)
@@ -909,7 +911,7 @@ const handleGoogleCalendarEventsChanges = async (
             Logger.error(`Event doesn't exist in Vepsa`)
           }
 
-          await insertEventIntoVespa(eventChange, userEmail)
+          await insertEventIntoVespa(eventChange)
 
           if (event) {
             stats.updated += 1

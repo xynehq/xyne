@@ -23,6 +23,12 @@ const cleanDocs = (text: string): string => {
   const invalidUtfPattern = /[\uE907\uFFFD]/g
   cleanedText = cleanedText.replace(invalidUtfPattern, "")
 
+  const extraUnderscores = /_{3,}/g
+  cleanedText = cleanedText.replace(extraUnderscores, "")
+
+  const extraEquals = /={3,}/g
+  cleanedText = cleanedText.replace(extraEquals, "")
+
   return cleanedText
 }
 
@@ -70,7 +76,7 @@ const parseHighlight = (text: string): ReactNode[] => {
 
 // Component that renders chunk summary with parsing
 const HighlightedText = ({ chunk_summary }: { chunk_summary: string }) => (
-  <p className="text-left text-sm mt-1 text-[#464B53] truncate text-ellipsis ml-[44px]">
+  <p className="text-left text-sm mt-1 text-[#464B53] text-ellipsis ml-[44px] line-clamp-3">
     {chunk_summary ? parseHighlight(chunk_summary) : " "}
   </p>
 )

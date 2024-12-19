@@ -33,6 +33,16 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
       }
     }, [])
 
+    const navigateToSearch = () => {
+      navigate({
+        to: "/search",
+        search: {
+          query: encodeURIComponent(decodeURIComponent(query)),
+        },
+        state: { isQueryTyped: !!query.length },
+      })
+    }
+
     return (
       <div
         className={`flex flex-col bg-white ${
@@ -72,10 +82,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      navigate({
-                        to: "/search",
-                        search: { query: encodeURIComponent(query) },
-                      })
+                      navigateToSearch()
                       setFilter({}) // Use empty object instead of null
                       // we only want to look for answer if at least
                       // 3 words are there in the query
@@ -87,7 +94,10 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                 />
                 {!hasSearched ? (
                   <button
-                    onClick={handleSearch}
+                    onClick={() => {
+                      handleSearch()
+                      navigateToSearch()
+                    }}
                     className="flex mr-2 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-[20px] w-[32px] h-[32px] items-center justify-center"
                   >
                     <ArrowRight className="text-white" size={16} />
@@ -113,6 +123,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                         onClick={() => {
                           if (result.type === "file") {
                             setQuery(result.title)
+                          } else if (result.type === "user_query") {
+                            setQuery(result.query_text)
                           }
                           setAutocompleteResults([])
                         }}
