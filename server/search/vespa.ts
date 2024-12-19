@@ -416,11 +416,12 @@ export const searchVespa = async (
   )
   const hybridDefaultPayload = {
     yql,
-    // query,
+    q: query,
+    // removing stopwords for only bm25, to keep semantic meaning for embeddings
     query: removeStopwords(query),
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@query)",
+    "input.query(e)": "embed(@q)",
     "input.query(alpha)": alpha,
     "input.query(bm25ChunkWeight)": 0.7,
     hits: limit,
@@ -870,4 +871,4 @@ export const getItems = async (
 
 // await deleteAllDocuments()
 
-// console.log((await searchVespa("Prevent force difference kid",'junaid.s@xynehq.com',null,null,8)).root.children.map(i => i.fields))
+// console.log((await searchVespa("He wrote at a time of religious flux and political upheaval",'junaid.s@xynehq.com',null,null,8)).root.children.map(i => i.fields))
