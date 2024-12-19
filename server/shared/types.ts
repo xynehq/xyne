@@ -180,6 +180,7 @@ export const EventResponseSchema = VespaEventSchema.pick({
   app: true,
   entity: true,
   updatedAt: true,
+  attendeesNames: true,
 })
   .extend({
     type: z.literal(eventSchema),

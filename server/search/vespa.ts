@@ -22,7 +22,7 @@ import type {
   VespaUserQueryHistory,
   VespaSchema,
 } from "@/search/types"
-import { getErrorMessage } from "@/utils"
+import { getErrorMessage, removeStopwords } from "@/utils"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -398,7 +398,7 @@ export const searchVespa = async (
   entity: Entity | null,
   limit = config.page,
   offset: number = 0,
-  alpha: number = 0.5,
+  alpha: number = 0.4,
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -414,15 +414,15 @@ export const searchVespa = async (
     excludedIds,
     notInMailLabels,
   )
-
   const hybridDefaultPayload = {
     yql,
-    query,
+    // query,
+    query: removeStopwords(query),
     email,
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
-    "input.query(bm25ChunkWeight)": 0.8,
+    "input.query(bm25ChunkWeight)": 0.7,
     hits: limit,
     ...(offset
       ? {
@@ -870,4 +870,4 @@ export const getItems = async (
 
 // await deleteAllDocuments()
 
-// console.log((await searchVespa("xsafe challenge everything.",'junaid.s@xynehq.com',null,null,2)).root.children[0])
+// console.log((await searchVespa("xsafe challenge everything.",'junaid.s@xynehq.com',null,null,2)).root.children[2])
