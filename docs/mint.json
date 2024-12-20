@@ -50,8 +50,7 @@
     {
       "group": "Deployment",
       "pages": [
-       "deployment/self-hosting",
-       "deployment/cloud/aws-deployment-with-docker"
+       "deployment/"
       ]
     },
     {
