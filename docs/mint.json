@@ -43,14 +43,27 @@
       "group": "Get Started",
       "pages": [
         "introduction",
-        "quickstart",
-        "setup"
+        "quickstart"
       ]
     },
     {
       "group": "Deployment",
       "pages": [
-       "deployment/"
+       "deployment/self-hosting",
+        {
+          "group": "Cloud Deployment",
+          "icon": "cloud",
+          "pages": [
+            {
+              "group": "AWS",
+              "icon": "aws",
+              "pages": [
+              "deployment/cloud/aws/aws-deployment-with-docker",
+             "deployment/cloud/aws/aws-deployment-using-env"
+              ]
+            }
+          ]
+        }
       ]
     },
     {

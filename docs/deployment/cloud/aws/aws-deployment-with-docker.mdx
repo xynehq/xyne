@@ -1,7 +1,7 @@
 ---
-title: 'AWS Deployment [Using Docker]'
-description: 'Deploying Xyne on AWS [EC2 Instance]'
-icon: 'aws'
+title: 'Docker Image'
+description: 'Deploying Xyne on AWS'
+icon: 'docker'
 ---
 
 <Tip>We recommend using EC2 Instance for the deployment as it is the simplest to set-up.</Tip>
@@ -9,10 +9,10 @@ icon: 'aws'
 If you want to deploy Xyne on AWS instead of your local machine, this guide will give you a detailed guide to do so.
 Follow the steps listed below to get started : 
 
+<Note>This guide focuses on deploying the application using docker image only</Note>
 
 ## Connect to the instance remotely: 
 Once you have your instance up and running, you can use your terminal to connect to your instance remotely. 
-For this you would require your private ssh key which you would have acquired during the creation of your EC2 Instance. 
 Use this command to connect to your instance : 
 
 ```javascript
@@ -23,25 +23,25 @@ ssh -i ~/path/to/your-private-key-file.pem ec2-user@public-ipv4-address [or your
 Deployment of Xyne on AWS EC2 requires the following dependencies to be installed on the instance:
 
 - [Bun](https://bun.sh/docs/installation)
-   - ```javascript
-   sudo yum update -y && curl -fsSL https://bun.sh/install | bash 
-   source ~/.bashrc
-   bun --version
-   ```
+```javascript
+sudo yum update -y && curl -fsSL https://bun.sh/install | bash 
+source ~/.bashrc
+bun --version
+```
 - [Docker](https://docs.docker.com/engine/install/) & [Docker Compose](https://docs.docker.com/compose/install/)
-   - ```javascript
-      sudo yum update -y && sudo yum install -y docker && sudo service docker start && sudo usermod -a -G docker $USER
-      curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
-      chmod +x docker-compose-linux-x86_64 && sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
-      docker-compose --version
-      ```
+```javascript
+sudo yum update -y && sudo yum install -y docker && sudo service docker start && sudo usermod -a -G docker $USER
+curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
+chmod +x docker-compose-linux-x86_64 && sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
+docker-compose --version
+```
 - [Vespa CLI](https://docs.vespa.ai/en/build-install-vespa.html)
-   - ```javascript
-   wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz [ you can choose a more recent version]
-   tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz
-   sudo mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/
-   vespa version
-   ```
+```javascript
+wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz [ you can choose a more recent version]
+tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz
+sudo mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/
+vespa version
+```
 
 Once you have installed the dependencies, you can use the following steps to set up the instance.
 
@@ -61,7 +61,7 @@ To extract the project, you first need to run the container with the loaded imag
 
 - Run the docker container with the image :
 ```javascript
-docker run --name your-container-name -p 80:80 image-name
+docker run --name your-container-name -p 3000:3000 image-name
 ```
 
 - Make a directory called ```xyne``` from your root instance, use the following command :
@@ -106,8 +106,8 @@ GOOGLE_PROD_REDIRECT_URI=<YOUR_Public_IPv4_DNS_ADDRESS>/v1/auth/callback
 POST_OAUTH_REDIRECT=http://localhost:5173/
 POST_OAUTH_PROD_REDIRECT=<YOUR_Public_IPv4_DNS_ADDRESS>
 JWT_SECRET=<YOUR_JWT_SECRET>
-DATABASE_HOST=0.0.0.0
-VESPA_HOST=0.0.0.0
+DATABASE_HOST=xyne-db
+VESPA_HOST=vespa
 AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY>
 AWS_SECRET_KEY=<YOUR_AWS_ACCESS_SECRET>
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
@@ -118,17 +118,7 @@ OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
 
 From the root of the instance, use the following commands : 
 ```javascript
-# Create directories
-sudo mkdir -p xyne/search/server/vespa-data
-sudo mkdir -p xyne/search/server/vespa-logs
-
-# Set correct ownership
-sudo chown -R 1000:1000 xyne/search/server/vespa-data
-sudo chown -R 1000:1000 xyne/search/server/vespa-logs
-
-# Set correct permissions
-sudo chmod -R 755 xyne/search/server/vespa-data
-sudo chmod -R 755 xyne/search/server/vespa-logs
+./init-vespa.sh
 ```
 
 ## Deploy Vespa and Postgres with Docker  :
@@ -139,7 +129,7 @@ cd xyne/search/deployment
 ```
 Once inside the ```deployment``` folder, run the following command to run vespa and postgres in docker :
 ```javascript 
-docker-compose -f docker-compose.prod.yml up
+docker-compose -f docker-compose.yml up
 ```
 
 ### Deploy Vespa in your instance : 
@@ -153,61 +143,6 @@ Navigate to ```server/vespa``` folder and set-up vespa :
 ./deploy.sh
 ```
 
-### Migrate PostgreSQL Schema
-
-Navigate to the server folder using ```cd server``` and run the following commands : 
-
-```javascript
-bun install
-```
-This will install all the dependencies required by the server to run the application successfully.
-<Warning> If you get an ```EEXISTS``` Error it means that the dependencies already exist </Warning>
-
-```javascript
-bun run generate
-```
-```javascript
-bun run migrate
-```
-This will generate and migrate the postgres schema.
-
-### Build the Xyne client
-To start the client side, navigate to the frontend folder using ```cd frontend``` and run the following command : 
-
-```javascript
-bun install
-```
-<Warning> If you get an ```EEXISTS``` Error it means that the dependencies already exist </Warning>
-This installs all dependencies required by the client side to run.
-
-Create a new ```.env.production ```, use the following command : 
-```javascript
-sudo touch .env.production
-```
-Now paste the following inside the ```.env.production``` file : 
-
-```javascript
- VITE_API_BASE_URL=http://<YOUR_AWS_INSTANCE_IPv4_DNS>
- VITE_WS_BASE_URL=wss://<YOUR_AWS_INSTANCE_IPv4_DNS>
-```
-
-Save the file.
-
-Then start the client using the command : 
-
-```javascript
-bun run build
-```
-This will build the client side of the application.
-
-### Start the Xyne server
-
-Once vespa has been deployed and the docker is running both Vespa and PostgreSQL containers, it is time to start the Xyne server.
-To do that, navigate back to the ```server``` folder. Once inside the server folder, run the following command : 
-
-```javascript
-sudo NODE_ENV=production $(which bun) run server.ts
-```
 
 Your application is now running and will be available in your EC2 Public IPv4 DNS address.
 
