@@ -1,18 +1,34 @@
 ---
-title: 'Setting Up Locally'
+title: 'Local Setup'
 description: 'Setting up Xyne On Local Machine'
 icon: 'server'
 ---
 
-If you don't want to set-up Xyne to a Cloud Platform, you can easily set-up Xyne to your local machine. Follow the instructions below to  set-up Xyne locally.
+You can easily set-up Xyne to your local machine. Follow the instructions below to  set-up Xyne locally.
 
 Deployment of Xyne on Local Machine requires the following dependencies to be installed:
 
 - [Bun](https://bun.sh/docs/installation)
-- [Docker](https://docs.docker.com/engine/install/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
+```javascript
+sudo yum update -y && curl -fsSL https://bun.sh/install | bash 
+source ~/.bashrc
+bun --version
+```
+- [Docker](https://docs.docker.com/engine/install/) & [Docker Compose](https://docs.docker.com/compose/install/)
+```javascript
+sudo yum update -y && sudo yum install -y docker && sudo service docker start && sudo usermod -a -G docker $USER
+curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
+chmod +x docker-compose-linux-x86_64 && sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
+docker-compose --version
+```
 - [Vespa CLI](https://docs.vespa.ai/en/build-install-vespa.html)
-- [PostgreSQL](https://www.postgresql.org/)
+```javascript
+wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz [ you can choose a version suitable with your OS]
+tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz
+sudo mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/
+vespa version
+```
+
 
 ---
  Set-Up Xyne Locally
@@ -61,45 +77,27 @@ docker-compose -f deployment/docker-compose.dev.yml up
 ```
 Running this command will host vespa and postgres containers inside your docker.
 
+# Set permission to run the init-script
+ We first need to set the executable permission to run the init-script, for that, run the following command : 
+ ```javascript
+sudo chmod +x init-script.sh [ For Mac OS and Unix ]
+
+OR 
+
+icacls init-script.sh /grant Everyone:F [If using PowerShell in Windows]
 
 
-### Migrate PostgreSQL Schema
+```
+
+
+### Run the init-script to initialize the application
 
 Navigate to the server folder using ```cd server``` and run the following commands : 
 
 ```javascript
-bun install
+./init-script.sh
 ```
-This will install all the dependencies required by the server to run the application successfully.
-
-```javascript
-bun run generate
-```
-```javascript
-bun run migrate
-```
-This will migrate the postgres schema.
-
-###  Set-Up Vespa
-
-Navigate to ```server/vespa``` folder and  set-up vespa : 
-
-<Warning> Ensure ```Vespa CLI``` is installed in the local machine for it to work.</Warning>
-
-
-```javascript
-./deploy.sh
-```
-
-### Start the Xyne server
-
-Once vespa has been deployed and the docker is running both Vespa and PostgreSQL containers, it is time to start the Xyne server. To do that, navigate to the ```server``` folder.
-Once inside the server folder, run the following command : 
-
-```javascript
-bun run dev
-```
-This will start the server, which will be listening on port ```3000```.
+This will initialise all the dependencies required by the server to run the application successfully, and will also start the server, which will be listening on port ```3000```.
 
 ### Start the Xyne client
 To start the client side, navigate to the frontend folder using ``` cd frontend``` and run the following command : 
