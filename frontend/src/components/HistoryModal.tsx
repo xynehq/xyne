@@ -1,5 +1,9 @@
 import { api } from "@/api"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
 import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
@@ -11,11 +15,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useRef, useState } from "react"
 
-export const fetchChats = async () => {
+export const fetchChats = async ({ pageParam }) => {
   let items = []
   const response = await api.chat.history.$get({
     query: {
-      page: 0,
+      page: pageParam ?? 0,
     },
   })
   if (response.ok) {
@@ -47,15 +51,46 @@ const HistoryModal = ({
   const [editedChatId, setEditedChatId] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
 
+  const historyRef = useRef<HTMLDivElement | null>(null)
+
   const router = useRouter()
   const {
     isPending,
     error,
     data: historyItems,
-  } = useQuery<SelectPublicChat[]>({
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery<SelectPublicChat[]>({
     queryKey: ["all-connectors"],
-    queryFn: fetchChats,
+    queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
+    getNextPageParam: (lastPage, allPages) => {
+      // If `lastPage` is empty, it means there's nothing more to fetch
+      if (lastPage.length === 0) {
+        return undefined
+      }
+      // Otherwise, next page = current number of pages fetched so far
+      return allPages.length
+    },
+    initialPageParam: 0,
   })
+
+  const handleScroll = () => {
+    if (!historyRef.current) return
+
+    const { scrollTop, scrollHeight, clientHeight } = historyRef.current
+
+    // If the user scrolled to bottom (or near bottom)
+    if (scrollTop + clientHeight >= scrollHeight - 20 /* threshold */) {
+      if (hasNextPage && !isFetchingNextPage) {
+        fetchNextPage()
+      }
+    }
+  }
+
+  // Combine all pages of chats into a single array
+  const chats = historyItems?.pages.flat() || []
 
   let existingChatId = ""
   if (pathname.startsWith("/chat/")) {
@@ -183,9 +218,13 @@ const HistoryModal = ({
           <X stroke="#9EB6CE" size={14} />
         </button>
       </div>
-      <div className="flex-1 overflow-auto mt-[15px]">
+      <div
+        ref={historyRef}
+        className="flex-1 overflow-auto"
+        onScroll={handleScroll}
+      >
         <ul>
-          {historyItems.map((item, index) => (
+          {chats.map((item, index) => (
             <li
               key={index}
               className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
@@ -256,6 +295,10 @@ const HistoryModal = ({
             </li>
           ))}
         </ul>
+        {isFetchingNextPage && <div>Loading more...</div>}
+        {/* {!hasNextPage && <div>No more chats</div>} */}
+        {isFetching && !isFetchingNextPage && <div>Loading...</div>}
+        {error && <div>Error loading chats</div>}
       </div>
     </div>
   )

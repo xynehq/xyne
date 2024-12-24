@@ -18,7 +18,11 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
+import {
+  useQueryClient,
+  useMutation,
+  useInfiniteQuery,
+} from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
 import { fetchChats, renameChat } from "@/components/HistoryModal"
 
@@ -131,11 +135,22 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }, [])
 
-  const { data: historyItems } = useQuery<SelectPublicChat[]>({
+  const { data: historyItems } = useInfiniteQuery<SelectPublicChat[]>({
     queryKey: ["all-connectors"],
-    queryFn: fetchChats,
+    queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
+    getNextPageParam: (lastPage, allPages) => {
+      // If `lastPage` is empty, it means there's nothing more to fetch
+      if (lastPage?.length === 0) {
+        return undefined
+      }
+      // Otherwise, next page = current number of pages fetched so far
+      return allPages?.length
+    },
+    initialPageParam: 0,
   })
-  const currentChat = historyItems?.find((item) => item.externalId === chatId)
+  const currentChat = historyItems?.pages
+    ?.flat()
+    .find((item) => item.externalId === chatId)
 
   useEffect(() => {
     // Only update local state if we are not currently editing the title

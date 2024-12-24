@@ -22,7 +22,7 @@ import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from "@tanstack/react-form"
 
 import { cn, getErrorMessage } from "@/lib/utils"
-import { useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery } from "@tanstack/react-query"
 import { Connectors } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
@@ -432,13 +432,14 @@ const ServiceAccountTab = ({
         <CardTitle>Google Workspace</CardTitle>
         {googleSAConnector.status === ConnectorStatus.Connecting ? (
           <>
-          <CardDescription>Connecting {progress}%</CardDescription>
-          <Progress value={progress} className="p-0 w-[60%]" />
+            <CardDescription>Connecting {progress}%</CardDescription>
+            <Progress value={progress} className="p-0 w-[60%]" />
           </>
-        ) : (<>
-          <CardDescription>Connected</CardDescription>
-        </>)}
-
+        ) : (
+          <>
+            <CardDescription>Connected</CardDescription>
+          </>
+        )}
       </CardHeader>
     )
   }
@@ -469,7 +470,11 @@ interface AdminPageProps {
 
 const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
-  const { isPending, error, data } = useQuery<any[]>({
+  const {
+    isPending,
+    error,
+    data: connectors,
+  } = useInfiniteQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
@@ -483,7 +488,18 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
         throw error
       }
     },
+    getNextPageParam: (lastPage, allPages) => {
+      // If `lastPage` is empty, it means there's nothing more to fetch
+      if (lastPage?.length === 0) {
+        return undefined
+      }
+      // Otherwise, next page = current number of pages fetched so far
+      return allPages?.length
+    },
+    initialPageParam: 0,
   })
+
+  const data = connectors?.pages.flat()
 
   const [updateStatus, setUpateStatus] = useState("")
   const [progress, setProgress] = useState<number>(0)
@@ -641,7 +657,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               )}
             </TabsContent>
           </Tabs>
-          {Object.keys(userStats).length > 0 && activeTab === "upload"  && (
+          {Object.keys(userStats).length > 0 && activeTab === "upload" && (
             <UserStatsTable userStats={userStats} />
           )}
         </div>
