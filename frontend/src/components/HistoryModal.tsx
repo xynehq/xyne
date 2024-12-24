@@ -220,7 +220,7 @@ const HistoryModal = ({
       </div>
       <div
         ref={historyRef}
-        className="flex-1 overflow-auto"
+        className="flex-1 overflow-auto mt-[15px]"
         onScroll={handleScroll}
       >
         <ul>
