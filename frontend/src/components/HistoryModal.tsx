@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useRef, useState } from "react"
 
+export const pageSize = 20
+
 export const fetchChats = async ({ pageParam }) => {
   let items = []
   const response = await api.chat.history.$get({
@@ -66,8 +68,8 @@ const HistoryModal = ({
     queryKey: ["all-connectors"],
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
-      // If `lastPage` is empty, it means there's nothing more to fetch
-      if (lastPage.length === 0) {
+      // lastPage?.length < pageSize becomes true, when there are no more pages
+      if (lastPage?.length < pageSize) {
         return undefined
       }
       // Otherwise, next page = current number of pages fetched so far
@@ -220,7 +222,7 @@ const HistoryModal = ({
       </div>
       <div
         ref={historyRef}
-        className="flex-1 overflow-auto mt-[15px]"
+        className="flex-1 overflow-auto mt-[15px] max-h-[730px]"
         onScroll={handleScroll}
       >
         <ul>

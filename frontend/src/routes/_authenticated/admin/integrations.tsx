@@ -36,6 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { pageSize } from "@/components/HistoryModal"
 
 const logger = console
 
@@ -489,8 +490,8 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       }
     },
     getNextPageParam: (lastPage, allPages) => {
-      // If `lastPage` is empty, it means there's nothing more to fetch
-      if (lastPage?.length === 0) {
+      // lastPage?.length < pageSize becomes true, when there are no more pages
+      if (lastPage?.length < pageSize) {
         return undefined
       }
       // Otherwise, next page = current number of pages fetched so far

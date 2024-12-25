@@ -24,7 +24,7 @@ import {
   useInfiniteQuery,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, renameChat } from "@/components/HistoryModal"
+import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
 
 type CurrentResp = {
   resp: string
@@ -139,8 +139,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     queryKey: ["all-connectors"],
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
-      // If `lastPage` is empty, it means there's nothing more to fetch
-      if (lastPage?.length === 0) {
+      // lastPage?.length < pageSize becomes true, when there are no more pages
+      if (lastPage?.length < pageSize) {
         return undefined
       }
       // Otherwise, next page = current number of pages fetched so far
