@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
+import { Trash2, MoreHorizontal, X, Pencil, Loader } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
@@ -297,10 +297,11 @@ const HistoryModal = ({
             </li>
           ))}
         </ul>
-        {isFetchingNextPage && <div>Loading more...</div>}
-        {/* {!hasNextPage && <div>No more chats</div>} */}
-        {isFetching && !isFetchingNextPage && <div>Loading...</div>}
-        {error && <div>Error loading chats</div>}
+        {(isFetching || isFetchingNextPage) && (
+          <div className="flex items-center justify-center">
+            <Loader className="animate-spin" size={18} />
+          </div>
+        )}
       </div>
     </div>
   )
