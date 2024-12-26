@@ -18,7 +18,7 @@ import { useRef, useState } from "react"
 
 export const pageSize = 20
 
-export const fetchChats = async ({ pageParam }) => {
+export const fetchChats = async ({ pageParam = 0 }: { pageParam?: number }) => {
   let items = []
   const response = await api.chat.history.$get({
     query: {
@@ -65,9 +65,16 @@ const HistoryModal = ({
     isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
-  } = useInfiniteQuery<SelectPublicChat[]>({
+  } = useInfiniteQuery<
+    SelectPublicChat[],
+    Error,
+    InfiniteData<SelectPublicChat[]>,
+    ["all-chats"],
+    number
+  >({
     queryKey: ["all-chats"],
-    queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
+    queryFn: ({ pageParam = 0 }: { pageParam?: number }) =>
+      fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
       // lastPage?.length < pageSize becomes true, when there are no more pages
       if (lastPage?.length < pageSize) {

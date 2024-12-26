@@ -152,7 +152,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }, [])
 
-  const { data: historyItems } = useInfiniteQuery<SelectPublicChat[]>({
+  const { data: historyItems } = useInfiniteQuery<
+    SelectPublicChat[],
+    Error,
+    InfiniteData<SelectPublicChat[]>,
+    ["all-chats"],
+    number
+  >({
     queryKey: ["all-chats"],
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
