@@ -66,7 +66,7 @@ const HistoryModal = ({
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery<SelectPublicChat[]>({
-    queryKey: ["all-connectors"],
+    queryKey: ["all-chats"],
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
       // lastPage?.length < pageSize becomes true, when there are no more pages
@@ -112,7 +112,7 @@ const HistoryModal = ({
     mutationFn: deleteChat,
     onSuccess: (chatId: string) => {
       queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
-        ["all-connectors"],
+        ["all-chats"],
         (oldData) => {
           if (!oldData) return oldData
 
@@ -143,7 +143,7 @@ const HistoryModal = ({
     },
     onSuccess: ({ chatId, title }) => {
       queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
-        ["all-connectors"],
+        ["all-chats"],
         (oldData) => {
           if (!oldData) return oldData
 

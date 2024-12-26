@@ -104,7 +104,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     onSuccess: ({ chatId, title }) => {
       // Update the UI by renaming the chat
       queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
-        ["all-connectors"],
+        ["all-chats"],
         (oldData) => {
           if (!oldData) return oldData
 
@@ -153,7 +153,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [])
 
   const { data: historyItems } = useInfiniteQuery<SelectPublicChat[]>({
-    queryKey: ["all-connectors"],
+    queryKey: ["all-chats"],
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
       // lastPage?.length < pageSize becomes true, when there are no more pages

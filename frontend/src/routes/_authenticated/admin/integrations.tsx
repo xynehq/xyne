@@ -22,7 +22,7 @@ import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from "@tanstack/react-form"
 
 import { cn, getErrorMessage } from "@/lib/utils"
-import { useInfiniteQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Connectors } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
@@ -36,7 +36,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { pageSize } from "@/components/HistoryModal"
 
 const logger = console
 
@@ -471,11 +470,7 @@ interface AdminPageProps {
 
 const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
-  const {
-    isPending,
-    error,
-    data: connectors,
-  } = useInfiniteQuery<any[]>({
+  const { isPending, error, data } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
@@ -489,18 +484,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
         throw error
       }
     },
-    getNextPageParam: (lastPage, allPages) => {
-      // lastPage?.length < pageSize becomes true, when there are no more pages
-      if (lastPage?.length < pageSize) {
-        return undefined
-      }
-      // Otherwise, next page = current number of pages fetched so far
-      return allPages?.length
-    },
-    initialPageParam: 0,
   })
-
-  const data = connectors?.pages.flat()
 
   const [updateStatus, setUpateStatus] = useState("")
   const [progress, setProgress] = useState<number>(0)
