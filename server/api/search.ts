@@ -77,6 +77,10 @@ export const chatRenameSchema = z.object({
   title: z.string().min(1),
 })
 
+export const chatDeleteSchema = z.object({
+  chatId: z.string().min(1),
+})
+
 export const chatHistorySchema = z.object({
   page: z
     .string()
@@ -151,6 +155,7 @@ export const SearchApi = async (c: Context) => {
         entity,
         page,
         offset,
+        0.5,
         timestampRange,
       ),
     ]
@@ -168,6 +173,7 @@ export const SearchApi = async (c: Context) => {
       entity,
       page,
       offset,
+      0.5,
       timestampRange,
     )
   }

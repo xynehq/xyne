@@ -2,6 +2,7 @@
   "name": "xyne-search",
   "module": "server/server.ts",
   "type": "module",
+  "version": "0.1.0",
   "devDependencies": {
     "@biomejs/biome": "1.9.3",
     "@types/bun": "latest",

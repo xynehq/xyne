@@ -65,3 +65,18 @@ Finally, run the following Python script to calculate the evaluation metrics:
 
 
 This will compute the evaluation scores based on the provided qrels and results file.
+
+
+___
+
+To run NanoBeir eval
+
+make sure you've venv setup
+
+    uv pip install datasets
+  
+	python getNanoBeir.py
+
+this is will download all nanoBeir datasets
+
+next remains the same steps as above for each dataset
