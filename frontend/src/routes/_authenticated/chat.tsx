@@ -22,6 +22,7 @@ import {
   useQueryClient,
   useMutation,
   useInfiniteQuery,
+  InfiniteData,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
 import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
@@ -102,22 +103,38 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     },
     onSuccess: ({ chatId, title }) => {
       // Update the UI by renaming the chat
-      queryClient.setQueryData<SelectPublicChat[]>(
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
         ["all-connectors"],
-        (oldChats) => {
-          if (!oldChats?.length) return []
+        (oldData) => {
+          if (!oldData) return oldData
 
-          // Find the chat to update
-          const chatToUpdate: SelectPublicChat = oldChats.find(
-            (chat) => chat.externalId === chatId,
+          let chatToUpdate: SelectPublicChat | undefined
+          oldData.pages.forEach((page) => {
+            const found = page.find((c) => c.externalId === chatId)
+            if (found) chatToUpdate = found
+          })
+
+          if (!chatToUpdate) {
+            return oldData
+          }
+
+          const updatedChat = { ...chatToUpdate, title }
+
+          // Remove the old version from all pages
+          const filteredPages = oldData.pages.map((page) =>
+            page.filter((c) => c.externalId !== chatId),
           )
-          if (!chatToUpdate) return oldChats
 
-          // Create updated chat and filter out old version in one pass
-          return [
-            { ...chatToUpdate, title },
-            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          // Insert the updated chat at the front of the first page
+          const newPages = [
+            [updatedChat, ...filteredPages[0]],
+            ...filteredPages.slice(1),
           ]
+
+          return {
+            ...oldData,
+            pages: newPages,
+          }
         },
       )
       setChatTitle(editedTitle)

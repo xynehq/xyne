@@ -1,5 +1,6 @@
 import { api } from "@/api"
 import {
+  InfiniteData,
   useInfiniteQuery,
   useMutation,
   useQueryClient,
@@ -73,7 +74,7 @@ const HistoryModal = ({
         return undefined
       }
       // Otherwise, next page = current number of pages fetched so far
-      return allPages.length
+      return allPages?.length
     },
     initialPageParam: 0,
   })
@@ -110,11 +111,16 @@ const HistoryModal = ({
   const mutation = useMutation<string, Error, string>({
     mutationFn: deleteChat,
     onSuccess: (chatId: string) => {
-      // Update the UI by removing the deleted chat
-      queryClient.setQueryData<SelectPublicChat[]>(
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
         ["all-connectors"],
-        (oldChats) =>
-          oldChats ? oldChats.filter((chat) => chat.externalId !== chatId) : [],
+        (oldData) => {
+          if (!oldData) return oldData
+
+          const newPages = oldData.pages.map((page) =>
+            page.filter((chat) => chat.externalId !== chatId),
+          )
+          return { ...oldData, pages: newPages }
+        },
       )
 
       // If the deleted chat is opened and it's deleted, then user should be taken back to '/'
@@ -136,23 +142,38 @@ const HistoryModal = ({
       return await renameChat(chatId, newTitle)
     },
     onSuccess: ({ chatId, title }) => {
-      // Update the UI by renaming the chat
-      queryClient.setQueryData<SelectPublicChat[]>(
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
         ["all-connectors"],
-        (oldChats) => {
-          if (!oldChats?.length) return []
+        (oldData) => {
+          if (!oldData) return oldData
 
-          // Find the chat to update
-          const chatToUpdate: SelectPublicChat = oldChats.find(
-            (chat) => chat.externalId === chatId,
+          let chatToUpdate: SelectPublicChat | undefined
+          oldData.pages.forEach((page) => {
+            const found = page.find((c) => c.externalId === chatId)
+            if (found) chatToUpdate = found
+          })
+
+          if (!chatToUpdate) {
+            return oldData
+          }
+
+          const updatedChat = { ...chatToUpdate, title }
+
+          // Remove the old version from all pages
+          const filteredPages = oldData.pages.map((page) =>
+            page.filter((c) => c.externalId !== chatId),
           )
-          if (!chatToUpdate) return oldChats
 
-          // Create updated chat and filter out old version in one pass
-          return [
-            { ...chatToUpdate, title },
-            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          // Insert the updated chat at the front of the first page
+          const newPages = [
+            [updatedChat, ...filteredPages[0]],
+            ...filteredPages.slice(1),
           ]
+
+          return {
+            ...oldData,
+            pages: newPages,
+          }
         },
       )
       setIsEditing(false)
