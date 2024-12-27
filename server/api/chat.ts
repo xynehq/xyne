@@ -294,8 +294,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   ).root.children
 
   const latestIds = latestResults
-    ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
-    ?.filter((v) => !!v)
+    .map((v: VespaSearchResult) => (v?.fields as any).docId)
+    .filter((v) => !!v)
 
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
@@ -311,8 +311,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         alpha,
       )
       const initialContext = cleanContext(
-        results?.root?.children
-          ?.map(
+        results.root.children
+          .map(
             (v, i) =>
               `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
           )
@@ -329,7 +329,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             from: new Date().getTime() - 4 * monthInMs,
             to: new Date().getTime(),
           })
-        )?.root?.children
+        ).root.children
 
         let results = await searchVespa(
           query,
@@ -341,17 +341,17 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha,
           null,
           latestResults
-            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-            ?.filter((v) => !!v),
+            .map((v: VespaSearchResult) => (v.fields as any).docId)
+            .filter((v) => !!v),
         )
-        const totalResults = results?.root?.children?.concat(latestResults)
+        const totalResults = results.root.children.concat(latestResults)
         const initialContext = cleanContext(
           totalResults
-            ?.map(
+            .map(
               (v, i) =>
                 `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
             )
-            ?.join("\n"),
+            .join("\n"),
         )
 
         const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
@@ -439,7 +439,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       if (!results.root.children) {
         results.root.children = []
       }
-      results.root.children = results?.root?.children?.concat(latestResults)
+      results.root.children = results.root.children.concat(latestResults)
     } else {
       results = await searchVespa(
         message,
@@ -452,12 +452,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     const initialContext = cleanContext(
-      results?.root?.children
-        ?.map(
+      results.root.children
+        .map(
           (v, i) =>
             `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        ?.join("\n"),
+        .join("\n"),
     )
 
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
