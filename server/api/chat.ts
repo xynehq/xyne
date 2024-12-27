@@ -1,8 +1,4 @@
-import {
-  answerContextMap,
-  cleanContext,
-  userContext,
-} from "@/ai/context"
+import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
   baselineRAGJsonStream,
   generateTitleUsingQuery,
@@ -37,9 +33,7 @@ import {
   type SelectChat,
   type SelectMessage,
 } from "@/db/schema"
-import {
-  getUserAndWorkspaceByEmail,
-} from "@/db/user"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
@@ -50,9 +44,7 @@ import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
-import {
-  searchVespa,
-} from "@/search/vespa"
+import { searchVespa } from "@/search/vespa"
 import {
   Apps,
   entitySchema,
@@ -302,8 +294,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   ).root.children
 
   const latestIds = latestResults
-    .map((v: VespaSearchResult) => (v?.fields as any).docId)
-    .filter((v) => !!v)
+    ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
+    ?.filter((v) => !!v)
 
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
@@ -319,8 +311,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         alpha,
       )
       const initialContext = cleanContext(
-        results.root.children
-          .map(
+        results?.root?.children
+          ?.map(
             (v, i) =>
               `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
           )
@@ -337,7 +329,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             from: new Date().getTime() - 4 * monthInMs,
             to: new Date().getTime(),
           })
-        ).root.children
+        )?.root?.children
 
         let results = await searchVespa(
           query,
@@ -349,17 +341,17 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha,
           null,
           latestResults
-            .map((v: VespaSearchResult) => (v.fields as any).docId)
-            .filter((v) => !!v),
+            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+            ?.filter((v) => !!v),
         )
-        const totalResults = results.root.children.concat(latestResults)
+        const totalResults = results?.root?.children?.concat(latestResults)
         const initialContext = cleanContext(
           totalResults
-            .map(
+            ?.map(
               (v, i) =>
                 `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
             )
-            .join("\n"),
+            ?.join("\n"),
         )
 
         const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
@@ -447,7 +439,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       if (!results.root.children) {
         results.root.children = []
       }
-      results.root.children = results.root.children.concat(latestResults)
+      results.root.children = results?.root?.children?.concat(latestResults)
     } else {
       results = await searchVespa(
         message,
@@ -460,12 +452,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     const initialContext = cleanContext(
-      results.root.children
-        .map(
+      results?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        .join("\n"),
+        ?.join("\n"),
     )
 
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
@@ -744,6 +736,27 @@ export async function* UnderstandMessageAndAnswer(
   }
 }
 
+const handleError = (error: any) => {
+  let errorMessage = ""
+  switch (error) {
+    default:
+      errorMessage = "Something went wrong. Please try again."
+      break
+  }
+  return errorMessage
+}
+
+const AddErrMessageToMessage = async (
+  lastMessage: SelectMessage,
+  errorMessage: string,
+) => {
+  if (lastMessage.messageRole === MessageRole.User) {
+    await updateMessageByExternalId(db, lastMessage?.externalId, {
+      errorMessage,
+    })
+  }
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
@@ -861,15 +874,19 @@ export const MessageApi = async (c: Context) => {
               modelId: ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
               stream: false,
             })
+          // Only send those messages here which don't have error responses
+          const messagesWithNoErrResponse = messages
+            .filter((msg) => !msg?.errorMessage)
+            .map((m) => ({
+              role: m.messageRole as ConversationRole,
+              content: [{ text: m.message }],
+            }))
           const iterator = UnderstandMessageAndAnswer(
             email,
             ctx,
             message,
             classification,
-            messages.map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            })),
+            messagesWithNoErrResponse,
           )
 
           stream.writeSSE({
