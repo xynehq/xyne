@@ -326,7 +326,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { messageRole: "assistant", message: `Error occured: ${event.data}` },
+          {
+            messageRole: "assistant",
+            message: `Error occured: ${event.data}`,
+            externalId: currentResp.messageId,
+            sources: currentResp.sources,
+            citationMap: currentResp.citationMap,
+          },
         ])
       }
       setCurrentResp(null)

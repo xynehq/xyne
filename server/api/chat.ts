@@ -993,7 +993,7 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          // answer = ""
+          answer = ""
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1023,13 +1023,20 @@ export const MessageApi = async (c: Context) => {
               event: ChatSSEvents.End,
             })
           } else {
+            const allMessages = await getChatMessages(db, chat?.externalId)
+            const lastMessage = allMessages[allMessages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: lastMessage.externalId,
+              }),
+            })
             await stream.writeSSE({
               event: ChatSSEvents.Error,
               data: "Error while trying to answer",
             })
             // Add the error message to last user message
-            const allMessages = await getChatMessages(db, chat?.externalId)
-            const lastMessage = allMessages[allMessages.length - 1]
             await AddErrMessageToMessage(
               lastMessage,
               "Error while trying to answer",
@@ -1042,14 +1049,21 @@ export const MessageApi = async (c: Context) => {
           }
         } catch (error) {
           const errFomMap = handleError(error)
+          const allMessages = await getChatMessages(db, chat?.externalId)
+          const lastMessage = allMessages[allMessages.length - 1]
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: lastMessage.externalId,
+            }),
+          })
           await stream.writeSSE({
             event: ChatSSEvents.Error,
             data: errFomMap,
           })
 
           // Add the error message to last user message
-          const allMessages = await getChatMessages(db, chat?.externalId)
-          const lastMessage = allMessages[allMessages.length - 1]
           await AddErrMessageToMessage(lastMessage, errFomMap)
 
           await stream.writeSSE({
@@ -1063,13 +1077,20 @@ export const MessageApi = async (c: Context) => {
       },
       async (err, stream) => {
         const errFromMap = handleError(err)
+        const allMessages = await getChatMessages(db, chat?.externalId)
+        const lastMessage = allMessages[allMessages.length - 1]
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+            messageId: lastMessage.externalId,
+          }),
+        })
         await stream.writeSSE({
           event: ChatSSEvents.Error,
           data: errFromMap,
         })
         // Add the error message to last user message
-        const allMessages = await getChatMessages(db, chat?.externalId)
-        const lastMessage = allMessages[allMessages.length - 1]
         await AddErrMessageToMessage(lastMessage, errFromMap)
 
         await stream.writeSSE({
@@ -1088,6 +1109,13 @@ export const MessageApi = async (c: Context) => {
       const allMessages = await getChatMessages(db, chat?.externalId)
       // Add the error message to last user message
       const lastMessage = allMessages[allMessages.length - 1]
+      await stream.writeSSE({
+        event: ChatSSEvents.ResponseMetadata,
+        data: JSON.stringify({
+          chatId: chat.externalId,
+          messageId: lastMessage.externalId,
+        }),
+      })
       await AddErrMessageToMessage(lastMessage, errFromMap)
     }
     if (error instanceof APIError) {
@@ -1290,6 +1318,7 @@ export const MessageRetryApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
+          throw new Error("Ase hi")
           // Retry on an error case
           // Error is retried and now assistant has a response
           // Inserting a new assistant message here, replacing the error message.
