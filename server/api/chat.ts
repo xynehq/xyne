@@ -297,8 +297,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   ).root.children
 
   const latestIds = latestResults
-    .map((v: VespaSearchResult) => (v?.fields as any).docId)
-    .filter((v) => !!v)
+    ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
+    ?.filter((v) => !!v)
 
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
@@ -314,12 +314,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         alpha,
       )
       const initialContext = cleanContext(
-        results.root.children
-          .map(
+        results?.root?.children
+          ?.map(
             (v, i) =>
               `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
           )
-          .join("\n"),
+          ?.join("\n"),
       )
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
         modelId: defaultBestModel,
@@ -344,17 +344,17 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha,
           null,
           latestResults
-            .map((v: VespaSearchResult) => (v.fields as any).docId)
-            .filter((v) => !!v),
+            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+            ?.filter((v) => !!v),
         )
-        const totalResults = results.root.children.concat(latestResults)
+        const totalResults = results?.root?.children?.concat(latestResults)
         const initialContext = cleanContext(
           totalResults
-            .map(
+            ?.map(
               (v, i) =>
                 `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
             )
-            .join("\n"),
+            ?.join("\n"),
         )
 
         const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
@@ -443,7 +443,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       if (!results.root.children) {
         results.root.children = []
       }
-      results.root.children = results.root.children.concat(latestResults)
+      results.root.children = results?.root?.children?.concat(latestResults)
     } else {
       results = await searchVespa(
         message,
@@ -456,12 +456,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     const initialContext = cleanContext(
-      results.root.children
-        .map(
+      results?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        .join("\n"),
+        ?.join("\n"),
     )
 
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
@@ -496,7 +496,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             while ((match = citationRegex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
-                const item = results.root.children[citationIndex]
+                const item = results?.root?.children[citationIndex]
                 if (item) {
                   yield {
                     citation: {
@@ -626,12 +626,12 @@ async function* generatePointQueryTimeExpansion(
 
     // Prepare context for LLM
     const initialContext = cleanContext(
-      combinedResults.root.children
-        .map(
+      combinedResults?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i}: \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        .join("\n"),
+        ?.join("\n"),
     )
 
     // Stream LLM response
@@ -670,7 +670,7 @@ async function* generatePointQueryTimeExpansion(
             while ((match = citationRegex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
-                const item = combinedResults.root.children[citationIndex]
+                const item = combinedResults?.root?.children[citationIndex]
                 if (item) {
                   yield {
                     citation: {
@@ -883,17 +883,14 @@ export const MessageApi = async (c: Context) => {
               content: [{ text: m.message }],
             }))
 
-          const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
-            message,
-            ctx,
-            {
+          const searchOrAnswerIterator =
+            generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
               messages: messagesWithNoErrResponse,
-            },
-          )
+            })
 
           // TODO: for now if the answer is from the conversation itself we don't
           // add any citations for it, we can refer to the original message for citations
@@ -996,6 +993,7 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
+          answer = ""
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1128,12 +1126,18 @@ export const MessageRetryApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Message not found" })
     }
 
+    const isOriginalMessageAUserMessage = originalMessage.messageRole === "user"
+
     let conversation = await getChatMessagesBefore(
       db,
       originalMessage.chatId,
       originalMessage.createdAt,
     )
-    if (!conversation || !conversation.length) {
+
+    if (
+      !isOriginalMessageAUserMessage &&
+      (!conversation || !conversation.length)
+    ) {
       throw new HTTPException(400, {
         message: "Could not fetch previous messages",
       })
@@ -1148,11 +1152,14 @@ export const MessageRetryApi = async (c: Context) => {
       workspaceId,
       email,
     )
+    const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
 
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
-    const prevUserMessage = conversation[conversation.length - 1]
+    const prevUserMessage = isOriginalMessageAUserMessage
+      ? originalMessage
+      : conversation[conversation.length - 1]
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
       conversation = []
@@ -1168,18 +1175,27 @@ export const MessageRetryApi = async (c: Context) => {
       async (stream) => {
         try {
           let message = prevUserMessage.message
+          const convWithNoErrMsg = isOriginalMessageAUserMessage
+            ? conversation
+                .filter((con) => !con?.errorMessage)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
+            : conversation.slice(0, conversation.length - 1).map((m) => ({
+                role: m.messageRole as ConversationRole,
+                content: [{ text: m.message }],
+              }))
+          console.log("convWithNoErrMsg")
+          console.log(convWithNoErrMsg)
+          console.log("convWithNoErrMsg")
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
-              messages: conversation
-                .slice(0, conversation.length - 1)
-                .map((m) => ({
-                  role: m.messageRole as ConversationRole,
-                  content: [{ text: m.message }],
-                })),
+              messages: convWithNoErrMsg,
             })
           let currentAnswer = ""
           let answer = ""
@@ -1239,10 +1255,7 @@ export const MessageRetryApi = async (c: Context) => {
               ctx,
               message,
               classification,
-              conversation.slice(0, conversation.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              })),
+              convWithNoErrMsg,
             )
 
             stream.writeSSE({
@@ -1280,20 +1293,52 @@ export const MessageRetryApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          await updateMessage(db, messageId, {
-            message: processMessage(answer, citationMap),
-            updatedAt: new Date(),
-            sources: citations,
-          })
+          // Retry on an error case
+          // Error is retried and now assistant has a response
+          // Inserting a new assistant message here, replacing the error message.
+          if (isOriginalMessageAUserMessage) {
+            // Remove the err message from the user message
+            await updateMessage(db, messageId, {
+              errorMessage: "",
+            })
+            // Insert the new assistant response
+            const msg = await insertMessage(db, {
+              chatId: originalMessage.chatId,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: originalMessage.chatExternalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              sources: citations,
+              message: processMessage(answer, citationMap),
+              modelId:
+                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+            })
+            console.log("hello......")
+          } else {
+            await updateMessage(db, messageId, {
+              message: processMessage(answer, citationMap),
+              updatedAt: new Date(),
+              sources: citations,
+            })
+          }
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
         } catch (error) {
+          const errFromMap = handleError(error)
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: (error as Error).message,
+            data: errFromMap,
           })
+          // Add the error message to last user message
+          const allMessages = await getChatMessages(
+            db,
+            originalMessage.chatExternalId,
+          )
+          const lastMessage = allMessages[allMessages.length - 1]
+          await AddErrMessageToMessage(lastMessage, errFromMap)
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
@@ -1304,10 +1349,18 @@ export const MessageRetryApi = async (c: Context) => {
         }
       },
       async (err, stream) => {
+        const errFromMap = handleError(err)
         await stream.writeSSE({
           event: ChatSSEvents.Error,
-          data: err.message,
+          data: errFromMap,
         })
+        // Add the error message to last user message
+        const allMessages = await getChatMessages(
+          db,
+          originalMessage.chatExternalId,
+        )
+        const lastMessage = allMessages[allMessages.length - 1]
+        await AddErrMessageToMessage(lastMessage, errFromMap)
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,

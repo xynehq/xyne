@@ -598,34 +598,36 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       }}
                       sourcesVisible={isSourcesVisible}
                       isStreaming={isStreaming}
-                  />
+                    />
                     {userMessageWithErr && (
-                      <div
-                        className={`rounded-[16px] text-[#1C1D1F] text-[15px] leading-[25px] self-start`}
-                      >
-                        <div className={`flex flex-col mt-[40px]`}>
-                          <div className="flex flex-row">
-                            <img
-                              className={"mr-[20px] w-[32px] self-start"}
-                              src={AssistantLogo}
-                            />
-                            <div className="mt-[4px] markdown-content max-w-[75%]">
-                              <MarkdownPreview
-                                source={message.errorMessage}
-                                wrapperElement={{
-                                  "data-color-mode": "light",
-                                }}
-                                style={{
-                                  padding: 0,
-                                  backgroundColor: "transparent",
-                                  color: "#1C1D1F",
-                                  maxWidth: "75%",
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      <ChatMessage
+                        message={message.errorMessage}
+                        isUser={false}
+                        responseDone={true}
+                        citations={message?.sources?.map(
+                          (c: Citation) => c.url,
+                        )}
+                        messageId={message.externalId}
+                        handleRetry={handleRetry}
+                        citationMap={message.citationMap}
+                        dots={message.isRetrying ? dots : ""}
+                        onToggleSources={() => {
+                          if (
+                            showSources &&
+                            currentMessageId === message.externalId
+                          ) {
+                            setShowSources(false)
+                            setCurrentCitations([])
+                            setCurrentMessageId(null)
+                          } else {
+                            setCurrentCitations(message?.sources || [])
+                            setShowSources(true)
+                            setCurrentMessageId(message.externalId)
+                          }
+                        }}
+                        sourcesVisible={isSourcesVisible}
+                        isStreaming={isStreaming}
+                      />
                     )}
                   </>
                 )
