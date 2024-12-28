@@ -993,7 +993,7 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          answer = ""
+          // answer = ""
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1186,9 +1186,6 @@ export const MessageRetryApi = async (c: Context) => {
                 role: m.messageRole as ConversationRole,
                 content: [{ text: m.message }],
               }))
-          console.log("convWithNoErrMsg")
-          console.log(convWithNoErrMsg)
-          console.log("convWithNoErrMsg")
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -1314,7 +1311,13 @@ export const MessageRetryApi = async (c: Context) => {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
-            console.log("hello......")
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: originalMessage.chatExternalId,
+                messageId: msg.externalId,
+              }),
+            })
           } else {
             await updateMessage(db, messageId, {
               message: processMessage(answer, citationMap),

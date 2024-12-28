@@ -375,11 +375,142 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }),
     )
 
+    // If user retries on error case
+    const userMsgWithErr = messages.find(
+      (msg) =>
+        msg.externalId === messageId &&
+        msg.messageRole === "user" &&
+        msg.errorMessage,
+    )
+
+    if (userMsgWithErr) {
+      console.log("Retry on error clicked")
+      // Hide the err message UI here
+      setCurrentResp({ resp: "" })
+      currentRespRef.current = { resp: "", sources: [] }
+    }
+
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
     })
+
+    if (userMsgWithErr) {
+      eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        if (currentRespRef.current) {
+          currentRespRef.current.sources = contextChunks
+          currentRespRef.current.citationMap = citationMap
+          setCurrentResp((prevResp) => ({
+            ...prevResp,
+            resp: prevResp?.resp || "",
+            sources: contextChunks,
+            citationMap,
+          }))
+        }
+      })
+
+      eventSource.addEventListener(ChatSSEvents.Start, (event) => {})
+
+      eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
+        setCurrentResp((prevResp) => {
+          const updatedResp = prevResp
+            ? { ...prevResp, resp: prevResp.resp + event.data }
+            : { resp: event.data }
+          currentRespRef.current = updatedResp // Update the ref
+          return updatedResp
+        })
+      })
+
+      eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
+        const { chatId, messageId } = JSON.parse(event.data)
+
+        // this will be optional
+        if (messageId) {
+          // there is a race condition between end and metadata events
+          // the message id would not reach and this would prevent the
+          // retry of just now streamed message as no message id
+          if (currentRespRef.current) {
+            setCurrentResp((resp) => {
+              const updatedResp = resp || { resp: "" }
+              updatedResp.chatId = chatId
+              updatedResp.messageId = messageId
+              currentRespRef.current = updatedResp
+              return updatedResp
+            })
+          } else {
+            setMessages((prevMessages) => {
+              const lastMessage = prevMessages[prevMessages.length - 1]
+              if (lastMessage.messageRole === "assistant") {
+                return [
+                  ...prevMessages.slice(0, -1),
+                  { ...lastMessage, externalId: messageId },
+                ]
+              }
+              return prevMessages
+            })
+          }
+        }
+      })
+
+      eventSource.addEventListener(ChatSSEvents.End, (event) => {
+        const currentResp = currentRespRef.current
+        if (currentResp) {
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              messageRole: "assistant",
+              message: currentResp.resp,
+              externalId: currentResp.messageId,
+              sources: currentResp.sources,
+              citationMap: currentResp.citationMap,
+            },
+          ])
+        }
+        setCurrentResp(null)
+        currentRespRef.current = null
+        eventSource.close()
+        setIsStreaming(false)
+      })
+
+      eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+        console.error("Error with SSE:", event.data)
+        const currentResp = currentRespRef.current
+        if (currentResp) {
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              messageRole: "assistant",
+              message: `Error occured: ${event.data}`,
+            },
+          ])
+        }
+        setCurrentResp(null)
+        currentRespRef.current = null
+        eventSource.close()
+        setIsStreaming(false)
+      })
+
+      // Handle error events
+      eventSource.onerror = (error) => {
+        console.error("Error with SSE:", error)
+        const currentResp = currentRespRef.current
+        if (currentResp) {
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              messageRole: "assistant",
+              message: `Error occured: please try again`,
+            },
+          ])
+        }
+        setCurrentResp(null)
+        currentRespRef.current = null
+        eventSource.close()
+        setIsStreaming(false)
+      }
+    }
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       setMessages((prevMessages) =>
