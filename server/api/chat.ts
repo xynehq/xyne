@@ -1,6 +1,7 @@
 import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
   baselineRAGJsonStream,
+  generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
   Models,
@@ -263,6 +264,7 @@ const searchToCitations = (
   return results.map((result) => searchToCitation(result as VespaSearchResults))
 }
 
+// if an index does not exist instead of NaN we should simply remove the citation itself from answer
 const processMessage = (text: string, citationMap: Record<number, number>) => {
   return text.replace(/\[(\d+)\]/g, (match, num) => {
     return `[${citationMap[num] + 1}]`
@@ -271,6 +273,7 @@ const processMessage = (text: string, citationMap: Record<number, number>) => {
 
 async function* generateIterativeTimeFilterAndQueryRewrite(
   input: string,
+  messages: Message[],
   email: string,
   userCtx: string,
   alpha: number = 0.5,
@@ -357,6 +360,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
           stream: true,
           modelId: defaultBestModel,
+          messages,
         })
         let buffer = ""
         let currentAnswer = ""
@@ -535,6 +539,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
 async function* generatePointQueryTimeExpansion(
   input: string,
+  messages: Message[],
   classification: TemporalClassifier & { cost: number },
   email: string,
   userCtx: string,
@@ -707,7 +712,7 @@ export async function* UnderstandMessageAndAnswer(
   userCtx: string,
   message: string,
   classification: TemporalClassifier & { cost: number },
-  messages?: Message[],
+  messages: Message[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -715,6 +720,7 @@ export async function* UnderstandMessageAndAnswer(
   if (classification.direction !== null) {
     return yield* generatePointQueryTimeExpansion(
       message,
+      messages,
       classification,
       email,
       userCtx,
@@ -726,6 +732,7 @@ export async function* UnderstandMessageAndAnswer(
     // default case
     return yield* generateIterativeTimeFilterAndQueryRewrite(
       message,
+      messages,
       email,
       userCtx,
       0.5,
@@ -868,58 +875,126 @@ export const MessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
-
-          const classification: TemporalClassifier & { cost: number } =
-            await temporalEventClassification(message, {
-              modelId: ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
-              stream: false,
-            })
-          // Only send those messages here which don't have error responses
           const messagesWithNoErrResponse = messages
             .filter((msg) => !msg?.errorMessage)
+            .slice(0, messages.length - 1)
             .map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
             }))
-          const iterator = UnderstandMessageAndAnswer(
-            email,
-            ctx,
+
+          const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
             message,
-            classification,
-            messagesWithNoErrResponse,
+            ctx,
+            {
+              modelId:
+                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+              stream: true,
+              json: true,
+              messages: messagesWithNoErrResponse,
+            },
           )
 
-          stream.writeSSE({
-            event: ChatSSEvents.Start,
-            data: "",
-          })
+          // TODO: for now if the answer is from the conversation itself we don't
+          // add any citations for it, we can refer to the original message for citations
+          // one more bug is now llm automatically copies the citation text sometimes without any reference
+          // leads to [NaN] in the answer
+          let currentAnswer = ""
           let answer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          for await (const chunk of iterator) {
+          let parsed = { answer: "", queryRewrite: "" }
+          let buffer = ""
+          for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
-              answer += chunk.text
-              stream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: chunk.text,
-              })
+              buffer += chunk.text
+              try {
+                parsed = jsonParseLLMOutput(buffer)
+                if (parsed.answer && currentAnswer !== parsed.answer) {
+                  if (currentAnswer === "") {
+                    stream.writeSSE({
+                      event: ChatSSEvents.Start,
+                      data: "",
+                    })
+                    // First valid answer - send the whole thing
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: parsed.answer,
+                    })
+                  } else {
+                    // Subsequent chunks - send only the new part
+                    const newText = parsed.answer.slice(currentAnswer.length)
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: newText,
+                    })
+                  }
+                  currentAnswer = parsed.answer
+                }
+              } catch (err) {
+                const errMessage = (err as Error).message
+                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                continue
+              }
             }
-
             if (chunk.cost) {
               costArr.push(chunk.cost)
             }
-            if (chunk.citation) {
-              const { index, item } = chunk.citation
-              citations.push(item)
-              citationMap[index] = citations.length - 1
-              stream.writeSSE({
-                event: ChatSSEvents.CitationsUpdate,
-                data: JSON.stringify({
-                  contextChunks: citations,
-                  citationMap,
-                }),
-              })
+          }
+          // continue as is if we didn't find answer in the existing conversation
+          if (parsed.answer === null) {
+            // ambigious user message
+            if (parsed.queryRewrite) {
+              message = parsed.queryRewrite
             }
+            const classification: TemporalClassifier & { cost: number } =
+              await temporalEventClassification(message, {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
+                stream: false,
+              })
+            const iterator = UnderstandMessageAndAnswer(
+              email,
+              ctx,
+              message,
+              classification,
+              messagesWithNoErrResponse,
+            )
+
+            stream.writeSSE({
+              event: ChatSSEvents.Start,
+              data: "",
+            })
+            answer = ""
+            citations = []
+            citationMap = {}
+            for await (const chunk of iterator) {
+              if (chunk.text) {
+                answer += chunk.text
+                stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: chunk.text,
+                })
+              }
+
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+              if (chunk.citation) {
+                const { index, item } = chunk.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+              }
+            }
+          } else if (parsed.answer) {
+            answer = parsed.answer
           }
           if (answer) {
             // TODO: incase user loses permission
@@ -1092,56 +1167,119 @@ export const MessageRetryApi = async (c: Context) => {
       c,
       async (stream) => {
         try {
-          const message = prevUserMessage.message
-          const classification: TemporalClassifier & { cost: number } =
-            await temporalEventClassification(message, {
-              modelId: ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
-              stream: false,
+          let message = prevUserMessage.message
+          const searchOrAnswerIterator =
+            generateSearchQueryOrAnswerFromConversation(message, ctx, {
+              modelId:
+                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+              stream: true,
+              json: true,
+              messages: conversation
+                .slice(0, conversation.length - 1)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                })),
             })
-          const iterator = UnderstandMessageAndAnswer(
-            email,
-            ctx,
-            message,
-            classification,
-            conversation.map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            })),
-          )
-
-          stream.writeSSE({
-            event: ChatSSEvents.Start,
-            data: "",
-          })
+          let currentAnswer = ""
           let answer = ""
-          let citations = []
+          let citations: number[] = []
           let citationMap: Record<number, number> = {}
-          for await (const chunk of iterator) {
+          let parsed = { answer: "", queryRewrite: "" }
+          let buffer = ""
+          for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
-              answer += chunk.text
-              stream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: chunk.text,
-              })
+              buffer += chunk.text
+              try {
+                parsed = jsonParseLLMOutput(buffer)
+                if (parsed.answer && currentAnswer !== parsed.answer) {
+                  if (currentAnswer === "") {
+                    stream.writeSSE({
+                      event: ChatSSEvents.Start,
+                      data: "",
+                    })
+                    // First valid answer - send the whole thing
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: parsed.answer,
+                    })
+                  } else {
+                    // Subsequent chunks - send only the new part
+                    const newText = parsed.answer.slice(currentAnswer.length)
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: newText,
+                    })
+                  }
+                  currentAnswer = parsed.answer
+                }
+              } catch (err) {
+                const errMessage = (err as Error).message
+                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                continue
+              }
             }
-
             if (chunk.cost) {
               costArr.push(chunk.cost)
             }
-            if (chunk.citation) {
-              const { index, item } = chunk.citation
-              citations.push(item)
-              citationMap[index] = citations.length - 1
-              stream.writeSSE({
-                event: ChatSSEvents.CitationsUpdate,
-                data: JSON.stringify({
-                  contextChunks: citations,
-                  citationMap,
-                }),
-              })
-            }
           }
 
+          if (parsed.answer === null) {
+            if (parsed.queryRewrite) {
+              message = parsed.queryRewrite
+            }
+            const classification: TemporalClassifier & { cost: number } =
+              await temporalEventClassification(message, {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
+                stream: false,
+              })
+            const iterator = UnderstandMessageAndAnswer(
+              email,
+              ctx,
+              message,
+              classification,
+              conversation.slice(0, conversation.length - 1).map((m) => ({
+                role: m.messageRole as ConversationRole,
+                content: [{ text: m.message }],
+              })),
+            )
+
+            stream.writeSSE({
+              event: ChatSSEvents.Start,
+              data: "",
+            })
+            answer = ""
+            citations = []
+            citationMap = {}
+            for await (const chunk of iterator) {
+              if (chunk.text) {
+                answer += chunk.text
+                stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: chunk.text,
+                })
+              }
+
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+              if (chunk.citation) {
+                const { index, item } = chunk.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+              }
+            }
+          } else if (parsed.answer) {
+            answer = parsed.answer
+          }
           await updateMessage(db, messageId, {
             message: processMessage(answer, citationMap),
             updatedAt: new Date(),
