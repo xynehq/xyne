@@ -993,7 +993,6 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          // answer = ""
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1203,13 +1202,17 @@ export const MessageRetryApi = async (c: Context) => {
       async (stream) => {
         try {
           let message = prevUserMessage.message
-          const convWithNoErrMsg = conversation
-            .slice(0, conversation.length - 1)
-            .filter((con) => !con?.errorMessage)
-            .map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            }))
+          const convWithNoErrMsg = isOriginalMessageAUserMessage
+            ? conversation
+                .filter((con) => !con?.errorMessage)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
+            : conversation.slice(0, conversation.length - 1).map((m) => ({
+                role: m.messageRole as ConversationRole,
+                content: [{ text: m.message }],
+              }))
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
