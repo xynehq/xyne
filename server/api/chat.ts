@@ -876,8 +876,8 @@ export const MessageApi = async (c: Context) => {
             }),
           })
           const messagesWithNoErrResponse = messages
-            .filter((msg) => !msg?.errorMessage)
             .slice(0, messages.length - 1)
+            .filter((msg) => !msg?.errorMessage)
             .map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
@@ -993,7 +993,7 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          answer = ""
+          // answer = ""
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1203,17 +1203,13 @@ export const MessageRetryApi = async (c: Context) => {
       async (stream) => {
         try {
           let message = prevUserMessage.message
-          const convWithNoErrMsg = isOriginalMessageAUserMessage
-            ? conversation
-                .filter((con) => !con?.errorMessage)
-                .map((m) => ({
-                  role: m.messageRole as ConversationRole,
-                  content: [{ text: m.message }],
-                }))
-            : conversation.slice(0, conversation.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              }))
+          const convWithNoErrMsg = conversation
+            .slice(0, conversation.length - 1)
+            .filter((con) => !con?.errorMessage)
+            .map((m) => ({
+              role: m.messageRole as ConversationRole,
+              content: [{ text: m.message }],
+            }))
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -1318,7 +1314,7 @@ export const MessageRetryApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          throw new Error("Ase hi")
+          // throw new Error("Ase hi")
           // Retry on an error case
           // Error is retried and now assistant has a response
           // Inserting a new assistant message here, replacing the error message.

@@ -328,7 +328,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           ...prevMessages,
           {
             messageRole: "assistant",
-            message: `Error occured: ${event.data}`,
+            message: `${event.data}`,
             externalId: currentResp.messageId,
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
@@ -390,8 +390,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     )
 
     if (userMsgWithErr) {
-      console.log("Retry on error clicked")
-      // Hide the err message UI here
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => {
+          if (msg.externalId === messageId && msg.messageRole === "user") {
+            return { ...msg, errorMessage: "" }
+          }
+          return msg
+        }),
+      )
       setCurrentResp({ resp: "" })
       currentRespRef.current = { resp: "", sources: [] }
     }
@@ -488,7 +494,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             ...prevMessages,
             {
               messageRole: "assistant",
-              message: `Error occured: ${event.data}`,
+              message: `${event.data}`,
             },
           ])
         }
@@ -516,50 +522,50 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         eventSource.close()
         setIsStreaming(false)
       }
-    }
+    } else {
+      eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, message: msg.message + event.data }
+              : msg,
+          ),
+        )
+      })
 
-    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, message: msg.message + event.data }
-            : msg,
-        ),
-      )
-    })
+      eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, sources: contextChunks, citationMap }
+              : msg,
+          ),
+        )
+      })
 
-    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, sources: contextChunks, citationMap }
-            : msg,
-        ),
-      )
-    })
+      eventSource.addEventListener(ChatSSEvents.End, (event) => {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false }
+              : msg,
+          ),
+        )
+        eventSource.close()
+        setIsStreaming(false) // Stop streaming after retry
+      })
 
-    eventSource.addEventListener(ChatSSEvents.End, (event) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, isRetrying: false }
-            : msg,
-        ),
-      )
-      eventSource.close()
-      setIsStreaming(false) // Stop streaming after retry
-    })
-
-    eventSource.onerror = (error) => {
-      console.error("Retry SSE Error:", error)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-        ),
-      )
-      eventSource.close()
-      setIsStreaming(false) // Stop streaming on error
+      eventSource.onerror = (error) => {
+        console.error("Retry SSE Error:", error)
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+          ),
+        )
+        eventSource.close()
+        setIsStreaming(false) // Stop streaming on error
+      }
     }
   }
 
