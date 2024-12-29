@@ -1,44 +1,50 @@
-# Warning: Do not execute if App is running in Docker
+  #!/bin/bash
+  set -e
 
-#!/bin/bash
-set -e
+  echo "Initializing Vespa permissions..."
+  ./init-vespa.sh
 
-echo "Setting Vespa permissions....."
-./init-vespa.sh
+  if ! command -v bun &> /dev/null; then
+    echo "Bun is not installed. Please install it before running this script."
+    exit 1
+  fi
 
-if ! command -v bun &> /dev/null; then
-  echo "Bun is not installed. Please install it before running this script."
-  exit 1
-fi
+  echo "Running generation and migration commands for the server..."
+  bun i
+  bun run generate
+  bun run migrate
 
-echo "Running Generation and Migration Commands for Server....."
+  echo "Deploying Vespa..."
+  cd ./vespa
 
-bun i
+  # Load .env variables (if any)
+  if [ -f "../.env" ]; then
+    export $(grep -v '^#' ../.env | xargs)
+  fi
 
-bun run generate
-bun run migrate
+  # Check if EMBEDDING_MODEL is set
+  if [ -n "$EMBEDDING_MODEL" ]; then
+    echo "Using EMBEDDING_MODEL=$EMBEDDING_MODEL"
+    if [ "$1" == "--docker" ]; then
+      ./deploy.sh "$EMBEDDING_MODEL" --docker
+    else
+      ./deploy.sh "$EMBEDDING_MODEL"
+    fi
+  else
+    echo "No EMBEDDING_MODEL provided. Using default model."
+    if [ "$1" == "--docker" ]; then
+      ./deploy.sh --docker
+    else
+      ./deploy.sh
+    fi
+  fi
 
-echo "Deploying Vespa....."
+  echo "Initializing frontend..."
 
-cd ./vespa
+  cd ../../frontend
 
-# Load .env variables (if any)
-if [ -f "../.env" ]; then
-  export $(grep -v '^#' ../.env | xargs)
-fi
+  bun i
 
-# Check if EMBEDDING_MODEL is set
-if [ -n "$EMBEDDING_MODEL" ]; then
-  echo "Using EMBEDDING_MODEL=$EMBEDDING_MODEL"
-  ./deploy.sh "$EMBEDDING_MODEL"
-else
-  echo "No EMBEDDING_MODEL provided. Using default model."
-  ./deploy.sh
-fi
+  bun run build
 
-echo "Running build Command for Frontend....."
-cd ../../frontend
-
-bun i
-
-bun run build
+  echo "***************Initialization completed*******************"

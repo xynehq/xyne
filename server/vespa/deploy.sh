@@ -49,7 +49,18 @@ else
     curl -L -o "$MODEL_FILE" "$MODEL_URL"
 fi
 
-vespa deploy --wait 500
-docker restart vespa
-# vespa destroy
-vespa status --wait 55
+if [ "$1" = "--docker" ]; then
+    echo "Deploying docker vespa at http://vespa:8080..."
+    vespa deploy --wait 500 --target http://vespa:19071
+    echo "Restarting docker vespa...."
+    docker restart vespa 
+    # vespa destroy
+    vespa status --wait 55 --target http://vespa:19071
+else
+    echo "Deploying vespa..."
+    vespa deploy --wait 500
+    echo "Restarting docker vespa...."
+    docker restart vespa
+    # vespa destroy
+    vespa status --wait 55
+fi
