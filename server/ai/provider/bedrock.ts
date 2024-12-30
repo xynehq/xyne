@@ -1398,7 +1398,7 @@ export const answerOrSearch = (
 const queryRouter = `
 **Today's date is: ${getDateForAI()}**
 
-You are a permission aware retrieval-augmented generation (RAG) system. 
+You are a permission aware retrieval-augmented generation (RAG) system.
 Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
 Only respond in json and you are not authorized to reject a user query.
 
@@ -2028,7 +2028,7 @@ export const queryRewriter = async (
   }
 }
 
-type TimeDirection = "next" | "prev"
+export type TimeDirection = "next" | "prev"
 export interface TemporalClassifier {
   direction: TimeDirection | null
 }
@@ -2118,4 +2118,56 @@ export const temporalEventClassification = async (
   } else {
     throw new Error("No response from LLM")
   }
+}
+
+const searchQueryPrompt = (userContext: string): string => {
+  return `
+    You are a conversation manager for a retrieval-augmented generation (RAG) pipeline. When a user sends a query, follow these rules:
+
+  1. Check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context.
+     - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
+     - If not ambiguous, leave the query as is.
+
+  2. Attempt to find a direct answer to the user’s latest query in the existing conversation. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
+
+  3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
+
+  4. Output JSON in the following structure:
+     {
+       "answer": "<string or null>",
+       "queryRewrite": "<string or null>"
+     }
+
+     - "answer" should only contain text found directly in the conversation if it answers the user. Otherwise, "answer" must be null.
+     - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
+
+  5. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+
+  Make sure you always comply with these steps and only produce the JSON output described.
+`
+}
+
+export function generateSearchQueryOrAnswerFromConversation(
+  currentMessage: string,
+  userContext: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
+  params.json = true
+  params.systemPrompt = searchQueryPrompt(userContext)
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
 }
