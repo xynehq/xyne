@@ -556,6 +556,19 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         setIsStreaming(false) // Stop streaming after retry
       })
 
+      eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+        console.error("Retry Error with SSE:", event.data)
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false, message: event.data }
+              : msg,
+          ),
+        )
+        eventSource.close()
+        setIsStreaming(false)
+      })
+
       eventSource.onerror = (error) => {
         console.error("Retry SSE Error:", error)
         setMessages((prevMessages) =>

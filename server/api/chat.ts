@@ -1209,10 +1209,13 @@ export const MessageRetryApi = async (c: Context) => {
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
                 }))
-            : conversation.slice(0, conversation.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              }))
+            : conversation
+                .slice(0, conversation.length - 1)
+                .filter((con) => !con?.errorMessage)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -1317,7 +1320,6 @@ export const MessageRetryApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          // throw new Error("Ase hi")
           // Retry on an error case
           // Error is retried and now assistant has a response
           // Inserting a new assistant message here, replacing the error message.
@@ -1360,16 +1362,17 @@ export const MessageRetryApi = async (c: Context) => {
         } catch (error) {
           const errFromMap = handleError(error)
           await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: originalMessage.chatExternalId,
+              messageId: originalMessage.externalId,
+            }),
+          })
+          await stream.writeSSE({
             event: ChatSSEvents.Error,
             data: errFromMap,
           })
-          // Add the error message to last user message
-          const allMessages = await getChatMessages(
-            db,
-            originalMessage.chatExternalId,
-          )
-          const lastMessage = allMessages[allMessages.length - 1]
-          await AddErrMessageToMessage(lastMessage, errFromMap)
+          await AddErrMessageToMessage(originalMessage, errFromMap)
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
@@ -1382,16 +1385,17 @@ export const MessageRetryApi = async (c: Context) => {
       async (err, stream) => {
         const errFromMap = handleError(err)
         await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: originalMessage.chatExternalId,
+            messageId: originalMessage.externalId,
+          }),
+        })
+        await stream.writeSSE({
           event: ChatSSEvents.Error,
           data: errFromMap,
         })
-        // Add the error message to last user message
-        const allMessages = await getChatMessages(
-          db,
-          originalMessage.chatExternalId,
-        )
-        const lastMessage = allMessages[allMessages.length - 1]
-        await AddErrMessageToMessage(lastMessage, errFromMap)
+        await AddErrMessageToMessage(originalMessage, errFromMap)
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
