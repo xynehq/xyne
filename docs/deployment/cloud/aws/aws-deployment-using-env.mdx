@@ -35,11 +35,14 @@ curl -s https://api.github.com/repos/docker/compose/releases/latest | grep brows
 chmod +x docker-compose-linux-x86_64 && sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
 docker-compose --version
 ```
+
+<Warning> Remember to exit out of the instance and login again to be able to use docker properly.</Warning>
+
 - [Vespa CLI](https://docs.vespa.ai/en/build-install-vespa.html)
 ```javascript
-wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz [ you can choose a more recent version]
-tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz
-sudo mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/
+wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz [ you can choose a more recent version]
+tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz
+sudo mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/
 vespa version
 ```
 
