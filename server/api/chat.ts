@@ -18,6 +18,7 @@ import {
   getPublicChats,
   insertChat,
   updateChatByExternalId,
+  updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
 import {
@@ -296,8 +297,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   ).root.children
 
   const latestIds = latestResults
-    .map((v: VespaSearchResult) => (v?.fields as any).docId)
-    .filter((v) => !!v)
+    ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
+    ?.filter((v) => !!v)
 
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
@@ -313,12 +314,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         alpha,
       )
       const initialContext = cleanContext(
-        results.root.children
-          .map(
+        results?.root?.children
+          ?.map(
             (v, i) =>
               `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
           )
-          .join("\n"),
+          ?.join("\n"),
       )
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
         modelId: defaultBestModel,
@@ -343,17 +344,17 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha,
           null,
           latestResults
-            .map((v: VespaSearchResult) => (v.fields as any).docId)
-            .filter((v) => !!v),
+            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+            ?.filter((v) => !!v),
         )
-        const totalResults = results.root.children.concat(latestResults)
+        const totalResults = results?.root?.children?.concat(latestResults)
         const initialContext = cleanContext(
           totalResults
-            .map(
+            ?.map(
               (v, i) =>
                 `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
             )
-            .join("\n"),
+            ?.join("\n"),
         )
 
         const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
@@ -442,7 +443,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       if (!results.root.children) {
         results.root.children = []
       }
-      results.root.children = results.root.children.concat(latestResults)
+      results.root.children = results?.root?.children?.concat(latestResults)
     } else {
       results = await searchVespa(
         message,
@@ -455,12 +456,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     const initialContext = cleanContext(
-      results.root.children
-        .map(
+      results?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        .join("\n"),
+        ?.join("\n"),
     )
 
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
@@ -495,7 +496,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             while ((match = citationRegex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
-                const item = results.root.children[citationIndex]
+                const item = results?.root?.children[citationIndex]
                 if (item) {
                   yield {
                     citation: {
@@ -625,12 +626,12 @@ async function* generatePointQueryTimeExpansion(
 
     // Prepare context for LLM
     const initialContext = cleanContext(
-      combinedResults.root.children
-        .map(
+      combinedResults?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i}: \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        .join("\n"),
+        ?.join("\n"),
     )
 
     // Stream LLM response
@@ -669,7 +670,7 @@ async function* generatePointQueryTimeExpansion(
             while ((match = citationRegex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
-                const item = combinedResults.root.children[citationIndex]
+                const item = combinedResults?.root?.children[citationIndex]
                 if (item) {
                   yield {
                     citation: {
@@ -742,10 +743,32 @@ export async function* UnderstandMessageAndAnswer(
   }
 }
 
+const handleError = (error: any) => {
+  let errorMessage = ""
+  switch (error) {
+    default:
+      errorMessage = "Something went wrong. Please try again."
+      break
+  }
+  return errorMessage
+}
+
+const AddErrMessageToMessage = async (
+  lastMessage: SelectMessage,
+  errorMessage: string,
+) => {
+  if (lastMessage.messageRole === MessageRole.User) {
+    await updateMessageByExternalId(db, lastMessage?.externalId, {
+      errorMessage,
+    })
+  }
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   let stream: any
+  let chat: SelectChat
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
@@ -852,6 +875,13 @@ export const MessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+          const messagesWithNoErrResponse = messages
+            .slice(0, messages.length - 1)
+            .filter((msg) => !msg?.errorMessage)
+            .map((m) => ({
+              role: m.messageRole as ConversationRole,
+              content: [{ text: m.message }],
+            }))
 
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
@@ -859,10 +889,7 @@ export const MessageApi = async (c: Context) => {
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
-              messages: messages.slice(0, messages.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              })),
+              messages: messagesWithNoErrResponse,
             })
 
           // TODO: for now if the answer is from the conversation itself we don't
@@ -928,10 +955,7 @@ export const MessageApi = async (c: Context) => {
               ctx,
               message,
               classification,
-              messages.slice(0, messages.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              })),
+              messagesWithNoErrResponse,
             )
 
             stream.writeSSE({
@@ -969,6 +993,7 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
+          // throw new Error("hello, new error is here")
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -998,20 +1023,49 @@ export const MessageApi = async (c: Context) => {
               event: ChatSSEvents.End,
             })
           } else {
+            const allMessages = await getChatMessages(db, chat?.externalId)
+            const lastMessage = allMessages[allMessages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: lastMessage.externalId,
+              }),
+            })
             await stream.writeSSE({
               event: ChatSSEvents.Error,
               data: "Error while trying to answer",
             })
+            // Add the error message to last user message
+            await AddErrMessageToMessage(
+              lastMessage,
+              "Error while trying to answer",
+            )
+
             await stream.writeSSE({
               data: "",
               event: ChatSSEvents.End,
             })
           }
         } catch (error) {
+          const errFomMap = handleError(error)
+          const allMessages = await getChatMessages(db, chat?.externalId)
+          const lastMessage = allMessages[allMessages.length - 1]
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: lastMessage.externalId,
+            }),
+          })
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: (error as Error).message,
+            data: errFomMap,
           })
+
+          // Add the error message to last user message
+          await AddErrMessageToMessage(lastMessage, errFomMap)
+
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
@@ -1022,10 +1076,23 @@ export const MessageApi = async (c: Context) => {
         }
       },
       async (err, stream) => {
+        const errFromMap = handleError(err)
+        const allMessages = await getChatMessages(db, chat?.externalId)
+        const lastMessage = allMessages[allMessages.length - 1]
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+            messageId: lastMessage.externalId,
+          }),
+        })
         await stream.writeSSE({
           event: ChatSSEvents.Error,
-          data: err.message,
+          data: errFromMap,
         })
+        // Add the error message to last user message
+        await AddErrMessageToMessage(lastMessage, errFromMap)
+
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
@@ -1036,6 +1103,21 @@ export const MessageApi = async (c: Context) => {
   } catch (error) {
     const errMsg = getErrorMessage(error)
     // TODO: add more errors like bedrock, this is only openai
+    const errFromMap = handleError(error)
+    // @ts-ignore
+    if (chat?.externalId) {
+      const allMessages = await getChatMessages(db, chat?.externalId)
+      // Add the error message to last user message
+      const lastMessage = allMessages[allMessages.length - 1]
+      await stream.writeSSE({
+        event: ChatSSEvents.ResponseMetadata,
+        data: JSON.stringify({
+          chatId: chat.externalId,
+          messageId: lastMessage.externalId,
+        }),
+      })
+      await AddErrMessageToMessage(lastMessage, errFromMap)
+    }
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
@@ -1043,7 +1125,7 @@ export const MessageApi = async (c: Context) => {
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: error.message,
+            data: errFromMap,
           })
         }
       }
@@ -1056,6 +1138,14 @@ export const MessageApi = async (c: Context) => {
   }
 }
 
+// We support both retrying of already valid assistant respone & retrying of an error
+// When the assitant gives error, that error message is stored in the user query's message object of that respective user query
+// On the frontend, an error message can be seen from the assistant's side, but it is not really present in the DB, it is taken from the user query's errorMessage property
+// On retry of that error, we send the user message itself again (like asking the same query again)
+// If the retry is successful and we get a valid response, we store that message inside DB with a 'createdAt' value just 1 unit ahead of the respective user query's createdAt value
+// This is done to maintain the order of user-assistant message pattern in messages which helps both in the frontend and server logic
+// If the retry also fails, we do the same thing, storing error message in the user query's respective message object
+// If a retry fails on a completely valid assistant response, the error is shown in the UI but not stored anywhere, we retain the valid response (can be seen after reload)
 export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
@@ -1071,13 +1161,17 @@ export const MessageRetryApi = async (c: Context) => {
     if (!originalMessage) {
       throw new HTTPException(404, { message: "Message not found" })
     }
+    const isUserMessage = originalMessage.messageRole === "user"
 
     let conversation = await getChatMessagesBefore(
       db,
       originalMessage.chatId,
       originalMessage.createdAt,
     )
-    if (!conversation || !conversation.length) {
+    // This !isUserMessage is useful for the case when the user retries the error he gets on the very first user query
+    // Becoz on retry of the error, there will be no conversation availble as there wouldn't be anything before the very first query
+    // And for retry on error, we use the user query itself
+    if (!isUserMessage && (!conversation || !conversation.length)) {
       throw new HTTPException(400, {
         message: "Could not fetch previous messages",
       })
@@ -1092,11 +1186,14 @@ export const MessageRetryApi = async (c: Context) => {
       workspaceId,
       email,
     )
+    const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
 
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
-    const prevUserMessage = conversation[conversation.length - 1]
+    const prevUserMessage = isUserMessage
+      ? originalMessage
+      : conversation[conversation.length - 1]
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
       conversation = []
@@ -1112,18 +1209,27 @@ export const MessageRetryApi = async (c: Context) => {
       async (stream) => {
         try {
           let message = prevUserMessage.message
+          const convWithNoErrMsg = isUserMessage
+            ? conversation
+                .filter((con) => !con?.errorMessage)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
+            : conversation
+                .slice(0, conversation.length - 1)
+                .filter((con) => !con?.errorMessage)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
-              messages: conversation
-                .slice(0, conversation.length - 1)
-                .map((m) => ({
-                  role: m.messageRole as ConversationRole,
-                  content: [{ text: m.message }],
-                })),
+              messages: convWithNoErrMsg,
             })
           let currentAnswer = ""
           let answer = ""
@@ -1183,12 +1289,9 @@ export const MessageRetryApi = async (c: Context) => {
               ctx,
               message,
               classification,
-              conversation.slice(0, conversation.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              })),
+              convWithNoErrMsg,
             )
-
+            // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
@@ -1224,20 +1327,72 @@ export const MessageRetryApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          await updateMessage(db, messageId, {
-            message: processMessage(answer, citationMap),
-            updatedAt: new Date(),
-            sources: citations,
-          })
+          // Retry on an error case
+          // Error is retried and now assistant has a response
+          // Inserting a new assistant message here, replacing the error message.
+          if (isUserMessage) {
+            let msg = await db.transaction(
+              async (tx): Promise<SelectMessage> => {
+                // Remove the err message from the user message
+                await updateMessage(tx, messageId, {
+                  errorMessage: "",
+                })
+                // Insert the new assistant response
+                const msg = await insertMessage(tx, {
+                  chatId: originalMessage.chatId,
+                  userId: user.id,
+                  workspaceExternalId: workspace.externalId,
+                  chatExternalId: originalMessage.chatExternalId,
+                  messageRole: MessageRole.Assistant,
+                  email: user.email,
+                  sources: citations,
+                  message: processMessage(answer, citationMap),
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                      .modelId,
+                  // The createdAt for this response which was error before
+                  // should be just 1 unit more than the respective user query's createdAt value
+                  // This is done to maintain order of user-assistant pattern of messages in UI
+                  createdAt: new Date(
+                    new Date(originalMessage.createdAt).getTime() + 1,
+                  ),
+                })
+                return msg
+              },
+            )
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: originalMessage.chatExternalId,
+                messageId: msg.externalId,
+              }),
+            })
+          } else {
+            await updateMessage(db, messageId, {
+              message: processMessage(answer, citationMap),
+              updatedAt: new Date(),
+              sources: citations,
+            })
+          }
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
         } catch (error) {
+          const errFromMap = handleError(error)
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: originalMessage.chatExternalId,
+              messageId: originalMessage.externalId,
+            }),
+          })
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: (error as Error).message,
+            data: errFromMap,
           })
+          await AddErrMessageToMessage(originalMessage, errFromMap)
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
@@ -1248,10 +1403,19 @@ export const MessageRetryApi = async (c: Context) => {
         }
       },
       async (err, stream) => {
+        const errFromMap = handleError(err)
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: originalMessage.chatExternalId,
+            messageId: originalMessage.externalId,
+          }),
+        })
         await stream.writeSSE({
           event: ChatSSEvents.Error,
-          data: err.message,
+          data: errFromMap,
         })
+        await AddErrMessageToMessage(originalMessage, errFromMap)
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
