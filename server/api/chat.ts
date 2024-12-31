@@ -1138,6 +1138,14 @@ export const MessageApi = async (c: Context) => {
   }
 }
 
+// We support both retrying of already valid assistant respone & retrying of an error
+// When the assitant gives error, that error message is stored in the user query's message object of that respective user query
+// On the frontend, an error message can be seen from the assistant's side, but it is not really present in the DB, it is taken from the user query's errorMessage property
+// On retry of that error, we send the user message itself again (like asking the same query again)
+// If the retry is successful and we get a valid response, we store that message inside DB with a 'createdAt' value just 1 unit ahead of the respective user query's createdAt value
+// This is done to maintain the order of user-assistant message pattern in messages which helps both in the frontend and server logic
+// If the retry also fails, we do the same thing, storing error message in the user query's respective message object
+// If a retry fails on a completely valid assistant response, the error is shown in the UI but not stored anywhere, we retain the valid response (can be seen after reload)
 export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
@@ -1160,7 +1168,9 @@ export const MessageRetryApi = async (c: Context) => {
       originalMessage.chatId,
       originalMessage.createdAt,
     )
-    // todo
+    // This !isUserMessage is useful for the case when the user retries the error he gets on the very first user query
+    // Becoz on retry of the error, there will be no conversation availble as there wouldn't be anything before the very first query
+    // And for retry on error, we use the user query itself
     if (!isUserMessage && (!conversation || !conversation.length)) {
       throw new HTTPException(400, {
         message: "Could not fetch previous messages",
