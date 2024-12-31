@@ -7,9 +7,11 @@ import {
   Models,
   queryRewriter,
   temporalEventClassification,
+} from "@/ai/provider/bedrock"
+import {
   type ConverseResponse,
   type TemporalClassifier,
-} from "@/ai/provider/bedrock"
+} from "@/ai/types"
 import config from "@/config"
 import {
   deleteChatByExternalId,
