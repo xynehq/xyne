@@ -1,4 +1,4 @@
-import { AIProviders, Models, type Cost } from "./types"
+import { AIProviders, Models, type Cost } from "@/ai/types"
 
 export const modelDetailsMap: Record<
   string,

@@ -11,7 +11,7 @@ import {
 import {
   type ConverseResponse,
   type TemporalClassifier,
-} from "@/ai/provider/types"
+} from "@/ai/types"
 import config from "@/config"
 import {
   deleteChatByExternalId,
