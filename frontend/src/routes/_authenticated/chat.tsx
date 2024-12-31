@@ -371,16 +371,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     setIsStreaming(true) // Start streaming for retry
 
-    // Update the assistant message being retried
-    setMessages((prevMessages) =>
-      prevMessages.map((msg) => {
-        if (msg.externalId === messageId && msg.messageRole === "assistant") {
-          return { ...msg, message: "", isRetrying: true, sources: [] }
-        }
-        return msg
-      }),
-    )
-
     // If user retries on error case
     const userMsgWithErr = messages.find(
       (msg) =>
@@ -388,9 +378,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         msg.messageRole === "user" &&
         msg.errorMessage,
     )
-
-    if (userMsgWithErr) {
-      setMessages((prevMessages) => {
+    // Update the assistant message being retried
+    setMessages((prevMessages) => {
+      if (userMsgWithErr) {
         // Create a copy of prevMessages so we can modify it
         const updatedMessages = [...prevMessages]
         // Find the index of the message you want to update
@@ -414,8 +404,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         }
 
         return updatedMessages
-      })
-    }
+      } else {
+        return prevMessages.map((msg) => {
+          if (msg.externalId === messageId && msg.messageRole === "assistant") {
+            return { ...msg, message: "", isRetrying: true, sources: [] }
+          }
+          return msg
+        })
+      }
+    })
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
@@ -460,13 +457,37 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks, citationMap } = JSON.parse(event.data)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, sources: contextChunks, citationMap }
-            : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying) {
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              sources: contextChunks,
+              citationMap,
+            }
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, sources: contextChunks, citationMap }
+              : msg,
+          )
+        }
+      })
     })
 
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
