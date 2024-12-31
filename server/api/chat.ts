@@ -993,6 +993,7 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
+          // throw new Error("hello, new error is here")
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1152,19 +1153,15 @@ export const MessageRetryApi = async (c: Context) => {
     if (!originalMessage) {
       throw new HTTPException(404, { message: "Message not found" })
     }
-
-    const isOriginalMessageAUserMessage = originalMessage.messageRole === "user"
+    const isUserMessage = originalMessage.messageRole === "user"
 
     let conversation = await getChatMessagesBefore(
       db,
       originalMessage.chatId,
       originalMessage.createdAt,
     )
-
-    if (
-      !isOriginalMessageAUserMessage &&
-      (!conversation || !conversation.length)
-    ) {
+    // todo
+    if (!isUserMessage && (!conversation || !conversation.length)) {
       throw new HTTPException(400, {
         message: "Could not fetch previous messages",
       })
@@ -1184,7 +1181,7 @@ export const MessageRetryApi = async (c: Context) => {
 
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
-    const prevUserMessage = isOriginalMessageAUserMessage
+    const prevUserMessage = isUserMessage
       ? originalMessage
       : conversation[conversation.length - 1]
     // we are trying to retry the first assistant's message
@@ -1202,7 +1199,7 @@ export const MessageRetryApi = async (c: Context) => {
       async (stream) => {
         try {
           let message = prevUserMessage.message
-          const convWithNoErrMsg = isOriginalMessageAUserMessage
+          const convWithNoErrMsg = isUserMessage
             ? conversation
                 .filter((con) => !con?.errorMessage)
                 .map((m) => ({
@@ -1284,7 +1281,7 @@ export const MessageRetryApi = async (c: Context) => {
               classification,
               convWithNoErrMsg,
             )
-
+            // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
@@ -1323,24 +1320,37 @@ export const MessageRetryApi = async (c: Context) => {
           // Retry on an error case
           // Error is retried and now assistant has a response
           // Inserting a new assistant message here, replacing the error message.
-          if (isOriginalMessageAUserMessage) {
-            // Remove the err message from the user message
-            await updateMessage(db, messageId, {
-              errorMessage: "",
-            })
-            // Insert the new assistant response
-            const msg = await insertMessage(db, {
-              chatId: originalMessage.chatId,
-              userId: user.id,
-              workspaceExternalId: workspace.externalId,
-              chatExternalId: originalMessage.chatExternalId,
-              messageRole: MessageRole.Assistant,
-              email: user.email,
-              sources: citations,
-              message: processMessage(answer, citationMap),
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-            })
+          if (isUserMessage) {
+            let msg = await db.transaction(
+              async (tx): Promise<SelectMessage> => {
+                // Remove the err message from the user message
+                await updateMessage(tx, messageId, {
+                  errorMessage: "",
+                })
+                // Insert the new assistant response
+                const msg = await insertMessage(tx, {
+                  chatId: originalMessage.chatId,
+                  userId: user.id,
+                  workspaceExternalId: workspace.externalId,
+                  chatExternalId: originalMessage.chatExternalId,
+                  messageRole: MessageRole.Assistant,
+                  email: user.email,
+                  sources: citations,
+                  message: processMessage(answer, citationMap),
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                      .modelId,
+                  // The createdAt for this response which was error before
+                  // should be just 1 unit more than the respective user query's createdAt value
+                  // This is done to maintain order of user-assistant pattern of messages in UI
+                  createdAt: new Date(
+                    new Date(originalMessage.createdAt).getTime() + 1,
+                  ),
+                })
+                return msg
+              },
+            )
+
             await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
               data: JSON.stringify({
