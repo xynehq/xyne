@@ -408,6 +408,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           updatedMessages.splice(index + 1, 0, {
             messageRole: "assistant",
             message: "",
+            isRetrying: true,
+            sources: [],
           })
         }
 
