@@ -412,7 +412,6 @@ const insertCalendarEvents = async (
   // To get all events from current Date to One Year later
   nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
 
-
   // we will fetch from one year back
   currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
   do {
@@ -1447,7 +1446,7 @@ if (process.env.NODE_ENV !== "production") {
       fs.mkdirSync(downloadDir, { recursive: true })
     }
   }
-  
+
   init()
 }
 
@@ -1465,17 +1464,17 @@ export const downloadPDF = async (
   )
   return new Promise((resolve, reject) => {
     res.data.on("data", (chunk) => {
-      writer.write(chunk);
-    });
+      writer.write(chunk)
+    })
     res.data.on("end", () => {
-      writer.end();
-      resolve();
-    });
+      writer.end()
+      resolve()
+    })
     res.data.on("error", (err) => {
-      writer.end();
-      reject(err);
-    });
-  });
+      writer.end()
+      reject(err)
+    })
+  })
 }
 
 // Helper function for safer PDF loading
