@@ -455,6 +455,39 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
     })
 
+    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
+      const userMessage = messages.find(
+        (msg) => msg.externalId === messageId && msg.messageRole === "user",
+      )
+      if (userMessage) {
+        const { messageId: newMessageId } = JSON.parse(event.data)
+
+        if (newMessageId) {
+          setMessages((prevMessages) => {
+            // Find the index of the message where externalId matches messageId
+            const index = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (index === -1 || index + 1 >= prevMessages.length) {
+              // If no match is found or index+1 is out of range, return the original array
+              return prevMessages
+            }
+
+            // Create a shallow copy of the array
+            const newMessages = [...prevMessages]
+
+            // Create a copy of the message object at index+1 and add the `message` field
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              externalId: newMessageId,
+            }
+            return newMessages
+          })
+        }
+      }
+    })
+
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks, citationMap } = JSON.parse(event.data)
       setMessages((prevMessages) => {
