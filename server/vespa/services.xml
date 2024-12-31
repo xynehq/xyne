@@ -2,7 +2,7 @@
     <container id="my_container" version="1.0">
         <!-- https://docs.vespa.ai/en/onnx.html#using-optimum-to-export-models-to-onnx-format -->
         <component id="hf-embedder" type="hugging-face-embedder">
-            <transformer-model path="models/model.onnx" />
+            <transformer-model path="models/model_quantized.onnx" />
             <tokenizer-model path="models/tokenizer.json" />
         </component>
         <search />
@@ -22,6 +22,7 @@
             <document type="user" mode="index" />
             <document type="mail" mode="index" />
             <document type="user_query" mode="index" />
+            <document type="colpali_pdf" mode="index" />
             <document type="event" mode="index" />
         </documents>
         <nodes>

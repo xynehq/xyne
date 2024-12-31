@@ -20,6 +20,7 @@ import type {
   Entity,
   VespaEvent,
   VespaUserQueryHistory,
+  VespaPDF,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -146,7 +147,8 @@ export const insert = async (
     | VespaFile
     | VespaMail
     | VespaEvent
-    | VespaUserQueryHistory,
+    | VespaUserQueryHistory
+    | VespaPDF,
   schema: string,
 ) => {
   try {

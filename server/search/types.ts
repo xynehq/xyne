@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { number, z } from "zod"
 export const fileSchema = "file" // Replace with your actual schema name
 export const userSchema = "user"
 export const mailSchema = "mail"
@@ -265,6 +265,15 @@ export const VespaUserQueryHistorySchema = z.object({
   count: z.number(),
 })
 
+export const VespaPDFSchema = z.object({
+  docId: z.string(),
+  text: z.string(),
+  url: z.string(),
+  title: z.string(),
+  embeddings: z.object({}),
+  owner: z.string().nullable(),
+})
+
 export const VespaUserQueryHGetSchema = VespaUserQueryHistorySchema.extend({
   sddocname: z.literal("user_query"),
 }).merge(defaultVespaFieldsSchema)
@@ -417,6 +426,7 @@ export type VespaEventSearch = z.infer<typeof VespaEventSearchSchema>
 export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaUser = z.infer<typeof VespaUserSchema>
 export type VespaUserQueryHistory = z.infer<typeof VespaUserQueryHistorySchema>
+export type VespaPDF = z.infer<typeof VespaPDFSchema>
 
 export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
   permissions: any[]

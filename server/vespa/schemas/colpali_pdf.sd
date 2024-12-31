@@ -1,0 +1,188 @@
+schema colpali_pdf {
+  document colpali_pdf {
+    field docId type string {
+      indexing: attribute | summary
+    }
+
+    field text type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+      match {
+        gram
+        gram-size: 3
+      }
+    }
+
+    field url type string {
+      indexing: summary | attribute
+    }
+
+    field title type string {
+      indexing: index | summary | attribute
+      index {
+        enable-bm25
+      }
+    }
+
+    field embedding type tensor<int8>(patch{}, v[16]) {
+        indexing: attribute | index | summary
+        attribute {
+            distance-metric: hamming
+        }
+        index {
+            hnsw {
+                max-links-per-node: 32
+                neighbors-to-explore-at-insert: 400
+            }
+        }
+    }
+
+    field owner type string {
+      indexing: attribute | summary
+    }
+
+  }
+
+  rank-profile hybrid {
+        inputs {
+            query(rq0) tensor<int8>(v[16])             
+            query(rq1) tensor<int8>(v[16])             
+            query(rq2) tensor<int8>(v[16])             
+            query(rq3) tensor<int8>(v[16])             
+            query(rq4) tensor<int8>(v[16])             
+            query(rq5) tensor<int8>(v[16])             
+            query(rq6) tensor<int8>(v[16])             
+            query(rq7) tensor<int8>(v[16])             
+            query(rq8) tensor<int8>(v[16])             
+            query(rq9) tensor<int8>(v[16])             
+            query(rq10) tensor<int8>(v[16])             
+            query(rq11) tensor<int8>(v[16])             
+            query(rq12) tensor<int8>(v[16])             
+            query(rq13) tensor<int8>(v[16])             
+            query(rq14) tensor<int8>(v[16])             
+            query(rq15) tensor<int8>(v[16])             
+            query(rq16) tensor<int8>(v[16])             
+            query(rq17) tensor<int8>(v[16])             
+            query(rq18) tensor<int8>(v[16])             
+            query(rq19) tensor<int8>(v[16])             
+            query(rq20) tensor<int8>(v[16])             
+            query(rq21) tensor<int8>(v[16])             
+            query(rq22) tensor<int8>(v[16])             
+            query(rq23) tensor<int8>(v[16])             
+            query(rq24) tensor<int8>(v[16])             
+            query(rq25) tensor<int8>(v[16])             
+            query(rq26) tensor<int8>(v[16])             
+            query(rq27) tensor<int8>(v[16])             
+            query(rq28) tensor<int8>(v[16])             
+            query(rq29) tensor<int8>(v[16])             
+            query(rq30) tensor<int8>(v[16])             
+            query(rq31) tensor<int8>(v[16])             
+            query(rq32) tensor<int8>(v[16])             
+            query(rq33) tensor<int8>(v[16])             
+            query(rq34) tensor<int8>(v[16])             
+            query(rq35) tensor<int8>(v[16])             
+            query(rq36) tensor<int8>(v[16])             
+            query(rq37) tensor<int8>(v[16])             
+            query(rq38) tensor<int8>(v[16])             
+            query(rq39) tensor<int8>(v[16])             
+            query(rq40) tensor<int8>(v[16])             
+            query(rq41) tensor<int8>(v[16])             
+            query(rq42) tensor<int8>(v[16])             
+            query(rq43) tensor<int8>(v[16])             
+            query(rq44) tensor<int8>(v[16])             
+            query(rq45) tensor<int8>(v[16])             
+            query(rq46) tensor<int8>(v[16])             
+            query(rq47) tensor<int8>(v[16])             
+            query(rq48) tensor<int8>(v[16])             
+            query(rq49) tensor<int8>(v[16])             
+            query(rq50) tensor<int8>(v[16])             
+            query(rq51) tensor<int8>(v[16])             
+            query(rq52) tensor<int8>(v[16])             
+            query(rq53) tensor<int8>(v[16])             
+            query(rq54) tensor<int8>(v[16])             
+            query(rq55) tensor<int8>(v[16])             
+            query(rq56) tensor<int8>(v[16])             
+            query(rq57) tensor<int8>(v[16])             
+            query(rq58) tensor<int8>(v[16])             
+            query(rq59) tensor<int8>(v[16])             
+            query(rq60) tensor<int8>(v[16])             
+            query(rq61) tensor<int8>(v[16])             
+            query(rq62) tensor<int8>(v[16])             
+            query(rq63) tensor<int8>(v[16])             
+            query(qt) tensor<float>(querytoken{}, v[128])             
+            query(qtb) tensor<int8>(querytoken{}, v[16])             
+        
+        }
+        function similarities() {
+            expression {
+                sum(
+                    query(qt) * unpack_bits(attribute(embedding)), v
+                )
+            }
+        }
+        function normalized() {
+            expression {
+                (similarities - reduce(similarities, min)) / (reduce((similarities - reduce(similarities, min)), max)) * 2 - 1
+            }
+        }
+        function quantized() {
+            expression {
+                cell_cast(normalized * 127.999, int8)
+            }
+        }
+        function max_sim() {
+            expression {
+                 sum(
+                    reduce(
+                        sum(
+                            query(qt) * unpack_bits(attribute(embedding)) , v
+                        ),
+                        max, patch
+                    ),
+                    querytoken
+                )
+            }
+        }
+        function max_sim_binary() {
+            expression {
+                sum(
+                    reduce(
+                        1 / (1 + sum(
+                            hamming(query(qtb), attribute(embedding)), v)
+                        ),
+                        max, patch
+                    ),
+                    querytoken
+                )
+            }
+        }
+
+        first-phase {
+            expression {
+                max_sim_binary
+            }
+        }
+        
+        second-phase {
+            rerank-count: 10
+            expression {
+                max_sim + 2 * (bm25(text) + bm25(title))
+            }
+        }
+
+        match-features {
+            bm25(text)
+            bm25(title)
+            max_sim_binary
+            max_sim
+        }
+    }
+  # Fieldset for default search
+  fieldset default {
+    fields: text
+  }
+
+
+}
