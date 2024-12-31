@@ -20,10 +20,29 @@ import { getLogger } from "@/logger"
 import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
-import { Apps, entitySchema } from "@/search/types"
-import { userContext } from "../context"
-
+import { modelDetailsMap, ModelToProviderMap } from "@/ai/provider/mappers"
+import type {
+  AnswerResponse,
+  ConverseResponse,
+  Cost,
+  ModelParams,
+  QueryRouterResponse,
+  TemporalClassifier,
+} from "@/ai/provider/types"
+import {
+  QueryContextRank,
+  QueryAnalysisSchema,
+  QueryRouterResponseSchema,
+} from "@/ai/provider/types"
 const Logger = getLogger(Subsystem.AI)
+
+// TODO: Use enums from types file
+export enum QueryCategory {
+  Self = "Self",
+  InternalPerson = "InternalPerson",
+  ExternalPerson = "ExternalPerson",
+  Other = "Other",
+}
 
 export enum Models {
   Llama_3_2_1B = "us.meta.llama3-2-1b-instruct-v1:0",
@@ -45,227 +64,6 @@ export enum Models {
   Amazon_Nova_Lite = "amazon.nova-lite-v1:0",
   Amazon_Nova_Pro = "amazon.nova-pro-v1:0",
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
-}
-
-type Cost = {
-  pricePerThousandInputTokens: number
-  pricePerThousandOutputTokens: number
-}
-
-export const modelDetailsMap: Record<
-  string,
-  { name: string; cost: { onDemand: Cost; batch?: Cost } }
-> = {
-  [Models.Llama_3_2_1B]: {
-    name: "Llama 3.2 Instruct (1B)",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.0001,
-        pricePerThousandOutputTokens: 0.0001,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.00005,
-        pricePerThousandOutputTokens: 0.00005,
-      },
-    },
-  },
-  [Models.Llama_3_2_3B]: {
-    name: "Llama 3.2 Instruct (3B)",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.00015,
-        pricePerThousandOutputTokens: 0.00015,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.000075,
-        pricePerThousandOutputTokens: 0.000075,
-      },
-    },
-  },
-  [Models.Llama_3_1_8B]: {
-    name: "Llama 3.1 Instruct (8B)",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.00022,
-        pricePerThousandOutputTokens: 0.00022,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.00011,
-        pricePerThousandOutputTokens: 0.00011,
-      },
-    },
-  },
-  [Models.Llama_3_1_70B]: {
-    name: "Llama 3.1 Instruct (70B)",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.00099,
-        pricePerThousandOutputTokens: 0.00099,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.0005,
-        pricePerThousandOutputTokens: 0.0005,
-      },
-    },
-  },
-  [Models.Llama_3_1_405B]: {
-    name: "Llama 3.1 Instruct (405B)",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.00532,
-        pricePerThousandOutputTokens: 0.016,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.00266,
-        pricePerThousandOutputTokens: 0.008,
-      },
-    },
-  },
-  [Models.Gpt_4o]: {
-    name: "GPT-4o",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.0025,
-        pricePerThousandOutputTokens: 0.01,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.00125,
-        pricePerThousandOutputTokens: 0.005,
-      },
-    },
-  },
-  [Models.Gpt_4o_mini]: {
-    name: "GPT-4o Mini",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.00015,
-        pricePerThousandOutputTokens: 0.0006,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.000075,
-        pricePerThousandOutputTokens: 0.0003,
-      },
-    },
-  },
-
-  [Models.Gpt_4]: {
-    name: "GPT-4",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.03,
-        pricePerThousandOutputTokens: 0.06,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.015,
-        pricePerThousandOutputTokens: 0.03,
-      },
-    },
-  },
-  [Models.CohereCmdRPlus]: {
-    name: "Command R+",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.0025,
-        pricePerThousandOutputTokens: 0.01,
-      },
-    },
-  },
-  [Models.CohereCmdR]: {
-    name: "Command R",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.00015,
-        pricePerThousandOutputTokens: 0.0006,
-      },
-    },
-  },
-  [Models.Claude_3_5_SonnetV2]: {
-    name: "Claude 3.5 Sonnet v2",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.003,
-        pricePerThousandOutputTokens: 0.015,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.0015,
-        pricePerThousandOutputTokens: 0.0075,
-      },
-    },
-  },
-  [Models.Claude_3_5_Sonnet]: {
-    name: "Claude 3.5 Sonnet",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.003,
-        pricePerThousandOutputTokens: 0.015,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.0015,
-        pricePerThousandOutputTokens: 0.0075,
-      },
-    },
-  },
-  [Models.Claude_3_5_Haiku]: {
-    name: "Claude 3.5 Haiku",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.001,
-        pricePerThousandOutputTokens: 0.005,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.0005,
-        pricePerThousandOutputTokens: 0.0025,
-      },
-    },
-  },
-  [Models.Amazon_Nova_Micro]: {
-    name: "Amazon Nova Micro",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.000035,
-        pricePerThousandOutputTokens: 0.00014,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.0000175,
-        pricePerThousandOutputTokens: 0.00007,
-      },
-    },
-  },
-  [Models.Amazon_Nova_Lite]: {
-    name: "Amazon Nova Lite",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.00006,
-        pricePerThousandOutputTokens: 0.00024,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.00003,
-        pricePerThousandOutputTokens: 0.00012,
-      },
-    },
-  },
-  [Models.Amazon_Nova_Pro]: {
-    name: "Amazon Nova Pro",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.0008,
-        pricePerThousandOutputTokens: 0.0032,
-      },
-      batch: {
-        pricePerThousandInputTokens: 0.0004,
-        pricePerThousandOutputTokens: 0.0016,
-      },
-    },
-  },
-  [Models.Mistral_Large]: {
-    name: "Mistral Large (24.02)",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.004,
-        pricePerThousandOutputTokens: 0.012,
-      },
-    },
-  },
 }
 
 export const calculateCost = (
@@ -290,29 +88,11 @@ ${context}
 const Oregon = "us-west-2"
 const NVirginia = "us-east-1"
 const FastModel = Models.Llama_3_1_70B
-interface ModelParams {
-  max_new_tokens?: number
-  top_p?: number
-  temperature?: number
-  modelId: Models
-  systemPrompt?: string
-  prompt?: string
-  userCtx?: string
-  stream: boolean
-  json?: boolean
-  messages?: Message[]
-}
 
 enum AIProviders {
   OpenAI = "openai",
   AwsBedrock = "bedrock",
   Ollama = "ollama",
-}
-
-export interface ConverseResponse {
-  text?: string
-  metadata?: any
-  cost?: number
 }
 
 interface LLMProvider {
@@ -640,26 +420,6 @@ const ProviderMap: Record<AIProviders, LLMProvider> = {
   // [AIProviders.Ollama]: openaiProvider,
 }
 
-const ModelToProviderMap: Record<Models, AIProviders> = {
-  [Models.Llama_3_1_405B]: AIProviders.AwsBedrock,
-  [Models.Llama_3_1_70B]: AIProviders.AwsBedrock,
-  [Models.Llama_3_2_3B]: AIProviders.AwsBedrock,
-  [Models.Llama_3_2_1B]: AIProviders.AwsBedrock,
-  [Models.Llama_3_1_8B]: AIProviders.AwsBedrock,
-  [Models.Gpt_4o]: AIProviders.OpenAI,
-  [Models.Gpt_4o_mini]: AIProviders.OpenAI,
-  [Models.Gpt_4]: AIProviders.OpenAI,
-  [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
-  [Models.CohereCmdR]: AIProviders.AwsBedrock,
-  [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
-  [Models.Claude_3_5_Sonnet]: AIProviders.AwsBedrock,
-  [Models.Claude_3_5_Haiku]: AIProviders.AwsBedrock,
-  [Models.Amazon_Nova_Micro]: AIProviders.AwsBedrock,
-  [Models.Amazon_Nova_Lite]: AIProviders.AwsBedrock,
-  [Models.Amazon_Nova_Pro]: AIProviders.AwsBedrock,
-  [Models.Mistral_Large]: AIProviders.AwsBedrock,
-}
-
 const getProviderByModel = (modelId: Models): LLMProvider => {
   const providerType = ModelToProviderMap[modelId]
   if (!providerType) {
@@ -723,13 +483,6 @@ Prioritize selecting only the chunks that contain relevant information for answe
 Use these metadata fields to determine relevance. Avoid selecting chunks that appear unrelated, repetitive, or without valuable context.
 
 Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`
-
-const QueryContextRank = z.object({
-  canBeAnswered: z.boolean(),
-  contextualChunks: z.array(z.number()),
-})
-
-export type QueryContextRank = z.infer<typeof QueryContextRank>
 
 export const analyzeQuery = async (
   userQuery: string,
@@ -841,19 +594,6 @@ export const analyzeQueryMetadata = async (
     throw error
   }
 }
-
-export enum QueryCategory {
-  Self = "Self",
-  InternalPerson = "InternalPerson",
-  ExternalPerson = "ExternalPerson",
-  Other = "Other",
-}
-
-const QueryAnalysisSchema = z.object({
-  category: z.nativeEnum(QueryCategory),
-  mentionedNames: z.array(z.string()),
-  mentionedEmails: z.array(z.string()),
-})
 
 export const jsonParseLLMOutput = (text: string): any => {
   let jsonVal
@@ -1094,14 +834,6 @@ ${context}`,
   }
 }
 
-export const initialResultsOrRewriteSchema = z.object({
-  answer: z.string().optional(),
-  citations: z.array(z.number()),
-  rewrittenQueries: z.array(z.string()).optional(),
-})
-
-export type ResultsOrRewrite = z.infer<typeof initialResultsOrRewriteSchema>
-
 export const analyzeInitialResultsOrRewrite = (
   userQuery: string,
   context: string,
@@ -1330,13 +1062,6 @@ Provide your response in the following JSON format:
 }
 `
 
-export const SearchAnswerResponse = z.object({
-  answer: z.string().nullable(),
-  citations: z.array(z.number()).nullable(),
-  searchQueries: z.array(z.string()),
-  usefulIndex: z.array(z.number()),
-})
-
 export const answerOrSearch = (
   userQuery: string,
   context: string,
@@ -1505,44 +1230,6 @@ export enum QueryType {
   ListItems = "ListItems",
   // RetrieveMetadata = "RetrieveMetadata",
 }
-// Zod schemas for filters
-const FiltersSchema = z.object({
-  app: z.nativeEnum(Apps).optional(),
-  entity: entitySchema.optional(),
-  startTime: z.string().nullable().optional(),
-  endTime: z.string().nullable().optional(),
-})
-
-const listItemsSchema = z.object({
-  type: z.literal(QueryType.ListItems),
-  filters: FiltersSchema.extend({
-    app: z.nativeEnum(Apps),
-    entity: entitySchema,
-    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-  }),
-})
-
-export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal(QueryType.RetrieveInformation),
-    filters: z.object({
-      startTime: z.string().nullable().optional(),
-      endTime: z.string().nullable().optional(),
-    }),
-  }),
-  listItemsSchema,
-  // z.object({
-  //   type: z.literal(QueryType.RetrieveMetadata),
-  //   filters: FiltersSchema.extend({
-  //     app: z.nativeEnum(Apps),
-  //     entity: entitySchema,
-  //   }),
-  // }),
-])
-
-export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
-
-export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>
 
 export const routeQuery = async (
   userQuery: string,
@@ -1860,10 +1547,6 @@ You must respond in valid JSON format with the following structure:
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
 
-interface AnswerResponse {
-  answer: string | null
-}
-
 export const baselineRAGJson = async (
   userQuery: string,
   userCtx: string,
@@ -2026,11 +1709,6 @@ export const queryRewriter = async (
   } else {
     throw new Error("No response from LLM")
   }
-}
-
-export type TimeDirection = "next" | "prev"
-export interface TemporalClassifier {
-  direction: TimeDirection | null
 }
 
 const temporalEventClassifier = (query: string) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
