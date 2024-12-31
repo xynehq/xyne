@@ -425,7 +425,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       if (userMsgWithErr) {
-        console.log("hellllllllooooooo")
         setMessages((prevMessages) => {
           // Find the index of the message where externalId matches messageId
           const index = prevMessages.findIndex(
@@ -471,37 +470,104 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, isRetrying: false }
-            : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying) {
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              isRetrying: false,
+            }
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false }
+              : msg,
+          )
+        }
+      })
       eventSource.close()
       setIsStreaming(false) // Stop streaming after retry
     })
 
     eventSource.addEventListener(ChatSSEvents.Error, (event) => {
       console.error("Retry Error with SSE:", event.data)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, isRetrying: false, message: event.data }
-            : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying)
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              isRetrying: false,
+              message: event.data,
+            }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false, message: event.data }
+              : msg,
+          )
+        }
+      })
       eventSource.close()
       setIsStreaming(false)
     })
 
     eventSource.onerror = (error) => {
       console.error("Retry SSE Error:", error)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          newMessages[index + 1] = {
+            ...newMessages[index + 1],
+            isRetrying: false,
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+          )
+        }
+      })
       eventSource.close()
       setIsStreaming(false) // Stop streaming on error
     }
