@@ -20,7 +20,7 @@ import { getLogger } from "@/logger"
 import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
-import { modelDetailsMap, ModelToProviderMap } from "@/ai/provider/mappers"
+import { modelDetailsMap, ModelToProviderMap } from "@/ai/mappers"
 import type {
   AnswerResponse,
   ConverseResponse,
@@ -28,12 +28,12 @@ import type {
   ModelParams,
   QueryRouterResponse,
   TemporalClassifier,
-} from "@/ai/provider/types"
+} from "@/ai/types"
 import {
   QueryContextRank,
   QueryAnalysisSchema,
   QueryRouterResponseSchema,
-} from "@/ai/provider/types"
+} from "@/ai/types"
 import {
   analyzeInitialResultsOrRewriteSystemPrompt,
   analyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -53,7 +53,7 @@ import {
   searchQueryPrompt,
   temporalEventClassifier,
   userChatSystem,
-} from "@/ai/provider/prompts"
+} from "@/ai/prompts"
 const Logger = getLogger(Subsystem.AI)
 
 // TODO: Use enums from types file
