@@ -1,19 +1,7 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
-import type { ConverseResponse, ModelParams } from "@/ai/types"
+import type { ConverseResponse, LLMProvider, ModelParams } from "@/ai/types"
 import { AIProviders } from "@/ai/types"
 import { FastModel } from "@/ai/contants"
-
-interface LLMProvider {
-  converseStream(
-    messages: Message[],
-    params?: ModelParams,
-  ): AsyncIterableIterator<ConverseResponse>
-  converseStream(
-    messages: Message[],
-    params?: ModelParams,
-  ): AsyncIterableIterator<ConverseResponse>
-  converse(messages: Message[], params?: ModelParams): Promise<ConverseResponse>
-}
 
 abstract class Provider implements LLMProvider {
   client: any
