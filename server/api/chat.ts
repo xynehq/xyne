@@ -4,11 +4,11 @@ import {
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
-  Models,
   queryRewriter,
   temporalEventClassification,
-} from "@/ai/provider/bedrock"
+} from "@/ai/provider"
 import {
+  Models,
   type ConverseResponse,
   type TemporalClassifier,
 } from "@/ai/types"
