@@ -63,7 +63,7 @@ type Variables = JwtVariables
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
-const postOauthRedirect = config.postOauthRedirect;
+const postOauthRedirect = config.postOauthRedirect
 
 const jwtSecret = process.env.JWT_SECRET!
 
@@ -332,7 +332,7 @@ app.get(
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/chat", AuthRedirect, (c) => c.redirect('/'))
+app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
