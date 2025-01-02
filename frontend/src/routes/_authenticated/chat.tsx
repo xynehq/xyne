@@ -364,7 +364,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { messageRole: "assistant", message: `Error occured: ${event.data}` },
+          {
+            messageRole: "assistant",
+            message: `${event.data}`,
+            externalId: currentResp.messageId,
+            sources: currentResp.sources,
+            citationMap: currentResp.citationMap,
+          },
         ])
       }
       setCurrentResp(null)
@@ -403,15 +409,48 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     setIsStreaming(true) // Start streaming for retry
 
-    // Update the assistant message being retried
-    setMessages((prevMessages) =>
-      prevMessages.map((msg) => {
-        if (msg.externalId === messageId && msg.messageRole === "assistant") {
-          return { ...msg, message: "", isRetrying: true, sources: [] }
-        }
-        return msg
-      }),
+    // If user retries on error case
+    const userMsgWithErr = messages.find(
+      (msg) =>
+        msg.externalId === messageId &&
+        msg.messageRole === "user" &&
+        msg.errorMessage,
     )
+    // Update the assistant message being retried
+    setMessages((prevMessages) => {
+      if (userMsgWithErr) {
+        // Create a copy of prevMessages so we can modify it
+        const updatedMessages = [...prevMessages]
+        // Find the index of the message you want to update
+        const index = updatedMessages.findIndex(
+          (msg) => msg.externalId === messageId && msg.messageRole === "user",
+        )
+
+        if (index !== -1) {
+          // Update the errorMessage of that specific message
+          updatedMessages[index] = {
+            ...updatedMessages[index],
+            errorMessage: "",
+          }
+          // Insert a new message right after
+          updatedMessages.splice(index + 1, 0, {
+            messageRole: "assistant",
+            message: "",
+            isRetrying: true,
+            sources: [],
+          })
+        }
+
+        return updatedMessages
+      } else {
+        return prevMessages.map((msg) => {
+          if (msg.externalId === messageId && msg.messageRole === "assistant") {
+            return { ...msg, message: "", isRetrying: true, sources: [] }
+          }
+          return msg
+        })
+      }
+    })
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
@@ -420,45 +459,207 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, message: msg.message + event.data }
-            : msg,
-        ),
+      if (userMsgWithErr) {
+        setMessages((prevMessages) => {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          // If no match is found or index+1 is out of range, return the original array
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            return prevMessages
+          }
+
+          // Create a shallow copy of the array
+          const newMessages = [...prevMessages]
+
+          // Create a copy of the message object at index+1 and add the `message` field
+          newMessages[index + 1] = {
+            ...newMessages[index + 1],
+            message: newMessages[index + 1].message + event.data,
+          }
+
+          return newMessages
+        })
+      } else {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, message: msg.message + event.data }
+              : msg,
+          ),
+        )
+      }
+    })
+
+    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
+      const userMessage = messages.find(
+        (msg) => msg.externalId === messageId && msg.messageRole === "user",
       )
+      if (userMessage) {
+        const { messageId: newMessageId } = JSON.parse(event.data)
+
+        if (newMessageId) {
+          setMessages((prevMessages) => {
+            // Find the index of the message where externalId matches messageId
+            const index = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (index === -1 || index + 1 >= prevMessages.length) {
+              // If no match is found or index+1 is out of range, return the original array
+              return prevMessages
+            }
+
+            // Create a shallow copy of the array
+            const newMessages = [...prevMessages]
+
+            // Create a copy of the message object at index+1 and add the `message` field
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              externalId: newMessageId,
+            }
+            return newMessages
+          })
+        }
+      }
     })
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks, citationMap } = JSON.parse(event.data)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, sources: contextChunks, citationMap }
-            : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying) {
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              sources: contextChunks,
+              citationMap,
+            }
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, sources: contextChunks, citationMap }
+              : msg,
+          )
+        }
+      })
     })
 
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, isRetrying: false }
-            : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying) {
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              isRetrying: false,
+            }
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false }
+              : msg,
+          )
+        }
+      })
       eventSource.close()
       setIsStreaming(false) // Stop streaming after retry
     })
 
+    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+      console.error("Retry Error with SSE:", event.data)
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying)
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              isRetrying: false,
+              message: event.data,
+            }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false, message: event.data }
+              : msg,
+          )
+        }
+      })
+      eventSource.close()
+      setIsStreaming(false)
+    })
+
     eventSource.onerror = (error) => {
       console.error("Retry SSE Error:", error)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          newMessages[index + 1] = {
+            ...newMessages[index + 1],
+            isRetrying: false,
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+          )
+        }
+      })
       eventSource.close()
       setIsStreaming(false) // Stop streaming on error
     }
@@ -605,34 +806,69 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               {messages.map((message, index) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
+                const userMessageWithErr =
+                  message.messageRole === "user" && message?.errorMessage
+
                 return (
-                  <ChatMessage
-                    key={index}
-                    message={message.message}
-                    isUser={message.messageRole === "user"}
-                    responseDone={true}
-                    citations={message?.sources?.map((c: Citation) => c.url)}
-                    messageId={message.externalId}
-                    handleRetry={handleRetry}
-                    citationMap={message.citationMap}
-                    dots={message.isRetrying ? dots : ""}
-                    onToggleSources={() => {
-                      if (
-                        showSources &&
-                        currentMessageId === message.externalId
-                      ) {
-                        setShowSources(false)
-                        setCurrentCitations([])
-                        setCurrentMessageId(null)
-                      } else {
-                        setCurrentCitations(message?.sources || [])
-                        setShowSources(true)
-                        setCurrentMessageId(message.externalId)
-                      }
-                    }}
-                    sourcesVisible={isSourcesVisible}
-                    isStreaming={isStreaming}
-                  />
+                  <>
+                    <ChatMessage
+                      key={index}
+                      message={message.message}
+                      isUser={message.messageRole === "user"}
+                      responseDone={true}
+                      citations={message?.sources?.map((c: Citation) => c.url)}
+                      messageId={message.externalId}
+                      handleRetry={handleRetry}
+                      citationMap={message.citationMap}
+                      dots={message.isRetrying ? dots : ""}
+                      onToggleSources={() => {
+                        if (
+                          showSources &&
+                          currentMessageId === message.externalId
+                        ) {
+                          setShowSources(false)
+                          setCurrentCitations([])
+                          setCurrentMessageId(null)
+                        } else {
+                          setCurrentCitations(message?.sources || [])
+                          setShowSources(true)
+                          setCurrentMessageId(message.externalId)
+                        }
+                      }}
+                      sourcesVisible={isSourcesVisible}
+                      isStreaming={isStreaming}
+                    />
+                    {userMessageWithErr && (
+                      <ChatMessage
+                        message={message.errorMessage}
+                        isUser={false}
+                        responseDone={true}
+                        citations={message?.sources?.map(
+                          (c: Citation) => c.url,
+                        )}
+                        messageId={message.externalId}
+                        handleRetry={handleRetry}
+                        citationMap={message.citationMap}
+                        dots={message.isRetrying ? dots : ""}
+                        onToggleSources={() => {
+                          if (
+                            showSources &&
+                            currentMessageId === message.externalId
+                          ) {
+                            setShowSources(false)
+                            setCurrentCitations([])
+                            setCurrentMessageId(null)
+                          } else {
+                            setCurrentCitations(message?.sources || [])
+                            setShowSources(true)
+                            setCurrentMessageId(message.externalId)
+                          }
+                        }}
+                        sourcesVisible={isSourcesVisible}
+                        isStreaming={isStreaming}
+                      />
+                    )}
+                  </>
                 )
               })}
               {currentResp && (
