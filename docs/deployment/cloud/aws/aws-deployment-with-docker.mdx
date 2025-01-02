@@ -118,8 +118,10 @@ OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
 
 ### Set permissions for vespa to run : 
 
-From the root of the instance, use the following commands : 
+From the root of the instance, use the following commands inside ther `server` directory : 
 ```javascript
+chmod +x ./init-vespa.sh
+
 ./init-vespa.sh
 ```
 
@@ -136,15 +138,13 @@ docker-compose -f docker-compose.yml up
 
 ### Deploy Vespa in your instance : 
 
-Navigate to ```server/vespa``` folder and set-up vespa : 
+Navigate to ```server``` folder and run the following command :
 
-<Warning> Ensure ```Vespa CLI``` is installed in the instance for it to work.</Warning>
+```javascript 
+chmod +x ./setup-docker.sh
 
-
-```javascript
-./deploy.sh
+./setup-docker.sh
 ```
-
 
 Your application is now running and will be available in your EC2 Public IPv4 DNS address.
 
