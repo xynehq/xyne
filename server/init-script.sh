@@ -5,7 +5,7 @@ echo "Initializing Vespa permissions..."
 if [ "$1" == "--docker" ]; then
   ./init-vespa.sh --docker
 else
-  ./init-vespa
+  ./init-vespa.sh
 fi
 
 if ! command -v bun &> /dev/null; then
