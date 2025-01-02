@@ -180,7 +180,7 @@ export const ChatHistory = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const { page } = c.req.valid("query")
-    const pageSize = 20
+    const pageSize = 21
     const offset = page * pageSize
     return c.json(await getPublicChats(db, email, pageSize, offset))
   } catch (error) {
@@ -334,7 +334,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             from: new Date().getTime() - 4 * monthInMs,
             to: new Date().getTime(),
           })
-        ).root.children
+        )?.root?.children
 
         let results = await searchVespa(
           query,

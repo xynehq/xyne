@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 export const pageSize = 20
 
@@ -106,6 +106,19 @@ const HistoryModal = ({
   if (pathname.startsWith("/chat/")) {
     existingChatId = pathname.substring(6)
   }
+
+  useEffect(() => {
+    // Only run if there's still more pages and we're not already fetching
+    if (hasNextPage && !isFetchingNextPage) {
+      const el = historyRef.current
+      if (!el) return
+
+      // Check if there's no scrollbar (meaning scrollHeight <= clientHeight)
+      if (el.scrollHeight - 20 <= el.clientHeight) {
+        fetchNextPage()
+      }
+    }
+  }, [chats, hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const deleteChat = async (chatId: string): Promise<string> => {
     const res = await api.chat.delete.$post({
@@ -250,7 +263,7 @@ const HistoryModal = ({
       </div>
       <div
         ref={historyRef}
-        className="flex-1 overflow-auto mt-[15px] max-h-[730px]"
+        className="flex-1 overflow-auto mt-[15px]"
         onScroll={handleScroll}
       >
         <ul>
