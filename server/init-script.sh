@@ -1,50 +1,54 @@
-  #!/bin/bash
-  set -e
+#!/bin/bash
+set -e
 
-  echo "Initializing Vespa permissions..."
-  ./init-vespa.sh
+echo "Initializing Vespa permissions..."
+if [ "$1" == "--docker" ]; then
+  ./init-vespa.sh --docker
+else
+  ./init-vespa
+fi
 
-  if ! command -v bun &> /dev/null; then
-    echo "Bun is not installed. Please install it before running this script."
-    exit 1
-  fi
+if ! command -v bun &> /dev/null; then
+  echo "Bun is not installed. Please install it before running this script."
+  exit 1
+fi
 
-  echo "Running generation and migration commands for the server..."
-  bun i
-  bun run generate
-  bun run migrate
+echo "Running generation and migration commands for the server..."
+bun i
+bun run generate
+bun run migrate
 
-  echo "Deploying Vespa..."
-  cd ./vespa
+echo "Deploying Vespa..."
+cd ./vespa
 
-  # Load .env variables (if any)
-  if [ -f "../.env" ]; then
-    export $(grep -v '^#' ../.env | xargs)
-  fi
+# Load .env variables (if any)
+if [ -f "../.env" ]; then
+  export $(grep -v '^#' ../.env | xargs)
+fi
 
-  # Check if EMBEDDING_MODEL is set
-  if [ -n "$EMBEDDING_MODEL" ]; then
-    echo "Using EMBEDDING_MODEL=$EMBEDDING_MODEL"
-    if [ "$1" == "--docker" ]; then
-      ./deploy.sh "$EMBEDDING_MODEL" --docker
-    else
-      ./deploy.sh "$EMBEDDING_MODEL"
-    fi
+# Check if EMBEDDING_MODEL is set
+if [ -n "$EMBEDDING_MODEL" ]; then
+  echo "Using EMBEDDING_MODEL=$EMBEDDING_MODEL"
+  if [ "$1" == "--docker" ]; then
+    ./deploy.sh "$EMBEDDING_MODEL" --docker
   else
-    echo "No EMBEDDING_MODEL provided. Using default model."
-    if [ "$1" == "--docker" ]; then
-      ./deploy.sh --docker
-    else
-      ./deploy.sh
-    fi
+    ./deploy.sh "$EMBEDDING_MODEL"
   fi
+else
+  echo "No EMBEDDING_MODEL provided. Using default model."
+  if [ "$1" == "--docker" ]; then
+    ./deploy.sh --docker
+  else
+    ./deploy.sh
+  fi
+fi
 
-  echo "Initializing frontend..."
+echo "Initializing frontend..."
 
-  cd ../../frontend
+cd ../../frontend
 
-  bun i
+bun i
 
-  bun run build
+bun run build
 
-  echo "***************Initialization completed*******************"
+echo "***************Initialization completed*******************"
