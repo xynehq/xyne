@@ -432,13 +432,14 @@ const ServiceAccountTab = ({
         <CardTitle>Google Workspace</CardTitle>
         {googleSAConnector.status === ConnectorStatus.Connecting ? (
           <>
-          <CardDescription>Connecting {progress}%</CardDescription>
-          <Progress value={progress} className="p-0 w-[60%]" />
+            <CardDescription>Connecting {progress}%</CardDescription>
+            <Progress value={progress} className="p-0 w-[60%]" />
           </>
-        ) : (<>
-          <CardDescription>Connected</CardDescription>
-        </>)}
-
+        ) : (
+          <>
+            <CardDescription>Connected</CardDescription>
+          </>
+        )}
       </CardHeader>
     )
   }
@@ -641,7 +642,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               )}
             </TabsContent>
           </Tabs>
-          {Object.keys(userStats).length > 0 && activeTab === "upload"  && (
+          {Object.keys(userStats).length > 0 && activeTab === "upload" && (
             <UserStatsTable userStats={userStats} />
           )}
         </div>
