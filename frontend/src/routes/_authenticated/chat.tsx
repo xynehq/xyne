@@ -18,9 +18,14 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
+import {
+  useQueryClient,
+  useMutation,
+  useInfiniteQuery,
+  InfiniteData,
+} from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, renameChat } from "@/components/HistoryModal"
+import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
 
 type CurrentResp = {
   resp: string
@@ -98,22 +103,38 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     },
     onSuccess: ({ chatId, title }) => {
       // Update the UI by renaming the chat
-      queryClient.setQueryData<SelectPublicChat[]>(
-        ["all-connectors"],
-        (oldChats) => {
-          if (!oldChats?.length) return []
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
 
-          // Find the chat to update
-          const chatToUpdate: SelectPublicChat = oldChats.find(
-            (chat) => chat.externalId === chatId,
+          let chatToUpdate: SelectPublicChat | undefined
+          oldData.pages.forEach((page) => {
+            const found = page.find((c) => c.externalId === chatId)
+            if (found) chatToUpdate = found
+          })
+
+          if (!chatToUpdate) {
+            return oldData
+          }
+
+          const updatedChat = { ...chatToUpdate, title }
+
+          // Remove the old version from all pages
+          const filteredPages = oldData.pages.map((page) =>
+            page.filter((c) => c.externalId !== chatId),
           )
-          if (!chatToUpdate) return oldChats
 
-          // Create updated chat and filter out old version in one pass
-          return [
-            { ...chatToUpdate, title },
-            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          // Insert the updated chat at the front of the first page
+          const newPages = [
+            [updatedChat, ...filteredPages[0]],
+            ...filteredPages.slice(1),
           ]
+
+          return {
+            ...oldData,
+            pages: newPages,
+          }
         },
       )
       setChatTitle(editedTitle)
@@ -131,11 +152,28 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }, [])
 
-  const { data: historyItems } = useQuery<SelectPublicChat[]>({
-    queryKey: ["all-connectors"],
-    queryFn: fetchChats,
+  const { data: historyItems } = useInfiniteQuery<
+    SelectPublicChat[],
+    Error,
+    InfiniteData<SelectPublicChat[]>,
+    ["all-chats"],
+    number
+  >({
+    queryKey: ["all-chats"],
+    queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
+    getNextPageParam: (lastPage, allPages) => {
+      // lastPage?.length < pageSize becomes true, when there are no more pages
+      if (lastPage?.length < pageSize) {
+        return undefined
+      }
+      // Otherwise, next page = current number of pages fetched so far
+      return allPages?.length
+    },
+    initialPageParam: 0,
   })
-  const currentChat = historyItems?.find((item) => item.externalId === chatId)
+  const currentChat = historyItems?.pages
+    ?.flat()
+    .find((item) => item.externalId === chatId)
 
   useEffect(() => {
     // Only update local state if we are not currently editing the title

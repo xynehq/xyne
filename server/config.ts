@@ -56,4 +56,5 @@ export default {
   // bestModelId: Models.CohereCmdRPlus
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
+  chatHistoryPageSize: 21,
 }
