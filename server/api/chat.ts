@@ -67,7 +67,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-const { JwtPayloadKey } = config
+const { JwtPayloadKey, chatHistoryPageSize } = config
 const Logger = getLogger(Subsystem.Chat)
 
 // this is not always the case but unless our router detects that we need
@@ -180,9 +180,8 @@ export const ChatHistory = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const { page } = c.req.valid("query")
-    const pageSize = 21
-    const offset = page * pageSize
-    return c.json(await getPublicChats(db, email, pageSize, offset))
+    const offset = page * chatHistoryPageSize
+    return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Chat History Error: ${errMsg} ${(error as Error).stack}`)

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useRef, useState } from "react"
 
-export const pageSize = 20
+export const pageSize = 21
 
 export const fetchChats = async ({ pageParam = 0 }: { pageParam?: number }) => {
   let items = []
@@ -92,7 +92,7 @@ const HistoryModal = ({
     const { scrollTop, scrollHeight, clientHeight } = historyRef.current
 
     // If the user scrolled to bottom (or near bottom)
-    if (scrollTop + clientHeight >= scrollHeight - 20 /* threshold */) {
+    if (scrollTop + clientHeight >= scrollHeight - 100 /* threshold */) {
       if (hasNextPage && !isFetchingNextPage) {
         fetchNextPage()
       }
@@ -114,7 +114,7 @@ const HistoryModal = ({
       if (!el) return
 
       // Check if there's no scrollbar (meaning scrollHeight <= clientHeight)
-      if (el.scrollHeight - 20 <= el.clientHeight) {
+      if (el.scrollHeight - 100 <= el.clientHeight) {
         fetchNextPage()
       }
     }
