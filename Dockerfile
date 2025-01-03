@@ -31,7 +31,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf vespa-cli_8.448.13_linux_amd64 vespa-cli_8.448.13_linux_amd64.tar.gz \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y docker.io
 
 # Set ownership for bun user
 RUN chown -R bun:bun /usr/src/app
