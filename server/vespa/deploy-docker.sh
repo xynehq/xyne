@@ -1,4 +1,4 @@
-## FOR PROD & DEV ENV
+## FOR DOCKER ENV
 
 #!/bin/sh
 set -e
@@ -52,9 +52,7 @@ else
 fi
 
 
-echo "Deploying vespa..."
-vespa deploy --wait 500
-echo "Restarting docker vespa...."
-docker restart vespa
+echo "Deploying docker vespa at http://vespa:8080..."
+vespa deploy --wait 500 --target http://vespa:19071
 # vespa destroy
-vespa status --wait 55
+vespa status --wait 55 --target http://vespa:19071

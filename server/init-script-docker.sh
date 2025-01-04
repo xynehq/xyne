@@ -25,10 +25,11 @@ fi
 # Check if EMBEDDING_MODEL is set
 if [ -n "$EMBEDDING_MODEL" ]; then
   echo "Using EMBEDDING_MODEL=$EMBEDDING_MODEL"
-    ./deploy-production.sh "$EMBEDDING_MODEL" 
+  ./deploy-docker.sh "$EMBEDDING_MODEL"
 else
-    ./deploy-production.sh 
+  ./deploy-docker.sh 
 fi
+
 
 echo "Initializing frontend..."
 

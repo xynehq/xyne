@@ -9,7 +9,7 @@ COPY . .
 # Switch to server directory and install backend dependencies
 WORKDIR /usr/src/app/server
 RUN bun install
-RUN chmod +x init-script.sh 
+RUN chmod +x init-script-docker.sh 
 
 # Install dependencies and build the frontend
 WORKDIR /usr/src/app/frontend

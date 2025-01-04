@@ -12,7 +12,7 @@ sleep 15
 docker exec -it xyne-app bash -c "
   echo 'Inside xyne-app container...';
   echo 'Running initialization script...';
-  ./init-script.sh ;
+  ./init-script-docker.sh ;
   echo 'Initialisation complete. Starting the app...';
 "
 
