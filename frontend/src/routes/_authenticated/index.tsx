@@ -13,8 +13,13 @@ import { api } from "@/api"
 import { ChatBox } from "@/components/ChatBox"
 import Sparkle from "@/assets/singleSparkle.svg"
 
+enum Tabs {
+  Search = "search",
+  Ask = "ask",
+}
+
 const Index = () => {
-  const [activeTab, setActiveTab] = useState<"search" | "ask">("search")
+  const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
 
   const [autocompleteResults, setAutocompleteResults] = useState<
@@ -103,7 +108,9 @@ const Index = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Tab") {
-        setActiveTab((prevTab) => (prevTab === "search" ? "ask" : "search"))
+        setActiveTab((prevTab) =>
+          prevTab === Tabs.Search ? Tabs.Ask : Tabs.Search,
+        )
         e.preventDefault()
       }
     }
@@ -121,10 +128,22 @@ const Index = () => {
         <div className="flex flex-col min-h-36 w-full max-w-3xl">
           <div className="flex mb-[14px] w-full justify-start">
             <button
+              className={`flex items-center pr-[12px] rounded-[20px] ${
+                activeTab === Tabs.Ask ? "bg-[#EDF2F7]" : ""
+              }`}
+              onClick={() => setActiveTab(Tabs.Ask)}
+            >
+              <img
+                src={Sparkle}
+                className="w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
+              />
+              Ask
+            </button>
+            <button
               className={`flex items-center text-[#33383D] pr-[12px] rounded-[20px] ${
                 activeTab === "search" ? "bg-[#EDF2F7]" : ""
               }`}
-              onClick={() => setActiveTab("search")}
+              onClick={() => setActiveTab(Tabs.Search)}
             >
               <SearchIcon
                 size={16}
@@ -132,18 +151,6 @@ const Index = () => {
                 className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
               />
               Search
-            </button>
-            <button
-              className={`flex items-center pr-[12px] rounded-[20px] ${
-                activeTab === "ask" ? "bg-[#EDF2F7]" : ""
-              }`}
-              onClick={() => setActiveTab("ask")}
-            >
-              <img
-                src={Sparkle}
-                className="w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
-              />
-              Ask
             </button>
           </div>
           {activeTab === "search" && (

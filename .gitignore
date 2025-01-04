@@ -181,6 +181,8 @@ data
 xyne-data
 vespa-data
 vespa-logs
+server/vespa-data
+server/xyne-data
 
 .env.production
 
@@ -193,7 +195,6 @@ server/vespa/models/
 
 # downloads like pdfs
 server/downloads
-server/vespa/models
 build
 server/eval-results
 server/.venv/*
