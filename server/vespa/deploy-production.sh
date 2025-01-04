@@ -1,4 +1,4 @@
-## FOR PROD/DEV ENV
+## FOR PROD & DEV ENV
 
 #!/bin/sh
 set -e
