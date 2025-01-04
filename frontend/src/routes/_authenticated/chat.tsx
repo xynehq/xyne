@@ -26,6 +26,7 @@ import {
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
 import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import { errorComponent } from "@/components/error"
 
 type CurrentResp = {
   resp: string
@@ -972,6 +973,8 @@ const Sources = ({
   ) : null
 }
 
+export const textToCitationIndex = /\[(\d+)\]/g
+
 const ChatMessage = ({
   message,
   isUser,
@@ -1002,7 +1005,7 @@ const ChatMessage = ({
   const [isCopied, setIsCopied] = useState(false)
   const processMessage = (text: string) => {
     if (citationMap) {
-      return text.replace(/\[(\d+)\]/g, (match, num) => {
+      return text.replace(textToCitationIndex, (match, num) => {
         const index = citationMap[num]
         const url = citations[index]
         if (url) {
@@ -1012,7 +1015,7 @@ const ChatMessage = ({
         return match
       })
     } else {
-      return text.replace(/\[(\d+)\]/g, (match, num) => {
+      return text.replace(textToCitationIndex, (match, num) => {
         const url = citations[num - 1]
 
         if (url) {
@@ -1131,4 +1134,5 @@ export const Route = createFileRoute("/_authenticated/chat")({
     const { user, workspace } = matches[matches.length - 1].context
     return <ChatPage user={user} workspace={workspace} />
   },
+  errorComponent: errorComponent,
 })

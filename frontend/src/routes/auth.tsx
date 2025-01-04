@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { api } from "@/api"
+import { errorComponent } from "@/components/error"
 
 export const description =
   "A login form with email and password. There's an option to login with Google and a link to sign up if you don't have an account."
@@ -63,4 +64,5 @@ export const Route = createFileRoute("/auth")({
     }
   },
   component: LoginForm,
+  errorComponent: errorComponent,
 })
