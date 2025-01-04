@@ -35,7 +35,7 @@ vespa version
 cd xyne
 # Give execute permissions to the init-script.sh inside the server folder
 echo "Setting execute permissions for init-script.sh..."
-chmod +x ./server/init-script.sh
+chmod +x ./server/init-script-prod.sh
 
 # Start the Docker Compose services in the background
 echo "Starting Docker Compose services..."
@@ -53,7 +53,7 @@ echo "Database is ready!"
 # Run init-script.sh to initialize the services
 echo "Running init-script.sh..."
 cd ./server
-./init-script.sh
+./init-script-prod.sh
 
 # You can add more logic here to monitor or wait for other processes, if needed
 echo "Initialization complete!"
@@ -85,7 +85,7 @@ elif [[ "$1" == "--docker" ]]; then
   docker exec -it xyne-app bash -c "
     echo 'Inside xyne-app container...';
     echo 'Running initialization script...';
-    ./init-script.sh --docker;
+    ./init-script.sh;
     echo 'Initialisation complete. Starting the app...';
   "
   docker restart xyne-app

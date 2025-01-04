@@ -12,16 +12,13 @@ sleep 15
 docker exec -it xyne-app bash -c "
   echo 'Inside xyne-app container...';
   echo 'Running initialization script...';
-  ./init-script.sh --docker;
+  ./init-script.sh ;
   echo 'Initialisation complete. Starting the app...';
 "
 
 echo "Restarting docker vespa...."
 docker restart vespa
 
-docker exec -it xyne-app bash -c "
-  vespa status --wait 55 --target http://vespa:19071
-"
 
 sleep 10
 
