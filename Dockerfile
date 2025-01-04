@@ -25,10 +25,10 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     tar \
-    && wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz \
-    && tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz \
-    && mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/ \
-    && rm -rf vespa-cli_8.448.13_linux_amd64 vespa-cli_8.448.13_linux_amd64.tar.gz \
+    && wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz \
+    && tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz \
+    && mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/ \
+    && rm -rf vespa-cli_8.453.24_linux_amd64 vespa-cli_8.453.24_linux_amd64.tar.gz \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 
