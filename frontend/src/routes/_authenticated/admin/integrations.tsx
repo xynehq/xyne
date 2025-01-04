@@ -36,6 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { errorComponent } from "@/components/error"
 
 const logger = console
 
@@ -663,4 +664,5 @@ export const Route = createFileRoute("/_authenticated/admin/integrations")({
     const { user, workspace } = matches[matches.length - 1].context
     return <AdminLayout user={user} workspace={workspace} />
   },
+  errorComponent: errorComponent,
 })

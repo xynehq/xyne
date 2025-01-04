@@ -43,6 +43,7 @@ import {
 } from "lucide-react"
 import { LastUpdated } from "@/components/SearchFilter"
 import { PublicUser, PublicWorkspace } from "shared/types"
+import { errorComponent } from "@/components/error"
 
 const logger = console
 
@@ -522,4 +523,5 @@ export const Route = createFileRoute("/_authenticated/search")({
     return <Search user={user} workspace={workspace} />
   },
   validateSearch: (search) => searchParams.parse(search),
+  errorComponent: errorComponent,
 })

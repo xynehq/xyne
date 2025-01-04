@@ -12,6 +12,7 @@ import {
 import { api } from "@/api"
 import { ChatBox } from "@/components/ChatBox"
 import Sparkle from "@/assets/singleSparkle.svg"
+import { errorComponent } from "@/components/error"
 
 enum Tabs {
   Search = "search",
@@ -191,4 +192,5 @@ export const Route = createFileRoute("/_authenticated/")({
   component: () => {
     return <Index />
   },
+  errorComponent: errorComponent,
 })
