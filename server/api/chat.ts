@@ -268,9 +268,11 @@ const searchToCitations = (
 export const textToCitationIndex = /\[(\d+)\]/g
 
 // if an index does not exist instead of NaN we should simply remove the citation itself from answer
-const processMessage = (text: string, citationMap: Record<number, number>) => {
+export const processMessage = (text: string, citationMap: Record<number, number>) => {
   return text.replace(textToCitationIndex, (match, num) => {
-    return `[${citationMap[num] + 1}]`
+    const index = citationMap[num]
+
+    return typeof index === 'number' ? `[${index + 1}]` : ''
   })
 }
 
