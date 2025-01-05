@@ -40,7 +40,7 @@ import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
-import { getErrorMessage } from "@/utils"
+import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
 import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -267,8 +267,8 @@ const searchToCitations = (
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
-// if an index does not exist instead of NaN we should simply remove the citation itself from answer
 export const processMessage = (text: string, citationMap: Record<number, number>) => {
+  text = splitGroupedCitationsWithSpaces(text)
   return text.replace(textToCitationIndex, (match, num) => {
     const index = citationMap[num]
 
