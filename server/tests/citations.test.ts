@@ -1,4 +1,5 @@
 import { processMessage, textToCitationIndex } from "@/api/chat"
+import { splitGroupedCitationsWithSpaces } from "@/utils"
 import { describe, expect, test } from "bun:test"
 
 describe("basic citation system", () => {
@@ -12,7 +13,7 @@ describe("basic citation system", () => {
     const text = "Multiple citations[1] in this[2] text[3]"
     const matches = Array.from(text.matchAll(textToCitationIndex))
     expect(matches).toHaveLength(3)
-    expect(matches.map(m => m[1])).toEqual(["1", "2", "3"])
+    expect(matches.map((m) => m[1])).toEqual(["1", "2", "3"])
   })
   test("should handle adjacent citations", () => {
     const text = "Adjacent citations[1][2][3]here"
@@ -48,5 +49,48 @@ describe("citation processing", () => {
     console.log(processed)
     // Should preserve the original citation if not in map
     expect(processed).toBe("Valid[1] and invalid citations")
+  })
+})
+
+describe("Grouped Citation Splitting", () => {
+  test("should split basic grouped citations", () => {
+    const text = "See references [1,2,3] for more info"
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("See references [1] [2] [3] for more info")
+  })
+  test("should handle multiple grouped citations", () => {
+    const text = "See [1,2] and also [3,4,5]"
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("See [1] [2] and also [3] [4] [5]")
+  })
+  test("should handle single number in brackets", () => {
+    const text = "Single citation [1]"
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("Single citation [1]")
+  })
+
+  test("should handle invalid content in grouped citations", () => {
+    const text = "[1,a,2] and [b,c,3] and [1,@,#,2]"
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe(text)
+  })
+
+  test("should handle mixed valid and invalid grouped citations in sentence", () => {
+    const text = "Good [1,2] bad [a,b] ok [3,4]"
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("Good [1] [2] bad [a,b] ok [3] [4]")
+  })
+
+  // this fails for now
+  test("should handle mixed valid and invalid citations", () => {
+    const text = "Mixed [1,2.5,3] and [a,2,b] citations"
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("Mixed [1] [3] and [2] citations")
+  })
+
+  test("should handle empty groups", () => {
+    const text = "Empty groups [] and [,,,] and [, ,]"
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("Empty groups [] and [,,,] and [, ,]")
   })
 })
