@@ -20,6 +20,7 @@ import type {
   Entity,
   VespaEvent,
   VespaUserQueryHistory,
+  VespaSchema,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -85,7 +86,7 @@ export const insert = async (
     | VespaMail
     | VespaEvent
     | VespaUserQueryHistory,
-  schema: string,
+  schema: VespaSchema,
 ) => {
   try {
     await vespa.insert(document, { namespace: NAMESPACE, schema })
@@ -457,7 +458,7 @@ const getDocumentCount = async () => {
 }
 
 export const GetDocument = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
 ): Promise<VespaGetResult> => {
   try {
@@ -475,7 +476,7 @@ export const GetDocument = async (
 }
 
 export const UpdateDocumentPermissions = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedPermissions: string[],
 ) => {
@@ -492,7 +493,7 @@ export const UpdateDocumentPermissions = async (
 }
 
 export const UpdateEventCancelledInstances = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedCancelledInstances: string[],
 ) => {
@@ -509,7 +510,7 @@ export const UpdateEventCancelledInstances = async (
 }
 
 export const UpdateDocument = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedFields: Record<string, any>,
 ) => {
@@ -525,7 +526,7 @@ export const UpdateDocument = async (
   }
 }
 
-export const DeleteDocument = async (docId: string, schema: string) => {
+export const DeleteDocument = async (docId: string, schema: VespaSchema) => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     await vespa.deleteDocument(options)
@@ -629,7 +630,7 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
   }
 }
 
-const getDocumentOrNull = async (schema: string, docId: string) => {
+const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
   try {
     return await GetDocument(schema, docId)
   } catch (error) {
@@ -763,7 +764,7 @@ export const getTimestamp = (lastUpdated: string): number | null => {
 // }
 
 interface GetItemsParams {
-  schema: string
+  schema: VespaSchema
   app?: Apps | null
   entity?: Entity | null
   timestampRange: { from: number | null; to: number | null } | null

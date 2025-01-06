@@ -5,7 +5,12 @@ export const mailSchema = "mail"
 export const eventSchema = "event"
 export const userQuerySchema = "user_query"
 // not using @ because of vite of frontend
-
+export type VespaSchema =
+  | typeof fileSchema
+  | typeof userSchema
+  | typeof mailSchema
+  | typeof eventSchema
+  | typeof userQuerySchema
 export enum Apps {
   // includes everything google
   GoogleWorkspace = "google-workspace",
