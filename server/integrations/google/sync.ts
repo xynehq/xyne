@@ -85,19 +85,19 @@ type ChangeStats = {
 
 const getDocumentOrSpreadsheet = async (docId: string) => {
   try {
-    const doc = await GetDocument(docId, fileSchema)
+    const doc = await GetDocument(fileSchema, docId)
     return doc
-  } catch (err: any) {
-    const errMessage = getErrorMessage(err?.cause)
+  } catch (err) {
+    const errMessage = getErrorMessage((err as Error).cause)
     if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
       Logger.error(
         err,
         `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
       )
-      const sheetsForSpreadSheet = await GetDocument(`${docId}_0`, fileSchema)
+      const sheetsForSpreadSheet = await GetDocument(fileSchema, `${docId}_0`)
       return sheetsForSpreadSheet
     } else {
-      Logger.error(err, `Error getting document: ${err.message} ${err.stack}`)
+      Logger.error(err, `Error getting document`)
       throw err
     }
   }
@@ -118,8 +118,8 @@ const deleteUpdateStatsForGoogleSheets = async (
   // Check if the sheets we have in vespa are same as we get
   // If not, it means maybe sheet/s can be deleted
   const spreadSheetFromVespa = await GetDocument(
-    `${spreadsheetId}_0`,
     fileSchema,
+    `${spreadsheetId}_0`,
   )
   const metadata = JSON.parse(
     //@ts-ignore
@@ -143,7 +143,7 @@ const deleteUpdateStatsForGoogleSheets = async (
   for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
     const id = `${spreadsheetId}_${sheetIndex}`
     try {
-      await GetDocument(id, fileSchema)
+      await GetDocument(fileSchema, id)
       stats.updated += 1
       continue
     } catch (e) {
@@ -170,7 +170,7 @@ const deleteWholeSpreadsheet = async (
   // Remove all sheets inside that spreadsheet
   for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
     const id = `${spreadsheetId}_${sheetIndex}`
-    const doc = await GetDocument(id, fileSchema)
+    const doc = await GetDocument(fileSchema, id)
     const permissions = (doc.fields as VespaFile).permissions
     if (permissions.length === 1) {
       // remove it
@@ -262,7 +262,7 @@ const handleGoogleDriveChange = async (
       ) {
         await deleteUpdateStatsForGoogleSheets(docId, client, stats)
       } else {
-        doc = await GetDocument(docId, fileSchema)
+        doc = await GetDocument(fileSchema, docId)
         stats.updated += 1
       }
     } catch (e) {

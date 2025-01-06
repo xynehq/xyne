@@ -366,8 +366,7 @@ const server = Bun.serve({
 })
 Logger.info(`listening on port: ${config.port}`)
 
-
-process.on('uncaughtException',(error) => {
-  Logger.error(error, 'uncaughtException')
+process.on("uncaughtException", (error) => {
+  Logger.error(error, "uncaughtException")
   // shutdown server?
 })
