@@ -90,12 +90,13 @@ const getDocumentOrSpreadsheet = async (docId: string) => {
     const errMessage = getErrorMessage(err?.cause)
     if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
       Logger.error(
+        err,
         `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
       )
       const sheetsForSpreadSheet = await GetDocument(`${docId}_0`, fileSchema)
       return sheetsForSpreadSheet
     } else {
-      Logger.error(`Error getting document: ${err.message} ${err.stack}`)
+      Logger.error(err, `Error getting document: ${err.message} ${err.stack}`)
       throw err
     }
   }
@@ -243,9 +244,7 @@ const handleGoogleDriveChange = async (
           }
         }
       } catch (err) {
-        Logger.error(
-          `Trying to delete document that doesnt exist in Vespa \n ${err}`,
-        )
+        Logger.error(err, `Failed to delete document in Vespa \n ${err}`)
       }
     }
   } else if (docId && change.file) {
@@ -502,6 +501,7 @@ export const handleGoogleOAuthChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
@@ -596,6 +596,7 @@ export const handleGoogleOAuthChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete Oauth sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
@@ -695,6 +696,7 @@ export const handleGoogleOAuthChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete Oauth sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: CalendarEventsChangeToken =
@@ -865,6 +867,7 @@ const handleGoogleCalendarEventsChanges = async (
               const eventId = splittedId[0]
               const instanceDateTime = splittedId[1]
               Logger.error(
+                err,
                 `Found no document with ${docId}, checking for event with ${eventId}`,
               )
               // Update this event and add a instanceDateTime cancelledInstances property
@@ -893,11 +896,13 @@ const handleGoogleCalendarEventsChanges = async (
                 }
               } catch (error) {
                 Logger.error(
+                  error,
                   `Can't find document to delete, probably doesn't exist`,
                 )
               }
             } else {
               Logger.error(
+                err,
                 `Error getting document: ${err.message} ${err.stack}`,
               )
               throw err
@@ -907,8 +912,8 @@ const handleGoogleCalendarEventsChanges = async (
           let event = null
           try {
             event = await GetDocument(eventSchema, docId!)
-          } catch (e) {
-            Logger.error(`Event doesn't exist in Vepsa`)
+          } catch (error) {
+            Logger.error(error, `Event doesn't exist in Vepsa`)
           }
 
           await insertEventIntoVespa(eventChange)
@@ -1003,10 +1008,11 @@ const handleGmailChanges = async (
                 await insert(parseMail(msgResp.data), mailSchema)
                 stats.added += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 // Handle errors if the message no longer exists
                 Logger.error(
-                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1030,10 +1036,11 @@ const handleGmailChanges = async (
                 }
                 stats.removed += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 // Handle errors if the document no longer exists
                 Logger.error(
-                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1047,9 +1054,10 @@ const handleGmailChanges = async (
                 await UpdateDocument(mailSchema, message?.id!, { labels })
                 stats.updated += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 Logger.error(
-                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1065,9 +1073,10 @@ const handleGmailChanges = async (
                 await UpdateDocument(mailSchema, message?.id!, { labels })
                 stats.updated += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 Logger.error(
-                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1083,6 +1092,7 @@ const handleGmailChanges = async (
     ) {
       // Log the error and return without updating the historyId
       Logger.error(
+        error,
         `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
       )
       return { stats, historyId: newHistoryId, changesExist }
@@ -1283,6 +1293,7 @@ export const handleGoogleServiceAccountChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: ChangeToken = syncJob.config as ChangeToken
@@ -1378,6 +1389,7 @@ export const handleGoogleServiceAccountChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete ServiceAccount sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
@@ -1475,6 +1487,7 @@ export const handleGoogleServiceAccountChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete ServiceAccount sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: CalendarEventsChangeToken =

@@ -252,6 +252,7 @@ export const jsonParseLLMOutput = (text: string): any => {
       jsonVal = parse(text)
     } catch (parseError) {
       Logger.error(
+        parseError,
         `The ai response that triggered the json parse error ${text.trim()}`,
       )
       throw parseError
@@ -363,6 +364,7 @@ export const generateTitleUsingQuery = async (
   } catch (error) {
     const errMessage = getErrorMessage(error)
     Logger.error(
+      error,
       `Error asking question: ${errMessage} ${(error as Error).stack}`,
     )
     throw error

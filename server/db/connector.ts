@@ -63,6 +63,7 @@ export const insertConnector = async (
     return inserted[0]
   } catch (error) {
     Logger.error(
+      error,
       `Error inserting connection:, ${error} \n ${(error as Error).stack}`,
     )
     throw new ConnectionInsertionError({

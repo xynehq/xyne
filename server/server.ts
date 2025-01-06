@@ -99,6 +99,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     await AuthMiddleware(c, next)
   } catch (err) {
     Logger.error(
+      err,
       `${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`,
     )
     Logger.warn("Redirected by server - Error in AuthMW")

@@ -92,6 +92,7 @@ export const insert = async (
   } catch (error) {
     const errMessage = getErrorMessage(error)
     Logger.error(
+      error,
       `Error inserting document ${document.docId}: ${errMessage} ${(error as Error).stack}`,
     )
     throw new ErrorInsertingDocument({
@@ -551,7 +552,7 @@ export const ifDocumentsExist = async (docIds: string[]) => {
     return await vespa.isDocumentExist(docIds)
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(`Error checking documents existence:  ${errMessage}`)
+    Logger.error(error, `Error checking documents existence:  ${errMessage}`)
     throw error
   }
 }
@@ -585,7 +586,7 @@ const getNDocuments = async (n: number) => {
     return data
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(`Error retrieving document count: , ${errMessage}`)
+    Logger.error(error, `Error retrieving document count: , ${errMessage}`)
     throw new ErrorRetrievingDocuments({
       cause: error as Error,
       sources: "file",
@@ -623,7 +624,7 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
     }
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Update user query error: ${errMsg}`, error)
+    Logger.error(error, `Update user query error: ${errMsg}`, error)
     throw new Error("Failed to update user query history")
   }
 }
@@ -681,7 +682,7 @@ export const searchUsersByNamesAndEmails = async (
   try {
     return await vespa.getUsersByNamesAndEmaisl(searchPayload)
   } catch (error) {
-    Logger.error(`Error searching users: ${error}`)
+    Logger.error(error, `Error searching users: ${error}`)
     throw error
   }
 }
