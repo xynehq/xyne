@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import {
   createFileRoute,
+  redirect,
   useNavigate,
   UseNavigateResult,
   useRouterState,
@@ -16,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Apps, AuthType, ConnectorStatus } from "shared/types"
+import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
 import { api, wsClient } from "@/api"
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from "@tanstack/react-form"
@@ -575,7 +576,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
-      <Sidebar photoLink={user.photoLink ?? ""} />
+      <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
@@ -653,7 +654,18 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
 }
 
 export const Route = createFileRoute("/_authenticated/admin/integrations")({
-  beforeLoad: (params) => {
+  beforeLoad: async (params) => {
+    const res = await api.me.$get()
+    if (res.ok) {
+      const userWorkspace = await res.json()
+      // Normal users shouldn't be allowed to visit /admin/integrations
+      if (
+        userWorkspace?.user?.role !== UserRole.SuperAdmin &&
+        userWorkspace?.user?.role !== UserRole.Admin
+      ) {
+        throw redirect({ to: "/" })
+      }
+    }
     return params
   },
   loader: async (params) => {

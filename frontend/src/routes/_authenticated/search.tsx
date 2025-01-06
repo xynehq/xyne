@@ -380,7 +380,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   return (
     <div className="h-full w-full flex">
-      <Sidebar photoLink={user?.photoLink ?? ""} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className={`flex flex-col flex-grow h-full "ml-[52px]"`}>
         <SearchBar
           ref={autocompleteRef}

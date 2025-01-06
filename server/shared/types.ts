@@ -247,3 +247,11 @@ const messageMetadataSchema = z.object({
 })
 
 export type MessageMetadataResponse = z.infer<typeof messageMetadataSchema>
+
+// very rudimentary
+export enum UserRole {
+  User = "User", // can do oauth of their own data or api key based
+  TeamLeader = "TeamLeader", // manage Users
+  Admin = "Admin", // Service account related changes
+  SuperAdmin = "SuperAdmin", // Admin level changes
+}
