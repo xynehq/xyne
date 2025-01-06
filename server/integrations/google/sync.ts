@@ -70,6 +70,7 @@ import {
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
+import type { GaxiosError } from "gaxios"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -1198,58 +1199,92 @@ export const handleGoogleServiceAccountChanges = async (
       let nextPageToken = ""
       let contactsToken = config.contactsToken
       let otherContactsToken = config.otherContactsToken
-      do {
-        const response = await peopleService.people.connections.list({
-          resourceName: "people/me",
-          personFields: contactKeys.join(","),
-          syncToken: config.contactsToken,
-          requestSyncToken: true,
-          pageSize: 1000, // Adjust the page size based on your quota and needs
-          pageToken: nextPageToken, // Use the nextPageToken for pagination
-        })
-        contactsToken = response.data.nextSyncToken ?? contactsToken
-        if (response.data.connections && response.data.connections.length) {
-          Logger.info(
-            `About to update ${response.data.connections.length} contacts`,
+      try {
+        do {
+          const response = await peopleService.people.connections.list({
+            resourceName: "people/me",
+            personFields: contactKeys.join(","),
+            syncToken: config.contactsToken,
+            requestSyncToken: true,
+            pageSize: 1000, // Adjust the page size based on your quota and needs
+            pageToken: nextPageToken, // Use the nextPageToken for pagination
+          })
+          if (response.data.connections && response.data.connections.length) {
+            Logger.info(
+              `About to update ${response.data.connections.length} contacts`,
+            )
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.connections,
+              user.email,
+              GooglePeopleEntity.Contacts,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } while (nextPageToken)
+      } catch (error) {
+        // if sync token is expired then we don't throw it further
+        // we will handle this case, it will require a full sync
+        if (
+          (error as GaxiosError).response &&
+          (error as GaxiosError).response?.status === 400 &&
+          (error as GaxiosError).message ===
+            "Sync token is expired. Clear local cache and retry call without the sync token."
+        ) {
+          Logger.warn(
+            "This is an error that is not yet implemented, it requires a full sync of the contacts api",
           )
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.connections,
-            user.email,
-            GooglePeopleEntity.Contacts,
-          )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+        } else {
+          throw error
         }
-      } while (nextPageToken)
-
+      }
       // reset
       nextPageToken = ""
-
-      do {
-        const response = await peopleService.otherContacts.list({
-          pageSize: 1000,
-          readMask: contactKeys.join(","),
-          syncToken: otherContactsToken,
-          pageToken: nextPageToken,
-          requestSyncToken: true,
-          sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
-        })
-        otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
-        if (response.data.otherContacts && response.data.otherContacts.length) {
-          Logger.info(
-            `About to update ${response.data.otherContacts.length} other contacts`,
+      try {
+        do {
+          const response = await peopleService.otherContacts.list({
+            pageSize: 1000,
+            readMask: contactKeys.join(","),
+            syncToken: otherContactsToken,
+            pageToken: nextPageToken,
+            requestSyncToken: true,
+            sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
+          })
+          otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+          if (
+            response.data.otherContacts &&
+            response.data.otherContacts.length
+          ) {
+            Logger.info(
+              `About to update ${response.data.otherContacts.length} other contacts`,
+            )
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.otherContacts,
+              user.email,
+              GooglePeopleEntity.OtherContacts,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } while (nextPageToken)
+      } catch (error) {
+        // if sync token is expired then we don't throw it further
+        // we will handle this case, it will require a full sync
+        if (
+          (error as GaxiosError).response &&
+          (error as GaxiosError).response?.status === 400 &&
+          (error as GaxiosError).message ===
+            "Sync token is expired. Clear local cache and retry call without the sync token."
+        ) {
+          Logger.warn(
+            "This is an error that is not yet implemented, it requires a full sync of the contacts api",
           )
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.otherContacts,
-            user.email,
-            GooglePeopleEntity.OtherContacts,
-          )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+        } else {
+          throw error
         }
-      } while (nextPageToken)
+      }
       if (changesExist) {
         const newConfig = {
           type: config.type,
