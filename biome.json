@@ -13,7 +13,8 @@
       "./server/vespa/models",
       "./server/eval/.venv",
       "./server/.venv",
-      "./migrations"
+      "./migrations",
+      "./server/eval-results"
     ]
   },
   "formatter": {

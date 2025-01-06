@@ -1,7 +1,12 @@
 import { api } from "@/api"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
+import { Trash2, MoreHorizontal, X, Pencil, Loader } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
@@ -9,13 +14,15 @@ import {
   DropdownMenuTrigger,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
-export const fetchChats = async () => {
+export const pageSize = 21
+
+export const fetchChats = async ({ pageParam = 0 }: { pageParam?: number }) => {
   let items = []
   const response = await api.chat.history.$get({
     query: {
-      page: 0,
+      page: pageParam ?? 0,
     },
   })
   if (response.ok) {
@@ -47,20 +54,71 @@ const HistoryModal = ({
   const [editedChatId, setEditedChatId] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
 
+  const historyRef = useRef<HTMLDivElement | null>(null)
+
   const router = useRouter()
   const {
     isPending,
     error,
     data: historyItems,
-  } = useQuery<SelectPublicChat[]>({
-    queryKey: ["all-connectors"],
-    queryFn: fetchChats,
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery<
+    SelectPublicChat[],
+    Error,
+    InfiniteData<SelectPublicChat[]>,
+    ["all-chats"],
+    number
+  >({
+    queryKey: ["all-chats"],
+    queryFn: ({ pageParam = 0 }: { pageParam?: number }) =>
+      fetchChats({ pageParam }),
+    getNextPageParam: (lastPage, allPages) => {
+      // lastPage?.length < pageSize becomes true, when there are no more pages
+      if (lastPage?.length < pageSize) {
+        return undefined
+      }
+      // Otherwise, next page = current number of pages fetched so far
+      return allPages?.length
+    },
+    initialPageParam: 0,
   })
+
+  const handleScroll = () => {
+    if (!historyRef.current) return
+
+    const { scrollTop, scrollHeight, clientHeight } = historyRef.current
+
+    // If the user scrolled to bottom (or near bottom)
+    if (scrollTop + clientHeight >= scrollHeight - 100 /* threshold */) {
+      if (hasNextPage && !isFetchingNextPage) {
+        fetchNextPage()
+      }
+    }
+  }
+
+  // Combine all pages of chats into a single array
+  const chats = historyItems?.pages.flat() || []
 
   let existingChatId = ""
   if (pathname.startsWith("/chat/")) {
     existingChatId = pathname.substring(6)
   }
+
+  useEffect(() => {
+    // Only run if there's still more pages and we're not already fetching
+    if (hasNextPage && !isFetchingNextPage) {
+      const el = historyRef.current
+      if (!el) return
+
+      // Check if there's no scrollbar (meaning scrollHeight <= clientHeight)
+      if (el.scrollHeight - 100 <= el.clientHeight) {
+        fetchNextPage()
+      }
+    }
+  }, [chats, hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const deleteChat = async (chatId: string): Promise<string> => {
     const res = await api.chat.delete.$post({
@@ -73,11 +131,16 @@ const HistoryModal = ({
   const mutation = useMutation<string, Error, string>({
     mutationFn: deleteChat,
     onSuccess: (chatId: string) => {
-      // Update the UI by removing the deleted chat
-      queryClient.setQueryData<SelectPublicChat[]>(
-        ["all-connectors"],
-        (oldChats) =>
-          oldChats ? oldChats.filter((chat) => chat.externalId !== chatId) : [],
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
+
+          const newPages = oldData.pages.map((page) =>
+            page.filter((chat) => chat.externalId !== chatId),
+          )
+          return { ...oldData, pages: newPages }
+        },
       )
 
       // If the deleted chat is opened and it's deleted, then user should be taken back to '/'
@@ -99,23 +162,38 @@ const HistoryModal = ({
       return await renameChat(chatId, newTitle)
     },
     onSuccess: ({ chatId, title }) => {
-      // Update the UI by renaming the chat
-      queryClient.setQueryData<SelectPublicChat[]>(
-        ["all-connectors"],
-        (oldChats) => {
-          if (!oldChats?.length) return []
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
 
-          // Find the chat to update
-          const chatToUpdate: SelectPublicChat = oldChats.find(
-            (chat) => chat.externalId === chatId,
+          let chatToUpdate: SelectPublicChat | undefined
+          oldData.pages.forEach((page) => {
+            const found = page.find((c) => c.externalId === chatId)
+            if (found) chatToUpdate = found
+          })
+
+          if (!chatToUpdate) {
+            return oldData
+          }
+
+          const updatedChat = { ...chatToUpdate, title }
+
+          // Remove the old version from all pages
+          const filteredPages = oldData.pages.map((page) =>
+            page.filter((c) => c.externalId !== chatId),
           )
-          if (!chatToUpdate) return oldChats
 
-          // Create updated chat and filter out old version in one pass
-          return [
-            { ...chatToUpdate, title },
-            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          // Insert the updated chat at the front of the first page
+          const newPages = [
+            [updatedChat, ...filteredPages[0]],
+            ...filteredPages.slice(1),
           ]
+
+          return {
+            ...oldData,
+            pages: newPages,
+          }
         },
       )
       setIsEditing(false)
@@ -183,9 +261,13 @@ const HistoryModal = ({
           <X stroke="#9EB6CE" size={14} />
         </button>
       </div>
-      <div className="flex-1 overflow-auto mt-[15px]">
+      <div
+        ref={historyRef}
+        className="flex-1 overflow-auto mt-[15px]"
+        onScroll={handleScroll}
+      >
         <ul>
-          {historyItems.map((item, index) => (
+          {chats.map((item, index) => (
             <li
               key={index}
               className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
@@ -256,6 +338,11 @@ const HistoryModal = ({
             </li>
           ))}
         </ul>
+        {(isFetching || isFetchingNextPage) && (
+          <div className="flex items-center justify-center">
+            <Loader className="animate-spin" size={18} />
+          </div>
+        )}
       </div>
     </div>
   )

@@ -9,7 +9,7 @@ COPY . .
 # Switch to server directory and install backend dependencies
 WORKDIR /usr/src/app/server
 RUN bun install
-RUN chmod +x init-script.sh 
+RUN chmod +x init-script-docker.sh 
 
 # Install dependencies and build the frontend
 WORKDIR /usr/src/app/frontend
@@ -25,13 +25,12 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     tar \
-    && wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz \
-    && tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz \
-    && mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/ \
-    && rm -rf vespa-cli_8.448.13_linux_amd64 vespa-cli_8.448.13_linux_amd64.tar.gz \
+    && wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz \
+    && tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz \
+    && mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/ \
+    && rm -rf vespa-cli_8.453.24_linux_amd64 vespa-cli_8.453.24_linux_amd64.tar.gz \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y docker.io
 
 # Set ownership for bun user
 RUN chown -R bun:bun /usr/src/app

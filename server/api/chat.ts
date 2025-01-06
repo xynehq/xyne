@@ -40,7 +40,7 @@ import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
-import { getErrorMessage } from "@/utils"
+import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
 import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -67,7 +67,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-const { JwtPayloadKey } = config
+const { JwtPayloadKey, chatHistoryPageSize } = config
 const Logger = getLogger(Subsystem.Chat)
 
 // this is not always the case but unless our router detects that we need
@@ -180,9 +180,8 @@ export const ChatHistory = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const { page } = c.req.valid("query")
-    const pageSize = 20
-    const offset = page * pageSize
-    return c.json(await getPublicChats(db, email, pageSize, offset))
+    const offset = page * chatHistoryPageSize
+    return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(`Chat History Error: ${errMsg} ${(error as Error).stack}`)
@@ -266,10 +265,14 @@ const searchToCitations = (
   return results.map((result) => searchToCitation(result as VespaSearchResults))
 }
 
-// if an index does not exist instead of NaN we should simply remove the citation itself from answer
-const processMessage = (text: string, citationMap: Record<number, number>) => {
-  return text.replace(/\[(\d+)\]/g, (match, num) => {
-    return `[${citationMap[num] + 1}]`
+export const textToCitationIndex = /\[(\d+)\]/g
+
+export const processMessage = (text: string, citationMap: Record<number, number>) => {
+  text = splitGroupedCitationsWithSpaces(text)
+  return text.replace(textToCitationIndex, (match, num) => {
+    const index = citationMap[num]
+
+    return typeof index === 'number' ? `[${index + 1}]` : ''
   })
 }
 
@@ -334,7 +337,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             from: new Date().getTime() - 4 * monthInMs,
             to: new Date().getTime(),
           })
-        ).root.children
+        )?.root?.children
 
         let results = await searchVespa(
           query,
@@ -367,7 +370,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         let buffer = ""
         let currentAnswer = ""
         let parsed = { answer: "" }
-        const citationRegex = /\[(\d+)\]/g
         let yieldedCitations = new Set<number>()
         for await (const chunk of iterator) {
           if (chunk.text) {
@@ -388,7 +390,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 }
                 // Extract all citations from the parsed answer
                 let match
-                while ((match = citationRegex.exec(parsed.answer)) !== null) {
+                while (
+                  (match = textToCitationIndex.exec(parsed.answer)) !== null
+                ) {
                   const citationIndex = parseInt(match[1], 10)
                   if (!yieldedCitations.has(citationIndex)) {
                     const item = totalResults[citationIndex]
@@ -474,7 +478,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
-    const citationRegex = /\[(\d+)\]/g
     let yieldedCitations = new Set<number>()
     for await (const chunk of iterator) {
       if (chunk.text) {
@@ -495,7 +498,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             }
             // Extract all citations from the parsed answer
             let match
-            while ((match = citationRegex.exec(parsed.answer)) !== null) {
+            while ((match = textToCitationIndex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
                 const item = results?.root?.children[citationIndex]
@@ -645,7 +648,6 @@ async function* generatePointQueryTimeExpansion(
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
-    const citationRegex = /\[(\d+)\]/g
     let yieldedCitations = new Set<number>()
 
     for await (const chunk of iterator) {
@@ -669,7 +671,7 @@ async function* generatePointQueryTimeExpansion(
               yield { text: newText }
             }
             let match
-            while ((match = citationRegex.exec(parsed.answer)) !== null) {
+            while ((match = textToCitationIndex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
                 const item = combinedResults?.root?.children[citationIndex]

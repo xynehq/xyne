@@ -29,9 +29,11 @@ For the watch mode
 ```sh
 bun run dev
 ```
-or 
+
 ```sh
-bun run server.ts
+cd frontend
+bun i
+bun run dev
 ```
 
 
@@ -40,8 +42,4 @@ bun run server.ts
 docker build -t xyne .
 ```
 
-```sh
-cd frontend
-bun i
-bun run dev
-```
+### Deployment

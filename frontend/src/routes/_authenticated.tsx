@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 import { api } from "@/api"
+import { errorComponent } from "@/components/error"
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async ({ context }) => {
@@ -14,4 +15,5 @@ export const Route = createFileRoute("/_authenticated")({
   component: () => {
     return <Outlet />
   },
+  errorComponent: errorComponent,
 })
