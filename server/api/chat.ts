@@ -132,6 +132,7 @@ export const GetChatApi = async (c: Context) => {
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(
+      error,
       `Get Chat and Messages Error: ${errMsg} ${(error as Error).stack}`,
     )
     throw new HTTPException(500, {
@@ -148,7 +149,10 @@ export const ChatRenameApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Rename Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Rename Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not rename chat",
     })
@@ -167,7 +171,10 @@ export const ChatDeleteApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Delete Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Delete Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not delete chat",
     })
@@ -184,7 +191,10 @@ export const ChatHistory = async (c: Context) => {
     return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat History Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat History Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not get chat history",
     })
@@ -200,7 +210,10 @@ export const ChatBookmarkApi = async (c: Context) => {
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not bookmark chat",
     })
@@ -267,12 +280,15 @@ const searchToCitations = (
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
-export const processMessage = (text: string, citationMap: Record<number, number>) => {
+export const processMessage = (
+  text: string,
+  citationMap: Record<number, number>,
+) => {
   text = splitGroupedCitationsWithSpaces(text)
   return text.replace(textToCitationIndex, (match, num) => {
     const index = citationMap[num]
 
-    return typeof index === 'number' ? `[${index + 1}]` : ''
+    return typeof index === "number" ? `[${index + 1}]` : ""
   })
 }
 
@@ -419,7 +435,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               }
             } catch (err) {
               const errMessage = (err as Error).message
-              Logger.error(`Error while parsing LLM output ${errMessage}`)
+              Logger.error(err, `Error while parsing LLM output ${errMessage}`)
               continue
             }
           }
@@ -525,7 +541,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           }
         } catch (err) {
           const errMessage = (err as Error).message
-          Logger.error(`Error while parsing LLM output ${errMessage}`)
+          Logger.error(err, `Error while parsing LLM output ${errMessage}`)
           continue
         }
       }
@@ -934,7 +950,10 @@ export const MessageApi = async (c: Context) => {
                 }
               } catch (err) {
                 const errMessage = (err as Error).message
-                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
                 continue
               }
             }
@@ -1075,6 +1094,7 @@ export const MessageApi = async (c: Context) => {
             event: ChatSSEvents.End,
           })
           Logger.error(
+            error,
             `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
         }
@@ -1101,7 +1121,10 @@ export const MessageApi = async (c: Context) => {
           data: "",
           event: ChatSSEvents.End,
         })
-        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
       },
     )
   } catch (error) {
@@ -1125,7 +1148,7 @@ export const MessageApi = async (c: Context) => {
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
-        Logger.error("You exceeded your current quota")
+        Logger.error(error, "You exceeded your current quota")
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
@@ -1134,7 +1157,7 @@ export const MessageApi = async (c: Context) => {
         }
       }
     } else {
-      Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
+      Logger.error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
@@ -1269,7 +1292,10 @@ export const MessageRetryApi = async (c: Context) => {
                 }
               } catch (err) {
                 const errMessage = (err as Error).message
-                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
                 continue
               }
             }
@@ -1402,6 +1428,7 @@ export const MessageRetryApi = async (c: Context) => {
             event: ChatSSEvents.End,
           })
           Logger.error(
+            error,
             `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
         }
@@ -1424,12 +1451,18 @@ export const MessageRetryApi = async (c: Context) => {
           data: "",
           event: ChatSSEvents.End,
         })
-        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
       },
     )
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Message Retry Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Message Retry Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not retry message",
     })

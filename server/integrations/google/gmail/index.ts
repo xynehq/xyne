@@ -77,6 +77,7 @@ export const handleGmailIngestion = async (
             updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
+              error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
           } finally {

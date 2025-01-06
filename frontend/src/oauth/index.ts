@@ -30,7 +30,7 @@ export class OAuthModal {
         this.openAuthWindow(`${authUrl}?app=${app}`)
         this.monitorWindow(resolve, reject)
       } catch (error) {
-        this.logger.error(`Error starting OAuth: ${error}`)
+        this.logger.error(error, `Error starting OAuth: ${error}`)
         reject(error)
       }
     })
@@ -96,6 +96,7 @@ export class OAuthModal {
         // This error happens due to cross-origin issues before the window redirects to your domain
         // It can be safely ignored until the popup window navigates to a URL on your domain
         this.logger.error(
+          error,
           {
             oauthProgress: {
               success: false,
