@@ -1279,7 +1279,7 @@ export const handleGoogleServiceAccountChanges = async (
             "Sync token is expired. Clear local cache and retry call without the sync token."
         ) {
           Logger.warn(
-            "This is an error that is not yet implemented, it requires a full sync of the contacts api",
+            "This is an error that is not yet implemented, it requires a full sync of the other contacts api",
           )
         } else {
           throw error
