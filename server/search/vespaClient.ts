@@ -10,6 +10,7 @@ import type {
   VespaGetResult,
   VespaEvent,
   VespaUserQueryHistory,
+  VespaSchema,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
@@ -18,7 +19,7 @@ import { handleVespaGroupResponse } from "@/search/mappers"
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 type VespaConfigValues = {
   namespace?: string
-  schema?: string
+  schema?: VespaSchema
   cluster?: string
 }
 
@@ -296,7 +297,7 @@ class VespaClient {
     }
   }
 
-  async getDocumentCount(schema: string, options: VespaConfigValues) {
+  async getDocumentCount(schema: VespaSchema, options: VespaConfigValues) {
     try {
       // Encode the YQL query to ensure it's URL-safe
       const yql = encodeURIComponent(
