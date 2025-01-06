@@ -54,4 +54,7 @@ export default {
   userQueryUpdateInterval: 60000, // 1 minute in milliseconds
   // fastModelId: OpenAIKey ? Models.Gpt_4o_mini : Models.Llama_3_1_8B,
   // bestModelId: Models.CohereCmdRPlus
+  vespaMaxRetryAttempts: 3,
+  vespaRetryDelay: 1000, // 1 sec
+  chatHistoryPageSize: 21,
 }

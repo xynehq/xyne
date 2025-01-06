@@ -34,6 +34,8 @@ import {
   ErrorInsertingDocument,
 } from "@/errors"
 import crypto from "crypto"
+import VespaClient from "@/search/vespaClient"
+const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -42,65 +44,17 @@ const CLUSTER = "my_content"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
-function handleVespaGroupResponse(
-  response: VespaSearchResponse,
-): AppEntityCounts {
-  const appEntityCounts: AppEntityCounts = {}
-
-  // Navigate to the first level of groups
-  const groupRoot = response.root.children?.[0] // Assuming this is the group:root level
-  if (!groupRoot || !("children" in groupRoot)) return appEntityCounts // Safeguard for empty responses
-
-  // Navigate to the app grouping (e.g., grouplist:app)
-  const appGroup = groupRoot.children?.[0]
-  if (!appGroup || !("children" in appGroup)) return appEntityCounts // Safeguard for missing app group
-
-  // Iterate through the apps
-  // @ts-ignore
-  for (const app of appGroup.children) {
-    const appName = app.value as string // Get the app name
-    appEntityCounts[appName] = {} // Initialize the app entry
-
-    // Navigate to the entity grouping (e.g., grouplist:entity)
-    const entityGroup = app.children?.[0]
-    if (!entityGroup || !("children" in entityGroup)) continue // Skip if no entities
-
-    // Iterate through the entities
-    // @ts-ignore
-    for (const entity of entityGroup.children) {
-      const entityName = entity.value as string // Get the entity name
-      const count = entity.fields?.["count()"] || 0 // Get the count or default to 0
-      appEntityCounts[appName][entityName] = count // Assign the count to the app-entity pair
-    }
-  }
-
-  return appEntityCounts // Return the final map
-}
-
 /**
  * Deletes all documents from the specified schema and namespace in Vespa.
  */
 async function deleteAllDocuments() {
-  // Construct the DELETE URL
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid?selection=true&cluster=${CLUSTER}`
-
   try {
-    const response: Response = await fetch(url, {
-      method: "DELETE",
+    await vespa.deleteAllDocuments({
+      cluster: CLUSTER,
+      namespace: NAMESPACE,
+      schema: fileSchema,
     })
-
-    if (response.ok) {
-      Logger.info("All documents deleted successfully.")
-    } else {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
   } catch (error) {
-    Logger.error(
-      `Error deleting documents:, ${error} ${(error as Error).stack}`,
-    )
     throw new ErrorDeletingDocuments({
       cause: error as Error,
       sources: AllSources,
@@ -110,27 +64,11 @@ async function deleteAllDocuments() {
 
 export const insertDocument = async (document: VespaFile) => {
   try {
-    const response = await fetch(
-      `${vespaEndpoint}/document/v1/${NAMESPACE}/${fileSchema}/docid/${document.docId}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ fields: document }),
-      },
-    )
-
-    const data = await response.json()
-
-    if (response.ok) {
-      // Logger.info(`Document ${document.docId} inserted successfully`)
-    } else {
-      Logger.error(`Error inserting document ${document.docId}`)
-    }
+    await vespa.insertDocument(document, {
+      namespace: NAMESPACE,
+      schema: fileSchema,
+    })
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(`Error inserting document ${document.docId}: ${errMessage}`)
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
@@ -150,31 +88,7 @@ export const insert = async (
   schema: string,
 ) => {
   try {
-    const response = await fetch(
-      `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${document.docId}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ fields: document }),
-      },
-    )
-
-    const data = await response.json()
-
-    if (response.ok) {
-      // Logger.info(`Document ${document.docId} inserted successfully`)
-    } else {
-      // Using status text since response.text() return Body Already used Error
-      const errorText = response.statusText
-      Logger.error(
-        `Error inserting document ${document.docId} for ${schema} ${data.message}`,
-      )
-      throw new Error(
-        `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
+    await vespa.insert(document, { namespace: NAMESPACE, schema })
   } catch (error) {
     const errMessage = getErrorMessage(error)
     Logger.error(
@@ -190,27 +104,8 @@ export const insert = async (
 
 export const insertUser = async (user: VespaUser) => {
   try {
-    const response = await fetch(
-      `${vespaEndpoint}/document/v1/${NAMESPACE}/${userSchema}/docid/${user.docId}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ fields: user }),
-      },
-    )
-
-    const data = await response.json()
-
-    if (response.ok) {
-      // Logger.info(`Document ${user.docId} inserted successfully:`, data)
-    } else {
-      Logger.error(`Error inserting user ${user.docId}: ${data}`, data)
-    }
+    await vespa.insertUser(user, { namespace: NAMESPACE, schema: userSchema })
   } catch (error) {
-    const errorMessage = getErrorMessage(error)
-    Logger.error(`Error inserting user ${user.docId}:`, errorMessage)
     throw new ErrorInsertingDocument({
       docId: user.docId,
       cause: error as Error,
@@ -292,27 +187,8 @@ export const autocomplete = async (
     "presentation.summary": "autocomplete",
   }
   try {
-    const response = await fetch(`${vespaEndpoint}/search/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(searchPayload),
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to perform autocomplete search: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const data = await response.json()
-    return data
+    return await vespa.autoComplete(searchPayload)
   } catch (error) {
-    Logger.error(
-      `Error performing autocomplete search:, ${error} ${(error as Error).stack} `,
-    )
     throw new ErrorPerformingSearch({
       message: `Error performing autocomplete search`,
       cause: error as Error,
@@ -490,7 +366,6 @@ export const groupVespaSearch = async (
   limit = config.page,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
-  const url = `${vespaEndpoint}/search/`
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
     timestampRange ?? null,
@@ -504,26 +379,8 @@ export const groupVespaSearch = async (
     "input.query(e)": "embed(@query)",
   }
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(hybridDefaultPayload),
-    })
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to fetch documents in groupVespaSearch: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const data = await response.json()
-    return handleVespaGroupResponse(data)
+    return await vespa.groupSearch(hybridDefaultPayload)
   } catch (error) {
-    Logger.error(
-      `Error performing search groupVespaSearch:, ${error} - ${(error as Error).stack}`,
-    )
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
@@ -543,8 +400,6 @@ export const searchVespa = async (
   excludedIds?: string[],
   notInMailLabels?: string[],
 ): Promise<VespaSearchResponse> => {
-  const url = `${vespaEndpoint}/search/`
-
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   let { yql, profile } = HybridDefaultProfile(
@@ -574,26 +429,8 @@ export const searchVespa = async (
     ...(entity ? { entity } : {}),
   }
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(hybridDefaultPayload),
-    })
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to fetch documents in searchVespa: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const data = await response.json()
-    return data
+    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
-    Logger.error(
-      `Error performing search in searchVespa:, ${error} ${(error as Error).stack}`,
-    )
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: AllSources,
@@ -605,43 +442,12 @@ export const searchVespa = async (
  * Retrieves the total count of documents in the specified schema, namespace, and cluster.
  */
 const getDocumentCount = async () => {
-  // Encode the YQL query to ensure it's URL-safe
-  const yql = encodeURIComponent(
-    `select * from sources ${fileSchema} where true`,
-  )
-
-  // Construct the search URL with necessary query parameters
-  const url = `${vespaEndpoint}/search/?yql=${yql}&hits=0&cluster=${CLUSTER}`
-
   try {
-    const response: Response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
+    return await vespa.getDocumentCount(fileSchema, {
+      namespace: NAMESPACE,
+      cluster: CLUSTER,
     })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to fetch document count: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const data = await response.json()
-
-    // Extract the total number of hits from the response
-    const totalCount = data?.root?.fields?.totalCount
-
-    if (typeof totalCount === "number") {
-      Logger.info(
-        `Total documents in schema '${fileSchema}' within namespace '${NAMESPACE}' and cluster '${CLUSTER}': ${totalCount}`,
-      )
-    } else {
-      Logger.error(`Unexpected response structure:', ${data}`)
-    }
   } catch (error) {
-    Logger.error("Error retrieving document count:", error)
     throw new ErrorRetrievingDocuments({
       cause: error as Error,
       sources: "file",
@@ -653,27 +459,11 @@ export const GetDocument = async (
   schema: string,
   docId: string,
 ): Promise<VespaGetResult> => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to fetch document: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const document = await response.json()
-    return document
+    const options = { namespace: NAMESPACE, docId, schema }
+    return vespa.getDocument(options)
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(`Error fetching document ${docId}:  ${errMessage}`)
     throw new ErrorGettingDocument({
       docId,
       cause: error as Error,
@@ -688,38 +478,10 @@ export const UpdateDocumentPermissions = async (
   docId: string,
   updatedPermissions: string[],
 ) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fields: {
-          permissions: { assign: updatedPermissions },
-        },
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new ErrorUpdatingDocument({
-        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
-        docId,
-        sources: schema,
-      })
-    }
-
-    Logger.info(
-      `Successfully updated permissions in schema ${schema} for document ${docId}.`,
-    )
+    const options = { namespace: NAMESPACE, docId, schema }
+    await vespa.updateDocumentPermissions(updatedPermissions, options)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(
-      `Error updating permissions in schema ${schema} for document ${docId}:`,
-      errMessage,
-    )
     throw new ErrorUpdatingDocument({
       docId,
       cause: error as Error,
@@ -733,38 +495,10 @@ export const UpdateEventCancelledInstances = async (
   docId: string,
   updatedCancelledInstances: string[],
 ) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fields: {
-          cancelledInstances: { assign: updatedCancelledInstances },
-        },
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new ErrorUpdatingDocument({
-        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
-        docId,
-        sources: schema,
-      })
-    }
-
-    Logger.info(
-      `Successfully updated event instances in schema ${schema} for document ${docId}.`,
-    )
+    const options = { namespace: NAMESPACE, docId, schema }
+    await vespa.updateCancelledEvents(updatedCancelledInstances, options)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(
-      `Error updating event instances in schema ${schema} for document ${docId}:`,
-      errMessage,
-    )
     throw new ErrorUpdatingDocument({
       docId,
       cause: error as Error,
@@ -778,46 +512,10 @@ export const UpdateDocument = async (
   docId: string,
   updatedFields: Record<string, any>,
 ) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
-  let fields: string[] = []
   try {
-    const updateObject = Object.entries(updatedFields).reduce(
-      (prev, [key, value]) => {
-        // for logging
-        fields.push(key)
-        prev[key] = { assign: value }
-        return prev
-      },
-      {} as Record<string, any>,
-    )
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fields: updateObject,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new ErrorUpdatingDocument({
-        message: `Failed to update document: ${response.status} ${response.statusText} - ${errorText}`,
-        docId,
-        sources: schema,
-      })
-    }
-
-    Logger.info(
-      `Successfully updated ${fields} in schema ${schema} for document ${docId}.`,
-    )
+    const options = { namespace: NAMESPACE, docId, schema }
+    await vespa.updateDocument(updatedFields, options)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(
-      `Error updating ${fields} in schema ${schema} for document ${docId}:`,
-      errMessage,
-    )
     throw new ErrorUpdatingDocument({
       docId,
       cause: error as Error,
@@ -827,23 +525,10 @@ export const UpdateDocument = async (
 }
 
 export const DeleteDocument = async (docId: string, schema: string) => {
-  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
   try {
-    const response = await fetch(url, {
-      method: "DELETE",
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to delete document: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    Logger.info(`Document ${docId} deleted successfully.`)
+    const options = { namespace: NAMESPACE, docId, schema }
+    await vespa.deleteDocument(options)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(`Error deleting document ${docId}:  ${errMessage}`)
     throw new ErrorDeletingDocuments({
       cause: error as Error,
       sources: schema,
@@ -862,43 +547,8 @@ export interface AppEntityCounts {
 }
 
 export const ifDocumentsExist = async (docIds: string[]) => {
-  // Construct the YQL query
-  const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
-  const yqlQuery = `select docId from sources * where docId in (${yqlIds})`
-
-  const url = `${vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`
-
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const result = await response.json()
-
-    // Extract the document IDs of the found documents
-    // @ts-ignore
-    const foundIds = result.root.children?.map((hit) => hit.fields.docId) || []
-
-    // Determine which IDs exist and which do not
-    const existenceMap = docIds.reduce(
-      (acc, id) => {
-        acc[id] = foundIds.includes(id)
-        return acc
-      },
-      {} as Record<string, boolean>,
-    )
-
-    return existenceMap // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
+    return await vespa.isDocumentExist(docIds)
   } catch (error) {
     const errMessage = getErrorMessage(error)
     Logger.error(`Error checking documents existence:  ${errMessage}`)
@@ -1029,31 +679,7 @@ export const searchUsersByNamesAndEmails = async (
   }
 
   try {
-    const response = await fetch(`${vespaEndpoint}/search/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(searchPayload),
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to perform user search: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const data: VespaSearchResponse = await response.json()
-
-    // Parse and return the user results
-    // const users: VespaUser[] =
-    //   data.root.children?.map((child) => {
-    //     const fields = child.fields
-    //     return VespaUserSchema.parse(fields)
-    //   }) || []
-
-    return data
+    return await vespa.getUsersByNamesAndEmaisl(searchPayload)
   } catch (error) {
     Logger.error(`Error searching users: ${error}`)
     throw error
@@ -1226,8 +852,6 @@ export const getItems = async (
   // Construct YQL query with limit and offset
   const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
 
-  const url = `${vespaEndpoint}/search/`
-
   const searchPayload = {
     yql,
     email,
@@ -1237,26 +861,8 @@ export const getItems = async (
   }
 
   try {
-    const response: Response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(searchPayload),
-    })
-
-    if (!response.ok) {
-      const errorText = response.statusText
-      throw new Error(
-        `Failed to fetch items: ${response.status} ${response.statusText} - ${errorText}`,
-      )
-    }
-
-    const data: VespaSearchResponse = await response.json()
-    return data
+    return await vespa.getItems(searchPayload)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(`Error fetching items: ${errMessage}`)
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: schema,
