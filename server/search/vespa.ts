@@ -635,11 +635,7 @@ const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
     return await GetDocument(schema, docId)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-
-    if (
-      errMsg.includes("404 Not Found") &&
-      errMsg.includes(`docId: ${docId}`)
-    ) {
+    if (errMsg.includes("404 Not Found")) {
       Logger.warn(`Document ${docId} does not exist`)
       return null
     }
