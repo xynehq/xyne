@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+chmod +x ./init-vespa.sh
+chmod +x ./vespa/deploy.sh
+
 echo "Initializing Vespa permissions..."
 ./init-vespa.sh
 

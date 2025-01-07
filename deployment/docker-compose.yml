@@ -12,14 +12,25 @@ services:
     depends_on:
       - xyne-db
       - vespa
+    working_dir: /usr/src/app/server
+    entrypoint: ""
+    command: sh -c '
+        echo "Inside Docker Container...." &&
+        sleep 20 &&
+        echo "Running initialization script..." &&
+        ./init-script-docker.sh &&
+        echo "Initialization complete!" &&
+        exec bun run server.ts '
     env_file:
       - ../server/.env
     networks:
-      - xyne
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock 
-    user: root       
+      - xyne    
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
     
   vespa:
     image: vespaengine/vespa
@@ -61,6 +72,12 @@ services:
     networks:
       - xyne
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xyne"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 networks:
   xyne:
     driver: bridge
