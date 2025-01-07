@@ -362,12 +362,8 @@ class VespaClient {
       return document
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Error fetching document docId: ${options.docId}`,
-      )
       throw new Error(
-        `Error fetching document docId: ${options.docId} - ${errMessage}`,
+        `Error fetching document docId: ${options.docId} - ${errMessage} - options: ${JSON.stringify(options)}`,
       )
     }
   }

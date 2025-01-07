@@ -91,11 +91,6 @@ export const insert = async (
   try {
     await vespa.insert(document, { namespace: NAMESPACE, schema })
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(
-      error,
-      `Error inserting document ${document.docId}: ${errMessage} ${(error as Error).stack}`,
-    )
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
@@ -465,6 +460,7 @@ export const GetDocument = async (
     const options = { namespace: NAMESPACE, docId, schema }
     return vespa.getDocument(options)
   } catch (error) {
+    Logger.error(error, `Error fetching document docId: ${docId}`)
     const errMessage = getErrorMessage(error)
     throw new ErrorGettingDocument({
       docId,
@@ -552,8 +548,6 @@ export const ifDocumentsExist = async (docIds: string[]) => {
   try {
     return await vespa.isDocumentExist(docIds)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(error, `Error checking documents existence:  ${errMessage}`)
     throw error
   }
 }
@@ -679,7 +673,6 @@ export const searchUsersByNamesAndEmails = async (
   try {
     return await vespa.getUsersByNamesAndEmaisl(searchPayload)
   } catch (error) {
-    Logger.error(error, `Error searching users: ${error}`)
     throw error
   }
 }
