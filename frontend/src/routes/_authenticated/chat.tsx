@@ -221,7 +221,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
     inputRef.current?.focus()
     setQuery("")
-  }, [(params as any).chatId])
+  }, [
+    data?.chat?.isBookmarked,
+    data?.chat?.title,
+    data?.messages,
+    isWithChatId,
+    params,
+  ])
 
   // New useEffect to handle query parameters
   useEffect(() => {
@@ -702,7 +708,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [messages, currentResp?.resp])
 
   // if invalid chatId
-  if (data.error) {
+  if (data?.error) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
         <Sidebar />
