@@ -7,11 +7,29 @@ import {
   beforeEach,
   afterAll,
 } from "bun:test"
-import VespaClient from "@/search/vespaClient"
 import config from "@/config"
 
+// mocking at top before importing vespaClient
+const mockPinoLogger = {
+  error: mock(() => {}),
+  info: mock(() => {}),
+  warn: mock(() => {}),
+  debug: mock(() => {}),
+  child: () => mockPinoLogger,
+}
+mock.module("../logger", () => ({
+  getLogger: () => mockPinoLogger,
+  LogMiddleware: () => {
+    return async (c: any, next: () => any) => {
+      await next()
+    }
+  },
+}))
+
+const { default: VespaClient } = await import("@/search/vespaClient")
+
 describe("VespaClient", () => {
-  let vespaClient: VespaClient
+  let vespaClient: any
   const mockPayload = {
     yql: "select * from sources * where true",
     query: "What is Vespa?",
