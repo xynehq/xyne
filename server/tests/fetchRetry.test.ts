@@ -1,14 +1,14 @@
-import { describe, expect, test, beforeAll, mock, beforeEach } from "bun:test"
+import {
+  describe,
+  expect,
+  test,
+  beforeAll,
+  mock,
+  beforeEach,
+  afterAll,
+} from "bun:test"
 import VespaClient from "@/search/vespaClient"
 import config from "@/config"
-
-mock.module("./config", () => ({
-  config: {
-    vespaMaxRetryAttempts: 3,
-    vespaRetryDelay: 100,
-    vespaBaseHost: "localhost",
-  },
-}))
 
 describe("VespaClient", () => {
   let vespaClient: VespaClient
@@ -25,9 +25,17 @@ describe("VespaClient", () => {
     entity: "knowledgeBase",
   }
 
-  beforeEach(() => {
-    // Resetting vespa client before each test
+  mock.module("../config", () => ({
+    vespaMaxRetryAttempts: 3,
+    vespaRetryDelay: 100,
+  }))
+
+  beforeAll(() => {
     vespaClient = new VespaClient()
+  })
+
+  afterAll(() => {
+    mock.restore()
   })
 
   test("search should succeed on first attempt", async () => {
