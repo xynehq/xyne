@@ -16,7 +16,6 @@ import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
 import { handleVespaGroupResponse } from "@/search/mappers"
 
-const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 type VespaConfigValues = {
   namespace?: string
   schema?: VespaSchema
@@ -27,10 +26,11 @@ class VespaClient {
   private maxRetries: number
   private retryDelay: number
   private vespaEndpoint: string
+  logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
   constructor() {
     this.maxRetries = config.vespaMaxRetryAttempts || 3
-    this.retryDelay = config.vespaRetryDelay || 1000// milliseconds
+    this.retryDelay = config.vespaRetryDelay || 1000 // milliseconds
     this.vespaEndpoint = `http://${config.vespaBaseHost}:8080`
   }
 
@@ -96,7 +96,7 @@ class VespaClient {
 
       return response.json()
     } catch (error: any) {
-      Logger.error(
+      this.logger.error(
         error,
         `Error performing search in searchVespa:, ${error} ${(error as Error).stack}`,
       )
@@ -115,7 +115,7 @@ class VespaClient {
       })
 
       if (response.ok) {
-        Logger.info("All documents deleted successfully.")
+        this.logger.info("All documents deleted successfully.")
       } else {
         const errorText = response.statusText
         throw new Error(
@@ -123,7 +123,7 @@ class VespaClient {
         )
       }
     } catch (error) {
-      Logger.error(
+      this.logger.error(
         error,
         `Error deleting documents:, ${error} ${(error as Error).stack}`,
       )
@@ -148,13 +148,13 @@ class VespaClient {
       const data = await response.json()
 
       if (response.ok) {
-        // Logger.info(`Document ${document.docId} inserted successfully`)
+        // this.logger.info(`Document ${document.docId} inserted successfully`)
       } else {
-        Logger.error(`Error inserting document ${document.docId}`)
+        this.logger.error(`Error inserting document ${document.docId}`)
       }
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(
+      this.logger.error(
         error,
         `Error inserting document ${document.docId}: ${errMessage}`,
       )
@@ -186,11 +186,11 @@ class VespaClient {
       const data = await response.json()
 
       if (response.ok) {
-        // Logger.info(`Document ${document.docId} inserted successfully`)
+        // this.logger.info(`Document ${document.docId} inserted successfully`)
       } else {
         // Using status text since response.text() return Body Already used Error
         const errorText = response.statusText
-        Logger.error(
+        this.logger.error(
           `Error inserting document ${document.docId} for ${options.schema} ${data.message}`,
         )
         throw new Error(
@@ -199,7 +199,7 @@ class VespaClient {
       }
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(
+      this.logger.error(
         error,
         `Error inserting document ${document.docId}: ${errMessage} ${(error as Error).stack}`,
       )
@@ -223,13 +223,17 @@ class VespaClient {
       const data = await response.json()
 
       if (response.ok) {
-        // Logger.info(`Document ${user.docId} inserted successfully:`, data)
+        // this.logger.info(`Document ${user.docId} inserted successfully:`, data)
       } else {
-        Logger.error(`Error inserting user ${user.docId}: ${data}`, data)
+        this.logger.error(`Error inserting user ${user.docId}: ${data}`, data)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      Logger.error(error, `Error inserting user ${user.docId}:`, errorMessage)
+      this.logger.error(
+        error,
+        `Error inserting user ${user.docId}:`,
+        errorMessage,
+      )
       throw new Error(`Error inserting user ${user.docId}: ${errorMessage}`)
     }
   }
@@ -255,7 +259,7 @@ class VespaClient {
       const data = await response.json()
       return data
     } catch (error) {
-      Logger.error(
+      this.logger.error(
         error,
         `Error performing autocomplete search:, ${error} ${(error as Error).stack} `,
       )
@@ -287,7 +291,7 @@ class VespaClient {
       const data = await response.json()
       return handleVespaGroupResponse(data)
     } catch (error) {
-      Logger.error(
+      this.logger.error(
         error,
         `Error performing search groupVespaSearch:, ${error} - ${(error as Error).stack}`,
       )
@@ -325,16 +329,16 @@ class VespaClient {
       const totalCount = data?.root?.fields?.totalCount
 
       if (typeof totalCount === "number") {
-        Logger.info(
+        this.logger.info(
           `Total documents in schema '${schema}' within namespace '${options.namespace}' and cluster '${options.cluster}': ${totalCount}`,
         )
         return data
       } else {
-        Logger.error(`Unexpected response structure:', ${data}`)
+        this.logger.error(`Unexpected response structure:', ${data}`)
       }
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(error, "Error retrieving document count")
+      this.logger.error(error, "Error retrieving document count")
       throw new Error(`Error retrieving document count: ${errMessage}`)
     }
   }
@@ -362,9 +366,7 @@ class VespaClient {
       return document
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      throw new Error(
-        `Error fetching document docId: ${docId} - ${errMessage}`,
-      )
+      throw new Error(`Error fetching document docId: ${docId} - ${errMessage}`)
     }
   }
 
@@ -395,12 +397,12 @@ class VespaClient {
         )
       }
 
-      Logger.info(
+      this.logger.info(
         `Successfully updated permissions in schema ${schema} for document ${docId}.`,
       )
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(
+      this.logger.error(
         error,
         `Error updating permissions in schema ${schema} for document ${docId}:`,
         errMessage,
@@ -437,12 +439,12 @@ class VespaClient {
         )
       }
 
-      Logger.info(
+      this.logger.info(
         `Successfully updated event instances in schema ${schema} for document ${docId}.`,
       )
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(
+      this.logger.error(
         error,
         `Error updating event instances in schema ${schema} for document ${docId}:`,
         errMessage,
@@ -488,12 +490,12 @@ class VespaClient {
         )
       }
 
-      Logger.info(
+      this.logger.info(
         `Successfully updated ${fields} in schema ${schema} for document ${docId}.`,
       )
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(
+      this.logger.error(
         error,
         `Error updating ${fields} in schema ${schema} for document ${docId}:`,
         errMessage,
@@ -521,10 +523,13 @@ class VespaClient {
         )
       }
 
-      Logger.info(`Document ${docId} deleted successfully.`)
+      this.logger.info(`Document ${docId} deleted successfully.`)
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(error, `Error deleting document ${docId}:  ${errMessage}`)
+      this.logger.error(
+        error,
+        `Error deleting document ${docId}:  ${errMessage}`,
+      )
       throw new Error(`Error deleting document ${docId}:  ${errMessage}`)
     }
   }
@@ -570,7 +575,10 @@ class VespaClient {
       return existenceMap // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(error, `Error checking documents existence:  ${errMessage}`)
+      this.logger.error(
+        error,
+        `Error checking documents existence:  ${errMessage}`,
+      )
       throw error
     }
   }
@@ -606,7 +614,7 @@ class VespaClient {
 
       return data
     } catch (error) {
-      Logger.error(error, `Error searching users: ${error}`)
+      this.logger.error(error, `Error searching users: ${error}`)
       throw error
     }
   }
@@ -635,7 +643,7 @@ class VespaClient {
       return data
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      Logger.error(error, `Error fetching items: ${errMessage}`)
+      this.logger.error(error, `Error fetching items: ${errMessage}`)
       throw new Error(`Error fetching items: ${errMessage}`)
     }
   }
