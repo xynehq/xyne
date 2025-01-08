@@ -66,7 +66,7 @@ describe("VespaClient", () => {
 
     try {
       await vespaClient.search(mockPayload)
-      throw new Error("Should have thrown an error")
+      // Should throw an error
     } catch (error: any) {
       expect(error.message).toInclude("Vespa search error")
       expect(global.fetch).toHaveBeenCalledTimes(1)

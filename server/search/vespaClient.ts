@@ -29,8 +29,8 @@ class VespaClient {
   private vespaEndpoint: string
 
   constructor() {
-    this.maxRetries = config.vespaMaxRetryAttempts
-    this.retryDelay = config.vespaRetryDelay // milliseconds
+    this.maxRetries = config.vespaMaxRetryAttempts || 3
+    this.retryDelay = config.vespaRetryDelay || 1000// milliseconds
     this.vespaEndpoint = `http://${config.vespaBaseHost}:8080`
   }
 
