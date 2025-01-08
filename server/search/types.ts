@@ -10,7 +10,7 @@ export type VespaSchema =
   | typeof mailSchema
   | typeof eventSchema
   | typeof userQuerySchema
-  
+
 // not using @ because of vite of frontend
 export enum Apps {
   // includes everything google
