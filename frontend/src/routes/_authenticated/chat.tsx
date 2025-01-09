@@ -27,6 +27,7 @@ import {
 import { SelectPublicChat } from "shared/types"
 import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
+import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 
 type CurrentResp = {
   resp: string
@@ -221,7 +222,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
     inputRef.current?.focus()
     setQuery("")
-  }, [(params as any).chatId])
+  }, [
+    data?.chat?.isBookmarked,
+    data?.chat?.title,
+    data?.messages,
+    isWithChatId,
+    params,
+  ])
 
   // New useEffect to handle query parameters
   useEffect(() => {
@@ -702,7 +709,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [messages, currentResp?.resp])
 
   // if invalid chatId
-  if (data.error) {
+  if (data?.error) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
         <Sidebar />
@@ -1003,30 +1010,26 @@ const ChatMessage = ({
   isStreaming?: boolean
 }) => {
   const [isCopied, setIsCopied] = useState(false)
+
   const processMessage = (text: string) => {
+    // First split any grouped citations
+    text = splitGroupedCitationsWithSpaces(text)
+
     if (citationMap) {
       return text.replace(textToCitationIndex, (match, num) => {
         const index = citationMap[num]
         const url = citations[index]
-        if (url) {
-          return `[[${index + 1}]](${url})`
-        }
-
-        return match
+        return typeof index === "number" && url
+          ? `[[${index + 1}]](${url})`
+          : ""
       })
     } else {
       return text.replace(textToCitationIndex, (match, num) => {
         const url = citations[num - 1]
-
-        if (url) {
-          return `[[${num}]](${url})`
-        }
-
-        return match
+        return url ? `[[${num}]](${url})` : ""
       })
     }
   }
-
   return (
     <div
       className={`${isUser ? "max-w-[75%]" : ""} rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}

@@ -51,3 +51,29 @@ export const humanizeNumbers = (num: number): string => {
 
   return `${formatter.format(scaledNum)}${unit}`
 }
+
+// [1,2,3] -> [1] [2] [3]
+export const splitGroupedCitationsWithSpaces = (text: string): string => {
+  if (!text || typeof text !== "string") {
+    throw new Error("Invalid input text")
+  }
+
+  // Only match groups containing numbers, commas and spaces
+  return text.replace(
+    /\[(\d+(?:\s*,\s*\d+)*)\]/g,
+    (match: string, group: string) => {
+      // Split by comma and clean each number
+      const numbers = group
+        .split(",")
+        .map((n: string) => n.trim())
+        .filter((n: string) => n.length > 0)
+
+      // If no valid numbers found, return original match
+      if (numbers.length === 0) {
+        return match
+      }
+
+      return numbers.map((num: string) => `[${num}]`).join(" ")
+    },
+  )
+}

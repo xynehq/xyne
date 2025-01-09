@@ -20,6 +20,7 @@ import type {
   Entity,
   VespaEvent,
   VespaUserQueryHistory,
+  VespaSchema,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -85,15 +86,11 @@ export const insert = async (
     | VespaMail
     | VespaEvent
     | VespaUserQueryHistory,
-  schema: string,
+  schema: VespaSchema,
 ) => {
   try {
     await vespa.insert(document, { namespace: NAMESPACE, schema })
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(
-      `Error inserting document ${document.docId}: ${errMessage} ${(error as Error).stack}`,
-    )
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
@@ -456,13 +453,14 @@ const getDocumentCount = async () => {
 }
 
 export const GetDocument = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
 ): Promise<VespaGetResult> => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     return vespa.getDocument(options)
   } catch (error) {
+    Logger.error(error, `Error fetching document docId: ${docId}`)
     const errMessage = getErrorMessage(error)
     throw new ErrorGettingDocument({
       docId,
@@ -474,7 +472,7 @@ export const GetDocument = async (
 }
 
 export const UpdateDocumentPermissions = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedPermissions: string[],
 ) => {
@@ -491,7 +489,7 @@ export const UpdateDocumentPermissions = async (
 }
 
 export const UpdateEventCancelledInstances = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedCancelledInstances: string[],
 ) => {
@@ -508,7 +506,7 @@ export const UpdateEventCancelledInstances = async (
 }
 
 export const UpdateDocument = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedFields: Record<string, any>,
 ) => {
@@ -524,7 +522,7 @@ export const UpdateDocument = async (
   }
 }
 
-export const DeleteDocument = async (docId: string, schema: string) => {
+export const DeleteDocument = async (docId: string, schema: VespaSchema) => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     await vespa.deleteDocument(options)
@@ -550,8 +548,6 @@ export const ifDocumentsExist = async (docIds: string[]) => {
   try {
     return await vespa.isDocumentExist(docIds)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(`Error checking documents existence:  ${errMessage}`)
     throw error
   }
 }
@@ -585,7 +581,7 @@ const getNDocuments = async (n: number) => {
     return data
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(`Error retrieving document count: , ${errMessage}`)
+    Logger.error(error, `Error retrieving document count: , ${errMessage}`)
     throw new ErrorRetrievingDocuments({
       cause: error as Error,
       sources: "file",
@@ -623,21 +619,17 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
     }
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Update user query error: ${errMsg}`, error)
+    Logger.error(error, `Update user query error: ${errMsg}`, error)
     throw new Error("Failed to update user query history")
   }
 }
 
-const getDocumentOrNull = async (schema: string, docId: string) => {
+const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
   try {
     return await GetDocument(schema, docId)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-
-    if (
-      errMsg.includes("404 Not Found") &&
-      errMsg.includes(`docId: ${docId}`)
-    ) {
+    if (errMsg.includes("404 Not Found")) {
       Logger.warn(`Document ${docId} does not exist`)
       return null
     }
@@ -681,7 +673,6 @@ export const searchUsersByNamesAndEmails = async (
   try {
     return await vespa.getUsersByNamesAndEmaisl(searchPayload)
   } catch (error) {
-    Logger.error(`Error searching users: ${error}`)
     throw error
   }
 }
@@ -762,7 +753,7 @@ export const getTimestamp = (lastUpdated: string): number | null => {
 // }
 
 interface GetItemsParams {
-  schema: string
+  schema: VespaSchema
   app?: Apps | null
   entity?: Entity | null
   timestampRange: { from: number | null; to: number | null } | null

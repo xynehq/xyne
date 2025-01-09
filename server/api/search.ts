@@ -117,7 +117,10 @@ export const AutocompleteApi = async (c: Context) => {
     return c.json(newResults)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Autocomplete Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Autocomplete Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not fetch autocomplete results",
     })
