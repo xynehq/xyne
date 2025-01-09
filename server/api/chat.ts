@@ -738,6 +738,7 @@ export async function* UnderstandMessageAndAnswer(
 > {
   // user is talking about an event
   if (classification.direction !== null) {
+  Logger.info(`User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`)
     return yield* generatePointQueryTimeExpansion(
       message,
       messages,
@@ -749,6 +750,7 @@ export async function* UnderstandMessageAndAnswer(
       3,
     )
   } else {
+  Logger.info('default case, trying to do iterative RAG with query rewriting and time filtering for answering users query')
     // default case
     return yield* generateIterativeTimeFilterAndQueryRewrite(
       message,
@@ -850,6 +852,7 @@ export const MessageApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
+      Logger.info('First mesage of the conversation, successfully created the chat')
       chat = insertedChat
       messages.push(insertedMsg) // Add the inserted message to messages array
     } else {
@@ -872,6 +875,7 @@ export const MessageApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
+      Logger.info('Existing conversation, fetched previous messages')
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
     }
@@ -903,6 +907,7 @@ export const MessageApi = async (c: Context) => {
               content: [{ text: m.message }],
             }))
 
+          Logger.info('Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG')
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -929,6 +934,7 @@ export const MessageApi = async (c: Context) => {
                 parsed = jsonParseLLMOutput(buffer)
                 if (parsed.answer && currentAnswer !== parsed.answer) {
                   if (currentAnswer === "") {
+                    Logger.info('We were able to find the answer/respond to users query in the conversation itself so not applying RAG')
                     stream.writeSSE({
                       event: ChatSSEvents.Start,
                       data: "",
@@ -965,7 +971,10 @@ export const MessageApi = async (c: Context) => {
           if (parsed.answer === null) {
             // ambigious user message
             if (parsed.queryRewrite) {
+              Logger.info('The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages')
               message = parsed.queryRewrite
+            } else {
+              Logger.info('There was no need for a query rewrite and there was no answer in the conversation, applying RAG')
             }
             const classification: TemporalClassifier & { cost: number } =
               await temporalEventClassification(message, {
@@ -1004,6 +1013,7 @@ export const MessageApi = async (c: Context) => {
                 const { index, item } = chunk.citation
                 citations.push(item)
                 citationMap[index] = citations.length - 1
+                Logger.info(`Found citations and sending it, current count: ${citations.length}`)
                 stream.writeSSE({
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
@@ -1250,6 +1260,7 @@ export const MessageRetryApi = async (c: Context) => {
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
                 }))
+          Logger.info('retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG')
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -1271,6 +1282,7 @@ export const MessageRetryApi = async (c: Context) => {
                 parsed = jsonParseLLMOutput(buffer)
                 if (parsed.answer && currentAnswer !== parsed.answer) {
                   if (currentAnswer === "") {
+                    Logger.info('retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG')
                     stream.writeSSE({
                       event: ChatSSEvents.Start,
                       data: "",
@@ -1306,7 +1318,10 @@ export const MessageRetryApi = async (c: Context) => {
 
           if (parsed.answer === null) {
             if (parsed.queryRewrite) {
+              Logger.info('retry: The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages')
               message = parsed.queryRewrite
+            } else {
+              Logger.info('retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG')
             }
             const classification: TemporalClassifier & { cost: number } =
               await temporalEventClassification(message, {
@@ -1345,6 +1360,7 @@ export const MessageRetryApi = async (c: Context) => {
                 const { index, item } = chunk.citation
                 citations.push(item)
                 citationMap[index] = citations.length - 1
+                Logger.info(`retry: Found citations and sending it, current count: ${citations.length}`)
                 stream.writeSSE({
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
