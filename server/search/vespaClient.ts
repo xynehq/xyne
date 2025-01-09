@@ -15,8 +15,8 @@ import type {
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
 import { handleVespaGroupResponse } from "@/search/mappers"
-
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
+
 type VespaConfigValues = {
   namespace?: string
   schema?: VespaSchema
@@ -29,8 +29,8 @@ class VespaClient {
   private vespaEndpoint: string
 
   constructor() {
-    this.maxRetries = config.vespaMaxRetryAttempts
-    this.retryDelay = config.vespaRetryDelay // milliseconds
+    this.maxRetries = config.vespaMaxRetryAttempts || 3
+    this.retryDelay = config.vespaRetryDelay || 1000 // milliseconds
     this.vespaEndpoint = `http://${config.vespaBaseHost}:8080`
   }
 
@@ -362,9 +362,7 @@ class VespaClient {
       return document
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      throw new Error(
-        `Error fetching document docId: ${docId} - ${errMessage}`,
-      )
+      throw new Error(`Error fetching document docId: ${docId} - ${errMessage}`)
     }
   }
 
