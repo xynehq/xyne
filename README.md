@@ -1,5 +1,6 @@
 # Xyne
 
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
 ## Search
 once you have a `.env` setup, inside root run
 
