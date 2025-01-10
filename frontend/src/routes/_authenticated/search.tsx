@@ -393,7 +393,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           filter={filter}
           query={query}
           handleSearch={handleSearch}
-          pathname={location.pathname}
+          hasSearched={true}
           handleAnswer={handleAnswer}
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
