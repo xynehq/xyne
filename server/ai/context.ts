@@ -92,8 +92,8 @@ Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString(
 End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
 Attendees: ${
-    fields.attendeesNames && fields.attendeesNames.length
-      ? fields.attendeesNames.join(", ")
+  fields.attendees && fields.attendees.length
+  ? fields.attendees.map((attendee) => `${attendee.email} ${attendee.displayName}`).join(", ")
       : "No attendees listed"
   }
 Recurrence: ${
