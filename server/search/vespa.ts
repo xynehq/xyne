@@ -170,7 +170,7 @@ export const autocomplete = async (
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
-        or 
+        or
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
         `
@@ -216,6 +216,7 @@ const HybridDefaultProfile = (
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
+  let eventTimestamp = ""
 
   if (timestampRange && !timestampRange.from && !timestampRange.to) {
     throw new Error("Invalid timestamp range")
@@ -224,26 +225,31 @@ const HybridDefaultProfile = (
   let fileTimestampConditions: string[] = []
   let mailTimestampConditions: string[] = []
   let userTimestampConditions: string[] = []
+  let eventTimestampConditions: string[] = []
 
   if (timestampRange && timestampRange.from) {
     fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
     mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
     userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
+    eventTimestampConditions.push(`startTime >= ${timestampRange.from}`) // Using startTime for events
   }
   if (timestampRange && timestampRange.to) {
     fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
     mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
     userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
+    eventTimestampConditions.push(`startTime <= ${timestampRange.to}`)
   }
 
   if (timestampRange && timestampRange.from && timestampRange.to) {
     fileTimestamp = fileTimestampConditions.join(" and ")
     mailTimestamp = mailTimestampConditions.join(" and ")
     userTimestamp = userTimestampConditions.join(" and ")
+    eventTimestamp = eventTimestampConditions.join(" and ")
   } else {
     fileTimestamp = fileTimestampConditions.join("")
     mailTimestamp = mailTimestampConditions.join("")
     userTimestamp = userTimestampConditions.join("")
+    eventTimestamp = eventTimestampConditions.join("")
   }
 
   let appOrEntityFilter =
@@ -273,7 +279,7 @@ const HybridDefaultProfile = (
               or
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
             and permissions contains @email ${mailLabelQuery}
             ${appOrEntityFilter}
           )

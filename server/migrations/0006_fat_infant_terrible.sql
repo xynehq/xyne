@@ -1,1 +1,0 @@
-ALTER TABLE "workspaces" ADD COLUMN "photoLink" text;
