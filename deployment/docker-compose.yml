@@ -36,23 +36,17 @@ services:
     image: vespaengine/vespa
     container_name: vespa
     hostname: vespa-container
-    entrypoint: >
-      bash -c '
-        echo "Inside vespa container......"
-        sleep 10
-        chown -R 1000:1000 /opt/vespa/var
-        chown -R 1000:1000 /opt/vespa/logs
-        echo "Creating user 1000 with username user1000 if it does not exist..."
-        useradd -u 1000 -o -m user1000 || true
-        echo "Switching to user 1000..."
-        exec su -s /bin/bash user1000 -c "/usr/local/bin/start-container.sh"
-      '
+    user: "1000:1000"
+    cap_add:
+        - CHOWN
+        - SETGID
+        - SETUID
     ports:
       - "8080:8080"
       - "19071:19071"
     volumes:
-      - ../server/vespa-data:/opt/vespa/var # Ensure this directory has correct permissions
-      - ../server/vespa-logs:/opt/vespa/logs # Ensure correct permissions
+      - ../server/vespa-data:/opt/vespa/var:rw # Ensure this directory has correct permissions
+      - ../server/vespa-logs:/opt/vespa/logs:rw # Ensure correct permissions
     networks:
       - xyne
     ulimits:
@@ -66,6 +60,7 @@ services:
     environment:
       - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M
       - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC
+      - VESPA_ALLOW_WRITE_AS_USER=true
 
   xyne-db:
     image: postgres
