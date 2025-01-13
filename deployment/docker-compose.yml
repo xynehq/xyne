@@ -36,8 +36,17 @@ services:
     image: vespaengine/vespa
     container_name: vespa
     hostname: vespa-container
-    # sudo chown -R 1000:1000 ./server/vespa-data
-    user: "1000:1000" # Run as vespa user
+    entrypoint: >
+      bash -c '
+        echo "Inside vespa container......"
+        sleep 10
+        chown -R 1000:1000 /opt/vespa/var
+        chown -R 1000:1000 /opt/vespa/logs
+        echo "Creating user 1000 with username user1000 if it does not exist..."
+        useradd -u 1000 -o -m user1000 || true
+        echo "Switching to user 1000..."
+        exec su -s /bin/bash user1000 -c "/usr/local/bin/start-container.sh"
+      '
     ports:
       - "8080:8080"
       - "19071:19071"
