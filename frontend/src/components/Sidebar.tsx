@@ -34,7 +34,6 @@ export const Sidebar = ({
       >
         <History size={18} stroke="#384049" />
       </div>
-      {/* Only SuperAdmins and Admins can see integrations icon */}
       <Link
         to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}
         className="flex w-[32px] h-[32px] items-center justify-center"
