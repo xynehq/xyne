@@ -23,9 +23,6 @@ jobs:
       - name: Install Dependencies (Server)
         working-directory: ./server
         run: bun install
-        env:
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-          SERVICE_ACCOUNT_ENCRYPTION_KEY: ${{ secrets.SERVICE_ACCOUNT_ENCRYPTION_KEY }}
       - name: Run tests
         run: bun test
         env:
