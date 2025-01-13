@@ -28,3 +28,6 @@ jobs:
           SERVICE_ACCOUNT_ENCRYPTION_KEY: ${{ secrets.SERVICE_ACCOUNT_ENCRYPTION_KEY }}
       - name: Run tests
         run: bun test
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          SERVICE_ACCOUNT_ENCRYPTION_KEY: ${{ secrets.SERVICE_ACCOUNT_ENCRYPTION_KEY }}
