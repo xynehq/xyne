@@ -203,12 +203,12 @@ type YqlProfile = {
 }
 
 // TODO: it seems the owner part is complicating things
-const HybridDefaultProfile = (
+export const HybridDefaultProfile = (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
   profile: RankProfile = "default",
-  timestampRange?: { to: number; from: number } | null,
+  timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
 ): YqlProfile => {
