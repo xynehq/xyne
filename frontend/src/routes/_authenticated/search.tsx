@@ -158,7 +158,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           data = AutocompleteResultsSchema.parse(data)
           setAutocompleteResults(data.results)
         } catch (error) {
-          logger.error(`Error fetching autocomplete results:', ${error}`)
+          logger.error(error, `Error fetching autocomplete results:', ${error}`)
         }
       })()
     }, 300) // 300ms debounce
@@ -330,7 +330,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         )
       }
     } catch (error) {
-      logger.error(`Error fetching search results:', ${error}`)
+      logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
     }
   }
@@ -393,7 +393,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           filter={filter}
           query={query}
           handleSearch={handleSearch}
-          pathname={location.pathname}
+          hasSearched={true}
           handleAnswer={handleAnswer}
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }

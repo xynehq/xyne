@@ -4,6 +4,7 @@ import {
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
+  meetingPromptJsonStream,
   queryRewriter,
   temporalEventClassification,
 } from "@/ai/provider"
@@ -40,7 +41,11 @@ import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
-import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
+import {
+  getErrorMessage,
+  getRelativeTime,
+  splitGroupedCitationsWithSpaces,
+} from "@/utils"
 import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -132,6 +137,7 @@ export const GetChatApi = async (c: Context) => {
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(
+      error,
       `Get Chat and Messages Error: ${errMsg} ${(error as Error).stack}`,
     )
     throw new HTTPException(500, {
@@ -148,7 +154,10 @@ export const ChatRenameApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Rename Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Rename Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not rename chat",
     })
@@ -167,7 +176,10 @@ export const ChatDeleteApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Delete Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Delete Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not delete chat",
     })
@@ -184,7 +196,10 @@ export const ChatHistory = async (c: Context) => {
     return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat History Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat History Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not get chat history",
     })
@@ -200,7 +215,10 @@ export const ChatBookmarkApi = async (c: Context) => {
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not bookmark chat",
     })
@@ -267,12 +285,15 @@ const searchToCitations = (
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
-export const processMessage = (text: string, citationMap: Record<number, number>) => {
+export const processMessage = (
+  text: string,
+  citationMap: Record<number, number>,
+) => {
   text = splitGroupedCitationsWithSpaces(text)
   return text.replace(textToCitationIndex, (match, num) => {
     const index = citationMap[num]
 
-    return typeof index === 'number' ? `[${index + 1}]` : ''
+    return typeof index === "number" ? `[${index + 1}]` : ""
   })
 }
 
@@ -419,7 +440,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               }
             } catch (err) {
               const errMessage = (err as Error).message
-              Logger.error(`Error while parsing LLM output ${errMessage}`)
+              Logger.error(err, `Error while parsing LLM output ${errMessage}`)
               continue
             }
           }
@@ -525,7 +546,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           }
         } catch (err) {
           const errMessage = (err as Error).message
-          Logger.error(`Error while parsing LLM output ${errMessage}`)
+          Logger.error(err, `Error while parsing LLM output ${errMessage}`)
           continue
         }
       }
@@ -541,7 +562,30 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     text: "I could not find any information to answer it, please change your query",
   }
 }
+const getSearchRangeSummary = (from: number, to: number, direction: string) => {
+  const now = Date.now()
 
+  // For "next" direction, we usually start from now
+  if (direction === "next") {
+    // Start from today/now
+    const endDate = new Date(to)
+    // Format end date to month/year if it's far in future
+    const endStr =
+      Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
+        ? `${endDate.toLocaleString("default", { month: "long" })} ${endDate.getFullYear()}`
+        : getRelativeTime(to)
+    return `from today until ${endStr}`
+  }
+  // For "prev" direction
+  else {
+    const startDate = new Date(from)
+    const startStr =
+      Math.abs(now - from) > 30 * 24 * 60 * 60 * 1000
+        ? `${startDate.toLocaleString("default", { month: "long" })} ${startDate.getFullYear()}`
+        : getRelativeTime(from)
+    return `from today back to ${startStr}`
+  }
+}
 async function* generatePointQueryTimeExpansion(
   input: string,
   messages: Message[],
@@ -557,7 +601,7 @@ async function* generatePointQueryTimeExpansion(
   const message = input
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
-  const direction = classification.direction
+  const direction = classification.direction as string
   let costArr: number[] = [classification.cost]
 
   let from = new Date().getTime()
@@ -640,7 +684,7 @@ async function* generatePointQueryTimeExpansion(
     )
 
     // Stream LLM response
-    const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
     })
@@ -704,9 +748,9 @@ async function* generatePointQueryTimeExpansion(
     }
   }
 
-  // If we've exhausted all iterations without finding an answer
+  const searchSummary = getSearchRangeSummary(from, to, direction)
   yield {
-    text: "I could not find any information to answer it, please change your query",
+    text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
     cost: costArr.reduce((a, b) => a + b, 0),
   }
 }
@@ -722,6 +766,9 @@ export async function* UnderstandMessageAndAnswer(
 > {
   // user is talking about an event
   if (classification.direction !== null) {
+    Logger.info(
+      `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
+    )
     return yield* generatePointQueryTimeExpansion(
       message,
       messages,
@@ -733,6 +780,9 @@ export async function* UnderstandMessageAndAnswer(
       3,
     )
   } else {
+    Logger.info(
+      "default case, trying to do iterative RAG with query rewriting and time filtering for answering users query",
+    )
     // default case
     return yield* generateIterativeTimeFilterAndQueryRewrite(
       message,
@@ -757,7 +807,7 @@ const handleError = (error: any) => {
   return errorMessage
 }
 
-const AddErrMessageToMessage = async (
+const addErrMessageToMessage = async (
   lastMessage: SelectMessage,
   errorMessage: string,
 ) => {
@@ -834,6 +884,9 @@ export const MessageApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
+      Logger.info(
+        "First mesage of the conversation, successfully created the chat",
+      )
       chat = insertedChat
       messages.push(insertedMsg) // Add the inserted message to messages array
     } else {
@@ -856,6 +909,7 @@ export const MessageApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
+      Logger.info("Existing conversation, fetched previous messages")
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
     }
@@ -887,6 +941,9 @@ export const MessageApi = async (c: Context) => {
               content: [{ text: m.message }],
             }))
 
+          Logger.info(
+            "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+          )
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -913,6 +970,9 @@ export const MessageApi = async (c: Context) => {
                 parsed = jsonParseLLMOutput(buffer)
                 if (parsed.answer && currentAnswer !== parsed.answer) {
                   if (currentAnswer === "") {
+                    Logger.info(
+                      "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                    )
                     stream.writeSSE({
                       event: ChatSSEvents.Start,
                       data: "",
@@ -934,7 +994,10 @@ export const MessageApi = async (c: Context) => {
                 }
               } catch (err) {
                 const errMessage = (err as Error).message
-                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
                 continue
               }
             }
@@ -946,7 +1009,14 @@ export const MessageApi = async (c: Context) => {
           if (parsed.answer === null) {
             // ambigious user message
             if (parsed.queryRewrite) {
+              Logger.info(
+                "The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
+              )
               message = parsed.queryRewrite
+            } else {
+              Logger.info(
+                "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+              )
             }
             const classification: TemporalClassifier & { cost: number } =
               await temporalEventClassification(message, {
@@ -985,6 +1055,9 @@ export const MessageApi = async (c: Context) => {
                 const { index, item } = chunk.citation
                 citations.push(item)
                 citationMap[index] = citations.length - 1
+                Logger.info(
+                  `Found citations and sending it, current count: ${citations.length}`,
+                )
                 stream.writeSSE({
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
@@ -997,7 +1070,6 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          // throw new Error("hello, new error is here")
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
@@ -1041,7 +1113,7 @@ export const MessageApi = async (c: Context) => {
               data: "Error while trying to answer",
             })
             // Add the error message to last user message
-            await AddErrMessageToMessage(
+            await addErrMessageToMessage(
               lastMessage,
               "Error while trying to answer",
             )
@@ -1068,13 +1140,14 @@ export const MessageApi = async (c: Context) => {
           })
 
           // Add the error message to last user message
-          await AddErrMessageToMessage(lastMessage, errFomMap)
+          await addErrMessageToMessage(lastMessage, errFomMap)
 
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
           Logger.error(
+            error,
             `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
         }
@@ -1095,13 +1168,16 @@ export const MessageApi = async (c: Context) => {
           data: errFromMap,
         })
         // Add the error message to last user message
-        await AddErrMessageToMessage(lastMessage, errFromMap)
+        await addErrMessageToMessage(lastMessage, errFromMap)
 
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
         })
-        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
       },
     )
   } catch (error) {
@@ -1120,12 +1196,12 @@ export const MessageApi = async (c: Context) => {
           messageId: lastMessage.externalId,
         }),
       })
-      await AddErrMessageToMessage(lastMessage, errFromMap)
+      await addErrMessageToMessage(lastMessage, errFromMap)
     }
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
-        Logger.error("You exceeded your current quota")
+        Logger.error(error, "You exceeded your current quota")
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
@@ -1134,7 +1210,7 @@ export const MessageApi = async (c: Context) => {
         }
       }
     } else {
-      Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
+      Logger.error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
@@ -1227,6 +1303,9 @@ export const MessageRetryApi = async (c: Context) => {
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
                 }))
+          Logger.info(
+            "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+          )
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -1248,6 +1327,9 @@ export const MessageRetryApi = async (c: Context) => {
                 parsed = jsonParseLLMOutput(buffer)
                 if (parsed.answer && currentAnswer !== parsed.answer) {
                   if (currentAnswer === "") {
+                    Logger.info(
+                      "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                    )
                     stream.writeSSE({
                       event: ChatSSEvents.Start,
                       data: "",
@@ -1269,7 +1351,10 @@ export const MessageRetryApi = async (c: Context) => {
                 }
               } catch (err) {
                 const errMessage = (err as Error).message
-                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
                 continue
               }
             }
@@ -1280,7 +1365,14 @@ export const MessageRetryApi = async (c: Context) => {
 
           if (parsed.answer === null) {
             if (parsed.queryRewrite) {
+              Logger.info(
+                "retry: The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
+              )
               message = parsed.queryRewrite
+            } else {
+              Logger.info(
+                "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+              )
             }
             const classification: TemporalClassifier & { cost: number } =
               await temporalEventClassification(message, {
@@ -1319,6 +1411,9 @@ export const MessageRetryApi = async (c: Context) => {
                 const { index, item } = chunk.citation
                 citations.push(item)
                 citationMap[index] = citations.length - 1
+                Logger.info(
+                  `retry: Found citations and sending it, current count: ${citations.length}`,
+                )
                 stream.writeSSE({
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
@@ -1396,12 +1491,13 @@ export const MessageRetryApi = async (c: Context) => {
             event: ChatSSEvents.Error,
             data: errFromMap,
           })
-          await AddErrMessageToMessage(originalMessage, errFromMap)
+          await addErrMessageToMessage(originalMessage, errFromMap)
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
           Logger.error(
+            error,
             `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
         }
@@ -1419,17 +1515,23 @@ export const MessageRetryApi = async (c: Context) => {
           event: ChatSSEvents.Error,
           data: errFromMap,
         })
-        await AddErrMessageToMessage(originalMessage, errFromMap)
+        await addErrMessageToMessage(originalMessage, errFromMap)
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
         })
-        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
       },
     )
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Message Retry Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Message Retry Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not retry message",
     })

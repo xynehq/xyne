@@ -63,7 +63,7 @@ export const UserQueryHistoryAutocompleteElement = ({
 }: { result: UserQueryHAutocomplete; onClick: () => void }) => {
   return (
     <div onClick={onClick} className="flex items-center">
-      <History size={16} className="mr-[10px]" />
+      <History color="#AEBAD3" size={16} className="mr-[10px]" />
       <p>{result.query_text}</p>
     </div>
   )

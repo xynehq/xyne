@@ -20,6 +20,7 @@ import type {
   Entity,
   VespaEvent,
   VespaUserQueryHistory,
+  VespaSchema,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -85,15 +86,11 @@ export const insert = async (
     | VespaMail
     | VespaEvent
     | VespaUserQueryHistory,
-  schema: string,
+  schema: VespaSchema,
 ) => {
   try {
     await vespa.insert(document, { namespace: NAMESPACE, schema })
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(
-      `Error inserting document ${document.docId}: ${errMessage} ${(error as Error).stack}`,
-    )
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
@@ -173,7 +170,7 @@ export const autocomplete = async (
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
-        or 
+        or
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
         `
@@ -206,12 +203,12 @@ type YqlProfile = {
 }
 
 // TODO: it seems the owner part is complicating things
-const HybridDefaultProfile = (
+export const HybridDefaultProfile = (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
   profile: RankProfile = "default",
-  timestampRange?: { to: number; from: number } | null,
+  timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
 ): YqlProfile => {
@@ -219,6 +216,7 @@ const HybridDefaultProfile = (
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
+  let eventTimestamp = ""
 
   if (timestampRange && !timestampRange.from && !timestampRange.to) {
     throw new Error("Invalid timestamp range")
@@ -227,26 +225,31 @@ const HybridDefaultProfile = (
   let fileTimestampConditions: string[] = []
   let mailTimestampConditions: string[] = []
   let userTimestampConditions: string[] = []
+  let eventTimestampConditions: string[] = []
 
   if (timestampRange && timestampRange.from) {
     fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
     mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
     userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
+    eventTimestampConditions.push(`startTime >= ${timestampRange.from}`) // Using startTime for events
   }
   if (timestampRange && timestampRange.to) {
     fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
     mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
     userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
+    eventTimestampConditions.push(`startTime <= ${timestampRange.to}`)
   }
 
   if (timestampRange && timestampRange.from && timestampRange.to) {
     fileTimestamp = fileTimestampConditions.join(" and ")
     mailTimestamp = mailTimestampConditions.join(" and ")
     userTimestamp = userTimestampConditions.join(" and ")
+    eventTimestamp = eventTimestampConditions.join(" and ")
   } else {
     fileTimestamp = fileTimestampConditions.join("")
     mailTimestamp = mailTimestampConditions.join("")
     userTimestamp = userTimestampConditions.join("")
+    eventTimestamp = eventTimestampConditions.join("")
   }
 
   let appOrEntityFilter =
@@ -276,7 +279,7 @@ const HybridDefaultProfile = (
               or
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
             and permissions contains @email ${mailLabelQuery}
             ${appOrEntityFilter}
           )
@@ -456,13 +459,14 @@ const getDocumentCount = async () => {
 }
 
 export const GetDocument = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
 ): Promise<VespaGetResult> => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     return vespa.getDocument(options)
   } catch (error) {
+    Logger.error(error, `Error fetching document docId: ${docId}`)
     const errMessage = getErrorMessage(error)
     throw new ErrorGettingDocument({
       docId,
@@ -474,7 +478,7 @@ export const GetDocument = async (
 }
 
 export const UpdateDocumentPermissions = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedPermissions: string[],
 ) => {
@@ -491,7 +495,7 @@ export const UpdateDocumentPermissions = async (
 }
 
 export const UpdateEventCancelledInstances = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedCancelledInstances: string[],
 ) => {
@@ -508,7 +512,7 @@ export const UpdateEventCancelledInstances = async (
 }
 
 export const UpdateDocument = async (
-  schema: string,
+  schema: VespaSchema,
   docId: string,
   updatedFields: Record<string, any>,
 ) => {
@@ -524,7 +528,7 @@ export const UpdateDocument = async (
   }
 }
 
-export const DeleteDocument = async (docId: string, schema: string) => {
+export const DeleteDocument = async (docId: string, schema: VespaSchema) => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     await vespa.deleteDocument(options)
@@ -550,8 +554,6 @@ export const ifDocumentsExist = async (docIds: string[]) => {
   try {
     return await vespa.isDocumentExist(docIds)
   } catch (error) {
-    const errMessage = getErrorMessage(error)
-    Logger.error(`Error checking documents existence:  ${errMessage}`)
     throw error
   }
 }
@@ -585,7 +587,7 @@ const getNDocuments = async (n: number) => {
     return data
   } catch (error) {
     const errMessage = getErrorMessage(error)
-    Logger.error(`Error retrieving document count: , ${errMessage}`)
+    Logger.error(error, `Error retrieving document count: , ${errMessage}`)
     throw new ErrorRetrievingDocuments({
       cause: error as Error,
       sources: "file",
@@ -623,21 +625,17 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
     }
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Update user query error: ${errMsg}`, error)
+    Logger.error(error, `Update user query error: ${errMsg}`, error)
     throw new Error("Failed to update user query history")
   }
 }
 
-const getDocumentOrNull = async (schema: string, docId: string) => {
+const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
   try {
     return await GetDocument(schema, docId)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-
-    if (
-      errMsg.includes("404 Not Found") &&
-      errMsg.includes(`docId: ${docId}`)
-    ) {
+    if (errMsg.includes("404 Not Found")) {
       Logger.warn(`Document ${docId} does not exist`)
       return null
     }
@@ -681,7 +679,6 @@ export const searchUsersByNamesAndEmails = async (
   try {
     return await vespa.getUsersByNamesAndEmaisl(searchPayload)
   } catch (error) {
-    Logger.error(`Error searching users: ${error}`)
     throw error
   }
 }
@@ -762,7 +759,7 @@ export const getTimestamp = (lastUpdated: string): number | null => {
 // }
 
 interface GetItemsParams {
-  schema: string
+  schema: VespaSchema
   app?: Apps | null
   entity?: Entity | null
   timestampRange: { from: number | null; to: number | null } | null

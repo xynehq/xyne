@@ -26,6 +26,7 @@ export const createOAuthProvider = async (
     return inserted[0]
   } catch (error) {
     Logger.error(
+      error,
       `Error inserting provider:, ${error} : ${(error as Error).stack}`,
     )
     throw new Error("Could not insert provider")

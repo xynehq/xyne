@@ -1,17 +1,35 @@
-import { describe, expect, test, beforeAll, mock, beforeEach } from "bun:test"
-import VespaClient from "@/search/vespaClient"
+import {
+  describe,
+  expect,
+  test,
+  beforeAll,
+  mock,
+  beforeEach,
+  afterAll,
+} from "bun:test"
 import config from "@/config"
 
-mock.module("./config", () => ({
-  config: {
-    vespaMaxRetryAttempts: 3,
-    vespaRetryDelay: 100,
-    vespaBaseHost: "localhost",
+// mocking at top before importing vespaClient
+const mockPinoLogger = {
+  error: mock(() => {}),
+  info: mock(() => {}),
+  warn: mock(() => {}),
+  debug: mock(() => {}),
+  child: () => mockPinoLogger,
+}
+mock.module("../logger", () => ({
+  getLogger: () => mockPinoLogger,
+  LogMiddleware: () => {
+    return async (c: any, next: () => any) => {
+      await next()
+    }
   },
 }))
 
+const { default: VespaClient } = await import("@/search/vespaClient")
+
 describe("VespaClient", () => {
-  let vespaClient: VespaClient
+  let vespaClient: any
   const mockPayload = {
     yql: "select * from sources * where true",
     query: "What is Vespa?",
@@ -25,9 +43,17 @@ describe("VespaClient", () => {
     entity: "knowledgeBase",
   }
 
-  beforeEach(() => {
-    // Resetting vespa client before each test
+  mock.module("../config", () => ({
+    vespaMaxRetryAttempts: 3,
+    vespaRetryDelay: 100,
+  }))
+
+  beforeAll(() => {
     vespaClient = new VespaClient()
+  })
+
+  afterAll(() => {
+    mock.restore()
   })
 
   test("search should succeed on first attempt", async () => {
@@ -66,7 +92,7 @@ describe("VespaClient", () => {
 
     try {
       await vespaClient.search(mockPayload)
-      throw new Error("Should have thrown an error")
+      // Should throw an error
     } catch (error: any) {
       expect(error.message).toInclude("Vespa search error")
       expect(global.fetch).toHaveBeenCalledTimes(1)

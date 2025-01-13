@@ -84,7 +84,9 @@ schema event {
             index: enable-bm25
         }
 
-        field attendees type array<user_info> {}
+        field attendees type array<user_info> {
+            indexing: summary
+        }
 
         field startTime type long {
             indexing: attribute | summary
@@ -151,7 +153,7 @@ schema event {
     }
 
     fieldset default {
-        fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl
+        fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl, attendees
     }
 
     rank-profile default {
