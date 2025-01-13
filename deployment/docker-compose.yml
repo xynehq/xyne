@@ -32,21 +32,32 @@ services:
         max-size: "50m"
         max-file: "6"
     
+
+  vespa-init:
+    image: alpine  # Using lightweight Alpine Linux
+    container_name: vespa-init-container
+    user: root
+    volumes:
+      - ../server/vespa-data:/opt/vespa/var
+      - ../server/vespa-logs:/opt/vespa/logs
+    command: chown -R 1000:1000 /opt/vespa/var /opt/vespa/logs
+    networks:
+      - xyne
+    
   vespa:
     image: vespaengine/vespa
     container_name: vespa
     hostname: vespa-container
     user: "1000:1000"
-    cap_add:
-        - CHOWN
-        - SETGID
-        - SETUID
+    depends_on:
+      vespa-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
       - "19071:19071"
     volumes:
-      - ../server/vespa-data:/opt/vespa/var:rw # Ensure this directory has correct permissions
-      - ../server/vespa-logs:/opt/vespa/logs:rw # Ensure correct permissions
+      - ../server/vespa-data:/opt/vespa/var
+      - ../server/vespa-logs:/opt/vespa/logs
     networks:
       - xyne
     ulimits:

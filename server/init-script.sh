@@ -41,4 +41,8 @@ bun i
 
 bun run build
 
+echo "Removing orphan container....."
+
+docker rm vespa-init-container
+
 echo "***************Initialization completed*******************"
