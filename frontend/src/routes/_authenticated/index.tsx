@@ -167,7 +167,7 @@ const Index = () => {
                 setFilter={setFilter}
                 handleAnswer={() => {}}
                 ref={autocompleteRef}
-                pathname={location.pathname}
+                hasSearched={false}
                 filter={filter}
                 autocompleteRef={autocompleteRef}
               />

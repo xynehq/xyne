@@ -1,5 +1,5 @@
 DO $$ BEGIN
- CREATE TYPE "public"."app_type" AS ENUM('google-workspace', 'google-drive');
+ CREATE TYPE "public"."app_type" AS ENUM('google-workspace', 'google-drive', 'gmail', 'notion', 'google-calendar');
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -12,6 +12,12 @@ END $$;
 --> statement-breakpoint
 DO $$ BEGIN
  CREATE TYPE "public"."connector_type" AS ENUM('SaaS', 'Database', 'Api', 'File', 'Website');
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ CREATE TYPE "public"."message_role" AS ENUM('system', 'user', 'assistant');
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -40,6 +46,22 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "chats" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"workspace_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"external_id" text NOT NULL,
+	"workspace_external_id" text NOT NULL,
+	"is_bookmarked" boolean DEFAULT false NOT NULL,
+	"email" text NOT NULL,
+	"title" text NOT NULL,
+	"attachments" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT NOW() NOT NULL,
+	"deleted_at" timestamp with time zone,
+	CONSTRAINT "chats_external_id_unique" UNIQUE("external_id")
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "connectors" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"workspace_id" integer NOT NULL,
@@ -59,6 +81,25 @@ CREATE TABLE IF NOT EXISTS "connectors" (
 	"updated_at" timestamp with time zone DEFAULT NOW() NOT NULL,
 	CONSTRAINT "connectors_external_id_unique" UNIQUE("external_id"),
 	CONSTRAINT "connectors_workspace_id_user_id_app_type_auth_type_unique" UNIQUE("workspace_id","user_id","app_type","auth_type")
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "messages" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"chat_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"external_id" text NOT NULL,
+	"workspace_external_id" text NOT NULL,
+	"chat_external_id" text NOT NULL,
+	"message" text NOT NULL,
+	"message_role" "message_role" NOT NULL,
+	"modelId" text NOT NULL,
+	"email" text NOT NULL,
+	"sources" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT NOW() NOT NULL,
+	"deleted_at" timestamp with time zone,
+	"error_message" text DEFAULT '',
+	CONSTRAINT "messages_external_id_unique" UNIQUE("external_id")
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "oauth_providers" (
@@ -88,7 +129,8 @@ CREATE TABLE IF NOT EXISTS "sync_history" (
 	"summary" jsonb NOT NULL,
 	"error_message" text DEFAULT '',
 	"type" "type" NOT NULL,
-	"status" "sync_status",
+	"status" "sync_status" NOT NULL,
+	"auth_type" "auth_type" NOT NULL,
 	"app_type" "app_type" NOT NULL,
 	"config" jsonb NOT NULL,
 	"last_ran_on" timestamp with time zone DEFAULT NOW(),
@@ -103,10 +145,12 @@ CREATE TABLE IF NOT EXISTS "sync_jobs" (
 	"workspace_id" integer NOT NULL,
 	"external_id" text NOT NULL,
 	"workspace_external_id" text NOT NULL,
+	"email" text NOT NULL,
 	"connector_id" integer NOT NULL,
 	"type" "type" NOT NULL,
-	"status" "sync_status",
+	"status" "sync_status" DEFAULT 'NotStarted' NOT NULL,
 	"app_type" "app_type" NOT NULL,
+	"auth_type" "auth_type" NOT NULL,
 	"config" jsonb NOT NULL,
 	"last_ran_on" timestamp with time zone DEFAULT NOW(),
 	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL,
@@ -137,13 +181,26 @@ CREATE TABLE IF NOT EXISTS "workspaces" (
 	"domain" text NOT NULL,
 	"created_by" text NOT NULL,
 	"external_id" text NOT NULL,
+	"photoLink" text,
 	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT NOW() NOT NULL,
-	"deleted_at" timestamp with time zone DEFAULT '1970-01-01T00:00:00Z' NOT NULL,
+	"deleted_at" timestamp with time zone,
 	CONSTRAINT "workspaces_domain_unique" UNIQUE("domain"),
 	CONSTRAINT "workspaces_created_by_unique" UNIQUE("created_by"),
 	CONSTRAINT "workspaces_external_id_unique" UNIQUE("external_id")
 );
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "chats" ADD CONSTRAINT "chats_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "chats" ADD CONSTRAINT "chats_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
 --> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "connectors" ADD CONSTRAINT "connectors_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;
@@ -153,6 +210,18 @@ END $$;
 --> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "connectors" ADD CONSTRAINT "connectors_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "messages" ADD CONSTRAINT "messages_chat_id_chats_id_fk" FOREIGN KEY ("chat_id") REFERENCES "public"."chats"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "messages" ADD CONSTRAINT "messages_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -199,4 +268,6 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "is_bookmarked_index" ON "chats" USING btree ("is_bookmarked");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_id_index" ON "messages" USING btree ("chat_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "email_unique_index" ON "users" USING btree (LOWER("email"));

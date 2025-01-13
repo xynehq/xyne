@@ -39,6 +39,7 @@ import {
   chatWithCitationsSystemPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
+  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
@@ -719,6 +720,32 @@ export const baselineRAGJsonStream = (
     params.modelId = FastModel
   }
   params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const meetingPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = FastModel
+  }
+  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,

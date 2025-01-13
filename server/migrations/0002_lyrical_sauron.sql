@@ -1,1 +1,0 @@
-ALTER TABLE "sync_jobs" ADD COLUMN "auth_type" "auth_type" NOT NULL;
