@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Plug, Plus, History, Settings2 } from "lucide-react"
+import { Plug, Plus, History } from "lucide-react"
 import { useState } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { UserRole } from "shared/types"
@@ -35,28 +35,15 @@ export const Sidebar = ({
         <History size={18} stroke="#384049" />
       </div>
       {/* Only SuperAdmins and Admins can see integrations icon */}
-      {role === UserRole.SuperAdmin || role === UserRole.Admin ? (
-        <Link
-          to="/admin/integrations"
-          className="flex w-[32px] h-[32px] items-center justify-center"
-        >
-          <Plug
-            stroke="#384049"
-            size={18}
-            {...(location.pathname === "/admin/integrations"
-              ? { className: "text-blue-500 hover:text-blue-600" }
-              : { className: "hover:text-blue-600" })}
-          />
-        </Link>
-      ) : null}
       <Link
-        // to="/settings"
+        to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}
         className="flex w-[32px] h-[32px] items-center justify-center"
       >
-        <Settings2
+        <Plug
           stroke="#384049"
           size={18}
-          {...(location.pathname === "/settings"
+          {...(location.pathname === "/admin/integrations" ||
+          location.pathname === "/integrations"
             ? { className: "text-blue-500 hover:text-blue-600" }
             : { className: "hover:text-blue-600" })}
         />

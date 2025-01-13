@@ -341,6 +341,11 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get(
+  "/integrations",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
   "/admin/integrations",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),

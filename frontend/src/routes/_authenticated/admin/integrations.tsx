@@ -312,7 +312,7 @@ export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
   )
 }
 
-const OAuthButton = ({
+export const OAuthButton = ({
   app,
   text,
   setOAuthIntegrationStatus,
@@ -352,9 +352,9 @@ export const LoadingSpinner = ({ className }: { className: string }) => {
     </svg>
   )
 }
-const minHeight = 320
+export const minHeight = 320
 
-const getConnectors = async (): Promise<any> => {
+export const getConnectors = async (): Promise<any> => {
   const res = await api.admin.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
@@ -459,13 +459,13 @@ const LoaderContent = () => {
   )
 }
 
-enum OAuthIntegrationStatus {
+export enum OAuthIntegrationStatus {
   Provider = "Provider", // yet to create provider
   OAuth = "OAuth", // provider created but OAuth not yet connected
   OAuthConnecting = "OAuthConnecting",
   OAuthConnected = "OAuthConnected",
 }
-interface AdminPageProps {
+export interface AdminPageProps {
   user: PublicUser
   workspace: PublicWorkspace
 }
@@ -654,17 +654,14 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
 }
 
 export const Route = createFileRoute("/_authenticated/admin/integrations")({
-  beforeLoad: async (params) => {
-    const res = await api.me.$get()
-    if (res.ok) {
-      const userWorkspace = await res.json()
-      // Normal users shouldn't be allowed to visit /admin/integrations
-      if (
-        userWorkspace?.user?.role !== UserRole.SuperAdmin &&
-        userWorkspace?.user?.role !== UserRole.Admin
-      ) {
-        throw redirect({ to: "/" })
-      }
+  beforeLoad: async ({ params, context }) => {
+    const userWorkspace = context
+    // Normal users shouldn't be allowed to visit /admin/integrations
+    if (
+      userWorkspace?.user?.role !== UserRole.SuperAdmin &&
+      userWorkspace?.user?.role !== UserRole.Admin
+    ) {
+      throw redirect({ to: "/integrations" })
     }
     return params
   },
