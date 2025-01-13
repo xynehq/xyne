@@ -1,4 +1,4 @@
-name: Bun CI
+name: tests
 
 on:
   push:
