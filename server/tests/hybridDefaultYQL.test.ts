@@ -12,7 +12,7 @@ describe("HybridDefaultProfile", () => {
 
     expect(result.yql).not.toContain("entity contains")
     expect(result.yql).not.toContain("!(docId contains")
-    expect(result.yql).not.toContain("!(labels contains",)
+    expect(result.yql).not.toContain("!(labels contains")
   })
 
   test("query with app filter", () => {
