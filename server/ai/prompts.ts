@@ -705,7 +705,6 @@ export const searchQueryPrompt = (userContext: string): string => {
   `
 }
 
-
 export const meetingPromptJson = (
   userContext: string,
   retrievedContext: string,
