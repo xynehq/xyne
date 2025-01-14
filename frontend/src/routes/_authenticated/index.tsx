@@ -124,7 +124,7 @@ const Index = () => {
 
   return (
     <div className="h-full w-full flex flex-row bg-white">
-      <Sidebar photoLink={user?.photoLink ?? ""} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="flex flex-col flex-grow justify-center items-center ml-[52px]">
         <div className="flex flex-col min-h-36 w-full max-w-3xl">
           <div className="flex mb-[14px] w-full justify-start">

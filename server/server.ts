@@ -19,7 +19,6 @@ import {
   createOAuthProvider,
   oauthStartQuerySchema,
   searchSchema,
-  UserRole,
 } from "@/types"
 import {
   AddServiceConnection,
@@ -58,6 +57,7 @@ import {
   MessageRetryApi,
 } from "./api/chat"
 import { z } from "zod"
+import { UserRole } from "./shared/types"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -338,6 +338,11 @@ app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
