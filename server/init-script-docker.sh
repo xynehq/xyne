@@ -13,6 +13,12 @@ if ! command -v bun &> /dev/null; then
 fi
 
 echo "Running generation and migration commands for the server..."
+
+if [ ! -f "./.env" ]; then
+  echo ".env file not found. Creating a new one..."
+  touch ./.env
+fi 
+
 bun i
 bun run generate
 bun run migrate
