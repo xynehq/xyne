@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
+import OAuthTab from "@/components/OAuthTab"
 
 const logger = console
 
@@ -447,7 +448,7 @@ const ServiceAccountTab = ({
   }
 }
 
-const LoaderContent = () => {
+export const LoaderContent = () => {
   return (
     <div
       className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}
@@ -602,47 +603,12 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                 />
               )}
             </TabsContent>
-            <TabsContent value="oauth">
-              {oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
-                <OAuthForm
-                  onSuccess={() =>
-                    setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-                  }
-                />
-              ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Google OAuth</CardTitle>
-                    <CardDescription>
-                      Connect using Google OAuth here.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <OAuthButton
-                      app={Apps.GoogleDrive}
-                      setOAuthIntegrationStatus={setOAuthIntegrationStatus}
-                      text="Connect with Google OAuth"
-                    />
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Google OAuth</CardTitle>
-                    {oauthIntegrationStatus ===
-                      OAuthIntegrationStatus.OAuthConnecting && (
-                      <CardDescription>status: {updateStatus} </CardDescription>
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    {oauthIntegrationStatus ===
-                    OAuthIntegrationStatus.OAuthConnected
-                      ? "Connected"
-                      : "Connecting"}
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
+            <OAuthTab
+              isPending={isPending}
+              oauthIntegrationStatus={oauthIntegrationStatus}
+              setOAuthIntegrationStatus={setOAuthIntegrationStatus}
+              updateStatus={updateStatus}
+            />
           </Tabs>
           {Object.keys(userStats).length > 0 && activeTab === "upload" && (
             <UserStatsTable userStats={userStats} />
