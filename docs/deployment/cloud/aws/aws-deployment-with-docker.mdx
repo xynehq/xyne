@@ -22,12 +22,7 @@ ssh -i ~/path/to/your-private-key-file.pem ec2-user@public-ipv4-address [or your
 ## Install the required dependencies : 
 Deployment of Xyne on AWS EC2 requires the following dependencies to be installed on the instance:
 
-- [Bun](https://bun.sh/docs/installation)
-```javascript
-sudo yum update -y && curl -fsSL https://bun.sh/install | bash 
-source ~/.bashrc
-bun --version
-```
+
 - [Docker](https://docs.docker.com/engine/install/) & [Docker Compose](https://docs.docker.com/compose/install/)
 ```javascript
 sudo yum update -y && sudo yum install -y docker && sudo service docker start && sudo usermod -a -G docker $USER
@@ -35,17 +30,7 @@ curl -s https://api.github.com/repos/docker/compose/releases/latest | grep brows
 chmod +x docker-compose-linux-x86_64 && sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
 docker-compose --version
 ```
-<Warning> Remember to exit out of the instance and login again to be able to use docker properly.</Warning>
-
-- [Vespa CLI](https://docs.vespa.ai/en/build-install-vespa.html)
-```javascript
-wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz [ you can choose a more recent version]
-tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz
-sudo mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/
-vespa version
-```
-
-Once you have installed the dependencies, you can use the following steps to set up the instance.
+Once you have installed the dependency, you can use the following steps to set up the instance.
 
 <Warning>Ensure you have an instance with enough storage to store the dependencies and run the Xyne Application</Warning>
 
@@ -116,16 +101,8 @@ OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
 
 ```
 
-### Set permissions for vespa to run : 
 
-From the root of the instance, use the following commands inside ther `server` directory : 
-```javascript
-chmod +x ./init-vespa.sh
-
-./init-vespa.sh
-```
-
-## Deploy Vespa and Postgres with Docker  :
+## Deploy Xyne with Docker  :
 
 Navigate to the ```deployment``` folder : 
 ```javascript 
@@ -133,18 +110,10 @@ cd xyne/search/deployment
 ```
 Once inside the ```deployment``` folder, run the following command to run vespa and postgres in docker :
 ```javascript 
-docker-compose -f docker-compose.yml up
+docker-compose -f docker-compose.yml up --build
 ```
 
 ### Deploy Vespa in your instance : 
-
-Navigate to ```server``` folder and run the following command :
-
-```javascript 
-chmod +x ./setup-docker.sh
-
-./setup-docker.sh
-```
 
 Your application is now running and will be available in your EC2 Public IPv4 DNS address.
 
