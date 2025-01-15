@@ -85,7 +85,7 @@ elif [[ "$1" == "--docker" ]]; then
   docker exec -it xyne-app bash -c "
     echo 'Inside xyne-app container...';
     echo 'Running initialization script...';
-    ./init-script-docker.sh;
+    ./docker-init.sh;
     echo 'Initialisation complete. Starting the app...';
   "
   docker restart xyne-app

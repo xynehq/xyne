@@ -9,7 +9,9 @@ COPY . .
 # Switch to server directory and install backend dependencies
 WORKDIR /usr/src/app/server
 RUN bun install
-RUN chmod +x init-script-docker.sh 
+RUN chmod +x docker-init.sh 
+
+RUN touch .env
 
 # Install dependencies and build the frontend
 WORKDIR /usr/src/app/frontend
@@ -44,4 +46,5 @@ RUN mkdir -p downloads
 
 USER bun
 
-ENTRYPOINT [ "bun", "run", "server.ts" ]
+
+CMD ["sh", "-c", "sleep 20 && bun run generate && bun run migrate && cd /usr/src/app/server/vespa && EMBEDDING_MODEL=$EMBEDDING_MODEL ./deploy-docker.sh && cd /usr/src/app/server/ && bun run server.ts"]
