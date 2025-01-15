@@ -19,9 +19,8 @@ import {
   MessageRole,
   SyncConfigSchema,
   SyncCron,
-  UserRole,
 } from "@/types"
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus, UserRole } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 

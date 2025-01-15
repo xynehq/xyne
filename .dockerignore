@@ -1,5 +1,9 @@
 node_modules
-frontend/node_modules
+**/node_modules
+**/.env
+.git
+.github/
+docs
 .env.development
 server/vespa-data
 server/xyne-data
