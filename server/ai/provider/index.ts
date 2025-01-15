@@ -11,7 +11,8 @@ import OpenAI from "openai"
 import { getLogger } from "@/logger"
 import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
-import { parse } from "partial-json"
+import { parse, Allow, OBJ, STR } from "partial-json"
+
 import { ModelToProviderMap } from "@/ai/mappers"
 import type {
   AnswerResponse,
@@ -226,20 +227,42 @@ export const jsonParseLLMOutput = (text: string): any => {
   try {
     text = text.trim()
     // first it has to exist
-    if (text.indexOf("{") !== -1) {
-      if (text.indexOf("{") !== 0) {
-        text = text.substring(text.indexOf("{"))
+    const startBrace = text.indexOf("{")
+    const endBrace = text.lastIndexOf("}")
+
+    if (startBrace !== -1) {
+      if (startBrace !== 0) {
+        text = text.substring(startBrace)
       }
     }
-    if (text.lastIndexOf("}") !== -1) {
-      if (text.lastIndexOf("}") !== text.length - 1) {
-        text = text.substring(0, text.lastIndexOf("}") + 1)
+    if (endBrace !== -1) {
+      if (endBrace !== text.length - 1) {
+        text = text.substring(0, endBrace + 1)
       }
     }
+
     if (!text.trim()) {
       return ""
     }
-    jsonVal = parse(text.trim())
+    try {
+      jsonVal = parse(text.trim())
+      // If empty object but we have content, try removing newlines
+      // we have a case where if content has new lines the parse
+      // library just returns empty object and fails to parse multi line strings
+      if (Object.keys(jsonVal).length === 0 && text.length > 2) {
+        // Count newlines before removing
+        const newlineCount = (text.match(/\n/g) || []).length
+        Logger.info(`Found ${newlineCount} newlines in text before stripping`)
+
+        // Try parsing without newlines
+        const withoutNewlines = text.replace(/\n\s*/g, " ")
+        jsonVal = parse(withoutNewlines.trim())
+      }
+      return jsonVal
+    } catch {
+      // If first parse failed, continue to code block cleanup
+      throw new Error("Initial parse failed")
+    }
   } catch (e) {
     try {
       text = text
