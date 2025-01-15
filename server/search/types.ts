@@ -206,6 +206,7 @@ export const MailSchema = z.object({
   mimeType: z.string(),
   attachmentFilenames: z.array(z.string()),
   attachments: z.array(AttachmentSchema),
+  attachment_chunks: z.array(z.string()),
   labels: z.array(z.string()),
 })
 export const VespaMailSchema = MailSchema.extend({

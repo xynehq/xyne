@@ -1490,7 +1490,7 @@ export const downloadPDF = async (
 }
 
 // Helper function for safer PDF loading
-async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
+export async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
   try {
     const loader = new PDFLoader(pdfPath)
     return await loader.load()
