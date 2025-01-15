@@ -11,7 +11,7 @@ import OpenAI from "openai"
 import { getLogger } from "@/logger"
 import { MessageRole, Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
-import { parse, Allow, OBJ, STR } from "partial-json"
+import { parse } from "partial-json"
 
 import { ModelToProviderMap } from "@/ai/mappers"
 import type {
