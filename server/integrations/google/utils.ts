@@ -453,13 +453,15 @@ export const parseAttachments = async (
       if (part.filename && part.body && part.body.attachmentId) {
         if (part.mimeType === "application/pdf" && messageId) {
           try {
-            attachmentChunks =
+            const chunks =
               (await getGmailAttachmentChunks(gmail, {
                 attachmentId: part.body.attachmentId,
                 filename: part.filename,
                 size: part.body.size,
                 messageId,
               })) ?? []
+
+            attachmentChunks = [...attachmentChunks, ...chunks]
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
