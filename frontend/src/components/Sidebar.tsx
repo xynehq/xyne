@@ -2,11 +2,13 @@ import { Link, useLocation } from "@tanstack/react-router"
 import { Plug, Plus, History } from "lucide-react"
 import { useState } from "react"
 import HistoryModal from "@/components/HistoryModal"
+import { UserRole } from "shared/types"
 
 export const Sidebar = ({
   className = "",
   photoLink = "",
-}: { className?: string; photoLink?: string }) => {
+  role = "",
+}: { className?: string; photoLink?: string; role?: string }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
   return (
@@ -33,13 +35,14 @@ export const Sidebar = ({
         <History size={18} stroke="#384049" />
       </div>
       <Link
-        to="/admin/integrations"
+        to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}
         className="flex w-[32px] h-[32px] items-center justify-center"
       >
         <Plug
           stroke="#384049"
           size={18}
-          {...(location.pathname === "/admin/integrations"
+          {...(location.pathname === "/admin/integrations" ||
+          location.pathname === "/integrations"
             ? { className: "text-blue-500 hover:text-blue-600" }
             : { className: "hover:text-blue-600" })}
         />

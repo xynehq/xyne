@@ -16,6 +16,7 @@ import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as OauthSuccessImport } from './routes/oauth/success'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedIntegrationsImport } from './routes/_authenticated/integrations'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminIntegrationsImport } from './routes/_authenticated/admin/integrations'
@@ -48,6 +49,12 @@ const OauthSuccessRoute = OauthSuccessImport.update({
 const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+
+const AuthenticatedIntegrationsRoute = AuthenticatedIntegrationsImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
@@ -93,6 +100,13 @@ declare module '@tanstack/react-router' {
       path: '/chat'
       fullPath: '/chat'
       preLoaderRoute: typeof AuthenticatedChatImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations': {
+      id: '/_authenticated/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof AuthenticatedIntegrationsImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/search': {
@@ -148,6 +162,7 @@ const AuthenticatedChatRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
+  AuthenticatedIntegrationsRoute: typeof AuthenticatedIntegrationsRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
@@ -155,6 +170,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
+  AuthenticatedIntegrationsRoute: AuthenticatedIntegrationsRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminIntegrationsRoute: AuthenticatedAdminIntegrationsRoute,
@@ -168,6 +184,7 @@ export interface FileRoutesByFullPath {
   '': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
+  '/integrations': typeof AuthenticatedIntegrationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
@@ -178,6 +195,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
+  '/integrations': typeof AuthenticatedIntegrationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
@@ -190,6 +208,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
+  '/_authenticated/integrations': typeof AuthenticatedIntegrationsRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -203,6 +222,7 @@ export interface FileRouteTypes {
     | ''
     | '/auth'
     | '/chat'
+    | '/integrations'
     | '/search'
     | '/oauth/success'
     | '/'
@@ -212,6 +232,7 @@ export interface FileRouteTypes {
   to:
     | '/auth'
     | '/chat'
+    | '/integrations'
     | '/search'
     | '/oauth/success'
     | '/'
@@ -222,6 +243,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/chat'
+    | '/_authenticated/integrations'
     | '/_authenticated/search'
     | '/oauth/success'
     | '/_authenticated/'
@@ -261,6 +283,7 @@ export const routeTree = rootRoute
       "filePath": "_authenticated.tsx",
       "children": [
         "/_authenticated/chat",
+        "/_authenticated/integrations",
         "/_authenticated/search",
         "/_authenticated/",
         "/_authenticated/admin/integrations"
@@ -275,6 +298,10 @@ export const routeTree = rootRoute
       "children": [
         "/_authenticated/chat/$chatId"
       ]
+    },
+    "/_authenticated/integrations": {
+      "filePath": "_authenticated/integrations.tsx",
+      "parent": "/_authenticated"
     },
     "/_authenticated/search": {
       "filePath": "_authenticated/search.tsx",
