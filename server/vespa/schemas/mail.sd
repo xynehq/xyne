@@ -195,7 +195,7 @@ schema mail {
       }
 
       function combined_bm25() {
-        expression: 0.3*scaled_bm25_combined_chunks + 0.8*scaled_bm25_subject
+        expression: 0.4*scaled_bm25_combined_chunks + 0.7*scaled_bm25_subject
       }
 
       first-phase {
