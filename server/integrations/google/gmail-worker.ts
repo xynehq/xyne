@@ -32,6 +32,7 @@ import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 // import { createJwtClient } from "@/integrations/google/utils"
 import { z } from "zod"
 import { JWT } from "google-auth-library"
+import { parseAttachments } from "@/integrations/google/utils"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -136,7 +137,7 @@ export const handleGmailIngestion = async (
                 }),
               `Fetching Gmail message (id: ${message.id})`,
             )
-            await insert(parseMail(msgResp.data), mailSchema)
+            await insert(await parseMail(msgResp.data, gmail), mailSchema)
             // updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
@@ -197,7 +198,10 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 }
 
 // Function to parse and validate email data
-export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
+export const parseMail = async (
+  email: gmail_v1.Schema$Message,
+  gmail: gmail_v1.Gmail,
+): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)
@@ -256,10 +260,12 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
+  let attachmentChunks: string[] = []
   if (payload) {
-    const parsedParts = parseAttachments(payload)
+    const parsedParts = await parseAttachments(payload, gmail, messageId ?? "")
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
+    attachmentChunks = parsedParts.attachmentChunks
   }
 
   if (!messageId || !threadId) {
@@ -282,6 +288,7 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
     mimeType: payload?.mimeType ?? "text/plain",
     attachmentFilenames: filenames,
     attachments,
+    attachment_chunks: attachmentChunks,
     labels: labels ?? [],
   }
 
@@ -323,32 +330,4 @@ const getBody = (payload: any): string => {
   const data = parseEmailBody(body).replace(/[\r?\n]+/g, "\n")
 
   return data
-}
-
-// Function to parse attachments from the email payload
-const parseAttachments = (
-  payload: gmail_v1.Schema$MessagePart,
-): { attachments: Attachment[]; filenames: string[] } => {
-  const attachments: Attachment[] = []
-  const filenames: string[] = []
-
-  const traverseParts = (parts: any[]) => {
-    for (const part of parts) {
-      if (part.filename && part.body && part.body.attachmentId) {
-        filenames.push(part.filename)
-        attachments.push({
-          fileType: part.mimeType || "application/octet-stream",
-          fileSize: parseInt(part.body.size, 10) || 0,
-        })
-      } else if (part.parts) {
-        traverseParts(part.parts)
-      }
-    }
-  }
-
-  if (payload.parts) {
-    traverseParts(payload.parts)
-  }
-
-  return { attachments, filenames }
 }

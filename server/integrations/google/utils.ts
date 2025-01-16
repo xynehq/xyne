@@ -19,7 +19,7 @@ import {
   MAX_GD_PDF_SIZE,
   scopes,
 } from "@/integrations/google/config"
-import type { VespaFileWithDrivePermission } from "@/search/types"
+import type { Attachment, VespaFileWithDrivePermission } from "@/search/types"
 import { DownloadDocumentError } from "@/errors"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"
@@ -433,4 +433,57 @@ export const getGmailAttachmentChunks = async (
   }
 
   return attachmentChunks
+}
+
+// Function to parse attachments from the email payload
+export const parseAttachments = async (
+  payload: gmail_v1.Schema$MessagePart,
+  gmail: gmail_v1.Gmail,
+  messageId: string,
+): Promise<{
+  attachments: Attachment[]
+  filenames: string[]
+  attachmentChunks: string[]
+}> => {
+  const attachments: Attachment[] = []
+  const filenames: string[] = []
+  let attachmentChunks: string[] = []
+  const traverseParts = async (parts: any[]) => {
+    for (const part of parts) {
+      if (part.filename && part.body && part.body.attachmentId) {
+        if (part.mimeType === "application/pdf" && messageId) {
+          try {
+            attachmentChunks =
+              (await getGmailAttachmentChunks(gmail, {
+                attachmentId: part.body.attachmentId,
+                filename: part.filename,
+                size: part.body.size,
+                messageId,
+              })) ?? []
+          } catch (error) {
+            // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
+            // log the error and proceed.
+            Logger.error(
+              error,
+              `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
+              error,
+            )
+          }
+        }
+        filenames.push(part.filename)
+        attachments.push({
+          fileType: part.mimeType || "application/octet-stream",
+          fileSize: parseInt(part.body.size, 10) || 0,
+        })
+      } else if (part.parts) {
+        await traverseParts(part.parts)
+      }
+    }
+  }
+
+  if (payload.parts) {
+    await traverseParts(payload.parts)
+  }
+
+  return { attachments, filenames, attachmentChunks }
 }
