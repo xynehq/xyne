@@ -31,8 +31,9 @@ services:
         max-file: "6"
     
 
+## This container is only to handle permissions for vespa [ ONLY FOR THE TIME BEING WILL GET REMOVED IN FUTURE]
   vespa-init:
-    image: alpine  # Using lightweight Alpine Linux
+    image: busybox  # Using lightweight Busybox Linux
     container_name: vespa-init
     user: root
     volumes:
