@@ -33,7 +33,7 @@ services:
 
   vespa-init:
     image: alpine  # Using lightweight Alpine Linux
-    container_name: vespa-init-container
+    container_name: vespa-init
     user: root
     volumes:
       - ../server/vespa-data:/opt/vespa/var
