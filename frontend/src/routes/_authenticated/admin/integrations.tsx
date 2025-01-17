@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import {
   createFileRoute,
+  redirect,
   useNavigate,
   UseNavigateResult,
   useRouterState,
@@ -16,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Apps, AuthType, ConnectorStatus } from "shared/types"
+import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
 import { api, wsClient } from "@/api"
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from "@tanstack/react-form"
@@ -36,6 +37,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { errorComponent } from "@/components/error"
+import OAuthTab from "@/components/OAuthTab"
 
 const logger = console
 
@@ -310,7 +313,7 @@ export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
   )
 }
 
-const OAuthButton = ({
+export const OAuthButton = ({
   app,
   text,
   setOAuthIntegrationStatus,
@@ -350,9 +353,9 @@ export const LoadingSpinner = ({ className }: { className: string }) => {
     </svg>
   )
 }
-const minHeight = 320
+export const minHeight = 320
 
-const getConnectors = async (): Promise<any> => {
+export const getConnectors = async (): Promise<any> => {
   const res = await api.admin.connectors.all.$get()
   if (!res.ok) {
     if (res.status === 401) {
@@ -432,19 +435,20 @@ const ServiceAccountTab = ({
         <CardTitle>Google Workspace</CardTitle>
         {googleSAConnector.status === ConnectorStatus.Connecting ? (
           <>
-          <CardDescription>Connecting {progress}%</CardDescription>
-          <Progress value={progress} className="p-0 w-[60%]" />
+            <CardDescription>Connecting {progress}%</CardDescription>
+            <Progress value={progress} className="p-0 w-[60%]" />
           </>
-        ) : (<>
-          <CardDescription>Connected</CardDescription>
-        </>)}
-
+        ) : (
+          <>
+            <CardDescription>Connected</CardDescription>
+          </>
+        )}
       </CardHeader>
     )
   }
 }
 
-const LoaderContent = () => {
+export const LoaderContent = () => {
   return (
     <div
       className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}
@@ -456,13 +460,13 @@ const LoaderContent = () => {
   )
 }
 
-enum OAuthIntegrationStatus {
+export enum OAuthIntegrationStatus {
   Provider = "Provider", // yet to create provider
   OAuth = "OAuth", // provider created but OAuth not yet connected
   OAuthConnecting = "OAuthConnecting",
   OAuthConnected = "OAuthConnected",
 }
-interface AdminPageProps {
+export interface AdminPageProps {
   user: PublicUser
   workspace: PublicWorkspace
 }
@@ -573,7 +577,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
-      <Sidebar photoLink={user.photoLink ?? ""} />
+      <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
@@ -599,49 +603,14 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                 />
               )}
             </TabsContent>
-            <TabsContent value="oauth">
-              {oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
-                <OAuthForm
-                  onSuccess={() =>
-                    setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-                  }
-                />
-              ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Google OAuth</CardTitle>
-                    <CardDescription>
-                      Connect using Google OAuth here.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <OAuthButton
-                      app={Apps.GoogleDrive}
-                      setOAuthIntegrationStatus={setOAuthIntegrationStatus}
-                      text="Connect with Google OAuth"
-                    />
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Google OAuth</CardTitle>
-                    {oauthIntegrationStatus ===
-                      OAuthIntegrationStatus.OAuthConnecting && (
-                      <CardDescription>status: {updateStatus} </CardDescription>
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    {oauthIntegrationStatus ===
-                    OAuthIntegrationStatus.OAuthConnected
-                      ? "Connected"
-                      : "Connecting"}
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
+            <OAuthTab
+              isPending={isPending}
+              oauthIntegrationStatus={oauthIntegrationStatus}
+              setOAuthIntegrationStatus={setOAuthIntegrationStatus}
+              updateStatus={updateStatus}
+            />
           </Tabs>
-          {Object.keys(userStats).length > 0 && activeTab === "upload"  && (
+          {Object.keys(userStats).length > 0 && activeTab === "upload" && (
             <UserStatsTable userStats={userStats} />
           )}
         </div>
@@ -651,7 +620,15 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
 }
 
 export const Route = createFileRoute("/_authenticated/admin/integrations")({
-  beforeLoad: (params) => {
+  beforeLoad: async ({ params, context }) => {
+    const userWorkspace = context
+    // Normal users shouldn't be allowed to visit /admin/integrations
+    if (
+      userWorkspace?.user?.role !== UserRole.SuperAdmin &&
+      userWorkspace?.user?.role !== UserRole.Admin
+    ) {
+      throw redirect({ to: "/integrations" })
+    }
     return params
   },
   loader: async (params) => {
@@ -662,4 +639,5 @@ export const Route = createFileRoute("/_authenticated/admin/integrations")({
     const { user, workspace } = matches[matches.length - 1].context
     return <AdminLayout user={user} workspace={workspace} />
   },
+  errorComponent: errorComponent,
 })

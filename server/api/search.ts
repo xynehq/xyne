@@ -31,9 +31,7 @@ import {
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
   askQuestion,
-  Models,
-  QueryCategory,
-} from "@/ai/provider/bedrock"
+} from "@/ai/provider"
 import {
   answerContextMap,
   answerMetadataContextMap,
@@ -49,6 +47,7 @@ import { getPublicUserAndWorkspaceByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import type { PublicUserWorkspace } from "@/db/schema"
 import { getErrorMessage } from "@/utils"
+import { Models, QueryCategory } from "@/ai/types"
 const Logger = getLogger(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
@@ -118,7 +117,10 @@ export const AutocompleteApi = async (c: Context) => {
     return c.json(newResults)
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Autocomplete Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Autocomplete Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not fetch autocomplete results",
     })

@@ -70,6 +70,7 @@ import {
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
+import type { GaxiosError } from "gaxios"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -84,18 +85,19 @@ type ChangeStats = {
 
 const getDocumentOrSpreadsheet = async (docId: string) => {
   try {
-    const doc = await GetDocument(docId, fileSchema)
+    const doc = await GetDocument(fileSchema, docId)
     return doc
-  } catch (err: any) {
-    const errMessage = getErrorMessage(err?.cause)
+  } catch (err) {
+    const errMessage = getErrorMessage((err as Error).cause)
     if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
       Logger.error(
+        err,
         `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
       )
-      const sheetsForSpreadSheet = await GetDocument(`${docId}_0`, fileSchema)
+      const sheetsForSpreadSheet = await GetDocument(fileSchema, `${docId}_0`)
       return sheetsForSpreadSheet
     } else {
-      Logger.error(`Error getting document: ${err.message} ${err.stack}`)
+      Logger.error(err, `Error getting document`)
       throw err
     }
   }
@@ -116,8 +118,8 @@ const deleteUpdateStatsForGoogleSheets = async (
   // Check if the sheets we have in vespa are same as we get
   // If not, it means maybe sheet/s can be deleted
   const spreadSheetFromVespa = await GetDocument(
-    `${spreadsheetId}_0`,
     fileSchema,
+    `${spreadsheetId}_0`,
   )
   const metadata = JSON.parse(
     //@ts-ignore
@@ -141,7 +143,7 @@ const deleteUpdateStatsForGoogleSheets = async (
   for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
     const id = `${spreadsheetId}_${sheetIndex}`
     try {
-      await GetDocument(id, fileSchema)
+      await GetDocument(fileSchema, id)
       stats.updated += 1
       continue
     } catch (e) {
@@ -168,7 +170,7 @@ const deleteWholeSpreadsheet = async (
   // Remove all sheets inside that spreadsheet
   for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
     const id = `${spreadsheetId}_${sheetIndex}`
-    const doc = await GetDocument(id, fileSchema)
+    const doc = await GetDocument(fileSchema, id)
     const permissions = (doc.fields as VespaFile).permissions
     if (permissions.length === 1) {
       // remove it
@@ -243,9 +245,7 @@ const handleGoogleDriveChange = async (
           }
         }
       } catch (err) {
-        Logger.error(
-          `Trying to delete document that doesnt exist in Vespa \n ${err}`,
-        )
+        Logger.error(err, `Failed to delete document in Vespa \n ${err}`)
       }
     }
   } else if (docId && change.file) {
@@ -262,7 +262,7 @@ const handleGoogleDriveChange = async (
       ) {
         await deleteUpdateStatsForGoogleSheets(docId, client, stats)
       } else {
-        doc = await GetDocument(docId, fileSchema)
+        doc = await GetDocument(fileSchema, docId)
         stats.updated += 1
       }
     } catch (e) {
@@ -502,6 +502,7 @@ export const handleGoogleOAuthChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
@@ -596,6 +597,7 @@ export const handleGoogleOAuthChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete Oauth sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
@@ -695,6 +697,7 @@ export const handleGoogleOAuthChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete Oauth sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: CalendarEventsChangeToken =
@@ -865,6 +868,7 @@ const handleGoogleCalendarEventsChanges = async (
               const eventId = splittedId[0]
               const instanceDateTime = splittedId[1]
               Logger.error(
+                err,
                 `Found no document with ${docId}, checking for event with ${eventId}`,
               )
               // Update this event and add a instanceDateTime cancelledInstances property
@@ -893,11 +897,13 @@ const handleGoogleCalendarEventsChanges = async (
                 }
               } catch (error) {
                 Logger.error(
+                  error,
                   `Can't find document to delete, probably doesn't exist`,
                 )
               }
             } else {
               Logger.error(
+                err,
                 `Error getting document: ${err.message} ${err.stack}`,
               )
               throw err
@@ -907,8 +913,8 @@ const handleGoogleCalendarEventsChanges = async (
           let event = null
           try {
             event = await GetDocument(eventSchema, docId!)
-          } catch (e) {
-            Logger.error(`Event doesn't exist in Vepsa`)
+          } catch (error) {
+            Logger.error(error, `Event doesn't exist in Vepsa`)
           }
 
           await insertEventIntoVespa(eventChange)
@@ -1003,10 +1009,11 @@ const handleGmailChanges = async (
                 await insert(parseMail(msgResp.data), mailSchema)
                 stats.added += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 // Handle errors if the message no longer exists
                 Logger.error(
-                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1030,10 +1037,11 @@ const handleGmailChanges = async (
                 }
                 stats.removed += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 // Handle errors if the document no longer exists
                 Logger.error(
-                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1047,9 +1055,10 @@ const handleGmailChanges = async (
                 await UpdateDocument(mailSchema, message?.id!, { labels })
                 stats.updated += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 Logger.error(
-                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1065,9 +1074,10 @@ const handleGmailChanges = async (
                 await UpdateDocument(mailSchema, message?.id!, { labels })
                 stats.updated += 1
                 changesExist = true
-              } catch (e) {
+              } catch (error) {
                 Logger.error(
-                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${e}`,
+                  error,
+                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${error}`,
                 )
               }
             }
@@ -1083,6 +1093,7 @@ const handleGmailChanges = async (
     ) {
       // Log the error and return without updating the historyId
       Logger.error(
+        error,
         `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
       )
       return { stats, historyId: newHistoryId, changesExist }
@@ -1188,58 +1199,92 @@ export const handleGoogleServiceAccountChanges = async (
       let nextPageToken = ""
       let contactsToken = config.contactsToken
       let otherContactsToken = config.otherContactsToken
-      do {
-        const response = await peopleService.people.connections.list({
-          resourceName: "people/me",
-          personFields: contactKeys.join(","),
-          syncToken: config.contactsToken,
-          requestSyncToken: true,
-          pageSize: 1000, // Adjust the page size based on your quota and needs
-          pageToken: nextPageToken, // Use the nextPageToken for pagination
-        })
-        contactsToken = response.data.nextSyncToken ?? contactsToken
-        if (response.data.connections && response.data.connections.length) {
-          Logger.info(
-            `About to update ${response.data.connections.length} contacts`,
+      try {
+        do {
+          const response = await peopleService.people.connections.list({
+            resourceName: "people/me",
+            personFields: contactKeys.join(","),
+            syncToken: config.contactsToken,
+            requestSyncToken: true,
+            pageSize: 1000, // Adjust the page size based on your quota and needs
+            pageToken: nextPageToken, // Use the nextPageToken for pagination
+          })
+          if (response.data.connections && response.data.connections.length) {
+            Logger.info(
+              `About to update ${response.data.connections.length} contacts`,
+            )
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.connections,
+              user.email,
+              GooglePeopleEntity.Contacts,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } while (nextPageToken)
+      } catch (error) {
+        // if sync token is expired then we don't throw it further
+        // we will handle this case, it will require a full sync
+        if (
+          (error as GaxiosError).response &&
+          (error as GaxiosError).response?.status === 400 &&
+          (error as GaxiosError).message ===
+            "Sync token is expired. Clear local cache and retry call without the sync token."
+        ) {
+          Logger.warn(
+            "This is an error that is not yet implemented, it requires a full sync of the contacts api",
           )
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.connections,
-            user.email,
-            GooglePeopleEntity.Contacts,
-          )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+        } else {
+          throw error
         }
-      } while (nextPageToken)
-
+      }
       // reset
       nextPageToken = ""
-
-      do {
-        const response = await peopleService.otherContacts.list({
-          pageSize: 1000,
-          readMask: contactKeys.join(","),
-          syncToken: otherContactsToken,
-          pageToken: nextPageToken,
-          requestSyncToken: true,
-          sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
-        })
-        otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
-        if (response.data.otherContacts && response.data.otherContacts.length) {
-          Logger.info(
-            `About to update ${response.data.otherContacts.length} other contacts`,
+      try {
+        do {
+          const response = await peopleService.otherContacts.list({
+            pageSize: 1000,
+            readMask: contactKeys.join(","),
+            syncToken: otherContactsToken,
+            pageToken: nextPageToken,
+            requestSyncToken: true,
+            sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
+          })
+          otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+          if (
+            response.data.otherContacts &&
+            response.data.otherContacts.length
+          ) {
+            Logger.info(
+              `About to update ${response.data.otherContacts.length} other contacts`,
+            )
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.otherContacts,
+              user.email,
+              GooglePeopleEntity.OtherContacts,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } while (nextPageToken)
+      } catch (error) {
+        // if sync token is expired then we don't throw it further
+        // we will handle this case, it will require a full sync
+        if (
+          (error as GaxiosError).response &&
+          (error as GaxiosError).response?.status === 400 &&
+          (error as GaxiosError).message ===
+            "Sync token is expired. Clear local cache and retry call without the sync token."
+        ) {
+          Logger.warn(
+            "This is an error that is not yet implemented, it requires a full sync of the other contacts api",
           )
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.otherContacts,
-            user.email,
-            GooglePeopleEntity.OtherContacts,
-          )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+        } else {
+          throw error
         }
-      } while (nextPageToken)
+      }
       if (changesExist) {
         const newConfig = {
           type: config.type,
@@ -1283,6 +1328,7 @@ export const handleGoogleServiceAccountChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: ChangeToken = syncJob.config as ChangeToken
@@ -1378,6 +1424,7 @@ export const handleGoogleServiceAccountChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete ServiceAccount sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
@@ -1475,6 +1522,7 @@ export const handleGoogleServiceAccountChanges = async (
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Could not successfully complete ServiceAccount sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: CalendarEventsChangeToken =

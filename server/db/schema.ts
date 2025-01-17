@@ -19,9 +19,8 @@ import {
   MessageRole,
   SyncConfigSchema,
   SyncCron,
-  UserRole,
 } from "@/types"
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, SyncJobStatus, UserRole } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 
@@ -332,6 +331,7 @@ export const messages = pgTable(
       .notNull()
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    errorMessage: text("error_message").default(""),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),

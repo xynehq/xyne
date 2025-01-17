@@ -1,3 +1,5 @@
+## FOR PROD & DEV ENV
+
 #!/bin/sh
 set -e
 
@@ -49,7 +51,10 @@ else
     curl -L -o "$MODEL_FILE" "$MODEL_URL"
 fi
 
+
+echo "Deploying vespa..."
 vespa deploy --wait 500
+echo "Restarting vespa...."
 docker restart vespa
 # vespa destroy
 vespa status --wait 55

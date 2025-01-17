@@ -1,9 +1,8 @@
-# Warning: Do not execute if App is running in Docker
-
 #!/bin/bash
 set -e
 
-echo "Setting Vespa permissions....."
+
+echo "Initializing Vespa permissions..."
 ./init-vespa.sh
 
 if ! command -v bun &> /dev/null; then
@@ -11,15 +10,17 @@ if ! command -v bun &> /dev/null; then
   exit 1
 fi
 
-echo "Running Generation and Migration Commands for Server....."
+if [ ! -f ".env" ]; then
+  echo ".env file not found. Creating a new one..."
+  touch .env
+fi 
 
+echo "Running generation and migration commands for the server..."
 bun i
-
 bun run generate
 bun run migrate
 
-echo "Deploying Vespa....."
-
+echo "Deploying Vespa..."
 cd ./vespa
 
 # Load .env variables (if any)
@@ -30,15 +31,21 @@ fi
 # Check if EMBEDDING_MODEL is set
 if [ -n "$EMBEDDING_MODEL" ]; then
   echo "Using EMBEDDING_MODEL=$EMBEDDING_MODEL"
-  ./deploy.sh "$EMBEDDING_MODEL"
+    ./deploy.sh "$EMBEDDING_MODEL" 
 else
-  echo "No EMBEDDING_MODEL provided. Using default model."
-  ./deploy.sh
+    ./deploy.sh 
 fi
 
-echo "Running build Command for Frontend....."
+echo "Initializing frontend..."
+
 cd ../../frontend
 
 bun i
 
 bun run build
+
+echo "Removing orphan container....."
+
+docker rm vespa-init-container
+
+echo "***************Initialization completed*******************"

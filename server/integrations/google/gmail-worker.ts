@@ -75,12 +75,12 @@ self.onmessage = async (event: MessageEvent<MessageType>) => {
       }
     }
   } catch (error) {
-    Logger.error(`Error in Gmail worker: ${error}`)
+    Logger.error(error, `Error in Gmail worker: ${error}`)
   }
 }
 
 self.onerror = (error) => {
-  Logger.error(`Error in Gmail worker: ${error}`)
+  Logger.error(error, `Error in Gmail worker: ${error}`)
 }
 
 export const handleGmailIngestion = async (
@@ -140,6 +140,7 @@ export const handleGmailIngestion = async (
             // updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
+              error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
           } finally {

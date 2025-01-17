@@ -18,15 +18,13 @@ import pc from "picocolors"
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
-
 // Function for handling file context
 const constructFileContext = (
   fields: VespaFileSearch,
   relevance: number,
-  maxSummaryChunks?: number
+  maxSummaryChunks?: number,
 ): string => {
-
-  if(!maxSummaryChunks) {
+  if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
   return `App: ${fields.app}
@@ -59,9 +57,9 @@ vespa relevance score: ${relevance}`
 const constructMailContext = (
   fields: VespaMailSearch,
   relevance: number,
-  maxSummaryChunks?: number
+  maxSummaryChunks?: number,
 ): string => {
-  if(!maxSummaryChunks) {
+  if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
   return `App: ${fields.app}
@@ -94,8 +92,10 @@ Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString(
 End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
 Attendees: ${
-    fields.attendeesNames && fields.attendeesNames.length
-      ? fields.attendeesNames.join(", ")
+    fields.attendees && fields.attendees.length
+      ? fields.attendees
+          .map((attendee) => `${attendee.email} ${attendee.displayName}`)
+          .join(", ")
       : "No attendees listed"
   }
 Recurrence: ${
@@ -268,11 +268,19 @@ export const answerContextMap = (
   maxSummaryChunks?: number,
 ): AiContext => {
   if (searchResult.fields.sddocname === fileSchema) {
-    return constructFileContext(searchResult.fields, searchResult.relevance, maxSummaryChunks)
+    return constructFileContext(
+      searchResult.fields,
+      searchResult.relevance,
+      maxSummaryChunks,
+    )
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
-    return constructMailContext(searchResult.fields, searchResult.relevance, maxSummaryChunks)
+    return constructMailContext(
+      searchResult.fields,
+      searchResult.relevance,
+      maxSummaryChunks,
+    )
   } else if (searchResult.fields.sddocname === eventSchema) {
     return constructEventContext(searchResult.fields, searchResult.relevance)
   } else {

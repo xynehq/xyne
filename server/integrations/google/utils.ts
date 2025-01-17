@@ -210,6 +210,7 @@ export const getPDFContent = async (
     }
   } catch (error) {
     Logger.error(
+      error,
       `Error getting file: ${error} ${(error as Error).stack}`,
       error,
     )
@@ -237,7 +238,7 @@ export const getSheetsFromSpreadSheet = async (
 
     return sheetsListFromOneSpreadsheet
   } catch (err) {
-    Logger.error(`Error in catch of getSheetsFromSpreadSheet`, err)
+    Logger.error(err, `Error in catch of getSheetsFromSpreadSheet`, err)
     return []
   }
 }
@@ -347,6 +348,7 @@ export const checkDownloadsFolder = async (
     Logger.info("All files deleted successfully.")
   } catch (error) {
     Logger.error(
+      error,
       `Error checking or deleting files in downloads folder: ${error} ${(error as Error).stack}`,
     )
   }

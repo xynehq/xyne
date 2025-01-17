@@ -12,7 +12,9 @@
       "./server/eval/RAGEval/dataset.json",
       "./server/vespa/models",
       "./server/eval/.venv",
-      "./migrations"
+      "./server/.venv",
+      "./migrations",
+      "./server/eval-results"
     ]
   },
   "formatter": {

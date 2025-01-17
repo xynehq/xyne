@@ -4,12 +4,15 @@ import {
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
-  Models,
+  meetingPromptJsonStream,
   queryRewriter,
   temporalEventClassification,
+} from "@/ai/provider"
+import {
+  Models,
   type ConverseResponse,
   type TemporalClassifier,
-} from "@/ai/provider/bedrock"
+} from "@/ai/types"
 import config from "@/config"
 import {
   deleteChatByExternalId,
@@ -18,6 +21,7 @@ import {
   getPublicChats,
   insertChat,
   updateChatByExternalId,
+  updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
 import {
@@ -37,7 +41,11 @@ import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { ChatSSEvents, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
-import { getErrorMessage } from "@/utils"
+import {
+  getErrorMessage,
+  getRelativeTime,
+  splitGroupedCitationsWithSpaces,
+} from "@/utils"
 import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -64,7 +72,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-const { JwtPayloadKey } = config
+const { JwtPayloadKey, chatHistoryPageSize } = config
 const Logger = getLogger(Subsystem.Chat)
 
 // this is not always the case but unless our router detects that we need
@@ -129,6 +137,7 @@ export const GetChatApi = async (c: Context) => {
   } catch (error) {
     const errMsg = getErrorMessage(error)
     Logger.error(
+      error,
       `Get Chat and Messages Error: ${errMsg} ${(error as Error).stack}`,
     )
     throw new HTTPException(500, {
@@ -145,7 +154,10 @@ export const ChatRenameApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Rename Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Rename Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not rename chat",
     })
@@ -164,7 +176,10 @@ export const ChatDeleteApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Delete Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Delete Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not delete chat",
     })
@@ -177,12 +192,14 @@ export const ChatHistory = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const { page } = c.req.valid("query")
-    const pageSize = 20
-    const offset = page * pageSize
-    return c.json(await getPublicChats(db, email, pageSize, offset))
+    const offset = page * chatHistoryPageSize
+    return c.json(await getPublicChats(db, email, chatHistoryPageSize, offset))
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat History Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat History Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not get chat history",
     })
@@ -198,7 +215,10 @@ export const ChatBookmarkApi = async (c: Context) => {
     return c.json({})
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Chat Bookmark Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not bookmark chat",
     })
@@ -263,10 +283,17 @@ const searchToCitations = (
   return results.map((result) => searchToCitation(result as VespaSearchResults))
 }
 
-// if an index does not exist instead of NaN we should simply remove the citation itself from answer
-const processMessage = (text: string, citationMap: Record<number, number>) => {
-  return text.replace(/\[(\d+)\]/g, (match, num) => {
-    return `[${citationMap[num] + 1}]`
+export const textToCitationIndex = /\[(\d+)\]/g
+
+export const processMessage = (
+  text: string,
+  citationMap: Record<number, number>,
+) => {
+  text = splitGroupedCitationsWithSpaces(text)
+  return text.replace(textToCitationIndex, (match, num) => {
+    const index = citationMap[num]
+
+    return typeof index === "number" ? `[${index + 1}]` : ""
   })
 }
 
@@ -296,8 +323,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   ).root.children
 
   const latestIds = latestResults
-    .map((v: VespaSearchResult) => (v?.fields as any).docId)
-    .filter((v) => !!v)
+    ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
+    ?.filter((v) => !!v)
 
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
@@ -313,12 +340,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         alpha,
       )
       const initialContext = cleanContext(
-        results.root.children
-          .map(
+        results?.root?.children
+          ?.map(
             (v, i) =>
               `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
           )
-          .join("\n"),
+          ?.join("\n"),
       )
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
         modelId: defaultBestModel,
@@ -331,7 +358,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             from: new Date().getTime() - 4 * monthInMs,
             to: new Date().getTime(),
           })
-        ).root.children
+        )?.root?.children
 
         let results = await searchVespa(
           query,
@@ -343,17 +370,17 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha,
           null,
           latestResults
-            .map((v: VespaSearchResult) => (v.fields as any).docId)
-            .filter((v) => !!v),
+            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+            ?.filter((v) => !!v),
         )
-        const totalResults = results.root.children.concat(latestResults)
+        const totalResults = results?.root?.children?.concat(latestResults)
         const initialContext = cleanContext(
           totalResults
-            .map(
+            ?.map(
               (v, i) =>
                 `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
             )
-            .join("\n"),
+            ?.join("\n"),
         )
 
         const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
@@ -364,7 +391,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         let buffer = ""
         let currentAnswer = ""
         let parsed = { answer: "" }
-        const citationRegex = /\[(\d+)\]/g
         let yieldedCitations = new Set<number>()
         for await (const chunk of iterator) {
           if (chunk.text) {
@@ -385,7 +411,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 }
                 // Extract all citations from the parsed answer
                 let match
-                while ((match = citationRegex.exec(parsed.answer)) !== null) {
+                while (
+                  (match = textToCitationIndex.exec(parsed.answer)) !== null
+                ) {
                   const citationIndex = parseInt(match[1], 10)
                   if (!yieldedCitations.has(citationIndex)) {
                     const item = totalResults[citationIndex]
@@ -412,7 +440,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               }
             } catch (err) {
               const errMessage = (err as Error).message
-              Logger.error(`Error while parsing LLM output ${errMessage}`)
+              Logger.error(err, `Error while parsing LLM output ${errMessage}`)
               continue
             }
           }
@@ -442,7 +470,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       if (!results.root.children) {
         results.root.children = []
       }
-      results.root.children = results.root.children.concat(latestResults)
+      results.root.children = results?.root?.children?.concat(latestResults)
     } else {
       results = await searchVespa(
         message,
@@ -455,12 +483,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     }
     const initialContext = cleanContext(
-      results.root.children
-        .map(
+      results?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        .join("\n"),
+        ?.join("\n"),
     )
 
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
@@ -471,7 +499,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
-    const citationRegex = /\[(\d+)\]/g
     let yieldedCitations = new Set<number>()
     for await (const chunk of iterator) {
       if (chunk.text) {
@@ -492,10 +519,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             }
             // Extract all citations from the parsed answer
             let match
-            while ((match = citationRegex.exec(parsed.answer)) !== null) {
+            while ((match = textToCitationIndex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
-                const item = results.root.children[citationIndex]
+                const item = results?.root?.children[citationIndex]
                 if (item) {
                   yield {
                     citation: {
@@ -519,7 +546,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           }
         } catch (err) {
           const errMessage = (err as Error).message
-          Logger.error(`Error while parsing LLM output ${errMessage}`)
+          Logger.error(err, `Error while parsing LLM output ${errMessage}`)
           continue
         }
       }
@@ -535,7 +562,30 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     text: "I could not find any information to answer it, please change your query",
   }
 }
+const getSearchRangeSummary = (from: number, to: number, direction: string) => {
+  const now = Date.now()
 
+  // For "next" direction, we usually start from now
+  if (direction === "next") {
+    // Start from today/now
+    const endDate = new Date(to)
+    // Format end date to month/year if it's far in future
+    const endStr =
+      Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
+        ? `${endDate.toLocaleString("default", { month: "long" })} ${endDate.getFullYear()}`
+        : getRelativeTime(to)
+    return `from today until ${endStr}`
+  }
+  // For "prev" direction
+  else {
+    const startDate = new Date(from)
+    const startStr =
+      Math.abs(now - from) > 30 * 24 * 60 * 60 * 1000
+        ? `${startDate.toLocaleString("default", { month: "long" })} ${startDate.getFullYear()}`
+        : getRelativeTime(from)
+    return `from today back to ${startStr}`
+  }
+}
 async function* generatePointQueryTimeExpansion(
   input: string,
   messages: Message[],
@@ -551,7 +601,7 @@ async function* generatePointQueryTimeExpansion(
   const message = input
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
-  const direction = classification.direction
+  const direction = classification.direction as string
   let costArr: number[] = [classification.cost]
 
   let from = new Date().getTime()
@@ -625,16 +675,16 @@ async function* generatePointQueryTimeExpansion(
 
     // Prepare context for LLM
     const initialContext = cleanContext(
-      combinedResults.root.children
-        .map(
+      combinedResults?.root?.children
+        ?.map(
           (v, i) =>
             `Index ${i}: \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
-        .join("\n"),
+        ?.join("\n"),
     )
 
     // Stream LLM response
-    const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
     })
@@ -642,7 +692,6 @@ async function* generatePointQueryTimeExpansion(
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
-    const citationRegex = /\[(\d+)\]/g
     let yieldedCitations = new Set<number>()
 
     for await (const chunk of iterator) {
@@ -666,10 +715,10 @@ async function* generatePointQueryTimeExpansion(
               yield { text: newText }
             }
             let match
-            while ((match = citationRegex.exec(parsed.answer)) !== null) {
+            while ((match = textToCitationIndex.exec(parsed.answer)) !== null) {
               const citationIndex = parseInt(match[1], 10)
               if (!yieldedCitations.has(citationIndex)) {
-                const item = combinedResults.root.children[citationIndex]
+                const item = combinedResults?.root?.children[citationIndex]
                 if (item) {
                   yield {
                     citation: {
@@ -699,9 +748,9 @@ async function* generatePointQueryTimeExpansion(
     }
   }
 
-  // If we've exhausted all iterations without finding an answer
+  const searchSummary = getSearchRangeSummary(from, to, direction)
   yield {
-    text: "I could not find any information to answer it, please change your query",
+    text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
     cost: costArr.reduce((a, b) => a + b, 0),
   }
 }
@@ -717,6 +766,9 @@ export async function* UnderstandMessageAndAnswer(
 > {
   // user is talking about an event
   if (classification.direction !== null) {
+    Logger.info(
+      `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
+    )
     return yield* generatePointQueryTimeExpansion(
       message,
       messages,
@@ -728,6 +780,9 @@ export async function* UnderstandMessageAndAnswer(
       3,
     )
   } else {
+    Logger.info(
+      "default case, trying to do iterative RAG with query rewriting and time filtering for answering users query",
+    )
     // default case
     return yield* generateIterativeTimeFilterAndQueryRewrite(
       message,
@@ -742,10 +797,32 @@ export async function* UnderstandMessageAndAnswer(
   }
 }
 
+const handleError = (error: any) => {
+  let errorMessage = ""
+  switch (error) {
+    default:
+      errorMessage = "Something went wrong. Please try again."
+      break
+  }
+  return errorMessage
+}
+
+const addErrMessageToMessage = async (
+  lastMessage: SelectMessage,
+  errorMessage: string,
+) => {
+  if (lastMessage.messageRole === MessageRole.User) {
+    await updateMessageByExternalId(db, lastMessage?.externalId, {
+      errorMessage,
+    })
+  }
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   let stream: any
+  let chat: SelectChat
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
@@ -807,6 +884,9 @@ export const MessageApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
+      Logger.info(
+        "First mesage of the conversation, successfully created the chat",
+      )
       chat = insertedChat
       messages.push(insertedMsg) // Add the inserted message to messages array
     } else {
@@ -829,6 +909,7 @@ export const MessageApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
+      Logger.info("Existing conversation, fetched previous messages")
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
     }
@@ -852,17 +933,24 @@ export const MessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+          const messagesWithNoErrResponse = messages
+            .slice(0, messages.length - 1)
+            .filter((msg) => !msg?.errorMessage)
+            .map((m) => ({
+              role: m.messageRole as ConversationRole,
+              content: [{ text: m.message }],
+            }))
 
+          Logger.info(
+            "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+          )
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
-              messages: messages.slice(0, messages.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              })),
+              messages: messagesWithNoErrResponse,
             })
 
           // TODO: for now if the answer is from the conversation itself we don't
@@ -882,6 +970,9 @@ export const MessageApi = async (c: Context) => {
                 parsed = jsonParseLLMOutput(buffer)
                 if (parsed.answer && currentAnswer !== parsed.answer) {
                   if (currentAnswer === "") {
+                    Logger.info(
+                      "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                    )
                     stream.writeSSE({
                       event: ChatSSEvents.Start,
                       data: "",
@@ -903,7 +994,10 @@ export const MessageApi = async (c: Context) => {
                 }
               } catch (err) {
                 const errMessage = (err as Error).message
-                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
                 continue
               }
             }
@@ -915,7 +1009,14 @@ export const MessageApi = async (c: Context) => {
           if (parsed.answer === null) {
             // ambigious user message
             if (parsed.queryRewrite) {
+              Logger.info(
+                "The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
+              )
               message = parsed.queryRewrite
+            } else {
+              Logger.info(
+                "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+              )
             }
             const classification: TemporalClassifier & { cost: number } =
               await temporalEventClassification(message, {
@@ -928,10 +1029,7 @@ export const MessageApi = async (c: Context) => {
               ctx,
               message,
               classification,
-              messages.slice(0, messages.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              })),
+              messagesWithNoErrResponse,
             )
 
             stream.writeSSE({
@@ -957,6 +1055,9 @@ export const MessageApi = async (c: Context) => {
                 const { index, item } = chunk.citation
                 citations.push(item)
                 citationMap[index] = citations.length - 1
+                Logger.info(
+                  `Found citations and sending it, current count: ${citations.length}`,
+                )
                 stream.writeSSE({
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
@@ -998,57 +1099,118 @@ export const MessageApi = async (c: Context) => {
               event: ChatSSEvents.End,
             })
           } else {
+            const allMessages = await getChatMessages(db, chat?.externalId)
+            const lastMessage = allMessages[allMessages.length - 1]
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: lastMessage.externalId,
+              }),
+            })
             await stream.writeSSE({
               event: ChatSSEvents.Error,
               data: "Error while trying to answer",
             })
+            // Add the error message to last user message
+            await addErrMessageToMessage(
+              lastMessage,
+              "Error while trying to answer",
+            )
+
             await stream.writeSSE({
               data: "",
               event: ChatSSEvents.End,
             })
           }
         } catch (error) {
+          const errFomMap = handleError(error)
+          const allMessages = await getChatMessages(db, chat?.externalId)
+          const lastMessage = allMessages[allMessages.length - 1]
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: lastMessage.externalId,
+            }),
+          })
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: (error as Error).message,
+            data: errFomMap,
           })
+
+          // Add the error message to last user message
+          await addErrMessageToMessage(lastMessage, errFomMap)
+
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
           Logger.error(
+            error,
             `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
         }
       },
       async (err, stream) => {
+        const errFromMap = handleError(err)
+        const allMessages = await getChatMessages(db, chat?.externalId)
+        const lastMessage = allMessages[allMessages.length - 1]
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+            messageId: lastMessage.externalId,
+          }),
+        })
         await stream.writeSSE({
           event: ChatSSEvents.Error,
-          data: err.message,
+          data: errFromMap,
         })
+        // Add the error message to last user message
+        await addErrMessageToMessage(lastMessage, errFromMap)
+
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
         })
-        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
       },
     )
   } catch (error) {
     const errMsg = getErrorMessage(error)
     // TODO: add more errors like bedrock, this is only openai
+    const errFromMap = handleError(error)
+    // @ts-ignore
+    if (chat?.externalId) {
+      const allMessages = await getChatMessages(db, chat?.externalId)
+      // Add the error message to last user message
+      const lastMessage = allMessages[allMessages.length - 1]
+      await stream.writeSSE({
+        event: ChatSSEvents.ResponseMetadata,
+        data: JSON.stringify({
+          chatId: chat.externalId,
+          messageId: lastMessage.externalId,
+        }),
+      })
+      await addErrMessageToMessage(lastMessage, errFromMap)
+    }
     if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
-        Logger.error("You exceeded your current quota")
+        Logger.error(error, "You exceeded your current quota")
         if (stream) {
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: error.message,
+            data: errFromMap,
           })
         }
       }
     } else {
-      Logger.error(`Message Error: ${errMsg} ${(error as Error).stack}`)
+      Logger.error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
       throw new HTTPException(500, {
         message: "Could not create message or Chat",
       })
@@ -1056,6 +1218,14 @@ export const MessageApi = async (c: Context) => {
   }
 }
 
+// We support both retrying of already valid assistant respone & retrying of an error
+// When the assitant gives error, that error message is stored in the user query's message object of that respective user query
+// On the frontend, an error message can be seen from the assistant's side, but it is not really present in the DB, it is taken from the user query's errorMessage property
+// On retry of that error, we send the user message itself again (like asking the same query again)
+// If the retry is successful and we get a valid response, we store that message inside DB with a 'createdAt' value just 1 unit ahead of the respective user query's createdAt value
+// This is done to maintain the order of user-assistant message pattern in messages which helps both in the frontend and server logic
+// If the retry also fails, we do the same thing, storing error message in the user query's respective message object
+// If a retry fails on a completely valid assistant response, the error is shown in the UI but not stored anywhere, we retain the valid response (can be seen after reload)
 export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
@@ -1071,13 +1241,17 @@ export const MessageRetryApi = async (c: Context) => {
     if (!originalMessage) {
       throw new HTTPException(404, { message: "Message not found" })
     }
+    const isUserMessage = originalMessage.messageRole === "user"
 
     let conversation = await getChatMessagesBefore(
       db,
       originalMessage.chatId,
       originalMessage.createdAt,
     )
-    if (!conversation || !conversation.length) {
+    // This !isUserMessage is useful for the case when the user retries the error he gets on the very first user query
+    // Becoz on retry of the error, there will be no conversation availble as there wouldn't be anything before the very first query
+    // And for retry on error, we use the user query itself
+    if (!isUserMessage && (!conversation || !conversation.length)) {
       throw new HTTPException(400, {
         message: "Could not fetch previous messages",
       })
@@ -1092,11 +1266,14 @@ export const MessageRetryApi = async (c: Context) => {
       workspaceId,
       email,
     )
+    const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
 
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
-    const prevUserMessage = conversation[conversation.length - 1]
+    const prevUserMessage = isUserMessage
+      ? originalMessage
+      : conversation[conversation.length - 1]
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
       conversation = []
@@ -1112,18 +1289,30 @@ export const MessageRetryApi = async (c: Context) => {
       async (stream) => {
         try {
           let message = prevUserMessage.message
+          const convWithNoErrMsg = isUserMessage
+            ? conversation
+                .filter((con) => !con?.errorMessage)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
+            : conversation
+                .slice(0, conversation.length - 1)
+                .filter((con) => !con?.errorMessage)
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
+          Logger.info(
+            "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+          )
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
-              messages: conversation
-                .slice(0, conversation.length - 1)
-                .map((m) => ({
-                  role: m.messageRole as ConversationRole,
-                  content: [{ text: m.message }],
-                })),
+              messages: convWithNoErrMsg,
             })
           let currentAnswer = ""
           let answer = ""
@@ -1138,6 +1327,9 @@ export const MessageRetryApi = async (c: Context) => {
                 parsed = jsonParseLLMOutput(buffer)
                 if (parsed.answer && currentAnswer !== parsed.answer) {
                   if (currentAnswer === "") {
+                    Logger.info(
+                      "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                    )
                     stream.writeSSE({
                       event: ChatSSEvents.Start,
                       data: "",
@@ -1159,7 +1351,10 @@ export const MessageRetryApi = async (c: Context) => {
                 }
               } catch (err) {
                 const errMessage = (err as Error).message
-                Logger.error(`Error while parsing LLM output ${errMessage}`)
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
                 continue
               }
             }
@@ -1170,7 +1365,14 @@ export const MessageRetryApi = async (c: Context) => {
 
           if (parsed.answer === null) {
             if (parsed.queryRewrite) {
+              Logger.info(
+                "retry: The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
+              )
               message = parsed.queryRewrite
+            } else {
+              Logger.info(
+                "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+              )
             }
             const classification: TemporalClassifier & { cost: number } =
               await temporalEventClassification(message, {
@@ -1183,12 +1385,9 @@ export const MessageRetryApi = async (c: Context) => {
               ctx,
               message,
               classification,
-              conversation.slice(0, conversation.length - 1).map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              })),
+              convWithNoErrMsg,
             )
-
+            // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
@@ -1212,6 +1411,9 @@ export const MessageRetryApi = async (c: Context) => {
                 const { index, item } = chunk.citation
                 citations.push(item)
                 citationMap[index] = citations.length - 1
+                Logger.info(
+                  `retry: Found citations and sending it, current count: ${citations.length}`,
+                )
                 stream.writeSSE({
                   event: ChatSSEvents.CitationsUpdate,
                   data: JSON.stringify({
@@ -1224,44 +1426,112 @@ export const MessageRetryApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          await updateMessage(db, messageId, {
-            message: processMessage(answer, citationMap),
-            updatedAt: new Date(),
-            sources: citations,
-          })
+          // Retry on an error case
+          // Error is retried and now assistant has a response
+          // Inserting a new assistant message here, replacing the error message.
+          if (isUserMessage) {
+            let msg = await db.transaction(
+              async (tx): Promise<SelectMessage> => {
+                // Remove the err message from the user message
+                await updateMessage(tx, messageId, {
+                  errorMessage: "",
+                })
+                // Insert the new assistant response
+                const msg = await insertMessage(tx, {
+                  chatId: originalMessage.chatId,
+                  userId: user.id,
+                  workspaceExternalId: workspace.externalId,
+                  chatExternalId: originalMessage.chatExternalId,
+                  messageRole: MessageRole.Assistant,
+                  email: user.email,
+                  sources: citations,
+                  message: processMessage(answer, citationMap),
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                      .modelId,
+                  // The createdAt for this response which was error before
+                  // should be just 1 unit more than the respective user query's createdAt value
+                  // This is done to maintain order of user-assistant pattern of messages in UI
+                  createdAt: new Date(
+                    new Date(originalMessage.createdAt).getTime() + 1,
+                  ),
+                })
+                return msg
+              },
+            )
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: originalMessage.chatExternalId,
+                messageId: msg.externalId,
+              }),
+            })
+          } else {
+            await updateMessage(db, messageId, {
+              message: processMessage(answer, citationMap),
+              updatedAt: new Date(),
+              sources: citations,
+            })
+          }
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
         } catch (error) {
+          const errFromMap = handleError(error)
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: originalMessage.chatExternalId,
+              messageId: originalMessage.externalId,
+            }),
+          })
           await stream.writeSSE({
             event: ChatSSEvents.Error,
-            data: (error as Error).message,
+            data: errFromMap,
           })
+          await addErrMessageToMessage(originalMessage, errFromMap)
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
           Logger.error(
+            error,
             `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
         }
       },
       async (err, stream) => {
+        const errFromMap = handleError(err)
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: originalMessage.chatExternalId,
+            messageId: originalMessage.externalId,
+          }),
+        })
         await stream.writeSSE({
           event: ChatSSEvents.Error,
-          data: err.message,
+          data: errFromMap,
         })
+        await addErrMessageToMessage(originalMessage, errFromMap)
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
         })
-        Logger.error(`Streaming Error: ${err.message} ${(err as Error).stack}`)
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
       },
     )
   } catch (error) {
     const errMsg = getErrorMessage(error)
-    Logger.error(`Message Retry Error: ${errMsg} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Message Retry Error: ${errMsg} ${(error as Error).stack}`,
+    )
     throw new HTTPException(500, {
       message: "Could not retry message",
     })

@@ -18,9 +18,16 @@ import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
+import {
+  useQueryClient,
+  useMutation,
+  useInfiniteQuery,
+  InfiniteData,
+} from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, renameChat } from "@/components/HistoryModal"
+import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import { errorComponent } from "@/components/error"
+import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 
 type CurrentResp = {
   resp: string
@@ -98,22 +105,38 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     },
     onSuccess: ({ chatId, title }) => {
       // Update the UI by renaming the chat
-      queryClient.setQueryData<SelectPublicChat[]>(
-        ["all-connectors"],
-        (oldChats) => {
-          if (!oldChats?.length) return []
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
 
-          // Find the chat to update
-          const chatToUpdate: SelectPublicChat = oldChats.find(
-            (chat) => chat.externalId === chatId,
+          let chatToUpdate: SelectPublicChat | undefined
+          oldData.pages.forEach((page) => {
+            const found = page.find((c) => c.externalId === chatId)
+            if (found) chatToUpdate = found
+          })
+
+          if (!chatToUpdate) {
+            return oldData
+          }
+
+          const updatedChat = { ...chatToUpdate, title }
+
+          // Remove the old version from all pages
+          const filteredPages = oldData.pages.map((page) =>
+            page.filter((c) => c.externalId !== chatId),
           )
-          if (!chatToUpdate) return oldChats
 
-          // Create updated chat and filter out old version in one pass
-          return [
-            { ...chatToUpdate, title },
-            ...oldChats.filter((chat) => chat.externalId !== chatId),
+          // Insert the updated chat at the front of the first page
+          const newPages = [
+            [updatedChat, ...filteredPages[0]],
+            ...filteredPages.slice(1),
           ]
+
+          return {
+            ...oldData,
+            pages: newPages,
+          }
         },
       )
       setChatTitle(editedTitle)
@@ -131,11 +154,28 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }, [])
 
-  const { data: historyItems } = useQuery<SelectPublicChat[]>({
-    queryKey: ["all-connectors"],
-    queryFn: fetchChats,
+  const { data: historyItems } = useInfiniteQuery<
+    SelectPublicChat[],
+    Error,
+    InfiniteData<SelectPublicChat[]>,
+    ["all-chats"],
+    number
+  >({
+    queryKey: ["all-chats"],
+    queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
+    getNextPageParam: (lastPage, allPages) => {
+      // lastPage?.length < pageSize becomes true, when there are no more pages
+      if (lastPage?.length < pageSize) {
+        return undefined
+      }
+      // Otherwise, next page = current number of pages fetched so far
+      return allPages?.length
+    },
+    initialPageParam: 0,
   })
-  const currentChat = historyItems?.find((item) => item.externalId === chatId)
+  const currentChat = historyItems?.pages
+    ?.flat()
+    .find((item) => item.externalId === chatId)
 
   useEffect(() => {
     // Only update local state if we are not currently editing the title
@@ -182,7 +222,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
     inputRef.current?.focus()
     setQuery("")
-  }, [(params as any).chatId])
+  }, [
+    data?.chat?.isBookmarked,
+    data?.chat?.title,
+    data?.messages,
+    isWithChatId,
+    params,
+  ])
 
   // New useEffect to handle query parameters
   useEffect(() => {
@@ -326,7 +372,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       if (currentResp) {
         setMessages((prevMessages) => [
           ...prevMessages,
-          { messageRole: "assistant", message: `Error occured: ${event.data}` },
+          {
+            messageRole: "assistant",
+            message: `${event.data}`,
+            externalId: currentResp.messageId,
+            sources: currentResp.sources,
+            citationMap: currentResp.citationMap,
+          },
         ])
       }
       setCurrentResp(null)
@@ -365,15 +417,48 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     setIsStreaming(true) // Start streaming for retry
 
-    // Update the assistant message being retried
-    setMessages((prevMessages) =>
-      prevMessages.map((msg) => {
-        if (msg.externalId === messageId && msg.messageRole === "assistant") {
-          return { ...msg, message: "", isRetrying: true, sources: [] }
-        }
-        return msg
-      }),
+    // If user retries on error case
+    const userMsgWithErr = messages.find(
+      (msg) =>
+        msg.externalId === messageId &&
+        msg.messageRole === "user" &&
+        msg.errorMessage,
     )
+    // Update the assistant message being retried
+    setMessages((prevMessages) => {
+      if (userMsgWithErr) {
+        // Create a copy of prevMessages so we can modify it
+        const updatedMessages = [...prevMessages]
+        // Find the index of the message you want to update
+        const index = updatedMessages.findIndex(
+          (msg) => msg.externalId === messageId && msg.messageRole === "user",
+        )
+
+        if (index !== -1) {
+          // Update the errorMessage of that specific message
+          updatedMessages[index] = {
+            ...updatedMessages[index],
+            errorMessage: "",
+          }
+          // Insert a new message right after
+          updatedMessages.splice(index + 1, 0, {
+            messageRole: "assistant",
+            message: "",
+            isRetrying: true,
+            sources: [],
+          })
+        }
+
+        return updatedMessages
+      } else {
+        return prevMessages.map((msg) => {
+          if (msg.externalId === messageId && msg.messageRole === "assistant") {
+            return { ...msg, message: "", isRetrying: true, sources: [] }
+          }
+          return msg
+        })
+      }
+    })
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
@@ -382,45 +467,207 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, message: msg.message + event.data }
-            : msg,
-        ),
+      if (userMsgWithErr) {
+        setMessages((prevMessages) => {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          // If no match is found or index+1 is out of range, return the original array
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            return prevMessages
+          }
+
+          // Create a shallow copy of the array
+          const newMessages = [...prevMessages]
+
+          // Create a copy of the message object at index+1 and add the `message` field
+          newMessages[index + 1] = {
+            ...newMessages[index + 1],
+            message: newMessages[index + 1].message + event.data,
+          }
+
+          return newMessages
+        })
+      } else {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, message: msg.message + event.data }
+              : msg,
+          ),
+        )
+      }
+    })
+
+    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
+      const userMessage = messages.find(
+        (msg) => msg.externalId === messageId && msg.messageRole === "user",
       )
+      if (userMessage) {
+        const { messageId: newMessageId } = JSON.parse(event.data)
+
+        if (newMessageId) {
+          setMessages((prevMessages) => {
+            // Find the index of the message where externalId matches messageId
+            const index = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (index === -1 || index + 1 >= prevMessages.length) {
+              // If no match is found or index+1 is out of range, return the original array
+              return prevMessages
+            }
+
+            // Create a shallow copy of the array
+            const newMessages = [...prevMessages]
+
+            // Create a copy of the message object at index+1 and add the `message` field
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              externalId: newMessageId,
+            }
+            return newMessages
+          })
+        }
+      }
     })
 
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks, citationMap } = JSON.parse(event.data)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, sources: contextChunks, citationMap }
-            : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying) {
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              sources: contextChunks,
+              citationMap,
+            }
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, sources: contextChunks, citationMap }
+              : msg,
+          )
+        }
+      })
     })
 
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.externalId === messageId && msg.isRetrying
-            ? { ...msg, isRetrying: false }
-            : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying) {
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              isRetrying: false,
+            }
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false }
+              : msg,
+          )
+        }
+      })
       eventSource.close()
       setIsStreaming(false) // Stop streaming after retry
     })
 
+    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+      console.error("Retry Error with SSE:", event.data)
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          if (newMessages[index + 1].isRetrying)
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              isRetrying: false,
+              message: event.data,
+            }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, isRetrying: false, message: event.data }
+              : msg,
+          )
+        }
+      })
+      eventSource.close()
+      setIsStreaming(false)
+    })
+
     eventSource.onerror = (error) => {
       console.error("Retry SSE Error:", error)
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.isRetrying ? { ...msg, isRetrying: false } : msg,
-        ),
-      )
+      setMessages((prevMessages) => {
+        if (userMsgWithErr) {
+          // Find the index of the message where externalId matches messageId
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            // If no match is found or index+1 is out of range, return the original array
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+
+          newMessages[index + 1] = {
+            ...newMessages[index + 1],
+            isRetrying: false,
+          }
+
+          return newMessages
+        } else {
+          return prevMessages.map((msg) =>
+            msg.isRetrying ? { ...msg, isRetrying: false } : msg,
+          )
+        }
+      })
       eventSource.close()
       setIsStreaming(false) // Stop streaming on error
     }
@@ -462,7 +709,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [messages, currentResp?.resp])
 
   // if invalid chatId
-  if (data.error) {
+  if (data?.error) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
         <Sidebar />
@@ -517,7 +764,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   return (
     <div className="h-full w-full flex flex-row bg-white">
-      <Sidebar photoLink={user.photoLink ?? ""} />
+      <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
       <div className="h-full w-full flex flex-col relative">
         <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
           <div className="flex h-[48px] items-center max-w-2xl w-full">
@@ -567,34 +814,69 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               {messages.map((message, index) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
+                const userMessageWithErr =
+                  message.messageRole === "user" && message?.errorMessage
+
                 return (
-                  <ChatMessage
-                    key={index}
-                    message={message.message}
-                    isUser={message.messageRole === "user"}
-                    responseDone={true}
-                    citations={message?.sources?.map((c: Citation) => c.url)}
-                    messageId={message.externalId}
-                    handleRetry={handleRetry}
-                    citationMap={message.citationMap}
-                    dots={message.isRetrying ? dots : ""}
-                    onToggleSources={() => {
-                      if (
-                        showSources &&
-                        currentMessageId === message.externalId
-                      ) {
-                        setShowSources(false)
-                        setCurrentCitations([])
-                        setCurrentMessageId(null)
-                      } else {
-                        setCurrentCitations(message?.sources || [])
-                        setShowSources(true)
-                        setCurrentMessageId(message.externalId)
-                      }
-                    }}
-                    sourcesVisible={isSourcesVisible}
-                    isStreaming={isStreaming}
-                  />
+                  <>
+                    <ChatMessage
+                      key={index}
+                      message={message.message}
+                      isUser={message.messageRole === "user"}
+                      responseDone={true}
+                      citations={message?.sources?.map((c: Citation) => c.url)}
+                      messageId={message.externalId}
+                      handleRetry={handleRetry}
+                      citationMap={message.citationMap}
+                      dots={message.isRetrying ? dots : ""}
+                      onToggleSources={() => {
+                        if (
+                          showSources &&
+                          currentMessageId === message.externalId
+                        ) {
+                          setShowSources(false)
+                          setCurrentCitations([])
+                          setCurrentMessageId(null)
+                        } else {
+                          setCurrentCitations(message?.sources || [])
+                          setShowSources(true)
+                          setCurrentMessageId(message.externalId)
+                        }
+                      }}
+                      sourcesVisible={isSourcesVisible}
+                      isStreaming={isStreaming}
+                    />
+                    {userMessageWithErr && (
+                      <ChatMessage
+                        message={message.errorMessage}
+                        isUser={false}
+                        responseDone={true}
+                        citations={message?.sources?.map(
+                          (c: Citation) => c.url,
+                        )}
+                        messageId={message.externalId}
+                        handleRetry={handleRetry}
+                        citationMap={message.citationMap}
+                        dots={message.isRetrying ? dots : ""}
+                        onToggleSources={() => {
+                          if (
+                            showSources &&
+                            currentMessageId === message.externalId
+                          ) {
+                            setShowSources(false)
+                            setCurrentCitations([])
+                            setCurrentMessageId(null)
+                          } else {
+                            setCurrentCitations(message?.sources || [])
+                            setShowSources(true)
+                            setCurrentMessageId(message.externalId)
+                          }
+                        }}
+                        sourcesVisible={isSourcesVisible}
+                        isStreaming={isStreaming}
+                      />
+                    )}
+                  </>
                 )
               })}
               {currentResp && (
@@ -698,6 +980,8 @@ const Sources = ({
   ) : null
 }
 
+export const textToCitationIndex = /\[(\d+)\]/g
+
 const ChatMessage = ({
   message,
   isUser,
@@ -726,30 +1010,26 @@ const ChatMessage = ({
   isStreaming?: boolean
 }) => {
   const [isCopied, setIsCopied] = useState(false)
+
   const processMessage = (text: string) => {
+    // First split any grouped citations
+    text = splitGroupedCitationsWithSpaces(text)
+
     if (citationMap) {
-      return text.replace(/\[(\d+)\]/g, (match, num) => {
+      return text.replace(textToCitationIndex, (match, num) => {
         const index = citationMap[num]
         const url = citations[index]
-        if (url) {
-          return `[[${index + 1}]](${url})`
-        }
-
-        return match
+        return typeof index === "number" && url
+          ? `[[${index + 1}]](${url})`
+          : ""
       })
     } else {
-      return text.replace(/\[(\d+)\]/g, (match, num) => {
+      return text.replace(textToCitationIndex, (match, num) => {
         const url = citations[num - 1]
-
-        if (url) {
-          return `[[${num}]](${url})`
-        }
-
-        return match
+        return url ? `[[${num}]](${url})` : ""
       })
     }
   }
-
   return (
     <div
       className={`${isUser ? "max-w-[75%]" : ""} rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
@@ -857,4 +1137,5 @@ export const Route = createFileRoute("/_authenticated/chat")({
     const { user, workspace } = matches[matches.length - 1].context
     return <ChatPage user={user} workspace={workspace} />
   },
+  errorComponent: errorComponent,
 })

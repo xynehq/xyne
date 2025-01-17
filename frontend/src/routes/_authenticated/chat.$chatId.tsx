@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { ChatPage } from "@/routes/_authenticated/chat"
 import { api } from "@/api"
+import { errorComponent } from "@/components/error"
 
 export const Route = createFileRoute("/_authenticated/chat/$chatId")({
   component: ChatPage,
@@ -17,4 +18,5 @@ export const Route = createFileRoute("/_authenticated/chat/$chatId")({
       return { error }
     }
   },
+  errorComponent: errorComponent,
 })
