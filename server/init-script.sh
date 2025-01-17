@@ -10,9 +10,9 @@ if ! command -v bun &> /dev/null; then
   exit 1
 fi
 
-if [ ! -f "./.env" ]; then
+if [ ! -f ".env" ]; then
   echo ".env file not found. Creating a new one..."
-  touch ./.env
+  touch .env
 fi 
 
 echo "Running generation and migration commands for the server..."
