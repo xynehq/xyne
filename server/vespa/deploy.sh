@@ -54,7 +54,7 @@ fi
 
 echo "Deploying vespa..."
 vespa deploy --wait 500
-echo "Restarting docker vespa...."
+echo "Restarting vespa...."
 docker restart vespa
 # vespa destroy
 vespa status --wait 55

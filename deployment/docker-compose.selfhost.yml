@@ -8,8 +8,7 @@ services:
       context: ..
       dockerfile: Dockerfile
     ports:
-      - "3001:80"
-
+      - "80:80"
     depends_on:
       - xyne-db
       - vespa
@@ -31,7 +30,6 @@ services:
         max-size: "50m"
         max-file: "6"
     
-
 ## Temporary fix for vespa permission issues until a better solution is found
   vespa-init:
     image: busybox 

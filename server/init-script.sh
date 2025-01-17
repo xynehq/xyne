@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+
 echo "Initializing Vespa permissions..."
 ./init-vespa.sh
 
@@ -8,6 +9,11 @@ if ! command -v bun &> /dev/null; then
   echo "Bun is not installed. Please install it before running this script."
   exit 1
 fi
+
+if [ ! -f ".env" ]; then
+  echo ".env file not found. Creating a new one..."
+  touch .env
+fi 
 
 echo "Running generation and migration commands for the server..."
 bun i
@@ -37,5 +43,9 @@ cd ../../frontend
 bun i
 
 bun run build
+
+echo "Removing orphan container....."
+
+docker rm vespa-init-container
 
 echo "***************Initialization completed*******************"
