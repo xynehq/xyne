@@ -630,7 +630,7 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
   }
 }
 
-const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
+export const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
   try {
     return await GetDocument(schema, docId)
   } catch (error) {
