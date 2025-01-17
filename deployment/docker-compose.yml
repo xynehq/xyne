@@ -9,6 +9,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3001:80"
+
     depends_on:
       - xyne-db
       - vespa
@@ -31,9 +32,9 @@ services:
         max-file: "6"
     
 
-## This container is only to handle permissions for vespa [ ONLY FOR THE TIME BEING WILL GET REMOVED IN FUTURE]
+## Temporary fix for vespa permission issues until a better solution is found
   vespa-init:
-    image: busybox  # Using lightweight Busybox Linux
+    image: busybox 
     container_name: vespa-init
     user: root
     volumes:

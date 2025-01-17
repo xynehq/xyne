@@ -11,9 +11,9 @@ fi
 
 echo "Running generation and migration commands for the server..."
 
-if [ ! -f "./.env" ]; then
+if [ ! -f ".env" ]; then
   echo ".env file not found. Creating a new one..."
-  touch ./.env
+  touch .env
 fi 
 
 bun i

@@ -11,7 +11,6 @@ WORKDIR /usr/src/app/server
 RUN bun install
 RUN chmod +x docker-init.sh 
 
-RUN touch .env
 
 # Install dependencies and build the frontend
 WORKDIR /usr/src/app/frontend
@@ -46,5 +45,6 @@ RUN mkdir -p downloads
 
 USER bun
 
+## A delay of 20 seconds to wait for the other containers to start running and the migrate changes and deploy schema changes
+CMD ["sh", "-c", "sleep 20 && if [ -f /usr/src/app/server/.env ]; then . /usr/src/app/server/.env; fi && bun run generate && bun run migrate && cd /usr/src/app/server/vespa && EMBEDDING_MODEL=$EMBEDDING_MODEL ./deploy-docker.sh && cd /usr/src/app/server/ && bun run server.ts"]
 
-CMD ["sh", "-c", "sleep 20 && bun run generate && bun run migrate && cd /usr/src/app/server/vespa && EMBEDDING_MODEL=$EMBEDDING_MODEL ./deploy-docker.sh && cd /usr/src/app/server/ && bun run server.ts"]
