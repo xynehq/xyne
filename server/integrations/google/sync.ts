@@ -84,24 +84,20 @@ type ChangeStats = {
   summary: string
 }
 
-// todo use getDocumentOrNull here
 const getDocumentOrSpreadsheet = async (docId: string) => {
   try {
-    const doc = await GetDocument(fileSchema, docId)
-    return doc
-  } catch (err) {
-    const errMessage = getErrorMessage((err as Error).cause)
-    if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
+    const doc = await getDocumentOrNull(fileSchema, docId)
+    if (!doc) {
       Logger.error(
-        err,
         `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
       )
       const sheetsForSpreadSheet = await GetDocument(fileSchema, `${docId}_0`)
       return sheetsForSpreadSheet
-    } else {
-      Logger.error(err, `Error getting document`)
-      throw err
     }
+    return doc
+  } catch (err) {
+    Logger.error(err, `Error getting document`)
+    throw err
   }
 }
 
@@ -825,7 +821,6 @@ const handleGoogleCalendarEventsChanges = async (
         if (docId && eventChange.status === "cancelled") {
           // We only delete the whole recurring event, when all instances are deleted
           // When the whole recurring event is deleted, GetDocument will not give error
-          // todo use getDocumentOrNull here
           try {
             const event = await getDocumentOrNull(eventSchema, docId)
             // For Recurring events, when an instance/s are deleted, we just update the cancelledInstances property
