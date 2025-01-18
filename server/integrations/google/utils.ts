@@ -386,12 +386,12 @@ export const getGmailAttachmentChunks = async (
     messageId: string
     attachmentId: string
     filename: string
-    size: string
+    size: number
   },
 ): Promise<string[] | null> => {
   const { attachmentId, filename, messageId, size } = attachmentMetadata
-  const attachmentChunks: string[] = []
-  const pdfSizeInMB = parseInt(size) / (1024 * 1024)
+  let attachmentChunks: string[] = []
+  const pdfSizeInMB = size / (1024 * 1024)
   // Ignore the PDF files larger than Max PDF Size
   if (pdfSizeInMB > MAX_ATTACHMENT_PDF_SIZE) {
     Logger.warn(
@@ -421,12 +421,11 @@ export const getGmailAttachmentChunks = async (
       await deleteDocument(downloadAttachmentFilePath)
       return null
     }
-    const chunks = docs
+    attachmentChunks = docs
       .flatMap((doc) => chunkDocument(doc.pageContent))
       .map((v) => v.chunk)
       .filter((v) => v.trim())
 
-    attachmentChunks.push(...chunks)
     await deleteDocument(downloadAttachmentFilePath)
   } catch (error) {
     throw error
@@ -436,56 +435,29 @@ export const getGmailAttachmentChunks = async (
 }
 
 // Function to parse attachments from the email payload
-export const parseAttachments = async (
+export const parseAttachments = (
   payload: gmail_v1.Schema$MessagePart,
-  gmail: gmail_v1.Gmail,
-  messageId: string,
-): Promise<{
-  attachments: Attachment[]
-  filenames: string[]
-  attachmentChunks: string[]
-}> => {
+): { attachments: Attachment[]; filenames: string[] } => {
   const attachments: Attachment[] = []
   const filenames: string[] = []
-  let attachmentChunks: string[] = []
-  const traverseParts = async (parts: any[]) => {
+
+  const traverseParts = (parts: any[]) => {
     for (const part of parts) {
       if (part.filename && part.body && part.body.attachmentId) {
-        if (part.mimeType === "application/pdf" && messageId) {
-          try {
-            const chunks =
-              (await getGmailAttachmentChunks(gmail, {
-                attachmentId: part.body.attachmentId,
-                filename: part.filename,
-                size: part.body.size,
-                messageId,
-              })) ?? []
-
-            attachmentChunks = [...attachmentChunks, ...chunks]
-          } catch (error) {
-            // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
-            // log the error and proceed.
-            Logger.error(
-              error,
-              `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
-              error,
-            )
-          }
-        }
         filenames.push(part.filename)
         attachments.push({
           fileType: part.mimeType || "application/octet-stream",
           fileSize: parseInt(part.body.size, 10) || 0,
         })
       } else if (part.parts) {
-        await traverseParts(part.parts)
+        traverseParts(part.parts)
       }
     }
   }
 
   if (payload.parts) {
-    await traverseParts(payload.parts)
+    traverseParts(payload.parts)
   }
 
-  return { attachments, filenames, attachmentChunks }
+  return { attachments, filenames }
 }

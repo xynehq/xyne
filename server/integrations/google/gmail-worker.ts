@@ -7,10 +7,13 @@ import { EmailParsingError } from "@/errors"
 import { getLogger } from "@/logger"
 import {
   Apps,
+  MailAttachmentEntity,
+  mailAttachmentSchema,
   MailEntity,
   mailSchema,
   type Attachment,
   type Mail,
+  type MailAttachment,
 } from "@/search/types"
 import { insert } from "@/search/vespa"
 import {
@@ -32,7 +35,10 @@ import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 // import { createJwtClient } from "@/integrations/google/utils"
 import { z } from "zod"
 import { JWT } from "google-auth-library"
-import { parseAttachments } from "@/integrations/google/utils"
+import {
+  getGmailAttachmentChunks,
+  parseAttachments,
+} from "@/integrations/google/utils"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -258,18 +264,64 @@ export const parseMail = async (
   const body = getBody(payload)
   const chunks = chunkTextByParagraph(body)
 
-  let attachments: Attachment[] = []
-  let filenames: string[] = []
-  let attachmentChunks: string[] = []
-  if (payload) {
-    const parsedParts = await parseAttachments(payload, gmail, messageId ?? "")
-    attachments = parsedParts.attachments
-    filenames = parsedParts.filenames
-    attachmentChunks = parsedParts.attachmentChunks
-  }
-
   if (!messageId || !threadId) {
     throw new Error("Invalid message")
+  }
+
+  let attachments: Attachment[] = []
+  let filenames: string[] = []
+  if (payload) {
+    const parsedParts = parseAttachments(payload)
+    attachments = parsedParts.attachments
+    filenames = parsedParts.filenames
+
+    // ingest attachments
+    if (payload.parts) {
+      for (const part of payload.parts) {
+        const { body, filename, mimeType } = part
+        if (
+          mimeType === "application/pdf" &&
+          filename &&
+          body &&
+          body.attachmentId
+        ) {
+          try {
+            const { attachmentId, size } = body
+            const attachmentChunks =
+              (await getGmailAttachmentChunks(gmail, {
+                attachmentId: attachmentId,
+                filename: filename,
+                size: size ? size : 0,
+                messageId: messageId ? messageId : "",
+              })) ?? []
+
+            const attachmentDoc: MailAttachment = {
+              app: Apps.Gmail,
+              entity: MailAttachmentEntity.PDF,
+              mailId: messageId,
+              partId: part.partId ? parseInt(part.partId) : null,
+              docId: attachmentId,
+              filename: filename,
+              fileSize: size,
+              fileType: mimeType,
+              chunks: attachmentChunks,
+              timestamp,
+              permissions,
+            }
+
+            await insert(attachmentDoc, mailAttachmentSchema)
+          } catch (error) {
+            // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
+            // log the error and proceed.
+            Logger.error(
+              error,
+              `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
+              error,
+            )
+          }
+        }
+      }
+    }
   }
 
   const emailData: Mail = {
@@ -288,7 +340,6 @@ export const parseMail = async (
     mimeType: payload?.mimeType ?? "text/plain",
     attachmentFilenames: filenames,
     attachments,
-    attachment_chunks: attachmentChunks,
     labels: labels ?? [],
   }
 

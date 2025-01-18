@@ -10,12 +10,15 @@ import {
   eventSchema,
   VespaEventSchema,
   userQuerySchema,
+  MailAttachmentResponseSchema,
+  mailAttachmentSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
   DriveEntity,
   NotionEntity,
   CalendarEntity,
+  MailAttachmentEntity,
   Apps,
 } from "search/types"
 export type { Entity } from "search/types"
@@ -113,6 +116,17 @@ export const AutocompleteMailSchema = z
   })
   .strip()
 
+export const AutocompleteMailAttachmentSchema = z
+  .object({
+    type: z.literal(mailAttachmentSchema),
+    relevance: z.number(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    filename: z.string(),
+    docId: z.string(),
+  })
+  .strip()
+
 export const AutocompleteEventSchema = z
   .object({
     type: z.literal(eventSchema),
@@ -130,6 +144,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteMailSchema,
   AutocompleteEventSchema,
   AutocompleteUserQueryHSchema,
+  AutocompleteMailAttachmentSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -144,6 +159,9 @@ export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
 export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
 export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
+export type MailAttachmentAutocomplete = z.infer<
+  typeof AutocompleteMailAttachmentSchema
+>
 export type EventAutocomplete = z.infer<typeof AutocompleteEventSchema>
 export type UserQueryHAutocomplete = z.infer<
   typeof AutocompleteUserQueryHSchema
@@ -207,6 +225,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   FileResponseSchema,
   MailResponseSchema,
   EventResponseSchema,
+  MailAttachmentResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
