@@ -90,14 +90,6 @@ schema mail {
     field attachments type array<attachment> {
 
     }
-
-    field attachment_chunks type array<string> {
-      indexing: index | summary
-      index {
-        enable-bm25
-      }
-    }
-
     field labels type array<string> {
     indexing: attribute | summary | index
     attribute: fast-search
@@ -110,14 +102,6 @@ schema mail {
       distance-metric: angular
     }
   }
-
-  field attachment_chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
-    indexing: guard { input attachment_chunks } | embed | attribute | index
-    attribute {
-      distance-metric: angular
-    }
-  }
-
   field subject_fuzzy type string {
     indexing: input subject | index
     index {
@@ -179,15 +163,15 @@ schema mail {
     rank-profile default inherits initial {
     
       function chunk_vector_score() {
-        expression: (closeness(field, chunk_embeddings) + closeness(field,attachment_chunk_embeddings))
+        expression: closeness(field, chunk_embeddings)
       }
 
       function scale(val) {
         expression: 2*atan(val/4)/(3.14159)
       }
 
-      function scaled_bm25_combined_chunks() {
-        expression: scale(bm25(chunks) + bm25(attachment_chunks))
+      function scaled_bm25_chunks() {
+        expression: scale(bm25(chunks))
       }
 
       function scaled_bm25_subject() {
@@ -195,7 +179,7 @@ schema mail {
       }
 
       function combined_bm25() {
-        expression: 0.4*scaled_bm25_combined_chunks + 0.7*scaled_bm25_subject
+        expression: 0.3*scaled_bm25_chunks + 0.8*scaled_bm25_subject
       }
 
       first-phase {
@@ -206,7 +190,7 @@ schema mail {
         expression {
           (
             (0.5 * normalize_linear(chunk_vector_score)) +
-            (max(scaled_bm25_subject,scaled_bm25_combined_chunks))
+            (max(scaled_bm25_subject,scaled_bm25_chunks))
           )
         }
         rerank-count: 1000
@@ -214,7 +198,7 @@ schema mail {
 
     match-features {
       chunk_vector_score
-      scaled_bm25_combined_chunks
+      scaled_bm25_chunks
       scaled_bm25_subject
     }
   }
