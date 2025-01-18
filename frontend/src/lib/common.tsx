@@ -17,6 +17,7 @@ import {
   GooglePeopleEntity,
   NotionEntity,
   CalendarEntity,
+  MailAttachmentEntity,
 } from "shared/types"
 
 export const getIcon = (
@@ -67,6 +68,9 @@ export const getIcon = (
   } else if (app === Apps.GoogleWorkspace) {
     return <Users size={12} className="mr-[10px]" />
   } else if (app === Apps.Gmail) {
+    if (entity === MailAttachmentEntity.PDF) {
+      return <img className={classNameVal} src={Pdf} />
+    }
     return <img className={classNameVal} src={Gmail} />
   } else if (app === Apps.Notion) {
     if (entity === NotionEntity.Page) {
