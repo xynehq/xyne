@@ -14,6 +14,7 @@ import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   DeleteDocument,
   GetDocument,
+  getDocumentOrNull,
   insert,
   insertDocument,
   UpdateDocument,
@@ -85,21 +86,19 @@ type ChangeStats = {
 
 const getDocumentOrSpreadsheet = async (docId: string) => {
   try {
-    const doc = await GetDocument(fileSchema, docId)
-    return doc
-  } catch (err) {
-    const errMessage = getErrorMessage((err as Error).cause)
-    if (errMessage.includes("Failed to fetch document: 404 Not Found")) {
+    const doc = await getDocumentOrNull(fileSchema, docId)
+    if (!doc) {
       Logger.error(
         err,
         `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
       )
       const sheetsForSpreadSheet = await GetDocument(fileSchema, `${docId}_0`)
       return sheetsForSpreadSheet
-    } else {
-      Logger.error(err, `Error getting document`)
-      throw err
     }
+    return doc
+  } catch (err) {
+    Logger.error(err, `Error getting document`)
+    throw err
   }
 }
 
@@ -824,44 +823,9 @@ const handleGoogleCalendarEventsChanges = async (
           // We only delete the whole recurring event, when all instances are deleted
           // When the whole recurring event is deleted, GetDocument will not give error
           try {
-            const event = await GetDocument(eventSchema, docId)
-            const permissions = (event.fields as VespaEvent).permissions
-            if (permissions.length === 1) {
-              // remove it
-              try {
-                // also ensure that we are that permission
-                if (!(permissions[0] === userEmail)) {
-                  throw new Error(
-                    "We got a change for us that we didn't have access to in Vespa",
-                  )
-                }
-                await DeleteDocument(docId, eventSchema)
-                stats.removed += 1
-                stats.summary += `${docId} event removed\n`
-                changesExist = true
-              } catch (e) {
-                // TODO: detect vespa 404 and only ignore for that case
-                // otherwise throw it further
-              }
-            } else {
-              // remove our user's permission to change event
-              const newPermissions = permissions.filter((v) => v !== userEmail)
-              await UpdateDocumentPermissions(
-                eventSchema,
-                docId,
-                newPermissions,
-              )
-              stats.updated += 1
-              stats.summary += `user lost permission to change event info: ${docId}\n`
-              changesExist = true
-            }
-          } catch (err: any) {
+            const event = await getDocumentOrNull(eventSchema, docId)
             // For Recurring events, when an instance/s are deleted, we just update the cancelledInstances property
-            // If GetDocument gives error then
-            const errMessage = getErrorMessage(err?.cause)
-            if (
-              errMessage.includes("Failed to fetch document: 404 Not Found")
-            ) {
+            if (!event) {
               // Splitting the id into eventId and instanceDataTime
               // Breaking 5cng0k77oaakthnrr2k340lf6p_20241114T170000Z into 5cng0k77oaakthnrr2k340lf6p & 20241114T170000Z
               const splittedId = docId.split("_")
@@ -900,14 +864,46 @@ const handleGoogleCalendarEventsChanges = async (
                   error,
                   `Can't find document to delete, probably doesn't exist`,
                 )
+              } finally {
+                continue
+              }
+            }
+            const permissions = (event?.fields as VespaEvent)?.permissions
+            if (permissions?.length === 1) {
+              // remove it
+              try {
+                // also ensure that we are that permission
+                if (!(permissions[0] === userEmail)) {
+                  throw new Error(
+                    "We got a change for us that we didn't have access to in Vespa",
+                  )
+                }
+                await DeleteDocument(docId, eventSchema)
+                stats.removed += 1
+                stats.summary += `${docId} event removed\n`
+                changesExist = true
+              } catch (e) {
+                // TODO: detect vespa 404 and only ignore for that case
+                // otherwise throw it further
               }
             } else {
-              Logger.error(
-                err,
-                `Error getting document: ${err.message} ${err.stack}`,
+              // remove our user's permission to change event
+              const newPermissions = permissions?.filter((v) => v !== userEmail)
+              await UpdateDocumentPermissions(
+                eventSchema,
+                docId,
+                newPermissions,
               )
-              throw err
+              stats.updated += 1
+              stats.summary += `user lost permission to change event info: ${docId}\n`
+              changesExist = true
             }
+          } catch (err: any) {
+            Logger.error(
+              err,
+              `Error getting document: ${err.message} ${err.stack}`,
+            )
+            throw err
           }
         } else if (docId) {
           let event = null

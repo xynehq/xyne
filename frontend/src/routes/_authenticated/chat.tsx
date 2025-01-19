@@ -8,7 +8,15 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Eye, EyeOff, Pencil, File } from "lucide-react"
+import {
+  Bookmark,
+  Copy,
+  Ellipsis,
+  Eye,
+  EyeOff,
+  Pencil,
+  File,
+} from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import {
   ChatSSEvents,
@@ -792,7 +800,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
     setIsEditing(false)
   }
-
 
   const handleFileUpload = async () => {
     const formData = new FormData()
