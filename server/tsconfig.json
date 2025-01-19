@@ -27,5 +27,5 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "include": ["."],
-  "exclude": ["node_modules", "build", "eval"]
+  "exclude": ["node_modules", "build"]
 }

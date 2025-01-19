@@ -31,12 +31,17 @@ services:
       - ../server/vespa-logs:/opt/vespa/logs # Ensure correct permissions
     networks:
       - xyne
+    ulimits:
+      nproc: 409600
     restart: always
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "6"
+    environment:
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC
 
   xyne-db:
     image: postgres
@@ -54,6 +59,7 @@ services:
     restart: always
 networks:
   xyne:
+    driver: bridge
 volumes:
   vespa-data:
     driver: local

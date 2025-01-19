@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      
+      - name: Install Dependencies (Server)
+        working-directory: ./server
+        run: bun install
+      - name: Run tests
+        run: bun test
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          SERVICE_ACCOUNT_ENCRYPTION_KEY: ${{ secrets.SERVICE_ACCOUNT_ENCRYPTION_KEY }}

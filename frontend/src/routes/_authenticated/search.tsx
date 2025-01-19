@@ -43,6 +43,7 @@ import {
 } from "lucide-react"
 import { LastUpdated } from "@/components/SearchFilter"
 import { PublicUser, PublicWorkspace } from "shared/types"
+import { errorComponent } from "@/components/error"
 
 const logger = console
 
@@ -102,7 +103,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-  const isInitialMountRef = useRef<boolean | null>(null)
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -158,7 +158,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           data = AutocompleteResultsSchema.parse(data)
           setAutocompleteResults(data.results)
         } catch (error) {
-          logger.error(`Error fetching autocomplete results:', ${error}`)
+          logger.error(error, `Error fetching autocomplete results:', ${error}`)
         }
       })()
     }, 300) // 300ms debounce
@@ -179,11 +179,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }, [])
 
   useEffect(() => {
-    // don't need to invoke on first mount
-    if (!isInitialMountRef.current) {
-      isInitialMountRef.current = true
-      return
-    }
     handleSearch()
   }, [filter, offset])
 
@@ -335,7 +330,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         )
       }
     } catch (error) {
-      logger.error(`Error fetching search results:', ${error}`)
+      logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
     }
   }
@@ -385,7 +380,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   return (
     <div className="h-full w-full flex">
-      <Sidebar photoLink={user?.photoLink ?? ""} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className={`flex flex-col flex-grow h-full "ml-[52px]"`}>
         <SearchBar
           ref={autocompleteRef}
@@ -398,7 +393,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           filter={filter}
           query={query}
           handleSearch={handleSearch}
-          pathname={location.pathname}
+          hasSearched={true}
           handleAnswer={handleAnswer}
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
@@ -528,4 +523,5 @@ export const Route = createFileRoute("/_authenticated/search")({
     return <Search user={user} workspace={workspace} />
   },
   validateSearch: (search) => searchParams.parse(search),
+  errorComponent: errorComponent,
 })

@@ -84,7 +84,9 @@ schema event {
             index: enable-bm25
         }
 
-        field attendees type array<user_info> {}
+        field attendees type array<user_info> {
+            indexing: summary
+        }
 
         field startTime type long {
             indexing: attribute | summary
@@ -132,7 +134,7 @@ schema event {
         }
     }
 
-     field chunk_embeddings type tensor<bfloat16>(v[384])  {
+     field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
         indexing: (input name || "") . " " .(input description || ""). " " .((input attachmentFilenames | for_each { _ }) . " " || ""). " " .(input url || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -151,12 +153,12 @@ schema event {
     }
 
     fieldset default {
-        fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl
+        fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl, attendees
     }
 
     rank-profile default {
         inputs {
-            query(e) tensor<bfloat16>(v[384])
+            query(e) tensor<bfloat16>(v[DIMS])
         }
 
         function scale(val) {
@@ -179,18 +181,18 @@ schema event {
         function combined_bm25() {
             expression {
                 (scale(bm25(name)) + scale(bm25(url))) +
-                (0.3 * (scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
+                ((scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
             }
         }
 
         first-phase {
-            expression: (0.3 * vector_score) + combined_bm25
+            expression: (vector_score) + combined_bm25
         }
 
         global-phase {
             expression {
               (
-                (0.3 * normalize_linear(vector_score)) +
+                (normalize_linear(vector_score)) +
                 combined_bm25 + 
                 freshness_weight
               )

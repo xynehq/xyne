@@ -1,0 +1,99 @@
+version: "3.9"
+
+services:
+  app:
+    image: xyne
+    container_name: xyne-app
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - xyne-db
+      - vespa
+    environment:
+      DATABASE_HOST: xyne-db
+      VESPA_HOST: vespa
+      HOST: http://localhost:3001/
+      ENCRYPTION_KEY: "ldRWi1hLL8zMT2yxAXwjjTJUYs1ikROLqRxFrs0qpvU=" #DEFAULT_VALUE
+      JWT_SECRET: "ldRWi1hLL8zMT2yxAXwjjTJUYs1ikROLqRxFrs0qpvU=" #DEFAULT_VALUE
+      SERVICE_ACCOUNT_ENCRYPTION_KEY: "ldRWi1hLL8zMT2yxAXwjjTJUYs1ikROLqRxFrs0qpvU=" #DEFAULT_VALUE
+      EMBEDDING_MODEL: "bge-base-en-v1.5"
+
+    networks:
+      - xyne    
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    
+## Temporary fix for vespa permission issues until a better solution is found
+  vespa-init:
+    image: busybox 
+    container_name: vespa-init
+    user: root
+    volumes:
+      - ../server/vespa-data:/opt/vespa/var
+      - ../server/vespa-logs:/opt/vespa/logs
+    command: chown -R 1000:1000 /opt/vespa/var /opt/vespa/logs
+    networks:
+      - xyne
+    
+  vespa:
+    image: vespaengine/vespa
+    container_name: vespa
+    hostname: vespa-container
+    user: "1000:1000"
+    depends_on:
+      vespa-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+      - "19071:19071"
+    volumes:
+      - ../server/vespa-data:/opt/vespa/var
+      - ../server/vespa-logs:/opt/vespa/logs
+    networks:
+      - xyne
+    ulimits:
+      nproc: 409600
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    environment:
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC
+      - VESPA_ALLOW_WRITE_AS_USER=true
+
+  xyne-db:
+    image: postgres
+    container_name: xyne-db
+    environment:
+      POSTGRES_USER: xyne
+      POSTGRES_PASSWORD: xyne
+      POSTGRES_DB: xyne
+    ports:
+      - "${XYNE_DB_PORT:-5432}:5432"
+    volumes:
+      - ../server/xyne-data:/var/lib/postgresql/data
+    networks:
+      - xyne
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xyne"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  xyne:
+    driver: bridge
+volumes:
+  vespa-data:
+    driver: local

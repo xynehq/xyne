@@ -10,6 +10,7 @@ import {
   type VespaEventSearch,
   type VespaFileSearch,
   type VespaMailSearch,
+  type VespaSearchResults,
   type VespaUser,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
@@ -19,13 +20,15 @@ import pc from "picocolors"
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
-const maxSummaryChunks = 3
-
 // Function for handling file context
 const constructFileContext = (
   fields: VespaFileSearch,
   relevance: number,
+  maxSummaryChunks?: number,
 ): string => {
+  if (!maxSummaryChunks) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
@@ -42,7 +45,11 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chu
 const constructChatAttachmentContext = (
   fields: VespaChatAttachmentSearch,
   relevance: number,
+  maxSummaryChunks?: number,
 ): string => {
+  if (!maxSummaryChunks) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
   return `Title: ${fields.title ? `Title: ${fields.title}` : ""}
 Created: ${getRelativeTime(fields.createdAt)}
 Updated At: ${getRelativeTime(fields.updatedAt)}
@@ -69,7 +76,11 @@ vespa relevance score: ${relevance}`
 const constructMailContext = (
   fields: VespaMailSearch,
   relevance: number,
+  maxSummaryChunks?: number,
 ): string => {
+  if (!maxSummaryChunks) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
@@ -100,8 +111,10 @@ Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString(
 End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
 Attendees: ${
-    fields.attendeesNames && fields.attendeesNames.length
-      ? fields.attendeesNames.join(", ")
+    fields.attendees && fields.attendees.length
+      ? fields.attendees
+          .map((attendee) => `${attendee.email} ${attendee.displayName}`)
+          .join(", ")
       : "No attendees listed"
   }
 Recurrence: ${
@@ -270,20 +283,33 @@ export const answerColoredContextMap = (
 
 type AiContext = string
 export const answerContextMap = (
-  searchResult: z.infer<typeof VespaSearchResultsSchema>,
+  searchResult: VespaSearchResults,
+  maxSummaryChunks?: number,
 ): AiContext => {
-  if (searchResult.fields.sddocname === fileSchema) {
-    return constructFileContext(searchResult.fields, searchResult.relevance)
-  } else if (searchResult.fields.sddocname === userSchema) {
-    return constructUserContext(searchResult.fields, searchResult.relevance)
-  } else if (searchResult.fields.sddocname === mailSchema) {
-    return constructMailContext(searchResult.fields, searchResult.relevance)
-  } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance)
-  } else if (searchResult.fields.sddocname === chatAttachmentSchema) {
+  if (!searchResult) {
+    return ""
+  }
+  if (searchResult?.fields?.sddocname === fileSchema) {
+    return constructFileContext(
+      searchResult?.fields,
+      searchResult?.relevance,
+      maxSummaryChunks,
+    )
+  } else if (searchResult?.fields?.sddocname === userSchema) {
+    return constructUserContext(searchResult?.fields, searchResult?.relevance)
+  } else if (searchResult?.fields?.sddocname === mailSchema) {
+    return constructMailContext(
+      searchResult?.fields,
+      searchResult?.relevance,
+      maxSummaryChunks,
+    )
+  } else if (searchResult?.fields?.sddocname === eventSchema) {
+    return constructEventContext(searchResult?.fields, searchResult?.relevance)
+  } else if (searchResult?.fields?.sddocname === chatAttachmentSchema) {
     return constructChatAttachmentContext(
-      searchResult.fields,
-      searchResult.relevance,
+      searchResult?.fields,
+      searchResult?.relevance,
+      maxSummaryChunks,
     )
   } else {
     throw new Error("Invalid search result type")
@@ -360,7 +386,7 @@ export const userContext = ({
   const now = new Date()
   const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
   const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
-  return `My Name: ${user.name}
+  return `My Name is ${user.name}
 Email: ${user.email}
 Company: ${workspace.name}
 Company domain: ${workspace.domain}

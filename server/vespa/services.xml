@@ -1,14 +1,21 @@
 <services version="1.0">
     <container id="my_container" version="1.0">
-    <!-- https://docs.vespa.ai/en/onnx.html#using-optimum-to-export-models-to-onnx-format -->
+        <!-- https://docs.vespa.ai/en/onnx.html#using-optimum-to-export-models-to-onnx-format -->
         <component id="hf-embedder" type="hugging-face-embedder">
-            <transformer-model path="models/model_quantized.onnx"/>
-            <tokenizer-model path="models/tokenizer.json"/>
+            <transformer-model path="models/model.onnx" />
+            <tokenizer-model path="models/tokenizer.json" />
         </component>
         <search />
         <document-api />
     </container>
     <content id="my_content" version="1.0">
+        <engine>
+            <proton>
+                <resource-limits>
+                    <disk>0.90</disk>
+                </resource-limits>
+            </proton>
+        </engine>
         <redundancy reply-after="1">1</redundancy>
         <documents>
             <document type="file" mode="index" />

@@ -35,6 +35,7 @@ import {
   type SearchResponse,
 } from "@/shared/types"
 import type { z } from "zod"
+import type { AppEntityCounts } from "@/search/vespa"
 
 // Vespa -> Backend/App -> Client
 
@@ -144,4 +145,39 @@ export const VespaAutocompleteResponseToResult = (
         return true
       }),
   }
+}
+
+export function handleVespaGroupResponse(
+  response: VespaSearchResponse,
+): AppEntityCounts {
+  const appEntityCounts: AppEntityCounts = {}
+
+  // Navigate to the first level of groups
+  const groupRoot = response.root.children?.[0] // Assuming this is the group:root level
+  if (!groupRoot || !("children" in groupRoot)) return appEntityCounts // Safeguard for empty responses
+
+  // Navigate to the app grouping (e.g., grouplist:app)
+  const appGroup = groupRoot.children?.[0]
+  if (!appGroup || !("children" in appGroup)) return appEntityCounts // Safeguard for missing app group
+
+  // Iterate through the apps
+  // @ts-ignore
+  for (const app of appGroup.children) {
+    const appName = app.value as string // Get the app name
+    appEntityCounts[appName] = {} // Initialize the app entry
+
+    // Navigate to the entity grouping (e.g., grouplist:entity)
+    const entityGroup = app.children?.[0]
+    if (!entityGroup || !("children" in entityGroup)) continue // Skip if no entities
+
+    // Iterate through the entities
+    // @ts-ignore
+    for (const entity of entityGroup.children) {
+      const entityName = entity.value as string // Get the entity name
+      const count = entity.fields?.["count()"] || 0 // Get the count or default to 0
+      appEntityCounts[appName][entityName] = count // Assign the count to the app-entity pair
+    }
+  }
+
+  return appEntityCounts // Return the final map
 }

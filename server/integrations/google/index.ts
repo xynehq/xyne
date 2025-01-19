@@ -131,7 +131,10 @@ const listUsers = async (
     } while (nextPageToken)
     return users
   } catch (error) {
-    Logger.error(`Error listing users: ${error} ${(error as Error).stack}`)
+    Logger.error(
+      error,
+      `Error listing users: ${error} ${(error as Error).stack}`,
+    )
     throw new UserListingError({
       cause: error as Error,
       integration: Apps.GoogleWorkspace,
@@ -202,6 +205,7 @@ export const syncGoogleWorkspace = async (
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     Logger.error(
+      error,
       `Could not sync Google workspace: , ${errorMessage} ${(error as Error).stack}`,
     )
     if (error instanceof SyncJobsCountError) {
@@ -412,6 +416,8 @@ const insertCalendarEvents = async (
   // To get all events from current Date to One Year later
   nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
 
+  // we will fetch from one year back
+  currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
   do {
     const res = await calendar.events.list({
       calendarId: "primary",
@@ -515,8 +521,9 @@ const insertCalendarEvents = async (
           )
         }
       }
-    } catch (e) {
+    } catch (error) {
       Logger.error(
+        error,
         `Main Event ${mainEventId} not found in Vespa to update cancelled instance ${instanceDateTime} of ${instanceEventId}`,
       )
     }
@@ -631,6 +638,7 @@ export const handleGoogleOAuthIngestion = async (
     })
   } catch (error) {
     Logger.error(
+      error,
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
       error,
     )
@@ -681,7 +689,7 @@ const messageTypes = z.discriminatedUnion("type", [stats, historyId])
 type ResponseType = z.infer<typeof messageTypes>
 
 gmailWorker.onerror = (error) => {
-  Logger.error(`Error in main thread: worker: ${JSON.stringify(error)}`)
+  Logger.error(error, `Error in main thread: worker: ${JSON.stringify(error)}`)
 }
 
 const pendingRequests = new Map<
@@ -901,6 +909,7 @@ export const handleGoogleServiceAccountIngestion = async (
     })
   } catch (error) {
     Logger.error(
+      error,
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
       error,
     )
@@ -928,6 +937,7 @@ export const deleteDocument = async (filePath: string) => {
     Logger.info(`File at ${filePath} deleted successfully`)
   } catch (err) {
     Logger.error(
+      err,
       `Error deleting file at ${filePath}: ${err} ${(err as Error).stack}`,
       err,
     )
@@ -1048,6 +1058,7 @@ const googleSlidesVespa = async (
       // }
     } catch (error) {
       Logger.error(
+        error,
         `Error getting slides: ${error} ${(error as Error).stack}`,
         error,
       )
@@ -1141,11 +1152,11 @@ const insertFilesForUser = async (
       }
 
       Logger.info(`finished ${pageFiles.length} files`)
-      Bun.gc(true)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     Logger.error(
+      error,
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
   }
@@ -1234,6 +1245,7 @@ export const getAllSheetsFromSpreadSheet = async (
       }
     } catch (error) {
       Logger.error(
+        error,
         `Failed to fetch sheets '${ranges.join(", ")}' from spreadsheet: ${(error as Error).message}`,
       )
     }
@@ -1415,6 +1427,7 @@ const googleSheetsVespa = async (
       // }
     } catch (error) {
       Logger.error(
+        error,
         `Error getting sheet files: ${error} ${(error as Error).stack}`,
         error,
       )
@@ -1439,30 +1452,41 @@ const googleSheetsVespa = async (
 
 export const downloadDir = path.resolve(__dirname, "../../downloads")
 
-export const init = () => {
-  if (!fs.existsSync(downloadDir)) {
-    fs.mkdirSync(downloadDir, { recursive: true })
+if (process.env.NODE_ENV !== "production") {
+  const init = () => {
+    if (!fs.existsSync(downloadDir)) {
+      fs.mkdirSync(downloadDir, { recursive: true })
+    }
   }
-}
 
-init()
+  init()
+}
 
 export const downloadPDF = async (
   drive: drive_v3.Drive,
   fileId: string,
   fileName: string,
-) => {
+): Promise<void> => {
   const filePath = path.join(downloadDir, fileName)
   const file = Bun.file(filePath)
   const writer = file.writer()
   const res = await drive.files.get(
     { fileId: fileId, alt: "media" },
-    { responseType: "arraybuffer" },
+    { responseType: "stream" },
   )
-
-  writer.write(Buffer.from(res.data as ArrayBuffer))
-  await writer.end()
-  Bun.gc(true)
+  return new Promise((resolve, reject) => {
+    res.data.on("data", (chunk) => {
+      writer.write(chunk)
+    })
+    res.data.on("end", () => {
+      writer.end()
+      resolve()
+    })
+    res.data.on("error", (err) => {
+      writer.end()
+      reject(err)
+    })
+  })
 }
 
 // Helper function for safer PDF loading
@@ -1474,7 +1498,7 @@ async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
     if ((error as Error).message.includes("PasswordException")) {
       Logger.warn("Password protected PDF, skipping")
     } else {
-      Logger.error(`PDF load error: ${error}`)
+      Logger.error(error, `PDF load error: ${error}`)
     }
     return []
   }
@@ -1541,6 +1565,7 @@ export const googlePDFsVespa = async (
         }
       } catch (error) {
         Logger.error(
+          error,
           `Error getting PDF files: ${error} ${(error as Error).stack}`,
           error,
         )
@@ -1794,10 +1819,11 @@ const insertContactsToVespa = async (
   } catch (error) {
     // error is related to vespa and not mapping
     if (error instanceof ErrorInsertingDocument) {
-      Logger.error(`Could not insert contact: ${(error as Error).stack}`)
+      Logger.error(error, `Could not insert contact: ${(error as Error).stack}`)
       throw error
     } else {
       Logger.error(
+        error,
         `Error mapping contact: ${error} ${(error as Error).stack}`,
         error,
       )
@@ -1924,6 +1950,7 @@ export const googleDocsVespa = async (
       } catch (error) {
         const errorMessage = getErrorMessage(error)
         Logger.error(
+          error,
           `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
         )
         return null

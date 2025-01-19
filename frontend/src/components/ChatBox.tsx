@@ -138,7 +138,7 @@ export const ChatBox = ({
             disabled={isStreaming}
             onClick={() => handleSend(query)}
             style={{ marginLeft: "auto" }}
-            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+            className={`flex mr-6 bg-[#464B53] text-white ${!isStreaming ? "hover:bg-[#5a5f66]" : ""}  rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50`}
           >
             <ArrowRight className="text-white" size={16} />
           </button>

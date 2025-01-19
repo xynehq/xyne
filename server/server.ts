@@ -4,6 +4,7 @@ import {
   AutocompleteApi,
   autocompleteSchema,
   chatBookmarkSchema,
+  chatDeleteSchema,
   chatHistorySchema,
   chatRenameSchema,
   chatSchema,
@@ -19,7 +20,6 @@ import {
   createOAuthProvider,
   oauthStartQuerySchema,
   searchSchema,
-  UserRole,
 } from "@/types"
 import {
   AddServiceConnection,
@@ -50,23 +50,23 @@ import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ChatBookmarkApi,
+  ChatDeleteApi,
   ChatHistory,
   ChatRenameApi,
   GetChatApi,
-  // MessageApiV1,
   MessageApi,
-  MessageApiV2,
   MessageRetryApi,
   UploadFilesApi,
 } from "./api/chat"
 import { z } from "zod"
+import { UserRole } from "./shared/types"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
 const redirectURI = config.redirectUri
-
 const postOauthRedirect = config.postOauthRedirect
+
 const jwtSecret = process.env.JWT_SECRET!
 
 const CookieName = "auth-token"
@@ -101,6 +101,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     await AuthMiddleware(c, next)
   } catch (err) {
     Logger.error(
+      err,
       `${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`,
     )
     Logger.warn("Redirected by server - Error in AuthMW")
@@ -153,9 +154,10 @@ export const AppRoutes = app
     ChatBookmarkApi,
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
+  .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   // this is event streaming end point
-  .get("/message/create", zValidator("query", messageSchema), MessageApiV2)
+  .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
     "/message/retry",
     zValidator("query", messageRetrySchema),
@@ -334,10 +336,16 @@ app.get(
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
@@ -365,3 +373,8 @@ const server = Bun.serve({
   idleTimeout: 60,
 })
 Logger.info(`listening on port: ${config.port}`)
+
+process.on("uncaughtException", (error) => {
+  Logger.error(error, "uncaughtException")
+  // shutdown server?
+})

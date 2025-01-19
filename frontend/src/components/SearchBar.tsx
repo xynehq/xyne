@@ -19,13 +19,12 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
       handleAnswer,
       filter,
       onLastUpdated,
-      pathname,
+      hasSearched,
     },
     autocompleteRef,
   ) => {
     const inputRef = useRef<HTMLInputElement | null>(null)
     const navigate = useNavigate({ from: "/search" })
-    const hasSearched = !(pathname === "/")
 
     useEffect(() => {
       if (inputRef.current) {

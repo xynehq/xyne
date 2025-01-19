@@ -1,9 +1,152 @@
 {
-  "id": "c808dec5-0cbd-47fd-9ffa-9f9a964262af",
-  "prevId": "217467b8-f6df-4197-87f0-0d931eb33da1",
+  "id": "9d2eb298-7917-47bd-96a4-c881a9306e97",
+  "prevId": "69339c64-d4cd-4467-8254-4d0d14b3de69",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.chats": {
+      "name": "chats",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_external_id": {
+          "name": "workspace_external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_bookmarked": {
+          "name": "is_bookmarked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attachments": {
+          "name": "attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "NOW()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "NOW()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hasAttachments": {
+          "name": "hasAttachments",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "is_bookmarked_index": {
+          "name": "is_bookmarked_index",
+          "columns": [
+            {
+              "expression": "is_bookmarked",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chats_workspace_id_workspaces_id_fk": {
+          "name": "chats_workspace_id_workspaces_id_fk",
+          "tableFrom": "chats",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chats_user_id_users_id_fk": {
+          "name": "chats_user_id_users_id_fk",
+          "tableFrom": "chats",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "chats_external_id_unique": {
+          "name": "chats_external_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "external_id"
+          ]
+        }
+      }
+    },
     "public.connectors": {
       "name": "connectors",
       "schema": "",
@@ -118,8 +261,12 @@
           "name": "connectors_workspace_id_workspaces_id_fk",
           "tableFrom": "connectors",
           "tableTo": "workspaces",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -127,8 +274,12 @@
           "name": "connectors_user_id_users_id_fk",
           "tableFrom": "connectors",
           "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -138,12 +289,182 @@
         "connectors_external_id_unique": {
           "name": "connectors_external_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["external_id"]
+          "columns": [
+            "external_id"
+          ]
         },
         "connectors_workspace_id_user_id_app_type_auth_type_unique": {
           "name": "connectors_workspace_id_user_id_app_type_auth_type_unique",
           "nullsNotDistinct": false,
-          "columns": ["workspace_id", "user_id", "app_type", "auth_type"]
+          "columns": [
+            "workspace_id",
+            "user_id",
+            "app_type",
+            "auth_type"
+          ]
+        }
+      }
+    },
+    "public.messages": {
+      "name": "messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "chat_id": {
+          "name": "chat_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_external_id": {
+          "name": "workspace_external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_external_id": {
+          "name": "chat_external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_role": {
+          "name": "message_role",
+          "type": "message_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "modelId": {
+          "name": "modelId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sources": {
+          "name": "sources",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "attachments": {
+          "name": "attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "NOW()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "NOW()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "''"
+        }
+      },
+      "indexes": {
+        "chat_id_index": {
+          "name": "chat_id_index",
+          "columns": [
+            {
+              "expression": "chat_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "messages_chat_id_chats_id_fk": {
+          "name": "messages_chat_id_chats_id_fk",
+          "tableFrom": "messages",
+          "tableTo": "chats",
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "messages_user_id_users_id_fk": {
+          "name": "messages_user_id_users_id_fk",
+          "tableFrom": "messages",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "messages_external_id_unique": {
+          "name": "messages_external_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "external_id"
+          ]
         }
       }
     },
@@ -234,8 +555,12 @@
           "name": "oauth_providers_workspace_id_workspaces_id_fk",
           "tableFrom": "oauth_providers",
           "tableTo": "workspaces",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -243,8 +568,12 @@
           "name": "oauth_providers_user_id_users_id_fk",
           "tableFrom": "oauth_providers",
           "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -252,8 +581,12 @@
           "name": "oauth_providers_container_id_connectors_id_fk",
           "tableFrom": "oauth_providers",
           "tableTo": "connectors",
-          "columnsFrom": ["container_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "container_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -263,7 +596,9 @@
         "oauth_providers_external_id_unique": {
           "name": "oauth_providers_external_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["external_id"]
+          "columns": [
+            "external_id"
+          ]
         }
       }
     },
@@ -343,6 +678,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "auth_type": {
+          "name": "auth_type",
+          "type": "auth_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
         "app_type": {
           "name": "app_type",
           "type": "app_type",
@@ -390,8 +732,12 @@
           "name": "sync_history_workspace_id_workspaces_id_fk",
           "tableFrom": "sync_history",
           "tableTo": "workspaces",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -401,7 +747,9 @@
         "sync_history_external_id_unique": {
           "name": "sync_history_external_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["external_id"]
+          "columns": [
+            "external_id"
+          ]
         }
       }
     },
@@ -467,6 +815,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "auth_type": {
+          "name": "auth_type",
+          "type": "auth_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
         "config": {
           "name": "config",
           "type": "jsonb",
@@ -507,8 +862,12 @@
           "name": "sync_jobs_workspace_id_workspaces_id_fk",
           "tableFrom": "sync_jobs",
           "tableTo": "workspaces",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -516,8 +875,12 @@
           "name": "sync_jobs_connector_id_connectors_id_fk",
           "tableFrom": "sync_jobs",
           "tableTo": "connectors",
-          "columnsFrom": ["connector_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "connector_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -527,7 +890,9 @@
         "sync_jobs_external_id_unique": {
           "name": "sync_jobs_external_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["external_id"]
+          "columns": [
+            "external_id"
+          ]
         }
       }
     },
@@ -635,8 +1000,12 @@
           "name": "users_workspace_id_workspaces_id_fk",
           "tableFrom": "users",
           "tableTo": "workspaces",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -646,7 +1015,9 @@
         "users_external_id_unique": {
           "name": "users_external_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["external_id"]
+          "columns": [
+            "external_id"
+          ]
         }
       }
     },
@@ -684,6 +1055,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "photoLink": {
+          "name": "photoLink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -702,8 +1079,7 @@
           "name": "deleted_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'1970-01-01T00:00:00Z'"
+          "notNull": false
         }
       },
       "indexes": {},
@@ -713,17 +1089,23 @@
         "workspaces_domain_unique": {
           "name": "workspaces_domain_unique",
           "nullsNotDistinct": false,
-          "columns": ["domain"]
+          "columns": [
+            "domain"
+          ]
         },
         "workspaces_created_by_unique": {
           "name": "workspaces_created_by_unique",
           "nullsNotDistinct": false,
-          "columns": ["created_by"]
+          "columns": [
+            "created_by"
+          ]
         },
         "workspaces_external_id_unique": {
           "name": "workspaces_external_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["external_id"]
+          "columns": [
+            "external_id"
+          ]
         }
       }
     }
@@ -732,37 +1114,82 @@
     "public.app_type": {
       "name": "app_type",
       "schema": "public",
-      "values": ["google-workspace", "google-drive"]
+      "values": [
+        "google-workspace",
+        "google-drive",
+        "gmail",
+        "notion",
+        "google-calendar"
+      ]
     },
     "public.auth_type": {
       "name": "auth_type",
       "schema": "public",
-      "values": ["oauth", "service_account", "custom", "api_key"]
+      "values": [
+        "oauth",
+        "service_account",
+        "custom",
+        "api_key"
+      ]
     },
     "public.connector_type": {
       "name": "connector_type",
       "schema": "public",
-      "values": ["SaaS", "Database", "Api", "File", "Website"]
+      "values": [
+        "SaaS",
+        "Database",
+        "Api",
+        "File",
+        "Website"
+      ]
+    },
+    "public.message_role": {
+      "name": "message_role",
+      "schema": "public",
+      "values": [
+        "system",
+        "user",
+        "assistant"
+      ]
     },
     "public.status": {
       "name": "status",
       "schema": "public",
-      "values": ["connected", "connecting", "failed", "not-connected"]
+      "values": [
+        "connected",
+        "connecting",
+        "failed",
+        "not-connected"
+      ]
     },
     "public.type": {
       "name": "type",
       "schema": "public",
-      "values": ["ChangeToken", "Partial", "FullSync"]
+      "values": [
+        "ChangeToken",
+        "Partial",
+        "FullSync"
+      ]
     },
     "public.sync_status": {
       "name": "sync_status",
       "schema": "public",
-      "values": ["NotStarted", "Started", "Failed", "Successful"]
+      "values": [
+        "NotStarted",
+        "Started",
+        "Failed",
+        "Successful"
+      ]
     },
     "public.role": {
       "name": "role",
       "schema": "public",
-      "values": ["User", "TeamLeader", "Admin", "SuperAdmin"]
+      "values": [
+        "User",
+        "TeamLeader",
+        "Admin",
+        "SuperAdmin"
+      ]
     }
   },
   "schemas": {},

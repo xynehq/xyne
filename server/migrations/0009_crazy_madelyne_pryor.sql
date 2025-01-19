@@ -1,1 +1,0 @@
-ALTER TABLE "messages" DROP CONSTRAINT "messages_chat_external_id_unique";

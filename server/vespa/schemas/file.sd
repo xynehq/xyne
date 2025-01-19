@@ -69,7 +69,7 @@ schema file {
     }
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: input chunks | embed | attribute | index
     attribute {
         distance-metric: angular
@@ -99,7 +99,7 @@ schema file {
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e) tensor<bfloat16>(v[384])  # Query embedding
+      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
     }
 
@@ -115,7 +115,7 @@ schema file {
 
     # First phase combines BM25 (title and chunks) and vector similarity (chunks)
     first-phase {
-      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) +bm25(title)))
+      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) + bm25(title)))
     }
 
     # Global phase (optional if more complex reranking is needed)

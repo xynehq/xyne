@@ -99,6 +99,7 @@ const initWorkers = async () => {
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
+        error,
         `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
       )
     }

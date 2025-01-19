@@ -5,8 +5,15 @@ export const mailSchema = "mail"
 export const eventSchema = "event"
 export const userQuerySchema = "user_query"
 export const chatAttachmentSchema = "chatAttachment"
-// not using @ because of vite of frontend
 
+export type VespaSchema =
+  | typeof fileSchema
+  | typeof userSchema
+  | typeof mailSchema
+  | typeof eventSchema
+  | typeof userQuerySchema
+
+// not using @ because of vite of frontend
 export enum Apps {
   // includes everything google
   GoogleWorkspace = "google-workspace",
@@ -366,7 +373,8 @@ export const VespaSearchResultsSchema = z.object({
   pathId: z.string().optional(),
 })
 
-export type VespaSearchResults = z.infer<typeof VespaSearchResultSchema>
+export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>
+export type VespaSearchResults = z.infer<typeof VespaSearchResultsSchema>
 
 const VespaGetResultSchema = z.object({
   id: z.string(),
@@ -433,7 +441,6 @@ const VespaSearchResultSchema = z.union([
   VespaSearchResultsSchema,
   VespaGroupSchema,
 ])
-export type VespaSearchResult = z.infer<typeof VespaSearchResultSchema>
 
 const VespaSearchResponseSchema = VespaRootBaseSchema.extend({
   root: VespaRootBaseSchema.shape.root.extend({

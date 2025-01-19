@@ -10,7 +10,11 @@
     "ignore": [
       "./frontend/src/routeTree.gen.ts",
       "./server/eval/RAGEval/dataset.json",
-      "./migrations"
+      "./server/vespa/models",
+      "./server/eval/.venv",
+      "./server/.venv",
+      "./migrations",
+      "./server/eval-results"
     ]
   },
   "formatter": {
