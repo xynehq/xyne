@@ -89,7 +89,6 @@ const getDocumentOrSpreadsheet = async (docId: string) => {
     const doc = await getDocumentOrNull(fileSchema, docId)
     if (!doc) {
       Logger.error(
-        err,
         `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
       )
       const sheetsForSpreadSheet = await GetDocument(fileSchema, `${docId}_0`)
@@ -832,7 +831,6 @@ const handleGoogleCalendarEventsChanges = async (
               const eventId = splittedId[0]
               const instanceDateTime = splittedId[1]
               Logger.error(
-                err,
                 `Found no document with ${docId}, checking for event with ${eventId}`,
               )
               // Update this event and add a instanceDateTime cancelledInstances property
