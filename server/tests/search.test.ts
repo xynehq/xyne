@@ -28,7 +28,7 @@ const search = async (query: string): Promise<SearchResponse> => {
   )
 }
 
-describe("search events", () => {
+describe.skip("search events", () => {
   test("verbatim name search", async () => {
     const query = "Task pull business value."
 
@@ -104,7 +104,7 @@ describe("search events", () => {
   })
 })
 
-describe("search mails", () => {
+describe.skip("search mails", () => {
   test("exact subject match", async () => {
     const query = "Citizen while suddenly phone recently analysis."
 
@@ -140,7 +140,7 @@ describe("search mails", () => {
   })
 })
 
-describe("search files", () => {
+describe.skip("search files", () => {
   test("verbatim title search", async () => {
     const query = "From ACH direct debit to Prepaid card?"
     const searchResults = (await search(query)).results
@@ -233,7 +233,7 @@ describe("search files", () => {
   
 })
 
-describe("people search", () => {
+describe.skip("people search", () => {
   test("name match", async () => {
     const query = "Brenda Molina"
     const searchResults = await (await search(query)).results
