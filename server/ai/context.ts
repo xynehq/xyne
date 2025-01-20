@@ -306,7 +306,7 @@ export const answerContextMap = (
     return constructMailAttachmentContext(
       searchResult.fields,
       searchResult.relevance,
-      5,
+      maxSummaryChunks,
     )
   } else {
     throw new Error("Invalid search result type")
