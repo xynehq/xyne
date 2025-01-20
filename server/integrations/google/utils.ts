@@ -34,6 +34,7 @@ import { getLogger } from "@/logger"
 import type PgBoss from "pg-boss"
 import fs from "node:fs/promises"
 import path from "path"
+import { retryWithBackoff } from "@/utils"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -404,11 +405,14 @@ export const getGmailAttachmentChunks = async (
     const fileName = `${filename}_${messageId}`
     const downloadAttachmentFilePath = path.join(downloadDir, fileName)
 
-    const attachementResp = await gmail.users.messages.attachments.get({
-      messageId: messageId,
-      id: attachmentId,
-      userId: "me",
-    })
+    const attachementResp = await retryWithBackoff(
+      () => gmail.users.messages.attachments.get({
+          messageId: messageId,
+          id: attachmentId,
+          userId: "me",
+        }),
+      "Fetching Gmail Attachments",
+    )
 
     await saveGmailAttachment(
       attachementResp.data.data,
