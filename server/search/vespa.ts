@@ -867,7 +867,3 @@ export const getItems = async (
     })
   }
 }
-
-// await deleteAllDocuments()
-
-// console.log((await searchVespa("He wrote at a time of religious flux and political upheaval",'junaid.s@xynehq.com',null,null,8)).root.children.map(i => i.fields))
