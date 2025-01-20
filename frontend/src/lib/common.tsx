@@ -1,4 +1,4 @@
-import { Folder, Users } from "lucide-react"
+import { Folder, Users, Paperclip } from "lucide-react"
 import DocsSvg from "@/assets/docs.svg"
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -17,7 +17,7 @@ import {
   GooglePeopleEntity,
   NotionEntity,
   CalendarEntity,
-  MailAttachmentEntity,
+  isMailAttachment,
 } from "shared/types"
 
 export const getIcon = (
@@ -68,8 +68,8 @@ export const getIcon = (
   } else if (app === Apps.GoogleWorkspace) {
     return <Users size={12} className="mr-[10px]" />
   } else if (app === Apps.Gmail) {
-    if (entity === MailAttachmentEntity.PDF) {
-      return <img className={classNameVal} src={Pdf} />
+    if (isMailAttachment(entity)) {
+      return <Paperclip className={classNameVal} fill="rgb(196, 199, 197)" />
     }
     return <img className={classNameVal} src={Gmail} />
   } else if (app === Apps.Notion) {

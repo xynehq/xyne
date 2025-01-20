@@ -79,6 +79,9 @@ export enum MailAttachmentEntity {
   PDF = "pdf",
 }
 
+export const isMailAttachment = (entity: Entity): boolean =>
+  Object.values(MailAttachmentEntity).includes(entity as MailAttachmentEntity)
+
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>

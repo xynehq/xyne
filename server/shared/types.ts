@@ -20,6 +20,7 @@ export {
   CalendarEntity,
   MailAttachmentEntity,
   Apps,
+  isMailAttachment,
 } from "search/types"
 export type { Entity } from "search/types"
 // @ts-ignore
