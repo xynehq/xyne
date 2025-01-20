@@ -95,6 +95,7 @@ schema mail {
     attribute: fast-search
   }
   }
+
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: guard { input chunks } | embed | attribute | index
     attribute {

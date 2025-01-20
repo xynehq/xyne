@@ -3,6 +3,7 @@ import type {
   Autocomplete,
   EventAutocomplete,
   FileAutocomplete,
+  MailAttachmentAutocomplete,
   MailAutocomplete,
   UserAutocomplete,
   UserQueryHAutocomplete,
@@ -17,6 +18,17 @@ export const FileAutocompleteElement = ({
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
       <p className="truncate">{result.title}</p>
+    </div>
+  )
+}
+
+export const MailAttachmentAutocompleteElement = ({
+  result,
+}: { result: MailAttachmentAutocomplete }) => {
+  return (
+    <div className="flex items-center">
+      {getIcon(result.app, result.entity)}
+      <p className="truncate">{result.filename}</p>
     </div>
   )
 }
@@ -100,6 +112,8 @@ export const AutocompleteElement = forwardRef(
           result={result}
         />
       )
+    } else if (result.type === "mail_attachment") {
+      content = <MailAttachmentAutocompleteElement result={result} />
     } else {
       throw new Error("invalid type")
     }

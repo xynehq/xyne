@@ -58,12 +58,14 @@ import {
   entitySchema,
   eventSchema,
   fileSchema,
+  mailAttachmentSchema,
   mailSchema,
   userSchema,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
   type VespaMail,
+  type VespaMailAttachment,
   type VespaMailSearch,
   type VespaSearchResponse,
   type VespaSearchResult,
@@ -268,6 +270,13 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
       url: (fields as VespaEvent).url,
       app: (fields as VespaEvent).app,
       entity: (fields as VespaEvent).entity,
+    }
+  } else if (result.fields.sddocname === mailAttachmentSchema) {
+    return {
+      title: (fields as VespaMailAttachment).filename || "No Filename",
+      url: `https://mail.google.com/mail/u/0/#inbox/${(fields as VespaMailAttachment).mailId}?projector=1&messagePartId=0.${(fields as VespaMailAttachment).partId}&disp=safe&zw`,
+      app: (fields as VespaMailAttachment).app,
+      entity: (fields as VespaMailAttachment).entity,
     }
   } else {
     throw new Error("Invalid search result type for citation")
