@@ -1,7 +1,7 @@
 ---
 title: 'Local Setup'
 description: 'Setting up Xyne On Local Machine'
-icon: 'server'
+icon: 'gears'
 ---
 
 You can easily set-up Xyne to your local machine. Follow the instructions below to  set-up Xyne locally.
@@ -63,17 +63,18 @@ JWT_SECRET=<YOUR_JWT_SECRET>
 DATABASE_HOST=xyne-db
 VESPA_HOST=vespa
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
+HOST=<YOUR_HOST>
 ```
 
 ### Set up Docker
 
 Navigate to deployment folder : 
  ```javascript
-cd xyne/search/deployment
+cd xyne/deployment
 ```
 Once inside the deployment folder set up docker by running the follow command : 
 ```javascript
-docker-compose -f deployment/docker-compose.dev.yml up
+docker-compose -f docker-compose.dev.yml up
 ```
 Running this command will host vespa and postgres containers inside your docker.
 
@@ -97,10 +98,25 @@ Navigate to the server folder using ```cd server``` and run the following comman
 ```javascript
 ./init-script.sh
 ```
-This will initialise all the dependencies required by the server to run the application successfully, and will also start the server, which will be listening on port ```3000```.
+This will initialise all the dependencies required by the server to run the application successfully, 
+and will also start the server, which will be listening on port ```3000```.
 
 ### Start the Xyne client
 To start the client side, navigate to the frontend folder using ``` cd frontend``` and run the following command : 
+
+#### Client side .env
+
+Create a new ```.env ``` in the ```frontend``` folder, use the following command : 
+```javascript
+touch .env
+```
+Now paste the following inside the ```.env``` file : 
+
+```javascript
+ VITE_API_BASE_URL=http://localhost:3000
+ VITE_WS_BASE_URL=wss://localhost:3000
+```
+Save the file.
 
 ```javascript
 bun install
@@ -113,10 +129,8 @@ Then start the client using the command :
 bun run dev
 ```
 
-The app will now be available in port ```5173```.
+The app will now be available in port ```5173```.  [Go to Xyne](http://localhost:5173/)
 
- [Go to Xyne](http://localhost:5173/)
-----
 
 
 <Tip>In case of any required support, feel free to [Contact Us](mailto:saheb@xynehq.com)</Tip>
