@@ -15,9 +15,11 @@ Follow the steps listed below to get started :
 Once you have your instance up and running, you can use your terminal to connect to your instance remotely. 
 Use this command to connect to your instance : 
 
+
 ```javascript
-ssh -i ~/path/to/your-private-key-file.pem ec2-user@public-ipv4-address [or your-instance-username@public-ipv4-address]
+ssh -i ~/path/to/your-private-key-file.pem ec2-user@public-ipv4-address
 ```
+
 
 ## Install the required dependencies : 
 Deployment of Xyne on AWS EC2 requires the following dependencies to be installed on the instance:
@@ -51,46 +53,15 @@ Once you have installed the dependencies, you can use the following steps to set
 <Warning>Ensure you have an instance with enough storage to store the dependencies and run the Xyne Application</Warning>
 
 
-## Use Docker To Load the Image : 
+## Clone the repository : 
 
-Use the following docker command to load the image of Xyne.
+Use the following git command to clone the Xyne repository.
 ```javascript
-docker load < image-name.tar.gz
+git clone https://github.com/xynehq/Xyne.git
 ```
-
-## Extract the project
-
-To extract the project, you first need to run the container with the loaded image, and then extract the project : 
-
-- Run the docker container with the image :
-```javascript
-docker run --name your-container-name -p 3000:3000 image-name
-```
-
-- Make a directory called ```xyne``` from your root instance, use the following command :
-```javascript
-sudo mkdir xyne
-```
-
-Use ```docker ps -a``` to check the ID of the container.
-
-- Extract the project inside the ```xyne``` folder, use the following command : 
-```javascript
-docker cp <container:id>:usr/src/app /home/your-instance-username/xyne/search
-```
-#### You can now remove the container : 
-
- - Stop the conatiner if not already stopped :
-    ```javascript
-    docker stop <container_name_or_id>
-    ```
- - Remove the container :
-    ```javascript
-    docker rm <container_name_or_id>
-    ```
 
 ### Setup Environment variables: 
-Inside the ```server``` folder of the ```xyne/search``` folder, create a ```.env``` file using :
+Inside the ```server``` folder of the ```xyne``` app, create a ```.env``` file using :
 ```javascript
 sudo touch .env
 ```
@@ -106,24 +77,22 @@ GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
 GOOGLE_REDIRECT_URI=http://localhost:3000/v1/auth/callback
 GOOGLE_PROD_REDIRECT_URI=<YOUR_Public_IPv4_DNS_ADDRESS>/v1/auth/callback
-POST_OAUTH_REDIRECT=http://localhost:5173/
-POST_OAUTH_PROD_REDIRECT=<YOUR_Public_IPv4_DNS_ADDRESS>
 JWT_SECRET=<YOUR_JWT_SECRET>
 DATABASE_HOST=0.0.0.0
 VESPA_HOST=0.0.0.0
 AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY>
 AWS_SECRET_KEY=<YOUR_AWS_ACCESS_SECRET>
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
-
 ```
+
 
 ### Add Environment Variables for Client side
 
-Create a new ```.env.production ```, use the following command : 
+Create a new ```.env ``` inside the ```frontend``` folder, use the following command : 
 ```javascript
-sudo touch .env.production
+touch .env
 ```
-Now paste the following inside the ```.env.production``` file : 
+Now paste the following inside the ```.env``` file : 
 
 ```javascript
  VITE_API_BASE_URL=http://<YOUR_AWS_INSTANCE_IPv4_DNS>
@@ -133,7 +102,7 @@ Save the file.
 
 ### Run the Init script to initialise the application :  
 
-From the root of the instance, use the following commands : 
+From the ```server``` folder of the instance, use the following commands: 
 ```javascript
 ./init-script.sh
 ```
@@ -142,7 +111,7 @@ From the root of the instance, use the following commands :
 
 Navigate to the ```deployment``` folder : 
 ```javascript 
-cd xyne/search/deployment
+cd xyne/deployment
 ```
 Once inside the ```deployment``` folder, run the following command to run vespa and postgres in docker :
 ```javascript 
