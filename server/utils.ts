@@ -165,10 +165,6 @@ export const splitGroupedCitationsWithSpaces = (text: string): string => {
       return numbers.map((num: string) => `[${num}]`).join(" ")
     },
   )
-  return text.replace(/\[([0-9,\s]+)\]/g, (match, group) => {
-    const numbers = group.split(",").map((n: string) => n.trim())
-    return numbers.map((num: number) => `[${num}]`).join(" ")
-  })
 }
 
 export const removeStopwords = (text: string) => {
@@ -213,16 +209,12 @@ export const removeStopwords = (text: string) => {
     "from",
     "s"
   ]
-  // Split the text into words using regex
   const words = text.split(/\s+/)
 
   // Filter out stopwords
   const filteredWords = words.filter((word) => {
-    // Convert to lowercase and remove non-alphanumeric characters for matching
     const cleanWord = word.toLowerCase().replace(/[^\w]/g, "")
     return !stopwords.includes(cleanWord)
   })
-
-  // Join the filtered words back into a string
   return filteredWords.join(" ")
 }

@@ -102,7 +102,7 @@ schema mail {
     }
   }
 
-  field subject_embeddings type tensor<bfloat16>(v[1024])  {
+  field subject_embeddings type tensor<bfloat16>(v[DIMS])  {
     indexing: input subject | embed | attribute | index
     attribute {
         distance-metric: angular

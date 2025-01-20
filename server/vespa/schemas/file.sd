@@ -76,7 +76,7 @@ schema file {
     }
   }
   
-  field title_embeddings type tensor<bfloat16>(v[1024])  {
+  field title_embeddings type tensor<bfloat16>(v[DIMS])  {
     indexing: input title | embed | attribute | index
     attribute {
         distance-metric: angular

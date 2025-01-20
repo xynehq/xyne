@@ -158,7 +158,7 @@ schema event {
 
     rank-profile default {
         inputs {
-            query(e) tensor<bfloat16>(v[1024])
+            query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
             query(bm25ChunkWeight) double 
         }
