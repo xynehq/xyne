@@ -177,7 +177,7 @@ const saveToDownloads = async (file: Blob) => {
 
   // Save the file
   try {
-    await fs.promises.writeFile(filePath, fileBuffer)
+    await fs.promises.writeFile(filePath, new Uint8Array(fileBuffer))
     Logger.info(`File saved successfully to ${filePath}`)
   } catch (err) {
     console.error("Error saving file:", err)
@@ -1655,6 +1655,7 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               classification,
               convWithNoErrMsg,
+              originalMessage.chatExternalId,
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
