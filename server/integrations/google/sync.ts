@@ -1000,7 +1000,8 @@ const handleGmailChanges = async (
                   id: message?.id!,
                   format: "full",
                 })
-                await insert(parseMail(msgResp.data), mailSchema)
+
+                await insert(await parseMail(msgResp.data, gmail), mailSchema)
                 stats.added += 1
                 changesExist = true
               } catch (error) {

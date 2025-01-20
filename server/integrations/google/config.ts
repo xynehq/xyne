@@ -19,3 +19,5 @@ export const ServiceAccountUserConcurrency = 2
 export const GoogleDocsConcurrency = 15
 export const GmailConcurrency = 15
 export const PDFProcessingConcurrency = 15
+
+export const MAX_ATTACHMENT_PDF_SIZE = 20

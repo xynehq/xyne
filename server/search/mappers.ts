@@ -21,10 +21,15 @@ import {
   type VespaEventSearch,
   userQuerySchema,
   type VespaAutocompleteUserQueryHistory,
+  type VespaMailAttachmentSearch,
+  mailAttachmentSchema,
+  MailAttachmentResponseSchema,
+  type VespaAutocompleteMailAttachment,
 } from "@/search/types"
 import {
   AutocompleteEventSchema,
   AutocompleteFileSchema,
+  AutocompleteMailAttachmentSchema,
   AutocompleteMailSchema,
   AutocompleteUserQueryHSchema,
   AutocompleteUserSchema,
@@ -81,6 +86,13 @@ export const VespaSearchResponseToSearchResult = (
               ).description
             }
             return EventResponseSchema.parse(child.fields)
+          } else if (
+            (child.fields as VespaMailAttachmentSearch).sddocname ===
+            mailAttachmentSchema
+          ) {
+            ;(child.fields as any).type = mailAttachmentSchema
+            ;(child.fields as any).relevance = child.relevance
+            return MailAttachmentResponseSchema.parse(child.fields)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname}`,
@@ -132,6 +144,13 @@ export const VespaAutocompleteResponseToResult = (
           ;(child.fields as any).type = userQuerySchema
           ;(child.fields as any).relevance = child.relevance
           return AutocompleteUserQueryHSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteMailAttachment).sddocname ===
+          mailAttachmentSchema
+        ) {
+          ;(child.fields as any).type = mailAttachmentSchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteMailAttachmentSchema.parse(child.fields)
         } else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,
