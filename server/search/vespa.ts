@@ -416,9 +416,8 @@ export const searchVespa = async (
   )
   const hybridDefaultPayload = {
     yql,
-    q: query,
-    // removing stopwords for only bm25, to keep semantic meaning for embeddings
-    query: removeStopwords(query),
+    q: query, // Original user input query
+    query: removeStopwords(query), // removing stopwords for only bm25, to keep semantic meaning for embeddings
     email,
     "ranking.profile": profile,
     "input.query(e)": "embed(@q)",
