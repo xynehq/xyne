@@ -3,10 +3,14 @@ import { EmailParsingError } from "@/errors"
 import { getLogger } from "@/logger"
 import {
   Apps,
+  MailAttachmentEntity,
+  mailAttachmentSchema,
   MailEntity,
   mailSchema,
   type Attachment,
   type Mail,
+  type MailAttachment,
+  type VespaMailAttachment,
 } from "@/search/types"
 import { insert } from "@/search/vespa"
 import { Subsystem, type GoogleClient } from "@/types"
@@ -19,6 +23,10 @@ import { StatType, updateUserStats } from "../tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
+import {
+  getGmailAttachmentChunks,
+  parseAttachments,
+} from "@/integrations/google/utils"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
@@ -73,7 +81,7 @@ export const handleGmailIngestion = async (
                 }),
               `Fetching Gmail message (id: ${message.id})`,
             )
-            await insert(parseMail(msgResp.data), mailSchema)
+            await insert(await parseMail(msgResp.data, gmail), mailSchema)
             updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
@@ -129,7 +137,10 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 }
 
 // Function to parse and validate email data
-export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
+export const parseMail = async (
+  email: gmail_v1.Schema$Message,
+  gmail: gmail_v1.Gmail,
+): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)
@@ -186,16 +197,64 @@ export const parseMail = (email: gmail_v1.Schema$Message): Mail => {
   const body = getBody(payload)
   const chunks = chunkTextByParagraph(body)
 
+  if (!messageId || !threadId) {
+    throw new Error("Invalid message")
+  }
+
   let attachments: Attachment[] = []
   let filenames: string[] = []
   if (payload) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
-  }
 
-  if (!messageId || !threadId) {
-    throw new Error("Invalid message")
+    // ingest attachments
+    if (payload.parts) {
+      for (const part of payload.parts) {
+        const { body, filename, mimeType } = part
+        if (
+          mimeType === "application/pdf" &&
+          filename &&
+          body &&
+          body.attachmentId
+        ) {
+          try {
+            const { attachmentId, size } = body
+            const attachmentChunks =
+              (await getGmailAttachmentChunks(gmail, {
+                attachmentId: attachmentId,
+                filename: filename,
+                size: size ? size : 0,
+                messageId: messageId ? messageId : "",
+              })) ?? []
+
+            const attachmentDoc: MailAttachment = {
+              app: Apps.Gmail,
+              entity: MailAttachmentEntity.PDF,
+              mailId: messageId,
+              partId: part.partId ? parseInt(part.partId) : null,
+              docId: attachmentId,
+              filename: filename,
+              fileSize: size,
+              fileType: mimeType,
+              chunks: attachmentChunks,
+              timestamp,
+              permissions,
+            }
+
+            await insert(attachmentDoc, mailAttachmentSchema)
+          } catch (error) {
+            // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
+            // log the error and proceed.
+            Logger.error(
+              error,
+              `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
+              error,
+            )
+          }
+        }
+      }
+    }
   }
 
   const emailData: Mail = {
@@ -255,32 +314,4 @@ const getBody = (payload: any): string => {
   const data = parseEmailBody(body).replace(/[\r?\n]+/g, "\n")
 
   return data
-}
-
-// Function to parse attachments from the email payload
-const parseAttachments = (
-  payload: gmail_v1.Schema$MessagePart,
-): { attachments: Attachment[]; filenames: string[] } => {
-  const attachments: Attachment[] = []
-  const filenames: string[] = []
-
-  const traverseParts = (parts: any[]) => {
-    for (const part of parts) {
-      if (part.filename && part.body && part.body.attachmentId) {
-        filenames.push(part.filename)
-        attachments.push({
-          fileType: part.mimeType || "application/octet-stream",
-          fileSize: parseInt(part.body.size, 10) || 0,
-        })
-      } else if (part.parts) {
-        traverseParts(part.parts)
-      }
-    }
-  }
-
-  if (payload.parts) {
-    traverseParts(payload.parts)
-  }
-
-  return { attachments, filenames }
 }

@@ -21,6 +21,7 @@
             <document type="file" mode="index" />
             <document type="user" mode="index" />
             <document type="mail" mode="index" />
+            <document type="mail_attachment" mode="index" />
             <document type="user_query" mode="index" />
             <document type="event" mode="index" />
             <document type="chatAttachment" mode="index" />

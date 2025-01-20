@@ -4,6 +4,7 @@ export const userSchema = "user"
 export const mailSchema = "mail"
 export const eventSchema = "event"
 export const userQuerySchema = "user_query"
+export const mailAttachmentSchema = "mail_attachment"
 export const chatAttachmentSchema = "chatAttachment"
 
 export type VespaSchema =
@@ -12,6 +13,7 @@ export type VespaSchema =
   | typeof mailSchema
   | typeof eventSchema
   | typeof userQuerySchema
+  | typeof mailAttachmentSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -38,6 +40,7 @@ const Schemas = z.union([
   z.literal(mailSchema),
   z.literal(eventSchema),
   z.literal(userQuerySchema),
+  z.literal(mailAttachmentSchema),
   z.literal(chatAttachmentSchema),
 ])
 
@@ -75,6 +78,13 @@ export enum DriveEntity {
   CSV = "csv",
 }
 
+export enum MailAttachmentEntity {
+  PDF = "pdf",
+}
+
+export const isMailAttachment = (entity: Entity): boolean =>
+  Object.values(MailAttachmentEntity).includes(entity as MailAttachmentEntity)
+
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
@@ -86,6 +96,7 @@ export enum NotionEntity {
 
 export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
+export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
@@ -96,6 +107,7 @@ export const entitySchema = z.union([
   NotionEntitySchema,
   MailEntitySchema,
   EventEntitySchema,
+  MailAttachmentEntitySchema,
 ])
 
 export type Entity =
@@ -104,6 +116,7 @@ export type Entity =
   | NotionEntity
   | MailEntity
   | CalendarEntity
+  | MailAttachmentEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -215,6 +228,22 @@ export const VespaMailSchema = MailSchema.extend({
   docId: z.string().min(1),
 })
 
+export const MailAttachmentSchema = z.object({
+  docId: z.string(),
+  mailId: z.string(),
+  partId: z.number().nullable().optional(),
+  app: z.nativeEnum(Apps),
+  entity: z.nativeEnum(MailAttachmentEntity),
+  chunks: z.array(z.string()),
+  timestamp: z.number(),
+  permissions: z.array(z.string()),
+  filename: z.string(),
+  fileType: z.string().nullable().optional(),
+  fileSize: z.number().nullable().optional(),
+})
+
+export const VespaMailAttachmentSchema = MailAttachmentSchema.extend({})
+
 const EventUser = z.object({
   email: z.string(),
   displayName: z.string(),
@@ -275,6 +304,16 @@ export const VespaMailSearchSchema = VespaMailSchema.extend({
     chunks_summary: z.array(z.string()).optional(),
   })
 
+export const VespaMailAttachmentSearchSchema = VespaMailAttachmentSchema.extend(
+  {
+    sddocname: z.literal("mail_attachment"),
+  },
+)
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.string()).optional(),
+  })
+
 export const VespaEventSearchSchema = VespaEventSchema.extend({
   sddocname: z.literal("event"),
 }).merge(defaultVespaFieldsSchema)
@@ -300,7 +339,12 @@ export const VespaChatAttachmentSearchSchema = VespaChatAttachmentSchema.extend(
     chunks_summary: z.array(z.string()),
   })
 
+
 export const VespaMailGetSchema = VespaMailSchema.merge(
+  defaultVespaFieldsSchema,
+)
+
+export const VespaMailAttachmentGetSchema = VespaMailAttachmentSchema.merge(
   defaultVespaFieldsSchema,
 )
 
@@ -310,6 +354,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaMailSearchSchema,
   VespaEventSearchSchema,
   VespaUserQueryHGetSchema,
+  VespaMailAttachmentSearchSchema,
   VespaChatAttachmentSearchSchema,
 ])
 
@@ -340,6 +385,12 @@ const EventMatchFeaturesSchema = z.object({
   "bm25(attendeesNames)": z.number().optional(),
 })
 
+const MailAttachmentMatchFeaturesSchema = z.object({
+  chunk_vector_score: z.number().optional(),
+  scaled_bm25_chunks: z.number().optional(),
+  scaled_bm25_filename: z.number().optional(),
+})
+
 const ChatAttachmentFeaturesSchema = z.object({
   "bm25(title)": z.number().optional(),
   "bm25(chunks)": z.number().optional(),
@@ -351,6 +402,7 @@ const SearchMatchFeaturesSchema = z.union([
   UserMatchFeaturesSchema,
   MailMatchFeaturesSchema,
   EventMatchFeaturesSchema,
+  MailAttachmentMatchFeaturesSchema,
   ChatAttachmentFeaturesSchema,
 ])
 const VespaSearchFieldsSchema = z
@@ -456,6 +508,9 @@ export type VespaChatAttachmentSearch = z.infer<
   typeof VespaChatAttachmentSearchSchema
 >
 export type VespaMailSearch = z.infer<typeof VespaMailSearchSchema>
+export type VespaMailAttachmentSearch = z.infer<
+  typeof VespaMailAttachmentSearchSchema
+>
 export type VespaEventSearch = z.infer<typeof VespaEventSearchSchema>
 export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaUser = z.infer<typeof VespaUserSchema>
@@ -512,6 +567,14 @@ const VespaAutocompleteMailSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
+const VespaAutocompleteMailAttachmentSchema = z
+  .object({
+    docId: z.string(),
+    filename: z.string(),
+    sddocname: Schemas,
+  })
+  .merge(defaultVespaFieldsSchema)
+
 const VespaAutocompleteEventSchema = z
   .object({
     docId: z.string(),
@@ -536,6 +599,7 @@ const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteUserSchema,
   VespaAutocompleteMailSchema,
   VespaAutocompleteUserQueryHSchema,
+  VespaAutocompleteMailAttachmentSchema,
 ])
 
 const VespaAutocompleteFieldsSchema = z
@@ -565,6 +629,9 @@ export type VespaAutocompleteResponse = z.infer<
 export type VespaAutocompleteFile = z.infer<typeof VespaAutocompleteFileSchema>
 export type VespaAutocompleteUser = z.infer<typeof VespaAutocompleteUserSchema>
 export type VespaAutocompleteMail = z.infer<typeof VespaAutocompleteMailSchema>
+export type VespaAutocompleteMailAttachment = z.infer<
+  typeof VespaAutocompleteMailAttachmentSchema
+>
 export type VespaAutocompleteEvent = z.infer<
   typeof VespaAutocompleteEventSchema
 >
@@ -577,6 +644,9 @@ export type Attachment = z.infer<typeof AttachmentSchema>
 
 export type VespaMail = z.infer<typeof VespaMailSchema>
 export type VespaMailGet = z.infer<typeof VespaMailGetSchema>
+
+export type MailAttachment = z.infer<typeof MailAttachmentSchema>
+export type VespaMailAttachment = z.infer<typeof VespaMailAttachmentSchema>
 
 export type VespaEvent = z.infer<typeof VespaEventSchema>
 
@@ -596,5 +666,22 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
   .extend({
     type: z.literal("mail"),
     mimeType: z.string(),
+    chunks_summary: z.array(z.string()).optional(),
+  })
+
+export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
+  docId: true,
+  app: true,
+  entity: true,
+  relevance: true,
+  timestamp: true,
+  filename: true,
+  mailId: true,
+  partId: true,
+  fileType: true,
+})
+  .strip()
+  .extend({
+    type: z.literal("mail_attachment"),
     chunks_summary: z.array(z.string()).optional(),
   })

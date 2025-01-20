@@ -4,6 +4,7 @@ import {
   DriveEntity,
   Entity,
   GooglePeopleEntity,
+  isMailAttachment,
 } from "shared/types"
 import { Filter, Groups } from "@/types"
 import { getIcon } from "@/lib/common"
@@ -63,6 +64,9 @@ export const getName = (
   isChatAttachment?: boolean,
 ): string => {
   if (app === Apps.Gmail) {
+    if (isMailAttachment(entity)) {
+      return "Attachments"
+    }
     return "Gmail"
   } else if (app === Apps.GoogleDrive) {
     if (entity === DriveEntity.PDF) {

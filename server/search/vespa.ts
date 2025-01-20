@@ -9,6 +9,7 @@ import {
   mailSchema,
   userQuerySchema,
   userSchema,
+  mailAttachmentSchema,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -22,6 +23,7 @@ import type {
   VespaEvent,
   VespaUserQueryHistory,
   VespaSchema,
+  VespaMailAttachment,
   VespaChatAttachment,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
@@ -88,6 +90,7 @@ export const insert = async (
     | VespaMail
     | VespaEvent
     | VespaUserQueryHistory
+    | VespaMailAttachment
     | VespaChatAttachment,
   schema: VespaSchema,
 ) => {
@@ -142,6 +145,7 @@ const AllSources = [
   userSchema,
   mailSchema,
   eventSchema,
+  mailAttachmentSchema,
   chatAttachmentSchema,
 ].join(", ")
 

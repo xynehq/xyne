@@ -3,12 +3,14 @@ import {
   chatAttachmentSchema,
   eventSchema,
   fileSchema,
+  mailAttachmentSchema,
   mailSchema,
   userSchema,
   VespaSearchResultsSchema,
   type VespaChatAttachmentSearch,
   type VespaEventSearch,
   type VespaFileSearch,
+  type VespaMailAttachmentSearch,
   type VespaMailSearch,
   type VespaSearchResults,
   type VespaUser,
@@ -90,6 +92,23 @@ ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+vespa relevance score: ${relevance}`
+}
+
+const constructMailAttachmentContext = (
+  fields: VespaMailAttachmentSearch,
+  relevance: number,
+  maxSummaryChunks?: number,
+): string => {
+  if (!maxSummaryChunks) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
+  return `App: ${fields.app}
+Entity: ${fields.entity}
+Sent: ${getRelativeTime(fields.timestamp)}
+${fields.filename ? `Filename: ${fields.filename}` : ""}
+${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
 vespa relevance score: ${relevance}`
 }
@@ -307,6 +326,12 @@ export const answerContextMap = (
     return constructEventContext(searchResult?.fields, searchResult?.relevance)
   } else if (searchResult?.fields?.sddocname === chatAttachmentSchema) {
     return constructChatAttachmentContext(
+      searchResult?.fields,
+      searchResult?.relevance,
+      maxSummaryChunks,
+    )
+  } else if (searchResult?.fields?.sddocname === mailAttachmentSchema) {
+    return constructMailAttachmentContext(
       searchResult?.fields,
       searchResult?.relevance,
       maxSummaryChunks,

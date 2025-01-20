@@ -11,6 +11,7 @@ import type {
   VespaEvent,
   VespaUserQueryHistory,
   VespaSchema,
+  VespaMailAttachment,
   VespaChatAttachment,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
@@ -172,6 +173,7 @@ class VespaClient {
       | VespaMail
       | VespaEvent
       | VespaUserQueryHistory
+      | VespaMailAttachment
       | VespaChatAttachment,
     options: VespaConfigValues,
   ): Promise<void> {

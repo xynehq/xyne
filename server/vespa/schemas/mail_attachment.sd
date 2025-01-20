@@ -1,0 +1,159 @@
+schema mail_attachment {
+  document mail_attachment {
+    # basically the attachmentId
+    field docId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field mailId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field filename type string {
+      indexing: summary | index
+      index: enable-bm25
+    }
+
+    field fileType type string {
+      indexing: summary | attribute
+    }
+
+     field fileSize type long {
+      indexing: summary | attribute
+    }
+
+    field partId type long {
+      indexing: summary | attribute
+    }
+
+    field chunks type array<string> {
+      indexing: index | summary
+      index {
+        enable-bm25
+      }
+    }
+
+    field timestamp type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field permissions type array<string> {
+      indexing: attribute | summary
+    }
+    
+  }
+
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+    indexing: guard { input chunks } | embed | attribute | index
+    attribute {
+      distance-metric: angular
+    }
+  }
+
+  # filename
+  field name_fuzzy type string {
+    indexing: input filename | index
+    index {
+      enable-bm25
+    }
+    match {
+      gram
+      gram-size: 3
+    }
+  }
+
+  fieldset default {
+    fields: filename, chunks
+  }
+
+  fieldset autocomplete {
+    fields: filename
+  }
+
+  rank-profile default {
+    inputs {
+      query(e) tensor<bfloat16>(v[DIMS])
+      query(alpha) double
+    }
+
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embeddings)
+    }
+
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
+    }
+
+    function scaled_bm25_chunks() {
+      expression: scale(bm25(chunks))
+    }
+
+    function scaled_bm25_filename() {
+      expression: scale(bm25(filename))
+    }
+
+    function combined_bm25() {
+      expression: 0.3*scaled_bm25_chunks + 0.8*scaled_bm25_filename
+    }
+
+    first-phase {
+      expression: (0.5 * chunk_vector_score) + combined_bm25
+    }
+
+    global-phase {
+      expression {
+        (
+          (0.5 * normalize_linear(chunk_vector_score)) +
+          (max(scaled_bm25_filename,scaled_bm25_chunks))
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      chunk_vector_score
+      scaled_bm25_chunks
+      scaled_bm25_filename
+    }
+  }
+
+  document-summary default {
+    summary filename {}
+    summary chunks_summary {
+      bolding: on
+      source: chunks
+    }
+  }
+
+  document-summary autocomplete {
+    summary docId {}
+    summary filename {}
+    summary fileType {}
+    summary app {}
+    summary entity {}
+  }
+
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(filename)
+    }
+    match-features {
+      bm25(filename)
+    }
+  }
+}
