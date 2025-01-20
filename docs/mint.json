@@ -49,7 +49,15 @@
     {
       "group": "Deployment",
       "pages": [
-       "deployment/self-hosting",
+        {
+          "group": "Local Hosting",
+          "icon": "server",
+          "pages": [
+            "deployment/local-hosting/servermode",
+            "deployment/local-hosting/dockermode"
+          ]
+        },
+
         {
           "group": "Cloud Deployment",
           "icon": "cloud",
