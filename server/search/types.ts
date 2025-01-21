@@ -5,6 +5,8 @@ export const mailSchema = "mail"
 export const eventSchema = "event"
 export const userQuerySchema = "user_query"
 export const mailAttachmentSchema = "mail_attachment"
+export const chatAttachmentSchema = "chatAttachment"
+
 export type VespaSchema =
   | typeof fileSchema
   | typeof userSchema
@@ -39,6 +41,7 @@ const Schemas = z.union([
   z.literal(eventSchema),
   z.literal(userQuerySchema),
   z.literal(mailAttachmentSchema),
+  z.literal(chatAttachmentSchema),
 ])
 
 export enum MailEntity {
@@ -280,6 +283,18 @@ export const VespaEventSchema = z.object({
   defaultStartTime: z.boolean(),
 })
 
+export const VespaChatAttachmentSchema = z.object({
+  docId: z.string(),
+  title: z.string(),
+  chunks: z.array(z.string()),
+  ownerEmail: z.string().nullable(),
+  mimeType: z.string().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  chatId: z.string(),
+  messageId: z.string(),
+})
+
 export const VespaMailSearchSchema = VespaMailSchema.extend({
   sddocname: z.literal("mail"),
 })
@@ -314,6 +329,17 @@ export const VespaUserQueryHGetSchema = VespaUserQueryHistorySchema.extend({
   sddocname: z.literal("user_query"),
 }).merge(defaultVespaFieldsSchema)
 
+export const VespaChatAttachmentSearchSchema = VespaChatAttachmentSchema.extend(
+  {
+    sddocname: z.literal(chatAttachmentSchema),
+  },
+)
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.string()),
+  })
+
+
 export const VespaMailGetSchema = VespaMailSchema.merge(
   defaultVespaFieldsSchema,
 )
@@ -329,6 +355,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaEventSearchSchema,
   VespaUserQueryHGetSchema,
   VespaMailAttachmentSearchSchema,
+  VespaChatAttachmentSearchSchema,
 ])
 
 // Match features for file schema
@@ -364,12 +391,19 @@ const MailAttachmentMatchFeaturesSchema = z.object({
   scaled_bm25_filename: z.number().optional(),
 })
 
+const ChatAttachmentFeaturesSchema = z.object({
+  "bm25(title)": z.number().optional(),
+  "bm25(chunks)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+})
+
 const SearchMatchFeaturesSchema = z.union([
   FileMatchFeaturesSchema,
   UserMatchFeaturesSchema,
   MailMatchFeaturesSchema,
   EventMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
+  ChatAttachmentFeaturesSchema,
 ])
 const VespaSearchFieldsSchema = z
   .object({
@@ -470,6 +504,9 @@ export type VespaSearchResponse = z.infer<typeof VespaSearchResponseSchema>
 
 export type VespaFileGet = z.infer<typeof VespaFileGetSchema>
 export type VespaFileSearch = z.infer<typeof VespaFileSearchSchema>
+export type VespaChatAttachmentSearch = z.infer<
+  typeof VespaChatAttachmentSearchSchema
+>
 export type VespaMailSearch = z.infer<typeof VespaMailSearchSchema>
 export type VespaMailAttachmentSearch = z.infer<
   typeof VespaMailAttachmentSearchSchema
@@ -612,6 +649,8 @@ export type MailAttachment = z.infer<typeof MailAttachmentSchema>
 export type VespaMailAttachment = z.infer<typeof VespaMailAttachmentSchema>
 
 export type VespaEvent = z.infer<typeof VespaEventSchema>
+
+export type VespaChatAttachment = z.infer<typeof VespaChatAttachmentSchema>
 
 export const MailResponseSchema = VespaMailGetSchema.pick({
   docId: true,

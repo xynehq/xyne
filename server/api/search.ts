@@ -94,11 +94,22 @@ export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
   modelId: z.string().min(1),
+  attachments: z.string(),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
+})
+
+const uploadFileSchema = z.object({
+  name: z.string(),
+  size: z.number(),
+  type: z.string(),
+})
+
+export const fileUploadSchema = z.object({
+  files: uploadFileSchema.or(z.array(uploadFileSchema)),
 })
 
 export const AutocompleteApi = async (c: Context) => {

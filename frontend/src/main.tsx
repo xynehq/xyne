@@ -10,6 +10,7 @@ import { routeTree } from "@/routeTree.gen"
 import { Toaster } from "@/components/ui/toaster"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { StateContextProvider } from "./StateProvider"
 
 const queryClient = new QueryClient({})
 
@@ -33,8 +34,10 @@ if (!rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster />
+        <StateContextProvider>
+          <RouterProvider router={router} />
+          <Toaster />
+        </StateContextProvider>
       </QueryClientProvider>
     </StrictMode>,
   )

@@ -13,6 +13,7 @@ import { api } from "@/api"
 import { ChatBox } from "@/components/ChatBox"
 import Sparkle from "@/assets/singleSparkle.svg"
 import { errorComponent } from "@/components/error"
+import { useStateContext } from "@/lib/common"
 
 enum Tabs {
   Search = "search",
@@ -21,7 +22,6 @@ enum Tabs {
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
-  const [query, setQuery] = useState("")
 
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
@@ -36,6 +36,14 @@ const Index = () => {
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
   const { user } = matches[matches.length - 1].context
+  const {
+    stagedFiles,
+    handleFileRemove,
+    handleFileSelection,
+    loading,
+    query,
+    setQuery,
+  } = useStateContext()
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -179,6 +187,10 @@ const Index = () => {
                 query={query}
                 setQuery={setQuery}
                 handleSend={handleAsk}
+                stagedFiles={stagedFiles}
+                handleFileSelection={handleFileSelection}
+                handleFileRemove={handleFileRemove}
+                loading={loading}
               />
             </div>
           )}

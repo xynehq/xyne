@@ -8,15 +8,28 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Eye, EyeOff, Pencil } from "lucide-react"
+import {
+  Bookmark,
+  Copy,
+  Ellipsis,
+  Eye,
+  EyeOff,
+  Pencil,
+  File,
+} from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
+import {
+  ChatSSEvents,
+  SelectPublicMessage,
+  Citation,
+  AttachmentMetadata,
+} from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
-import { ChatBox } from "@/components/ChatBox"
+import { ChatBox, getFileTypeName } from "@/components/ChatBox"
 import { z } from "zod"
-import { getIcon } from "@/lib/common"
+import { getIcon, useStateContext } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
 import {
   useQueryClient,
@@ -67,7 +80,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const hasHandledQueryParam = useRef(false)
 
-  const [query, setQuery] = useState("")
   const [messages, setMessages] = useState<SelectPublicMessage[]>(
     isWithChatId ? data?.messages || [] : [],
   )
@@ -147,6 +159,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       console.error("Failed to rename chat:", error)
     },
   })
+  const {
+    stagedFiles,
+    setStagedFiles,
+    handleFileRemove,
+    handleFileSelection,
+    loading,
+    setLoading,
+    query,
+    setQuery,
+  } = useStateContext()
 
   useEffect(() => {
     if (inputRef.current) {
@@ -221,7 +243,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       currentRespRef.current = null
     }
     inputRef.current?.focus()
-    setQuery("")
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
@@ -248,11 +269,24 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     // Prevent the user from sending a query if streaming is already in progress.
     if (isStreaming) return
 
+    let uploadedFilesMetadata = []
+
+    if (stagedFiles.length !== 0) {
+      setLoading(true)
+      uploadedFilesMetadata = await handleFileUpload()
+      setStagedFiles([])
+      setLoading(false)
+    }
+
     setQuery("")
     // Append the user's message to the chat
     setMessages((prevMessages) => [
       ...prevMessages,
-      { messageRole: "user", message: messageToSend },
+      {
+        messageRole: "user",
+        message: messageToSend,
+        attachments: uploadedFilesMetadata,
+      },
     ])
 
     setIsStreaming(true)
@@ -265,6 +299,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
+    url.searchParams.append(
+      "attachments",
+      JSON.stringify(uploadedFilesMetadata),
+    )
 
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
@@ -762,6 +800,40 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setIsEditing(false)
   }
 
+  const handleFileUpload = async () => {
+    const formData = new FormData()
+    // Append each file to the FormData object
+    stagedFiles.forEach((file) => {
+      formData.append("files", file)
+    })
+
+    try {
+      // Making POST req like this is giving errors at the server side
+      // const response = await api.chat.upload.$post({
+      //   body: formData,
+      //   headers: {
+      //     "Content-Type": "multipart/form-data",
+      //   },
+      // })
+
+      // For now using simple fetch which works fine
+      const response = await fetch("/api/v1/chat/upload", {
+        method: "POST",
+        body: formData,
+      })
+
+      const result = await response.json()
+      if (response.ok) {
+        return result.attachmentsMetadata
+      } else {
+        console.error("File upload failed:")
+      }
+    } catch (error) {
+      console.error("Error uploading files:", error)
+      throw error
+    }
+  }
+
   return (
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
@@ -822,6 +894,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     <ChatMessage
                       key={index}
                       message={message.message}
+                      attachments={message.attachments}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
                       citations={message?.sources?.map((c: Citation) => c.url)}
@@ -849,6 +922,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     {userMessageWithErr && (
                       <ChatMessage
                         message={message.errorMessage}
+                        attachments={message.attachments}
                         isUser={false}
                         responseDone={true}
                         citations={message?.sources?.map(
@@ -915,6 +989,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               query={query}
               setQuery={setQuery}
               handleSend={handleSend}
+              stagedFiles={stagedFiles}
+              handleFileRemove={handleFileRemove}
+              handleFileSelection={handleFileSelection}
+              loading={loading}
               isStreaming={isStreaming}
             />
           </div>
@@ -964,9 +1042,18 @@ const Sources = ({
                   <div className="flex flex-col  mr-[12px] truncate">
                     <span className="truncate">{citation.title}</span>
                     <div className="flex items-center pb-[12px]">
-                      {getIcon(citation.app, citation.entity)}
+                      {citation?.sddocname === "chatAttachment"
+                        ? getIcon(
+                            citation.app,
+                            citation.entity,
+                            undefined,
+                            true,
+                          )
+                        : getIcon(citation.app, citation.entity)}
                       <span className="text-[#848DA1]">
-                        {getName(citation.app, citation.entity)}
+                        {citation?.sddocname === "chatAttachment"
+                          ? getName(citation.app, citation.entity, true)
+                          : getName(citation.app, citation.entity)}
                       </span>
                     </div>
                   </div>
@@ -984,6 +1071,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 
 const ChatMessage = ({
   message,
+  attachments,
   isUser,
   responseDone,
   isRetrying,
@@ -997,6 +1085,7 @@ const ChatMessage = ({
   isStreaming = false,
 }: {
   message: string
+  attachments?: AttachmentMetadata[]
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -1035,7 +1124,33 @@ const ChatMessage = ({
       className={`${isUser ? "max-w-[75%]" : ""} rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
-        message
+        <>
+          {attachments && attachments?.length > 0 && (
+            <div className="flex-col w-full">
+              <ul className="flex flex-col space-y-2 pb-2">
+                {attachments?.map((attachment, index) => (
+                  <li
+                    key={index}
+                    className="flex items-center p-2 border rounded border-gray-300 min-w-[200px] max-w-[300px]"
+                  >
+                    <div className="flex items-center justify-center w-8 h-8 mr-2 bg-gray-100 rounded">
+                      <File className="text-black" size={16} />
+                    </div>
+                    <div className="flex flex-col flex-1">
+                      <span className="text-sm font-medium text-gray-700 truncate max-w-[100px]">
+                        {attachment?.fileName}
+                      </span>
+                      <span className="text-xs font-medium text-gray-700 truncate max-w-[100px]">
+                        {getFileTypeName(attachment?.fileType) ?? null}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {message}
+        </>
       ) : (
         <div
           className={`flex flex-col mt-[40px] ${citations.length ? "mb-[35px]" : ""}`}

@@ -58,7 +58,11 @@ const GroupFilterItem = ({
   )
 }
 
-export const getName = (app: Apps, entity: Entity): string => {
+export const getName = (
+  app: Apps,
+  entity: Entity,
+  isChatAttachment?: boolean,
+): string => {
   if (app === Apps.Gmail) {
     if (isMailAttachment(entity)) {
       return "Attachments"
@@ -88,10 +92,12 @@ export const getName = (app: Apps, entity: Entity): string => {
     } else {
       return "Drive"
     }
-  } else if (app == Apps.GoogleWorkspace) {
+  } else if (app === Apps.GoogleWorkspace) {
     return "People"
-  } else if (app == Apps.GoogleCalendar && entity === CalendarEntity.Event) {
+  } else if (app === Apps.GoogleCalendar && entity === CalendarEntity.Event) {
     return "Event"
+  } else if (!app && !entity && isChatAttachment) {
+    return "Attachment"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

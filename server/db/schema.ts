@@ -292,6 +292,7 @@ export const chats = pgTable(
       .notNull()
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    hasAttachments: boolean("hasAttachments").notNull().default(false),
   },
   (table) => ({
     isBookmarkedIndex: index("is_bookmarked_index").on(table.isBookmarked),
@@ -324,6 +325,7 @@ export const messages = pgTable(
     modelId: text("modelId").notNull(),
     email: text("email").notNull(),
     sources: jsonb("sources").notNull().default(sql`'[]'::jsonb`),
+    attachments: jsonb("attachments").notNull().default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),

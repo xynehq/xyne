@@ -2,6 +2,7 @@ import {
   Apps,
   CalendarEntity,
   DriveEntity,
+  chatAttachmentSchema,
   eventSchema,
   MailEntity,
   fileSchema,
@@ -23,6 +24,7 @@ import type {
   VespaUserQueryHistory,
   VespaSchema,
   VespaMailAttachment,
+  VespaChatAttachment,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -88,7 +90,8 @@ export const insert = async (
     | VespaMail
     | VespaEvent
     | VespaUserQueryHistory
-    | VespaMailAttachment,
+    | VespaMailAttachment
+    | VespaChatAttachment,
   schema: VespaSchema,
 ) => {
   try {
@@ -143,6 +146,7 @@ const AllSources = [
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
+  chatAttachmentSchema,
 ].join(", ")
 
 export const autocomplete = async (
@@ -450,6 +454,49 @@ export const searchVespa = async (
   }
 }
 
+export const searchVespaWithChatAttachment = async (
+  query: string,
+  email: string,
+  chatId: string,
+  limit = config.page,
+  offset?: number,
+): Promise<VespaSearchResponse> => {
+  const url = `${vespaEndpoint}/search/`
+
+  let yql = `select * from sources ${chatAttachmentSchema}
+        where (
+            (
+              ({targetHits:${limit}}userInput(@query))
+              or
+              ({targetHits:${limit}}nearestNeighbor(chunk_embeddings, e))
+            )
+            and chatId contains "${chatId}")`
+
+  const hybridDefaultPayload = {
+    yql,
+    query,
+    email,
+    "ranking.profile": "default",
+    "input.query(e)": "embed(@query)",
+    hits: limit,
+    alpha: 0.5,
+    ...(offset
+      ? {
+          offset,
+        }
+      : {}),
+    ...(chatId ? { chatId } : {}),
+  }
+  try {
+    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+  } catch (error) {
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: chatAttachmentSchema,
+    })
+  }
+}
+
 /**
  * Retrieves the total count of documents in the specified schema, namespace, and cluster.
  */
@@ -512,6 +559,55 @@ export const UpdateEventCancelledInstances = async (
     const options = { namespace: NAMESPACE, docId, schema }
     await vespa.updateCancelledEvents(updatedCancelledInstances, options)
   } catch (error) {
+    throw new ErrorUpdatingDocument({
+      docId,
+      cause: error as Error,
+      sources: schema,
+    })
+  }
+}
+
+export const AddChatMessageIdToAttachment = async (
+  schema: string,
+  docId: string,
+  chatId: string,
+  messageId: string,
+) => {
+  const url = `${vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid/${docId}`
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: {
+          chatId: { assign: chatId },
+          messageId: { assign: messageId },
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = response.statusText
+      throw new ErrorUpdatingDocument({
+        message: `Failed to add chatId and messageId to chatAttachment: ${response.status} ${response.statusText} - ${errorText}`,
+        docId,
+        sources: schema,
+      })
+    }
+
+    const data = await response.json()
+
+    Logger.info(
+      `Successfully added chatId and messageId to chatAttachment for document ${docId}.`,
+    )
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      `Error adding chatId and messageId for document ${docId}:`,
+      errMessage,
+    )
     throw new ErrorUpdatingDocument({
       docId,
       cause: error as Error,

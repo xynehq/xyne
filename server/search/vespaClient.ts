@@ -12,6 +12,7 @@ import type {
   VespaUserQueryHistory,
   VespaSchema,
   VespaMailAttachment,
+  VespaChatAttachment,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
@@ -172,7 +173,8 @@ class VespaClient {
       | VespaMail
       | VespaEvent
       | VespaUserQueryHistory
-      | VespaMailAttachment,
+      | VespaMailAttachment
+      | VespaChatAttachment,
     options: VespaConfigValues,
   ): Promise<void> {
     try {

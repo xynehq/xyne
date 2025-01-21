@@ -19,11 +19,14 @@ import {
   CalendarEntity,
   isMailAttachment,
 } from "shared/types"
+import { useContext } from "react"
+import { StateContext } from "@/StateProvider"
 
 export const getIcon = (
   app: Apps,
   entity: Entity,
   size?: { w: number; h: number; mr: number; ml?: number },
+  isChatAttachment?: boolean,
 ) => {
   let classNameVal = ""
   if (size) {
@@ -80,7 +83,27 @@ export const getIcon = (
     if (entity === CalendarEntity.Event) {
       return <img className={classNameVal} src={GoogleCalendarSvg} />
     }
+  } else if (!app && !entity && isChatAttachment) {
+    return <Paperclip size={12} className="text-[#464D53]" />
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
+  }
+}
+
+export const useStateContext = () => {
+  const context = useContext(StateContext)
+  if (!context) {
+    throw new Error(
+      "useStateContext must be used within a StateContextProvider",
+    )
+  }
+  return context
+}
+
+export const isSupportedFileType = (fileType: string): boolean => {
+  if (fileType === "application/pdf") {
+    return true
+  } else {
+    return false
   }
 }

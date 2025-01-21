@@ -8,6 +8,7 @@ import {
   chatHistorySchema,
   chatRenameSchema,
   chatSchema,
+  fileUploadSchema,
   messageRetrySchema,
   messageSchema,
   SearchApi,
@@ -55,6 +56,7 @@ import {
   GetChatApi,
   MessageApi,
   MessageRetryApi,
+  UploadFilesApi,
 } from "./api/chat"
 import { z } from "zod"
 import { UserRole } from "./shared/types"
@@ -161,6 +163,7 @@ export const AppRoutes = app
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
   )
+  .post("/chat/upload", zValidator("form", fileUploadSchema), UploadFilesApi)
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/proxy/:url", ProxyUrl)

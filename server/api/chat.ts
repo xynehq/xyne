@@ -52,15 +52,22 @@ import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
-import { searchVespa } from "@/search/vespa"
+import {
+  AddChatMessageIdToAttachment,
+  insert,
+  searchVespa,
+  searchVespaWithChatAttachment,
+} from "@/search/vespa"
 import {
   Apps,
+  chatAttachmentSchema,
   entitySchema,
   eventSchema,
   fileSchema,
   mailAttachmentSchema,
   mailSchema,
   userSchema,
+  type VespaChatAttachment,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
@@ -74,6 +81,12 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import type { Document } from "@langchain/core/documents"
+import { chunkDocument } from "@/chunks"
+import { deleteDocument, downloadDir } from "@/integrations/google"
+import fs from "node:fs"
+import path from "node:path"
 const { JwtPayloadKey, chatHistoryPageSize } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -144,6 +157,135 @@ export const GetChatApi = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Could not fetch chat and messages",
+    })
+  }
+}
+
+const blobToBuffer = async (blob: Blob) => {
+  const arrayBuffer = await blob.arrayBuffer() // Convert Blob to ArrayBuffer
+  return Buffer.from(arrayBuffer) // Convert ArrayBuffer to Buffer
+}
+
+const saveToDownloads = async (file: Blob) => {
+  if (!fs.existsSync(downloadDir)) {
+    fs.mkdirSync(downloadDir, { recursive: true })
+  }
+
+  // Define the file path
+  const filePath = path.join(downloadDir, file?.name)
+
+  // Convert the Blob to a Buffer
+  const fileBuffer = await blobToBuffer(file)
+
+  // Save the file
+  try {
+    await fs.promises.writeFile(filePath, new Uint8Array(fileBuffer))
+    Logger.info(`File saved successfully to ${filePath}`)
+  } catch (err) {
+    console.error("Error saving file:", err)
+    await deleteDocument(filePath)
+  }
+}
+
+const getUploadFileDocId = (
+  userEmail: string,
+  fileName: string,
+  dateTime: number,
+) => {
+  return `file_upload_${userEmail}_${fileName}_${dateTime}`
+}
+
+const handlePDFFile = async (file: Blob, userEmail: string) => {
+  let wasDownloaded = false
+  try {
+    // saving the uploaded file in downloads folder
+    await saveToDownloads(file)
+    wasDownloaded = true
+
+    let docs: Document[] = []
+    const filePath = `${downloadDir}/${file?.name}`
+    const loader = new PDFLoader(filePath)
+    docs = await loader.load()
+
+    if (!docs || docs.length === 0) {
+      Logger.error(`Could not get content for file: ${file.name}. Skipping it`)
+      await deleteDocument(filePath)
+      return
+    }
+
+    const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent))
+
+    const dateTime = new Date().getTime()
+
+    const docId = getUploadFileDocId(userEmail, file?.name, dateTime)
+    const pdfName = `${userEmail}_${file?.name}_${dateTime}`
+
+    const pdfToIngest = {
+      docId: docId,
+      title: pdfName,
+      ownerEmail: userEmail,
+      chunks: chunks.map((v) => v.chunk),
+      mimeType: "application/pdf",
+      createdAt: dateTime,
+      updatedAt: dateTime,
+    }
+
+    // @ts-ignore
+    await insert(pdfToIngest, chatAttachmentSchema)
+
+    // Delete the file here
+    await deleteDocument(filePath)
+
+    // Return metadata
+    // Metadata contains docId, fileName, fileType, fileSize
+    return {
+      docId: docId,
+      fileName: file?.name,
+      fileSize: file?.size,
+      fileType: file?.type,
+    }
+  } catch (err) {
+    if (wasDownloaded) {
+      const filePath = `${downloadDir}/${file?.name}`
+      await deleteDocument(filePath)
+    }
+    Logger.error(
+      `Error handling PDF ${file.name}: ${err} ${(err as Error).stack}`,
+      err,
+    )
+  }
+}
+
+export const UploadFilesApi = async (c: Context) => {
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+
+    const formData = await c.req.formData()
+    const files = formData.getAll("files") as File[]
+    const metadata: AttachmentMetadata[] = []
+
+    for (const file of files) {
+      // Parse file according to its type
+      if (file.type === "application/pdf") {
+        const fileMetadata = await handlePDFFile(file, email)
+
+        if (fileMetadata?.docId && fileMetadata?.fileName) {
+          metadata.push(fileMetadata)
+        }
+
+        Logger.info(`Upload file completed`)
+      } else {
+        Logger.error(`File type not supported yet`)
+      }
+    }
+
+    return c.json({ attachmentsMetadata: metadata })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(`Error uploading files: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not upload files",
     })
   }
 }
@@ -230,11 +372,22 @@ export const ChatBookmarkApi = async (c: Context) => {
 const MinimalCitationSchema = z.object({
   title: z.string().optional(),
   url: z.string().optional(),
-  app: z.nativeEnum(Apps),
-  entity: entitySchema,
+  app: z.nativeEnum(Apps).optional(),
+  entity: entitySchema.optional(),
+  mimeType: z.string().optional(),
+  sddocname: z.string().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
+
+const AttachmentMetadataSchema = z.object({
+  docId: z.string(),
+  fileName: z.string(),
+  fileSize: z.number(),
+  fileType: z.string(),
+})
+
+export type AttachmentMetadata = z.infer<typeof AttachmentMetadataSchema>
 
 interface CitationResponse {
   answer?: string
@@ -278,6 +431,12 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaMailAttachment).app,
       entity: (fields as VespaMailAttachment).entity,
     }
+  } else if (result.fields.sddocname === chatAttachmentSchema) {
+    return {
+      title: (fields as VespaChatAttachment).title,
+      sddocname: fields.sddocname,
+      mimeType: (fields as VespaChatAttachment).mimeType || "",
+    }
   } else {
     throw new Error("Invalid search result type for citation")
   }
@@ -315,6 +474,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
+  chatExtId: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -335,19 +495,37 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
     ?.filter((v) => !!v)
 
+  // Condition to decide if searchVespa function will be used to search or searchVespaWithChatAttachment
+  // If Chat has attachment then we use searchVespaWithChatAttachment, otherwise searchVespa
+
+  // Check if the current chat has attachments
+  const currentChat = await getChatByExternalId(db, chatExtId)
+  const currentChatHasAttachments = currentChat?.hasAttachments
+
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
       // get the first page of results
-      let results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
-        alpha,
-      )
+      let results
+      if (currentChatHasAttachments) {
+        results = await searchVespaWithChatAttachment(
+          message,
+          email,
+          chatExtId,
+          pageSize,
+          0,
+        )
+      } else {
+        results = await searchVespa(
+          message,
+          email,
+          null,
+          null,
+          pageSize,
+          0,
+          alpha,
+        )
+      }
       const initialContext = cleanContext(
         results?.root?.children
           ?.map(
@@ -362,26 +540,51 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       })
       const queries = queryResp.queries
       for (const query of queries) {
-        const latestResults: VespaSearchResult[] = (
-          await searchVespa(query, email, null, null, pageSize, 0, alpha, {
-            from: new Date().getTime() - 4 * monthInMs,
-            to: new Date().getTime(),
-          })
-        )?.root?.children
+        let latestResults: VespaSearchResult[]
+        if (currentChatHasAttachments) {
+          latestResults = (
+            await searchVespaWithChatAttachment(
+              message,
+              email,
+              chatExtId,
+              pageSize,
+              0,
+            )
+          )?.root?.children
+        } else {
+          latestResults = (
+            await searchVespa(query, email, null, null, pageSize, 0, alpha, {
+              from: new Date().getTime() - 4 * monthInMs,
+              to: new Date().getTime(),
+            })
+          )?.root?.children
+        }
 
-        let results = await searchVespa(
-          query,
-          email,
-          null,
-          null,
-          pageSize,
-          0,
-          alpha,
-          null,
-          latestResults
-            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-            ?.filter((v) => !!v),
-        )
+        let results
+        if (currentChatHasAttachments) {
+          results = await searchVespaWithChatAttachment(
+            message,
+            email,
+            chatExtId,
+            pageSize,
+            0,
+          )
+        } else {
+          results = await searchVespa(
+            query,
+            email,
+            null,
+            null,
+            pageSize,
+            0,
+            alpha,
+            null,
+            latestResults
+              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+              ?.filter((v) => !!v),
+          )
+        }
+
         const totalResults = results?.root?.children?.concat(latestResults)
         const initialContext = cleanContext(
           totalResults
@@ -465,31 +668,51 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     let results: VespaSearchResponse
     if (pageNumber === 0) {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
-        alpha,
-        null,
-        latestIds,
-      )
+      if (currentChatHasAttachments) {
+        results = await searchVespaWithChatAttachment(
+          message,
+          email,
+          chatExtId,
+          pageSize,
+          pageNumber * pageSize,
+        )
+      } else {
+        results = await searchVespa(
+          message,
+          email,
+          null,
+          null,
+          pageSize,
+          pageNumber * pageSize,
+          alpha,
+          null,
+          latestIds,
+        )
+      }
       if (!results.root.children) {
         results.root.children = []
       }
       results.root.children = results?.root?.children?.concat(latestResults)
     } else {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
-        alpha,
-      )
+      if (currentChatHasAttachments) {
+        results = await searchVespaWithChatAttachment(
+          message,
+          email,
+          chatExtId,
+          pageSize,
+          pageNumber * pageSize,
+        )
+      } else {
+        results = await searchVespa(
+          message,
+          email,
+          null,
+          null,
+          pageSize,
+          pageNumber * pageSize,
+          alpha,
+        )
+      }
     }
     const initialContext = cleanContext(
       results?.root?.children
@@ -770,6 +993,7 @@ export async function* UnderstandMessageAndAnswer(
   message: string,
   classification: TemporalClassifier & { cost: number },
   messages: Message[],
+  chatExtId: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -802,6 +1026,7 @@ export async function* UnderstandMessageAndAnswer(
       20,
       3,
       5,
+      chatExtId,
     )
   }
 }
@@ -837,7 +1062,7 @@ export const MessageApi = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId }: MessageReqType = body
+    let { message, chatId, modelId, attachments }: MessageReqType = body
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -871,6 +1096,7 @@ export const MessageApi = async (c: Context) => {
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const attachmentsToBeInserted = JSON.parse(attachments) || []
           const chat = await insertChat(tx, {
             workspaceId: workspace.id,
             workspaceExternalId: workspace.externalId,
@@ -878,6 +1104,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
+            hasAttachments: attachmentsToBeInserted?.length > 0 ? true : false,
           })
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
@@ -886,10 +1113,24 @@ export const MessageApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: [],
+            sources: attachmentsToBeInserted, // Adding attachmentMetadata to sources
+            attachments: attachmentsToBeInserted,
             message,
             modelId,
           })
+
+          // Add this to chatAttachments in vespa
+          const chatExtId = chat.externalId
+          const messageExtId = insertedMsg.externalId
+          for (const attachment of attachmentsToBeInserted) {
+            const attachmentId = attachment?.docId
+            await AddChatMessageIdToAttachment(
+              chatAttachmentSchema,
+              attachmentId,
+              chatExtId,
+              messageExtId,
+            )
+          }
           return [chat, insertedMsg]
         },
       )
@@ -901,8 +1142,21 @@ export const MessageApi = async (c: Context) => {
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
+          const newAttachments = JSON.parse(attachments) || []
+
+          const oldChat = await getChatByExternalId(db, chatId)
+          const alreadyHasAttachments = oldChat?.hasAttachments
+          const hasAttachmentsNow = newAttachments?.length > 0 ? true : false
           // we are updating the chat and getting it's value in one call itself
-          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let existingChat = await updateChatByExternalId(
+            db,
+            chatId,
+            alreadyHasAttachments
+              ? {}
+              : hasAttachmentsNow
+                ? { hasAttachments: hasAttachmentsNow }
+                : {},
+          )
           let allMessages = await getChatMessages(tx, chatId)
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
@@ -911,10 +1165,24 @@ export const MessageApi = async (c: Context) => {
             chatExternalId: existingChat.externalId,
             messageRole: MessageRole.User,
             email: user.email,
-            sources: [],
+            sources: newAttachments, // Adding new attachments metadata
+            attachments: newAttachments,
             message,
             modelId,
           })
+
+          // Add this to chatAttachments in vespa
+          const chatExtId = existingChat.externalId
+          const messageExtId = insertedMsg.externalId
+          for (const attachment of newAttachments) {
+            const attachmentId = attachment?.docId
+            await AddChatMessageIdToAttachment(
+              chatAttachmentSchema,
+              attachmentId,
+              chatExtId,
+              messageExtId,
+            )
+          }
           return [existingChat, allMessages, insertedMsg]
         },
       )
@@ -1039,6 +1307,7 @@ export const MessageApi = async (c: Context) => {
               message,
               classification,
               messagesWithNoErrResponse,
+              chat?.externalId,
             )
 
             stream.writeSSE({
@@ -1395,6 +1664,7 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               classification,
               convWithNoErrMsg,
+              originalMessage.chatExternalId,
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
