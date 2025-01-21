@@ -1,37 +1,20 @@
 ---
-title: 'Local Setup'
-description: 'Setting up Xyne On Local Machine'
-icon: 'gears'
+title: Running the application in development mode
 ---
 
-You can easily set-up Xyne to your local machine. Follow the instructions below to  set-up Xyne locally.
+If you want to run the Xyne application in dev mode, this guide will help you do so
 
 Deployment of Xyne on Local Machine requires the following dependencies to be installed:
 
 - [Bun](https://bun.sh/docs/installation)
-```javascript
-sudo yum update -y && curl -fsSL https://bun.sh/install | bash 
-source ~/.bashrc
-bun --version
-```
-- [Docker](https://docs.docker.com/engine/install/) & [Docker Compose](https://docs.docker.com/compose/install/)
-```javascript
-sudo yum update -y && sudo yum install -y docker && sudo service docker start && sudo usermod -a -G docker $USER
-curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
-chmod +x docker-compose-linux-x86_64 && sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
-docker-compose --version
-```
+- [Docker](https://docs.docker.com/engine/install/) 
+- [Docker Compose](https://docs.docker.com/compose/install/)
 - [Vespa CLI](https://docs.vespa.ai/en/build-install-vespa.html)
-```javascript
-wget https://github.com/vespa-engine/vespa/releases/download/v8.448.13/vespa-cli_8.448.13_linux_amd64.tar.gz [ you can choose a version suitable with your OS]
-tar -xzf vespa-cli_8.448.13_linux_amd64.tar.gz
-sudo mv vespa-cli_8.448.13_linux_amd64/bin/vespa /usr/local/bin/
-vespa version
-```
+- [ PostgreSQL](https://www.postgresql.org/download/)
 
 
 ---
- Set-Up Xyne Locally
+ Set-Up Xyne Locally in Dev Mode
 ---
 To Set-Up Xyne, follow the steps listed below :
 
@@ -43,6 +26,8 @@ git clone https://github.com/xynehq/xyne.git
     ```
 
 ### Setup Environment variables: 
+The application is dependent on some environment variables that you will need to set up.
+
 Inside the ```server``` folder, create a ```.env``` file using :
 ```javascript
 touch .env
@@ -50,7 +35,6 @@ touch .env
 In the ```.env``` file, you can paste the following :
 
 ```javascript .env file
-NOTION_API_KEY=<YOUR_NOTION_SECRET>
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
 # If you wish to execute authorization using Service Account then use :
  SERVICE_ACCOUNT_ENCRYPTION_KEY=<YOUR_SERVICE_ACCOUNT_ENCRYPTION_KEY> 
@@ -68,13 +52,9 @@ HOST=<YOUR_HOST>
 
 ### Set up Docker
 
-Navigate to deployment folder : 
- ```javascript
-cd xyne/deployment
-```
-Once inside the deployment folder set up docker by running the follow command : 
+Set up docker by running the follow command : 
 ```javascript
-docker-compose -f docker-compose.dev.yml up
+docker-compose -f deployment/docker-compose.dev.yml up
 ```
 Running this command will host vespa and postgres containers inside your docker.
 
@@ -90,7 +70,6 @@ icacls init-script.sh /grant Everyone:F [If using PowerShell in Windows]
 
 ```
 
-
 ### Run the init-script to initialize the application
 
 Navigate to the server folder using ```cd server``` and run the following commands : 
@@ -102,7 +81,7 @@ This will initialise all the dependencies required by the server to run the appl
 and will also start the server, which will be listening on port ```3000```.
 
 ### Start the Xyne client
-To start the client side, navigate to the frontend folder using ``` cd frontend``` and run the following command : 
+To start the client side, navigate to the ```frontend``` folder : 
 
 #### Client side .env
 
@@ -135,3 +114,4 @@ The app will now be available in port ```5173```.  [Go to Xyne](http://localhost
 
 <Tip>In case of any required support, feel free to [Contact Us](mailto:saheb@xynehq.com)</Tip>
 ​
+
