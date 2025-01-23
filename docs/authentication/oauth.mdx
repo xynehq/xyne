@@ -49,7 +49,7 @@ Under that select the ```OAuth client ID``` option.
     - ```http://localhost:3000``` for local or replace with ```http://<YOUR_AWS_EC2_IPv4_DNS>``` for production.
 
 - Add a Authorized redirect URIs as:
-    - ```http://localhost:3000/V1/auth/callback``` for local setup or ```https://<YOUR_AWS_EC2_IPv4_DNS>/v1/auth/callback``` for production.
+    - ```http://localhost:3000/v1/auth/callback``` for local setup or ```https://<YOUR_AWS_EC2_IPv4_DNS>/v1/auth/callback``` for production.
 
 Click ```CREATE``` and make sure save the Client ID and Client Secret for putting it in the [```.env``` of the application](https://xyne.mintlify.app/deployment/aws/aws-deployment#setup-environment-variables)
 
@@ -60,7 +60,7 @@ The last step is to enable the APIs is needed for the app.
 <img height="200" src="../images/enable-apis1.png" />
 - In the ```Enabled APIs & Services``` page, click on the ```+ Enable APIs & Services```.
 <img height="200" src="../images/enable-apis2.png" />
-- You will now see a search box where you can search for the specific API that you want to enable. (For example :  Google Deive API)
+- You will now see a search box where you can search for the specific API that you want to enable. (For example :  Google Drive API)
 <img height="200" src="../images/enable-apis3.png" />
 - Once you search for an API, you will find a list of APIs. 
 <img height="200" src="../images/enable-apis4.png" />
