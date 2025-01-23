@@ -11,7 +11,6 @@ Follow the steps listed below to get started :
 ## Install the required dependencies : 
 Deployment of Xyne requires you to only install Docker and Docker Compose:
 
-
 - [Docker](https://docs.docker.com/engine/install/) 
 - [Docker Compose](https://docs.docker.com/compose/install/)
 
@@ -27,6 +26,10 @@ git clone https://github.com/xynehq/Xyne.git
 
 ## Deploy Xyne with Docker  :
 
+<Tip> Remember to ensure that your Docker service is running. Incase you're using Docker Desktop, ensure that is running too </Tip>
+
+<Tip> If you have postgres running, we suggest you kill the porocess before starting docker </Tip>
+
 Run the application with the following command:
 ```javascript 
 docker-compose -f deployment/docker-compose.yml up
@@ -34,15 +37,23 @@ docker-compose -f deployment/docker-compose.yml up
 
 And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to Xyne](http://localhost:3001/)
 
+<Info> Wait for the application to start running, this can take around 5 - 10 minutes. </Info>
+
 ### Post Execution Steup [Environment Variables]:
 
 For enabling Google Authentication for your application you need to create and setup some environment variables: 
 
 #### Server side: 
-Inside the ```server``` folder of the ```xyne``` folder, create a ```.env``` file using :
+Inside the ```server``` folder of the ```Xyne``` folder, create a ```.env``` file using :
+```javascript
+cd server 
+```
+And then, 
+
 ```javascript
 touch .env
 ```
+
 In the ```.env``` file, you can paste the following :
 
 ```javascript .env file
@@ -62,10 +73,17 @@ AWS_SECRET_KEY=<YOUR_AWS_ACCESS_SECRET>
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
 HOST=http://localhost:3001/
 ```
+<Note> You can obtain the GOOGLE_CLIENT_ID and GOOGLE_SECRET by following either the [Oauth](https://xyne.mintlify.app/authentication/oauth) or [Service](https://xyne.mintlify.app/authentication/service-accounts) Account authentication section depending on which procedure you choose.</Note>
 
 #### Client side
 
 Create a new ```.env ``` in the ```frontend``` folder, use the following command : 
+
+```javascript
+cd frontend 
+```
+And then, 
+
 ```javascript
 touch .env
 ```
@@ -78,7 +96,7 @@ Now paste the following inside the ```.env``` file :
 Save the file.
 
 
-And build again from the ``xyne`` folder using : 
+And build again from the ``Xyne`` folder using : 
 
 ```javascript 
 docker-compose -f deployment/docker-compose.yml up 

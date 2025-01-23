@@ -8,59 +8,13 @@ icon: 'lock'
 Create a new project in [Google Cloud Console](https://console.cloud.google.com/projectcreate) 
 <img height="200" src="../images/oauth-1.png" />
 
-
-### Setting up the Oauth Consent Screen
-Navigate to the Oauth Consent Screen in the Sidebar of your Google Cloud Console : 
-<img height="200" src="../images/oauth-2.png" />
-
-Under ```OAuth Consent``` screen select either Internal or External, depending on your requirement : 
-
- - Since you're in a Google Workspace, you should choose ```Internal```
-Click on ```Create```
-
-Under the ```App Information``` Section, fill out the details :
- - Provide a Name for the app (For ex: Xyne)
- - Provide a User Support email (For ex: your-email@gmail.com)
- - Upload an App Logo (if needed)
- - Put your domain under ```Authorised``` domain (You can choose to go ahead with your localhost or AWS IP Address)
- - Add Developer contact information (For ex: your-email@gmail.com)
-
- Click ```Save and Continue```
-
-Under the ```Scopes``` section, you can choose to add the basic scopes ,
- - ```.../auth/userinfo.email``` 
- - ```.../auth/userinfo.profile```
- - ```openid```
-
-Leave the next page ,i.e. ```Test users``` blank.
-This concludes the setting-up of your Oauth Consent Screen
-
-### Setting up the OAuth Credentials
-Furthermore Under APIs and Services section,
-<img height="200" src="../images/oauth-4.png" />
-- Navigate to the Credentials Section in the sidebar, and click on  ```+CREATE CREDENTIALS ```. 
-Under that select the ```OAuth client ID``` option. 
-<img height="200" src="../images/oauth-5.png" />
-
-- Add the type as ```Web Application```, and give it a name (For ex: Xyne)
-<img height="200" src="../images/oauth-6.png" />
-
-- Add a Authorized JavaScript origins as:
-    - ```http://localhost:3000``` for local or replace with ```http://<YOUR_AWS_EC2_IPv4_DNS>``` for production.
-
-- Add a Authorized redirect URIs as:
-    - ```http://localhost:3000/V1/auth/callback``` for local setup or ```https://<YOUR_AWS_EC2_IPv4_DNS>/v1/auth/callback``` for production.
-
-Click ```CREATE``` and make sure save the Client ID and Client Secret for putting it in the [```.env``` of the application](https://xyne.mintlify.app/deployment/aws/aws-deployment#setup-environment-variables)
-
-
 ## Enabling APIs
-The last step is to enable the APIs is needed for the app.
+The first step is to enable the APIs is needed for the app.
 - From the menu in the side bar, under APIs and Services section select the ```Enabled APIs & Services```.
 <img height="200" src="../images/enable-apis1.png" />
 - In the ```Enabled APIs & Services``` page, click on the ```+ Enable APIs & Services```.
 <img height="200" src="../images/enable-apis2.png" />
-- You will now see a search box where you can search for the specific API that you want to enable. (For example :  Google Deive API)
+- You will now see a search box where you can search for the specific API that you want to enable. (For example :  Google Drive API)
 <img height="200" src="../images/enable-apis3.png" />
 - Once you search for an API, you will find a list of APIs. 
 <img height="200" src="../images/enable-apis4.png" />
@@ -80,6 +34,90 @@ Following the same steps above, enable the following APIs :
  - [Gmail](https://console.cloud.google.com/apis/library/gmail.googleapis.com)
  - [Contacts](https://console.cloud.google.com/apis/library/contacts.googleapis.com)
  - [People](https://console.cloud.google.com/apis/library/people.googleapis.com)
+
+
+### Setting up the Oauth Consent Screen
+Once you've enabled the APIs, you'll also need to add the scopes for this APIs. For our app we only require ```readonly``` scopes for all the APIs.
+For this navigate to the Oauth Consent Screen in the Sidebar of your Google Cloud Console : 
+<img height="200" src="../images/oauth-2.png" />
+
+Under ```OAuth Consent``` screen select ```Internal``` : 
+<img height="200" src="../images/oauth-int.png" />
+
+Click on ```Create```
+
+
+Under the ```App Information``` Section, fill out the details :
+ - Provide a Name for the app (For ex: Xyne)
+ - Provide a User Support email (For ex: your-email@gmail.com)
+ - Upload an App Logo (if needed)
+ - Put your domain under ```Authorised``` domain (You can choose to go ahead with your localhost or AWS IP Address)
+ - Add Developer contact information (For ex: your-email@gmail.com)
+
+ Click ```Save and Continue```
+
+Under the ```Scopes``` section, you can choose to add the basic scopes ,
+
+You'll see the ```Add or Remove Scopes``` section : 
+<img height="200" src="../images/oauth-scopes.png" />
+
+You will see the copes on the right side like this :
+<img height="200" src="../images/oauth-scopes-add.png" />
+
+Ensure to select the checkbox for these scopes : 
+ - ```.../auth/userinfo.email``` 
+ - ```.../auth/userinfo.profile```
+ - ```openid```
+ - ```../auth/drive.readonly```
+ - ```../auth/admin.directory.user.readonly```
+ - ```../auth/documents.readonly```
+ - ```../auth/spreadsheets.readonly```
+ - ```../auth/presentations.readonly```
+ - ```../auth/contacts.readonly```
+ - ```../auth/contacts.other.readonly```
+ - ```../auth/gmail.readonly```
+ - ```../auth/calendar.events.readonly```
+
+You can also choose to ```manually``` add the scopes in the ```box``` below.
+
+```javascript
+  https://www.googleapis.com/auth/userinfo.email,
+  https://www.googleapis.com/auth/userinfo.profile,
+  openid,
+  https://www.googleapis.com/auth/drive.readonly,
+  https://www.googleapis.com/auth/admin.directory.user.readonly
+  https://www.googleapis.com/auth/documents.readonly,
+  https://www.googleapis.com/auth/spreadsheets.readonly,
+  https://www.googleapis.com/auth/presentations.readonly,
+  https://www.googleapis.com/auth/contacts.readonly,
+  https://www.googleapis.com/auth/contacts.other.readonly,
+  https://www.googleapis.com/auth/gmail.readonly,
+  https://www.googleapis.com/auth/calendar.events.readonly,
+```
+
+Leave the next page ,i.e. ```Test users``` blank.
+This concludes the setting-up of your Oauth Consent Screen
+
+### Setting up the OAuth Credentials
+Furthermore Under APIs and Services section,
+<img height="200" src="../images/oauth-4.png" />
+- Navigate to the Credentials Section in the sidebar, and click on  ```+CREATE CREDENTIALS ```. 
+Under that select the ```OAuth client ID``` option. 
+<img height="200" src="../images/oauth-5.png" />
+
+- Add the type as ```Web Application```, and give it a name (For ex: Xyne)
+<img height="200" src="../images/oauth-6.png" />
+
+- Add a Authorized JavaScript origins as:
+    - ```http://localhost:3000``` for local or replace with ```http://<YOUR_AWS_EC2_IPv4_DNS>``` for production.
+
+- Add a Authorized redirect URIs as:
+    - ```http://localhost:3000/v1/auth/callback``` for local setup or ```https://<YOUR_AWS_EC2_IPv4_DNS>/v1/auth/callback``` for production.
+
+Click ```CREATE``` and make sure save the Client ID and Client Secret for putting it in the [```.env``` of the application](https://xyne.mintlify.app/deployment/aws/aws-deployment#setup-environment-variables)
+
+
+
 
 
 This concludes the set-up process of Google Oauth.
