@@ -119,6 +119,27 @@ export const SearchResult = ({
         </p>
       </div>
     )
+  } else if (result.type === "mail_attachment") {
+    content = (
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start">
+          {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
+          <a
+            href={`https://mail.google.com/mail/u/0/#inbox/${result.mailId}?projector=1&messagePartId=0.${result.partId}&disp=safe&zw`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-[#2067F5]"
+          >
+            {result.filename}
+          </a>
+        </div>
+        {result.chunks_summary &&
+          result.chunks_summary?.length &&
+          result.chunks_summary
+            .slice(0, 1)
+            .map((summary) => <HighlightedText chunk_summary={summary} />)}
+      </div>
+    )
   }
   return content
 }

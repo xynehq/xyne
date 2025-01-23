@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X, Pencil, Loader } from "lucide-react"
+import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
@@ -15,6 +15,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useRef, useState } from "react"
+import { LoaderContent } from "@/routes/_authenticated/admin/integrations"
 
 export const pageSize = 21
 
@@ -204,13 +205,6 @@ const HistoryModal = ({
     },
   })
 
-  if (error) {
-    return <p>Something went wrong...</p>
-  }
-  if (isPending) {
-    return <p>Loading...</p>
-  }
-
   const handleKeyDown = async (
     e: React.KeyboardEvent<HTMLInputElement>,
     item: SelectPublicChat,
@@ -266,82 +260,86 @@ const HistoryModal = ({
         className="flex-1 overflow-auto mt-[15px]"
         onScroll={handleScroll}
       >
-        <ul>
-          {chats.map((item, index) => (
-            <li
-              key={index}
-              className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
-            >
-              {isEditing && editedChatId === item.externalId ? (
-                <input
-                  ref={titleRef}
-                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
-                  type="text"
-                  value={editedTitle}
-                  onChange={(e) => handleInput(e)}
-                  onBlur={() => handleBlur(item)}
-                  onKeyDown={(e) => handleKeyDown(e, item)}
-                  autoFocus
-                />
-              ) : (
-                <span
-                  className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
-                  onClick={() => {
-                    router.navigate({
-                      to: "/chat/$chatId",
-                      params: { chatId: item.externalId },
-                    })
-                  }}
+        {error ? (
+          <p className="text-center">Something went wrong...</p>
+        ) : !chats.length && (isPending || isFetching) ? (
+          <LoaderContent />
+        ) : (
+          <>
+            <ul>
+              {chats.map((item, index) => (
+                <li
+                  key={index}
+                  className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
                 >
-                  {item.title}
-                </span>
-              )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <MoreHorizontal
-                    size={16}
-                    className={
-                      "invisible group-hover:visible mr-[10px] cursor-pointer"
-                    }
-                  />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem
-                    key={"rename"}
-                    className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                    onClick={() => {
-                      setEditedTitle(item.title) // Set the current title for editing
-                      setEditedChatId(item.externalId) // Track the chat being edited
-                      setIsEditing(true)
-                      setTimeout(() => {
-                        if (titleRef.current) {
-                          titleRef.current.focus()
+                  {isEditing && editedChatId === item.externalId ? (
+                    <input
+                      ref={titleRef}
+                      className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                      type="text"
+                      value={editedTitle}
+                      onChange={(e) => handleInput(e)}
+                      onBlur={() => handleBlur(item)}
+                      onKeyDown={(e) => handleKeyDown(e, item)}
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                      onClick={() => {
+                        router.navigate({
+                          to: "/chat/$chatId",
+                          params: { chatId: item.externalId },
+                        })
+                      }}
+                    >
+                      {item.title}
+                    </span>
+                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <MoreHorizontal
+                        size={16}
+                        className={
+                          "invisible group-hover:visible mr-[10px] cursor-pointer"
                         }
-                      }, 0)
-                    }}
-                  >
-                    <Pencil size={16} />
-                    <span>Rename</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    key={"delete"}
-                    className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                    onClick={() => {
-                      mutation.mutate(item?.externalId)
-                    }}
-                  >
-                    <Trash2 size={16} className="text-red-500" />
-                    <span className="text-red-500">Delete</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </li>
-          ))}
-        </ul>
-        {(isFetching || isFetchingNextPage) && (
-          <div className="flex items-center justify-center">
-            <Loader className="animate-spin" size={18} />
-          </div>
+                      />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem
+                        key={"rename"}
+                        className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                        onClick={() => {
+                          setEditedTitle(item.title) // Set the current title for editing
+                          setEditedChatId(item.externalId) // Track the chat being edited
+                          setIsEditing(true)
+                          setTimeout(() => {
+                            if (titleRef.current) {
+                              titleRef.current.focus()
+                            }
+                          }, 0)
+                        }}
+                      >
+                        <Pencil size={16} />
+                        <span>Rename</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        key={"delete"}
+                        className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                        onClick={() => {
+                          mutation.mutate(item?.externalId)
+                        }}
+                      >
+                        <Trash2 size={16} className="text-red-500" />
+                        <span className="text-red-500">Delete</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </li>
+              ))}
+            </ul>
+            {isFetchingNextPage && <LoaderContent />}
+          </>
         )}
       </div>
     </div>

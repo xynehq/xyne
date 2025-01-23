@@ -1490,12 +1490,16 @@ export const downloadPDF = async (
 }
 
 // Helper function for safer PDF loading
-async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
+export async function safeLoadPDF(pdfPath: string): Promise<Document[]> {
   try {
     const loader = new PDFLoader(pdfPath)
     return await loader.load()
   } catch (error) {
-    if ((error as Error).message.includes("PasswordException")) {
+    const { name, message } = error as Error
+    if (
+      message.includes("PasswordException") ||
+      name.includes("PasswordException")
+    ) {
       Logger.warn("Password protected PDF, skipping")
     } else {
       Logger.error(error, `PDF load error: ${error}`)

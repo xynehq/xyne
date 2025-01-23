@@ -18,7 +18,7 @@
   "topbarLinks": [
     {
       "name": "Support",
-      "url": "mailto:saheb@xynehq.com"
+      "url": "mailto:founders@xynehq.com"
     }
   ],
   "topbarCtaButton": {
@@ -41,12 +41,15 @@
   "navigation": [
     {
       "group": "Get Started",
-      "pages": ["introduction", "quickstart"]
+      "pages": [
+        "introduction",
+        "quickstart"
+      ]
     },
     {
       "group": "Deployment",
       "pages": [
-        "deployment/self-hosting",
+
         {
           "group": "Cloud Deployment",
           "icon": "cloud",
@@ -55,8 +58,7 @@
               "group": "AWS",
               "icon": "aws",
               "pages": [
-                "deployment/cloud/aws/aws-deployment-with-docker",
-                "deployment/cloud/aws/aws-deployment-using-env"
+              "deployment/cloud/aws/aws-deployment-with-docker"
               ]
             }
           ]
@@ -65,7 +67,16 @@
     },
     {
       "group": "Authentication",
-      "pages": ["authentication/oauth", "authentication/service-accounts"]
+      "pages": [
+        "authentication/oauth",
+        "authentication/service-accounts"
+      ]
+    },
+    {
+      "group": "For Developers",
+      "pages": [
+        "contribution/contribute"
+      ]
     }
   ],
   "footerSocials": {

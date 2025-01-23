@@ -8,6 +8,7 @@ import {
   mailSchema,
   userQuerySchema,
   userSchema,
+  mailAttachmentSchema,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -21,6 +22,7 @@ import type {
   VespaEvent,
   VespaUserQueryHistory,
   VespaSchema,
+  VespaMailAttachment,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -85,7 +87,8 @@ export const insert = async (
     | VespaFile
     | VespaMail
     | VespaEvent
-    | VespaUserQueryHistory,
+    | VespaUserQueryHistory
+    | VespaMailAttachment,
   schema: VespaSchema,
 ) => {
   try {
@@ -134,7 +137,13 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
-const AllSources = [fileSchema, userSchema, mailSchema, eventSchema].join(", ")
+const AllSources = [
+  fileSchema,
+  userSchema,
+  mailSchema,
+  eventSchema,
+  mailAttachmentSchema,
+].join(", ")
 
 export const autocomplete = async (
   query: string,
@@ -630,7 +639,7 @@ export const updateUserQueryHistory = async (query: string, owner: string) => {
   }
 }
 
-const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
+export const getDocumentOrNull = async (schema: VespaSchema, docId: string) => {
   try {
     return await GetDocument(schema, docId)
   } catch (error) {
