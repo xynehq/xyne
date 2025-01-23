@@ -49,14 +49,6 @@
     {
       "group": "Deployment",
       "pages": [
-        {
-          "group": "Local Hosting",
-          "icon": "server",
-          "pages": [
-            "deployment/local-hosting/servermode",
-            "deployment/local-hosting/dockermode"
-          ]
-        },
 
         {
           "group": "Cloud Deployment",
@@ -66,8 +58,7 @@
               "group": "AWS",
               "icon": "aws",
               "pages": [
-              "deployment/cloud/aws/aws-deployment-with-docker",
-             "deployment/cloud/aws/aws-deployment-using-env"
+              "deployment/cloud/aws/aws-deployment-with-docker"
               ]
             }
           ]
@@ -79,6 +70,12 @@
       "pages": [
         "authentication/oauth",
         "authentication/service-accounts"
+      ]
+    },
+    {
+      "group": "For Developers",
+      "pages": [
+        "contribution/contribute"
       ]
     }
   ],
