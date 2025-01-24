@@ -54,6 +54,8 @@ import {
 import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
 import { BigModel, FastModel, Oregon } from "@/ai/contants"
+import { Ollama } from "ollama"
+import { OllamaProvider } from "@/ai/provider/ollama"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
@@ -85,12 +87,13 @@ const openAIClient = new OpenAI({
 })
 const openaiProvider = new OpenAIProvider(openAIClient)
 
+const ollama = new Ollama()
+const ollamaProvider = new OllamaProvider(ollama)
 // @ts-ignore
 const ProviderMap: Record<AIProviders, LLMProvider> = {
   [AIProviders.AwsBedrock]: bedrockProvider,
   [AIProviders.OpenAI]: openaiProvider,
-
-  // [AIProviders.Ollama]: openaiProvider,
+  [AIProviders.Ollama]: ollamaProvider,
 }
 
 const getProviderByModel = (modelId: Models): LLMProvider => {
