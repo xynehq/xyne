@@ -58,12 +58,14 @@ import {
   entitySchema,
   eventSchema,
   fileSchema,
+  mailAttachmentSchema,
   mailSchema,
   userSchema,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
   type VespaMail,
+  type VespaMailAttachment,
   type VespaMailSearch,
   type VespaSearchResponse,
   type VespaSearchResult,
@@ -72,7 +74,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-const { JwtPayloadKey, chatHistoryPageSize } = config
+const { JwtPayloadKey, chatHistoryPageSize, maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)
 
 // this is not always the case but unless our router detects that we need
@@ -268,6 +270,13 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
       url: (fields as VespaEvent).url,
       app: (fields as VespaEvent).app,
       entity: (fields as VespaEvent).entity,
+    }
+  } else if (result.fields.sddocname === mailAttachmentSchema) {
+    return {
+      title: (fields as VespaMailAttachment).filename || "No Filename",
+      url: `https://mail.google.com/mail/u/0/#inbox/${(fields as VespaMailAttachment).mailId}?projector=1&messagePartId=0.${(fields as VespaMailAttachment).partId}&disp=safe&zw`,
+      app: (fields as VespaMailAttachment).app,
+      entity: (fields as VespaMailAttachment).entity,
     }
   } else {
     throw new Error("Invalid search result type for citation")
@@ -777,7 +786,7 @@ export async function* UnderstandMessageAndAnswer(
       userCtx,
       0.5,
       20,
-      3,
+      5,
     )
   } else {
     Logger.info(
@@ -792,7 +801,7 @@ export async function* UnderstandMessageAndAnswer(
       0.5,
       20,
       3,
-      5,
+      maxDefaultSummary
     )
   }
 }
