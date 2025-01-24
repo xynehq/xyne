@@ -22,6 +22,10 @@ body {
 @tailwind components;
 @tailwind utilities;
 
+html {
+  @apply antialiased;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
