@@ -74,7 +74,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-const { JwtPayloadKey, chatHistoryPageSize } = config
+const { JwtPayloadKey, chatHistoryPageSize, maxDefaultSummary } = config
 const Logger = getLogger(Subsystem.Chat)
 
 // this is not always the case but unless our router detects that we need
@@ -786,7 +786,7 @@ export async function* UnderstandMessageAndAnswer(
       userCtx,
       0.5,
       20,
-      3,
+      5,
     )
   } else {
     Logger.info(
@@ -801,7 +801,7 @@ export async function* UnderstandMessageAndAnswer(
       0.5,
       20,
       3,
-      5,
+      maxDefaultSummary
     )
   }
 }
