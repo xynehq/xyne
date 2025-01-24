@@ -4,7 +4,7 @@
   "type": "module",
   "version": "0.2.4",
   "devDependencies": {
-    "@biomejs/biome": "1.9.3",
+    "@biomejs/biome": "1.9.4",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.24.2",
