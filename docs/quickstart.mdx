@@ -28,16 +28,16 @@ git clone https://github.com/xynehq/Xyne.git
 
 <Tip> Remember to ensure that your Docker service is running. Incase you're using Docker Desktop, ensure that is running too </Tip>
 
-<Tip> If you have postgres running, we suggest you kill the porocess before starting docker </Tip>
+<Tip> If you have postgres running, we suggest you kill the process before starting docker </Tip>
 
-Run the application with the following command:
+Run the application with the following command from the ```Xyne``` folder:
 ```javascript 
 docker-compose -f deployment/docker-compose.yml up
 ```
 
 And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to Xyne](http://localhost:3001/)
 
-<Info> Wait for the application to start running, this can take around 10 - 15 minutes. </Info>
+<Info> Wait for the application to start running, this can take around 10 - 15 minutes, depending on your internet connection. </Info>
 
 ### Post Execution Steup [Environment Variables]:
 
@@ -49,9 +49,9 @@ For the moment you will find some default generated environment variables that w
 
 <Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values.</Warning>
 
-In the ```.env.temp``` file, you can modify the following :
+In the ```.env.temp``` file, you can modify the following with your own values:
 
-```javascript .env file
+```javascript .env.temp file
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
 SERVICE_ACCOUNT_ENCRYPTION_KEY=<YOUR_SERVICE_ACCOUNT_ENCRYPTION_KEY> 
 # If you wish to execute authorization using Oauth then use :   
