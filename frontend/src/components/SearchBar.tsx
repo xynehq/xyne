@@ -86,7 +86,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                       // we only want to look for answer if at least
                       // 3 words are there in the query
                       if (query.split(" ").length > 2) {
-                        handleAnswer()
+                        // handleAnswer()
                       }
                     }
                   }}
