@@ -1,27 +1,27 @@
-import { Link, useLocation } from "@tanstack/react-router";
-import { Plug, Plus, History } from "lucide-react";
-import { useState } from "react";
-import HistoryModal from "@/components/HistoryModal";
-import { UserRole } from "shared/types";
+import { Link, useLocation } from "@tanstack/react-router"
+import { Plug, Plus, History } from "lucide-react"
+import { useState } from "react"
+import HistoryModal from "@/components/HistoryModal"
+import { UserRole } from "shared/types"
 import {
   Tooltip,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Tip } from "@/components/Tooltip";
-import Logo from '@/assets/logo.svg'
+} from "@/components/ui/tooltip"
+import { Tip } from "@/components/Tooltip"
+import Logo from "@/assets/logo.svg"
 
 export const Sidebar = ({
   className = "",
   photoLink = "",
   role = "",
 }: {
-  className?: string;
-  photoLink?: string;
-  role?: string;
+  className?: string
+  photoLink?: string
+  role?: string
 }) => {
-  const location = useLocation();
-  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const location = useLocation()
+  const [showHistory, setShowHistory] = useState<boolean>(false)
   return (
     <TooltipProvider>
       <div
@@ -38,10 +38,10 @@ export const Sidebar = ({
           to="/"
           className="flex w-[32px] h-[32px] border-[1px] border-[#C4D0DC] items-center justify-center rounded-[6px]"
         >
-                    <Tooltip>
-                    <TooltipTrigger asChild>
-          <Plus size={18} stroke="#384049" />
-          </TooltipTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Plus size={18} stroke="#384049" />
+            </TooltipTrigger>
             <Tip side="right" info="Home" />
           </Tooltip>
         </Link>
@@ -80,8 +80,8 @@ export const Sidebar = ({
             onClose={() => setShowHistory(false)}
           />
         )}
-        <img style={{marginTop: "auto", marginBottom: "16px"}} src={Logo} />
+        <img style={{ marginTop: "auto", marginBottom: "16px" }} src={Logo} />
       </div>
     </TooltipProvider>
-  );
-};
+  )
+}

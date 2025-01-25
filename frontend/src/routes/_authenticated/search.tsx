@@ -147,18 +147,18 @@ export const Search = ({ user, workspace }: IndexProps) => {
       clearTimeout(debounceTimeout.current)
     }
     debounceTimeout.current = window.setTimeout(async () => {
-        try {
-          const response = await api.autocomplete.$post({
-            json: {
-              query: autocompleteQuery,
-            },
-          })
-          let data: AutocompleteResults = await response.json()
-          data = AutocompleteResultsSchema.parse(data)
-          setAutocompleteResults(data.results)
-        } catch (error) {
-          logger.error(error, `Error fetching autocomplete results:', ${error}`)
-        }
+      try {
+        const response = await api.autocomplete.$post({
+          json: {
+            query: autocompleteQuery,
+          },
+        })
+        let data: AutocompleteResults = await response.json()
+        data = AutocompleteResultsSchema.parse(data)
+        setAutocompleteResults(data.results)
+      } catch (error) {
+        logger.error(error, `Error fetching autocomplete results:', ${error}`)
+      }
     }, 300) // 300ms debounce
 
     // Cleanup function to clear the timeout when component unmounts or new call starts
