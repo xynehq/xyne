@@ -79,7 +79,7 @@ const {
   chatHistoryPageSize,
   defaultBestModel,
   defaultFastModel,
-  maxDefaultSummary
+  maxDefaultSummary,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -804,7 +804,7 @@ export async function* UnderstandMessageAndAnswer(
       0.5,
       20,
       3,
-      maxDefaultSummary
+      maxDefaultSummary,
     )
   }
 }

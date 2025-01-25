@@ -77,5 +77,5 @@ export default {
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
-  maxDefaultSummary: 8
+  maxDefaultSummary: 8,
 }
