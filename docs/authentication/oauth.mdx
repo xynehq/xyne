@@ -44,8 +44,9 @@ For this navigate to the Oauth Consent Screen in the Sidebar of your Google Clou
 Under ```OAuth Consent``` screen select ```Internal``` : 
 <img height="200" src="../images/oauth-int.png" />
 
-Click on ```Create```
+ - Since you're in a Google Workspace, you should choose ```Internal```.
 
+Click on ```Create```
 
 Under the ```App Information``` Section, fill out the details :
  - Provide a Name for the app (For ex: Xyne)
@@ -61,7 +62,7 @@ Under the ```Scopes``` section, you can choose to add the basic scopes ,
 You'll see the ```Add or Remove Scopes``` section : 
 <img height="200" src="../images/oauth-scopes.png" />
 
-You will see the copes on the right side like this :
+You will see the scopes on the right side like this :
 <img height="200" src="../images/oauth-scopes-add.png" />
 
 Ensure to select the checkbox for these scopes : 
@@ -108,13 +109,13 @@ Under that select the ```OAuth client ID``` option.
 - Add the type as ```Web Application```, and give it a name (For ex: Xyne)
 <img height="200" src="../images/oauth-6.png" />
 
-- Add a Authorized JavaScript origins as:
+- Add Authorized JavaScript origins as:
     - ```http://localhost:3000``` for local or replace with ```http://<YOUR_AWS_EC2_IPv4_DNS>``` for production.
 
-- Add a Authorized redirect URIs as:
+- Add Authorized redirect URIs as:
     - ```http://localhost:3000/v1/auth/callback``` for local setup or ```https://<YOUR_AWS_EC2_IPv4_DNS>/v1/auth/callback``` for production.
 
-Click ```CREATE``` and make sure save the Client ID and Client Secret for putting it in the [```.env``` of the application](https://xyne.mintlify.app/deployment/aws/aws-deployment#setup-environment-variables)
+Click ```CREATE``` and make sure save the Client ID and Client Secret for putting it in the [```.env``` of the application](https://xyne.mintlify.app/quickstart#post-execution-steup-environment-variables)
 
 
 
