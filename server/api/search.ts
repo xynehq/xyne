@@ -47,10 +47,11 @@ import { getPublicUserAndWorkspaceByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import type { PublicUserWorkspace } from "@/db/schema"
 import { getErrorMessage } from "@/utils"
-import { Models, QueryCategory } from "@/ai/types"
+import { QueryCategory } from "@/ai/types"
 const Logger = getLogger(Subsystem.Api)
 
-const { JwtPayloadKey, maxTokenBeforeMetadataCleanup } = config
+const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
+  config
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
@@ -206,7 +207,7 @@ export const AnswerApi = async (c: Context) => {
   const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${query}`
   // could be called parallely if not for userAndWorkspace
   let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
-    modelId: Models.Llama_3_1_8B,
+    modelId: defaultFastModel,
     stream: false,
     json: true,
   })
@@ -288,7 +289,7 @@ export const AnswerApi = async (c: Context) => {
     .join("\n\n")
 
   const analyseRes = await analyzeQueryMetadata(decodedQuery, metadataContext, {
-    modelId: Models.Llama_3_1_8B,
+    modelId: defaultFastModel,
     stream: true,
     json: true,
   })
@@ -316,7 +317,7 @@ export const AnswerApi = async (c: Context) => {
     })
     if (output?.canBeAnswered && output.contextualChunks.length) {
       const interator = askQuestion(decodedQuery, finalContext, {
-        modelId: Models.Llama_3_1_8B,
+        modelId: defaultFastModel,
         userCtx: ctx,
         stream: true,
         json: true,
