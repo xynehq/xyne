@@ -6,7 +6,15 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import { z } from "zod"
-const { AwsAccessKey, AwsSecretKey, bedrockSupport, OpenAIKey } = config
+const {
+  AwsAccessKey,
+  AwsSecretKey,
+  AwsRegion,
+  OllamaModel,
+  OpenAIKey,
+  defaultBestModel,
+  defaultFastModel,
+} = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
 import { MessageRole, Subsystem } from "@/types"
@@ -53,7 +61,8 @@ import {
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
-import { BigModel, FastModel, Oregon } from "@/ai/contants"
+import { Ollama } from "ollama"
+import { OllamaProvider } from "@/ai/provider/ollama"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
@@ -71,30 +80,83 @@ export const askQuestionInputTokenCount = (
   ).length
 }
 
-const BedrockClient = new BedrockRuntimeClient({
-  region: Oregon,
-  credentials: {
-    accessKeyId: AwsAccessKey,
-    secretAccessKey: AwsSecretKey,
-  },
-})
-const bedrockProvider = new BedrockProvider(BedrockClient)
+let providersInitialized = false
+let bedrockProvider: LLMProvider | null = null
+let openaiProvider: LLMProvider | null = null
+let ollamaProvider: LLMProvider | null = null
 
-const openAIClient = new OpenAI({
-  apiKey: OpenAIKey,
-})
-const openaiProvider = new OpenAIProvider(openAIClient)
+const initializeProviders = (): void => {
+  if (providersInitialized) return
 
-// @ts-ignore
-const ProviderMap: Record<AIProviders, LLMProvider> = {
-  [AIProviders.AwsBedrock]: bedrockProvider,
-  [AIProviders.OpenAI]: openaiProvider,
+  if (AwsAccessKey && AwsSecretKey && AwsRegion) {
+    const BedrockClient = new BedrockRuntimeClient({
+      region: AwsRegion,
+      credentials: {
+        accessKeyId: AwsAccessKey,
+        secretAccessKey: AwsSecretKey,
+      },
+    })
+    bedrockProvider = new BedrockProvider(BedrockClient)
+  }
 
-  // [AIProviders.Ollama]: openaiProvider,
+  if (OpenAIKey) {
+    const openAIClient = new OpenAI({
+      apiKey: OpenAIKey,
+    })
+    openaiProvider = new OpenAIProvider(openAIClient)
+  }
+
+  if (OllamaModel) {
+    const ollama = new Ollama()
+    ollamaProvider = new OllamaProvider(ollama)
+  }
+
+  providersInitialized = true
+}
+
+const getProviders = (): {
+  [AIProviders.AwsBedrock]: LLMProvider | null
+  [AIProviders.OpenAI]: LLMProvider | null
+  [AIProviders.Ollama]: LLMProvider | null
+} => {
+  initializeProviders()
+  if (!bedrockProvider && !openaiProvider && !ollamaProvider) {
+    throw new Error("No valid API keys or model provided")
+  }
+
+  return {
+    [AIProviders.AwsBedrock]: bedrockProvider,
+    [AIProviders.OpenAI]: openaiProvider,
+    [AIProviders.Ollama]: ollamaProvider,
+  }
+}
+
+const getProviderMap = (): Partial<Record<AIProviders, LLMProvider>> => {
+  const providerMap: Partial<Record<AIProviders, LLMProvider>> = {}
+  try {
+    const providers = getProviders()
+    for (const [key, provider] of Object.entries(providers)) {
+      if (provider) {
+        providerMap[key as AIProviders] = provider
+      }
+    }
+  } catch (error) {
+    Logger.error(error, "AI Provider Error")
+    throw error
+  }
+
+  return providerMap
 }
 
 const getProviderByModel = (modelId: Models): LLMProvider => {
+  const ProviderMap = getProviderMap()
+
   const providerType = ModelToProviderMap[modelId]
+    ? ModelToProviderMap[modelId]
+    : OllamaModel
+      ? AIProviders.Ollama
+      : null
+
   if (!providerType) {
     throw new Error("Invalid provider type")
   }
@@ -112,7 +174,7 @@ export const askQuestion = (
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
     if (!params.modelId) {
-      params.modelId = BigModel
+      params.modelId = defaultBestModel
     }
 
     if (!params.systemPrompt) {
@@ -149,7 +211,7 @@ export const analyzeQuery = async (
     }
 
     if (!params.modelId) {
-      params.modelId = FastModel
+      params.modelId = defaultFastModel
     }
 
     const { text: fullResponse, cost } = await getProviderByModel(
@@ -292,7 +354,7 @@ export const analyzeQueryForNamesAndEmails = async (
   params: ModelParams,
 ): Promise<{ result: QueryAnalysisResult; cost: number }> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   if (!params.systemPrompt) {
     params.systemPrompt = peopleQueryAnalysisSystemPrompt
@@ -330,7 +392,7 @@ export const userChat = (
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
     if (!params.modelId) {
-      params.modelId = BigModel
+      params.modelId = defaultBestModel
     }
 
     if (!params.systemPrompt) {
@@ -354,7 +416,7 @@ export const generateTitleUsingQuery = async (
 ): Promise<{ title: string; cost: number }> => {
   try {
     if (!params.modelId) {
-      params.modelId = BigModel
+      params.modelId = defaultBestModel
     }
 
     if (!params.systemPrompt) {
@@ -487,7 +549,7 @@ export const rewriteQuery = async (
   searchContext?: string,
 ): Promise<{ rewrittenQueries: string[]; cost: number }> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   if (!params.systemPrompt) {
     params.systemPrompt = rewriteQuerySystemPrompt(!!searchContext)
@@ -531,7 +593,7 @@ export const answerOrSearch = (
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
     if (!params.modelId) {
-      params.modelId = BigModel
+      params.modelId = defaultBestModel
     }
 
     params.systemPrompt = optimizedPrompt(userCtx)
@@ -593,7 +655,7 @@ export const routeQuery = async (
   params: ModelParams,
 ): Promise<{ result: QueryRouterResponse; cost: number }> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   params.systemPrompt = queryRouterPrompt
   params.json = true
@@ -661,7 +723,7 @@ export const baselineRAG = async (
   params: ModelParams,
 ): Promise<{ text: string; cost: number }> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   params.systemPrompt = baselinePrompt(userCtx, retrievedCtx)
   params.json = false
@@ -702,7 +764,7 @@ export const baselineRAGJson = async (
   params: ModelParams,
 ): Promise<{ output: AnswerResponse; cost: number }> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
@@ -740,7 +802,7 @@ export const baselineRAGJsonStream = (
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
@@ -766,7 +828,7 @@ export const meetingPromptJsonStream = (
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
@@ -796,7 +858,7 @@ export const queryRewriter = async (
   params: ModelParams,
 ): Promise<RewrittenQueries & { cost: number }> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   params.systemPrompt = queryRewritePromptJson(userCtx, retrievedCtx)
   params.json = true
@@ -835,7 +897,7 @@ export const temporalEventClassification = async (
   params: ModelParams,
 ): Promise<TemporalClassifier & { cost: number }> => {
   if (!params.modelId) {
-    params.modelId = FastModel
+    params.modelId = defaultFastModel
   }
   params.systemPrompt = temporalEventClassifier(userQuery)
   params.json = true

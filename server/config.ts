@@ -1,3 +1,5 @@
+import { Models } from "@/ai/types"
+
 let vespaBaseHost = "0.0.0.0"
 let postgresBaseHost = "0.0.0.0"
 let port = 3000
@@ -16,19 +18,35 @@ if (process.env.NODE_ENV === "production") {
 if (process.env.NODE_ENV !== "production") {
   postOauthRedirect = "http://localhost:5173/"
 }
-
+let defaultFastModel: Models = "" as Models
+let defaultBestModel: Models = "" as Models
 let bedrockSupport = false
 let AwsAccessKey = ""
 let AwsSecretKey = ""
+let AwsRegion = ""
 let OpenAIKey = ""
-if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
+let OllamaModel = ""
+
+// Priority (AWS > OpenAI > Ollama)
+if (
+  process.env["AWS_ACCESS_KEY"] &&
+  process.env["AWS_SECRET_KEY"] &&
+  process.env["AWS_REGION"]
+) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
+  AwsRegion = process.env["AWS_REGION"]
   bedrockSupport = true
-}
-
-if (process.env["OPENAI_API_KEY"]) {
+  defaultFastModel = Models.Claude_3_5_Haiku
+  defaultBestModel = Models.Claude_3_5_SonnetV2
+} else if (process.env["OPENAI_API_KEY"]) {
   OpenAIKey = process.env["OPENAI_API_KEY"]
+  defaultFastModel = Models.Gpt_4o_mini
+  defaultBestModel = Models.Gpt_4o
+} else if (process.env["OLLAMA_MODEL"]) {
+  OllamaModel = process.env["OLLAMA_MODEL"]
+  defaultFastModel = OllamaModel as Models
+  defaultBestModel = OllamaModel as Models
 }
 
 export default {
@@ -47,15 +65,17 @@ export default {
   bedrockSupport,
   AwsAccessKey,
   AwsSecretKey,
+  AwsRegion,
   OpenAIKey,
+  OllamaModel,
   redirectUri,
   postOauthRedirect,
   // update user query session time
   userQueryUpdateInterval: 60000, // 1 minute in milliseconds
-  // fastModelId: OpenAIKey ? Models.Gpt_4o_mini : Models.Llama_3_1_8B,
-  // bestModelId: Models.CohereCmdRPlus
+  defaultBestModel,
+  defaultFastModel,
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
-  maxDefaultSummary: 8
+  maxDefaultSummary: 8,
 }
