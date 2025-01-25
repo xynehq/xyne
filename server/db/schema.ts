@@ -14,13 +14,14 @@ import {
 } from "drizzle-orm/pg-core"
 import { encryptedText } from "./customType"
 import { Encryption } from "@/utils/encryption"
+import { ConnectorType, MessageRole, SyncConfigSchema, SyncCron } from "@/types"
 import {
-  ConnectorType,
-  MessageRole,
-  SyncConfigSchema,
-  SyncCron,
-} from "@/types"
-import { Apps, AuthType, ConnectorStatus, SyncJobStatus, UserRole } from "@/shared/types"
+  Apps,
+  AuthType,
+  ConnectorStatus,
+  SyncJobStatus,
+  UserRole,
+} from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 
