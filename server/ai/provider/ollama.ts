@@ -3,6 +3,9 @@ import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders } from "@/ai/types"
 import BaseProvider from "@/ai/provider/base"
 import type { Ollama } from "ollama"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+const Logger = getLogger(Subsystem.AI)
 
 export class OllamaProvider extends BaseProvider {
   constructor(client: Ollama) {
@@ -14,7 +17,7 @@ export class OllamaProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    
+
     try {
       const response = await (this.client as Ollama).chat({
         model: modelParams.modelId,
@@ -83,7 +86,7 @@ export class OllamaProvider extends BaseProvider {
         }
       }
     } catch (error) {
-      console.error("Error in converseOllama:", error)
+      Logger.error(error, "Error in converseOllama")
       throw error
     }
   }
