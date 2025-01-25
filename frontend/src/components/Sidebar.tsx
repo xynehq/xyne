@@ -27,6 +27,12 @@ export const Sidebar = ({
       <div
         className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col items-center space-y-[10px] fixed ${className} z-20 select-none`}
       >
+        {showHistory && (
+          <HistoryModal
+            pathname={location.pathname}
+            onClose={() => setShowHistory(false)}
+          />
+        )}
         {photoLink && (
           <img
             className="w-[32px] h-[32px] mt-[16px] rounded-full mb-[15px]"
@@ -74,12 +80,6 @@ export const Sidebar = ({
             <Tip side="right" info="Integrations" />
           </Tooltip>
         </Link>
-        {showHistory && (
-          <HistoryModal
-            pathname={location.pathname}
-            onClose={() => setShowHistory(false)}
-          />
-        )}
         <img style={{ marginTop: "auto", marginBottom: "16px" }} src={Logo} />
       </div>
     </TooltipProvider>
