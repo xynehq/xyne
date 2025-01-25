@@ -74,7 +74,13 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-const { JwtPayloadKey, chatHistoryPageSize } = config
+const {
+  JwtPayloadKey,
+  chatHistoryPageSize,
+  defaultBestModel,
+  defaultFastModel,
+  maxDefaultSummary,
+} = config
 const Logger = getLogger(Subsystem.Chat)
 
 // this is not always the case but unless our router detects that we need
@@ -91,9 +97,6 @@ enum RagPipelineStages {
   UserChat = "UserChat",
   DefaultRetrieval = "DefaultRetrieval",
 }
-
-const defaultFastModel = Models.Claude_3_5_Haiku
-const defaultBestModel = Models.Claude_3_5_SonnetV2
 
 const ragPipelineConfig = {
   [RagPipelineStages.QueryRouter]: {
@@ -786,7 +789,7 @@ export async function* UnderstandMessageAndAnswer(
       userCtx,
       0.5,
       20,
-      3,
+      5,
     )
   } else {
     Logger.info(
@@ -801,7 +804,7 @@ export async function* UnderstandMessageAndAnswer(
       0.5,
       20,
       3,
-      5,
+      maxDefaultSummary,
     )
   }
 }
