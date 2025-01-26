@@ -243,7 +243,7 @@ const HistoryModal = ({
   }
 
   return (
-    <div className="fixed left-[52px] top-0 max-w-sm w-[300px] h-full border-[0.5px] border-[#D7E0E9] flex flex-col select-none">
+    <div className="fixed left-[52px] top-0 max-w-sm w-[300px] h-full border-[0.5px] border-[#D7E0E9] flex flex-col select-none bg-white">
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
         <p className="text-[#1C1D1F] font-medium text-[16px]">Chat History</p>
         <button

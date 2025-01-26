@@ -3,11 +3,19 @@ import { TooltipContent } from "@radix-ui/react-tooltip"
 export function Tip({
   info,
   side,
-}: { info: string; side?: "top" | "right" | "bottom" | "left" }) {
-  let margin = "mb-[7px]"
-  if (side === "right") {
-    margin = "ml-[22px]"
+  margin,
+}: {
+  info: string
+  side?: "top" | "right" | "bottom" | "left"
+  margin?: string
+}) {
+  if (!margin) {
+    margin = "mb-[7px]"
+    if (side === "right") {
+      margin = "ml-[22px]"
+    }
   }
+
   return (
     <TooltipContent side={side}>
       <p

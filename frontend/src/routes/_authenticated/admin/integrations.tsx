@@ -215,7 +215,10 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
   )
 }
 
-export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
+export const ServiceAccountForm = ({
+  onSuccess,
+  refetch,
+}: { onSuccess: any; refetch: any }) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const { toast } = useToast()
@@ -238,6 +241,7 @@ export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
 
       try {
         await submitServiceAccountForm(value, navigate) // Call the async function
+        await refetch()
         toast({
           title: "File uploaded successfully",
           description: "Integration in progress",
@@ -404,6 +408,7 @@ const ServiceAccountTab = ({
   onSuccess,
   isIntegrating,
   progress,
+  refetch,
 }: {
   connectors: Connectors[]
   updateStatus: string
@@ -411,6 +416,7 @@ const ServiceAccountTab = ({
   isIntegrating: boolean
   progress: number
   userStats: any
+  refetch: any
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
@@ -425,7 +431,7 @@ const ServiceAccountTab = ({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ServiceAccountForm onSuccess={onSuccess} />
+          <ServiceAccountForm onSuccess={onSuccess} refetch={refetch} />
         </CardContent>
       </Card>
     )
@@ -473,7 +479,7 @@ export interface AdminPageProps {
 
 const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
-  const { isPending, error, data } = useQuery<any[]>({
+  const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
@@ -600,6 +606,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                   onSuccess={() => setIsIntegratingSA(true)}
                   progress={progress}
                   userStats={userStats}
+                  refetch={refetch}
                 />
               )}
             </TabsContent>
