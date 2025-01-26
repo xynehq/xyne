@@ -48,7 +48,7 @@ export const Sidebar = ({
             <TooltipTrigger asChild>
               <Plus size={18} stroke="#384049" />
             </TooltipTrigger>
-            <Tip side="right" info="Home" />
+            <Tip side="right" info="Ask & Search" />
           </Tooltip>
         </Link>
         <div
