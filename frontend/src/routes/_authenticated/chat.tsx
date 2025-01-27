@@ -816,7 +816,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           <div className={`w-full h-full flex flex-col items-center`}>
             <div
               onScroll={handleScroll}
-              className="flex flex-col  max-w-3xl flex-grow mb-[60px] mt-[56px]"
+              className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]"
             >
               {messages.map((message, index) => {
                 const isSourcesVisible =
@@ -831,7 +831,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       message={message.message}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
-                      // citations={message?.sources?.map((c: Citation) => c.url)}
                       citations={message.sources}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
@@ -859,9 +858,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         message={message.errorMessage}
                         isUser={false}
                         responseDone={true}
-                        // citations={message?.sources?.map(
-                        //   (c: Citation) => c.url
-                        // )}
                         citations={message.sources}
                         messageId={message.externalId}
                         handleRetry={handleRetry}
@@ -964,7 +960,7 @@ const MessageCitationList = ({
               title={citation.title}
             >
               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
-                <div className="flex flex-col">
+                <div className="flex flex-col w-full">
                   <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis">
                     {citation.title}
                   </p>
@@ -977,16 +973,12 @@ const MessageCitationList = ({
                       >
                         {getName(citation.app, citation.entity)}
                       </span>
-                      <a
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={citation.title}
-                        href={citation.url}
+                      <span
                         className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px]"
                         style={{ fontFamily: "JetBrains Mono" }}
                       >
                         {index + 1}
-                      </a>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -994,6 +986,7 @@ const MessageCitationList = ({
             </a>
           </li>
         ))}
+        {!!citations.length &&
         <Tooltip>
           <TooltipTrigger asChild>
             <img
@@ -1004,6 +997,8 @@ const MessageCitationList = ({
           </TooltipTrigger>
           <Tip side="right" info="Show All Sources" margin="ml-[16px]" />
         </Tooltip>
+
+        }
       </ul>
     </TooltipProvider>
   )
