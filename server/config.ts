@@ -23,19 +23,13 @@ let defaultBestModel: Models = "" as Models
 let bedrockSupport = false
 let AwsAccessKey = ""
 let AwsSecretKey = ""
-let AwsRegion = ""
 let OpenAIKey = ""
 let OllamaModel = ""
 
 // Priority (AWS > OpenAI > Ollama)
-if (
-  process.env["AWS_ACCESS_KEY"] &&
-  process.env["AWS_SECRET_KEY"] &&
-  process.env["AWS_REGION"]
-) {
+if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
-  AwsRegion = process.env["AWS_REGION"]
   bedrockSupport = true
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_3_5_SonnetV2
@@ -65,7 +59,6 @@ export default {
   bedrockSupport,
   AwsAccessKey,
   AwsSecretKey,
-  AwsRegion,
   OpenAIKey,
   OllamaModel,
   redirectUri,
