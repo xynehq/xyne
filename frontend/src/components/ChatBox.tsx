@@ -1,5 +1,6 @@
-import { ArrowRight, Globe, Paperclip } from "lucide-react"
+import { ArrowRight, Globe } from "lucide-react"
 import { useEffect, useRef } from "react"
+import Attach from "@/assets/attach.svg?react"
 
 interface ChatBoxProps {
   query: string
@@ -25,7 +26,7 @@ export const ChatBox = ({
     }
   }, [])
   return (
-    <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white">
+    <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white  max-w-3xl">
       <div className="relative flex items-center">
         <textarea
           ref={inputRef}
@@ -53,7 +54,7 @@ export const ChatBox = ({
           inputRef?.current?.focus()
         }}
       >
-        <Paperclip size={16} className="text-[#464D53] cursor-pointer" />
+        <Attach className="text-[#464D53] cursor-pointer" />
         <Globe size={16} className="text-[#464D53] cursor-pointer" />
         <button
           disabled={isStreaming}

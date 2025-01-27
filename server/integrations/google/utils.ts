@@ -406,7 +406,8 @@ export const getGmailAttachmentChunks = async (
     const downloadAttachmentFilePath = path.join(downloadDir, fileName)
 
     const attachementResp = await retryWithBackoff(
-      () => gmail.users.messages.attachments.get({
+      () =>
+        gmail.users.messages.attachments.get({
           messageId: messageId,
           id: attachmentId,
           userId: "me",

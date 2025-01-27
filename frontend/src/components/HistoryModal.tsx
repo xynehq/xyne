@@ -243,16 +243,14 @@ const HistoryModal = ({
   }
 
   return (
-    <div className="fixed left-[58px] top-0 max-w-sm w-[300px] h-[calc(100%-18px)] m-[6px] bg-[#F7FAFC] border-[0.5px] border-[#D7E0E9] rounded-[12px] flex flex-col select-none">
+    <div className="fixed left-[52px] top-0 max-w-sm w-[300px] h-full border-[0.5px] border-[#D7E0E9] flex flex-col select-none bg-white">
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
-        <p className="text-lg text-[#1C1E1F] font-semibold text-[15px]">
-          Chat History
-        </p>
+        <p className="text-[#1C1D1F] font-medium text-[16px]">Chat History</p>
         <button
           onClick={onClose}
-          className="flex items-center justify-center bg-white rounded-full w-[24px] h-[24px] mr-[14px] border-[0.5px] border-[#D7E0E9]"
+          className="flex items-center justify-center bg-[#F0F5F7] rounded-full w-[24px] h-[24px] mr-[14px] border-[0.5px] border-[#D7E0E9]"
         >
-          <X stroke="#9EB6CE" size={14} />
+          <X stroke="#4A4F59" size={14} />
         </button>
       </div>
       <div
