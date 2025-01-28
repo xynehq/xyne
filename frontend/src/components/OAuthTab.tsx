@@ -55,10 +55,10 @@ const OAuthTab = ({
         <Card>
           <CardHeader>
             <CardTitle>Google OAuth</CardTitle>
-            {oauthIntegrationStatus ===
+            {/* {oauthIntegrationStatus ===
               OAuthIntegrationStatus.OAuthConnecting && (
               <CardDescription>status: {updateStatus} </CardDescription>
-            )}
+            )} */}
           </CardHeader>
           <CardContent>
             {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
