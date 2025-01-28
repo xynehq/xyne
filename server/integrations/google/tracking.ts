@@ -1,3 +1,5 @@
+import { AuthType } from "@/shared/types"
+
 type Email = string
 type WorkspaceStats = Record<Email, UserStats>
 
@@ -6,12 +8,14 @@ export enum StatType {
   Drive = "driveCount",
   Contacts = "contactsCount",
   Events = "eventsCount",
+  Mail_Attachments = "mailAttachmentCount",
 }
 
 interface StatMetadata {
   done: boolean
   startedAt: number
   doneAt: number
+  type: AuthType
 }
 
 type UserStats = Record<StatType, number> & StatMetadata
@@ -23,13 +27,20 @@ interface ServiceAccountProgress {
   userStats: Record<string, UserStats>
 }
 
+interface OAuthProgress {
+  user: string
+  userStats: Record<string, UserStats>
+}
 // Global tracker object
 export const serviceAccountTracker: ServiceAccountProgress = {
   totalUsers: 0,
   completedUsers: 0,
   userStats: {},
 }
-
+export const oAuthTracker: OAuthProgress = {
+  user: "",
+  userStats: {},
+}
 // Helper functions to update tracker
 const initializeUserStats = (email: string) => {
   if (!serviceAccountTracker.userStats[email]) {
@@ -38,9 +49,24 @@ const initializeUserStats = (email: string) => {
       driveCount: 0,
       contactsCount: 0,
       eventsCount: 0,
+      mailAttachmentCount: 0,
       done: false,
       startedAt: new Date().getTime(),
       doneAt: 0,
+      type: AuthType.ServiceAccount,
+    }
+  }
+  if (!oAuthTracker.userStats[email]) {
+    oAuthTracker.userStats[email] = {
+      gmailCount: 0,
+      driveCount: 0,
+      contactsCount: 0,
+      eventsCount: 0,
+      mailAttachmentCount: 0,
+      done: false,
+      startedAt: new Date().getTime(),
+      doneAt: 0,
+      type: AuthType.OAuth,
     }
   }
 }
@@ -52,6 +78,7 @@ export const updateUserStats = (
 ) => {
   initializeUserStats(email)
   serviceAccountTracker.userStats[email][type] += count
+  oAuthTracker.userStats[email][type] += count
 }
 
 export const markUserComplete = (email: string) => {
@@ -71,4 +98,8 @@ export const getProgress = (): number => {
     (serviceAccountTracker.completedUsers / serviceAccountTracker.totalUsers) *
       100,
   )
+}
+
+export const setOAuthUser = (mail: string) => {
+  oAuthTracker.user = mail
 }
