@@ -986,19 +986,18 @@ const MessageCitationList = ({
             </a>
           </li>
         ))}
-        {!!citations.length &&
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <img
-              onClick={onToggleSources}
-              className="cursor-pointer"
-              src={Expand}
-            />
-          </TooltipTrigger>
-          <Tip side="right" info="Show All Sources" margin="ml-[16px]" />
-        </Tooltip>
-
-        }
+        {!!citations.length && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <img
+                onClick={onToggleSources}
+                className="cursor-pointer"
+                src={Expand}
+              />
+            </TooltipTrigger>
+            <Tip side="right" info="Show All Sources" margin="ml-[16px]" />
+          </Tooltip>
+        )}
       </ul>
     </TooltipProvider>
   )
@@ -1169,7 +1168,7 @@ const ChatMessage = ({
               <div className="flex ml-[52px] mt-[24px] items-center">
                 <Copy
                   size={16}
-                  stroke={`${isCopied ? "#4F535C" : "#9EA6B8"}`}
+                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
                   onMouseDown={(e) => setIsCopied(true)}
                   onMouseUp={(e) => setIsCopied(false)}

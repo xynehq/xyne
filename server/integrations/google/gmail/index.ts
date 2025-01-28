@@ -81,7 +81,10 @@ export const handleGmailIngestion = async (
                 }),
               `Fetching Gmail message (id: ${message.id})`,
             )
-            await insert(await parseMail(msgResp.data, gmail), mailSchema)
+            await insert(
+              await parseMail(msgResp.data, gmail, email),
+              mailSchema,
+            )
             updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
@@ -140,6 +143,7 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
+  userEmail?: string,
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
@@ -243,6 +247,8 @@ export const parseMail = async (
             }
 
             await insert(attachmentDoc, mailAttachmentSchema)
+            if (userEmail)
+              updateUserStats(userEmail, StatType.Mail_Attachments, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
