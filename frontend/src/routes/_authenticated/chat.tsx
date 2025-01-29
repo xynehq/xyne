@@ -787,7 +787,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 value={editedTitle!}
               />
             ) : (
-              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
                 {chatTitle}
               </span>
             )}
@@ -961,7 +961,7 @@ const MessageCitationList = ({
             >
               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                 <div className="flex flex-col w-full">
-                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis">
+                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
                     {citation.title}
                   </p>
                   <div className="flex flex-col mt-[9px]">
@@ -1023,13 +1023,13 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 rel="noopener noreferrer"
                 title={citation.title}
                 href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px] mr-[8px]"
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] rounded-full text-[9px] mr-[8px]"
                 style={{ fontFamily: "JetBrains Mono" }}
               >
                 {index + 1}
               </a>
               <div className="flex flex-col mr-[12px]">
-                <span className="">{citation.title}</span>
+                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">{citation.title}</span>
                 <div className="flex items-center pb-[12px] mt-[8px]">
                   {getIcon(citation.app, citation.entity)}
                   <span className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]">
