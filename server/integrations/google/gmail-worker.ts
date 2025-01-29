@@ -38,7 +38,7 @@ import { JWT } from "google-auth-library"
 import {
   getGmailAttachmentChunks,
   parseAttachments,
-} from "@/integrations/google/utils"
+} from "@/integrations/google/worker-utils"
 
 
 const jwtValue = z.object({

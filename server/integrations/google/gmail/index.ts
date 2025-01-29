@@ -26,7 +26,7 @@ import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 import {
   getGmailAttachmentChunks,
   parseAttachments,
-} from "@/integrations/google/utils"
+} from "@/integrations/google/worker-utils"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
