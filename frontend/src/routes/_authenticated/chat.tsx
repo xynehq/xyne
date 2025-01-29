@@ -8,10 +8,11 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Eye, EyeOff, Pencil } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
+import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { ChatBox } from "@/components/ChatBox"
@@ -28,6 +29,12 @@ import { SelectPublicChat } from "shared/types"
 import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
+import {
+  Tooltip,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Tip } from "@/components/Tooltip"
 
 type CurrentResp = {
   resp: string
@@ -766,8 +773,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     <div className="h-full w-full flex flex-row bg-white">
       <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
       <div className="h-full w-full flex flex-col relative">
-        <div className="flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center">
-          <div className="flex h-[48px] items-center max-w-2xl w-full">
+        <div
+          className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+        >
+          <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
               <input
                 ref={titleRef}
@@ -801,15 +810,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         </div>
 
         <div
-          className={`h-full w-full flex items-end overflow-y-auto justify-center`}
+          className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
           ref={messagesContainerRef}
         >
-          <div
-            className={`w-full h-full max-w-3xl flex flex-col justify-between`}
-          >
+          <div className={`w-full h-full flex flex-col items-center`}>
             <div
               onScroll={handleScroll}
-              className="flex flex-col flex-grow mb-[60px] mt-[56px]"
+              className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]"
             >
               {messages.map((message, index) => {
                 const isSourcesVisible =
@@ -824,7 +831,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       message={message.message}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
-                      citations={message?.sources?.map((c: Citation) => c.url)}
+                      citations={message.sources}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
@@ -851,9 +858,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         message={message.errorMessage}
                         isUser={false}
                         responseDone={true}
-                        citations={message?.sources?.map(
-                          (c: Citation) => c.url,
-                        )}
+                        citations={message.sources}
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
@@ -882,7 +887,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               {currentResp && (
                 <ChatMessage
                   message={currentResp.resp}
-                  citations={currentResp.sources?.map((c: Citation) => c.url)}
+                  citations={currentResp.sources}
                   isUser={false}
                   responseDone={false}
                   handleRetry={handleRetry}
@@ -918,63 +923,155 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               isStreaming={isStreaming}
             />
           </div>
-          <Sources showSources={showSources} citations={currentCitations} />
+          <Sources
+            showSources={showSources}
+            citations={currentCitations}
+            closeSources={() => {
+              setShowSources(false)
+              setCurrentCitations([])
+              setCurrentMessageId(null)
+            }}
+          />
         </div>
       </div>
     </div>
   )
 }
 
-const Sources = ({
-  showSources,
+const MessageCitationList = ({
   citations,
+  onToggleSources,
 }: {
-  showSources: boolean
-  citations: Citation
+  citations: Citation[]
+  onToggleSources: () => void
 }) => {
-  return showSources ? (
-    <div className="fixed right-0 top-[48px] h-full w-1/4 border-l-[1px] border-[#E6EBF5] bg-white">
-      <div className="ml-[40px] mt-[24px]">
-        <span className="text-[#929FBA] font-normal text-[11px] tracking-[0.08em]">
-          SOURCES
-        </span>
-        <ul className="mt-2">
-          {citations.map((citation: Citation, index: number) => (
-            <li
-              key={index}
-              className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] w-[75%]"
+  return (
+    <TooltipProvider>
+      <ul className={`flex flex-row mt-[24px]`}>
+        {citations.map((citation: Citation, index: number) => (
+          <li
+            key={index}
+            className="border-[#E6EBF5] border-[1px] rounded-[10px] w-[196px] mr-[6px]"
+          >
+            <a
+              href={citation.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={citation.title}
             >
-              <a
-                href={citation.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={citation.title}
-              >
-                <div className="flex pl-[12px] pt-[12px]">
-                  <a
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={citation.title}
-                    href={citation.url}
-                    className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px] mr-[8px]"
-                    style={{ fontFamily: "JetBrains Mono" }}
-                  >
-                    {index + 1}
-                  </a>
-                  <div className="flex flex-col  mr-[12px] truncate">
-                    <span className="truncate">{citation.title}</span>
+              <div className="flex pl-[12px] pt-[10px] pr-[12px]">
+                <div className="flex flex-col w-full">
+                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis">
+                    {citation.title}
+                  </p>
+                  <div className="flex flex-col mt-[9px]">
                     <div className="flex items-center pb-[12px]">
                       {getIcon(citation.app, citation.entity)}
-                      <span className="text-[#848DA1]">
+                      <span
+                        style={{ fontWeight: 450 }}
+                        className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]"
+                      >
                         {getName(citation.app, citation.entity)}
+                      </span>
+                      <span
+                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px]"
+                        style={{ fontFamily: "JetBrains Mono" }}
+                      >
+                        {index + 1}
                       </span>
                     </div>
                   </div>
                 </div>
+              </div>
+            </a>
+          </li>
+        ))}
+        {!!citations.length && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <img
+                onClick={onToggleSources}
+                className="cursor-pointer"
+                src={Expand}
+              />
+            </TooltipTrigger>
+            <Tip side="right" info="Show All Sources" margin="ml-[16px]" />
+          </Tooltip>
+        )}
+      </ul>
+    </TooltipProvider>
+  )
+}
+
+const CitationList = ({ citations }: { citations: Citation[] }) => {
+  return (
+    <ul className={`mt-2`}>
+      {citations.map((citation: Citation, index: number) => (
+        <li
+          key={index}
+          className="border-[#E6EBF5] border-[1px] rounded-[10px] mt-[12px] w-[85%]"
+        >
+          <a
+            href={citation.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={citation.title}
+          >
+            <div className="flex pl-[12px] pt-[12px]">
+              <a
+                target="_blank"
+                rel="noopener noreferrer"
+                title={citation.title}
+                href={citation.url}
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px] mr-[8px]"
+                style={{ fontFamily: "JetBrains Mono" }}
+              >
+                {index + 1}
               </a>
-            </li>
-          ))}
-        </ul>
+              <div className="flex flex-col mr-[12px]">
+                <span className="">{citation.title}</span>
+                <div className="flex items-center pb-[12px] mt-[8px]">
+                  {getIcon(citation.app, citation.entity)}
+                  <span className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]">
+                    {getName(citation.app, citation.entity)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+const Sources = ({
+  showSources,
+  citations,
+  closeSources,
+}: {
+  showSources: boolean
+  citations: Citation[]
+  closeSources: () => void
+}) => {
+  return showSources ? (
+    <div className="h-full w-1/4 top-[48px] right-0 fixed border-l-[1px] border-[#E6EBF5] bg-white overflow-y-auto">
+      <div className="ml-[40px] mt-[24px]">
+        <div className="flex items-center">
+          <span
+            className="text-[#929FBA] font-normal text-[12px] tracking-[0.08em]"
+            style={{ fontFamily: "JetBrains Mono" }}
+          >
+            SOURCES
+          </span>
+          <X
+            stroke="#9EAEBE"
+            size={14}
+            className="ml-auto mr-[40px] cursor-pointer"
+            onClick={closeSources}
+          />
+        </div>
+        <CitationList citations={citations} />
       </div>
     </div>
   ) : null
@@ -1000,7 +1097,7 @@ const ChatMessage = ({
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
-  citations?: string[]
+  citations?: Citation[]
   messageId?: string
   dots: string
   handleRetry: (messageId: string) => void
@@ -1010,6 +1107,7 @@ const ChatMessage = ({
   isStreaming?: boolean
 }) => {
   const [isCopied, setIsCopied] = useState(false)
+  const citationUrls = citations?.map((c: Citation) => c.url)
 
   const processMessage = (text: string) => {
     // First split any grouped citations
@@ -1018,27 +1116,27 @@ const ChatMessage = ({
     if (citationMap) {
       return text.replace(textToCitationIndex, (match, num) => {
         const index = citationMap[num]
-        const url = citations[index]
+        const url = citationUrls[index]
         return typeof index === "number" && url
           ? `[[${index + 1}]](${url})`
           : ""
       })
     } else {
       return text.replace(textToCitationIndex, (match, num) => {
-        const url = citations[num - 1]
+        const url = citationUrls[num - 1]
         return url ? `[[${num}]](${url})` : ""
       })
     }
   }
   return (
     <div
-      className={`${isUser ? "max-w-[75%]" : ""} rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
+      className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
         message
       ) : (
         <div
-          className={`flex flex-col mt-[40px] ${citations.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] ${citationUrls.length ? "mb-[35px]" : ""}`}
         >
           <div className="flex flex-row">
             <img
@@ -1060,57 +1158,54 @@ const ChatMessage = ({
                     padding: 0,
                     backgroundColor: "transparent",
                     color: "#1C1D1F",
-                    maxWidth: "75%",
                   }}
                 />
               )}
             </div>
           </div>
           {responseDone && !isRetrying && (
-            <div className="flex ml-[52px] mt-[24px] items-center">
-              <Copy
-                size={16}
-                stroke={`${isCopied ? "#4F535C" : "#9EA6B8"}`}
-                className={`cursor-pointer`}
-                onMouseDown={(e) => setIsCopied(true)}
-                onMouseUp={(e) => setIsCopied(false)}
-                onClick={() => {
-                  navigator.clipboard.writeText(processMessage(message))
-                }}
-              />
-              <img
-                className={`ml-[18px] ${isStreaming ? "opacity-50" : "cursor-pointer"}`}
-                src={Retry}
-                onClick={() => handleRetry(messageId!)}
-              />
-              {!!citations.length && (
-                <div
-                  className="ml-auto flex cursor-pointer text-[#9EA6B8]"
-                  onClick={onToggleSources}
-                >
-                  {sourcesVisible ? (
-                    <div className="flex items-center bg-[#F0F2F5] rounded-[20px] pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
-                      <EyeOff stroke="#464B53" size={16} />
-                      <span
-                        className="font-light ml-[4px] select-none leading-[14px] tracking-[2%] text-[12px] text-[#464B53]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
-                        HIDE SOURCES
-                      </span>
-                    </div>
-                  ) : (
+            <div className="flex flex-col">
+              <div className="flex ml-[52px] mt-[24px] items-center">
+                <Copy
+                  size={16}
+                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
+                  className={`cursor-pointer`}
+                  onMouseDown={(e) => setIsCopied(true)}
+                  onMouseUp={(e) => setIsCopied(false)}
+                  onClick={() => {
+                    navigator.clipboard.writeText(processMessage(message))
+                  }}
+                />
+                <img
+                  className={`ml-[18px] ${isStreaming ? "opacity-50" : "cursor-pointer"}`}
+                  src={Retry}
+                  onClick={() => handleRetry(messageId!)}
+                />
+                {!!citationUrls.length && (
+                  <div className="ml-auto flex">
                     <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
-                      <Eye stroke="#9EA6B8" size={16} />
                       <span
-                        className="font-light ml-[4px] select-none leading-[14px] tracking-[2%] text-[12px]"
+                        className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE]"
                         style={{ fontFamily: "JetBrains Mono" }}
                       >
-                        SHOW SOURCES
+                        SOURCES
                       </span>
+                      <ChevronDown
+                        size={14}
+                        className="ml-[4px]"
+                        color="#B2C3D4"
+                      />
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-row ml-[52px]">
+                <MessageCitationList
+                  citations={citations.slice(0, 3)}
+                  onToggleSources={onToggleSources}
+                />
+              </div>
             </div>
           )}
         </div>

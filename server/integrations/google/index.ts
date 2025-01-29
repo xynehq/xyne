@@ -97,7 +97,9 @@ import { GoogleDocsConcurrency } from "./config"
 import {
   getProgress,
   markUserComplete,
+  oAuthTracker,
   serviceAccountTracker,
+  setOAuthUser,
   setTotalUsers,
   StatType,
   updateUserStats,
@@ -556,6 +558,18 @@ export const handleGoogleOAuthIngestion = async (
     const userEmail = job.data.email
     const oauthTokens: GoogleTokens = connector.oauthCredentials
     const oauth2Client = new google.auth.OAuth2()
+
+    setOAuthUser(userEmail)
+    const interval = setInterval(() => {
+      sendWebsocketMessage(
+        JSON.stringify({
+          progress: () => {},
+          userStats: oAuthTracker.userStats,
+        }),
+        connector.externalId,
+      )
+    }, 4000)
+
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
     oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
@@ -576,6 +590,11 @@ export const handleGoogleOAuthIngestion = async (
       handleGmailIngestion(oauth2Client, userEmail),
       insertCalendarEvents(oauth2Client, userEmail),
     ])
+
+    setTimeout(() => {
+      clearInterval(interval)
+    }, 8000)
+
     const changeTokens = {
       driveToken: startPageToken,
       type: "googleDriveChangeToken",

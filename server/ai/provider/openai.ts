@@ -55,7 +55,6 @@ export class OpenAIProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    // Placeholder for Ollama implementation
     const chatCompletion = await (
       this.client as OpenAI
     ).chat.completions.create({

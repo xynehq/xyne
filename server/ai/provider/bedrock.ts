@@ -9,7 +9,9 @@ import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders } from "@/ai/types"
 import BaseProvider from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
-
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+const Logger = getLogger(Subsystem.AI)
 export class BedrockProvider extends BaseProvider {
   constructor(client: any) {
     super(client, AIProviders.AwsBedrock)
@@ -103,7 +105,7 @@ export class BedrockProvider extends BaseProvider {
         }
       }
     } catch (error) {
-      console.error("Error in converseBedrock:", error)
+      Logger.error(error, "Error in converseBedrock")
       throw error
     }
   }

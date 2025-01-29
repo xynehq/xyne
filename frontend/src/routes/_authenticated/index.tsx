@@ -11,8 +11,14 @@ import {
 } from "shared/types"
 import { api } from "@/api"
 import { ChatBox } from "@/components/ChatBox"
-import Sparkle from "@/assets/singleSparkle.svg"
+import Sparkle from "@/assets/singleSparkle.svg?react"
 import { errorComponent } from "@/components/error"
+import {
+  Tooltip,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Tip } from "@/components/Tooltip"
 
 enum Tabs {
   Search = "search",
@@ -123,68 +129,84 @@ const Index = () => {
   }, [])
 
   return (
-    <div className="h-full w-full flex flex-row bg-white">
-      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
-      <div className="flex flex-col flex-grow justify-center items-center ml-[52px]">
-        <div className="flex flex-col min-h-36 w-full max-w-3xl">
-          <div className="flex mb-[14px] w-full justify-start">
-            <button
-              className={`flex items-center pr-[12px] rounded-[20px] ${
-                activeTab === Tabs.Ask ? "bg-[#EDF2F7]" : ""
-              }`}
-              onClick={() => setActiveTab(Tabs.Ask)}
-            >
-              <img
-                src={Sparkle}
-                className="w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
-              />
-              Ask
-            </button>
-            <button
-              className={`flex items-center text-[#33383D] pr-[12px] rounded-[20px] ${
-                activeTab === "search" ? "bg-[#EDF2F7]" : ""
-              }`}
-              onClick={() => setActiveTab(Tabs.Search)}
-            >
-              <SearchIcon
-                size={16}
-                stroke="#728395"
-                className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
-              />
-              Search
-            </button>
+    <TooltipProvider>
+      <div className="h-full w-full flex flex-row bg-white">
+        <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+        <div className="flex flex-col flex-grow justify-center items-center ml-[52px]">
+          <div className="flex flex-col min-h-36 w-full max-w-3xl">
+            <div className="flex mb-[14px] w-full justify-start">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`flex items-center pr-[12px] rounded-[20px] ${
+                      activeTab === Tabs.Ask
+                        ? "bg-[#EDF2F7] text-[#33383D]"
+                        : "text-[#728395]"
+                    }`}
+                    onClick={() => setActiveTab(Tabs.Ask)}
+                  >
+                    <Sparkle
+                      stroke={activeTab === Tabs.Ask ? "#33383D" : "#728395"}
+                      className={`w-[14px] h-[14px] ml-[12px] mr-[6px] mt-[6px] mb-[6px]`}
+                    />
+                    Ask
+                  </button>
+                </TooltipTrigger>
+                <Tip info="Use `tab` key to switch between Ask & Search" />
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`flex items-center text-[#33383D] pr-[12px] rounded-[20px] ${
+                      activeTab === Tabs.Search
+                        ? "bg-[#EDF2F7] text-[#33383D]"
+                        : "text-[#728395]"
+                    }`}
+                    onClick={() => setActiveTab(Tabs.Search)}
+                  >
+                    <SearchIcon
+                      size={16}
+                      stroke={activeTab === Tabs.Search ? "#33383D" : "#728395"}
+                      className="ml-[12px] mr-[6px] mt-[6px] mb-[6px]"
+                    />
+                    Search
+                  </button>
+                </TooltipTrigger>
+                <Tip info="Use `tab` key to switch between Ask & Search" />
+              </Tooltip>
+            </div>
+            {activeTab === "search" && (
+              <div className="w-full">
+                <SearchBar
+                  query={query}
+                  setQuery={setQuery}
+                  handleSearch={handleSearch}
+                  autocompleteResults={autocompleteResults}
+                  setAutocompleteResults={setAutocompleteResults}
+                  setAutocompleteQuery={setAutocompleteQuery}
+                  setOffset={setOffset}
+                  setFilter={setFilter}
+                  handleAnswer={() => {}}
+                  ref={autocompleteRef}
+                  hasSearched={false}
+                  filter={filter}
+                  autocompleteRef={autocompleteRef}
+                />
+              </div>
+            )}
+            {activeTab === "ask" && (
+              <div className="w-full max-w-3xl">
+                <ChatBox
+                  query={query}
+                  setQuery={setQuery}
+                  handleSend={handleAsk}
+                />
+              </div>
+            )}
           </div>
-          {activeTab === "search" && (
-            <div className="w-full">
-              <SearchBar
-                query={query}
-                setQuery={setQuery}
-                handleSearch={handleSearch}
-                autocompleteResults={autocompleteResults}
-                setAutocompleteResults={setAutocompleteResults}
-                setAutocompleteQuery={setAutocompleteQuery}
-                setOffset={setOffset}
-                setFilter={setFilter}
-                handleAnswer={() => {}}
-                ref={autocompleteRef}
-                hasSearched={false}
-                filter={filter}
-                autocompleteRef={autocompleteRef}
-              />
-            </div>
-          )}
-          {activeTab === "ask" && (
-            <div className="w-full max-w-3xl">
-              <ChatBox
-                query={query}
-                setQuery={setQuery}
-                handleSend={handleAsk}
-              />
-            </div>
-          )}
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
 

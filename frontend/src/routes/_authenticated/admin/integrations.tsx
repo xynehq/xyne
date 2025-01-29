@@ -215,7 +215,10 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
   )
 }
 
-export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
+export const ServiceAccountForm = ({
+  onSuccess,
+  refetch,
+}: { onSuccess: any; refetch: any }) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const { toast } = useToast()
@@ -238,6 +241,7 @@ export const ServiceAccountForm = ({ onSuccess }: { onSuccess: any }) => {
 
       try {
         await submitServiceAccountForm(value, navigate) // Call the async function
+        await refetch()
         toast({
           title: "File uploaded successfully",
           description: "Integration in progress",
@@ -368,29 +372,40 @@ export const getConnectors = async (): Promise<any> => {
 
 const UserStatsTable = ({
   userStats,
-}: { userStats: { [email: string]: any } }) => {
+  type,
+}: { userStats: { [email: string]: any }; type: AuthType }) => {
   return (
-    <Table className="ml-[20px] max-h-[400px]">
+    <Table
+      className={
+        "ml-[20px] max-h-[400px]" + type === AuthType.OAuth
+          ? "ml-[10px] mt-[10px]"
+          : ""
+      }
+    >
       <TableHeader>
         <TableRow>
-          <TableHead>Email</TableHead>
+          {type !== AuthType.OAuth && <TableHead>Email</TableHead>}
           <TableHead>Gmail</TableHead>
           <TableHead>Drive</TableHead>
           <TableHead>Contacts</TableHead>
           <TableHead>Events</TableHead>
+          <TableHead>Attachments</TableHead>
           {/* <TableHead>Status</TableHead> */}
         </TableRow>
       </TableHeader>
       <TableBody>
         {Object.entries(userStats).map(([email, stats]) => (
           <TableRow key={email}>
-            <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
-              {email}
-            </TableCell>
+            {type !== AuthType.OAuth && (
+              <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+                {email}
+              </TableCell>
+            )}
             <TableCell>{stats.gmailCount}</TableCell>
             <TableCell>{stats.driveCount}</TableCell>
             <TableCell>{stats.contactsCount}</TableCell>
             <TableCell>{stats.eventsCount}</TableCell>
+            <TableCell>{stats.mailAttachmentCount}</TableCell>
             {/* <TableCell className={`${stats.done ? "text-lime-600": ""}`}>{stats.done ? "Done" : "In Progress"}</TableCell> */}
           </TableRow>
         ))}
@@ -404,6 +419,7 @@ const ServiceAccountTab = ({
   onSuccess,
   isIntegrating,
   progress,
+  refetch,
 }: {
   connectors: Connectors[]
   updateStatus: string
@@ -411,6 +427,7 @@ const ServiceAccountTab = ({
   isIntegrating: boolean
   progress: number
   userStats: any
+  refetch: any
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
@@ -425,7 +442,7 @@ const ServiceAccountTab = ({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ServiceAccountForm onSuccess={onSuccess} />
+          <ServiceAccountForm onSuccess={onSuccess} refetch={refetch} />
         </CardContent>
       </Card>
     )
@@ -473,7 +490,7 @@ export interface AdminPageProps {
 
 const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
-  const { isPending, error, data } = useQuery<any[]>({
+  const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
@@ -492,7 +509,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const [updateStatus, setUpateStatus] = useState("")
   const [progress, setProgress] = useState<number>(0)
   const [userStats, setUserStats] = useState<{ [email: string]: any }>({})
-  const [activeTab, setActiveTab] = useState<string>("upload")
+  const [activeTab, setActiveTab] = useState<string>("service_account")
   const [isIntegratingSA, setIsIntegratingSA] = useState<boolean>(
     data
       ? !!data.find(
@@ -573,6 +590,19 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }, [data, isPending])
 
+  const showUserStats = (
+    userStats: { [email: string]: any },
+    activeTab: string,
+  ) => {
+    if (!Object.keys(userStats).length) return false
+    if (activeTab !== "service_account" && activeTab !== "oauth") return false
+
+    const currentAuthType =
+      activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
+    return Object.values(userStats).some(
+      (stats) => stats.type === currentAuthType,
+    )
+  }
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
@@ -581,15 +611,15 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
-            defaultValue="upload"
+            defaultValue="service_account"
             className={`w-[400px] min-h-[${minHeight}px] ${Object.keys(userStats).length > 0 ? "mt-[150px]" : ""}`}
             onValueChange={setActiveTab}
           >
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="upload">Service Account</TabsTrigger>
+              <TabsTrigger value="service_account">Service Account</TabsTrigger>
               <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
             </TabsList>
-            <TabsContent value="upload">
+            <TabsContent value="service_account">
               {isPending ? (
                 <LoaderContent />
               ) : (
@@ -600,6 +630,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                   onSuccess={() => setIsIntegratingSA(true)}
                   progress={progress}
                   userStats={userStats}
+                  refetch={refetch}
                 />
               )}
             </TabsContent>
@@ -610,8 +641,13 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               updateStatus={updateStatus}
             />
           </Tabs>
-          {Object.keys(userStats).length > 0 && activeTab === "upload" && (
-            <UserStatsTable userStats={userStats} />
+          {showUserStats(userStats, activeTab) && (
+            <UserStatsTable
+              userStats={userStats}
+              type={
+                activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
+              }
+            />
           )}
         </div>
       </div>

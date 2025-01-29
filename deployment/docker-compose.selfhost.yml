@@ -2,25 +2,15 @@ version: "3.9"
 
 services:
   app:
-    image: xyne
+    image: xynehq/xyne
     container_name: xyne-app
-    build:
-      context: ..
-      dockerfile: Dockerfile
     ports:
       - "80:80"
+    env_file:
+      ../server/.env.temp
     depends_on:
       - xyne-db
       - vespa
-    environment:
-      DATABASE_HOST: xyne-db
-      VESPA_HOST: vespa
-      HOST: http://localhost:3001/
-      ENCRYPTION_KEY: "ldRWi1hLL8zMT2yxAXwjjTJUYs1ikROLqRxFrs0qpvU=" #DEFAULT_VALUE
-      JWT_SECRET: "ldRWi1hLL8zMT2yxAXwjjTJUYs1ikROLqRxFrs0qpvU=" #DEFAULT_VALUE
-      SERVICE_ACCOUNT_ENCRYPTION_KEY: "ldRWi1hLL8zMT2yxAXwjjTJUYs1ikROLqRxFrs0qpvU=" #DEFAULT_VALUE
-      EMBEDDING_MODEL: "bge-base-en-v1.5"
-
     networks:
       - xyne    
     restart: always
