@@ -106,6 +106,7 @@ import {
 } from "./tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
