@@ -192,9 +192,13 @@ schema user {
             bm25(name)
             bm25(email)
         }
+        function scale(val) {
+            expression: 2*atan(val/4)/(3.14159)
+        }
+
         global-phase {
             expression {
-                normalize_linear(bm25(name)) + normalize_linear(bm25(email))
+                scale(bm25(name) + bm25(email))
             }
         }
     }
