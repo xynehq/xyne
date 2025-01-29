@@ -29,7 +29,7 @@ import {
   downloadPDF,
   getSheetsListFromOneSpreadsheet,
   safeLoadPDF,
-} from "."
+} from "@/integrations/google"
 import { getLogger } from "@/logger"
 import type PgBoss from "pg-boss"
 import fs from "node:fs/promises"
