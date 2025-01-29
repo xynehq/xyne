@@ -39,7 +39,7 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
-import { ChatSSEvents, type MessageReqType } from "@/shared/types"
+import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   getErrorMessage,
@@ -810,12 +810,12 @@ export async function* UnderstandMessageAndAnswer(
 }
 
 const handleError = (error: any) => {
-  let errorMessage = ""
-  switch (error) {
-    default:
-      errorMessage = "Something went wrong. Please try again."
-      break
-  }
+  let errorMessage = "Something went wrong. Please try again.";
+  if(error?.code === OpenAIError.RateLimitError){
+    errorMessage = "Rate limit exceeded. Please try again later."
+  } else if(error?.code === OpenAIError.InvalidAPIKey) {
+    errorMessage = "Invalid API key provided. Please check your API key and ensure it is correct."
+  } 
   return errorMessage
 }
 
