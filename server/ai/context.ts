@@ -181,6 +181,19 @@ ${fields.labels ? `Mailbox Labels: ${fields.labels.join(", ")}` : ""}
 vespa relevance score: ${relevance}`
 }
 
+const constructMailAttachmentMetadataContext = (
+  fields: VespaMailAttachmentSearch,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
+Entity: ${fields.entity}
+timestamp: ${getRelativeTime(fields.timestamp)}
+${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
+${fields.filename ? `Filename: ${fields.filename}` : ""}
+${fields.fileType ? `FileType: ${fields.fileType}` : ""}
+vespa relevance score: ${relevance}`
+}
+
 const constructFileColoredContext = (
   fields: VespaFileSearch,
   relevance: number,
@@ -251,10 +264,15 @@ export const answerMetadataContextMap = (
       searchResult.fields,
       searchResult.relevance,
     )
+  } else if(searchResult.fields.sddocname === mailAttachmentSchema){
+    return constructMailAttachmentMetadataContext(
+      searchResult.fields,
+      searchResult.relevance,
+    )
   } else if (searchResult.fields.sddocname === eventSchema) {
     return constructEventContext(searchResult.fields, searchResult.relevance)
   } else {
-    throw new Error("Invalid search result type")
+    throw new Error(`Invalid search result type: ${searchResult.fields.sddocname}`)
   }
 }
 
@@ -277,7 +295,7 @@ export const answerColoredContextMap = (
       searchResult.relevance,
     )
   } else {
-    throw new Error("Invalid search result type")
+    throw new Error(`Invalid search result type: ${searchResult.fields.sddocname}`)
   }
 }
 
@@ -309,7 +327,7 @@ export const answerContextMap = (
       maxSummaryChunks,
     )
   } else {
-    throw new Error("Invalid search result type")
+    throw new Error(`Invalid search result type: ${searchResult.fields.sddocname}`)
   }
 }
 
