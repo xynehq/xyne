@@ -3,8 +3,18 @@
 [![Release](https://img.shields.io/github/release/xynehq/xyne.svg?style=flat-square)](https://github.com/xynehq/Xyne/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
 
-
 ## 📌 What is Xyne 
+Xyne is an Al-first Search & Answer Engine for work. We're an
+OSS alternative to Glean, Gemini and MS Copilot.
+Your work information has become fragmented across so many
+SaaS apps, docs, files, repos, projects, issues, emails,
+messages, tickets, etc. Xyne connects to your applications like
+Google Workspace, Atlassian suite, Slack, Github, etc and
+securely indexes your data. So you get a (Google + ChatGPT)
+like experience to find anything across it all and get up-to-date
+answers with sources.
+Find that file, triage that issue, ask everything about a
+customer / deal / feature, discover the right people.
 
 
 You can check out our [documentation](https://xyne.mintlify.app/introduction) to lean more about Xyne.
@@ -27,10 +37,17 @@ To run xyne on your virtual machine, check out the [Cloud Deployment](https://xy
 
 Xyne offers you the following features :
 
-- Document Search within your Workspace Applications.
-- AI answers related to Documents and Natural Language Queries.
-- Document Access with Permisison Awareness.
-- Option to connect to a variety of LLMs.
+• Open Source: Under Apache 2.0 license.
+• Self-hosted: Deploy anywhere - laptop, on-prem, cloud.
+• Model Agnostic: Plugs into any LLM of your choice. Also
+via any cloud provider of your choice. You can even point it
+to a local Deepseek via ollama.
+• Private & secure: No training on your data or prompts. No
+telemetry on your usage.
+• Permissions-aware: Live enforcing of your apps' existing
+permissions; no one sees what they don't have access to.
+We believe Xyne is the most future-proof solution to bring Al
+into your work and org.
 
 ## 🔌 Connect Xyne to Integrations
 
