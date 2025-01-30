@@ -34,7 +34,7 @@ import {
   UpdateEventCancelledInstances,
 } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
-import { wsConnections } from "@/server"
+import { wsConnections } from "@/integrations/google/ws"
 import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import { connectors, type SelectConnector } from "@/db/schema"
@@ -97,13 +97,16 @@ import { GoogleDocsConcurrency } from "./config"
 import {
   getProgress,
   markUserComplete,
+  oAuthTracker,
   serviceAccountTracker,
+  setOAuthUser,
   setTotalUsers,
   StatType,
   updateUserStats,
 } from "./tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -556,6 +559,18 @@ export const handleGoogleOAuthIngestion = async (
     const userEmail = job.data.email
     const oauthTokens: GoogleTokens = connector.oauthCredentials
     const oauth2Client = new google.auth.OAuth2()
+
+    setOAuthUser(userEmail)
+    const interval = setInterval(() => {
+      sendWebsocketMessage(
+        JSON.stringify({
+          progress: () => {},
+          userStats: oAuthTracker.userStats,
+        }),
+        connector.externalId,
+      )
+    }, 4000)
+
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
     oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
@@ -576,6 +591,11 @@ export const handleGoogleOAuthIngestion = async (
       handleGmailIngestion(oauth2Client, userEmail),
       insertCalendarEvents(oauth2Client, userEmail),
     ])
+
+    setTimeout(() => {
+      clearInterval(interval)
+    }, 8000)
+
     const changeTokens = {
       driveToken: startPageToken,
       type: "googleDriveChangeToken",
@@ -688,7 +708,7 @@ const messageTypes = z.discriminatedUnion("type", [stats, historyId])
 
 type ResponseType = z.infer<typeof messageTypes>
 
-gmailWorker.onerror = (error) => {
+gmailWorker.onerror = (error: ErrorEvent) => {
   Logger.error(error, `Error in main thread: worker: ${JSON.stringify(error)}`)
 }
 

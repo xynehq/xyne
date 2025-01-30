@@ -56,8 +56,8 @@ import {
   MessageApi,
   MessageRetryApi,
 } from "./api/chat"
-import { z } from "zod"
 import { UserRole } from "./shared/types"
+import { wsConnections } from "@/integrations/google/ws"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -112,7 +112,6 @@ const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 
 app.use("*", honoMiddlewareLogger)
 
-export const wsConnections = new Map()
 
 export const WsApp = app.get(
   "/ws",
