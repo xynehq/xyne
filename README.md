@@ -9,9 +9,18 @@ Open source alternative to Glean
 </div>
 <br>
 
-[![Release](https://img.shields.io/github/release/xynehq/xyne.svg?style=flat-square)](https://github.com/xynehq/Xyne/releases/latest)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
-[![Slack](https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack?style=flat-square)](http://xynerds.slack.com/)
+<p align="center">
+  <a href="https://github.com/xynehq/Xyne/releases/latest">
+    <img src="https://img.shields.io/github/release/xynehq/xyne.svg?style=flat-square" alt="Release">
+  </a>
+  <a href="https://opensource.org/licenses/Apache-2.0">
+    <img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License">
+  </a>
+  <a href="http://xynerds.slack.com/">
+    <img src="https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack?style=flat-square" alt="Slack">
+  </a>
+</p>
+
 ## 📌 What is Xyne 
 ![Xyne App](docs/readme/Xyne-Readme.png)
 
