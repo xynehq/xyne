@@ -108,10 +108,10 @@ Now you need to add this to the docker container running the app, for this use :
 docker cp /path/to/your/.env.production xyne-app:usr/src/app/frontend/.env.production
 ```
 
-And the restart the docker container using :
+And then rebuild the frontend using :
 
 ```javascript
-docker restart xyne-app
+docker exec -it xyne-app sh -c "cd /usr/src/app/frontend && bun run build"
 ```
 
 ## Ingesting data 
