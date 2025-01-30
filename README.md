@@ -5,19 +5,19 @@
 </div>
 <h1 align="center">AI-first Search & Answer Engine for work.</h1>
 <div align="center">
-Open source alternative to Glean
+Open-source alternative to Glean, Gemini, and MS Copilot.
 </div>
 <br>
 
 <p align="center">
-  <a href="https://github.com/xynehq/Xyne/releases/latest">
+  <a href="https://github.com/xynehq/xyne/releases/latest">
     <img src="https://img.shields.io/github/release/xynehq/xyne.svg?style=flat-square" alt="Release">
   </a>
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License">
   </a>
   <a href="http://xynerds.slack.com/">
-    <img src="https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack?style=flat-square" alt="Slack">
+    <img src="https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack&style=flat-square" alt="Slack">
   </a>
 </p>
 
