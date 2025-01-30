@@ -313,17 +313,16 @@ export const jsonParseLLMOutput = (text: string): any => {
     }
     try {
       jsonVal = parse(text.trim())
-      // If empty object but we have content, try removing newlines
-      // we have a case where if content has new lines the parse
-      // library just returns empty object and fails to parse multi line strings
+      // If the object is empty but contains content, we explicitly add newline and carriage return characters (\\n).
+      // This is necessary because the parsing library fails to handle multi-line strings properly,
+      // returning an empty object when newlines are present in the content.
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
-        // Count newlines before removing
-        const newlineCount = (text.match(/\n/g) || []).length
-        Logger.info(`Found ${newlineCount} newlines in text before stripping`)
-
-        // Try parsing without newlines
-        const withoutNewlines = text.replace(/\n\s*/g, " ")
-        jsonVal = parse(withoutNewlines.trim())
+        // Replace newlines with \n in content between quotes
+        const withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
+          const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
+          return `: "${escaped}"`
+        })
+        jsonVal = parse(withNewLines.trim())
       }
       return jsonVal
     } catch {
@@ -336,6 +335,8 @@ export const jsonParseLLMOutput = (text: string): any => {
         .replace(/```(json)?/g, "")
         .replace(/```/g, "")
         .replace(/\/\/.*$/gm, "")
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r")
         .trim()
       if (!text) {
         return ""
