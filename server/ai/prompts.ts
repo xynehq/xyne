@@ -126,7 +126,9 @@ Rules for citations:
 Do not include any additional text outside of the JSON structure.
 `
 
-export const analyzeInitialResultsOrRewriteSystemPrompt = (userCtx: string) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
+export const analyzeInitialResultsOrRewriteSystemPrompt = (
+  userCtx: string,
+) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
 
 **Context of user asking the query:**
 ${userCtx}
@@ -229,6 +231,7 @@ Given the user's question and the context (which includes indexed information), 
    - Only use the most recent information available.
    - If you are not sure, do not provide an answer, leave it empty
    - Include the indices of the supporting evidence in "usefulIndex" so in future iterations you will get that context
+   - Write markdown text wherever neccessary
 2. **Search Refinement**:
    - If you cannot fully answer, suggest alternative search queries in "searchQueries"
    - Each query should focus on a different aspect of the information needed
@@ -572,6 +575,7 @@ You must respond in valid JSON format with the following structure:
 - No explanation why answer was not found in the context, just set it to null
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
+- Write markdown text wherever neccessary
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
 
@@ -630,7 +634,9 @@ export const queryRewritePromptJson = (
   - "engineering team lead salary structure"
   - "employee compensation package information"`
 
-export const temporalEventClassifier = (query: string) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
+export const temporalEventClassifier = (
+  query: string,
+) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
 
 The query: "${query}"
 
@@ -696,7 +702,7 @@ export const searchQueryPrompt = (userContext: string): string => {
          "queryRewrite": "<string or null>"
        }
   
-       - "answer" should only contain text found directly in the conversation if it answers the user. Otherwise, "answer" must be null.
+       - "answer" should only contain text found directly in the conversation if it answers the user. Otherwise, "answer" must be null and please write markdown text wherever neccessary.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
   
     5. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
@@ -792,4 +798,6 @@ Bad: "No clear meeting information found" (Use null instead)
 - Stay focused on temporal aspects while including key details
 - Use user's timezone for all times
 - When both email and calendar info exists, prioritize the most relevant based on query
-- For recurring meetings, focus on the specific occurrence relevant to the query`
+- For recurring meetings, focus on the specific occurrence relevant to the query
+- Write markdown text wherever neccessary
+`
