@@ -17,7 +17,7 @@ Open source alternative to Glean
     <img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License">
   </a>
   <a href="http://xynerds.slack.com/">
-    <img src="https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack?style=flat-square" alt="Slack">
+    <img src="https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack&style=flat-square" alt="Slack">
   </a>
 </p>
 
