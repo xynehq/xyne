@@ -787,7 +787,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 value={editedTitle!}
               />
             ) : (
-              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+              <span className="flex-grow text-[#1C1D1F] text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
                 {chatTitle}
               </span>
             )}
@@ -961,7 +961,7 @@ const MessageCitationList = ({
             >
               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                 <div className="flex flex-col w-full">
-                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis">
+                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
                     {citation.title}
                   </p>
                   <div className="flex flex-col mt-[9px]">
@@ -986,19 +986,18 @@ const MessageCitationList = ({
             </a>
           </li>
         ))}
-        {!!citations.length &&
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <img
-              onClick={onToggleSources}
-              className="cursor-pointer"
-              src={Expand}
-            />
-          </TooltipTrigger>
-          <Tip side="right" info="Show All Sources" margin="ml-[16px]" />
-        </Tooltip>
-
-        }
+        {!!citations.length && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <img
+                onClick={onToggleSources}
+                className="cursor-pointer"
+                src={Expand}
+              />
+            </TooltipTrigger>
+            <Tip side="right" info="Show All Sources" margin="ml-[16px]" />
+          </Tooltip>
+        )}
       </ul>
     </TooltipProvider>
   )
@@ -1024,13 +1023,13 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 rel="noopener noreferrer"
                 title={citation.title}
                 href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] mt-[3px] rounded-full text-[9px] mr-[8px]"
+                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] rounded-full text-[9px] mr-[8px]"
                 style={{ fontFamily: "JetBrains Mono" }}
               >
                 {index + 1}
               </a>
               <div className="flex flex-col mr-[12px]">
-                <span className="">{citation.title}</span>
+                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">{citation.title}</span>
                 <div className="flex items-center pb-[12px] mt-[8px]">
                   {getIcon(citation.app, citation.entity)}
                   <span className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]">
@@ -1169,7 +1168,7 @@ const ChatMessage = ({
               <div className="flex ml-[52px] mt-[24px] items-center">
                 <Copy
                   size={16}
-                  stroke={`${isCopied ? "#4F535C" : "#9EA6B8"}`}
+                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
                   onMouseDown={(e) => setIsCopied(true)}
                   onMouseUp={(e) => setIsCopied(false)}

@@ -9,7 +9,6 @@ import { z } from "zod"
 const {
   AwsAccessKey,
   AwsSecretKey,
-  AwsRegion,
   OllamaModel,
   OpenAIKey,
   defaultBestModel,
@@ -88,7 +87,13 @@ let ollamaProvider: LLMProvider | null = null
 const initializeProviders = (): void => {
   if (providersInitialized) return
 
-  if (AwsAccessKey && AwsSecretKey && AwsRegion) {
+  if (AwsAccessKey && AwsSecretKey) {
+    const AwsRegion = process.env["AWS_REGION"] || "us-west-2"
+    if (!process.env["AWS_REGION"]) {
+      Logger.info(
+        "AWS_REGION not provided, falling back to default 'us-west-2'",
+      )
+    }
     const BedrockClient = new BedrockRuntimeClient({
       region: AwsRegion,
       credentials: {
