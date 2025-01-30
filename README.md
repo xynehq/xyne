@@ -1,11 +1,20 @@
-# Xyne
+<div align="center">
+
+<img alt="xyne-logo" src="docs/readme/logo.svg?raw=true" width="100">
+
+</div>
+<h1 align="center">AI-first Search & Answer Engine for work.</h1>
+<div align="center">
+Open source alternative to Glean
+</div>
+<br>
 
 [![Release](https://img.shields.io/github/release/xynehq/xyne.svg?style=flat-square)](https://github.com/xynehq/Xyne/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
-
+[![Slack](https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack?style=flat-square)](http://xynerds.slack.com/)
 ## 📌 What is Xyne 
-Xyne is an Al-first Search & Answer Engine for work. We're an
-OSS alternative to Glean, Gemini and MS Copilot.
+![Xyne App](docs/readme/Xyne-Readme.png)
+
 Your work information has become fragmented across so many
 SaaS apps, docs, files, repos, projects, issues, emails,
 messages, tickets, etc. Xyne connects to your applications like
@@ -17,10 +26,10 @@ Find that file, triage that issue, ask everything about a
 customer / deal / feature, discover the right people.
 
 
-You can check out our [documentation](https://xyne.mintlify.app/introduction) to lean more about Xyne.
+You can check out our [documentation](https://docs.xynehq.com) to learn more about Xyne.
 
 ## 💻 Using Xyne for your Workspace 	
-
+Follow the steps mentioned for the [Service Account integration](https://docs.xynehq.com/authentication/service-accounts) of Google Workspace
 
 ## 🚀 Deployment 
 ### Quickstart
