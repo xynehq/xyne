@@ -34,20 +34,29 @@ Once you have installed the dependency, you can use the following steps to set u
 
 Use the following git command to clone the Xyne repository.
 ```javascript
-git clone https://github.com/xynehq/Xyne.git
+git clone https://github.com/xynehq/xyne.git
 ```
 
 ### Pre Execution Steup [Environment Variables]:
 
-For enabling Google Authentication for your application you need to create and setup some environment variables: 
+For enabling Google Authentication for your application you need to create your google credentials and setup some environment variables: 
+
+You can obtain the ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following guide : 
+<Card
+  title="Setup Google Credentials"
+  icon="google"
+  href="/authentication/get-credentials"
+>
+Setup your Google Credentials for the application.
+</Card>
 
 #### Server side: 
-Inside the ```server``` folder of the ```Xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
+Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
-<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values.</Warning>
+<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values for security.</Warning>
 
-In the ```.env.temp``` file, you can modify the following :
+In the ```.env.temp``` file, you can modify the following and replace the missing values with your own :
 
 ```javascript .env.temp file
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
@@ -66,8 +75,8 @@ OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
 HOST=<YOUR_Public_IPv4_DNS_ADDRESS>
 AWS_REGION=<YOUR_AWS_REGION>
 ```
-<Note> You can obtain the GOOGLE_CLIENT_ID and GOOGLE_SECRET by following either the [Oauth](https://xyne.mintlify.app/authentication/oauth) or [Service](https://xyne.mintlify.app/authentication/service-accounts) Account authentication section depending on which procedure you choose.</Note>
-<Warning> Ensure that these IPv4 address is the same as the you've added in your Google Cloud Project</Warning>
+
+<Warning> Ensure that these IPv4 address is the same as the one you've added in your Google Cloud Project</Warning>
 
 ## Deploy Xyne with Docker  :
 
@@ -90,7 +99,7 @@ For this create a ```.env.production``` in your application, and then add the fo
  VITE_WS_BASE_URL=wss://<YOUR_AWS_INSTANCE_IPv4_DNS>
 ```
 
-<Warning> Ensure that these IPv4 address is the same as the you've added in your Google Cloud Project</Warning>
+<Warning> Ensure that these IPv4 address is the same as the one you've added in your Google Cloud Project</Warning>
 Save the file.
 
 Now you need to add this to the docker container running the app, for this use :

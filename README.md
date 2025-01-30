@@ -10,7 +10,7 @@ Open source alternative to Glean
 <br>
 
 <p align="center">
-  <a href="https://github.com/xynehq/Xyne/releases/latest">
+  <a href="https://github.com/xynehq/xyne/releases/latest">
     <img src="https://img.shields.io/github/release/xynehq/xyne.svg?style=flat-square" alt="Release">
   </a>
   <a href="https://opensource.org/licenses/Apache-2.0">

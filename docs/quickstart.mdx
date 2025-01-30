@@ -5,7 +5,7 @@ icon: 'rocket'
 ---
 
 
-If you want to deploy Xyne using on your local machine, this document will give you a detailed guide to do so.
+If you want to deploy Xyne using your local machine, this document will give you a detailed guide to do so.
 Follow the steps listed below to get started : 
 
 ## Install the required dependencies : 
@@ -19,9 +19,9 @@ Once you have installed the dependency, you can use the following steps to set u
 
 ## Clone the repository : 
 
-Use the following git command to clone the Xyne repository.
+Use the following git command to clone the xyne repository.
 ```javascript
-git clone https://github.com/xynehq/Xyne.git
+git clone https://github.com/xynehq/xyne.git
 ```
 
 ## Deploy Xyne with Docker  :
@@ -30,26 +30,36 @@ git clone https://github.com/xynehq/Xyne.git
 
 <Tip> If you have postgres running, we suggest you kill the process before starting docker </Tip>
 
-Run the application with the following command from the ```Xyne``` folder:
+Run the application with the following command from the ```xyne``` folder:
 ```javascript 
 docker-compose -f deployment/docker-compose.yml up
 ```
 
-And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to Xyne](http://localhost:3001/)
+And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to xyne](http://localhost:3001/)
 
 <Info> Since the size of the downloading models can be quite large, wait for the application to start running, this can take around 10 - 15 minutes, depending on your internet connection. </Info>
 
 ### Post Execution Steup [Environment Variables]:
 
-For enabling Google Authentication for your application you need to create and setup some environment variables: 
+For enabling Google Authentication for your application you need to create your google credentials and setup some environment variables: 
+
+You can obtain the ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following guide :
+<Card
+  title="Setup Google Credentials"
+  icon="google"
+  href="/authentication/get-credentials"
+>
+Setup your Google Credentials for the application.
+</Card>
 
 #### Server side: 
-Inside the ```server``` folder of the ```Xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
+Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
-<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values.</Warning>
 
-In the ```.env.temp``` file, you can modify the following with your own values:
+<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values for security.</Warning>
+
+In the ```.env.temp``` file, you can modify the following and replace the missing values with your own :
 
 ```javascript .env.temp file
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
@@ -68,10 +78,8 @@ OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
 HOST=http://localhost:3001
 AWS_REGION=<YOUR_AWS_REGION>
 ```
-<Note> You can obtain the GOOGLE_CLIENT_ID and GOOGLE_SECRET by following either the [Oauth](https://xyne.mintlify.app/authentication/oauth) or [Service](https://xyne.mintlify.app/authentication/service-accounts) Account authentication section depending on which procedure you choose.</Note>
 
-
-And build again from the ``Xyne`` folder using : 
+And build again from the ``xyne`` folder using : 
 
 ```javascript 
 docker-compose -f deployment/docker-compose.yml up 
@@ -80,7 +88,7 @@ docker-compose -f deployment/docker-compose.yml up
 <Note> Cuurently the client side has .env variables that refer to port 3001, if you've changed the port number ensure to change the values in the .env as well as well. </Note>
 
 ## Ingesting data 
-Follow the guide below to learn more about ingesting data into Xyne app: 
+Follow the guide below to learn more about ingesting data into xyne app: 
 
 <Card
   title="Ingest data in Xyne app"
