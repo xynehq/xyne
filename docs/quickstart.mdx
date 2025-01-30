@@ -57,15 +57,16 @@ SERVICE_ACCOUNT_ENCRYPTION_KEY=<YOUR_SERVICE_ACCOUNT_ENCRYPTION_KEY>
 # If you wish to execute authorization using Oauth then use :   
 GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
-GOOGLE_REDIRECT_URI=http://localhost:3001/v1/auth/callback
-GOOGLE_PROD_REDIRECT_URI=<YOUR_Public_IPv4_DNS_ADDRESS>/v1/auth/callback
+GOOGLE_REDIRECT_URI=http://localhost:3000/v1/auth/callback
+GOOGLE_PROD_REDIRECT_URI=http://localhost:3001/v1/auth/callback
 JWT_SECRET=<YOUR_JWT_SECRET>
 DATABASE_HOST=xyne-db
 VESPA_HOST=vespa
 AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY>
 AWS_SECRET_KEY=<YOUR_AWS_ACCESS_SECRET>
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
-HOST=http://localhost:3001/
+HOST=http://localhost:3001
+AWS_REGION=<YOUR_AWS_REGION>
 ```
 <Note> You can obtain the GOOGLE_CLIENT_ID and GOOGLE_SECRET by following either the [Oauth](https://xyne.mintlify.app/authentication/oauth) or [Service](https://xyne.mintlify.app/authentication/service-accounts) Account authentication section depending on which procedure you choose.</Note>
 
