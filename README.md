@@ -5,7 +5,7 @@
 </div>
 <h1 align="center">AI-first Search & Answer Engine for work.</h1>
 <div align="center">
-Open source alternative to Glean
+Open-source alternative to Glean, Gemini, and MS Copilot.
 </div>
 <br>
 
