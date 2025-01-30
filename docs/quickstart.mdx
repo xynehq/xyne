@@ -41,13 +41,9 @@ And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to
 
 ### Post Execution Steup [Environment Variables]:
 
-For enabling Google Authentication for your application you need to create and setup some environment variables: 
+For enabling Google Authentication for your application you need to create your google credentials and setup some environment variables: 
 
-#### Server side: 
-Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
-For the moment you will find some default generated environment variables that we've set up for the app to work.
-
-You can obtain the GOOGLE_CLIENT_ID and GOOGLE_SECRET by following guide :
+You can obtain the ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following guide :
 <Card
   title="Setup Google Credentials"
   icon="google"
@@ -56,9 +52,14 @@ You can obtain the GOOGLE_CLIENT_ID and GOOGLE_SECRET by following guide :
 Setup your Google Credentials for the application.
 </Card>
 
-<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values.</Warning>
+#### Server side: 
+Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
+For the moment you will find some default generated environment variables that we've set up for the app to work.
 
-In the ```.env.temp``` file, you can modify the following with your own values:
+
+<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values for security.</Warning>
+
+In the ```.env.temp``` file, you can modify the following and replace the missing values with your own :
 
 ```javascript .env.temp file
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
