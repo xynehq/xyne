@@ -42,12 +42,12 @@ ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
 GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
 GOOGLE_REDIRECT_URI=http://localhost:3000/v1/auth/callback
-POST_OAUTH_REDIRECT=http://localhost:5173/
+HOST=http://localhost:5173
 JWT_SECRET=<YOUR_JWT_SECRET>
 DATABASE_HOST=xyne-db
 VESPA_HOST=vespa
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
-HOST=<YOUR_HOST>
+AWS_REGION=<YOUR_AWS_REGION>
 ```
 
 ### Set up Docker
@@ -109,7 +109,7 @@ Then start the client using the command :
 bun run dev
 ```
 
-The app will now be available in port ```5173```.  [Go to Xyne](http://localhost:5173/)
+The app will now be available in port ```5173```.  [Go to xyne](http://localhost:5173/)
 
 
 <Tip>In case of any required support, feel free to [Contact Us](mailto:founders@xynehq.com)</Tip>

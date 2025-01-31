@@ -5,7 +5,7 @@
     "dark": "/logo/dark.svg",
     "light": "/logo/light.svg"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/logo/logo.svg",
   "colors": {
     "primary": "#FF4F4F",
     "light": "#FF7F7F",
@@ -22,7 +22,7 @@
     }
   ],
   "topbarCtaButton": {
-    "name": "Dashboard",
+    "name": "Xyne",
     "url": "https://www.xynehq.com/"
   },
 
@@ -30,12 +30,12 @@
     {
       "name": "Community",
       "icon": "slack",
-      "url": "https://mintlify.com/community"
+      "url": "https://xynerds.slack.com/"
     },
     {
-      "name": "Blog",
-      "icon": "newspaper",
-      "url": "https://mintlify.com/blog"
+      "name": "Github",
+      "icon": "github",
+      "url": "https://github.com/xynehq/xyne"
     }
   ],
   "navigation": [
@@ -66,6 +66,12 @@
     {
       "group": "For Developers",
       "pages": ["contribution/contribute"]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/introduction"
     }
   ],
   "footerSocials": {

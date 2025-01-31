@@ -4,11 +4,21 @@ description: 'Oauth Authorization'
 icon: 'lock'
 ---
 
-## Setting up a project in Google Cloud Console
-Create a new project in [Google Cloud Console](https://console.cloud.google.com/projectcreate) 
-<img height="200" src="../images/oauth-1.png" />
+This guide assumes you've already configured your google credentials, incase you haven't follow the guide below to first do that :
+
+<Card
+  title="Setup Google Credentials"
+  icon="google"
+  href="/authentication/get-credentials"
+>
+Setup your Google Credentials for the application.
+</Card>
+
 
 ## Enabling APIs
+Switch to the new project you just created.
+
+
 The first step is to enable the APIs is needed for the app.
 - From the menu in the side bar, under APIs and Services section select the ```Enabled APIs & Services```.
 <img height="200" src="../images/enable-apis1.png" />
@@ -18,9 +28,9 @@ The first step is to enable the APIs is needed for the app.
 <img height="200" src="../images/enable-apis3.png" />
 - Once you search for an API, you will find a list of APIs. 
 <img height="200" src="../images/enable-apis4.png" />
-- From the list of APIs, select the API that you want to enable. And then click on ```Enable``` in the API page.
+- From the list of APIs, select the Google Drive API to enable. And then click on ```Enable``` in the API page.
 <img height="200" src="../images/enable-apis5.png" />
-- Once the API is enabled, you will see that the Enable button noe changes to Manage. This means that the API has been enabled.
+- Once the API is enabled, you will see that the Enable button now changes to ```Manage```. This means that the API has been enabled.
 <img height="200" src="../images/enable-apis6.png" />
 - When you go back to the ```Enabled APIs & Services``` page, you will see that the enabled API has appeared in the list.
 <img height="200" src="../images/enable-apis7.png" />
@@ -44,8 +54,6 @@ For this navigate to the Oauth Consent Screen in the Sidebar of your Google Clou
 Under ```OAuth Consent``` screen select ```Internal``` : 
 <img height="200" src="../images/oauth-int.png" />
 
- - Since you're in a Google Workspace, you should choose ```Internal```.
-
 Click on ```Create```
 
 Under the ```App Information``` Section, fill out the details :
@@ -57,9 +65,7 @@ Under the ```App Information``` Section, fill out the details :
 
  Click ```Save and Continue```
 
-Under the ```Scopes``` section, you can choose to add the basic scopes ,
-
-You'll see the ```Add or Remove Scopes``` section : 
+Under the ```Scopes``` section you'll see the ```Add or Remove Scopes``` button. Click on that: 
 <img height="200" src="../images/oauth-scopes.png" />
 
 You will see the scopes on the right side like this :
@@ -98,28 +104,6 @@ You can also choose to ```manually``` add the scopes in the ```box``` below.
 
 Leave the next page ,i.e. ```Test users``` blank.
 This concludes the setting-up of your Oauth Consent Screen
-
-### Setting up the OAuth Credentials
-Furthermore Under APIs and Services section,
-<img height="200" src="../images/oauth-4.png" />
-- Navigate to the Credentials Section in the sidebar, and click on  ```+CREATE CREDENTIALS ```. 
-Under that select the ```OAuth client ID``` option. 
-<img height="200" src="../images/oauth-5.png" />
-
-- Add the type as ```Web Application```, and give it a name (For ex: Xyne)
-<img height="200" src="../images/oauth-6.png" />
-
-- Add Authorized JavaScript origins as:
-    - ```http://localhost:3000``` for local or replace with ```http://<YOUR_AWS_EC2_IPv4_DNS>``` for production.
-
-- Add Authorized redirect URIs as:
-    - ```http://localhost:3001/v1/auth/callback``` for local setup or ```https://<YOUR_AWS_EC2_IPv4_DNS>/v1/auth/callback``` for production.
-    - ```http://localhost:3001/oauth/callback``` for local setup or ```https://<YOUR_AWS_EC2_IPv4_DNS>/oauth/callback``` for production.
-
-<Note> Use ```http://localhost:3000/v1/auth/callback``` and ```http://localhost:3000/oauth/callback``` when using devmode.</Note>
-
-Click ```CREATE``` and make sure save the Client ID and Client Secret for putting it in the [```.env``` of the application](https://xyne.mintlify.app/quickstart#post-execution-steup-environment-variables)
-
 
 
 This concludes the set-up process of Google Oauth.

@@ -38,7 +38,8 @@ import { JWT } from "google-auth-library"
 import {
   getGmailAttachmentChunks,
   parseAttachments,
-} from "@/integrations/google/utils"
+} from "@/integrations/google/worker-utils"
+
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -86,8 +87,8 @@ self.onmessage = async (event: MessageEvent<MessageType>) => {
   }
 }
 
-self.onerror = (error) => {
-  Logger.error(error, `Error in Gmail worker: ${error}`)
+self.onerror = (error: ErrorEvent) => {
+  Logger.error(error, `Error in Gmail worker: ${JSON.stringify(error)}`)
 }
 
 export const handleGmailIngestion = async (

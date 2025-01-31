@@ -72,6 +72,11 @@ export enum SyncJobStatus {
   Successful = "Successful",
 }
 
+export enum OpenAIError {
+  RateLimitError = 'rate_limit_exceeded',
+  InvalidAPIKey = 'invalid_api_key'
+}
+
 export const AutocompleteFileSchema = z
   .object({
     type: z.literal(fileSchema),

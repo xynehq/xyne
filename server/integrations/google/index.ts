@@ -34,7 +34,7 @@ import {
   UpdateEventCancelledInstances,
 } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
-import { wsConnections } from "@/server"
+import { wsConnections } from "@/integrations/google/ws"
 import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import { connectors, type SelectConnector } from "@/db/schema"
@@ -106,6 +106,7 @@ import {
 } from "./tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -707,7 +708,7 @@ const messageTypes = z.discriminatedUnion("type", [stats, historyId])
 
 type ResponseType = z.infer<typeof messageTypes>
 
-gmailWorker.onerror = (error) => {
+gmailWorker.onerror = (error: ErrorEvent) => {
   Logger.error(error, `Error in main thread: worker: ${JSON.stringify(error)}`)
 }
 
