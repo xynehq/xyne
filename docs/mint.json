@@ -38,12 +38,6 @@
       "url": "https://github.com/xynehq/xyne"
     }
   ],
-  "redirects": [
-    {
-      "source": "/introduction",
-      "destination": "/"
-    }
-  ],
   "navigation": [
     {
       "group": "Get Started",
@@ -72,6 +66,12 @@
     {
       "group": "For Developers",
       "pages": ["contribution/contribute"]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/introduction"
     }
   ],
   "footerSocials": {
