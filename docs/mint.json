@@ -68,6 +68,12 @@
       "pages": ["contribution/contribute"]
     }
   ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/introduction"
+    }
+  ],
   "footerSocials": {
     "x": "https://x.com/mintlify",
     "github": "https://github.com/xynehq",
