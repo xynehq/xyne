@@ -7,7 +7,7 @@
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License">
   </a>
-  <a href="http://xynerds.slack.com/">
+  <a href="https://join.slack.com/t/xynerds/shared_invite/zt-2z2x1c7cw-wMTfymVAhmu2abkVXopVQQ">
     <img src="https://img.shields.io/badge/slack-xyne-brightgreen.svg?logo=slack&style=flat-square" alt="Slack">
   </a>
 </p>
