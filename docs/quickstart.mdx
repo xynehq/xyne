@@ -43,6 +43,12 @@ And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to
 
 For enabling Google Authentication for your application you need to create your google credentials and setup some environment variables: 
 
+First take down the docker-compose using  : 
+
+```javascript 
+docker-compose -f deployment/docker-compose.yml down
+```
+
 You can obtain the ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following guide :
 <Card
   title="Setup Google Credentials"
