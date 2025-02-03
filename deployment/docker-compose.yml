@@ -49,6 +49,10 @@ services:
       - ../server/vespa-logs:/opt/vespa/logs
     networks:
       - xyne
+    deploy:
+      resources:
+        limits:
+          memory: 6G
     ulimits:
       nproc: 409600
     restart: always
