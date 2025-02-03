@@ -3,7 +3,8 @@
   "name": "Xyne",
   "logo": {
     "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "light": "/logo/light.svg",
+     "href": "https://xynehq.com/"
   },
   "favicon": "/logo/logo.svg",
   "colors": {
@@ -22,10 +23,15 @@
     }
   ],
   "topbarCtaButton": {
-    "name": "Xyne",
-    "url": "https://www.xynehq.com/"
+    "url": "https://github.com/xynehq/xyne",
+    "type": "github"
   },
-
+  "tabs": [
+    {
+      "name": "Changelog",
+      "url": "changelog"
+    }
+  ],
   "anchors": [
     {
       "name": "Community",
@@ -33,9 +39,9 @@
       "url": "https://xynerds.slack.com/"
     },
     {
-      "name": "Github",
-      "icon": "github",
-      "url": "https://github.com/xynehq/xyne"
+      "name": "Xyne",
+      "icon": "x",
+      "url": "https://xynehq.com/"
     }
   ],
   "navigation": [
@@ -66,6 +72,10 @@
     {
       "group": "For Developers",
       "pages": ["contribution/contribute"]
+    },
+    {
+      "group": "Changelog",
+      "pages": ["changelog/overview"]
     }
   ],
   "redirects": [
