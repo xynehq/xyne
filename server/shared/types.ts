@@ -73,8 +73,8 @@ export enum SyncJobStatus {
 }
 
 export enum OpenAIError {
-  RateLimitError = 'rate_limit_exceeded',
-  InvalidAPIKey = 'invalid_api_key'
+  RateLimitError = "rate_limit_exceeded",
+  InvalidAPIKey = "invalid_api_key",
 }
 
 export const AutocompleteFileSchema = z

@@ -1,6 +1,6 @@
 ---
 title: 'OAuth'
-description: 'Oauth Authorization'
+description: 'OAuth Authorization'
 icon: 'lock'
 ---
 
@@ -30,8 +30,8 @@ The first step is to enable the APIs is needed for the app.
 <img height="200" src="../images/enable-apis4.png" />
 - From the list of APIs, select the Google Drive API to enable. And then click on ```Enable``` in the API page.
 <img height="200" src="../images/enable-apis5.png" />
-- Once the API is enabled, you will see that the Enable button now changes to ```Manage```. This means that the API has been enabled.
-<img height="200" src="../images/enable-apis6.png" />
+- Once the API is enabled, you will see that a ```DISABLE API``` button appears on top of the page.
+<img height="200" src="../images/disableapi.png" />
 - When you go back to the ```Enabled APIs & Services``` page, you will see that the enabled API has appeared in the list.
 <img height="200" src="../images/enable-apis7.png" />
 
@@ -46,9 +46,9 @@ Following the same steps above, enable the following APIs :
  - [People](https://console.cloud.google.com/apis/library/people.googleapis.com)
 
 
-### Setting up the Oauth Consent Screen
-Once you've enabled the APIs, you'll also need to add the scopes for this APIs. For our app we only require ```readonly``` scopes for all the APIs.
-For this navigate to the Oauth Consent Screen in the Sidebar of your Google Cloud Console : 
+### Setting up the OAuth Consent Screen
+Once you've enabled the APIs, you'll also need to add the scopes for these APIs. For our app we only require ```readonly``` scopes for all the APIs.
+For this navigate to the OAuth Consent Screen in the Sidebar of your Google Cloud Console : 
 <img height="200" src="../images/oauth-2.png" />
 
 Under ```OAuth Consent``` screen select ```Internal``` : 
@@ -71,19 +71,20 @@ Under the ```Scopes``` section you'll see the ```Add or Remove Scopes``` button.
 You will see the scopes on the right side like this :
 <img height="200" src="../images/oauth-scopes-add.png" />
 
-Ensure to select the checkbox for these scopes : 
- - ```.../auth/userinfo.email``` 
- - ```.../auth/userinfo.profile```
+Along with the scopes you had added before, add the rest of scopes for the enabled apis : 
+
+Ensure to select the checkbox for all of these scopes : 
+ - ```/auth/userinfo.email``` 
+ - ```/auth/userinfo.profile```
  - ```openid```
- - ```../auth/drive.readonly```
- - ```../auth/admin.directory.user.readonly```
- - ```../auth/documents.readonly```
- - ```../auth/spreadsheets.readonly```
- - ```../auth/presentations.readonly```
- - ```../auth/contacts.readonly```
- - ```../auth/contacts.other.readonly```
- - ```../auth/gmail.readonly```
- - ```../auth/calendar.events.readonly```
+ - ```/auth/drive.readonly```
+ - ```/auth/documents.readonly```
+ - ```/auth/spreadsheets.readonly```
+ - ```/auth/presentations.readonly```
+ - ```/auth/contacts.readonly```
+ - ```/auth/contacts.other.readonly```
+ - ```/auth/gmail.readonly```
+ - ```/auth/calendar.events.readonly```
 
 You can also choose to ```manually``` add the scopes in the ```box``` below.
 
@@ -92,7 +93,6 @@ You can also choose to ```manually``` add the scopes in the ```box``` below.
   https://www.googleapis.com/auth/userinfo.profile,
   openid,
   https://www.googleapis.com/auth/drive.readonly,
-  https://www.googleapis.com/auth/admin.directory.user.readonly
   https://www.googleapis.com/auth/documents.readonly,
   https://www.googleapis.com/auth/spreadsheets.readonly,
   https://www.googleapis.com/auth/presentations.readonly,
@@ -102,10 +102,12 @@ You can also choose to ```manually``` add the scopes in the ```box``` below.
   https://www.googleapis.com/auth/calendar.events.readonly,
 ```
 
+Click on ```ADD TO TABLE```, and then ```UPDATE```.
+
 Leave the next page ,i.e. ```Test users``` blank.
-This concludes the setting-up of your Oauth Consent Screen
+This concludes the setting-up of your OAuth Consent Screen
 
 
-This concludes the set-up process of Google Oauth.
+This concludes the set-up process of Google OAuth.
 
 

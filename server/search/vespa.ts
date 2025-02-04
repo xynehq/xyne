@@ -296,7 +296,7 @@ export const HybridDefaultProfile = (
           (
             ({targetHits:${hits}}userInput(@query))
             ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : appOrEntityFilter}
+            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and permissions contains @email`}
           )
           or
           (
