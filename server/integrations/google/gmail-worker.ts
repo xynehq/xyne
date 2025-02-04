@@ -40,7 +40,6 @@ import {
   parseAttachments,
 } from "@/integrations/google/worker-utils"
 
-
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
   userEmail: z.string(),

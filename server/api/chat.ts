@@ -810,12 +810,13 @@ export async function* UnderstandMessageAndAnswer(
 }
 
 const handleError = (error: any) => {
-  let errorMessage = "Something went wrong. Please try again.";
-  if(error?.code === OpenAIError.RateLimitError){
+  let errorMessage = "Something went wrong. Please try again."
+  if (error?.code === OpenAIError.RateLimitError) {
     errorMessage = "Rate limit exceeded. Please try again later."
-  } else if(error?.code === OpenAIError.InvalidAPIKey) {
-    errorMessage = "Invalid API key provided. Please check your API key and ensure it is correct."
-  } 
+  } else if (error?.code === OpenAIError.InvalidAPIKey) {
+    errorMessage =
+      "Invalid API key provided. Please check your API key and ensure it is correct."
+  }
   return errorMessage
 }
 

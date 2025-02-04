@@ -1029,7 +1029,9 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 {index + 1}
               </a>
               <div className="flex flex-col mr-[12px]">
-                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">{citation.title}</span>
+                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
+                  {citation.title}
+                </span>
                 <div className="flex items-center pb-[12px] mt-[8px]">
                   {getIcon(citation.app, citation.entity)}
                   <span className="text-[#848DA1] text-[13px] tracking-[0.01em] leading-[16px]">
