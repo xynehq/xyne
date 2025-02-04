@@ -1529,7 +1529,10 @@ export const handleGoogleServiceAccountChanges = async (
         `Could not successfully complete ServiceAccount sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
 
-      if(errorMessage === 'Sync token is no longer valid, a full sync is required.') {
+      if (
+        errorMessage ===
+        "Sync token is no longer valid, a full sync is required."
+      ) {
         continue
       }
       const config: CalendarEventsChangeToken =

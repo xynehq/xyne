@@ -112,7 +112,6 @@ const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 
 app.use("*", honoMiddlewareLogger)
 
-
 export const WsApp = app.get(
   "/ws",
   upgradeWebSocket((c) => {

@@ -126,7 +126,9 @@ Rules for citations:
 Do not include any additional text outside of the JSON structure.
 `
 
-export const analyzeInitialResultsOrRewriteSystemPrompt = (userCtx: string) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
+export const analyzeInitialResultsOrRewriteSystemPrompt = (
+  userCtx: string,
+) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
 
 **Context of user asking the query:**
 ${userCtx}
@@ -630,7 +632,9 @@ export const queryRewritePromptJson = (
   - "engineering team lead salary structure"
   - "employee compensation package information"`
 
-export const temporalEventClassifier = (query: string) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
+export const temporalEventClassifier = (
+  query: string,
+) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
 
 The query: "${query}"
 
