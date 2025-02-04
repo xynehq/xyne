@@ -188,18 +188,30 @@ schema user {
     }
 
     rank-profile default {
-        match-features {
-            bm25(name)
-            bm25(email)
+        constants {
+            decay: 0.8
         }
+
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
         }
 
+        function combined_bm25(){
+            expression: bm25(name) + bm25(email)
+        }
+
         global-phase {
+            # Added slight decay to mitigate the disproportionate increase in BM25 scores 
+            # for shorter content with minimal matches, preventing them from 
+            # overpowering more relevant documents.
             expression {
-                scale(bm25(name) + bm25(email))
+               (decay * scale(combined_bm25))
             }
+        }
+
+        match-features {
+            bm25(name)
+            bm25(email)
         }
     }
 
