@@ -188,13 +188,21 @@ schema user {
     }
 
     rank-profile default {
+        constants {
+            decay: 0.8
+        }
+
         match-features {
             bm25(name)
             bm25(email)
         }
+
         global-phase {
+            # Added slight decay to mitigate the disproportionate increase in BM25 scores 
+            # for shorter content with minimal matches, preventing them from 
+            # overpowering more relevant documents.
             expression {
-                normalize_linear(bm25(name))+ normalize_linear(bm25(email))
+               (decay * normalize_linear(bm25(name))) + (decay * normalize_linear(bm25(email)))
             }
         }
     }
