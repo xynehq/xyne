@@ -264,7 +264,7 @@ export const answerMetadataContextMap = (
       searchResult.fields,
       searchResult.relevance,
     )
-  } else if(searchResult.fields.sddocname === mailAttachmentSchema){
+  } else if (searchResult.fields.sddocname === mailAttachmentSchema) {
     return constructMailAttachmentMetadataContext(
       searchResult.fields,
       searchResult.relevance,
@@ -272,7 +272,9 @@ export const answerMetadataContextMap = (
   } else if (searchResult.fields.sddocname === eventSchema) {
     return constructEventContext(searchResult.fields, searchResult.relevance)
   } else {
-    throw new Error(`Invalid search result type: ${searchResult.fields.sddocname}`)
+    throw new Error(
+      `Invalid search result type: ${searchResult.fields.sddocname}`,
+    )
   }
 }
 
@@ -295,7 +297,9 @@ export const answerColoredContextMap = (
       searchResult.relevance,
     )
   } else {
-    throw new Error(`Invalid search result type: ${searchResult.fields.sddocname}`)
+    throw new Error(
+      `Invalid search result type: ${searchResult.fields.sddocname}`,
+    )
   }
 }
 
@@ -327,7 +331,9 @@ export const answerContextMap = (
       maxSummaryChunks,
     )
   } else {
-    throw new Error(`Invalid search result type: ${searchResult.fields.sddocname}`)
+    throw new Error(
+      `Invalid search result type: ${searchResult.fields.sddocname}`,
+    )
   }
 }
 
@@ -368,17 +374,22 @@ const cleanColoredDocs = (text: string): string => {
 }
 
 // google docs need lots of cleanup
-const cleanDocs = (text: string): string => {
+export const cleanDocs = (text: string): string => {
   const urlPattern =
     /!\[.*?\]\(https:\/\/lh7-rt\.googleusercontent\.com\/docsz\/[a-zA-Z0-9-_?=&]+\)/g
   let cleanedText = text.replace(urlPattern, "")
 
+  // Handle newlines first
+  cleanedText = cleanedText.replace(/\s+/g, " ")
+
   // ........
-  const extendedEllipsisPattern = /[…\.\s]{2,}/g
+  const extendedEllipsisPattern = /[…\.]{2,}/g
   cleanedText = cleanedText.replace(extendedEllipsisPattern, " ")
-  // .0.0.0.0.0.0.0.0
-  const repetitiveDotZeroPattern = /(?:\.0)+(\.\d+)?/g
-  cleanedText = cleanedText.replace(repetitiveDotZeroPattern, "")
+
+  // .0.0.0.0.0.0.0.0 while retaining the numeric
+  const repetitiveDotZeroPattern = /(?<!\d)\s*[.0]+\.0(?:\.0)+\s*/g
+
+  cleanedText = cleanedText.replace(repetitiveDotZeroPattern, " ")
 
   // Remove control characters
   const controlCharsPattern = /[\x00-\x1F\x7F-\x9F]/g
@@ -388,7 +399,7 @@ const cleanDocs = (text: string): string => {
   const invalidUtfPattern = /[\uE907\uFFFD]/g
   cleanedText = cleanedText.replace(invalidUtfPattern, "")
 
-  return cleanedText
+  return cleanedText.trim()
 }
 
 // TODO:
