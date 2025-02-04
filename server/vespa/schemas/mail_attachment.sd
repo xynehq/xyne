@@ -99,14 +99,20 @@ schema mail_attachment {
       query(bm25ChunkWeight) double 
     }
 
+    constants {
+      THREE_MONTHS_IN_SECONDS: 7890000
+      ONE_YEAR_IN_SECONDS: 31536000
+      MAX_DOC_DECAY: 0.75
+    }
+
     function document_age() {
       # Default document age assuming to 3 months when no updateAt timestamp is present
-      expression: max(if(isNan(attribute(timestamp)) == 1, 7890000, now() - (attribute(timestamp) / 1000)) / 31536000, 0)
+      expression: max(if(isNan(attribute(timestamp)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(timestamp) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
     }
 
     # Document score decays from 1 to 0.75 as age of last updated time increases 
     function doc_recency() {
-        expression: max(1 / (1 + 0.5 * document_age), 0.75)
+        expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
 
     function chunk_vector_score() {

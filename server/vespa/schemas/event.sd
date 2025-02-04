@@ -163,26 +163,25 @@ schema event {
             query(bm25ChunkWeight) double 
         }
 
+        constants {
+          THREE_MONTHS_IN_SECONDS: 7890000
+          ONE_YEAR_IN_SECONDS: 31536000
+          MAX_DOC_DECAY: 0.75
+          META_FIELDS_DECAY: 0.8
+        }
+
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
-        }
-        
-        function freshness_score() {
-            expression: exp(-1 * (now() - (attribute(createdAt) / 1000)) / (3600 * 24))
-        }
-        
-        function freshness_weight(){
-            expression: if(scale(bm25(name)) > 0.6, freshness_score, if(scale(bm25(description)) > 0.6, freshness_score,0))
         }
 
         function document_age() {
             # Default document age assuming to 3 months when no updateAt timestamp is present
-            expression: max(if(isNan(attribute(createdAt)) == 1, 7890000, now() - (attribute(createdAt) / 1000)) / 31536000, 0)
+            expression: max(if(isNan(attribute(createdAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(createdAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
         }
 
         # Document score decays from 1 to 0.75 as age of last updated time increases 
         function doc_recency() {
-            expression: max(1 / (1 + 0.5 * document_age), 0.75)
+            expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
         }
 
         function vector_score() {
@@ -200,7 +199,7 @@ schema event {
         function combined_bm25() {
             expression {
                 scale(bm25(name) + bm25(url) + bm25(description)) +
-                (0.8 * scale(bm25(attachmentFilenames) + bm25(attendeesNames)))
+                (META_FIELDS_DECAY * scale(bm25(attachmentFilenames) + bm25(attendeesNames)))
             }
         }
 
