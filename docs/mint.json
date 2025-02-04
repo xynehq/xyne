@@ -71,7 +71,7 @@
     },
     {
       "group": "For Developers",
-      "pages": ["contribution/contribute"]
+      "pages": ["contribution/contribute", "contribution/devmode"]
     },
     {
       "group": "Changelog",
