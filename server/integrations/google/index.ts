@@ -120,12 +120,16 @@ const listUsers = async (
   try {
     do {
       const res: GaxiosResponse<admin_directory_v1.Schema$Users> =
-        await admin.users.list({
-          domain: domain,
-          maxResults: 500,
-          orderBy: "email",
-          ...(nextPageToken ? { pageToken: nextPageToken } : {}),
-        })
+        await retryWithBackoff(
+          () =>
+            admin.users.list({
+              domain: domain,
+              maxResults: 500,
+              orderBy: "email",
+              ...(nextPageToken! ? { pageToken: nextPageToken } : {}),
+            }),
+          `Fetching all users`,
+        )
       if (res.data.users) {
         users = users.concat(res.data.users)
       }
@@ -422,14 +426,18 @@ const insertCalendarEvents = async (
   // we will fetch from one year back
   currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
   do {
-    const res = await calendar.events.list({
-      calendarId: "primary",
-      timeMin: currentDateTime.toISOString(),
-      timeMax: nextYearDateTime.toISOString(),
-      maxResults: maxCalendarEventResults, // Limit the number of results
-      pageToken: nextPageToken,
-      fields: eventFields,
-    })
+    const res = await retryWithBackoff(
+      () =>
+        calendar.events.list({
+          calendarId: "primary",
+          timeMin: currentDateTime.toISOString(),
+          timeMax: nextYearDateTime.toISOString(),
+          maxResults: maxCalendarEventResults, // Limit the number of results
+          pageToken: nextPageToken,
+          fields: eventFields,
+        }),
+      `Fetching all calendar events`,
+    )
     if (res.data.items) {
       events = events.concat(res.data.items)
     }
@@ -975,9 +983,13 @@ export const getPresentationToBeIngested = async (
   client: GoogleClient,
 ) => {
   const slides = google.slides({ version: "v1", auth: client })
-  const presentationData = await slides.presentations.get({
-    presentationId: presentation.id!,
-  })
+  const presentationData = await retryWithBackoff(
+    () =>
+      slides.presentations.get({
+        presentationId: presentation.id!,
+      }),
+    `Fetching presentation with id ${presentation.id}`,
+  )
   const slidesData = presentationData.data.slides!
   let chunks: string[] = []
   let totalTextLen = 0
@@ -1490,9 +1502,13 @@ export const downloadPDF = async (
   const filePath = path.join(downloadDir, fileName)
   const file = Bun.file(filePath)
   const writer = file.writer()
-  const res = await drive.files.get(
-    { fileId: fileId, alt: "media" },
-    { responseType: "stream" },
+  const res = await retryWithBackoff(
+    () =>
+      drive.files.get(
+        { fileId: fileId, alt: "media" },
+        { responseType: "stream" },
+      ),
+    `Getting PDF content of fileId ${fileId}`,
   )
   return new Promise((resolve, reject) => {
     res.data.on("data", (chunk) => {
@@ -1688,13 +1704,17 @@ const listAllContacts = async (
   let newSyncTokenOtherContacts: string = ""
 
   do {
-    const response = await peopleService.people.connections.list({
-      resourceName: "people/me",
-      pageSize: maxOtherContactsPerPage,
-      personFields: keys.join(","),
-      pageToken,
-      requestSyncToken: true,
-    })
+    const response = await retryWithBackoff(
+      () =>
+        peopleService.people.connections.list({
+          resourceName: "people/me",
+          pageSize: maxOtherContactsPerPage,
+          personFields: keys.join(","),
+          pageToken,
+          requestSyncToken: true,
+        }),
+      `Fetching contacts with pageToken ${pageToken}`,
+    )
 
     if (response.data.connections) {
       contacts.push(...response.data.connections)
@@ -1708,13 +1728,17 @@ const listAllContacts = async (
   pageToken = ""
 
   do {
-    const response = await peopleService.otherContacts.list({
-      pageSize: maxOtherContactsPerPage,
-      readMask: keys.join(","),
-      pageToken,
-      requestSyncToken: true,
-      sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
-    })
+    const response = await retryWithBackoff(
+      () =>
+        peopleService.otherContacts.list({
+          pageSize: maxOtherContactsPerPage,
+          readMask: keys.join(","),
+          pageToken,
+          requestSyncToken: true,
+          sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
+        }),
+      `Fetching other contacts with pageToken ${pageToken}`,
+    )
 
     if (response.data.otherContacts) {
       otherContacts.push(...response.data.otherContacts)
@@ -1868,21 +1892,25 @@ export async function* listFiles(
   let nextPageToken = ""
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
-      await drive.files.list({
-        // TODO: prevent Google AI studio from getting indexed or add limits
-        // that don't cause that issue.
-        // anyone who uses Google AI Studio, AI Studio creates a folder
-        // and all the pdf's they upload on it is part of this folder
-        // these can be quite large and for now we should just avoid it
-        // this does not guarantee that this folder is only created by AI studio
-        // so that edge case is not handled
-        // or just depend on the size limit of pdfs, we don't want to index books as of now
-        q: "trashed = false",
-        pageSize: 100,
-        fields:
-          "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
-        pageToken: nextPageToken,
-      })
+      await retryWithBackoff(
+        () =>
+          drive.files.list({
+            // TODO: prevent Google AI studio from getting indexed or add limits
+            // that don't cause that issue.
+            // anyone who uses Google AI Studio, AI Studio creates a folder
+            // and all the pdf's they upload on it is part of this folder
+            // these can be quite large and for now we should just avoid it
+            // this does not guarantee that this folder is only created by AI studio
+            // so that edge case is not handled
+            // or just depend on the size limit of pdfs, we don't want to index books as of now
+            q: "trashed = false",
+            pageSize: 100,
+            fields:
+              "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
+            pageToken: nextPageToken,
+          }),
+        `Fetching all files from Google Drive`,
+      )
 
     if (res.data.files) {
       yield res.data.files
@@ -1915,9 +1943,13 @@ export const googleDocsVespa = async (
     limit(async () => {
       try {
         const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-          await docs.documents.get({
-            documentId: doc.id as string,
-          })
+          await retryWithBackoff(
+            () =>
+              docs.documents.get({
+                documentId: doc.id as string,
+              }),
+            `Fetching document with documentId ${doc.id}`,
+          )
         if (!docResponse || !docResponse.data) {
           throw new DocsParsingError(
             `Could not get document content for file: ${doc.id}`,

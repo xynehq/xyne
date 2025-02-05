@@ -93,10 +93,14 @@ export const getFile = async (
   const drive = google.drive({ version: "v3", auth: client })
   const fields =
     "id, webViewLink, createdTime, modifiedTime, name, size, parents, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
-  const file: GaxiosResponse<drive_v3.Schema$File> = await drive.files.get({
-    fileId,
-    fields,
-  })
+  const file: GaxiosResponse<drive_v3.Schema$File> = await retryWithBackoff(
+    () =>
+      drive.files.get({
+        fileId,
+        fields,
+      }),
+    `Getting file with fileId ${fileId}`,
+  )
 
   return file.data
 }
@@ -108,9 +112,13 @@ export const getFileContent = async (
 ): Promise<VespaFileWithDrivePermission> => {
   const docs = google.docs({ version: "v1", auth: client })
   const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-    await docs.documents.get({
-      documentId: file.id as string,
-    })
+    await retryWithBackoff(
+      () =>
+        docs.documents.get({
+          documentId: file.id as string,
+        }),
+      `Getting document with documentId ${file.id}`,
+    )
   if (!docResponse || !docResponse.data) {
     throw new DocsParsingError(
       `Could not get document content for file: ${file.id}`,
