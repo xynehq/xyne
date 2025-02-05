@@ -181,18 +181,20 @@ schema event {
         function combined_bm25() {
             expression {
                 (scale(bm25(name)) + scale(bm25(url))) +
-                ((scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
+                (0.6 * (scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
             }
         }
 
+        # Adjusting the ranking by reducing the weight of vector_score and metadata fields in BM25,  
+        # while giving higher importance to BM25 scores for 'name' and 'url'
         first-phase {
-            expression: (vector_score) + combined_bm25
+            expression: (0.5 * vector_score) + combined_bm25
         }
 
         global-phase {
             expression {
               (
-                (normalize_linear(vector_score)) +
+                (0.5 * normalize_linear(vector_score)) +
                 combined_bm25 + 
                 freshness_weight
               )
