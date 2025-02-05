@@ -104,7 +104,7 @@ export const handleGmailIngestion = async (
   })
   let totalMails = 0
   let nextPageToken = ""
-  let attachmentCountRef: Record<string, { count: number }> = {}
+  let attachmentCount = 0
   const limit = pLimit(GmailConcurrency)
 
   const profile = await retryWithBackoff(
@@ -146,7 +146,7 @@ export const handleGmailIngestion = async (
               `Fetching Gmail message (id: ${message.id})`,
             )
             const mail = await parseMail(msgResp.data, gmail)
-            attachmentCountRef[email].count += mail.attachments.length
+            attachmentCount += mail.attachments.length
             await insert(mail, mailSchema)
             // updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
@@ -173,9 +173,7 @@ export const handleGmailIngestion = async (
       postMessage({
         type: WorkerResponseTypes.Stats,
         userEmail: email,
-        count: attachmentCountRef[email]?.count
-          ? attachmentCountRef[email].count
-          : 0,
+        count: attachmentCount,
         statType: StatType.Mail_Attachments,
       })
 
