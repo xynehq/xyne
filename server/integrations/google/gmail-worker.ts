@@ -39,7 +39,7 @@ import {
   getGmailAttachmentChunks,
   parseAttachments,
 } from "@/integrations/google/worker-utils"
-import { StatType, updateUserStats } from "@/integrations/google/tracking"
+import { StatType } from "@/integrations/google/tracking"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -104,6 +104,7 @@ export const handleGmailIngestion = async (
   })
   let totalMails = 0
   let nextPageToken = ""
+  let attachmentCount = 0
   const limit = pLimit(GmailConcurrency)
 
   const profile = await retryWithBackoff(
@@ -144,10 +145,9 @@ export const handleGmailIngestion = async (
                 }),
               `Fetching Gmail message (id: ${message.id})`,
             )
-            await insert(
-              await parseMail(msgResp.data, gmail, email),
-              mailSchema,
-            )
+            const mail = await parseMail(msgResp.data, gmail)
+            attachmentCount += mail.attachments.length
+            await insert(mail, mailSchema)
             // updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
@@ -163,10 +163,18 @@ export const handleGmailIngestion = async (
 
       await Promise.allSettled(batchRequests)
       totalMails += messageBatch.length
+
       postMessage({
         type: WorkerResponseTypes.Stats,
         userEmail: email,
         count: messageBatch.length,
+        statType: StatType.Gmail,
+      })
+      postMessage({
+        type: WorkerResponseTypes.Stats,
+        userEmail: email,
+        count: attachmentCount,
+        statType: StatType.Mail_Attachments,
       })
 
       // clean up explicitly
@@ -211,7 +219,6 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
-  userEmail?: string,
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
@@ -315,8 +322,6 @@ export const parseMail = async (
             }
 
             await insert(attachmentDoc, mailAttachmentSchema)
-            if (userEmail)
-              updateUserStats(userEmail, StatType.Mail_Attachments, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.

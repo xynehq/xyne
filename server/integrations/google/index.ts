@@ -697,6 +697,7 @@ const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
   userEmail: z.string(),
   count: z.number(),
+  statType: z.nativeEnum(StatType),
 })
 
 const historyId = z.object({
@@ -729,8 +730,8 @@ gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
       pendingRequests.delete(userEmail)
     }
   } else if (message.data.type === WorkerResponseTypes.Stats) {
-    const { userEmail, count } = message.data
-    updateUserStats(userEmail, StatType.Gmail, count)
+    const { userEmail, count, statType } = message.data
+    updateUserStats(userEmail, statType, count)
   }
 
   // else if (type === WorkerResponseTypes.Error) {
