@@ -105,7 +105,7 @@ export class BedrockProvider extends BaseProvider {
         }
       }
     } catch (error) {
-      Logger.error(error, "Error in converseBedrock")
+      Logger.error(error, "Error in converseStream of Bedrock")
       throw error
     }
   }

@@ -6,6 +6,7 @@ export enum AIProviders {
   OpenAI = "openai",
   AwsBedrock = "bedrock",
   Ollama = "ollama",
+  Together = "together-ai"
 }
 
 export enum Models {
