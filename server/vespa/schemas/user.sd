@@ -189,7 +189,7 @@ schema user {
 
     rank-profile default {
         constants {
-            DECAY: 0.8
+            DECAY: 0.6
         }
 
         function scale(val) {
