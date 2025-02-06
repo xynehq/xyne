@@ -1,5 +1,7 @@
 ---
-title: Running the application in development mode
+title: Devmode
+description: Running the application in development mode
+icon: laptop-code
 ---
 
 If you want to run the Xyne application in dev mode, this guide will help you do so
@@ -78,7 +80,7 @@ Navigate to the server folder using ```cd server``` and run the following comman
 ```javascript
 ./init-script.sh
 ```
-This will initialise all the dependencies required by the server to run the application successfully, 
+This will initialize all the dependencies required by the server to run the application successfully, 
 and will also start the server, which will be listening on port ```3000```.
 
 ### Start the Xyne client
@@ -94,7 +96,7 @@ Now paste the following inside the ```.env``` file :
 
 ```javascript
  VITE_API_BASE_URL=http://localhost:3000
- VITE_WS_BASE_URL=wss://localhost:3000
+ VITE_WS_BASE_URL=ws://localhost:3000
 ```
 Save the file.
 
