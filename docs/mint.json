@@ -67,12 +67,20 @@
     },
     {
       "group": "Authentication",
-      "pages": ["authentication/oauth", "authentication/service-accounts"]
+      "pages": ["authentication/get-credentials", "authentication/oauth", "authentication/service-accounts"]
     },
     {
       "group": "For Developers",
       "pages": ["contribution/contribute", "contribution/devmode"]
     },
+    {
+      "group": "Ingesting Data",
+      "pages": ["ingestion/ingestion","ingestion/oauth-ingest", "ingestion/service-ingest"]      
+      },
+      {
+        "group": "Re-Ingesting Data",
+        "pages": ["re-ingest/reingest"]      
+        },
     {
       "group": "Changelog",
       "pages": ["changelog/overview"]

@@ -51,14 +51,14 @@ Setup your Google Credentials for the application.
 </Card>
 
 #### Server side: 
-Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
+Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.default``` file, this is the .env file that our docker uses.
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
 <Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values for security.</Warning>
 
-In the ```.env.temp``` file, you can modify the following and replace the missing values with your own :
+In the ```.env.default``` file, you can modify the following and replace the missing values with your own :
 
-```javascript .env.temp file
+```javascript .env.default file
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
 SERVICE_ACCOUNT_ENCRYPTION_KEY=<YOUR_SERVICE_ACCOUNT_ENCRYPTION_KEY> 
 # If you wish to execute authorization using Oauth then use :   
