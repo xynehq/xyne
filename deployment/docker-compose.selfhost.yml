@@ -7,7 +7,7 @@ services:
     ports:
       - "80:80"
     env_file:
-      ../server/.env.temp
+      ../server/.env.default
     depends_on:
       - xyne-db
       - vespa
