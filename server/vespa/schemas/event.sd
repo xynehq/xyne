@@ -203,6 +203,8 @@ schema event {
             }
         }
 
+        # Adjusting the ranking by reducing the weight of vector_score and metadata fields in BM25,  
+        # while giving higher importance to BM25 scores for 'name' and 'url'
         first-phase {
             expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
         }
