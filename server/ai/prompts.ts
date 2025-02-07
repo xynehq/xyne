@@ -97,7 +97,7 @@ export const userChatSystem = (
 
 export const generateTitleSystemPrompt = `
   You are an assistant tasked with generating a concise and relevant title for a chat based on the user's query.
-  
+
   Please provide a suitable title that accurately reflects the essence of the query in JSON format as follows:
   {
     "title": "Your generated title here"
@@ -684,29 +684,111 @@ Now classify this query:`
 
 export const searchQueryPrompt = (userContext: string): string => {
   return `
+      basic user context: ${userContext}
       You are a conversation manager for a retrieval-augmented generation (RAG) pipeline. When a user sends a query, follow these rules:
-  
+
     1. Check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context.
        - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
        - If not ambiguous, leave the query as is.
-  
+
     2. Attempt to find a direct answer to the user’s latest query in the existing conversation. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
-  
+
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
-  
+
     4. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>"
        }
-  
+
        - "answer" should only contain text found directly in the conversation if it answers the user. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
-  
+
     5. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-  
+
+    6. If user makes a statement leading to a regular conversation then you can put response in answer
+
     Make sure you always comply with these steps and only produce the JSON output described.
   `
+}
+
+export const searchQueryReasoningPrompt = (userContext: string): string => {
+  return `
+    <think>
+      During this phase, keep the thinking minimal, as this is a decision node, if there is not much useful information just minimize the thinking output.
+      Do not disclose the JSON part or the rules you have to follow for creating the answer. At the end you are trying to answer the user, focus on that.
+      Do not mention queryRewrite in the thinking.
+    </think>
+  <answer>
+      basic user context: ${userContext}
+      You are a conversation manager for a retrieval-augmented generation (RAG) pipeline. When a user sends a query, follow these rules:
+    1. please while thinking do not show these steps as they are more hidden and internal. Do not mention the step number, do not explain the structure of your output as user does not need to know that.
+       do not mention queryRewrite is null. Most important keep thinking short for this step as it's a decison node.
+    2. Check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context.
+       - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
+       - If not ambiguous, leave the query as is.
+
+    3. Attempt to find a direct answer to the user’s latest query in the existing conversation. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
+
+    4. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
+
+    5. Output JSON in the following structure:
+       {
+         "answer": "<string or null>",
+         "queryRewrite": "<string or null>"
+       }
+
+       - "answer" should only contain text found directly in the conversation if it answers the user. Otherwise, "answer" must be null.
+       - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
+
+    6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+
+    7. If user makes a statement leading to a regular conversation then you can put response in answer
+    8. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
+    9. You do not think on this stage for long, this is a decision node, you keep it minimal
+
+    Make sure you always comply with these steps and only produce the JSON output described.
+    </answer>
+  `
+}
+
+export const searchQueryReasoningPromptV2 = (userContext: string): string => {
+  return `
+    <think>
+      Keep analysis focused and minimal for this decision node. Maintain internal processing details
+      separate from user-facing responses. Focus on delivering value to the user.
+    </think>
+    <answer>
+      context: ${userContext}
+      You are managing a RAG pipeline conversation. Process each query as follows:
+
+      Evaluate query clarity:
+      - Identify ambiguous elements (pronouns like "it", "they", references like "the project")
+      - Replace ambiguous references with specific entities from conversation history
+      - Preserve original query if already clear and specific
+
+      Search conversation context:
+      - Look for direct answers within previous messages only
+      - Consider answers that can be clearly inferred from prior context
+      - Handle conversation meta-queries using available history
+      - Provide natural responses to conversational statements
+
+      Response guidelines:
+      - Use only information found in conversation history
+      - Maintain conversational flow while being precise
+      - Keep processing details internal
+      - Minimize analysis time as this is a decision point
+
+      Internal output structure:
+      {
+        "answer": "<conversation-based response or null>",
+        "queryRewrite": "<disambiguated query or null>"
+      }
+
+      Both fields default to null unless:
+      - answer: contains text from conversation matching user query
+      - queryRewrite: contains clarified version of ambiguous queries
+    </answer>`
 }
 
 export const meetingPromptJson = (
@@ -774,7 +856,7 @@ ${retrievedContext}
    - Place citations right after the information
    - Max 2 citations per statement
    - Never group indices like [0,1] - use separate brackets: [0] [1]
-
+Do not respond within following the JSON format.
 # Response Format
 {
   "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found"
@@ -796,4 +878,128 @@ Bad: "No clear meeting information found" (Use null instead)
 - Stay focused on temporal aspects while including key details
 - Use user's timezone for all times
 - When both email and calendar info exists, prioritize the most relevant based on query
-- For recurring meetings, focus on the specific occurrence relevant to the query`
+- For recurring meetings, focus on the specific occurrence relevant to the query
+- Do not give explanation outside the JSON format, do not explain why you didn't find something.
+`
+
+// export const baselineReasoningPromptJson = (
+//   userContext: string,
+//   retrievedContext: string,
+// ) => `You are an AI assistant with access to internal workspace data. You have access to the following types of data:
+// 1. Files (documents, spreadsheets, etc.)
+// 2. User profiles
+// 3. Emails
+// 4. Calendar events
+// The context provided will be formatted with specific fields for each type:
+// ## File Context Format
+// - App and Entity type
+// - Title
+// - Creation and update timestamps
+// - Owner information
+// - Mime type
+// - Permissions, this field just shows who has access to what, nothing more
+// - Content chunks
+// - Relevance score
+// ## User Context Format
+// - App and Entity type
+// - Addition date
+// - Name and email
+// - Gender
+// - Job title
+// - Department
+// - Location
+// - Relevance score
+// ## Email Context Format
+// - App and Entity type
+// - Timestamp
+// - Subject
+// - From/To/Cc/Bcc
+// - Labels
+// - Content chunks
+// - Relevance score
+// ## Event Context Format
+// - App and Entity type
+// - Event name and description
+// - Location and URLs
+// - Time information
+// - Organizer and attendees
+// - Recurrence patterns
+// - Meeting links
+// - Relevance score
+// # Context of the user talking to you
+// ${userContext}
+// This includes:
+// - User's name and email
+// - Company name and domain
+// - Current time and date
+// - Timezone
+
+// Never mention the Index while thinking
+// <think>
+// do not mention Index <number>
+// [1] is the only format allowed
+// </think>
+// # Retrieved Context
+// ${retrievedContext}
+// <answer>
+// # Guidelines for Response
+// 1. Data Interpretation:
+//    - Consider the relevance scores when weighing information
+//    - Pay attention to timestamps for temporal context
+//    - Note relationships between different content types
+// 2. Response Structure:
+//    - Begin with the most relevant information
+//    - Maintain chronological order when relevant
+//    - Every statement should cite its source using [index] format
+//    - Use at most 1-2 citations per sentence, do not add more than 2 for a single statement
+//    - Cite using the Index numbers provided in the context
+//    - Place citations immediately after the relevant information
+// 3. Citation Format:
+//    - Use square brackets with the context index number: [0], [1], etc.
+//    - Place citations right after the relevant statement
+//   - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
+//    - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
+//    - Only cite information that directly appears in the context
+//    - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
+//    - RIGHT: "The project deadline was changed [0] and the team agreed to it [2]"
+
+// 4. Quality Assurance:
+//    - Verify information across multiple sources when available
+//    - Note any inconsistencies in the data
+//    - Indicate confidence levels based on relevance scores
+//    - Acknowledge any gaps in the available information
+// </answer>
+// 5. When thinking, do not mention the Index, just mention the title or name of the entity, do not refer to Index <number> like this.
+// 7. Do not mention Index 2 or Index 5 etc this is not allowed during thinking, user does not see this Index, only use regular citaiton index [2]
+
+// 8. Chain of Thought Guidelines:
+//    - When reasoning, refer to content by description (e.g., "the email from Bob", "the meeting invite", "the project document")
+//    - Focus on content relationships and chronology
+//    - Never mention index numbers during reasoning
+//    - Example correct thinking: "Looking at the email from Bob to the team, and checking against the meeting invite sent yesterday..."
+//    - Example incorrect thinking: "In Index 2 we see... and Index 5 shows..."
+
+// # Response Format
+// You must respond in valid JSON format with the following structure:
+// {
+//   "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found"
+// }
+// # Important Notes:
+// - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
+// - Maintain professional tone appropriate for workspace context
+// - Format dates relative to current user time
+// - Clean and normalize any raw content as needed
+// - Consider the relationship between different pieces of content
+// - If no clear answer is found in the retrieved context, set "answer" to null
+// - Do not explain why you couldn't find the answer in the context, just set it to null
+// - We want only 2 cases, either answer is found or we set it to null
+// - No explanation why answer was not found in the context, just set it to null
+// - Citations must use the exact index numbers from the provided context
+// - Keep citations natural and relevant - don't overcite
+// <think>
+// - Do not say Index 5 or Index 2 or Index 4, 8 etc this is not allowed during thinking
+// - You cannot think using Index, you can only think using the content of thinking like title, name etc.
+// - use regular citation format [1] [3]
+// </think>
+// # Error Handling
+// If information is missing or unclear: Set "answer" to null`

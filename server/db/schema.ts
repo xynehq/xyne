@@ -320,6 +320,7 @@ export const messages = pgTable(
     chatExternalId: text("chat_external_id").notNull(),
     message: text("message").notNull(),
     messageRole: messageRoleEnum(messageRoleField).notNull(),
+    thinking: text("thinking").notNull().default(""),
     // model id is present in the app itself
     // <provider><modelId>
     modelId: text("modelId").notNull(),

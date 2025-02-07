@@ -61,10 +61,6 @@ export class OllamaProvider extends BaseProvider {
             role: "system",
             content: modelParams.systemPrompt!,
           },
-          {
-            role: "user",
-            content: modelParams.systemPrompt!,
-          },
           ...messages.map((v) => ({
             content: v.content ? v.content[0].text! : "",
             role: v.role! as "user" | "assistant",

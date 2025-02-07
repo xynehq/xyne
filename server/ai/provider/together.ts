@@ -6,6 +6,8 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.AI)
 import Together from "together-ai"
+import config from "@/config"
+const { isReasoning, EndThinkingToken } = config
 
 export class TogetherProvider extends BaseProvider {
   constructor(client: Together) {
@@ -39,7 +41,7 @@ export class TogetherProvider extends BaseProvider {
 
       const cost = 0 // Explicitly setting 0 as cost
       return {
-        text: response.choices[0].text,
+        text: response.choices[0].message?.content || "",
         cost,
       }
     } catch (error) {
@@ -53,15 +55,11 @@ export class TogetherProvider extends BaseProvider {
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
     try {
-      const stream = await (this.client as Together).chat.completions.stream({
+      const stream = await (this.client as Together).chat.completions.create({
         model: modelParams.modelId,
         messages: [
           {
             role: "system",
-            content: modelParams.systemPrompt!,
-          },
-          {
-            role: "user",
             content: modelParams.systemPrompt!,
           },
           ...messages.map((v) => ({
@@ -75,13 +73,24 @@ export class TogetherProvider extends BaseProvider {
         stream: true,
       })
 
-
+      let reasoning = isReasoning
       for await (const chunk of stream) {
+        const text = chunk.choices[0]?.delta?.content
+        // if we are expecting reasoning
+        // and thinking concludes we now expect the rest of the response after
+        // thinking
+        if (reasoning) {
+          if (text?.includes(EndThinkingToken)) {
+            reasoning = false
+          }
+        }
+
         yield {
-          text: chunk.choices[0]?.delta?.content || "",
-          metadata: chunk.choices[0].finish_reason,
+          text: text || "",
+          metadata: chunk.choices[0]?.finish_reason,
           // TODO: figure out cost for together
           cost: 0,
+          reasoning,
         }
       }
     } catch (error) {

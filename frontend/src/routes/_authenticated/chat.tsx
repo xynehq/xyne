@@ -42,6 +42,7 @@ type CurrentResp = {
   messageId?: string
   sources?: Citation[]
   citationMap?: Record<number, number>
+  thinking?: string
 }
 
 interface ChatPageProps {
@@ -263,8 +264,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     ])
 
     setIsStreaming(true)
-    setCurrentResp({ resp: "" })
-    currentRespRef.current = { resp: "", sources: [] }
+    setCurrentResp({ resp: "", thinking: "" })
+    currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
@@ -289,6 +290,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           citationMap,
         }))
       }
+    })
+
+    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      setCurrentResp((prevResp) => ({
+        ...(prevResp || { resp: "", thinking: event.data || "" }),
+        thinking: (prevResp?.thinking || "") + event.data,
+      }))
     })
 
     eventSource.addEventListener(ChatSSEvents.Start, (event) => {})
@@ -364,6 +372,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             externalId: currentResp.messageId,
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
+            thinking: currentResp.thinking,
           },
         ])
       }
@@ -385,6 +394,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             externalId: currentResp.messageId,
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
+            thinking: currentResp.thinking,
           },
         ])
       }
@@ -831,6 +841,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       message={message.message}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
+                      thinking={message.thinking}
                       citations={message.sources}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
@@ -856,6 +867,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     {userMessageWithErr && (
                       <ChatMessage
                         message={message.errorMessage}
+                        thinking={message.thinking}
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
@@ -888,6 +900,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 <ChatMessage
                   message={currentResp.resp}
                   citations={currentResp.sources}
+                  thinking={currentResp.thinking || ""}
                   isUser={false}
                   responseDone={false}
                   handleRetry={handleRetry}
@@ -1083,6 +1096,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 
 const ChatMessage = ({
   message,
+  thinking,
   isUser,
   responseDone,
   isRetrying,
@@ -1096,6 +1110,7 @@ const ChatMessage = ({
   isStreaming = false,
 }: {
   message: string
+  thinking: string
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -1146,6 +1161,11 @@ const ChatMessage = ({
               src={AssistantLogo}
             />
             <div className="mt-[4px] markdown-content">
+              {thinking && (
+                <div className="border-l-2 border-[#E6EBF5] pl-2 mb-4 text-gray-600">
+                  {thinking}
+                </div>
+              )}
               {message === "" ? (
                 <div className="flex-grow">
                   {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}

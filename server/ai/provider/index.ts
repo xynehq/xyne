@@ -11,8 +11,12 @@ const {
   AwsSecretKey,
   OllamaModel,
   OpenAIKey,
+  TogetherApiKey,
+  TogetherAIModel,
   defaultBestModel,
   defaultFastModel,
+  isReasoning,
+  EndThinkingToken,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -55,6 +59,7 @@ import {
   queryRouterPrompt,
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
+  searchQueryReasoningPrompt,
   temporalEventClassifier,
   userChatSystem,
 } from "@/ai/prompts"
@@ -62,6 +67,8 @@ import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
 import { Ollama } from "ollama"
 import { OllamaProvider } from "@/ai/provider/ollama"
+import Together from "together-ai"
+import { TogetherProvider } from "./together"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
@@ -83,6 +90,7 @@ let providersInitialized = false
 let bedrockProvider: LLMProvider | null = null
 let openaiProvider: LLMProvider | null = null
 let ollamaProvider: LLMProvider | null = null
+let togetherProvidder: LLMProvider | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -116,6 +124,11 @@ const initializeProviders = (): void => {
     ollamaProvider = new OllamaProvider(ollama)
   }
 
+  if (TogetherAIModel && TogetherApiKey) {
+    const together = new Together({ apiKey: TogetherApiKey })
+    togetherProvidder = new TogetherProvider(together)
+  }
+
   providersInitialized = true
 }
 
@@ -123,9 +136,15 @@ const getProviders = (): {
   [AIProviders.AwsBedrock]: LLMProvider | null
   [AIProviders.OpenAI]: LLMProvider | null
   [AIProviders.Ollama]: LLMProvider | null
+  [AIProviders.Together]: LLMProvider | null
 } => {
   initializeProviders()
-  if (!bedrockProvider && !openaiProvider && !ollamaProvider) {
+  if (
+    !bedrockProvider &&
+    !openaiProvider &&
+    !ollamaProvider &&
+    !togetherProvidder
+  ) {
     throw new Error("No valid API keys or model provided")
   }
 
@@ -133,6 +152,7 @@ const getProviders = (): {
     [AIProviders.AwsBedrock]: bedrockProvider,
     [AIProviders.OpenAI]: openaiProvider,
     [AIProviders.Ollama]: ollamaProvider,
+    [AIProviders.Together]: togetherProvidder,
   }
 }
 
@@ -160,7 +180,9 @@ const getProviderByModel = (modelId: Models): LLMProvider => {
     ? ModelToProviderMap[modelId]
     : OllamaModel
       ? AIProviders.Ollama
-      : null
+      : TogetherAIModel
+        ? AIProviders.Together
+        : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
@@ -343,11 +365,11 @@ export const jsonParseLLMOutput = (text: string): any => {
       }
       jsonVal = parse(text)
     } catch (parseError) {
-      Logger.error(
-        parseError,
-        `The ai response that triggered the json parse error ${text.trim()}`,
-      )
-      throw parseError
+      // Logger.error(
+      //   parseError,
+      //   `The ai response that triggered the json parse error ${text.trim()}`,
+      // )
+      // throw parseError
     }
   }
   return jsonVal
@@ -431,7 +453,7 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
 
-    const { text, cost } = await getProviderByModel(params.modelId).converse(
+    let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
         {
           role: "user",
@@ -444,6 +466,9 @@ export const generateTitleUsingQuery = async (
       ],
       params,
     )
+    if (isReasoning && text?.includes(EndThinkingToken)) {
+      text = text?.split(EndThinkingToken)[1]
+    }
     if (text) {
       const jsonVal = jsonParseLLMOutput(text)
       return {
@@ -810,7 +835,18 @@ export const baselineRAGJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  if (defaultReasoning) {
+    // TODO: replace with reasoning specific prompt
+    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  } else {
+    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  }
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -821,6 +857,16 @@ export const baselineRAGJsonStream = (
     ],
   }
   params.messages = []
+  if (defaultReasoning) {
+    params.messages.push({
+      role: ConversationRole.ASSISTANT,
+      content: [
+        {
+          text: params.systemPrompt,
+        },
+      ],
+    })
+  }
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
@@ -944,7 +990,16 @@ export function generateSearchQueryOrAnswerFromConversation(
 ): AsyncIterableIterator<ConverseResponse> {
   //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
-  params.systemPrompt = searchQueryPrompt(userContext)
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  if (defaultReasoning) {
+    params.systemPrompt = searchQueryReasoningPrompt(userContext)
+  } else {
+    params.systemPrompt = searchQueryPrompt(userContext)
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,
