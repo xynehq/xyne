@@ -1476,6 +1476,8 @@ export const MessageRetryApi = async (c: Context) => {
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
+              reasoning:
+                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
               messages: convWithNoErrMsg,
             })
           let currentAnswer = ""
@@ -1483,43 +1485,76 @@ export const MessageRetryApi = async (c: Context) => {
           let citations: number[] = []
           let citationMap: Record<number, number> = {}
           let parsed = { answer: "", queryRewrite: "" }
+          let thinking = ""
+          let reasoning =
+            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
           for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
-              buffer += chunk.text
-              try {
-                parsed = jsonParseLLMOutput(buffer)
-                if (parsed.answer && currentAnswer !== parsed.answer) {
-                  if (currentAnswer === "") {
-                    Logger.info(
-                      "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                    )
+              if (reasoning) {
+                if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                } else {
+                  // first time
+                  if (!chunk.text.includes(StartThinkingToken)) {
+                    let token = chunk.text
+                    if (chunk.text.includes(EndThinkingToken)) {
+                      token = chunk.text.split(EndThinkingToken)[0]
+                      thinking += token
+                    } else {
+                      thinking += token
+                    }
                     stream.writeSSE({
-                      event: ChatSSEvents.Start,
-                      data: "",
-                    })
-                    // First valid answer - send the whole thing
-                    stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: parsed.answer,
-                    })
-                  } else {
-                    // Subsequent chunks - send only the new part
-                    const newText = parsed.answer.slice(currentAnswer.length)
-                    stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: newText,
+                      event: ChatSSEvents.Reasoning,
+                      data: token,
                     })
                   }
-                  currentAnswer = parsed.answer
                 }
-              } catch (err) {
-                const errMessage = (err as Error).message
-                Logger.error(
-                  err,
-                  `Error while parsing LLM output ${errMessage}`,
-                )
-                continue
+              }
+              if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                reasoning = false
+                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+              }
+              buffer += chunk.text
+              if (!reasoning) {
+                try {
+                  parsed = jsonParseLLMOutput(buffer)
+                  if (parsed.answer && currentAnswer !== parsed.answer) {
+                    if (currentAnswer === "") {
+                      Logger.info(
+                        "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                      )
+                      stream.writeSSE({
+                        event: ChatSSEvents.Start,
+                        data: "",
+                      })
+                      // First valid answer - send the whole thing
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: parsed.answer,
+                      })
+                    } else {
+                      // Subsequent chunks - send only the new part
+                      const newText = parsed.answer.slice(currentAnswer.length)
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: newText,
+                      })
+                    }
+                    currentAnswer = parsed.answer
+                  }
+                } catch (err) {
+                  const errMessage = (err as Error).message
+                  Logger.error(
+                    err,
+                    `Error while parsing LLM output ${errMessage}`,
+                  )
+                  continue
+                }
               }
             }
             if (chunk.cost) {
@@ -1557,17 +1592,27 @@ export const MessageRetryApi = async (c: Context) => {
               data: "",
             })
             answer = ""
+            thinking = ""
+            reasoning = isReasoning
             citations = []
             citationMap = {}
             for await (const chunk of iterator) {
               if (chunk.text) {
-                answer += chunk.text
-                stream.writeSSE({
-                  event: ChatSSEvents.ResponseUpdate,
-                  data: chunk.text,
-                })
+                if (chunk.reasoning) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                }
+                if (!chunk.reasoning) {
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                }
               }
-
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
@@ -1610,6 +1655,7 @@ export const MessageRetryApi = async (c: Context) => {
                   email: user.email,
                   sources: citations,
                   message: processMessage(answer, citationMap),
+                  thinking,
                   modelId:
                     ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                       .modelId,

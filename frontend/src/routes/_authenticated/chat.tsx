@@ -518,6 +518,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
     })
 
+    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      setCurrentResp((prevResp) => ({
+        ...(prevResp || { resp: "", thinking: event.data || "" }),
+        thinking: (prevResp?.thinking || "") + event.data,
+      }))
+    })
+
     eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
       const userMessage = messages.find(
         (msg) => msg.externalId === messageId && msg.messageRole === "user",

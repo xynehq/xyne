@@ -857,16 +857,6 @@ export const baselineRAGJsonStream = (
     ],
   }
   params.messages = []
-  if (defaultReasoning) {
-    params.messages.push({
-      role: ConversationRole.ASSISTANT,
-      content: [
-        {
-          text: params.systemPrompt,
-        },
-      ],
-    })
-  }
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]

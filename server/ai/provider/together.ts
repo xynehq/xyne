@@ -73,24 +73,14 @@ export class TogetherProvider extends BaseProvider {
         stream: true,
       })
 
-      let reasoning = isReasoning
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content
-        // if we are expecting reasoning
-        // and thinking concludes we now expect the rest of the response after
-        // thinking
-        if (reasoning) {
-          if (text?.includes(EndThinkingToken)) {
-            reasoning = false
-          }
-        }
 
         yield {
           text: text || "",
           metadata: chunk.choices[0]?.finish_reason,
           // TODO: figure out cost for together
           cost: 0,
-          reasoning,
         }
       }
     } catch (error) {
