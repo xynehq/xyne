@@ -65,7 +65,7 @@ Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
 
-<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values for security.</Warning>
+<Warning> We strictly recommend generating your own ***ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET*** values for security.</Warning>
 
 
 <Tip>Due to our agentic RAG implementation, the maximum TPM limit exceeds for Open AI's gpt4o model. 
@@ -86,10 +86,28 @@ DATABASE_HOST=xyne-db
 VESPA_HOST=vespa
 AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY>
 AWS_SECRET_KEY=<YOUR_AWS_ACCESS_SECRET>
+## OR
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
+## OR
+OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
 HOST=http://localhost:3001
+## Set your desired AI provider 
 AWS_REGION=<YOUR_AWS_REGION>
 ```
+
+<Tip>To use the chat feature of Xyne, you need any one AI provider (AWS, Ollama, or OpenAI). Missing keys will disable chat functionality.</Tip>
+
+You can checkout the AI Providers section for better clarity : 
+
+<Card
+  title="Setup AI Providers for Xyne"
+  icon="key"
+  href="/apikeys/apikeys"
+>
+Setup your AI Provider.
+</Card>
+
+<Warning> Chat will be unavailable without a Service Account or OAuth Account connection. </Warning>
 
 And build again from the ``xyne`` folder using : 
 

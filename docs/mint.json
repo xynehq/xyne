@@ -50,6 +50,10 @@
       "pages": ["introduction", "quickstart"]
     },
     {
+      "group": "AI Providers",
+      "pages": ["apikeys/apikeys"]      
+ },
+    {
       "group": "Deployment",
       "pages": [
         {

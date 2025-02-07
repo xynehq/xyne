@@ -1,0 +1,39 @@
+---
+title: 'AI Providers' 
+description: 'Set-up AI API keys'
+icon: 'key'
+---
+
+This guide providers more details about creating and setting AI api keys in your .env file for using Xyne's chat feature.
+
+To use **AI chat**, you need to configure access credentials. You can use one of the following providers: ***AWS, OpenAI, or Ollama***.
+
+### AWS (Amazon Bedrock) 
+
+- Sign in to the [AWS Management Console](https://console.aws.amazon.com/console/home)
+- Generate your ```Access Key``` and ```Secret Key```.
+- Add them as environment variables in your ```.env.default``` file:
+    ```javascript   .env.default
+    AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY> 
+    ```
+    <Note> The ```AWS_REGION``` key is optional in the ```.env.default``` file; if not provided, it defaults to ```us-west-2``` </Note>
+
+### OpenAI
+- Create an API key from the [OpenAI API settings](https://platform.openai.com/settings/organization/api-keys).
+- Add it as environment variables in your .env.default file:
+    ```javascript .env.default
+    OPENAI_API_KEY=<YOUR_OPENAI_API_KEY> 
+    ```
+### Ollama (Local LLM)
+- Install Ollama and the desired model from ollama.com.
+- Add the model name in your .env.default file:
+    ```javascript .env.default
+    OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
+    ```
+<Tip> If you're using Ollama, ensure the specified model is downloaded locally. </Tip>    
+### Key Selection Order : 
+If multiple keys are set in the environment variable, our system follows this precedence:
+```javascript 
+AWS → OpenAI → Ollama
+```
+<Tip>Only anyone provider is required to get started. This means either AWS or OpenAI or Ollama can be used, all of them aren't required.</Tip>
