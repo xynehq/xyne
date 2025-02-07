@@ -462,6 +462,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             messageRole: "assistant",
             message: "",
             isRetrying: true,
+            thinking: "",
             sources: [],
           })
         }
@@ -470,7 +471,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       } else {
         return prevMessages.map((msg) => {
           if (msg.externalId === messageId && msg.messageRole === "assistant") {
-            return { ...msg, message: "", isRetrying: true, sources: [] }
+            return {
+              ...msg,
+              message: "",
+              isRetrying: true,
+              sources: [],
+              thinking: "",
+            }
           }
           return msg
         })
@@ -519,10 +526,33 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      setCurrentResp((prevResp) => ({
-        ...(prevResp || { resp: "", thinking: event.data || "" }),
-        thinking: (prevResp?.thinking || "") + event.data,
-      }))
+      if (userMsgWithErr) {
+        setMessages((prevMessages) => {
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+          newMessages[index + 1] = {
+            ...newMessages[index + 1],
+            thinking: (newMessages[index + 1].thinking || "") + event.data,
+          }
+
+          return newMessages
+        })
+      } else {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, thinking: (msg.thinking || "") + event.data }
+              : msg,
+          ),
+        )
+      }
     })
 
     eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
