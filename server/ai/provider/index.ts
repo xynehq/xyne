@@ -48,6 +48,7 @@ import {
   askQuestionUserPrompt,
   baselinePrompt,
   baselinePromptJson,
+  baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
@@ -826,6 +827,10 @@ export const baselineRAGJson = async (
   }
 }
 
+const indexToCitation = (text: string): string => {
+  return text.replace(/Index (\d+)/g, "[$1]")
+}
+
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
@@ -843,7 +848,13 @@ export const baselineRAGJsonStream = (
   }
   if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
-    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+    // clean retrieved context and turn Index <number> to just [<number>]
+    // this is extra work because we just now set Index <number>
+    // in future once the reasoning mode better supported we won't have to do this
+    params.systemPrompt = baselineReasoningPromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
   } else {
     params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
   }

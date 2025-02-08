@@ -316,6 +316,37 @@ export const processMessage = (
   })
 }
 
+// the Set is passed by reference so that singular object will get updated
+// but need to be kept in mind
+const checkAndYieldCitations = function* (
+  text: string,
+  yieldedCitations: Set<number>,
+  results: any[],
+) {
+  let match
+  while ((match = textToCitationIndex.exec(text)) !== null) {
+    const citationIndex = parseInt(match[1], 10)
+    if (!yieldedCitations.has(citationIndex)) {
+      const item = results[citationIndex]
+      if (item) {
+        yield {
+          citation: {
+            index: citationIndex,
+            item: searchToCitation(item as VespaSearchResults),
+          },
+        }
+        yieldedCitations.add(citationIndex)
+      } else {
+        Logger.error(
+          "Found a citation index but could not find it in the search result ",
+          citationIndex,
+          results.length,
+        )
+      }
+    }
+  }
+}
+
 async function* generateIterativeTimeFilterAndQueryRewrite(
   input: string,
   messages: Message[],
@@ -426,6 +457,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (reasoning) {
               if (thinking && !chunk.text.includes(EndThinkingToken)) {
                 thinking += chunk.text
+                yield* checkAndYieldCitations(
+                  thinking,
+                  yieldedCitations,
+                  totalResults,
+                )
                 yield { text: chunk.text, reasoning }
               } else {
                 // first time
@@ -437,6 +473,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                   } else {
                     thinking += token
                   }
+                  yield* checkAndYieldCitations(
+                    thinking,
+                    yieldedCitations,
+                    totalResults,
+                  )
                   yield { text: token, reasoning }
                 }
               }
@@ -461,33 +502,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                     const newText = parsed.answer.slice(currentAnswer.length)
                     yield { text: newText }
                   }
-                  // Extract all citations from the parsed answer
-                  let match
-                  while (
-                    (match = textToCitationIndex.exec(parsed.answer)) !== null
-                  ) {
-                    const citationIndex = parseInt(match[1], 10)
-                    if (!yieldedCitations.has(citationIndex)) {
-                      const item = totalResults[citationIndex]
-                      if (item) {
-                        yield {
-                          citation: {
-                            index: citationIndex,
-                            item: searchToCitation(item as VespaSearchResults),
-                          },
-                        }
-                        yieldedCitations.add(citationIndex)
-                      } else {
-                        // TODO: we need to handle this.
-                        // either we replace the [citationIndex]
-                        Logger.error(
-                          "Found a citation index but could not find it in the search result ",
-                          citationIndex,
-                          totalResults.length,
-                        )
-                      }
-                    }
-                  }
+                  yield* checkAndYieldCitations(
+                    parsed.answer,
+                    yieldedCitations,
+                    totalResults,
+                  )
                   currentAnswer = parsed.answer
                 }
               } catch (err) {
@@ -564,6 +583,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         if (reasoning) {
           if (thinking && !chunk.text.includes(EndThinkingToken)) {
             thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+            )
             yield { text: chunk.text, reasoning }
           } else {
             // first time
@@ -575,6 +599,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               } else {
                 thinking += token
               }
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                results?.root?.children,
+              )
               yield { text: token, reasoning }
             }
           }
@@ -601,32 +630,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 yield { text: newText }
               }
               // Extract all citations from the parsed answer
-              let match
-              while (
-                (match = textToCitationIndex.exec(parsed.answer)) !== null
-              ) {
-                const citationIndex = parseInt(match[1], 10)
-                if (!yieldedCitations.has(citationIndex)) {
-                  const item = results?.root?.children[citationIndex]
-                  if (item) {
-                    yield {
-                      citation: {
-                        index: citationIndex,
-                        item: searchToCitation(item as VespaSearchResults),
-                      },
-                    }
-                    yieldedCitations.add(citationIndex)
-                  } else {
-                    // TODO: we need to handle this.
-                    // either we replace the [citationIndex]
-                    Logger.error(
-                      "Found a citation index but could not find it in the search result ",
-                      citationIndex,
-                      results.root.children.length,
-                    )
-                  }
-                }
-              }
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                results?.root?.children,
+              )
               currentAnswer = parsed.answer
             }
           } catch (err) {
@@ -787,6 +795,11 @@ async function* generatePointQueryTimeExpansion(
         if (reasoning) {
           if (thinking && !chunk.text.includes(EndThinkingToken)) {
             thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+            )
             yield { text: chunk.text, reasoning }
           } else {
             // first time
@@ -798,6 +811,11 @@ async function* generatePointQueryTimeExpansion(
               } else {
                 thinking += token
               }
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                results?.root?.children,
+              )
               yield { text: token, reasoning }
             }
           }
@@ -825,24 +843,11 @@ async function* generatePointQueryTimeExpansion(
                 const newText = parsed.answer.slice(currentAnswer.length)
                 yield { text: newText }
               }
-              let match
-              while (
-                (match = textToCitationIndex.exec(parsed.answer)) !== null
-              ) {
-                const citationIndex = parseInt(match[1], 10)
-                if (!yieldedCitations.has(citationIndex)) {
-                  const item = combinedResults?.root?.children[citationIndex]
-                  if (item) {
-                    yield {
-                      citation: {
-                        index: citationIndex,
-                        item: searchToCitation(item as VespaSearchResults),
-                      },
-                    }
-                    yieldedCitations.add(citationIndex)
-                  }
-                }
-              }
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                results?.root?.children,
+              )
               currentAnswer = parsed.answer
             }
           } catch (e) {

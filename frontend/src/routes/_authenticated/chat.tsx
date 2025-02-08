@@ -1200,7 +1200,17 @@ const ChatMessage = ({
             <div className="mt-[4px] markdown-content">
               {thinking && (
                 <div className="border-l-2 border-[#E6EBF5] pl-2 mb-4 text-gray-600">
-                  {thinking}
+                  <MarkdownPreview
+                    source={processMessage(thinking)}
+                    wrapperElement={{
+                      "data-color-mode": "light",
+                    }}
+                    style={{
+                      padding: 0,
+                      backgroundColor: "transparent",
+                      color: "#1C1D1F",
+                    }}
+                  />
                 </div>
               )}
               {message === "" ? (
