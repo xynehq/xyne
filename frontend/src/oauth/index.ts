@@ -75,9 +75,27 @@ export class OAuthModal {
       try {
         currentUrl = this.windowRef?.location?.href
         this.logger.info("Monitoring window")
-      } catch (err) {
+      } catch (error) {
         // This error happens due to cross-origin issues before the window redirects to your domain
         // It can be safely ignored until the popup window navigates to a URL on your domain
+        // If any other error occurs, it should be rejected and error should be thrown
+        if (!String(error)?.includes(
+          "SecurityError: Failed to read a named property 'href' from 'Location'",
+        )) {
+          this.logger.error(
+            error,
+            {
+              oauthProgress: {
+                success: false,
+              },
+            },
+            "Something went wrong. Error occurred",
+          )
+          reject({
+            success: false,
+            message: "Something went wrong. Error occurred",
+          })
+        }
       }
 
       // 3. If we can read the URL, check if it’s the success URL
