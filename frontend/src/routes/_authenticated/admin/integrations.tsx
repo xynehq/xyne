@@ -327,10 +327,10 @@ export const OAuthButton = ({
     try {
       await oauth.startAuth(app)
       setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Could not finish oauth",
-        description: `Error: ${getErrorMessage(error)}`,
+        description: `Error: ${error?.message}`,
         variant: "destructive",
       })
     }
