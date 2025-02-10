@@ -152,8 +152,8 @@ schema file {
       MAX_DOC_DECAY: 0.75
     }
 
-    function chunk_vector_score() {
-      expression: closeness(field, chunk_embeddings)
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
     }
 
     function document_age() {
@@ -165,9 +165,13 @@ schema file {
     function doc_recency() {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
-    
-    function scale(val) {
-      expression: 2*atan(val/4)/(3.14159)
+
+    function chunk_vector_score() {
+      expression: closeness(field, chunk_embeddings)
+    }
+
+    function title_vector_score() {
+      expression: closeness(field, title_embeddings)
     }
 
     function scaled_bm25_chunks() {
@@ -176,10 +180,6 @@ schema file {
 
     function scaled_bm25_title() {
       expression: scale(bm25(title))
-    }
-
-    function title_vector_score() {
-      expression: closeness(field, title_embeddings)
     }
 
     function vector_score() {

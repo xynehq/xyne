@@ -177,8 +177,8 @@ schema mail {
         MAX_DOC_DECAY: 0.75
       }
 
-      function chunk_vector_score() {
-        expression: closeness(field, chunk_embeddings)
+      function scale(val) {
+        expression: 2*atan(val/4)/(3.14159)
       }
 
       function document_age() {
@@ -191,13 +191,14 @@ schema mail {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
       }
 
-      function scale(val) {
-        expression: 2*atan(val/4)/(3.14159)
-      }
-
       function subject_vector_score() {
         expression: closeness(field, subject_embeddings)
       }
+      
+      function chunk_vector_score() {
+        expression: closeness(field, chunk_embeddings)
+      }
+
       function vector_score() {
         expression: max(chunk_vector_score,subject_vector_score)
       }

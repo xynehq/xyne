@@ -201,7 +201,7 @@ schema user {
         }
 
         global-phase {
-            # Added slight decay to mitigate the disproportionate increase in BM25 scores 
+            # Added decay to mitigate the disproportionate increase in BM25 scores 
             # for shorter content with minimal matches, preventing them from 
             # overpowering more relevant documents.
             expression {

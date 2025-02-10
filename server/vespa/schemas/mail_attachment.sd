@@ -105,8 +105,12 @@ schema mail_attachment {
       MAX_DOC_DECAY: 0.75
     }
 
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
+    }
+    
     function document_age() {
-      # Default document age assuming to 3 months when no updateAt timestamp is present
+      # Default document age assuming to 3 months when no timestamp is present
       expression: max(if(isNan(attribute(timestamp)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(timestamp) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
     }
 
@@ -126,10 +130,6 @@ schema mail_attachment {
     function vector_score() {
       # taking whichever has a good matching
       expression: max(chunk_vector_score,filename_vector_score)
-    }
-
-    function scale(val) {
-      expression: 2*atan(val/4)/(3.14159)
     }
 
     function scaled_bm25_chunks() {
