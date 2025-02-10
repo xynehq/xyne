@@ -131,15 +131,19 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    const together = new Together({ apiKey: TogetherApiKey, timeout: 4 * 60 * 1000, maxRetries: 10})
+    const together = new Together({
+      apiKey: TogetherApiKey,
+      timeout: 4 * 60 * 1000,
+      maxRetries: 10,
+    })
     togetherProvidder = new TogetherProvider(together)
   }
 
   console.log(FireworksAIModel, FireworksApiKey)
-  if(FireworksAIModel && FireworksApiKey) {
+  if (FireworksAIModel && FireworksApiKey) {
     const fireworks = new Fireworks({
-      apiKey: FireworksApiKey
-    });
+      apiKey: FireworksApiKey,
+    })
     fireworksProvider = new FireworksProvider(fireworks)
   }
 
@@ -195,9 +199,13 @@ const getProviderByModel = (modelId: Models): LLMProvider => {
 
   const providerType = ModelToProviderMap[modelId]
     ? ModelToProviderMap[modelId]
-    : OllamaModel ? AIProviders.Ollama :
-       TogetherAIModel ? AIProviders.Together
-        : FireworksAIModel? AIProviders.Fireworks : null
+    : OllamaModel
+      ? AIProviders.Ollama
+      : TogetherAIModel
+        ? AIProviders.Together
+        : FireworksAIModel
+          ? AIProviders.Fireworks
+          : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")

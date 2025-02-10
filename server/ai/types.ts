@@ -7,7 +7,7 @@ export enum AIProviders {
   AwsBedrock = "bedrock",
   Ollama = "ollama",
   Together = "together-ai",
-  Fireworks = "fireworks"
+  Fireworks = "fireworks",
 }
 
 export enum Models {

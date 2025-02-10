@@ -80,7 +80,7 @@ export class TogetherProvider extends BaseProvider {
             text: text || "",
             metadata: finishReason,
             // Only send cost with first meaningful chunk
-            cost: 0
+            cost: 0,
           }
         }
       }

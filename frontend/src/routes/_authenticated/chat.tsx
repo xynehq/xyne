@@ -9,7 +9,7 @@ import {
   useSearch,
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
-import { useEffect, useRef, useState, Fragment} from "react"
+import { useEffect, useRef, useState, Fragment } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"

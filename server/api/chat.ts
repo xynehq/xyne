@@ -322,12 +322,13 @@ const checkAndYieldCitations = function* (
   text: string,
   yieldedCitations: Set<number>,
   results: any[],
+  baseIndex: number = 0,
 ) {
   let match
   while ((match = textToCitationIndex.exec(text)) !== null) {
     const citationIndex = parseInt(match[1], 10)
     if (!yieldedCitations.has(citationIndex)) {
-      const item = results[citationIndex]
+      const item = results[citationIndex - baseIndex]
       if (item) {
         yield {
           citation: {
@@ -376,6 +377,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
     ?.filter((v) => !!v)
 
+  // for the case of reasoning as we are streaming the tokens and the citations
+  // our iterative rag has be aware of the results length(max potential citation index) that is already sent before hand
+  // so this helps us avoid conflict with a previous citation index
+  let previousResultsLength = 0
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
@@ -423,7 +428,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             ?.map((v: VespaSearchResult) => (v.fields as any).docId)
             ?.filter((v) => !!v),
         )
-        const totalResults = results?.root?.children?.concat(latestResults)
+        const totalResults = (results?.root?.children || []).concat(
+          latestResults || [],
+        )
         const initialContext = cleanContext(
           totalResults
             ?.map(
@@ -461,6 +468,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                   thinking,
                   yieldedCitations,
                   totalResults,
+                  previousResultsLength,
                 )
                 yield { text: chunk.text, reasoning }
               } else {
@@ -477,6 +485,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                     thinking,
                     yieldedCitations,
                     totalResults,
+                    previousResultsLength,
                   )
                   yield { text: token, reasoning }
                 }
@@ -506,6 +515,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                     parsed.answer,
                     yieldedCitations,
                     totalResults,
+                    previousResultsLength,
                   )
                   currentAnswer = parsed.answer
                 }
@@ -526,6 +536,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         if (parsed.answer) {
           return
         }
+        if (isReasoning) {
+          previousResultsLength += totalResults.length
+        }
       }
     }
 
@@ -545,7 +558,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       if (!results.root.children) {
         results.root.children = []
       }
-      results.root.children = results?.root?.children?.concat(latestResults)
+      results.root.children = results?.root?.children?.concat(
+        latestResults || [],
+      )
     } else {
       results = await searchVespa(
         message,
@@ -557,11 +572,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         alpha,
       )
     }
+    const startIndex = isReasoning ? previousResultsLength : 0
     const initialContext = cleanContext(
       results?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
         ?.join("\n"),
     )
@@ -587,6 +603,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               thinking,
               yieldedCitations,
               results?.root?.children,
+              previousResultsLength,
             )
             yield { text: chunk.text, reasoning }
           } else {
@@ -603,6 +620,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 thinking,
                 yieldedCitations,
                 results?.root?.children,
+                previousResultsLength,
               )
               yield { text: token, reasoning }
             }
@@ -634,6 +652,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 parsed.answer,
                 yieldedCitations,
                 results?.root?.children,
+                previousResultsLength,
               )
               currentAnswer = parsed.answer
             }
@@ -650,6 +669,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     }
     if (parsed.answer) {
       return
+    }
+    if (isReasoning) {
+      previousResultsLength += results?.root?.children?.length || 0
     }
   }
   yield {
@@ -702,6 +724,7 @@ async function* generatePointQueryTimeExpansion(
   let to = new Date().getTime()
   let lastSearchedTime = direction === "prev" ? from : to
 
+  let previousResultsLength = 0
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     const windowSize = (2 + iteration) * weekInMs
 
@@ -768,11 +791,12 @@ async function* generatePointQueryTimeExpansion(
     }
 
     // Prepare context for LLM
+    const startIndex = isReasoning ? previousResultsLength : 0
     const initialContext = cleanContext(
       combinedResults?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i}: \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
         ?.join("\n"),
     )
@@ -798,7 +822,8 @@ async function* generatePointQueryTimeExpansion(
             yield* checkAndYieldCitations(
               thinking,
               yieldedCitations,
-              results?.root?.children,
+              combinedResults?.root?.children,
+              previousResultsLength,
             )
             yield { text: chunk.text, reasoning }
           } else {
@@ -814,7 +839,8 @@ async function* generatePointQueryTimeExpansion(
               yield* checkAndYieldCitations(
                 thinking,
                 yieldedCitations,
-                results?.root?.children,
+                combinedResults?.root?.children,
+                previousResultsLength,
               )
               yield { text: token, reasoning }
             }
@@ -846,7 +872,8 @@ async function* generatePointQueryTimeExpansion(
               yield* checkAndYieldCitations(
                 parsed.answer,
                 yieldedCitations,
-                results?.root?.children,
+                combinedResults?.root?.children,
+                previousResultsLength,
               )
               currentAnswer = parsed.answer
             }
@@ -864,6 +891,10 @@ async function* generatePointQueryTimeExpansion(
     }
     if (parsed.answer) {
       return
+    }
+    // only increment in the case of reasoning
+    if (isReasoning) {
+      previousResultsLength += combinedResults?.root?.children?.length || 0
     }
   }
 
