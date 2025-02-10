@@ -74,13 +74,14 @@ export class BedrockProvider extends BaseProvider {
       ],
       messages: messages,
       inferenceConfig: {
-        maxTokens: modelParams.maxTokens || 512,
+        // maxTokens: modelParams.maxTokens || 512,
         topP: modelParams.topP || 0.9,
         temperature: modelParams.temperature || 0.6,
       },
     })
 
     let modelId = modelParams.modelId!
+    let costYielded = false
     try {
       const response = await this.client.send(command)
 
@@ -89,18 +90,36 @@ export class BedrockProvider extends BaseProvider {
           const text = chunk.contentBlockDelta?.delta?.text
           const metadata = chunk.metadata
           let cost: number | undefined
-
-          if (metadata?.usage) {
-            const { inputTokens, outputTokens } = metadata.usage
-            cost = calculateCost(
-              { inputTokens: inputTokens!, outputTokens: outputTokens! },
-              modelDetailsMap[modelId].cost.onDemand,
-            )
+          if (text) {
+            yield {
+              text,
+              metadata,
+              cost:
+                !costYielded && metadata?.usage
+                  ? calculateCost(
+                      {
+                        inputTokens: metadata.usage.inputTokens!,
+                        outputTokens: metadata.usage.outputTokens!,
+                      },
+                      modelDetailsMap[modelId].cost.onDemand,
+                    )
+                  : undefined,
+            }
           }
-          yield {
-            text,
-            metadata,
-            cost,
+          // Handle cost separately if we haven't yielded it yet
+          else if (metadata?.usage && !costYielded) {
+            costYielded = true
+            yield {
+              text: "",
+              metadata,
+              cost: calculateCost(
+                {
+                  inputTokens: metadata.usage.inputTokens!,
+                  outputTokens: metadata.usage.outputTokens!,
+                },
+                modelDetailsMap[modelId].cost.onDemand,
+              ),
+            }
           }
         }
       }
