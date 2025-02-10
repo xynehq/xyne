@@ -9,7 +9,7 @@ import {
   useSearch,
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, Fragment } from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"
@@ -42,6 +42,7 @@ type CurrentResp = {
   messageId?: string
   sources?: Citation[]
   citationMap?: Record<number, number>
+  thinking?: string
 }
 
 interface ChatPageProps {
@@ -263,8 +264,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     ])
 
     setIsStreaming(true)
-    setCurrentResp({ resp: "" })
-    currentRespRef.current = { resp: "", sources: [] }
+    setCurrentResp({ resp: "", thinking: "" })
+    currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
@@ -289,6 +290,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           citationMap,
         }))
       }
+    })
+
+    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      setCurrentResp((prevResp) => ({
+        ...(prevResp || { resp: "", thinking: event.data || "" }),
+        thinking: (prevResp?.thinking || "") + event.data,
+      }))
     })
 
     eventSource.addEventListener(ChatSSEvents.Start, (event) => {})
@@ -364,6 +372,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             externalId: currentResp.messageId,
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
+            thinking: currentResp.thinking,
           },
         ])
       }
@@ -385,6 +394,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             externalId: currentResp.messageId,
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
+            thinking: currentResp.thinking,
           },
         ])
       }
@@ -452,6 +462,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             messageRole: "assistant",
             message: "",
             isRetrying: true,
+            thinking: "",
             sources: [],
           })
         }
@@ -460,7 +471,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       } else {
         return prevMessages.map((msg) => {
           if (msg.externalId === messageId && msg.messageRole === "assistant") {
-            return { ...msg, message: "", isRetrying: true, sources: [] }
+            return {
+              ...msg,
+              message: "",
+              isRetrying: true,
+              sources: [],
+              thinking: "",
+            }
           }
           return msg
         })
@@ -502,6 +519,36 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           prevMessages.map((msg) =>
             msg.externalId === messageId && msg.isRetrying
               ? { ...msg, message: msg.message + event.data }
+              : msg,
+          ),
+        )
+      }
+    })
+
+    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      if (userMsgWithErr) {
+        setMessages((prevMessages) => {
+          const index = prevMessages.findIndex(
+            (msg) => msg.externalId === messageId,
+          )
+
+          if (index === -1 || index + 1 >= prevMessages.length) {
+            return prevMessages
+          }
+
+          const newMessages = [...prevMessages]
+          newMessages[index + 1] = {
+            ...newMessages[index + 1],
+            thinking: (newMessages[index + 1].thinking || "") + event.data,
+          }
+
+          return newMessages
+        })
+      } else {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.externalId === messageId && msg.isRetrying
+              ? { ...msg, thinking: (msg.thinking || "") + event.data }
               : msg,
           ),
         )
@@ -771,7 +818,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   return (
     <div className="h-full w-full flex flex-row bg-white">
-      <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="h-full w-full flex flex-col relative">
         <div
           className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
@@ -825,12 +872,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   message.messageRole === "user" && message?.errorMessage
 
                 return (
-                  <>
+                  <Fragment key={message.externalId ?? index}>
                     <ChatMessage
                       key={index}
                       message={message.message}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
+                      thinking={message.thinking}
                       citations={message.sources}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
@@ -856,6 +904,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     {userMessageWithErr && (
                       <ChatMessage
                         message={message.errorMessage}
+                        thinking={message.thinking}
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
@@ -881,13 +930,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         isStreaming={isStreaming}
                       />
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
               {currentResp && (
                 <ChatMessage
                   message={currentResp.resp}
                   citations={currentResp.sources}
+                  thinking={currentResp.thinking || ""}
                   isUser={false}
                   responseDone={false}
                   handleRetry={handleRetry}
@@ -1083,6 +1133,7 @@ export const textToCitationIndex = /\[(\d+)\]/g
 
 const ChatMessage = ({
   message,
+  thinking,
   isUser,
   responseDone,
   isRetrying,
@@ -1096,6 +1147,7 @@ const ChatMessage = ({
   isStreaming = false,
 }: {
   message: string
+  thinking: string
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -1146,6 +1198,21 @@ const ChatMessage = ({
               src={AssistantLogo}
             />
             <div className="mt-[4px] markdown-content">
+              {thinking && (
+                <div className="border-l-2 border-[#E6EBF5] pl-2 mb-4 text-gray-600">
+                  <MarkdownPreview
+                    source={processMessage(thinking)}
+                    wrapperElement={{
+                      "data-color-mode": "light",
+                    }}
+                    style={{
+                      padding: 0,
+                      backgroundColor: "transparent",
+                      color: "#1C1D1F",
+                    }}
+                  />
+                </div>
+              )}
               {message === "" ? (
                 <div className="flex-grow">
                   {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}

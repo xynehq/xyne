@@ -99,7 +99,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
-      <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs

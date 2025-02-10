@@ -46,7 +46,6 @@ describe("citation processing", () => {
     const text = "Valid[1] and invalid[5] citations"
     const citationMap = { 1: 0 }
     const processed = processMessage(text, citationMap)
-    console.log(processed)
     // Should preserve the original citation if not in map
     expect(processed).toBe("Valid[1] and invalid citations")
   })

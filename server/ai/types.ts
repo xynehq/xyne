@@ -6,6 +6,8 @@ export enum AIProviders {
   OpenAI = "openai",
   AwsBedrock = "bedrock",
   Ollama = "ollama",
+  Together = "together-ai",
+  Fireworks = "fireworks",
 }
 
 export enum Models {
@@ -65,12 +67,14 @@ export interface ModelParams {
   stream: boolean
   json?: boolean
   messages?: Message[]
+  reasoning?: boolean
 }
 
 export interface ConverseResponse {
   text?: string
   metadata?: any
   cost?: number
+  reasoning?: boolean
 }
 
 export interface LLMProvider {
