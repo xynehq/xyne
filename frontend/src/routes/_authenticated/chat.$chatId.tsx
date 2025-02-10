@@ -3,6 +3,7 @@ import { ChatPage } from "@/routes/_authenticated/chat"
 import { api } from "@/api"
 import { errorComponent } from "@/components/error"
 
+
 export const Route = createFileRoute("/_authenticated/chat/$chatId")({
   component: ChatPage,
   loader: async ({ params }) => {

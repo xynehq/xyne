@@ -9,7 +9,7 @@ import {
   useSearch,
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, Fragment} from "react"
 import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"
@@ -818,7 +818,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   return (
     <div className="h-full w-full flex flex-row bg-white">
-      <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="h-full w-full flex flex-col relative">
         <div
           className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
@@ -872,7 +872,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   message.messageRole === "user" && message?.errorMessage
 
                 return (
-                  <>
+                  <Fragment key={message.externalId ?? index}>
                     <ChatMessage
                       key={index}
                       message={message.message}
@@ -930,7 +930,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         isStreaming={isStreaming}
                       />
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
               {currentResp && (

@@ -25,7 +25,9 @@ let AwsSecretKey = ""
 let OpenAIKey = ""
 let OllamaModel = ""
 let TogetherAIModel = ""
+let FireworksAIModel = ""
 let TogetherApiKey = ""
+let FireworksApiKey = ""
 let isReasoning = false
 let fastModelReasoning = false
 
@@ -54,6 +56,13 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
   defaultBestModel = TogetherAIModel as Models
+} else if(process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
+  FireworksAIModel = process.env["FIREWORKS_MODEL"] as Models
+  FireworksApiKey = process.env["FIREWORKS_API_KEY"]
+  defaultFastModel = process.env["FIREWORKS_FAST_MODEL"]
+  ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
+  : (FireworksAIModel as Models)
+  defaultBestModel = FireworksAIModel as Models
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -88,6 +97,8 @@ export default {
   OllamaModel,
   TogetherAIModel,
   TogetherApiKey,
+  FireworksAIModel,
+  FireworksApiKey,
   redirectUri,
   postOauthRedirect,
   // update user query session time

@@ -6,8 +6,6 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.AI)
 import Together from "together-ai"
-import config from "@/config"
-const { isReasoning, EndThinkingToken } = config
 
 export class TogetherProvider extends BaseProvider {
   constructor(client: Together) {
@@ -69,18 +67,21 @@ export class TogetherProvider extends BaseProvider {
         ],
         temperature: modelParams.temperature,
         top_p: modelParams.topP,
-        max_tokens: modelParams.maxTokens,
+        // max_tokens: modelParams.maxTokens,
         stream: true,
       })
 
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content
+        const finishReason = chunk.choices[0]?.finish_reason
 
-        yield {
-          text: text || "",
-          metadata: chunk.choices[0]?.finish_reason,
-          // TODO: figure out cost for together
-          cost: 0,
+        if (text || finishReason) {
+          yield {
+            text: text || "",
+            metadata: finishReason,
+            // Only send cost with first meaningful chunk
+            cost: 0
+          }
         }
       }
     } catch (error) {

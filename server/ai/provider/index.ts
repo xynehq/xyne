@@ -12,6 +12,8 @@ const {
   OllamaModel,
   OpenAIKey,
   TogetherApiKey,
+  FireworksAIModel,
+  FireworksApiKey,
   TogetherAIModel,
   defaultBestModel,
   defaultFastModel,
@@ -70,6 +72,8 @@ import { Ollama } from "ollama"
 import { OllamaProvider } from "@/ai/provider/ollama"
 import Together from "together-ai"
 import { TogetherProvider } from "./together"
+import { Fireworks } from "./fireworksClient"
+import { FireworksProvider } from "./fireworks"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
@@ -92,6 +96,7 @@ let bedrockProvider: LLMProvider | null = null
 let openaiProvider: LLMProvider | null = null
 let ollamaProvider: LLMProvider | null = null
 let togetherProvidder: LLMProvider | null = null
+let fireworksProvider: LLMProvider | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -126,8 +131,16 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    const together = new Together({ apiKey: TogetherApiKey })
+    const together = new Together({ apiKey: TogetherApiKey, timeout: 4 * 60 * 1000, maxRetries: 10})
     togetherProvidder = new TogetherProvider(together)
+  }
+
+  console.log(FireworksAIModel, FireworksApiKey)
+  if(FireworksAIModel && FireworksApiKey) {
+    const fireworks = new Fireworks({
+      apiKey: FireworksApiKey
+    });
+    fireworksProvider = new FireworksProvider(fireworks)
   }
 
   providersInitialized = true
@@ -138,13 +151,15 @@ const getProviders = (): {
   [AIProviders.OpenAI]: LLMProvider | null
   [AIProviders.Ollama]: LLMProvider | null
   [AIProviders.Together]: LLMProvider | null
+  [AIProviders.Fireworks]: LLMProvider | null
 } => {
   initializeProviders()
   if (
     !bedrockProvider &&
     !openaiProvider &&
     !ollamaProvider &&
-    !togetherProvidder
+    !togetherProvidder &&
+    !fireworksProvider
   ) {
     throw new Error("No valid API keys or model provided")
   }
@@ -154,6 +169,7 @@ const getProviders = (): {
     [AIProviders.OpenAI]: openaiProvider,
     [AIProviders.Ollama]: ollamaProvider,
     [AIProviders.Together]: togetherProvidder,
+    [AIProviders.Fireworks]: fireworksProvider,
   }
 }
 
@@ -179,11 +195,9 @@ const getProviderByModel = (modelId: Models): LLMProvider => {
 
   const providerType = ModelToProviderMap[modelId]
     ? ModelToProviderMap[modelId]
-    : OllamaModel
-      ? AIProviders.Ollama
-      : TogetherAIModel
-        ? AIProviders.Together
-        : null
+    : OllamaModel ? AIProviders.Ollama :
+       TogetherAIModel ? AIProviders.Together
+        : FireworksAIModel? AIProviders.Fireworks : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
@@ -366,11 +380,11 @@ export const jsonParseLLMOutput = (text: string): any => {
       }
       jsonVal = parse(text)
     } catch (parseError) {
-      // Logger.error(
-      //   parseError,
-      //   `The ai response that triggered the json parse error ${text.trim()}`,
-      // )
-      // throw parseError
+      Logger.error(
+        parseError,
+        `The ai response that triggered the json parse error ${text.trim()}`,
+      )
+      throw parseError
     }
   }
   return jsonVal

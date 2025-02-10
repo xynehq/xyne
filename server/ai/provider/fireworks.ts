@@ -73,7 +73,7 @@ export class FireworksProvider extends BaseProvider {
           model: modelParams.modelId,
           temperature: modelParams.temperature,
           top_p: modelParams.topP,
-          max_tokens: modelParams.maxTokens,
+          // max_tokens: modelParams.maxTokens,
         },
       )) {
         yield {
