@@ -299,13 +299,13 @@ export const parseMail = async (
         ) {
           try {
             const { attachmentId, size } = body
-            const attachmentChunks =
-              (await getGmailAttachmentChunks(gmail, {
-                attachmentId: attachmentId,
-                filename: filename,
-                size: size ? size : 0,
-                messageId: messageId ? messageId : "",
-              })) ?? []
+            const attachmentChunks = await getGmailAttachmentChunks(gmail, {
+              attachmentId: attachmentId,
+              filename: filename,
+              size: size ? size : 0,
+              messageId: messageId ? messageId : "",
+            })
+            if (!attachmentChunks) continue
 
             const attachmentDoc: MailAttachment = {
               app: Apps.Gmail,
@@ -317,6 +317,7 @@ export const parseMail = async (
               fileSize: size,
               fileType: mimeType,
               chunks: attachmentChunks,
+              threadId,
               timestamp,
               permissions,
             }
