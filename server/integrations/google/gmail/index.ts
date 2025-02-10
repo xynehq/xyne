@@ -143,7 +143,7 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
-  userEmail?: string,
+  userEmail: string,
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
@@ -213,6 +213,12 @@ export const parseMail = async (
     filenames = parsedParts.filenames
 
     // ingest attachments
+    // TODO:
+    // Prevent indexing duplicate attachments from forwarded emails for the same user.
+    // When an email is forwarded within a thread, its attachments may be duplicated.
+    // - For non-forwarded emails, we can use the threadId to check if an attachment already exists in the thread.
+    // - For forwarded emails, we should still index the attachments but possibly adjust their permissions?
+    // - what If a forwarded email includes new attachments, should we rely on the filename to differentiate them?
     if (payload.parts) {
       for (const part of payload.parts) {
         const { body, filename, mimeType } = part
@@ -224,13 +230,13 @@ export const parseMail = async (
         ) {
           try {
             const { attachmentId, size } = body
-            const attachmentChunks =
-              (await getGmailAttachmentChunks(gmail, {
-                attachmentId: attachmentId,
-                filename: filename,
-                size: size ? size : 0,
-                messageId: messageId ? messageId : "",
-              })) ?? []
+            const attachmentChunks = await getGmailAttachmentChunks(gmail, {
+              attachmentId: attachmentId,
+              filename: filename,
+              size: size ? size : 0,
+              messageId: messageId ? messageId : "",
+            })
+            if (!attachmentChunks) continue
 
             const attachmentDoc: MailAttachment = {
               app: Apps.Gmail,
@@ -242,13 +248,13 @@ export const parseMail = async (
               fileSize: size,
               fileType: mimeType,
               chunks: attachmentChunks,
+              threadId: threadId,
               timestamp,
               permissions,
             }
 
             await insert(attachmentDoc, mailAttachmentSchema)
-            if (userEmail)
-              updateUserStats(userEmail, StatType.Mail_Attachments, 1)
+            updateUserStats(userEmail, StatType.Mail_Attachments, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
