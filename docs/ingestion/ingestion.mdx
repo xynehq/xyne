@@ -1,12 +1,17 @@
 ---
 title: 'Ingesting Data' 
 description: 'Ingest data into Xyne'
-icon: 'inbox'
+icon: 'inbox-in'
 ---
 
-This guide assumes you have created the desired authentication keys, and will show you how to ingest your data into the Xyne application. 
+This guide assumes you have created the required authentication keys, and will show you how to ingest your data into the Xyne application. 
 
-If you haven't already setup the authentication, follow this guide below : 
+<Tip>If you're running the application individually and just trying it out, we recommend using OAuth authentication. 
+Service accounts are better suited for organizations.</Tip>
+
+<Note> You only need one type of Authentication, either OAuth Authentication [best suited for individual users] or Service Account Authentication  [best suited for organizations]. </Note>
+
+If you haven't already setup the authentication, follow this guide below :
 
 <CardGroup>
 
@@ -32,24 +37,17 @@ Authenticate with Service Account.
 
 Once you have setup the authentication keys and have started the application, you will see your application running in the browser. 
 
- - Once you login with your google account, this screen will appear :
+ - Once you login with your google account successfully, this screen will appear :
 
 <img height="200" src="../images/ingest1.png" />
 
  - On the left you will find a ```plug``` icon. That's our connector.  
 <img height="200" src="../images/ingest2.png" />
 
-- Now depending on which authentication key you have configured, you can choose ingestion using ```Service Account``` or ingest using ```Oauth Account```
+- Now depending on which authentication key you have configured, you can choose ingestion using ```Oauth Account``` or ingest using ```Service Account```.
+
 
 <CardGroup>
-
-<Card
-  title="Ingestion using Service Account"
-  icon="shield-keyhole"
-  href="/ingestion/service-ingest"
->
-Ingestion with Service Account.
-</Card>
 
 <Card
   title="Ingestion using Oauth Account"
@@ -57,6 +55,14 @@ Ingestion with Service Account.
   href="/ingestion/oauth-ingest"
 >
 Ingestion with Oauth Account.
+</Card>
+
+<Card
+  title="Ingestion using Service Account"
+  icon="shield-keyhole"
+  href="/ingestion/service-ingest"
+>
+Ingestion with Service Account.
 </Card>
 
 </CardGroup>
