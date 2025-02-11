@@ -71,7 +71,7 @@ import {
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
-import type { GaxiosError } from "gaxios"
+import { GaxiosError } from "gaxios"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -347,6 +347,38 @@ const contactKeys = [
   "userDefined",
 ]
 
+const getDriveChanges = async (
+  driveClient: drive_v3.Drive,
+  config: GoogleChangeToken,
+): Promise<{
+  changes: drive_v3.Schema$Change[] | undefined
+  newStartPageToken: string | null | undefined
+} | null> => {
+  try {
+    const response = await retryWithBackoff(
+      () => driveClient.changes.list({ pageToken: config.driveToken }),
+      `Fetching drive changes with pageToken ${config.driveToken}`,
+    )
+    const { changes, newStartPageToken } = response.data
+    return { changes, newStartPageToken }
+  } catch (error: unknown) {
+    // Final catch: log the error details without breaking the sync job.
+    if (error instanceof GaxiosError) {
+      Logger.error(
+        `GaxiosError while fetching drive changes: status ${error.response?.status}, ` +
+          `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`,
+      )
+    } else if (error instanceof Error) {
+      Logger.error(
+        `Unexpected error while fetching drive changes: ${error.message}`,
+      )
+    } else {
+      Logger.error(`An unknown error occurred while fetching drive changes.`)
+    }
+    return null
+  }
+}
+
 // TODO: check early, if new change token is same as last
 // return early
 export const handleGoogleOAuthChanges = async (
@@ -375,12 +407,8 @@ export const handleGoogleOAuthChanges = async (
 
       const driveClient = google.drive({ version: "v3", auth: oauth2Client })
       // TODO: add pagination for all the possible changes
-      const { changes, newStartPageToken } = (
-        await retryWithBackoff(
-          () => driveClient.changes.list({ pageToken: config.driveToken }),
-          `Fetching drive changes with pageToken ${config.driveToken}`,
-        )
-      ).data
+      const driveChanges = await getDriveChanges(driveClient, config)
+      const { changes = [], newStartPageToken = "" } = driveChanges ?? {}
       // there are changes
 
       // Potential issues:
