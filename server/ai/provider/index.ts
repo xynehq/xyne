@@ -11,8 +11,14 @@ const {
   AwsSecretKey,
   OllamaModel,
   OpenAIKey,
+  TogetherApiKey,
+  FireworksAIModel,
+  FireworksApiKey,
+  TogetherAIModel,
   defaultBestModel,
   defaultFastModel,
+  isReasoning,
+  EndThinkingToken,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -44,6 +50,7 @@ import {
   askQuestionUserPrompt,
   baselinePrompt,
   baselinePromptJson,
+  baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
@@ -55,6 +62,7 @@ import {
   queryRouterPrompt,
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
+  searchQueryReasoningPrompt,
   temporalEventClassifier,
   userChatSystem,
 } from "@/ai/prompts"
@@ -62,6 +70,10 @@ import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
 import { Ollama } from "ollama"
 import { OllamaProvider } from "@/ai/provider/ollama"
+import Together from "together-ai"
+import { TogetherProvider } from "./together"
+import { Fireworks } from "./fireworksClient"
+import { FireworksProvider } from "./fireworks"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
@@ -83,6 +95,8 @@ let providersInitialized = false
 let bedrockProvider: LLMProvider | null = null
 let openaiProvider: LLMProvider | null = null
 let ollamaProvider: LLMProvider | null = null
+let togetherProvidder: LLMProvider | null = null
+let fireworksProvider: LLMProvider | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -116,6 +130,23 @@ const initializeProviders = (): void => {
     ollamaProvider = new OllamaProvider(ollama)
   }
 
+  if (TogetherAIModel && TogetherApiKey) {
+    const together = new Together({
+      apiKey: TogetherApiKey,
+      timeout: 4 * 60 * 1000,
+      maxRetries: 10,
+    })
+    togetherProvidder = new TogetherProvider(together)
+  }
+
+  console.log(FireworksAIModel, FireworksApiKey)
+  if (FireworksAIModel && FireworksApiKey) {
+    const fireworks = new Fireworks({
+      apiKey: FireworksApiKey,
+    })
+    fireworksProvider = new FireworksProvider(fireworks)
+  }
+
   providersInitialized = true
 }
 
@@ -123,9 +154,17 @@ const getProviders = (): {
   [AIProviders.AwsBedrock]: LLMProvider | null
   [AIProviders.OpenAI]: LLMProvider | null
   [AIProviders.Ollama]: LLMProvider | null
+  [AIProviders.Together]: LLMProvider | null
+  [AIProviders.Fireworks]: LLMProvider | null
 } => {
   initializeProviders()
-  if (!bedrockProvider && !openaiProvider && !ollamaProvider) {
+  if (
+    !bedrockProvider &&
+    !openaiProvider &&
+    !ollamaProvider &&
+    !togetherProvidder &&
+    !fireworksProvider
+  ) {
     throw new Error("No valid API keys or model provided")
   }
 
@@ -133,6 +172,8 @@ const getProviders = (): {
     [AIProviders.AwsBedrock]: bedrockProvider,
     [AIProviders.OpenAI]: openaiProvider,
     [AIProviders.Ollama]: ollamaProvider,
+    [AIProviders.Together]: togetherProvidder,
+    [AIProviders.Fireworks]: fireworksProvider,
   }
 }
 
@@ -160,7 +201,11 @@ const getProviderByModel = (modelId: Models): LLMProvider => {
     ? ModelToProviderMap[modelId]
     : OllamaModel
       ? AIProviders.Ollama
-      : null
+      : TogetherAIModel
+        ? AIProviders.Together
+        : FireworksAIModel
+          ? AIProviders.Fireworks
+          : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
@@ -431,7 +476,7 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
 
-    const { text, cost } = await getProviderByModel(params.modelId).converse(
+    let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
         {
           role: "user",
@@ -444,6 +489,9 @@ export const generateTitleUsingQuery = async (
       ],
       params,
     )
+    if (isReasoning && text?.includes(EndThinkingToken)) {
+      text = text?.split(EndThinkingToken)[1]
+    }
     if (text) {
       const jsonVal = jsonParseLLMOutput(text)
       return {
@@ -801,6 +849,10 @@ export const baselineRAGJson = async (
   }
 }
 
+const indexToCitation = (text: string): string => {
+  return text.replace(/Index (\d+)/g, "[$1]")
+}
+
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
@@ -810,7 +862,24 @@ export const baselineRAGJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  if (defaultReasoning) {
+    // TODO: replace with reasoning specific prompt
+    // clean retrieved context and turn Index <number> to just [<number>]
+    // this is extra work because we just now set Index <number>
+    // in future once the reasoning mode better supported we won't have to do this
+    params.systemPrompt = baselineReasoningPromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
+  } else {
+    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  }
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -944,7 +1013,16 @@ export function generateSearchQueryOrAnswerFromConversation(
 ): AsyncIterableIterator<ConverseResponse> {
   //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
-  params.systemPrompt = searchQueryPrompt(userContext)
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  if (defaultReasoning) {
+    params.systemPrompt = searchQueryReasoningPrompt(userContext)
+  } else {
+    params.systemPrompt = searchQueryPrompt(userContext)
+  }
 
   const baseMessage = {
     role: ConversationRole.USER,

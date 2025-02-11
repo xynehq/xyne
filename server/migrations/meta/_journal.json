@@ -8,6 +8,13 @@
       "when": 1736661636928,
       "tag": "0000_early_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1738829424740,
+      "tag": "0001_workable_molly_hayes",
+      "breakpoints": true
     }
   ]
 }

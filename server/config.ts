@@ -20,17 +20,25 @@ if (process.env.NODE_ENV !== "production") {
 }
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
-let bedrockSupport = false
 let AwsAccessKey = ""
 let AwsSecretKey = ""
 let OpenAIKey = ""
 let OllamaModel = ""
+let TogetherAIModel = ""
+let FireworksAIModel = ""
+let TogetherApiKey = ""
+let FireworksApiKey = ""
+let isReasoning = false
+let fastModelReasoning = false
 
-// Priority (AWS > OpenAI > Ollama)
+// TODO:
+// instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
+// since even docs have to be updated we can make this change in one go including that, so will be done later
+
+// Priority (AWS > OpenAI > Ollama > Together)
 if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
-  bedrockSupport = true
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_3_5_SonnetV2
 } else if (process.env["OPENAI_API_KEY"]) {
@@ -41,6 +49,33 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   OllamaModel = process.env["OLLAMA_MODEL"]
   defaultFastModel = OllamaModel as Models
   defaultBestModel = OllamaModel as Models
+} else if (process.env["TOGETHER_MODEL"] && process.env["TOGETHER_API_KEY"]) {
+  TogetherAIModel = process.env["TOGETHER_MODEL"]
+  TogetherApiKey = process.env["TOGETHER_API_KEY"]
+  defaultFastModel = process.env["TOGETHER_FAST_MODEL"]
+    ? (process.env["TOGETHER_FAST_MODEL"] as Models)
+    : (TogetherAIModel as Models)
+  defaultBestModel = TogetherAIModel as Models
+} else if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
+  FireworksAIModel = process.env["FIREWORKS_MODEL"] as Models
+  FireworksApiKey = process.env["FIREWORKS_API_KEY"]
+  defaultFastModel = process.env["FIREWORKS_FAST_MODEL"]
+    ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
+    : (FireworksAIModel as Models)
+  defaultBestModel = FireworksAIModel as Models
+}
+let StartThinkingToken = "<think>"
+let EndThinkingToken = "</think>"
+
+if (process.env["REASONING"] === "true") {
+  isReasoning = true
+}
+
+if (
+  process.env["FAST_MODEL_REASONING"] &&
+  process.env["FAST_MODEL_REASONING"] === "true"
+) {
+  fastModelReasoning = true
 }
 
 export default {
@@ -56,19 +91,26 @@ export default {
   postgresBaseHost,
   port,
   host,
-  bedrockSupport,
   AwsAccessKey,
   AwsSecretKey,
   OpenAIKey,
   OllamaModel,
+  TogetherAIModel,
+  TogetherApiKey,
+  FireworksAIModel,
+  FireworksApiKey,
   redirectUri,
   postOauthRedirect,
   // update user query session time
-  userQueryUpdateInterval: 60000, // 1 minute in milliseconds
+  userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
   defaultFastModel,
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 8,
+  isReasoning,
+  fastModelReasoning,
+  StartThinkingToken,
+  EndThinkingToken,
 }
