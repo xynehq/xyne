@@ -228,6 +228,7 @@ export const VespaMailSchema = MailSchema.extend({
 export const MailAttachmentSchema = z.object({
   docId: z.string(),
   mailId: z.string(),
+  threadId: z.string(),
   partId: z.number().nullable().optional(),
   app: z.nativeEnum(Apps),
   entity: z.nativeEnum(MailAttachmentEntity),
