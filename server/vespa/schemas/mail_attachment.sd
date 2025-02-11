@@ -6,6 +6,11 @@ schema mail_attachment {
       attribute: fast-search
     }
 
+    field threadId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
     field mailId type string {
       indexing: attribute | summary
       attribute: fast-search

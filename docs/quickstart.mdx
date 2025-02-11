@@ -37,19 +37,21 @@ docker-compose -f deployment/docker-compose.yml up
 
 And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to xyne](http://localhost:3001/)
 
-<Info> Since the size of the downloading models can be quite large, wait for the application to start running, this can take around 10 - 15 minutes, depending on your internet connection. </Info>
+<Note> Since the size of the downloading models can be quite large, wait for the application to start running, this can take around 10 - 15 minutes, 
+depending on your internet connection. </Note>
 
-### Post Execution Steup [Environment Variables]:
+### Post Execution Setup [Environment Variables]:
 
-For enabling Google Authentication for your application you need to create your google credentials and setup some environment variables: 
+To unlock the full potential of the Xyne app, you need to enable Google Authentication. This requires setting up your Google credentials first.
 
-First take down the docker-compose using  : 
+#### Taking down docker-compose
+First, bring down the Docker Compose setup using: 
 
 ```javascript 
 docker-compose -f deployment/docker-compose.yml down
 ```
-
-You can obtain the ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following guide :
+#### Getting Google Credentials
+Then proceed to obtain your ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following this guide:
 <Card
   title="Setup Google Credentials"
   icon="google"
@@ -58,16 +60,20 @@ You can obtain the ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following g
 Setup your Google Credentials for the application.
 </Card>
 
-#### Server side: 
-Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.temp``` file, this is the .env file that our docker uses.
+#### Setting the environment variables: 
+Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.default``` file, this is the .env file that our docker uses.
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
 
-<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values for security.</Warning>
+<Warning> We strictly recommend generating your own ***ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET*** values for security.</Warning>
 
-In the ```.env.temp``` file, you can modify the following and replace the missing values with your own :
 
-```javascript .env.temp file
+<Tip>Due to our agentic RAG implementation, the maximum TPM limit exceeds for Open AI's gpt4o model. 
+ For the ***best experience***, we recommend using ***AWS Bedrock or Claude***, as it enhances performance and accuracy. </Tip>
+
+In the ```.env.default``` file, you can modify the following and replace the missing values with your own :
+
+```javascript .env.default file
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
 SERVICE_ACCOUNT_ENCRYPTION_KEY=<YOUR_SERVICE_ACCOUNT_ENCRYPTION_KEY> 
 # If you wish to execute authorization using Oauth then use :   
@@ -80,10 +86,28 @@ DATABASE_HOST=xyne-db
 VESPA_HOST=vespa
 AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY>
 AWS_SECRET_KEY=<YOUR_AWS_ACCESS_SECRET>
+## OR
 OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
+## OR
+OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
 HOST=http://localhost:3001
+## Set your desired AI provider 
 AWS_REGION=<YOUR_AWS_REGION>
 ```
+
+<Tip>To use the chat feature of Xyne, you need any one AI provider (AWS, Ollama, or OpenAI). Missing keys will disable chat functionality.</Tip>
+
+You can checkout the AI Providers section for better clarity : 
+
+<Card
+  title="Setup AI Providers for Xyne"
+  icon="key"
+  href="/apikeys/apikeys"
+>
+Setup your AI Provider.
+</Card>
+
+<Warning> Chat will be unavailable without a Service Account or OAuth Account connection. </Warning>
 
 And build again from the ``xyne`` folder using : 
 
@@ -91,7 +115,7 @@ And build again from the ``xyne`` folder using :
 docker-compose -f deployment/docker-compose.yml up 
 ```
 
-<Note> Cuurently the client side has .env variables that refer to port 3001, if you've changed the port number ensure to change the values in the .env as well. </Note>
+<Note> Currently the client side has .env variables that refer to port 3001, if you've changed the port number ensure to change the values in the .env as well. </Note>
 
 ## Ingesting data 
 Follow the guide below to learn more about ingesting data into xyne app: 

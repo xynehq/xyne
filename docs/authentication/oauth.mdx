@@ -19,7 +19,7 @@ Setup your Google Credentials for the application.
 Switch to the new project you just created.
 
 
-The first step is to enable the APIs is needed for the app.
+The first step is to enable the APIs which are needed for the app.
 - From the menu in the side bar, under APIs and Services section select the ```Enabled APIs & Services```.
 <img height="200" src="../images/enable-apis1.png" />
 - In the ```Enabled APIs & Services``` page, click on the ```+ Enable APIs & Services```.
@@ -45,27 +45,15 @@ Following the same steps above, enable the following APIs :
  - [Contacts](https://console.cloud.google.com/apis/library/contacts.googleapis.com)
  - [People](https://console.cloud.google.com/apis/library/people.googleapis.com)
 
+<Warning> Please make sure to **enable all** the APIs listed above to ensure the Xyne app runs smoothly. </Warning>
 
-### Setting up the OAuth Consent Screen
-Once you've enabled the APIs, you'll also need to add the scopes for these APIs. For our app we only require ```readonly``` scopes for all the APIs.
-For this navigate to the OAuth Consent Screen in the Sidebar of your Google Cloud Console : 
-<img height="200" src="../images/oauth-2.png" />
+## Adding the scopes for the Enabled APIs:
+Navigate to the OAuth Consent Screen you configured, and click on the ```Edit App``` button : 
+<img height="200" src="../images/edit-oapp.png" />
+Skip the form to the OAuth consent screen by clicking on ```SAVE AND CONTINUE``` at the bottom of the page. 
 
-Under ```OAuth Consent``` screen select ```Internal``` : 
-<img height="200" src="../images/oauth-int.png" />
+In the next page, under the Scopes section you will find the ```ADD OR REMOVE SCOPES``` button. Click on that :
 
-Click on ```Create```
-
-Under the ```App Information``` Section, fill out the details :
- - Provide a Name for the app (For ex: Xyne)
- - Provide a User Support email (For ex: your-email@gmail.com)
- - Upload an App Logo (if needed)
- - Put your domain under ```Authorised``` domain (You can choose to go ahead with your localhost or AWS IP Address)
- - Add Developer contact information (For ex: your-email@gmail.com)
-
- Click ```Save and Continue```
-
-Under the ```Scopes``` section you'll see the ```Add or Remove Scopes``` button. Click on that: 
 <img height="200" src="../images/oauth-scopes.png" />
 
 You will see the scopes on the right side like this :
@@ -73,10 +61,7 @@ You will see the scopes on the right side like this :
 
 Along with the scopes you had added before, add the rest of scopes for the enabled apis : 
 
-Ensure to select the checkbox for all of these scopes : 
- - ```/auth/userinfo.email``` 
- - ```/auth/userinfo.profile```
- - ```openid```
+Ensure to select the checkbox for all of these scopes [you can use these values in the searchbox for the scopes table] : 
  - ```/auth/drive.readonly```
  - ```/auth/documents.readonly```
  - ```/auth/spreadsheets.readonly```
@@ -89,9 +74,6 @@ Ensure to select the checkbox for all of these scopes :
 You can also choose to ```manually``` add the scopes in the ```box``` below.
 
 ```javascript
-  https://www.googleapis.com/auth/userinfo.email,
-  https://www.googleapis.com/auth/userinfo.profile,
-  openid,
   https://www.googleapis.com/auth/drive.readonly,
   https://www.googleapis.com/auth/documents.readonly,
   https://www.googleapis.com/auth/spreadsheets.readonly,
@@ -102,11 +84,11 @@ You can also choose to ```manually``` add the scopes in the ```box``` below.
   https://www.googleapis.com/auth/calendar.events.readonly,
 ```
 
-Click on ```ADD TO TABLE```, and then ```UPDATE```.
+Click on ```ADD TO TABLE```, and then ```UPDATE```. You will now be able to see all the added scopes in the tables below: 
 
-Leave the next page ,i.e. ```Test users``` blank.
-This concludes the setting-up of your OAuth Consent Screen
+<img height="200" src="../images/scopes-table.png" />
 
+Then click on ```SAVE AND CONTINUE```, and then in the next page scroll to the bottom and click on the ```BACK TO DASHBOARD``` .
 
 This concludes the set-up process of Google OAuth.
 
