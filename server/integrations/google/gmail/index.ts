@@ -234,7 +234,7 @@ export const parseMail = async (
               attachmentId: attachmentId,
               filename: filename,
               size: size ? size : 0,
-              messageId: messageId ? messageId : "",
+              messageId: messageId,
             })
             if (!attachmentChunks) continue
 
