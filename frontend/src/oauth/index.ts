@@ -79,9 +79,11 @@ export class OAuthModal {
         // This error happens due to cross-origin issues before the window redirects to your domain
         // It can be safely ignored until the popup window navigates to a URL on your domain
         // If any other error occurs, it should be rejected and error should be thrown
-        if (!String(error)?.includes(
-          "SecurityError: Failed to read a named property 'href' from 'Location'",
-        )) {
+        if (
+          !String(error)?.includes(
+            "SecurityError: Failed to read a named property 'href' from 'Location'",
+          )
+        ) {
           this.logger.error(
             error,
             {

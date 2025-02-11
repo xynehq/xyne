@@ -47,7 +47,9 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultBestModel = Models.Gpt_4o
 } else if (process.env["OLLAMA_MODEL"]) {
   OllamaModel = process.env["OLLAMA_MODEL"]
-  defaultFastModel = OllamaModel as Models
+  defaultFastModel = process.env["OLLAMA_FAST_MODEL"]
+    ? (process.env["OLLAMA_FAST_MODEL"] as Models)
+    : (OllamaModel as Models)
   defaultBestModel = OllamaModel as Models
 } else if (process.env["TOGETHER_MODEL"] && process.env["TOGETHER_API_KEY"]) {
   TogetherAIModel = process.env["TOGETHER_MODEL"]
