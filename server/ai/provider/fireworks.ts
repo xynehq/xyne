@@ -2,14 +2,15 @@ import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders } from "@/ai/types"
 import BaseProvider from "@/ai/provider/base"
-import type { Ollama } from "ollama"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.AI)
 
-export class OllamaProvider extends BaseProvider {
-  constructor(client: Ollama) {
-    super(client, AIProviders.Ollama)
+import type { ChatMessage, Fireworks, MessageRole } from "./fireworksClient"
+
+export class FireworksProvider extends BaseProvider {
+  constructor(client: Fireworks) {
+    super(client, AIProviders.Fireworks)
   }
 
   async converse(
@@ -19,9 +20,8 @@ export class OllamaProvider extends BaseProvider {
     const modelParams = this.getModelParams(params)
 
     try {
-      const response = await (this.client as Ollama).chat({
-        model: modelParams.modelId,
-        messages: [
+      const response = await (this.client as Fireworks).complete(
+        [
           {
             role: "system",
             content: modelParams.systemPrompt,
@@ -31,20 +31,22 @@ export class OllamaProvider extends BaseProvider {
             role: v.role! as "user" | "assistant",
           })),
         ],
-        options: {
+        {
+          model: modelParams.modelId,
           temperature: modelParams.temperature,
           top_p: modelParams.topP,
-          num_predict: modelParams.maxTokens,
+          max_tokens: modelParams.maxTokens,
+          stream: false,
         },
-      })
+      )
 
       const cost = 0 // Explicitly setting 0 as cost
       return {
-        text: response.message.content,
+        text: response.choices[0].message?.content || "",
         cost,
       }
     } catch (error) {
-      throw new Error("Failed to get response from Ollama")
+      throw new Error("Failed to get response from Fireworks")
     }
   }
 
@@ -54,35 +56,33 @@ export class OllamaProvider extends BaseProvider {
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
     try {
-      const stream = await (this.client as Ollama).chat({
-        model: modelParams.modelId,
-        messages: [
-          {
-            role: "system",
-            content: modelParams.systemPrompt!,
-          },
-          ...messages.map((v) => ({
-            content: v.content ? v.content[0].text! : "",
-            role: v.role! as "user" | "assistant",
-          })),
-        ],
-        options: {
+      const messagesList: ChatMessage[] = [
+        {
+          role: "system" as MessageRole,
+          content: modelParams.systemPrompt!,
+        },
+        ...messages.map((v) => ({
+          content: v.content ? v.content[0].text! : "",
+          role: (v.role || "user") as MessageRole,
+        })),
+      ]
+
+      for await (const chunk of (this.client as Fireworks).streamComplete(
+        messagesList,
+        {
+          model: modelParams.modelId,
           temperature: modelParams.temperature,
           top_p: modelParams.topP,
-          num_predict: modelParams.maxTokens,
+          // max_tokens: modelParams.maxTokens,
         },
-        stream: true,
-      })
-
-      for await (const chunk of stream) {
+      )) {
         yield {
-          text: chunk.message.content,
-          metadata: chunk.done ? "stop" : undefined,
-          cost: 0, // Ollama is typically free to run locally
+          text: chunk,
+          cost: 0,
         }
       }
     } catch (error) {
-      Logger.error(error, "Error in converseStream of Ollama")
+      Logger.error(error, "Error in converseStream of Together")
       throw error
     }
   }

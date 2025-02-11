@@ -33,7 +33,7 @@ import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
-import { getErrorMessage } from "@/utils"
+import { getErrorMessage, retryWithBackoff } from "@/utils"
 import {
   createJwtClient,
   driveFileToIndexed,
@@ -376,7 +376,10 @@ export const handleGoogleOAuthChanges = async (
       const driveClient = google.drive({ version: "v3", auth: oauth2Client })
       // TODO: add pagination for all the possible changes
       const { changes, newStartPageToken } = (
-        await driveClient.changes.list({ pageToken: config.driveToken })
+        await retryWithBackoff(
+          () => driveClient.changes.list({ pageToken: config.driveToken }),
+          `Fetching drive changes with pageToken ${config.driveToken}`,
+        )
       ).data
       // there are changes
 
@@ -406,14 +409,18 @@ export const handleGoogleOAuthChanges = async (
       let contactsToken = config.contactsToken
       let otherContactsToken = config.otherContactsToken
       do {
-        const response = await peopleService.people.connections.list({
-          resourceName: "people/me",
-          personFields: contactKeys.join(","),
-          syncToken: config.contactsToken,
-          requestSyncToken: true,
-          pageSize: 1000, // Adjust the page size based on your quota and needs
-          pageToken: nextPageToken, // Use the nextPageToken for pagination
-        })
+        const response = await retryWithBackoff(
+          () =>
+            peopleService.people.connections.list({
+              resourceName: "people/me",
+              personFields: contactKeys.join(","),
+              syncToken: config.contactsToken,
+              requestSyncToken: true,
+              pageSize: 1000, // Adjust the page size based on your quota and needs
+              pageToken: nextPageToken, // Use the nextPageToken for pagination
+            }),
+          `Fetching contacts changes with syncToken ${config.contactsToken}`,
+        )
         contactsToken = response.data.nextSyncToken ?? contactsToken
         nextPageToken = response.data.nextPageToken ?? ""
         if (response.data.connections) {
@@ -432,14 +439,18 @@ export const handleGoogleOAuthChanges = async (
       nextPageToken = ""
 
       do {
-        const response = await peopleService.otherContacts.list({
-          pageSize: 1000,
-          readMask: contactKeys.join(","),
-          syncToken: otherContactsToken,
-          pageToken: nextPageToken,
-          requestSyncToken: true,
-          sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
-        })
+        const response = await retryWithBackoff(
+          () =>
+            peopleService.otherContacts.list({
+              pageSize: 1000,
+              readMask: contactKeys.join(","),
+              syncToken: otherContactsToken,
+              pageToken: nextPageToken,
+              requestSyncToken: true,
+              sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
+            }),
+          `Fetching other contacts changes with syncToken ${otherContactsToken}`,
+        )
         otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
         nextPageToken = response.data.nextPageToken ?? ""
         if (response.data.otherContacts) {
@@ -793,13 +804,17 @@ const handleGoogleCalendarEventsChanges = async (
 
   try {
     do {
-      const res = await calendar.events.list({
-        calendarId: "primary", // Use 'primary' for the primary calendar
-        maxResults: maxCalendarEventChangeResults, // Limit the number of results
-        pageToken: nextPageToken,
-        syncToken,
-        fields: eventFields,
-      })
+      const res = await retryWithBackoff(
+        () =>
+          calendar.events.list({
+            calendarId: "primary", // Use 'primary' for the primary calendar
+            maxResults: maxCalendarEventChangeResults, // Limit the number of results
+            pageToken: nextPageToken,
+            syncToken,
+            fields: eventFields,
+          }),
+        `Fetching calendar events changes with syncToken ${syncToken}`,
+      )
 
       newSyncTokenCalendarEvents = res.data.nextSyncToken ?? syncToken
       // Check if there are no new changes
@@ -969,12 +984,16 @@ const handleGmailChanges = async (
 
   try {
     do {
-      const res = await gmail.users.history.list({
-        userId: "me",
-        startHistoryId: historyId,
-        maxResults: maxChangeResults,
-        pageToken: nextPageToken,
-      })
+      const res = await retryWithBackoff(
+        () =>
+          gmail.users.history.list({
+            userId: "me",
+            startHistoryId: historyId,
+            maxResults: maxChangeResults,
+            pageToken: nextPageToken,
+          }),
+        `Fetching gmail changes with historyId ${historyId}`,
+      )
       newHistoryId = res.data.historyId ?? historyId
 
       // Check if there are no new changes
@@ -995,11 +1014,15 @@ const handleGmailChanges = async (
           if (history.messagesAdded) {
             for (const { message } of history.messagesAdded) {
               try {
-                const msgResp = await gmail.users.messages.get({
-                  userId: "me",
-                  id: message?.id!,
-                  format: "full",
-                })
+                const msgResp = await retryWithBackoff(
+                  () =>
+                    gmail.users.messages.get({
+                      userId: "me",
+                      id: message?.id!,
+                      format: "full",
+                    }),
+                  `Fetching gmail email with id ${message?.id}`,
+                )
 
                 await insert(
                   await parseMail(msgResp.data, gmail, userEmail),
@@ -1122,10 +1145,14 @@ const syncContacts = async (
       if (contact.resourceName) {
         if (entity === GooglePeopleEntity.Contacts) {
           // we probably don't need this get
-          const contactResp = await client.people.get({
-            resourceName: contact.resourceName,
-            personFields: contactKeys.join(","),
-          })
+          const contactResp = await retryWithBackoff(
+            () =>
+              client.people.get({
+                resourceName: contact.resourceName!,
+                personFields: contactKeys.join(","),
+              }),
+            `Fetching contact with resourceName ${contact.resourceName}`,
+          )
           await insertContact(contactResp.data, entity, email)
         } else if (entity === GooglePeopleEntity.OtherContacts) {
           // insert as is what we got for the changes
@@ -1165,7 +1192,10 @@ export const handleGoogleServiceAccountChanges = async (
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // TODO: add pagination for all the possible changes
       const { changes, newStartPageToken } = (
-        await driveClient.changes.list({ pageToken: config.driveToken })
+        await retryWithBackoff(
+          () => driveClient.changes.list({ pageToken: config.driveToken }),
+          `Fetching drive changes with pageToken ${config.driveToken}`,
+        )
       ).data
       // there are changes
 
@@ -1199,14 +1229,18 @@ export const handleGoogleServiceAccountChanges = async (
       let otherContactsToken = config.otherContactsToken
       try {
         do {
-          const response = await peopleService.people.connections.list({
-            resourceName: "people/me",
-            personFields: contactKeys.join(","),
-            syncToken: config.contactsToken,
-            requestSyncToken: true,
-            pageSize: 1000, // Adjust the page size based on your quota and needs
-            pageToken: nextPageToken, // Use the nextPageToken for pagination
-          })
+          const response = await retryWithBackoff(
+            () =>
+              peopleService.people.connections.list({
+                resourceName: "people/me",
+                personFields: contactKeys.join(","),
+                syncToken: config.contactsToken,
+                requestSyncToken: true,
+                pageSize: 1000, // Adjust the page size based on your quota and needs
+                pageToken: nextPageToken, // Use the nextPageToken for pagination
+              }),
+            `Fetching contacts changes with syncToken ${config.contactsToken}`,
+          )
           if (response.data.connections && response.data.connections.length) {
             Logger.info(
               `About to update ${response.data.connections.length} contacts`,
@@ -1241,14 +1275,21 @@ export const handleGoogleServiceAccountChanges = async (
       nextPageToken = ""
       try {
         do {
-          const response = await peopleService.otherContacts.list({
-            pageSize: 1000,
-            readMask: contactKeys.join(","),
-            syncToken: otherContactsToken,
-            pageToken: nextPageToken,
-            requestSyncToken: true,
-            sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
-          })
+          const response = await retryWithBackoff(
+            () =>
+              peopleService.otherContacts.list({
+                pageSize: 1000,
+                readMask: contactKeys.join(","),
+                syncToken: otherContactsToken,
+                pageToken: nextPageToken,
+                requestSyncToken: true,
+                sources: [
+                  "READ_SOURCE_TYPE_PROFILE",
+                  "READ_SOURCE_TYPE_CONTACT",
+                ],
+              }),
+            `Fetching other contacts changes with syncToken ${otherContactsToken}`,
+          )
           otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
           if (
             response.data.otherContacts &&
@@ -1523,7 +1564,6 @@ export const handleGoogleServiceAccountChanges = async (
         errorMessage ===
         "Sync token is no longer valid, a full sync is required."
       ) {
-        console.log("continuing")
         continue
       }
 

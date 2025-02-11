@@ -365,7 +365,7 @@ const server = Bun.serve({
   fetch: app.fetch,
   port: config.port,
   websocket,
-  idleTimeout: 60,
+  idleTimeout: 180,
 })
 Logger.info(`listening on port: ${config.port}`)
 

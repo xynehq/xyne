@@ -1,7 +1,7 @@
 import { Apps } from "shared/types"
 
 const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
-const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth?success=true}`
+const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/success`
 export class OAuthModal {
   // private authUrl: string;
   // private connectorId: string;
@@ -56,7 +56,7 @@ export class OAuthModal {
   ) {
     this.intervalId = window.setInterval(() => {
       if (this.completed) return // If already resolved/rejected, stop further actions
-
+      // 1. Check if window is closed
       if (this.windowRef && this.windowRef.closed) {
         window.clearInterval(this.intervalId!)
         this.intervalId = null
@@ -70,45 +70,54 @@ export class OAuthModal {
         }
       }
 
+      // 2. Try reading the current URL
+      let currentUrl: string | undefined
       try {
-        const currentUrl = this.windowRef?.location.href
+        currentUrl = this.windowRef?.location?.href
         this.logger.info("Monitoring window")
-        if (currentUrl && currentUrl === successUrl) {
-          // When the popup window reaches the success URL, stop monitoring
-          window.clearInterval(this.intervalId!)
-          this.intervalId = null
-
-          if (!this.completed) {
-            this.completed = true // Mark as completed
-            this.windowRef?.close()
-            this.logger.info(
-              {
-                oauthProgress: {
-                  success: true,
-                },
-              },
-              "Oauth Successful",
-            )
-            resolve({ success: true, message: "OAuth successful!" })
-          }
-        }
       } catch (error) {
         // This error happens due to cross-origin issues before the window redirects to your domain
         // It can be safely ignored until the popup window navigates to a URL on your domain
-        this.logger.error(
-          error,
-          {
-            oauthProgress: {
-              success: false,
+        // If any other error occurs, it should be rejected and error should be thrown
+        if (!String(error)?.includes(
+          "SecurityError: Failed to read a named property 'href' from 'Location'",
+        )) {
+          this.logger.error(
+            error,
+            {
+              oauthProgress: {
+                success: false,
+              },
             },
-          },
-          "Authentication window was closed before completion.",
-        )
-        reject({
-          success: false,
-          message: "Authentication window was closed before completion.",
-        })
+            "Something went wrong. Error occurred",
+          )
+          reject({
+            success: false,
+            message: "Something went wrong. Error occurred",
+          })
+        }
       }
-    }, 500) // Check every 500ms
+
+      // 3. If we can read the URL, check if it’s the success URL
+      if (currentUrl && currentUrl === successUrl) {
+        // When the popup window reaches the success URL, stop monitoring
+        window.clearInterval(this.intervalId!)
+        this.intervalId = null
+
+        if (!this.completed) {
+          this.completed = true // Mark as completed
+          this.windowRef?.close()
+          this.logger.info(
+            {
+              oauthProgress: {
+                success: true,
+              },
+            },
+            "Oauth Successful",
+          )
+          resolve({ success: true, message: "OAuth successful!" })
+        }
+      }
+    }, 500)
   }
 }

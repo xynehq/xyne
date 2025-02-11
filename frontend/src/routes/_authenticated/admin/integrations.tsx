@@ -327,10 +327,10 @@ export const OAuthButton = ({
     try {
       await oauth.startAuth(app)
       setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Could not finish oauth",
-        description: `Error: ${getErrorMessage(error)}`,
+        description: `Error: ${error?.message}`,
         variant: "destructive",
       })
     }
@@ -607,7 +607,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
-      <Sidebar photoLink={user.photoLink ?? ""} role={user?.role} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
