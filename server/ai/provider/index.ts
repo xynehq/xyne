@@ -148,6 +148,7 @@ const initializeProviders = (): void => {
   }
 
   providersInitialized = true
+  // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
 
 const getProviders = (): {
