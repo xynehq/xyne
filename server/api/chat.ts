@@ -1,5 +1,6 @@
 import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
+  // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
@@ -80,6 +81,10 @@ const {
   defaultBestModel,
   defaultFastModel,
   maxDefaultSummary,
+  isReasoning,
+  fastModelReasoning,
+  StartThinkingToken,
+  EndThinkingToken,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -101,9 +106,11 @@ enum RagPipelineStages {
 const ragPipelineConfig = {
   [RagPipelineStages.QueryRouter]: {
     modelId: defaultFastModel,
+    reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerOrSearch]: {
-    modelId: defaultBestModel,
+    modelId: defaultFastModel, //defaultBestModel,
+    reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerWithList]: {
     modelId: defaultBestModel,
@@ -309,6 +316,38 @@ export const processMessage = (
   })
 }
 
+// the Set is passed by reference so that singular object will get updated
+// but need to be kept in mind
+const checkAndYieldCitations = function* (
+  text: string,
+  yieldedCitations: Set<number>,
+  results: any[],
+  baseIndex: number = 0,
+) {
+  let match
+  while ((match = textToCitationIndex.exec(text)) !== null) {
+    const citationIndex = parseInt(match[1], 10)
+    if (!yieldedCitations.has(citationIndex)) {
+      const item = results[citationIndex - baseIndex]
+      if (item) {
+        yield {
+          citation: {
+            index: citationIndex,
+            item: searchToCitation(item as VespaSearchResults),
+          },
+        }
+        yieldedCitations.add(citationIndex)
+      } else {
+        Logger.error(
+          "Found a citation index but could not find it in the search result ",
+          citationIndex,
+          results.length,
+        )
+      }
+    }
+  }
+}
+
 async function* generateIterativeTimeFilterAndQueryRewrite(
   input: string,
   messages: Message[],
@@ -338,6 +377,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
     ?.filter((v) => !!v)
 
+  // for the case of reasoning as we are streaming the tokens and the citations
+  // our iterative rag has be aware of the results length(max potential citation index) that is already sent before hand
+  // so this helps us avoid conflict with a previous citation index
+  let previousResultsLength = 0
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
     // should only do it once
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
@@ -360,7 +403,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           ?.join("\n"),
       )
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
-        modelId: defaultBestModel,
+        modelId: defaultFastModel, //defaultBestModel,
         stream: false,
       })
       const queries = queryResp.queries
@@ -385,7 +428,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             ?.map((v: VespaSearchResult) => (v.fields as any).docId)
             ?.filter((v) => !!v),
         )
-        const totalResults = results?.root?.children?.concat(latestResults)
+        const totalResults = (results?.root?.children || []).concat(
+          latestResults || [],
+        )
         const initialContext = cleanContext(
           totalResults
             ?.map(
@@ -395,65 +440,93 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             ?.join("\n"),
         )
 
-        const iterator = baselineRAGJsonStream(query, userCtx, initialContext, {
-          stream: true,
-          modelId: defaultBestModel,
-          messages,
-        })
+        const iterator = baselineRAGJsonStream(
+          query,
+          userCtx,
+          initialContext,
+          // pageNumber,
+          // maxPageNumber,
+          {
+            stream: true,
+            modelId: defaultBestModel,
+            messages,
+            reasoning: isReasoning,
+          },
+        )
         let buffer = ""
         let currentAnswer = ""
         let parsed = { answer: "" }
+        let thinking = ""
+        let reasoning = isReasoning
         let yieldedCitations = new Set<number>()
         for await (const chunk of iterator) {
           if (chunk.text) {
-            buffer += chunk.text
-            try {
-              parsed = jsonParseLLMOutput(buffer)
-              if (parsed.answer === null) {
-                break
-              }
-              if (parsed.answer && currentAnswer !== parsed.answer) {
-                if (currentAnswer === "") {
-                  // First valid answer - send the whole thing
-                  yield { text: parsed.answer }
-                } else {
-                  // Subsequent chunks - send only the new part
-                  const newText = parsed.answer.slice(currentAnswer.length)
-                  yield { text: newText }
-                }
-                // Extract all citations from the parsed answer
-                let match
-                while (
-                  (match = textToCitationIndex.exec(parsed.answer)) !== null
-                ) {
-                  const citationIndex = parseInt(match[1], 10)
-                  if (!yieldedCitations.has(citationIndex)) {
-                    const item = totalResults[citationIndex]
-                    if (item) {
-                      yield {
-                        citation: {
-                          index: citationIndex,
-                          item: searchToCitation(item as VespaSearchResults),
-                        },
-                      }
-                      yieldedCitations.add(citationIndex)
-                    } else {
-                      // TODO: we need to handle this.
-                      // either we replace the [citationIndex]
-                      Logger.error(
-                        "Found a citation index but could not find it in the search result ",
-                        citationIndex,
-                        totalResults.length,
-                      )
-                    }
+            if (reasoning) {
+              if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                thinking += chunk.text
+                yield* checkAndYieldCitations(
+                  thinking,
+                  yieldedCitations,
+                  totalResults,
+                  previousResultsLength,
+                )
+                yield { text: chunk.text, reasoning }
+              } else {
+                // first time
+                if (!chunk.text.includes(StartThinkingToken)) {
+                  let token = chunk.text
+                  if (chunk.text.includes(EndThinkingToken)) {
+                    token = chunk.text.split(EndThinkingToken)[0]
+                    thinking += token
+                  } else {
+                    thinking += token
                   }
+                  yield* checkAndYieldCitations(
+                    thinking,
+                    yieldedCitations,
+                    totalResults,
+                    previousResultsLength,
+                  )
+                  yield { text: token, reasoning }
                 }
-                currentAnswer = parsed.answer
               }
-            } catch (err) {
-              const errMessage = (err as Error).message
-              Logger.error(err, `Error while parsing LLM output ${errMessage}`)
-              continue
+            }
+            if (reasoning && chunk.text.includes(EndThinkingToken)) {
+              reasoning = false
+              chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+            }
+            if (!reasoning) {
+              buffer += chunk.text
+              try {
+                parsed = jsonParseLLMOutput(buffer)
+                if (parsed.answer === null) {
+                  break
+                }
+                if (parsed.answer && currentAnswer !== parsed.answer) {
+                  if (currentAnswer === "") {
+                    // First valid answer - send the whole thing
+                    yield { text: parsed.answer }
+                  } else {
+                    // Subsequent chunks - send only the new part
+                    const newText = parsed.answer.slice(currentAnswer.length)
+                    yield { text: newText }
+                  }
+                  yield* checkAndYieldCitations(
+                    parsed.answer,
+                    yieldedCitations,
+                    totalResults,
+                    previousResultsLength,
+                  )
+                  currentAnswer = parsed.answer
+                }
+              } catch (err) {
+                const errMessage = (err as Error).message
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
+                continue
+              }
             }
           }
           if (chunk.cost) {
@@ -462,6 +535,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         }
         if (parsed.answer) {
           return
+        }
+        if (isReasoning) {
+          previousResultsLength += totalResults.length
         }
       }
     }
@@ -482,7 +558,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       if (!results.root.children) {
         results.root.children = []
       }
-      results.root.children = results?.root?.children?.concat(latestResults)
+      results.root.children = results?.root?.children?.concat(
+        latestResults || [],
+      )
     } else {
       results = await searchVespa(
         message,
@@ -494,11 +572,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         alpha,
       )
     }
+    const startIndex = isReasoning ? previousResultsLength : 0
     const initialContext = cleanContext(
       results?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
         ?.join("\n"),
     )
@@ -506,60 +585,82 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
+      reasoning: isReasoning,
     })
 
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
+    let thinking = ""
+    let reasoning = isReasoning
     let yieldedCitations = new Set<number>()
     for await (const chunk of iterator) {
       if (chunk.text) {
-        buffer += chunk.text
-        try {
-          parsed = jsonParseLLMOutput(buffer)
-          if (parsed.answer === null) {
-            break
-          }
-          if (parsed.answer && currentAnswer !== parsed.answer) {
-            if (currentAnswer === "") {
-              // First valid answer - send the whole thing
-              yield { text: parsed.answer }
-            } else {
-              // Subsequent chunks - send only the new part
-              const newText = parsed.answer.slice(currentAnswer.length)
-              yield { text: newText }
-            }
-            // Extract all citations from the parsed answer
-            let match
-            while ((match = textToCitationIndex.exec(parsed.answer)) !== null) {
-              const citationIndex = parseInt(match[1], 10)
-              if (!yieldedCitations.has(citationIndex)) {
-                const item = results?.root?.children[citationIndex]
-                if (item) {
-                  yield {
-                    citation: {
-                      index: citationIndex,
-                      item: searchToCitation(item as VespaSearchResults),
-                    },
-                  }
-                  yieldedCitations.add(citationIndex)
-                } else {
-                  // TODO: we need to handle this.
-                  // either we replace the [citationIndex]
-                  Logger.error(
-                    "Found a citation index but could not find it in the search result ",
-                    citationIndex,
-                    results.root.children.length,
-                  )
-                }
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            // first time
+            if (!chunk.text.includes(StartThinkingToken)) {
+              let token = chunk.text
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
               }
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              yield { text: token, reasoning }
             }
-            currentAnswer = parsed.answer
           }
-        } catch (err) {
-          const errMessage = (err as Error).message
-          Logger.error(err, `Error while parsing LLM output ${errMessage}`)
-          continue
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+
+        if (!reasoning) {
+          buffer += chunk.text
+          try {
+            parsed = jsonParseLLMOutput(buffer)
+            if (parsed.answer === null) {
+              break
+            }
+            if (parsed.answer && currentAnswer !== parsed.answer) {
+              if (currentAnswer === "") {
+                // First valid answer - send the whole thing
+                yield { text: parsed.answer }
+              } else {
+                // Subsequent chunks - send only the new part
+                const newText = parsed.answer.slice(currentAnswer.length)
+                yield { text: newText }
+              }
+              // Extract all citations from the parsed answer
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              currentAnswer = parsed.answer
+            }
+          } catch (err) {
+            const errMessage = (err as Error).message
+            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+            continue
+          }
         }
       }
       if (chunk.cost) {
@@ -568,6 +669,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     }
     if (parsed.answer) {
       return
+    }
+    if (isReasoning) {
+      previousResultsLength += results?.root?.children?.length || 0
     }
   }
   yield {
@@ -620,6 +724,7 @@ async function* generatePointQueryTimeExpansion(
   let to = new Date().getTime()
   let lastSearchedTime = direction === "prev" ? from : to
 
+  let previousResultsLength = 0
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     const windowSize = (2 + iteration) * weekInMs
 
@@ -686,11 +791,12 @@ async function* generatePointQueryTimeExpansion(
     }
 
     // Prepare context for LLM
+    const startIndex = isReasoning ? previousResultsLength : 0
     const initialContext = cleanContext(
       combinedResults?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i}: \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
         )
         ?.join("\n"),
     )
@@ -704,49 +810,77 @@ async function* generatePointQueryTimeExpansion(
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
+    let thinking = ""
+    let reasoning = isReasoning
     let yieldedCitations = new Set<number>()
 
     for await (const chunk of iterator) {
       if (chunk.text) {
-        buffer += chunk.text
-        try {
-          parsed = jsonParseLLMOutput(buffer)
-          // If we have a null answer, break this inner loop and continue outer loop
-          if (parsed.answer === null) {
-            break
-          }
-
-          // If we have an answer and it's different from what we've seen
-          if (parsed.answer && currentAnswer !== parsed.answer) {
-            if (currentAnswer === "") {
-              // First valid answer - send the whole thing
-              yield { text: parsed.answer }
-            } else {
-              // Subsequent chunks - send only the new part
-              const newText = parsed.answer.slice(currentAnswer.length)
-              yield { text: newText }
-            }
-            let match
-            while ((match = textToCitationIndex.exec(parsed.answer)) !== null) {
-              const citationIndex = parseInt(match[1], 10)
-              if (!yieldedCitations.has(citationIndex)) {
-                const item = combinedResults?.root?.children[citationIndex]
-                if (item) {
-                  yield {
-                    citation: {
-                      index: citationIndex,
-                      item: searchToCitation(item as VespaSearchResults),
-                    },
-                  }
-                  yieldedCitations.add(citationIndex)
-                }
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              combinedResults?.root?.children,
+              previousResultsLength,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            // first time
+            if (!chunk.text.includes(StartThinkingToken)) {
+              let token = chunk.text
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
               }
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                combinedResults?.root?.children,
+                previousResultsLength,
+              )
+              yield { text: token, reasoning }
             }
-            currentAnswer = parsed.answer
           }
-        } catch (e) {
-          // If we can't parse the JSON yet, continue accumulating
-          continue
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+        if (!reasoning) {
+          buffer += chunk.text
+          try {
+            parsed = jsonParseLLMOutput(buffer)
+            // If we have a null answer, break this inner loop and continue outer loop
+            if (parsed.answer === null) {
+              break
+            }
+
+            // If we have an answer and it's different from what we've seen
+            if (parsed.answer && currentAnswer !== parsed.answer) {
+              if (currentAnswer === "") {
+                // First valid answer - send the whole thing
+                yield { text: parsed.answer }
+              } else {
+                // Subsequent chunks - send only the new part
+                const newText = parsed.answer.slice(currentAnswer.length)
+                yield { text: newText }
+              }
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                combinedResults?.root?.children,
+                previousResultsLength,
+              )
+              currentAnswer = parsed.answer
+            }
+          } catch (e) {
+            // If we can't parse the JSON yet, continue accumulating
+            continue
+          }
         }
       }
 
@@ -757,6 +891,10 @@ async function* generatePointQueryTimeExpansion(
     }
     if (parsed.answer) {
       return
+    }
+    // only increment in the case of reasoning
+    if (isReasoning) {
+      previousResultsLength += combinedResults?.root?.children?.length || 0
     }
   }
 
@@ -963,6 +1101,8 @@ export const MessageApi = async (c: Context) => {
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
+              reasoning:
+                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
               messages: messagesWithNoErrResponse,
             })
 
@@ -975,43 +1115,76 @@ export const MessageApi = async (c: Context) => {
           let citations = []
           let citationMap: Record<number, number> = {}
           let parsed = { answer: "", queryRewrite: "" }
+          let thinking = ""
+          let reasoning =
+            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
           for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
-              buffer += chunk.text
-              try {
-                parsed = jsonParseLLMOutput(buffer)
-                if (parsed.answer && currentAnswer !== parsed.answer) {
-                  if (currentAnswer === "") {
-                    Logger.info(
-                      "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                    )
+              if (reasoning) {
+                if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                } else {
+                  // first time
+                  if (!chunk.text.includes(StartThinkingToken)) {
+                    let token = chunk.text
+                    if (chunk.text.includes(EndThinkingToken)) {
+                      token = chunk.text.split(EndThinkingToken)[0]
+                      thinking += token
+                    } else {
+                      thinking += token
+                    }
                     stream.writeSSE({
-                      event: ChatSSEvents.Start,
-                      data: "",
-                    })
-                    // First valid answer - send the whole thing
-                    stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: parsed.answer,
-                    })
-                  } else {
-                    // Subsequent chunks - send only the new part
-                    const newText = parsed.answer.slice(currentAnswer.length)
-                    stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: newText,
+                      event: ChatSSEvents.Reasoning,
+                      data: token,
                     })
                   }
-                  currentAnswer = parsed.answer
                 }
-              } catch (err) {
-                const errMessage = (err as Error).message
-                Logger.error(
-                  err,
-                  `Error while parsing LLM output ${errMessage}`,
-                )
-                continue
+              }
+              if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                reasoning = false
+                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+              }
+              if (!reasoning) {
+                buffer += chunk.text
+                try {
+                  parsed = jsonParseLLMOutput(buffer)
+                  if (parsed.answer && currentAnswer !== parsed.answer) {
+                    if (currentAnswer === "") {
+                      Logger.info(
+                        "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                      )
+                      stream.writeSSE({
+                        event: ChatSSEvents.Start,
+                        data: "",
+                      })
+                      // First valid answer - send the whole thing
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: parsed.answer,
+                      })
+                    } else {
+                      // Subsequent chunks - send only the new part
+                      const newText = parsed.answer.slice(currentAnswer.length)
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: newText,
+                      })
+                    }
+                    currentAnswer = parsed.answer
+                  }
+                } catch (err) {
+                  const errMessage = (err as Error).message
+                  Logger.error(
+                    err,
+                    `Error while parsing LLM output ${errMessage}`,
+                  )
+                  continue
+                }
               }
             }
             if (chunk.cost) {
@@ -1019,7 +1192,8 @@ export const MessageApi = async (c: Context) => {
             }
           }
           // continue as is if we didn't find answer in the existing conversation
-          if (parsed.answer === null) {
+          // empty string as DeepSeek provides this instead of null for some cases
+          if (parsed.answer === null || parsed.answer === "") {
             // ambigious user message
             if (parsed.queryRewrite) {
               Logger.info(
@@ -1050,15 +1224,27 @@ export const MessageApi = async (c: Context) => {
               data: "",
             })
             answer = ""
+            thinking = ""
+            reasoning = isReasoning
             citations = []
             citationMap = {}
             for await (const chunk of iterator) {
               if (chunk.text) {
-                answer += chunk.text
-                stream.writeSSE({
-                  event: ChatSSEvents.ResponseUpdate,
-                  data: chunk.text,
-                })
+                if (chunk.reasoning) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                }
+
+                if (!chunk.reasoning) {
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                }
               }
 
               if (chunk.cost) {
@@ -1097,6 +1283,7 @@ export const MessageApi = async (c: Context) => {
               email: user.email,
               sources: citations,
               message: processMessage(answer, citationMap),
+              thinking,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
@@ -1325,6 +1512,8 @@ export const MessageRetryApi = async (c: Context) => {
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
               stream: true,
               json: true,
+              reasoning:
+                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
               messages: convWithNoErrMsg,
             })
           let currentAnswer = ""
@@ -1332,43 +1521,76 @@ export const MessageRetryApi = async (c: Context) => {
           let citations: number[] = []
           let citationMap: Record<number, number> = {}
           let parsed = { answer: "", queryRewrite: "" }
+          let thinking = ""
+          let reasoning =
+            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
           for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
-              buffer += chunk.text
-              try {
-                parsed = jsonParseLLMOutput(buffer)
-                if (parsed.answer && currentAnswer !== parsed.answer) {
-                  if (currentAnswer === "") {
-                    Logger.info(
-                      "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                    )
+              if (reasoning) {
+                if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                } else {
+                  // first time
+                  if (!chunk.text.includes(StartThinkingToken)) {
+                    let token = chunk.text
+                    if (chunk.text.includes(EndThinkingToken)) {
+                      token = chunk.text.split(EndThinkingToken)[0]
+                      thinking += token
+                    } else {
+                      thinking += token
+                    }
                     stream.writeSSE({
-                      event: ChatSSEvents.Start,
-                      data: "",
-                    })
-                    // First valid answer - send the whole thing
-                    stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: parsed.answer,
-                    })
-                  } else {
-                    // Subsequent chunks - send only the new part
-                    const newText = parsed.answer.slice(currentAnswer.length)
-                    stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: newText,
+                      event: ChatSSEvents.Reasoning,
+                      data: token,
                     })
                   }
-                  currentAnswer = parsed.answer
                 }
-              } catch (err) {
-                const errMessage = (err as Error).message
-                Logger.error(
-                  err,
-                  `Error while parsing LLM output ${errMessage}`,
-                )
-                continue
+              }
+              if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                reasoning = false
+                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+              }
+              buffer += chunk.text
+              if (!reasoning) {
+                try {
+                  parsed = jsonParseLLMOutput(buffer)
+                  if (parsed.answer && currentAnswer !== parsed.answer) {
+                    if (currentAnswer === "") {
+                      Logger.info(
+                        "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                      )
+                      stream.writeSSE({
+                        event: ChatSSEvents.Start,
+                        data: "",
+                      })
+                      // First valid answer - send the whole thing
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: parsed.answer,
+                      })
+                    } else {
+                      // Subsequent chunks - send only the new part
+                      const newText = parsed.answer.slice(currentAnswer.length)
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: newText,
+                      })
+                    }
+                    currentAnswer = parsed.answer
+                  }
+                } catch (err) {
+                  const errMessage = (err as Error).message
+                  Logger.error(
+                    err,
+                    `Error while parsing LLM output ${errMessage}`,
+                  )
+                  continue
+                }
               }
             }
             if (chunk.cost) {
@@ -1406,17 +1628,27 @@ export const MessageRetryApi = async (c: Context) => {
               data: "",
             })
             answer = ""
+            thinking = ""
+            reasoning = isReasoning
             citations = []
             citationMap = {}
             for await (const chunk of iterator) {
               if (chunk.text) {
-                answer += chunk.text
-                stream.writeSSE({
-                  event: ChatSSEvents.ResponseUpdate,
-                  data: chunk.text,
-                })
+                if (chunk.reasoning) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                }
+                if (!chunk.reasoning) {
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                }
               }
-
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
@@ -1459,6 +1691,7 @@ export const MessageRetryApi = async (c: Context) => {
                   email: user.email,
                   sources: citations,
                   message: processMessage(answer, citationMap),
+                  thinking,
                   modelId:
                     ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                       .modelId,

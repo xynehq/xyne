@@ -263,6 +263,7 @@ export enum ChatSSEvents {
   End = "e",
   ChatTitleUpdate = "ct",
   CitationsUpdate = "cu",
+  Reasoning = "rz",
   Error = "er",
 }
 

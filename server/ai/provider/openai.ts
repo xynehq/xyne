@@ -50,6 +50,7 @@ export class OpenAIProvider extends BaseProvider {
       cost,
     }
   }
+
   async *converseStream(
     messages: Message[],
     params: ModelParams,
@@ -72,32 +73,50 @@ export class OpenAIProvider extends BaseProvider {
       model: modelParams.modelId,
       stream: true,
       stream_options: { include_usage: true },
-      max_tokens: modelParams.maxTokens,
       temperature: modelParams.temperature,
       top_p: modelParams.topP,
     })
-    let cost: number | undefined
+
+    let costYielded = false
+
     for await (const chunk of chatCompletion) {
-      if (chunk.usage) {
-        cost = calculateCost(
-          {
-            inputTokens: chunk.usage.prompt_tokens,
-            outputTokens: chunk.usage.completion_tokens,
-          },
-          modelDetailsMap[modelParams.modelId].cost.onDemand,
-        )
-      }
-      if (chunk.choices && chunk.choices.length) {
+      // Handle content chunks
+      if (chunk.choices?.[0]?.delta?.content) {
         yield {
-          text: chunk.choices[0].delta.content!,
-          metadata: chunk.choices[0].finish_reason,
-          cost,
+          text: chunk.choices[0].delta.content,
+          metadata: chunk.choices[0].finish_reason ?? "",
+          cost:
+            !costYielded && chunk.usage
+              ? calculateCost(
+                  {
+                    inputTokens: chunk.usage.prompt_tokens,
+                    outputTokens: chunk.usage.completion_tokens,
+                  },
+                  modelDetailsMap[modelParams.modelId].cost.onDemand,
+                )
+              : undefined,
         }
-      } else {
+      }
+      // Handle completion token (finish_reason without content)
+      else if (chunk.choices?.[0]?.finish_reason) {
+        yield {
+          text: "",
+          metadata: chunk.choices[0].finish_reason,
+        }
+      }
+      // Handle cost (if not yet yielded)
+      else if (chunk.usage && !costYielded) {
+        costYielded = true
         yield {
           text: "",
           metadata: "",
-          cost,
+          cost: calculateCost(
+            {
+              inputTokens: chunk.usage.prompt_tokens,
+              outputTokens: chunk.usage.completion_tokens,
+            },
+            modelDetailsMap[modelParams.modelId].cost.onDemand,
+          ),
         }
       }
     }
