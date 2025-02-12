@@ -71,9 +71,9 @@ import { OpenAIProvider } from "@/ai/provider/openai"
 import { Ollama } from "ollama"
 import { OllamaProvider } from "@/ai/provider/ollama"
 import Together from "together-ai"
-import { TogetherProvider } from "./together"
-import { Fireworks } from "./fireworksClient"
-import { FireworksProvider } from "./fireworks"
+import { TogetherProvider } from "@/ai/provider/together"
+import { Fireworks } from "@/ai/provider/fireworksClient"
+import { FireworksProvider } from "@/ai/provider/fireworks"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
