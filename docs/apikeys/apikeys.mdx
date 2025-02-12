@@ -6,7 +6,7 @@ icon: 'key'
 
 This guide providers more details about creating and setting AI api keys in your .env file for using Xyne's chat feature.
 
-To use **AI chat**, you need to configure access credentials. You can use one of the following providers: ***AWS, OpenAI, or Ollama***.
+To use **AI chat**, you need to configure access credentials. You can use one of the following providers: ***AWS, OpenAI, Ollama, Together AI or Fireworks AI***.
 
 ### AWS (Amazon Bedrock) 
 
@@ -15,6 +15,8 @@ To use **AI chat**, you need to configure access credentials. You can use one of
 - Add them as environment variables in your ```.env.default``` file:
     ```javascript   .env.default
     AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY> 
+    AWS_SECRET_KEY=<YOUR_AWS_SECRET_KEY>  
+    AWS_REGION=<YOUR_AWS_REGION>     
     ```
     <Note> The ```AWS_REGION``` key is optional in the ```.env.default``` file; if not provided, it defaults to ```us-west-2``` </Note>
 
@@ -25,15 +27,73 @@ To use **AI chat**, you need to configure access credentials. You can use one of
     OPENAI_API_KEY=<YOUR_OPENAI_API_KEY> 
     ```
 ### Ollama (Local LLM)
-- Install Ollama and the desired model from ollama.com.
+- Install Ollama and the desired model from [Ollama](https://ollama.com/).
 - Add the model name in your .env.default file:
     ```javascript .env.default
     OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
     ```
-<Tip> If you're using Ollama, ensure the specified model is downloaded locally. </Tip>    
+<Tip> If you're using Ollama, ensure the specified model is downloaded locally. </Tip> 
+
+### Together AI
+- Create your API key in [Together AI](https://www.together.ai/)
+- Select the model from your choice.
+- Add the following to your .env.default file:
+    ```javascript .env.default
+    TOGETHER_API_KEY=<YOUR_TOGETHER_API_KEY>
+    TOGETHER_MODEL=<YOUR_TOGETHER_MODEL>
+    TOGETHER_FAST_MODEL=<YOUR_TOGETHER_FAST_MODEL>
+    ```
+
+### Fireworks AI
+- Create your API key in [Fireworks AI](https://fireworks.ai/)
+- Select the model from your choice.
+- Add the following to your .env.default file:
+    ```javascript .env.default
+    FIREWORKS_API_KEY=<YOUR_FIREWORKS_API_KEY>
+    FIREWORKS_MODEL=<YOUR_FIREWORKS_MODEL>
+    FIREWORKS_FAST_MODEL=<YOUR_FIREWORKS_FAST_MODEL>
+    ```
+
+## Setting up for Reasoning [Together | Fireworks | Ollama] : 
+
+For addition of only reasoning in your model, you need to add REASONING in your .env.default file:
+```javascript .env.default
+REASONING=true
+```
+
+### For example : 
+
+#### Reasoning with Together AI : 
+
+```javascript .env.default
+TOGETHER_API_KEY=<YOUR_TOGETHER_API_KEY>
+TOGETHER_MODEL=deepseek-ai/DeepSeek-R1
+TOGETHER_FAST_MODEL=deepseek-ai/DeepSeek-V3
+REASONING=true
+FAST_MODEL_REASONING=false
+```
+#### Reasoning with Fireworks AI : 
+
+```javascript .env.default
+FIREWORKS_API_KEY=<YOUR_FIREWORKS_API_KEY>
+FIREWORKS_MODEL=accounts/fireworks/models/deepseek-r1
+FIREWORKS_FAST_MODEL=accounts/fireworks/models/deepseek-v3
+REASONING=true
+FAST_MODEL_REASONING=false
+```
+
+#### Reasoning with Ollama : 
+
+```javascript .env.default
+OLLAMA_MODEL=<REASONING_MODEL>
+OLLAMA_FAST_MODEL=non reasoning model
+REASONING=true
+FAST_MODEL_REASONING=false
+```
+
 ### Key Selection Order : 
 If multiple keys are set in the environment variable, our system follows this precedence:
 ```javascript 
-AWS → OpenAI → Ollama
+AWS → OpenAI → Ollama → Together AI → Fireworks AI
 ```
-<Tip>Only anyone provider is required to get started. This means either AWS or OpenAI or Ollama can be used, all of them aren't required.</Tip>
+<Tip>Only anyone provider is required to get started. This means either AWS or OpenAI, Ollama, Together AI or Fireworks AI can be used, all of them aren't required.</Tip>

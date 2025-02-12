@@ -50,37 +50,33 @@
       "pages": ["introduction", "quickstart"]
     },
     {
-      "group": "AI Providers",
-      "pages": ["apikeys/apikeys"]      
- },
-    {
-      "group": "Deployment",
-      "pages": [
-        {
-          "group": "Cloud Deployment",
-          "icon": "cloud",
-          "pages": [
-            {
-              "group": "AWS",
-              "icon": "aws",
-              "pages": ["deployment/cloud/aws/aws-deployment-with-docker"]
-            }
-          ]
-        }
-      ]
-    },
-    {
       "group": "Authentication",
       "pages": ["authentication/get-credentials", "authentication/oauth", "authentication/service-accounts"]
-    },
-    {
-      "group": "For Developers",
-      "pages": ["contribution/contribute", "contribution/devmode"]
     },
     {
       "group": "Ingesting Data",
       "pages": ["ingestion/ingestion","ingestion/oauth-ingest", "ingestion/service-ingest"]      
       },
+      {
+        "group": "AI Providers",
+        "pages": ["apikeys/apikeys"]      
+   },
+   {
+    "group": "Deployment",
+    "pages": [
+      {
+        "group": "Cloud Deployment",
+        "icon": "cloud",
+        "pages": [
+          {
+            "group": "AWS",
+            "icon": "aws",
+            "pages": ["deployment/cloud/aws/aws-deployment-with-docker"]
+          }
+        ]
+      }
+    ]
+  },
       {
         "group": "Re-Ingesting Data",
         "pages": ["re-ingest/reingest"]      
@@ -88,6 +84,10 @@
     {
       "group": "Changelog",
       "pages": ["changelog/overview"]
+    },
+    {
+      "group": "For Developers",
+      "pages": ["contribution/contribute", "contribution/devmode"]
     }
   ],
   "redirects": [

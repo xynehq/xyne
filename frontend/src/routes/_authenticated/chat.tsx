@@ -1208,7 +1208,7 @@ const ChatMessage = ({
                     style={{
                       padding: 0,
                       backgroundColor: "transparent",
-                      color: "#1C1D1F",
+                      color: "#627384",
                     }}
                   />
                 </div>
@@ -1227,6 +1227,15 @@ const ChatMessage = ({
                     padding: 0,
                     backgroundColor: "transparent",
                     color: "#1C1D1F",
+                  }}
+                  components={{
+                    // reducing all values by 20% for heading
+                    h1: ({ node, ...props }) => <h1 style={{fontSize: "1.6em"}} {...props} />,
+                    h2: ({ node, ...props }) => <h1 style={{fontSize: "1.2em"}} {...props} />,
+                    h3: ({ node, ...props }) => <h1 style={{fontSize: "1em"}} {...props} />,
+                    h4: ({ node, ...props }) => <h1 style={{fontSize: "0.8em"}} {...props} />,
+                    h5: ({ node, ...props }) => <h1 style={{fontSize: "0.7em"}} {...props} />,
+                    h6: ({ node, ...props }) => <h1 style={{fontSize: "0.68em"}} {...props} />,
                   }}
                 />
               )}
