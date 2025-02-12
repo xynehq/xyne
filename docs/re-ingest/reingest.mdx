@@ -19,8 +19,7 @@ Incase you have restarted the app or simply want to re-ingest your data into the
     docker exec -it xyne-db bash
     ```
 
-- Then, once you're inside the docker container, you'll see the following :
-    <img height="200" src="../images/pde.png" />
+- This will take you inside the docker container. You will see that you're logged-in as a ```root``` user and also see the ```container id``` with it.
 
 - This means you're now inside the docker container successfully, after this you need to login to the postgres database as a xyne user. 
 
@@ -36,7 +35,7 @@ Incase you have restarted the app or simply want to re-ingest your data into the
     ```javascript
     \d
     ```
-- This will show you the list of tables in the postgres database, out of the tables, we will be working with ```connectors``` and ```oauth_providers``` and also ```sync_jobs```.
+- This will show you the list of tables in the postgres database, out of the tables, we will be working with ```connectors``` and ```oauth_providers```, ```sync_jobs``` and also ```sync_history```.
     <img height="200" src="../images/slashd.png" />
 
 - Now we will have a look at the contents of each table using the following commands :
@@ -50,33 +49,54 @@ Incase you have restarted the app or simply want to re-ingest your data into the
     ```javascript
     select * from connectors;
     ```
-    and 
 
     - Sync Jobs
     ```javascript
     select * from sync_jobs;
     ```
 
+    and
+
+        - Sync History
+    ```javascript
+    select * from sync_history;
+    ```
+<Tip> Consider remembering the ```id``` for each table because you might need it later. </Tip>
+
 <Tip>If you don't see an output for any of the above tables, you can refrain from following the next step for that specific table only.</Tip>
 
 - This will show you the contents of the table. 
 
-- Now lets remove the contents of the tables, for this use  :
+- Now lets remove the contents of the tables, for this use either:
 
-    - Oauth Providers
+#### Truncate
+
     ```javascript
-    truncate table oauth_providers;
+    truncate table connectors, oauth_providers, sync_jobs, sync_history;
+    ```
+OR [If you face issues with the truncation]
+
+#### Delete 
+
+ - Oauth Providers
+    ```javascript
+    delete from table oauth_providers where id=;
     ```
      - Connectors
     ```javascript
-    truncate table connectors;
+    delete from table connectors where id= ;
+    ```
+    - Sync Jobs
+    ```javascript
+    delete from table sync_jobs where id= ; 
     ```
     and 
 
-        - Sync Jobs
-        ```javascript
-        truncate table sync_jobs;
-        ```
+    - Sync History
+    ```javascript
+    delete from table sync_history where id= ;
+    ```
+
 
 - Once this is done, you can ```exit``` out of the db and docker-container using the  command: 
 
