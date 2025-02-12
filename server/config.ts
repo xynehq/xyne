@@ -26,8 +26,10 @@ let OpenAIKey = ""
 let OllamaModel = ""
 let TogetherAIModel = ""
 let FireworksAIModel = ""
+let GeminiAIModel = ""
 let TogetherApiKey = ""
 let FireworksApiKey = ""
+let GeminiApiKey = ""
 let isReasoning = false
 let fastModelReasoning = false
 
@@ -65,6 +67,11 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
     : (FireworksAIModel as Models)
   defaultBestModel = FireworksAIModel as Models
+} else if( process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"] ) {
+  GeminiAIModel = process.env["GEMINI_MODEL"] as Models
+  GeminiApiKey = process.env["GEMINI_API_KEY"]
+  defaultFastModel = Models.Gemini_2_0_Flash
+  defaultBestModel = Models.Gemini_1_5_Flash
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -101,6 +108,8 @@ export default {
   TogetherApiKey,
   FireworksAIModel,
   FireworksApiKey,
+  GeminiAIModel,
+  GeminiApiKey,
   redirectUri,
   postOauthRedirect,
   // update user query session time
