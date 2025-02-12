@@ -3,7 +3,8 @@
   "name": "Xyne",
   "logo": {
     "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "light": "/logo/light.svg",
+     "href": "https://xynehq.com/"
   },
   "favicon": "/logo/logo.svg",
   "colors": {
@@ -22,10 +23,15 @@
     }
   ],
   "topbarCtaButton": {
-    "name": "Xyne",
-    "url": "https://www.xynehq.com/"
+    "url": "https://github.com/xynehq/xyne",
+    "type": "github"
   },
-
+  "tabs": [
+    {
+      "name": "Changelog",
+      "url": "changelog"
+    }
+  ],
   "anchors": [
     {
       "name": "Community",
@@ -33,9 +39,9 @@
       "url": "https://xynerds.slack.com/"
     },
     {
-      "name": "Github",
-      "icon": "github",
-      "url": "https://github.com/xynehq/xyne"
+      "name": "Xyne",
+      "icon": "x",
+      "url": "https://xynehq.com/"
     }
   ],
   "navigation": [
@@ -43,6 +49,10 @@
       "group": "Get Started",
       "pages": ["introduction", "quickstart"]
     },
+    {
+      "group": "AI Providers",
+      "pages": ["apikeys/apikeys"]      
+ },
     {
       "group": "Deployment",
       "pages": [
@@ -61,11 +71,23 @@
     },
     {
       "group": "Authentication",
-      "pages": ["authentication/oauth", "authentication/service-accounts"]
+      "pages": ["authentication/get-credentials", "authentication/oauth", "authentication/service-accounts"]
     },
     {
       "group": "For Developers",
-      "pages": ["contribution/contribute"]
+      "pages": ["contribution/contribute", "contribution/devmode"]
+    },
+    {
+      "group": "Ingesting Data",
+      "pages": ["ingestion/ingestion","ingestion/oauth-ingest", "ingestion/service-ingest"]      
+      },
+      {
+        "group": "Re-Ingesting Data",
+        "pages": ["re-ingest/reingest"]      
+        },
+    {
+      "group": "Changelog",
+      "pages": ["changelog/overview"]
     }
   ],
   "redirects": [
