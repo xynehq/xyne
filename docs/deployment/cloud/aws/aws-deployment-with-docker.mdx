@@ -54,32 +54,72 @@ Setup your Google Credentials for the application.
 Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.default``` file, this is the .env file that our docker uses.
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
-<Warning> We strictly recommend generating your own ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET values for security.</Warning>
+<Warning> We strictly recommend generating your own ***ENCRYPTION_KEY, SERVICE_ACCOUNT_ENCRYPTION_KEY and JWT_SECRET*** values for security.</Warning>
+
+
+<Tip>Due to our agentic RAG implementation, the maximum TPM limit exceeds for Open AI's gpt4o model. 
+ For the ***best experience***, we recommend using ***AWS Bedrock or Claude***, as it enhances performance and accuracy. </Tip>
 
 In the ```.env.default``` file, you can modify the following and replace the missing values with your own :
 
 ```javascript .env.default file
 ENCRYPTION_KEY=<YOUR_ENCRYPTION_KEY>
 SERVICE_ACCOUNT_ENCRYPTION_KEY=<YOUR_SERVICE_ACCOUNT_ENCRYPTION_KEY> 
-# If you wish to execute authorization using Oauth then use :   
+
+  
 GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
 GOOGLE_REDIRECT_URI=http://localhost:3001/v1/auth/callback
 GOOGLE_PROD_REDIRECT_URI=<YOUR_Public_IPv4_DNS_ADDRESS>/v1/auth/callback
+
 JWT_SECRET=<YOUR_JWT_SECRET>
+
+
 DATABASE_HOST=xyne-db
 VESPA_HOST=vespa
+
+
+## If using AWS Bedrock
 AWS_ACCESS_KEY=<YOUR_AWS_ACCESS_KEY>
 AWS_SECRET_KEY=<YOUR_AWS_ACCESS_SECRET>
-## OR
-OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
-## OR
-OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
-HOST=<YOUR_Public_IPv4_DNS_ADDRESS>
 AWS_REGION=<YOUR_AWS_REGION>
+  
+## OR [ If using Open AI ]
+OPENAI_API_KEY=<YOUR_OPEN_API_KEY>
+
+## OR [ If using Ollama ] 
+OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
+
+## OR  [ If using Together AI ] 
+TOGETHER_API_KEY=<YOUR_TOGETHER_API_KEY>
+TOGETHER_MODEL=<YOUR_TOGETHER_MODEL>
+TOGETHER_FAST_MODEL=<YOUR_TOGETHER_FAST_MODEL>
+
+## OR  [ If using Fireworks AI ] 
+FIREWORKS_API_KEY=<YOUR_FIREWORKS_API_KEY>
+FIREWORKS_MODEL=<YOUR_FIREWORKS_MODEL>
+FIREWORKS_FAST_MODEL=<YOUR_FIREWORKS_FAST_MODEL>
+
+
+HOST=<YOUR_Public_IPv4_DNS_ADDRESS>
 ```
 
 <Warning> Ensure that these IPv4 address is the same as the one you've added in your Google Cloud Project</Warning>
+
+
+<Tip>To use the chat feature of Xyne, you need any one AI provider (AWS, Ollama, OpenAI Together AI or Fireworks AI). Missing keys will disable chat functionality.</Tip>
+
+You can checkout the AI Providers section for better clarity : 
+
+<Card
+  title="Setup AI Providers for Xyne"
+  icon="key"
+  href="/apikeys/apikeys"
+>
+Setup your AI Provider.
+</Card>
+
+<Warning> Chat will be unavailable without a Service Account or OAuth Account connection. </Warning>
 
 ## Deploy Xyne with Docker  :
 
