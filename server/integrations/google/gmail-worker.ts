@@ -274,7 +274,7 @@ export const parseMail = async (
 
   // Extract body and chunks
   const body = getBody(payload)
-  const chunks = chunkTextByParagraph(body)
+  const chunks = chunkTextByParagraph(body).filter(v => v)
 
   if (!messageId || !threadId) {
     throw new Error("Invalid message")
