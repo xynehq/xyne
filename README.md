@@ -44,8 +44,15 @@ telemetry.
 permissions; no one sees what they don't have access to.
 - **High performance**: Multi Threaded data ingestion
 
-## 📺 Demo
+## 📺 Demos
+
+AI Search and Answer engine for Work
+
 [![Alt text](https://img.youtube.com/vi/ZvyRp4o_p-0/0.jpg)](https://www.youtube.com/watch?v=ZvyRp4o_p-0)
+
+DeepSeek over internal data
+
+[![DeepSeek](https://img.youtube.com/vi/rl5J-DeHG04/0.jpg)](https://www.youtube.com/watch?v=rl5J-DeHG04)
 
 ## 💻 Setting up Google Workspace integration
 Follow the steps mentioned for the [Service Account integration](https://docs.xynehq.com/authentication/service-accounts) of Google Workspace
