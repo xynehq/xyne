@@ -102,6 +102,14 @@ schema mail {
       distance-metric: angular
     }
   }
+
+  field subject_embeddings type tensor<bfloat16>(v[DIMS])  {
+    indexing: input subject | embed | attribute | index
+    attribute {
+        distance-metric: angular
+    }
+  }
+
   field subject_fuzzy type string {
     indexing: input subject | index
     index {
@@ -126,6 +134,7 @@ schema mail {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
+      query(bm25ChunkWeight) double 
     }
 
     function chunk_vector_score() {
@@ -162,12 +171,36 @@ schema mail {
   }
     rank-profile default inherits initial {
     
-      function chunk_vector_score() {
-        expression: closeness(field, chunk_embeddings)
+      constants {
+        THREE_MONTHS_IN_SECONDS: 7890000
+        ONE_YEAR_IN_SECONDS: 31536000
+        MAX_DOC_DECAY: 0.5
       }
 
       function scale(val) {
         expression: 2*atan(val/4)/(3.14159)
+      }
+
+      function document_age() {
+        # Default document age assuming to 3 months when no updateAt timestamp is present
+        expression: max(if(isNan(attribute(timestamp)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(timestamp) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
+      }
+
+      # Document score decays min to 0.5
+      function doc_recency() {
+        expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+      }
+
+      function subject_vector_score() {
+        expression: closeness(field, subject_embeddings)
+      }
+      
+      function chunk_vector_score() {
+        expression: closeness(field, chunk_embeddings)
+      }
+
+      function vector_score() {
+        expression: max(chunk_vector_score,subject_vector_score)
       }
 
       function scaled_bm25_chunks() {
@@ -179,27 +212,29 @@ schema mail {
       }
 
       function combined_bm25() {
-        expression: 0.3*scaled_bm25_chunks + 0.8*scaled_bm25_subject
+        expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_subject
       }
 
       first-phase {
-        expression: (0.5 * chunk_vector_score) + combined_bm25
+        expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
       }
 
       global-phase {
         expression {
           (
-            (0.5 * normalize_linear(chunk_vector_score)) +
-            (max(scaled_bm25_subject,scaled_bm25_chunks))
-          )
+            (query(alpha) * scale(vector_score)) +
+            ((1 - query(alpha)) * max(scaled_bm25_subject,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
+          ) * doc_recency
         }
         rerank-count: 1000
       }
 
     match-features {
       chunk_vector_score
+      subject_vector_score
       scaled_bm25_chunks
       scaled_bm25_subject
+      doc_recency
     }
   }
 

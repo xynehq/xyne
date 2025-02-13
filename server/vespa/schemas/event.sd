@@ -159,45 +159,61 @@ schema event {
     rank-profile default {
         inputs {
             query(e) tensor<bfloat16>(v[DIMS])
+            query(alpha) double 
+        }
+
+        constants {
+          THREE_MONTHS_IN_SECONDS: 7890000
+          ONE_YEAR_IN_SECONDS: 31536000
+          MAX_DOC_DECAY: 0.5
+          META_FIELDS_DECAY: 0.8
         }
 
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
         }
-        
-        function freshness_score() {
-            expression: exp(-1 * (now() - (attribute(createdAt) / 1000)) / (3600 * 24))
-        }
-        
-        function freshness_weight(){
-            expression: if(scale(bm25(name)) > 0.6, freshness_score, if(scale(bm25(description)) > 0.6, freshness_score,0))
+
+        function document_age() {
+            # Default document age assuming to 3 months when no createdAt timestamp is present
+            expression: max(if(isNan(attribute(createdAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(createdAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
         }
 
+        # Document score decays min to 0.5
+        function doc_recency() {
+            expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+        }
 
         function vector_score() {
             expression: closeness(field, chunk_embeddings)
         }
 
+        function scaled_bm25_name(){
+            expression: scale(bm25(name))
+        }
+
+        function scaled_bm25_description(){
+            expression: scale(bm25(description))
+        }
+
         function combined_bm25() {
             expression {
-                (scale(bm25(name)) + scale(bm25(url))) +
-                (0.6 * (scale(bm25(description)) + (scale(bm25(attachmentFilenames)) + scale(bm25(attendeesNames))))) 
+                scale(bm25(name) + bm25(url) + bm25(description)) +
+                (META_FIELDS_DECAY * scale(bm25(attachmentFilenames) + bm25(attendeesNames)))
             }
         }
 
         # Adjusting the ranking by reducing the weight of vector_score and metadata fields in BM25,  
         # while giving higher importance to BM25 scores for 'name' and 'url'
         first-phase {
-            expression: (0.5 * vector_score) + combined_bm25
+            expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
         }
 
         global-phase {
             expression {
               (
-                (0.5 * normalize_linear(vector_score)) +
-                combined_bm25 + 
-                freshness_weight
-              )
+                (query(alpha) * scale(vector_score)) +
+                ((1 - query(alpha)) * max(scale(bm25(name)),scale(bm25(description)))) 
+              ) * doc_recency
             }
             rerank-count: 1000
         }
@@ -208,7 +224,7 @@ schema event {
           scale(bm25(attachmentFilenames))
           scale(bm25(attendeesNames))
           vector_score
-          freshness_weight
+          doc_recency
         }
     }
 

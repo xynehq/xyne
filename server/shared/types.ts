@@ -209,6 +209,7 @@ export const EventResponseSchema = VespaEventSchema.pick({
     type: z.literal(eventSchema),
     relevance: z.number(),
     description: z.string().optional(),
+    attendeesNames: z.array(z.string()).optional(),
   })
   .strip()
 

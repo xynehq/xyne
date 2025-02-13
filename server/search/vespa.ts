@@ -24,7 +24,7 @@ import type {
   VespaSchema,
   VespaMailAttachment,
 } from "@/search/types"
-import { getErrorMessage } from "@/utils"
+import { getErrorMessage, removeStopwords } from "@/utils"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -423,15 +423,16 @@ export const searchVespa = async (
     excludedIds,
     notInMailLabels,
   )
-
   const hybridDefaultPayload = {
     yql,
-    query,
+    q: query, // Original user input query
+    query: removeStopwords(query), // removing stopwords for only bm25, to keep semantic meaning for embeddings
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@query)",
+    "input.query(e)": "embed(@q)",
+    "input.query(alpha)": alpha,
+    "input.query(bm25ChunkWeight)": 0.7,
     hits: limit,
-    alpha,
     ...(offset
       ? {
           offset,
