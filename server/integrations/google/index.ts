@@ -27,6 +27,7 @@ import {
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
+  deleteAllDocuments,
   GetDocument,
   insert,
   insertDocument,
@@ -65,8 +66,11 @@ import { getLogger } from "@/logger"
 import {
   CalendarEntity,
   eventSchema,
+  userQuerySchema,
+  VespaSchemaSources,
   type VespaEvent,
   type VespaFileWithDrivePermission,
+  type VespaSchema,
 } from "@/search/types"
 import {
   UserListingError,
@@ -104,6 +108,13 @@ import {
   StatType,
   updateUserStats,
 } from "./tracking"
+import {
+  deleteAllConnectors,
+  deleteAllOauthProviders,
+  deleteAllSyncHistory,
+  deleteAllSyncJobs,
+} from "@/db/connector"
+
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -245,6 +256,67 @@ export const syncGoogleWorkspace = async (
   }
 }
 
+export const removeConnector = async (boss: PgBoss, job: PgBoss.Job<any>) => {
+  const jobId = job.id
+  Logger.info(`Starting connector removal job ${jobId}`)
+
+  try {
+    const operations = [
+      { name: "deleteOauthProviders", fn: deleteAllOauthProviders },
+      { name: "deleteSyncHistory", fn: deleteAllSyncHistory },
+      { name: "deleteSyncJobs", fn: deleteAllSyncJobs },
+      { name: "deleteConnectors", fn: deleteAllConnectors },
+    ]
+
+    for (const op of operations) {
+      try {
+        await op.fn()
+        Logger.info(`Successfully completed ${op.name} for job ${jobId}`)
+      } catch (error) {
+        const errMessage = getErrorMessage(error)
+        Logger.error(`Error in ${op.name} for job ${jobId}: ${errMessage}`, {
+          error,
+        })
+        throw new Error(`Failed in ${op.name}: ${errMessage}`)
+      }
+    }
+
+    // we will keep user queries
+    const deleteDocsPromises = VespaSchemaSources.filter(
+      (v) => v !== userQuerySchema,
+    ).map(async (schema) => {
+      try {
+        await deleteAllDocuments(schema as VespaSchema)
+        Logger.info(
+          `Successfully deleted documents for schema ${schema} in job ${jobId}`,
+        )
+      } catch (error) {
+        const errMessage = getErrorMessage(error)
+        Logger.error(
+          `Error deleting documents for schema ${schema} in job ${jobId}: ${errMessage}`,
+          { error },
+        )
+        throw new Error(
+          `Failed to delete documents for schema ${schema}: ${errMessage}`,
+        )
+      }
+    })
+
+    await Promise.all(deleteDocsPromises)
+
+    Logger.info(`Successfully completed connector removal job ${jobId}`)
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      error,
+      `Failed to complete connector removal job ${jobId}: ${errMessage}`,
+    )
+    boss.fail(job.name, job.id)
+    throw new Error(
+      `Failed to complete connector removal job ${jobId}: ${errMessage}`,
+    )
+  }
+}
 export const getTextFromEventDescription = (description: string): string => {
   return htmlToText.convert(description, { wordwrap: 130 })
 }

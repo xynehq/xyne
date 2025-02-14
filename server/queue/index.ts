@@ -1,6 +1,7 @@
 import {
   handleGoogleOAuthIngestion,
   handleGoogleServiceAccountIngestion,
+  removeConnector,
   syncGoogleWorkspace,
 } from "@/integrations/google"
 import { ConnectorType, Subsystem, type SaaSJob } from "@/types"
@@ -31,6 +32,7 @@ export const SyncOAuthSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.OAuth}`
 export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`
 export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`
 export const CheckDownloadsFolderQueue = `check-downloads-folder`
+export const RemoveConnectorQueue = `remove-connector`
 
 const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
@@ -46,6 +48,7 @@ export const init = async () => {
   await boss.createQueue(SyncServiceAccountSaaSQueue)
   await boss.createQueue(SyncGoogleWorkspace)
   await boss.createQueue(CheckDownloadsFolderQueue)
+  await boss.createQueue(RemoveConnectorQueue)
   await initWorkers()
 }
 
@@ -117,6 +120,10 @@ const initWorkers = async () => {
 
   await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
     await checkDownloadsFolder(boss, job)
+  })
+
+  await boss.work(RemoveConnectorQueue, async ([job]) => {
+    await removeConnector(boss, job)
   })
 }
 

@@ -15,7 +15,7 @@ import {
   type ServiceAccountConnection,
   Subsystem,
 } from "@/types"
-import { boss, SaaSQueue } from "@/queue"
+import { boss, RemoveConnectorQueue, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
@@ -97,6 +97,31 @@ export const StartOAuth = async (c: Context) => {
   const provider = await getOAuthProvider(db, app)
   const url = await getAuthorizationUrl(c, app, provider)
   return c.redirect(url.toString())
+}
+
+export const deleteConnectors = async (c: Context) => {
+  try {
+    // Enqueue the background job
+    const jobId = await boss.send(RemoveConnectorQueue, {})
+    if (!jobId) {
+      throw new Error("Failed to enqueue job")
+    }
+    Logger.info(`Job ${jobId} enqueued for removing connector`)
+
+    return c.json({
+      success: true,
+      message: "Job enqueued for removing connectors",
+      jobId,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(error, "Failed to enqueue connector removal job")
+    return c.json({
+      success: false,
+      message: "Failed to enqueue job for removing connectors",
+      error: errMsg,
+    })
+  }
 }
 
 export const CreateOAuthProvider = async (c: Context) => {
