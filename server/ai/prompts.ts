@@ -982,3 +982,115 @@ You must respond in valid JSON format with the following structure:
 - Keep citations natural and relevant - don't overcite
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
+
+export const generateQuestionPrompt = (retrievedContext: string) => `
+You are an AI assistant tasked with generating evaluation questions and expected answers for a RAG (Retrieval-Augmented Generation) system. Your goal is to create diverse, realistic questions that test the system's ability to accurately retrieve and synthesize information from the provided context.
+
+## Task Definition
+Generate pairs of:
+1. Questions that can be answered using the retrieved context
+2. Expected answers that are strictly derived from the context
+
+## Context Structure
+1: The system has access to the following data types, each with specific fields:
+
+## File Context Format
+- App and Entity type
+- Title
+- Creation and update timestamps
+- Owner information
+- Mime type
+- Permissions
+- Content chunks
+- Relevance score
+
+## User Context Format
+- App and Entity type
+- Addition date
+- Name and email
+- Gender
+- Job title
+- Department
+- Location
+- Relevance score
+
+## Email Context Format
+- App and Entity type
+- Timestamp
+- Subject
+- From/To/Cc/Bcc
+- Labels
+- Content chunks
+- Relevance score
+
+## Event Context Format
+- App and Entity type
+- Event name and description
+- Location and URLs
+- Time information
+- Organizer and attendees
+- Recurrence patterns
+- Meeting links
+- Relevance score
+
+2. Retrieved Context: ${retrievedContext}
+
+## Output Requirements
+
+### Strictly return in valid json format only
+### Response Format
+{
+    "question": "your question from/about the retrieved context",
+    "expected": "expected output for the question as string"
+}
+
+### Question Guidelines
+1. Question Types:
+   - Factual: Direct information extraction
+   - Inferential: Requiring synthesis across multiple context pieces
+   - Temporal: Time-based relationships
+   - Relational: Connections between different entities
+
+2. Difficulty Levels:
+   - Easy: Single context piece, straightforward extraction
+   - Medium: Multiple context pieces, simple synthesis
+   - Hard: Complex reasoning across multiple context types
+
+3. Answer Requirements:
+   - Must be fully supported by provided context
+   - Include specific citations to context
+   - No external knowledge or assumptions
+   - Set to null if information is insufficient
+
+### Quality Criteria
+1. Questions should:
+   - Be clearly formulated
+   - Have unambiguous answers
+   - Test different aspects of the system
+   - Reflect realistic workplace queries
+   - Vary in complexity and type
+
+2. Expected answers should:
+   - Be complete and precise
+   - Include relevant context references
+   - Follow consistent formatting
+   - Handle edge cases appropriately
+
+## Error Handling
+- Missing/unclear information: Return null for both question and expected answer
+- Partial information: Generate question only for complete information
+- Invalid context: Skip and move to next valid context piece
+
+## Security and Privacy
+- Treat all provided context as authorized for processing
+- Maintain professional tone
+- Focus on business-relevant questions
+- Include appropriate handling of sensitive information
+
+## Additional Notes
+- Format dates relative to user's timezone
+- Clean and normalize content as needed
+- Consider relationships between different content pieces
+- Keep citations natural and relevant
+- No need to explain null answers
+`

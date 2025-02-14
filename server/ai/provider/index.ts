@@ -53,6 +53,7 @@ import {
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   generateMarkdownTableSystemPrompt,
+  generateQuestionPrompt,
   generateTitleSystemPrompt,
   meetingPromptJson,
   metadataAnalysisSystemPrompt,
@@ -1038,4 +1039,43 @@ export function generateSearchQueryOrAnswerFromConversation(
     : [baseMessage]
 
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const generateQuestion = async (
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<{ question: string; expected: string } & { cost: number }> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  // params.systemPrompt = generateQuestionPrompt(retrievedCtx)
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${generateQuestionPrompt(retrievedCtx)} \nGenerate only one question and their expected answer based on the retrieved context.`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  const { text, cost } = await getProviderByModel(params.modelId).converse(
+    messages,
+    params,
+  )
+  if (text) {
+    const parsedResponse = jsonParseLLMOutput(text)
+    return {
+      question: parsedResponse.question,
+      expected: parsedResponse.expected,
+      cost: cost!,
+    }
+  } else {
+    throw new Error("No response from LLM")
+  }
 }
