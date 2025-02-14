@@ -4,6 +4,8 @@ import {
   connectors,
   oauthProviders,
   selectConnectorSchema,
+  syncHistory,
+  syncJobs,
   type SelectConnector,
   type SelectOAuthProvider,
 } from "./schema"
@@ -111,6 +113,37 @@ export const getConnector = async (
     throw new NoConnectorsFound({
       message: `Could not get the connector with id: ${connectorId}`,
     })
+  }
+}
+
+export const deleteAllConnectors = async (): Promise<void> => {
+  try {
+    await db.delete(connectors)
+  } catch (error) {
+    throw new Error("could not delete connectors - Error:" + error)
+  }
+}
+
+export const deleteAllSyncJobs = async (): Promise<void> => {
+  try {
+    await db.delete(syncJobs)
+  } catch (error) {
+    throw new Error("could not delete sync_jobs - Error:" + error)
+  }
+}
+export const deleteAllOauthProviders = async (): Promise<void> => {
+  try {
+    await db.delete(oauthProviders)
+  } catch (error) {
+    throw new Error("could not delete oAuth-providers - Error:" + error)
+  }
+}
+
+export const deleteAllSyncHistory = async (): Promise<void> => {
+  try {
+    await db.delete(syncHistory)
+  } catch (error) {
+    throw new Error("could not delete sync_history - Error:" + error)
   }
 }
 
