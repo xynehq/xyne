@@ -267,95 +267,102 @@ const handleGoogleDriveChange = async (
       }
     }
   } else if (docId && change.file) {
-    const file = await getFile(client, docId)
-    // we want to check if the doc already existed in vespa
-    // and we are just updating the content of it
-    // or user got access to a completely new doc
-    let doc = null
-    if (file) {
-      try {
-        if (
-          file.mimeType &&
-          MimeMapForContent[file.mimeType] &&
-          file.mimeType === DriveMime.Sheets
-        ) {
-          await deleteUpdateStatsForGoogleSheets(docId, client, stats)
-        } else {
-          doc = await getDocumentOrNull(fileSchema, docId)
-          if (doc) {
-            stats.updated += 1
+    try {
+      const file = await getFile(client, docId)
+      // we want to check if the doc already existed in vespa
+      // and we are just updating the content of it
+      // or user got access to a completely new doc
+      let doc = null
+      if (file) {
+        try {
+          if (
+            file.mimeType &&
+            MimeMapForContent[file.mimeType] &&
+            file.mimeType === DriveMime.Sheets
+          ) {
+            await deleteUpdateStatsForGoogleSheets(docId, client, stats)
           } else {
-            Logger.warn(
-              `Could not get document ${docId}, probably does not exist`,
-            )
-            stats.added += 1
+            doc = await getDocumentOrNull(fileSchema, docId)
+            if (doc) {
+              stats.updated += 1
+            } else {
+              Logger.warn(
+                `Could not get document ${docId}, probably does not exist`,
+              )
+              stats.added += 1
+            }
           }
-        }
 
-        // for these mime types we fetch the file
-        // with the full processing
-        let vespaData
-        // TODO: make this generic
-        if (file.mimeType && MimeMapForContent[file.mimeType]) {
-          if (file.mimeType === DriveMime.PDF) {
-            vespaData = await getPDFContent(client, file, DriveEntity.PDF)
-            stats.summary += `indexed new content ${docId}\n`
-          } else if (file.mimeType === DriveMime.Sheets) {
-            vespaData = await getSheetsFromSpreadSheet(
-              client,
-              file,
-              DriveEntity.Sheets,
-            )
-            stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
-          } else if (file.mimeType === DriveMime.Slides) {
-            vespaData = await getPresentationToBeIngested(file, client)
-            if (doc) {
-              stats.summary += `updated the content for ${docId}\n`
-            } else {
+          // for these mime types we fetch the file
+          // with the full processing
+          let vespaData
+          // TODO: make this generic
+          if (file.mimeType && MimeMapForContent[file.mimeType]) {
+            if (file.mimeType === DriveMime.PDF) {
+              vespaData = await getPDFContent(client, file, DriveEntity.PDF)
               stats.summary += `indexed new content ${docId}\n`
-            }
-          } else {
-            vespaData = await getFileContent(client, file, DriveEntity.Docs)
-            if (doc) {
-              stats.summary += `updated the content for ${docId}\n`
+            } else if (file.mimeType === DriveMime.Sheets) {
+              vespaData = await getSheetsFromSpreadSheet(
+                client,
+                file,
+                DriveEntity.Sheets,
+              )
+              stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
+            } else if (file.mimeType === DriveMime.Slides) {
+              vespaData = await getPresentationToBeIngested(file, client)
+              if (doc) {
+                stats.summary += `updated the content for ${docId}\n`
+              } else {
+                stats.summary += `indexed new content ${docId}\n`
+              }
             } else {
-              stats.summary += `indexed new content ${docId}\n`
-            }
-          }
-        } else {
-          if (doc) {
-            stats.summary += `updated file ${docId}\n`
-          } else {
-            stats.summary += `added new file ${docId}\n`
-          }
-          // just update it as is
-          vespaData = await driveFileToIndexed(client, file)
-        }
-        if (vespaData) {
-          // If vespaData is of array type containing multiple things
-          if (Array.isArray(vespaData)) {
-            let allData: VespaFileWithDrivePermission[] = [...vespaData].map(
-              (v) => {
-                v.permissions = toPermissionsList(v.permissions, email)
-                return v
-              },
-            )
-            for (const data of allData) {
-              insertDocument(data)
+              vespaData = await getFileContent(client, file, DriveEntity.Docs)
+              if (doc) {
+                stats.summary += `updated the content for ${docId}\n`
+              } else {
+                stats.summary += `indexed new content ${docId}\n`
+              }
             }
           } else {
-            vespaData.permissions = toPermissionsList(
-              vespaData.permissions,
-              email,
-            )
-            insertDocument(vespaData)
+            if (doc) {
+              stats.summary += `updated file ${docId}\n`
+            } else {
+              stats.summary += `added new file ${docId}\n`
+            }
+            // just update it as is
+            vespaData = await driveFileToIndexed(client, file)
           }
+          if (vespaData) {
+            // If vespaData is of array type containing multiple things
+            if (Array.isArray(vespaData)) {
+              let allData: VespaFileWithDrivePermission[] = [...vespaData].map(
+                (v) => {
+                  v.permissions = toPermissionsList(v.permissions, email)
+                  return v
+                },
+              )
+              for (const data of allData) {
+                insertDocument(data)
+              }
+            } else {
+              vespaData.permissions = toPermissionsList(
+                vespaData.permissions,
+                email,
+              )
+              insertDocument(vespaData)
+            }
+          }
+        } catch (err) {
+          Logger.error(
+            err,
+            `Couldn't add or update document with docId ${docId}`,
+          )
         }
-      } catch (err) {
-        Logger.error(err, `Couldn't add or update document with docId ${docId}`)
+      } else {
+        Logger.error(`Couldn't get file with id ${docId}`)
       }
-    } else {
-      Logger.error(`Couldn't get file with id ${docId}`)
+    } catch (err) {
+      Logger.error(err, `Error getting file with id ${docId}`)
     }
   } else if (change.driveId) {
     // TODO: handle this once we support multiple drives
@@ -454,13 +461,17 @@ export const handleGoogleOAuthChanges = async (
       ) {
         Logger.info(`total changes:  ${changes.length}`)
         for (const change of changes) {
-          let changeStats = await handleGoogleDriveChange(
-            change,
-            oauth2Client,
-            user.email,
-          )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+          try {
+            let changeStats = await handleGoogleDriveChange(
+              change,
+              oauth2Client,
+              user.email,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          } catch (err) {
+            Logger.error(err, `Error syncing drive change`)
+          }
         }
       }
       const peopleService = google.people({ version: "v1", auth: oauth2Client })
@@ -468,29 +479,34 @@ export const handleGoogleOAuthChanges = async (
       let contactsToken = config.contactsToken
       let otherContactsToken = config.otherContactsToken
       do {
-        const response = await retryWithBackoff(
-          () =>
-            peopleService.people.connections.list({
-              resourceName: "people/me",
-              personFields: contactKeys.join(","),
-              syncToken: config.contactsToken,
-              requestSyncToken: true,
-              pageSize: 1000, // Adjust the page size based on your quota and needs
-              pageToken: nextPageToken, // Use the nextPageToken for pagination
-            }),
-          `Fetching contacts changes with syncToken ${config.contactsToken}`,
-        )
-        contactsToken = response.data.nextSyncToken ?? contactsToken
-        nextPageToken = response.data.nextPageToken ?? ""
-        if (response.data.connections) {
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.connections,
-            user.email,
-            GooglePeopleEntity.Contacts,
+        try {
+          const response = await retryWithBackoff(
+            () =>
+              peopleService.people.connections.list({
+                resourceName: "people/me",
+                personFields: contactKeys.join(","),
+                syncToken: config.contactsToken,
+                requestSyncToken: true,
+                pageSize: 1000, // Adjust the page size based on your quota and needs
+                pageToken: nextPageToken, // Use the nextPageToken for pagination
+              }),
+            `Fetching contacts changes with syncToken ${config.contactsToken}`,
           )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+          contactsToken = response.data.nextSyncToken ?? contactsToken
+          nextPageToken = response.data.nextPageToken ?? ""
+          if (response.data.connections) {
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.connections,
+              user.email,
+              GooglePeopleEntity.Contacts,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } catch (err) {
+          Logger.error(err, `Error syncing contacts`)
+          break
         }
       } while (nextPageToken)
 
@@ -498,30 +514,38 @@ export const handleGoogleOAuthChanges = async (
       nextPageToken = ""
 
       do {
-        const response = await retryWithBackoff(
-          () =>
-            peopleService.otherContacts.list({
-              pageSize: 1000,
-              readMask: contactKeys.join(","),
-              syncToken: otherContactsToken,
-              pageToken: nextPageToken,
-              requestSyncToken: true,
-              sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
-            }),
-          `Fetching other contacts changes with syncToken ${otherContactsToken}`,
-        )
-        otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
-        nextPageToken = response.data.nextPageToken ?? ""
-        if (response.data.otherContacts) {
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.otherContacts,
-            user.email,
-            GooglePeopleEntity.OtherContacts,
+        try {
+          const response = await retryWithBackoff(
+            () =>
+              peopleService.otherContacts.list({
+                pageSize: 1000,
+                readMask: contactKeys.join(","),
+                syncToken: otherContactsToken,
+                pageToken: nextPageToken,
+                requestSyncToken: true,
+                sources: [
+                  "READ_SOURCE_TYPE_PROFILE",
+                  "READ_SOURCE_TYPE_CONTACT",
+                ],
+              }),
+            `Fetching other contacts changes with syncToken ${otherContactsToken}`,
           )
+          otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+          nextPageToken = response.data.nextPageToken ?? ""
+          if (response.data.otherContacts) {
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.otherContacts,
+              user.email,
+              GooglePeopleEntity.OtherContacts,
+            )
 
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } catch (err) {
+          Logger.error(err, `Error syncing other contacts`)
+          break
         }
       } while (nextPageToken)
       if (changesExist) {
@@ -571,7 +595,7 @@ export const handleGoogleOAuthChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
+        `Could not successfully complete sync job for Google Drive: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       const newConfig = {
@@ -593,12 +617,12 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: `Could not complete sync job: ${stats.summary}`,
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: "",
-      })
+      // throw new SyncJobFailed({
+      //   message: `Could not complete sync job for Google Drive: ${stats.summary}`,
+      //   cause: error as Error,
+      //   integration: Apps.GoogleDrive,
+      //   entity: "",
+      // })
     }
   }
 
@@ -688,12 +712,12 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.Gmail,
-        entity: "",
-      })
+      // throw new SyncJobFailed({
+      //   message: "Could not complete sync job",
+      //   cause: error as Error,
+      //   integration: Apps.Gmail,
+      //   entity: "",
+      // })
     }
   }
 
@@ -789,61 +813,68 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.GoogleCalendar,
-        entity: "",
-      })
+      // throw new SyncJobFailed({
+      //   message: "Could not complete sync job",
+      //   cause: error as Error,
+      //   integration: Apps.GoogleCalendar,
+      //   entity: "",
+      // })
     }
   }
 }
 
 const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
-  const { baseUrl, joiningUrl } = getJoiningLink(event)
-  const { attendeesInfo, attendeesEmails, attendeesNames } =
-    getAttendeesOfEvent(event.attendees ?? [])
-  const { attachmentsInfo, attachmentFilenames } = getAttachments(
-    event.attachments ?? [],
-  )
-  const { isDefaultStartTime, startTime } = getEventStartTime(event)
-  const eventToBeIngested = {
-    docId: event.id ?? "",
-    name: event.summary ?? "",
-    description: getTextFromEventDescription(event?.description ?? ""),
-    url: event.htmlLink ?? "", // eventLink, not joiningLink
-    status: event.status ?? "",
-    location: event.location ?? "",
-    createdAt: new Date(event.created!).getTime(),
-    updatedAt: new Date(event.updated!).getTime(),
-    app: Apps.GoogleCalendar,
-    entity: CalendarEntity.Event,
-    creator: {
-      email: event.creator?.email ?? "",
-      displayName: event.creator?.displayName ?? "",
-    },
-    organizer: {
-      email: event.organizer?.email ?? "",
-      displayName: event.organizer?.displayName ?? "",
-    },
-    attendees: attendeesInfo,
-    attendeesNames: attendeesNames,
-    startTime: startTime,
-    endTime: new Date(event.end?.dateTime!).getTime(),
-    attachmentFilenames,
-    attachments: attachmentsInfo,
-    recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
-    baseUrl,
-    joiningLink: joiningUrl,
-    permissions: getUniqueEmails([
-      event.organizer?.email ?? "",
-      ...attendeesEmails,
-    ]),
-    cancelledInstances: [],
-    defaultStartTime: isDefaultStartTime,
-  }
+  try {
+    const { baseUrl, joiningUrl } = getJoiningLink(event)
+    const { attendeesInfo, attendeesEmails, attendeesNames } =
+      getAttendeesOfEvent(event.attendees ?? [])
+    const { attachmentsInfo, attachmentFilenames } = getAttachments(
+      event.attachments ?? [],
+    )
+    const { isDefaultStartTime, startTime } = getEventStartTime(event)
+    const eventToBeIngested = {
+      docId: event.id ?? "",
+      name: event.summary ?? "",
+      description: getTextFromEventDescription(event?.description ?? ""),
+      url: event.htmlLink ?? "", // eventLink, not joiningLink
+      status: event.status ?? "",
+      location: event.location ?? "",
+      createdAt: new Date(event.created!).getTime(),
+      updatedAt: new Date(event.updated!).getTime(),
+      app: Apps.GoogleCalendar,
+      entity: CalendarEntity.Event,
+      creator: {
+        email: event.creator?.email ?? "",
+        displayName: event.creator?.displayName ?? "",
+      },
+      organizer: {
+        email: event.organizer?.email ?? "",
+        displayName: event.organizer?.displayName ?? "",
+      },
+      attendees: attendeesInfo,
+      attendeesNames: attendeesNames,
+      startTime: startTime,
+      endTime: new Date(event.end?.dateTime!).getTime(),
+      attachmentFilenames,
+      attachments: attachmentsInfo,
+      recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
+      baseUrl,
+      joiningLink: joiningUrl,
+      permissions: getUniqueEmails([
+        event.organizer?.email ?? "",
+        ...attendeesEmails,
+      ]),
+      cancelledInstances: [],
+      defaultStartTime: isDefaultStartTime,
+    }
 
-  await insert(eventToBeIngested, eventSchema)
+    await insert(eventToBeIngested, eventSchema)
+  } catch (e) {
+    Logger.error(
+      e,
+      `Error inserting Calendar event with id ${event?.id} into Vespa`,
+    )
+  }
 }
 
 const maxCalendarEventChangeResults = 2500
@@ -909,33 +940,40 @@ const handleGoogleCalendarEventsChanges = async (
               )
               // Update this event and add a instanceDateTime cancelledInstances property
               try {
-                const eventFromVespa = await GetDocument(eventSchema, eventId)
-                const oldCancelledInstances =
-                  (eventFromVespa.fields as VespaEvent).cancelledInstances ?? []
+                const eventFromVespa = await getDocumentOrNull(
+                  eventSchema,
+                  eventId,
+                )
+                if (eventFromVespa) {
+                  const oldCancelledInstances =
+                    (eventFromVespa?.fields as VespaEvent)
+                      ?.cancelledInstances ?? []
 
-                if (!oldCancelledInstances?.includes(instanceDateTime)) {
-                  // Do this only if instanceDateTime not already inside oldCancelledInstances
-                  const newCancelledInstances = [
-                    ...oldCancelledInstances,
-                    instanceDateTime,
-                  ]
+                  if (!oldCancelledInstances?.includes(instanceDateTime)) {
+                    // Do this only if instanceDateTime not already inside oldCancelledInstances
+                    const newCancelledInstances = [
+                      ...oldCancelledInstances,
+                      instanceDateTime,
+                    ]
 
-                  if (eventFromVespa) {
-                    await UpdateEventCancelledInstances(
-                      eventSchema,
-                      eventId,
-                      newCancelledInstances,
-                    )
-                    stats.updated += 1
-                    stats.summary += `updated cancelledInstances of event: ${docId}\n`
-                    changesExist = true
+                    if (eventFromVespa) {
+                      await UpdateEventCancelledInstances(
+                        eventSchema,
+                        eventId,
+                        newCancelledInstances,
+                      )
+                      stats.updated += 1
+                      stats.summary += `updated cancelledInstances of event: ${docId}\n`
+                      changesExist = true
+                    }
                   }
+                } else {
+                  Logger.error(
+                    `Can't find event to delete, probably doesn't exist`,
+                  )
                 }
               } catch (error) {
-                Logger.error(
-                  error,
-                  `Can't find document to delete, probably doesn't exist`,
-                )
+                Logger.error(error, `Error deleting Calendar event`)
               } finally {
                 continue
               }
@@ -955,8 +993,7 @@ const handleGoogleCalendarEventsChanges = async (
                 stats.summary += `${docId} event removed\n`
                 changesExist = true
               } catch (e) {
-                // TODO: detect vespa 404 and only ignore for that case
-                // otherwise throw it further
+                Logger.error(`Couldn't delete document with id ${docId}`)
               }
             } else {
               // remove our user's permission to change event
@@ -975,14 +1012,13 @@ const handleGoogleCalendarEventsChanges = async (
               err,
               `Error getting document: ${err.message} ${err.stack}`,
             )
-            throw err
           }
         } else if (docId) {
           let event = null
-          try {
-            event = await GetDocument(eventSchema, docId!)
-          } catch (error) {
-            Logger.error(error, `Event doesn't exist in Vepsa`)
+
+          event = await getDocumentOrNull(eventSchema, docId!)
+          if (!event) {
+            Logger.error(`Event doesn't exist in Vepsa`)
           }
 
           await insertEventIntoVespa(eventChange)
@@ -1010,7 +1046,13 @@ const handleGoogleCalendarEventsChanges = async (
       changesExist,
     }
   } catch (err) {
-    throw err
+    Logger.error(err, `Error handling Calendar event changes`)
+    return {
+      eventChanges,
+      stats,
+      newCalendarEventsSyncToken: newSyncTokenCalendarEvents,
+      changesExist,
+    }
   }
 }
 
@@ -1098,22 +1140,28 @@ const handleGmailChanges = async (
           if (history.messagesDeleted) {
             for (const { message } of history.messagesDeleted) {
               try {
-                const mailMsg = await GetDocument(mailSchema, message?.id!)
-                const permissions = (mailMsg.fields as VespaMail).permissions
-                if (permissions.length === 1) {
-                  await DeleteDocument(message?.id!, mailSchema)
-                } else {
-                  const newPermissions = permissions.filter(
-                    (v) => v !== userEmail,
-                  )
-                  await UpdateDocumentPermissions(
-                    mailSchema,
-                    message?.id!,
-                    newPermissions,
-                  )
+                const mailMsg = await getDocumentOrNull(
+                  mailSchema,
+                  message?.id!,
+                )
+                if (mailMsg) {
+                  const permissions = (mailMsg?.fields as VespaMail)
+                    ?.permissions
+                  if (permissions?.length === 1) {
+                    await DeleteDocument(message?.id!, mailSchema)
+                  } else {
+                    const newPermissions = permissions?.filter(
+                      (v) => v !== userEmail,
+                    )
+                    await UpdateDocumentPermissions(
+                      mailSchema,
+                      message?.id!,
+                      newPermissions,
+                    )
+                  }
+                  stats.removed += 1
+                  changesExist = true
                 }
-                stats.removed += 1
-                changesExist = true
               } catch (error) {
                 // Handle errors if the document no longer exists
                 Logger.error(
@@ -1126,12 +1174,17 @@ const handleGmailChanges = async (
           if (history.labelsAdded) {
             for (const { message, labelIds } of history.labelsAdded) {
               try {
-                const mailMsg = await GetDocument(mailSchema, message?.id!)
-                let labels = (mailMsg.fields as VespaMail).labels || []
-                labels = labels.concat(labelIds || [])
-                await UpdateDocument(mailSchema, message?.id!, { labels })
-                stats.updated += 1
-                changesExist = true
+                const mailMsg = await getDocumentOrNull(
+                  mailSchema,
+                  message?.id!,
+                )
+                if (mailMsg) {
+                  let labels = (mailMsg?.fields as VespaMail)?.labels || []
+                  labels = labels.concat(labelIds || [])
+                  await UpdateDocument(mailSchema, message?.id!, { labels })
+                  stats.updated += 1
+                  changesExist = true
+                }
               } catch (error) {
                 Logger.error(
                   error,
@@ -1143,14 +1196,19 @@ const handleGmailChanges = async (
           if (history.labelsRemoved) {
             for (const { message, labelIds } of history.labelsRemoved) {
               try {
-                const mailMsg = await GetDocument(mailSchema, message?.id!)
-                let labels = (mailMsg.fields as VespaMail).labels || []
-                labels = labels.filter(
-                  (label) => !(labelIds || []).includes(label),
+                const mailMsg = await getDocumentOrNull(
+                  mailSchema,
+                  message?.id!,
                 )
-                await UpdateDocument(mailSchema, message?.id!, { labels })
-                stats.updated += 1
-                changesExist = true
+                if (mailMsg) {
+                  let labels = (mailMsg?.fields as VespaMail)?.labels || []
+                  labels = labels.filter(
+                    (label) => !(labelIds || []).includes(label),
+                  )
+                  await UpdateDocument(mailSchema, message?.id!, { labels })
+                  stats.updated += 1
+                  changesExist = true
+                }
               } catch (error) {
                 Logger.error(
                   error,
@@ -1164,19 +1222,21 @@ const handleGmailChanges = async (
       nextPageToken = res.data.nextPageToken || ""
     } while (nextPageToken)
   } catch (error) {
-    if (
-      (error as any).code === 404 ||
-      (error as any).message.includes("Requested entity was not found")
-    ) {
-      // Log the error and return without updating the historyId
-      Logger.error(
-        error,
-        `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
-      )
-      return { stats, historyId: newHistoryId, changesExist }
-    } else {
-      throw error
-    }
+    // if (
+    //   (error as any).code === 404 ||
+    //   (error as any).message.includes("Requested entity was not found")
+    // ) {
+    //   // Log the error and return without updating the historyId
+    //   Logger.error(
+    //     error,
+    //     `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
+    //   )
+    //   return { stats, historyId: newHistoryId, changesExist }
+    // } else {
+    //   throw error
+    // }
+    Logger.error(error, `Error handling Gmail changes`)
+    return { stats, historyId: newHistoryId, changesExist }
   }
 
   return { historyId: newHistoryId, stats, changesExist }
@@ -1192,31 +1252,35 @@ const syncContacts = async (
   const connections = contacts || [] // Get contacts from current page
   // check if deleted else update/add
   for (const contact of connections) {
-    // if the contact is deleted
-    if (contact.metadata?.deleted && contact.resourceName) {
-      await DeleteDocument(contact.resourceName, userSchema)
-      stats.removed += 1
-    } else {
-      // TODO: distinction between insert vs update
-      if (contact.resourceName) {
-        if (entity === GooglePeopleEntity.Contacts) {
-          // we probably don't need this get
-          const contactResp = await retryWithBackoff(
-            () =>
-              client.people.get({
-                resourceName: contact.resourceName!,
-                personFields: contactKeys.join(","),
-              }),
-            `Fetching contact with resourceName ${contact.resourceName}`,
-          )
-          await insertContact(contactResp.data, entity, email)
-        } else if (entity === GooglePeopleEntity.OtherContacts) {
-          // insert as is what we got for the changes
-          await insertContact(contact, entity, email)
+    try {
+      // if the contact is deleted
+      if (contact.metadata?.deleted && contact.resourceName) {
+        await DeleteDocument(contact.resourceName, userSchema)
+        stats.removed += 1
+      } else {
+        // TODO: distinction between insert vs update
+        if (contact.resourceName) {
+          if (entity === GooglePeopleEntity.Contacts) {
+            // we probably don't need this get
+            const contactResp = await retryWithBackoff(
+              () =>
+                client.people.get({
+                  resourceName: contact.resourceName!,
+                  personFields: contactKeys.join(","),
+                }),
+              `Fetching contact with resourceName ${contact.resourceName}`,
+            )
+            await insertContact(contactResp.data, entity, email)
+          } else if (entity === GooglePeopleEntity.OtherContacts) {
+            // insert as is what we got for the changes
+            await insertContact(contact, entity, email)
+          }
+          stats.added += 1
+          Logger.info(`Updated contact ${contact.resourceName}`)
         }
-        stats.added += 1
-        Logger.info(`Updated contact ${contact.resourceName}`)
       }
+    } catch (e) {
+      Logger.error(e, `Error in syncing contact`)
     }
   }
   return stats
