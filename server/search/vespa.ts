@@ -50,12 +50,12 @@ const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 /**
  * Deletes all documents from the specified schema and namespace in Vespa.
  */
-async function deleteAllDocuments() {
+export async function deleteAllDocuments(schema: VespaSchema) {
   try {
     await vespa.deleteAllDocuments({
       cluster: CLUSTER,
       namespace: NAMESPACE,
-      schema: fileSchema,
+      schema: schema,
     })
   } catch (error) {
     throw new ErrorDeletingDocuments({

@@ -116,11 +116,11 @@ class VespaClient {
       })
 
       if (response.ok) {
-        Logger.info("All documents deleted successfully.")
+        Logger.info(`All documents deleted successfully for schema: ${schema}`)
       } else {
         const errorText = response.statusText
         throw new Error(
-          `Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`,
+          `Failed to delete documents for schema: ${schema} ${response.status} ${response.statusText} - ${errorText}`,
         )
       }
     } catch (error) {
