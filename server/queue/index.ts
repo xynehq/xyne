@@ -1,7 +1,7 @@
 import {
   handleGoogleOAuthIngestion,
   handleGoogleServiceAccountIngestion,
-  removeConnector,
+  disconnectConnector,
   syncGoogleWorkspace,
 } from "@/integrations/google"
 import { ConnectorType, Subsystem, type SaaSJob } from "@/types"
@@ -63,7 +63,7 @@ export const setupServiceAccountCronjobs = async () => {
   await boss.schedule(SyncGoogleWorkspace, Every6Hours, {}, { retryLimit: 0 })
 }
 
-const initWorkers = async () => {
+export const initWorkers = async () => {
   Logger.info("initWorkers")
   await boss.work(SaaSQueue, async ([job]) => {
     const start = new Date()
@@ -123,7 +123,7 @@ const initWorkers = async () => {
   })
 
   await boss.work(RemoveConnectorQueue, async ([job]) => {
-    await removeConnector(boss, job)
+    await disconnectConnector(boss, job)
   })
 }
 

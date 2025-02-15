@@ -34,7 +34,13 @@ import {
   insertUser,
   UpdateEventCancelledInstances,
 } from "@/search/vespa"
-import { SaaSQueue } from "@/queue"
+import {
+  RemoveConnectorQueue,
+  SaaSQueue,
+  SyncGoogleWorkspace,
+  SyncOAuthSaaSQueue,
+  SyncServiceAccountSaaSQueue,
+} from "@/queue"
 import { wsConnections } from "@/integrations/google/ws"
 import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
@@ -256,11 +262,26 @@ export const syncGoogleWorkspace = async (
   }
 }
 
-export const removeConnector = async (boss: PgBoss, job: PgBoss.Job<any>) => {
+export const disconnectConnector = async (
+  boss: PgBoss,
+  job: PgBoss.Job<any>,
+) => {
   const jobId = job.id
-  Logger.info(`Starting connector removal job ${jobId}`)
+  const jobName = job.name
+  let disconnectingState = {
+    disconnecting: true,
+    completed: false,
+  }
+
+  Logger.info(
+    `Starting connector removal job jobId: ${jobId} job-name: ${jobName}`,
+  )
+  const interval = setInterval(() => {
+    sendWebsocketMessage(JSON.stringify(disconnectingState), "remove-connector")
+  }, 100)
 
   try {
+    // await new Promise((resolve) => setTimeout(resolve, 10000))
     const operations = [
       { name: "deleteOauthProviders", fn: deleteAllOauthProviders },
       { name: "deleteSyncHistory", fn: deleteAllSyncHistory },
@@ -271,15 +292,32 @@ export const removeConnector = async (boss: PgBoss, job: PgBoss.Job<any>) => {
     for (const op of operations) {
       try {
         await op.fn()
-        Logger.info(`Successfully completed ${op.name} for job ${jobId}`)
+        Logger.info(
+          `Successfully completed ${op.name} for jobId: ${jobId} job-name: ${jobName}`,
+        )
       } catch (error) {
-        const errMessage = getErrorMessage(error)
-        Logger.error(`Error in ${op.name} for job ${jobId}: ${errMessage}`, {
+        Logger.error(
           error,
-        })
-        throw new Error(`Failed in ${op.name}: ${errMessage}`)
+          `Error in ${op.name} for jobId: ${jobId} job-name: ${jobName}`,
+        )
+        throw error
       }
     }
+
+    const unschedulePromises = [
+      SyncGoogleWorkspace,
+      SyncOAuthSaaSQueue,
+      SyncServiceAccountSaaSQueue,
+    ].map(async (queue) => {
+      try {
+        await boss.unschedule(queue)
+      } catch (error) {
+        Logger.error(error, `Error unscheduling ${queue}`)
+        throw error
+      }
+    })
+
+    await Promise.all(unschedulePromises)
 
     // we will keep user queries
     const deleteDocsPromises = VespaSchemaSources.filter(
@@ -288,35 +326,44 @@ export const removeConnector = async (boss: PgBoss, job: PgBoss.Job<any>) => {
       try {
         await deleteAllDocuments(schema as VespaSchema)
         Logger.info(
-          `Successfully deleted documents for schema ${schema} in job ${jobId}`,
+          `Successfully deleted documents for schema ${schema} in jobId: ${jobId} job-name: ${jobName}`,
         )
       } catch (error) {
-        const errMessage = getErrorMessage(error)
         Logger.error(
-          `Error deleting documents for schema ${schema} in job ${jobId}: ${errMessage}`,
-          { error },
+          error,
+          `Error deleting documents for schema ${schema} in jobId: ${jobId} job-name: ${jobName}`,
         )
-        throw new Error(
-          `Failed to delete documents for schema ${schema}: ${errMessage}`,
-        )
+        throw error
       }
     })
 
     await Promise.all(deleteDocsPromises)
+    await boss.complete(RemoveConnectorQueue, jobId)
 
-    Logger.info(`Successfully completed connector removal job ${jobId}`)
+    disconnectingState.completed = true
+    disconnectingState.disconnecting = false
+    Logger.info(
+      `Successfully completed connector removal jobId: ${jobId} job-name: ${jobName}`,
+    )
   } catch (error) {
+    disconnectingState.completed = false
+    disconnectingState.disconnecting = false
     const errMessage = getErrorMessage(error)
     Logger.error(
       error,
-      `Failed to complete connector removal job ${jobId}: ${errMessage}`,
+      `Failed to complete connector removal job jobId: ${jobId} job-name: ${jobName}: ${errMessage}`,
     )
-    boss.fail(job.name, job.id)
+    await boss.fail(jobId, jobName)
     throw new Error(
-      `Failed to complete connector removal job ${jobId}: ${errMessage}`,
+      `Failed to complete connector removal job jobId: ${jobId} job-name: ${jobName}: ${errMessage}`,
     )
+  } finally {
+    setTimeout(() => {
+      clearInterval(interval)
+    }, 2000)
   }
 }
+
 export const getTextFromEventDescription = (description: string): string => {
   return htmlToText.convert(description, { wordwrap: 130 })
 }
