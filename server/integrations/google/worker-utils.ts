@@ -89,7 +89,8 @@ export const getGmailAttachmentChunks = async (
 
     await deleteDocument(downloadAttachmentFilePath)
   } catch (error) {
-    throw error
+    // throw error
+    Logger.error(error, `Error in getting gmailAttachmentChunks`)
   }
 
   return attachmentChunks
