@@ -1331,14 +1331,18 @@ export const handleGoogleServiceAccountChanges = async (
       ) {
         Logger.info(`About to Sync Drive changes:  ${changes.length}`)
         for (const change of changes) {
-          let changeStats = await handleGoogleDriveChange(
-            change,
-            jwtClient,
-            user.email,
-          )
-          stats = mergeStats(stats, changeStats)
+          try {
+            let changeStats = await handleGoogleDriveChange(
+              change,
+              jwtClient,
+              user.email,
+            )
+            stats = mergeStats(stats, changeStats)
+          } catch (err) {
+            Logger.error(err, `Error syncing drive change`)
+          }
+          changesExist = true
         }
-        changesExist = true
       }
       const peopleService = google.people({
         version: "v1",
@@ -1388,7 +1392,8 @@ export const handleGoogleServiceAccountChanges = async (
             "This is an error that is not yet implemented, it requires a full sync of the contacts api",
           )
         } else {
-          throw error
+          // throw error
+          Logger.error(error, `Error syncing contacts`)
         }
       }
       // reset
@@ -1441,7 +1446,8 @@ export const handleGoogleServiceAccountChanges = async (
             "This is an error that is not yet implemented, it requires a full sync of the other contacts api",
           )
         } else {
-          throw error
+          // throw error
+          Logger.error(error, `Error syncing other contacts`)
         }
       }
       if (changesExist) {
@@ -1488,7 +1494,7 @@ export const handleGoogleServiceAccountChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete ServiceAccount sync job for Google Drive: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: ChangeToken = syncJob.config as ChangeToken
       const newConfig = {
@@ -1510,12 +1516,12 @@ export const handleGoogleServiceAccountChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: "",
-      })
+      // throw new SyncJobFailed({
+      //   message: "Could not complete sync job",
+      //   cause: error as Error,
+      //   integration: Apps.GoogleDrive,
+      //   entity: "",
+      // })
     }
   }
   const gmailSyncJobs = await getAppSyncJobs(
@@ -1606,12 +1612,12 @@ export const handleGoogleServiceAccountChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.Gmail,
-        entity: "",
-      })
+      // throw new SyncJobFailed({
+      //   message: "Could not complete sync job",
+      //   cause: error as Error,
+      //   integration: Apps.Gmail,
+      //   entity: "",
+      // })
     }
   }
 
@@ -1692,12 +1698,6 @@ export const handleGoogleServiceAccountChanges = async (
         `Could not successfully complete ServiceAccount sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
 
-      if (
-        errorMessage ===
-        "Sync token is no longer valid, a full sync is required."
-      ) {
-        continue
-      }
       const config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken
       const newConfig = {
@@ -1719,12 +1719,12 @@ export const handleGoogleServiceAccountChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.GoogleCalendar,
-        entity: "",
-      })
+      // throw new SyncJobFailed({
+      //   message: "Could not complete sync job",
+      //   cause: error as Error,
+      //   integration: Apps.GoogleCalendar,
+      //   entity: "",
+      // })
     }
   }
 }
