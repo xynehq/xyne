@@ -6,14 +6,53 @@ icon: 'code-compare'
 
 {/* ADD NEW CHANGES ABOVE THE OLD ONES */}
 
+<Update label="February 2025" description="v0.3.0">
+  ## Changelog
+  <Frame>
+    <img src="/images/deepseek_release.png" alt="Deepseek release screenshot" />
+  </Frame>
 
-<Update label="February 2025" description="v0.2.4">
+  * ```Feature``` : Added DeepSeek (670B) to work with together, fireworks client
+  * ```Feature``` : Ingest Gmail PDF attachments
+  * ```Feature``` : Add a permission aware eval script to test our Chat function
+  * ```Feature``` : Smoother deployment experience
+  * ```Feature``` : Add Ollama support
+  * ```Feature``` : Add ingestion stats for OAuth
+  * ```Feature``` : Improve OpenAI error mapping for better messages especially for rate limits 
+  * ```Enhancement``` : Made AWS region in env optional
+  * ```Enhancement``` : Change History Modal to a sidebar
+  * ```Enhancement``` : A more robust Sync engine
+  * ```Enhancement``` : Improved reliability of running Vespa locally be increasing the timeouts.
+  * ```Enhancement``` : More tool tips in the UI
+  * ```Enhancement``` : Change style of citations with layout shift as sources open
+  * ```Enhancement``` : Enhanced font rendering with global anti-aliasing for improved visual clarity
+  * ```Enhancement``` : Add Loader & display error inside HistoryModal UI
+  * ```Bug Fix``` : Added missing context map for attachments
+  * ```Bug Fix``` : Service account gmail worker crash due to import of server
+  * ```Bug Fix``` : Prevent infinite loop of worker creation via cyclic imports
+  * ```Bug Fix``` : Fix parse json of LLM response to allow multiline response
+  * ```Bug Fix``` : Add missing permission check for docs
+  * ```Bug Fix``` : Increased memory limits in docker compose for Vespa
+  * ```Bug Fix``` : Add missing gmail attachment stats for service‐account.
+  * ```Bug Fix``` : Fix people and event ranking in search
+  * ```Bug Fix``` : Prevent document clean up from affecting numeric values
+  * ```Bug Fix``` : Update attachment stats via worker message
+  * ```Bug Fix``` : Fix OAuth error toast
+
+  release: https://github.com/xynehq/xyne/releases/tag/v0.3.0
+  [![DeepSeek](https://img.youtube.com/vi/rl5J-DeHG04/0.jpg)](https://www.youtube.com/watch?v=rl5J-DeHG04)
+</Update>
+
+<Update label="January 2025" description="v0.2.4">
   ## Launch Week changelog
   * ```Enhancement``` : Addition of more file types in .dockerignore
-  * ```Feature``` : Unified deployment - a single command to run the app using docker-compose.
-  * ```Feature``` : Addition of role based checking in UI for integrations page.
-  * ```Enhancement``` : Addition of badges in Readme.md.
-  * ```Enhancement``` : Addition of support for multi-architecture platforms in docker-hub. Now architecture specific image of the app gets downloaded in your system.
-  * ```Bug Fix``` : Fixing invalid citations provided by LLMs.
-  * ```Bug Fix``` : Fixing calendar sync errors.
+  * ```Feature``` : Unified deployment - a single command to run the app using docker-compose
+  * ```Feature``` : Addition of role based checking in UI for integrations page
+  * ```Enhancement``` : Addition of badges in Readme.md
+  * ```Enhancement``` : Addition of support for multi-architecture platforms in docker-hub. Now architecture specific image of the app gets downloaded in your system
+  * ```Bug Fix``` : Fixing invalid citations provided by LLMs
+  * ```Bug Fix``` : Fixing calendar sync errors
+
+  release: https://github.com/xynehq/xyne/releases/tag/v0.2.4
+  [![Demo](https://img.youtube.com/vi/ZvyRp4o_p-0/0.jpg)](https://www.youtube.com/watch?v=ZvyRp4o_p-0)
 </Update>
