@@ -13,6 +13,15 @@ export type VespaSchema =
   | typeof userQuerySchema
   | typeof mailAttachmentSchema
 
+export const VespaSchemaSources = [
+  fileSchema,
+  userSchema,
+  mailSchema,
+  eventSchema,
+  mailAttachmentSchema,
+  userQuerySchema,
+]
+
 // not using @ because of vite of frontend
 export enum Apps {
   // includes everything google
