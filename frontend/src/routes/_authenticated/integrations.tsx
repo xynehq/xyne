@@ -10,7 +10,6 @@ import {
   AdminPageProps,
   getConnectors,
   handleRemoveConnectors,
-  handleStopConnecting,
   minHeight,
   OAuthIntegrationStatus,
 } from "./admin/integrations"
@@ -130,7 +129,6 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     })
     socket?.addEventListener("message", (e) => {
       const statusJson = JSON.parse(JSON.parse(e.data).message)
-      console.log(statusJson, "statusjson")
       if (statusJson.completed) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
       }
@@ -175,7 +173,6 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
                 })
               }
               disconnected={isDisConnected}
-              stopConnector={handleStopConnecting}
             />
           </Tabs>
         </div>

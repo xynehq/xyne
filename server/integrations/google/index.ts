@@ -281,7 +281,6 @@ export const disconnectConnector = async (
   }, 2000)
 
   try {
-    // await new Promise((resolve) => setTimeout(resolve, 10000))
     const operations = [
       { name: "deleteOauthProviders", fn: deleteAllOauthProviders },
       { name: "deleteSyncHistory", fn: deleteAllSyncHistory },

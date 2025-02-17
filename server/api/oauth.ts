@@ -69,8 +69,9 @@ export const OAuthCallback = async (c: Context) => {
       email: sub,
     }
     // Enqueue the background job within the same transaction
-    const jobId = await boss.send(SaaSQueue, SaasJobPayload)
     await initWorkers()
+    const jobId = await boss.send(SaaSQueue, SaasJobPayload)
+
     Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
     // Commit the transaction if everything is successful

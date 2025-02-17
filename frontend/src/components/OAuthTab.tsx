@@ -13,12 +13,15 @@ import {
   CardTitle,
 } from "./ui/card"
 import { Apps } from "shared/types"
+import { X } from "lucide-react"
 
 interface OAuthTabProps {
   isPending: boolean
   oauthIntegrationStatus: OAuthIntegrationStatus
   setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
   updateStatus: string
+  removeConnector: () => void
+  disconnected: { disconnecting: boolean; completed: boolean }
 }
 
 const OAuthTab = ({
@@ -26,6 +29,8 @@ const OAuthTab = ({
   oauthIntegrationStatus,
   setOAuthIntegrationStatus,
   updateStatus,
+  removeConnector,
+  disconnected,
 }: OAuthTabProps) => {
   return (
     <TabsContent value="oauth">
@@ -56,10 +61,21 @@ const OAuthTab = ({
           <CardHeader>
             <CardTitle>Google OAuth</CardTitle>
           </CardHeader>
-          <CardContent>
-            {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
-              ? "Connected"
-              : "Connecting"}
+          <CardContent className="flex items-center justify-between">
+            {disconnected.disconnecting
+              ? "disconnecting"
+              : oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
+                ? "Connected"
+                : "Connecting"}
+
+            {!disconnected.disconnecting &&
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ? (
+              <X className="cursor-pointer" onClick={removeConnector} />
+            ) : (
+              <div>
+                <LoaderContent />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

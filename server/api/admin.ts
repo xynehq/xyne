@@ -15,7 +15,7 @@ import {
   type ServiceAccountConnection,
   Subsystem,
 } from "@/types"
-import { boss, RemoveConnectorQueue, SaaSQueue } from "@/queue"
+import { boss, initWorkers, RemoveConnectorQueue, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
@@ -103,8 +103,9 @@ export const deleteConnectors = async (c: Context) => {
   try {
     // Enqueue the background job
     const jobId = await boss.send(RemoveConnectorQueue, {})
+
     if (!jobId) {
-      throw new Error("Failed to enqueue job")
+      throw new Error(`Failed to enqueue ${RemoveConnectorQueue} job`)
     }
     Logger.info(`Job ${jobId} enqueued for removing connector`)
 
@@ -217,6 +218,7 @@ export const AddServiceConnection = async (c: Context) => {
         email: sub,
       }
       // Enqueue the background job within the same transaction
+      await initWorkers()
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
         singletonKey: connector.externalId,
         priority: 1,

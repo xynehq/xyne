@@ -181,7 +181,6 @@ export const AppRoutes = app
     CreateOAuthProvider,
   )
   .delete("/connector/remove", deleteConnectors)
-  .delete("/connector/stop", stopConnecting)
   .get("/connectors/all", GetConnectors)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)

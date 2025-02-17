@@ -383,17 +383,6 @@ export const handleRemoveConnectors: () => Promise<any> = async () => {
   return res.json()
 }
 
-export const handleStopConnecting: () => Promise<void> = async () => {
-  const res = await api.admin.connector.remove.$delete()
-  if (!res.ok) {
-    if (res.status === 401) {
-      throw new Error("Unauthorized")
-    }
-    throw new Error("Could not remove connectors")
-  }
-  return res.json()
-}
-
 const UserStatsTable = ({
   userStats,
   type,
@@ -642,6 +631,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
 
   useEffect(() => {
     let socket: WebSocket | null = null
+    // if(isConnectorRemove){
     socket = wsClient.ws.$ws({
       query: {
         id: "remove-connector",
@@ -660,11 +650,12 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       }
       setIsDisConnected(statusJson)
     })
+    // }
 
     return () => {
       socket?.close()
     }
-  }, [isDisConnected])
+  }, [])
 
   const showUserStats = (
     userStats: { [email: string]: any },
@@ -679,6 +670,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       (stats) => stats.type === currentAuthType,
     )
   }
+
   const onDisconnectConfirm = async () => {
     const res = await handleRemoveConnectors()
     if (res.success) {
@@ -747,7 +739,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                 })
               }
               disconnected={isDisConnected}
-              stopConnector={handleStopConnecting}
             />
           </Tabs>
           {showUserStats(userStats, activeTab) && (
