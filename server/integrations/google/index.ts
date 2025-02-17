@@ -278,7 +278,7 @@ export const disconnectConnector = async (
   )
   const interval = setInterval(() => {
     sendWebsocketMessage(JSON.stringify(disconnectingState), "remove-connector")
-  }, 100)
+  }, 2000)
 
   try {
     // await new Promise((resolve) => setTimeout(resolve, 10000))
@@ -304,6 +304,7 @@ export const disconnectConnector = async (
       }
     }
 
+    // unschedule all the scheduled jobs
     const unschedulePromises = [
       SyncGoogleWorkspace,
       SyncOAuthSaaSQueue,
@@ -360,7 +361,7 @@ export const disconnectConnector = async (
   } finally {
     setTimeout(() => {
       clearInterval(interval)
-    }, 2000)
+    }, 4000)
   }
 }
 

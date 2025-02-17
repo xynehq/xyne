@@ -9,6 +9,8 @@ import {
 import {
   AdminPageProps,
   getConnectors,
+  handleRemoveConnectors,
+  handleStopConnecting,
   minHeight,
   OAuthIntegrationStatus,
 } from "./admin/integrations"
@@ -19,6 +21,7 @@ import { useEffect, useState } from "react"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
 import { wsClient } from "@/api"
 import OAuthTab from "@/components/OAuthTab"
+import { ConfirmModal } from "@/components/ui/confirmModal"
 
 const logger = console
 
@@ -39,6 +42,12 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
       }
     },
   })
+  const onDisconnectConfirm = async () => {
+    const res = await handleRemoveConnectors()
+    if (res.success) {
+      setIsDisConnected({ disconnecting: true, completed: false })
+    }
+  }
 
   const [updateStatus, setUpateStatus] = useState("")
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
@@ -51,6 +60,16 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
           : OAuthIntegrationStatus.Provider
         : OAuthIntegrationStatus.Provider,
     )
+
+  const [isDisConnected, setIsDisConnected] = useState({
+    disconnecting: false,
+    completed: false,
+  })
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState({
+    open: false,
+    title: "",
+    description: "",
+  })
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
@@ -96,9 +115,42 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }, [data, isPending])
 
+  useEffect(() => {
+    let socket: WebSocket | null = null
+    socket = wsClient.ws.$ws({
+      query: {
+        id: "remove-connector",
+      },
+    })
+    socket?.addEventListener("open", () => {
+      logger.info("remove-connector ws open")
+    })
+    socket?.addEventListener("close", () => {
+      logger.info("remove-connector ws close")
+    })
+    socket?.addEventListener("message", (e) => {
+      const statusJson = JSON.parse(JSON.parse(e.data).message)
+      console.log(statusJson, "statusjson")
+      if (statusJson.completed) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+      }
+      setIsDisConnected(statusJson)
+    })
+    return () => {
+      socket?.close()
+    }
+  }, [isDisConnected])
+
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
+      <ConfirmModal
+        showModal={isConfirmationModalOpen.open}
+        setShowModal={setIsConfirmationModalOpen}
+        onConfirm={onDisconnectConfirm}
+        modalTitle={isConfirmationModalOpen.title}
+        modalMessage={isConfirmationModalOpen.description}
+      />
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
@@ -114,6 +166,16 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
+              removeConnector={() =>
+                setIsConfirmationModalOpen({
+                  open: true,
+                  title: "Confirm",
+                  description:
+                    "Are you sure you want to disconnect? This action will erase all your indexed data.",
+                })
+              }
+              disconnected={isDisConnected}
+              stopConnector={handleStopConnecting}
             />
           </Tabs>
         </div>

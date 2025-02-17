@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
 import OAuthTab from "@/components/OAuthTab"
+import { X } from "lucide-react"
+import { ConfirmModal } from "@/components/ui/confirmModal"
 
 const logger = console
 
@@ -370,6 +372,28 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
+export const handleRemoveConnectors: () => Promise<any> = async () => {
+  const res = await api.admin.connector.remove.$delete()
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized")
+    }
+    throw new Error("Could not remove connectors")
+  }
+  return res.json()
+}
+
+export const handleStopConnecting: () => Promise<void> = async () => {
+  const res = await api.admin.connector.remove.$delete()
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized")
+    }
+    throw new Error("Could not remove connectors")
+  }
+  return res.json()
+}
+
 const UserStatsTable = ({
   userStats,
   type,
@@ -420,6 +444,8 @@ const ServiceAccountTab = ({
   isIntegrating,
   progress,
   refetch,
+  removeConnector,
+  disconnected,
 }: {
   connectors: Connectors[]
   updateStatus: string
@@ -428,6 +454,8 @@ const ServiceAccountTab = ({
   progress: number
   userStats: any
   refetch: any
+  removeConnector: () => void
+  disconnected: { disconnecting: boolean; completed: boolean }
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
@@ -456,9 +484,21 @@ const ServiceAccountTab = ({
             <Progress value={progress} className="p-0 w-[60%]" />
           </>
         ) : (
-          <>
+          <CardContent className="flex items-center justify-between">
             <CardDescription>Connected</CardDescription>
-          </>
+            {disconnected.disconnecting ? (
+              <LoaderContent />
+            ) : (
+              <X
+                className="cursor-pointer"
+                onClick={
+                  googleSAConnector.status === ConnectorStatus.Connected
+                    ? removeConnector
+                    : () => {}
+                }
+              />
+            )}
+          </CardContent>
         )}
       </CardHeader>
     )
@@ -519,6 +559,16 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
         )
       : false,
   )
+  const [isDisConnected, setIsDisConnected] = useState({
+    disconnecting: false,
+    completed: false,
+  })
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState({
+    open: false,
+    title: "",
+    description: "",
+  })
+
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(
       data
@@ -590,6 +640,32 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }, [data, isPending])
 
+  useEffect(() => {
+    let socket: WebSocket | null = null
+    socket = wsClient.ws.$ws({
+      query: {
+        id: "remove-connector",
+      },
+    })
+    socket?.addEventListener("open", () => {
+      logger.info("remove-connector ws open")
+    })
+    socket?.addEventListener("close", () => {
+      logger.info("remove-connector ws close")
+    })
+    socket?.addEventListener("message", (e) => {
+      const statusJson = JSON.parse(JSON.parse(e.data).message)
+      if (statusJson.completed) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+      }
+      setIsDisConnected(statusJson)
+    })
+
+    return () => {
+      socket?.close()
+    }
+  }, [isDisConnected])
+
   const showUserStats = (
     userStats: { [email: string]: any },
     activeTab: string,
@@ -603,10 +679,24 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       (stats) => stats.type === currentAuthType,
     )
   }
+  const onDisconnectConfirm = async () => {
+    const res = await handleRemoveConnectors()
+    if (res.success) {
+      setIsDisConnected({ disconnecting: true, completed: false })
+    }
+  }
+
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
+      <ConfirmModal
+        showModal={isConfirmationModalOpen.open}
+        setShowModal={setIsConfirmationModalOpen}
+        onConfirm={onDisconnectConfirm}
+        modalTitle={isConfirmationModalOpen.title}
+        modalMessage={isConfirmationModalOpen.description}
+      />
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
@@ -631,6 +721,15 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                   progress={progress}
                   userStats={userStats}
                   refetch={refetch}
+                  removeConnector={() =>
+                    setIsConfirmationModalOpen({
+                      open: true,
+                      title: "Confirm",
+                      description:
+                        "Are you sure you want to disconnect? This action will erase all your indexed data.",
+                    })
+                  }
+                  disconnected={isDisConnected}
                 />
               )}
             </TabsContent>
@@ -639,6 +738,16 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
+              removeConnector={() =>
+                setIsConfirmationModalOpen({
+                  open: true,
+                  title: "Confirm",
+                  description:
+                    "Are you sure you want to disconnect? This action will erase all your indexed data.",
+                })
+              }
+              disconnected={isDisConnected}
+              stopConnector={handleStopConnecting}
             />
           </Tabs>
           {showUserStats(userStats, activeTab) && (
