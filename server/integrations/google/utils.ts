@@ -253,22 +253,23 @@ export const getPDFContent = async (
       `Error getting file: ${error} ${(error as Error).stack}`,
       error,
     )
-    return
 
     // previously sync was breaking for these 2 cases
     // so we return null (TODO: confirm if we ingest atleast the metadata)
-    // if (
-    //   (error as Error).message === "No password given" &&
-    //   (error as any).code === 1
-    // ) {
-    //   return
-    // } else if (
-    //   (error as Error).message === "Permission denied" &&
-    //   (error as GaxiosError).code === "EACCES"
-    // ) {
-    //   // this is pdf someone else has shared but we don't have access to download it
-    //   return
-    // }
+    if (
+      (error as Error)?.message === "No password given" &&
+      (error as any)?.code === 1
+    ) {
+      return
+    } else if (
+      (error as Error)?.message === "Permission denied" &&
+      (error as GaxiosError)?.code === "EACCES"
+    ) {
+      // this is pdf someone else has shared but we don't have access to download it
+      return
+    } else {
+      return
+    }
 
     // throw new DownloadDocumentError({
     //   message: "Error in getting file content",

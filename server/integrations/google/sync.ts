@@ -362,7 +362,7 @@ const handleGoogleDriveChange = async (
         Logger.error(`Couldn't get file with id ${docId}`)
       }
     } catch (err) {
-      Logger.error(err, `Error getting file with id ${docId}`)
+      Logger.error(err, `Error syncing file with id ${docId}`)
     }
   } else if (change.driveId) {
     // TODO: handle this once we support multiple drives
@@ -1222,21 +1222,20 @@ const handleGmailChanges = async (
       nextPageToken = res.data.nextPageToken || ""
     } while (nextPageToken)
   } catch (error) {
-    // if (
-    //   (error as any).code === 404 ||
-    //   (error as any).message.includes("Requested entity was not found")
-    // ) {
-    //   // Log the error and return without updating the historyId
-    //   Logger.error(
-    //     error,
-    //     `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
-    //   )
-    //   return { stats, historyId: newHistoryId, changesExist }
-    // } else {
-    //   throw error
-    // }
-    Logger.error(error, `Error handling Gmail changes`)
-    return { stats, historyId: newHistoryId, changesExist }
+    if (
+      (error as any)?.code === 404 ||
+      (error as any)?.message.includes("Requested entity was not found")
+    ) {
+      // Log the error and return without updating the historyId
+      Logger.error(
+        error,
+        `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
+      )
+      return { stats, historyId: newHistoryId, changesExist }
+    } else {
+      Logger.error(error, `Error handling Gmail changes`)
+      return { stats, historyId: newHistoryId, changesExist }
+    }
   }
 
   return { historyId: newHistoryId, stats, changesExist }
