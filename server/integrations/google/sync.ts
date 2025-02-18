@@ -158,7 +158,10 @@ const deleteUpdateStatsForGoogleSheets = async (
       }
     }
   } catch (error) {
-    Logger.error(error, `Error in deleteUpdateStatsForGoogleSheets function`)
+    Logger.error(
+      error,
+      `Error in deleteUpdateStatsForGoogleSheets function, but continuing sync engine execution.`,
+    )
   }
 }
 
@@ -206,7 +209,10 @@ const deleteWholeSpreadsheet = async (
         Logger.error(`No spreadsheet found with id ${id} to delete`)
       }
     } catch (err) {
-      Logger.error(err, `Error deleting spreadsheet with id ${docId}`)
+      Logger.error(
+        err,
+        `Error deleting spreadsheet with id ${docId}, but continuing sync engine execution.`,
+      )
     }
   }
 }
@@ -263,7 +269,10 @@ const handleGoogleDriveChange = async (
           )
         }
       } catch (err) {
-        Logger.error(err, `Failed to delete document in Vespa \n ${err}`)
+        Logger.error(
+          err,
+          `Failed to delete document in Vespa \n ${err}, but continuing sync engine execution.`,
+        )
       }
     }
   } else if (docId && change.file) {
@@ -355,14 +364,17 @@ const handleGoogleDriveChange = async (
         } catch (err) {
           Logger.error(
             err,
-            `Couldn't add or update document with docId ${docId}`,
+            `Couldn't add or update document with docId ${docId}, but continuing sync engine execution.`,
           )
         }
       } else {
         Logger.error(`Couldn't get file with id ${docId}`)
       }
     } catch (err) {
-      Logger.error(err, `Error syncing file with id ${docId}`)
+      Logger.error(
+        err,
+        `Error syncing file with id ${docId}, but continuing sync engine execution.`,
+      )
     }
   } else if (change.driveId) {
     // TODO: handle this once we support multiple drives
@@ -403,15 +415,17 @@ const getDriveChanges = async (
     // Final catch: log the error details without breaking the sync job.
     if (error instanceof GaxiosError) {
       Logger.error(
-        `GaxiosError while fetching drive changes: status ${error.response?.status}, ` +
+        `GaxiosError while fetching drive changes, but continuing sync engine execution.: status ${error.response?.status}, ` +
           `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`,
       )
     } else if (error instanceof Error) {
       Logger.error(
-        `Unexpected error while fetching drive changes: ${error.message}`,
+        `Unexpected error while fetching drive changes, but continuing sync engine execution.: ${error.message}`,
       )
     } else {
-      Logger.error(`An unknown error occurred while fetching drive changes.`)
+      Logger.error(
+        `An unknown error occurred while fetching drive changes, but continuing sync engine execution.`,
+      )
     }
     return null
   }
@@ -470,7 +484,10 @@ export const handleGoogleOAuthChanges = async (
             stats = mergeStats(stats, changeStats)
             changesExist = true
           } catch (err) {
-            Logger.error(err, `Error syncing drive change`)
+            Logger.error(
+              err,
+              `Error syncing drive change, but continuing sync engine execution.`,
+            )
           }
         }
       }
@@ -505,7 +522,10 @@ export const handleGoogleOAuthChanges = async (
             changesExist = true
           }
         } catch (err) {
-          Logger.error(err, `Error syncing contacts`)
+          Logger.error(
+            err,
+            `Error syncing contacts, but continuing sync engine execution.`,
+          )
           break
         }
       } while (nextPageToken)
@@ -544,7 +564,10 @@ export const handleGoogleOAuthChanges = async (
             changesExist = true
           }
         } catch (err) {
-          Logger.error(err, `Error syncing other contacts`)
+          Logger.error(
+            err,
+            `Error syncing other contacts, but continuing sync engine execution.`,
+          )
           break
         }
       } while (nextPageToken)
@@ -595,7 +618,7 @@ export const handleGoogleOAuthChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete sync job for Google Drive: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
+        `Could not successfully complete sync for Google Drive, but continuing sync engine execution.: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       const newConfig = {
@@ -690,7 +713,7 @@ export const handleGoogleOAuthChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete Oauth sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete Oauth sync for Gmail, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
       const newConfig = {
@@ -790,7 +813,7 @@ export const handleGoogleOAuthChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete Oauth sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete Oauth sync for Google Calendar, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken
@@ -973,7 +996,10 @@ const handleGoogleCalendarEventsChanges = async (
                   )
                 }
               } catch (error) {
-                Logger.error(error, `Error deleting Calendar event`)
+                Logger.error(
+                  error,
+                  `Error deleting Calendar event, but continuing sync engine execution.`,
+                )
               } finally {
                 continue
               }
@@ -993,7 +1019,9 @@ const handleGoogleCalendarEventsChanges = async (
                 stats.summary += `${docId} event removed\n`
                 changesExist = true
               } catch (e) {
-                Logger.error(`Couldn't delete document with id ${docId}`)
+                Logger.error(
+                  `Couldn't delete document with id ${docId}, but continuing sync engine execution.`,
+                )
               }
             } else {
               // remove our user's permission to change event
@@ -1010,7 +1038,7 @@ const handleGoogleCalendarEventsChanges = async (
           } catch (err: any) {
             Logger.error(
               err,
-              `Error getting document: ${err.message} ${err.stack}`,
+              `Error getting document, but continuing sync engine execution: ${err.message} ${err.stack}`,
             )
           }
         } else if (docId) {
@@ -1046,7 +1074,10 @@ const handleGoogleCalendarEventsChanges = async (
       changesExist,
     }
   } catch (err) {
-    Logger.error(err, `Error handling Calendar event changes`)
+    Logger.error(
+      err,
+      `Error handling Calendar event changes, but continuing sync engine execution.`,
+    )
     return {
       eventChanges,
       stats,
@@ -1132,7 +1163,7 @@ const handleGmailChanges = async (
                 // Handle errors if the message no longer exists
                 Logger.error(
                   error,
-                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1166,7 +1197,7 @@ const handleGmailChanges = async (
                 // Handle errors if the document no longer exists
                 Logger.error(
                   error,
-                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1188,7 +1219,7 @@ const handleGmailChanges = async (
               } catch (error) {
                 Logger.error(
                   error,
-                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1212,7 +1243,7 @@ const handleGmailChanges = async (
               } catch (error) {
                 Logger.error(
                   error,
-                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1229,11 +1260,14 @@ const handleGmailChanges = async (
       // Log the error and return without updating the historyId
       Logger.error(
         error,
-        `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
+        `Invalid historyId ${historyId}, but continuing sync engine execution: ${error}`,
       )
       return { stats, historyId: newHistoryId, changesExist }
     } else {
-      Logger.error(error, `Error handling Gmail changes`)
+      Logger.error(
+        error,
+        `Error handling Gmail changes, but continuing sync engine execution.`,
+      )
       return { stats, historyId: newHistoryId, changesExist }
     }
   }
@@ -1279,7 +1313,10 @@ const syncContacts = async (
         }
       }
     } catch (e) {
-      Logger.error(e, `Error in syncing contact`)
+      Logger.error(
+        e,
+        `Error in syncing contact, but continuing sync engine execution.`,
+      )
     }
   }
   return stats
@@ -1338,7 +1375,10 @@ export const handleGoogleServiceAccountChanges = async (
             )
             stats = mergeStats(stats, changeStats)
           } catch (err) {
-            Logger.error(err, `Error syncing drive change`)
+            Logger.error(
+              err,
+              `Error syncing drive change, but continuing sync engine execution.`,
+            )
           }
           changesExist = true
         }
@@ -1388,11 +1428,14 @@ export const handleGoogleServiceAccountChanges = async (
             "Sync token is expired. Clear local cache and retry call without the sync token."
         ) {
           Logger.warn(
-            "This is an error that is not yet implemented, it requires a full sync of the contacts api",
+            "This is an error that is not yet implemented, it requires a full sync of the contacts api, but continuing sync engine execution for now.",
           )
         } else {
           // throw error
-          Logger.error(error, `Error syncing contacts`)
+          Logger.error(
+            error,
+            `Error syncing contacts, but continuing sync engine execution.`,
+          )
         }
       }
       // reset
@@ -1442,11 +1485,14 @@ export const handleGoogleServiceAccountChanges = async (
             "Sync token is expired. Clear local cache and retry call without the sync token."
         ) {
           Logger.warn(
-            "This is an error that is not yet implemented, it requires a full sync of the other contacts api",
+            "This is an error that is not yet implemented, it requires a full sync of the other contacts api, but continuing sync engine execution for now.",
           )
         } else {
           // throw error
-          Logger.error(error, `Error syncing other contacts`)
+          Logger.error(
+            error,
+            `Error syncing other contacts, but continuing sync engine execution for now.`,
+          )
         }
       }
       if (changesExist) {
@@ -1493,7 +1539,7 @@ export const handleGoogleServiceAccountChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete ServiceAccount sync job for Google Drive: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete ServiceAccount sync for Google Drive, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: ChangeToken = syncJob.config as ChangeToken
       const newConfig = {
@@ -1589,7 +1635,7 @@ export const handleGoogleServiceAccountChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete ServiceAccount sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete ServiceAccount sync for Gmail, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
       const newConfig = {
@@ -1694,7 +1740,7 @@ export const handleGoogleServiceAccountChanges = async (
 
       Logger.error(
         error,
-        `Could not successfully complete ServiceAccount sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete ServiceAccount sync for Google Calendar, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
 
       const config: CalendarEventsChangeToken =

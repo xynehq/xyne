@@ -184,7 +184,7 @@ export const getFileContent = async (
   } catch (err) {
     Logger.error(
       err,
-      `Error in getting document content of document with id ${file?.id}`,
+      `Error in getting document content of document with id ${file?.id}, but continuing sync engine execution.`,
     )
     return null
   }
@@ -250,8 +250,7 @@ export const getPDFContent = async (
   } catch (error) {
     Logger.error(
       error,
-      `Error getting file: ${error} ${(error as Error).stack}`,
-      error,
+      `Error getting file: ${error} ${(error as Error).stack} but continuing sync engine execution.`,
     )
 
     // previously sync was breaking for these 2 cases
