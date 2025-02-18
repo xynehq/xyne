@@ -8,6 +8,7 @@ export enum AIProviders {
   Ollama = "ollama",
   Together = "together-ai",
   Fireworks = "fireworks",
+  GoogleAI = "google-ai",
 }
 
 export enum Models {

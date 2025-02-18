@@ -26,6 +26,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.721.0",
     "@aws-sdk/client-bedrock-runtime": "^3.721.0",
+    "@google/generative-ai": "^0.21.0",
     "@hono/oauth-providers": "^0.6.2",
     "@hono/zod-validator": "^0.2.2",
     "@jrmdayn/googleapis-batcher": "^0.8.0",

@@ -19,6 +19,8 @@ const {
   defaultFastModel,
   isReasoning,
   EndThinkingToken,
+  GeminiAIModel,
+  GeminiApiKey,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -74,6 +76,8 @@ import Together from "together-ai"
 import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
+import { GoogleGenerativeAI } from "@google/generative-ai"
+import { GeminiAIProvider } from "./gemini"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
@@ -97,6 +101,7 @@ let openaiProvider: LLMProvider | null = null
 let ollamaProvider: LLMProvider | null = null
 let togetherProvidder: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
+let geminiProvider: LLMProvider | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -147,7 +152,13 @@ const initializeProviders = (): void => {
     fireworksProvider = new FireworksProvider(fireworks)
   }
 
+  if (GeminiAIModel && GeminiApiKey) {
+    const gemini = new GoogleGenerativeAI(GeminiApiKey)
+    geminiProvider = new GeminiAIProvider(gemini)
+  }
+
   providersInitialized = true
+  // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
 
 const getProviders = (): {
@@ -156,6 +167,7 @@ const getProviders = (): {
   [AIProviders.Ollama]: LLMProvider | null
   [AIProviders.Together]: LLMProvider | null
   [AIProviders.Fireworks]: LLMProvider | null
+  [AIProviders.GoogleAI]: LLMProvider | null
 } => {
   initializeProviders()
   if (
@@ -163,7 +175,8 @@ const getProviders = (): {
     !openaiProvider &&
     !ollamaProvider &&
     !togetherProvidder &&
-    !fireworksProvider
+    !fireworksProvider &&
+    !geminiProvider
   ) {
     throw new Error("No valid API keys or model provided")
   }
@@ -174,6 +187,7 @@ const getProviders = (): {
     [AIProviders.Ollama]: ollamaProvider,
     [AIProviders.Together]: togetherProvidder,
     [AIProviders.Fireworks]: fireworksProvider,
+    [AIProviders.GoogleAI]: geminiProvider,
   }
 }
 
@@ -205,7 +219,9 @@ const getProviderByModel = (modelId: Models): LLMProvider => {
         ? AIProviders.Together
         : FireworksAIModel
           ? AIProviders.Fireworks
-          : null
+          : GeminiAIModel
+            ? AIProviders.GoogleAI
+            : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
