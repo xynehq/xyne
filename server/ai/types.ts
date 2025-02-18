@@ -31,10 +31,6 @@ export enum Models {
   Amazon_Nova_Lite = "amazon.nova-lite-v1:0",
   Amazon_Nova_Pro = "amazon.nova-pro-v1:0",
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
-  Gemini_2_0_Flash = "gemini-2.0-flash",
-  Gemini_2_0_Flash_Lite_Preview = "gemini-2.0-flash-lite-preview-02-05",
-  Gemini_1_5_Flash = "gemini-1.5-flash",
-  Gemini_1_5_Pro = "gemini-1.5-pro",
 }
 
 export enum QueryCategory {

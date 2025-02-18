@@ -219,7 +219,9 @@ const getProviderByModel = (modelId: Models): LLMProvider => {
         ? AIProviders.Together
         : FireworksAIModel
           ? AIProviders.Fireworks
-          : null
+          : GeminiAIModel
+            ? AIProviders.GoogleAI
+            : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
