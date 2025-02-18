@@ -20,7 +20,7 @@ const {
   isReasoning,
   EndThinkingToken,
   GeminiAIModel,
-  GeminiApiKey
+  GeminiApiKey,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -76,7 +76,7 @@ import Together from "together-ai"
 import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
-import {  GoogleGenerativeAI } from "@google/generative-ai"
+import { GoogleGenerativeAI } from "@google/generative-ai"
 import { GeminiAIProvider } from "./gemini"
 const Logger = getLogger(Subsystem.AI)
 
@@ -152,7 +152,7 @@ const initializeProviders = (): void => {
     fireworksProvider = new FireworksProvider(fireworks)
   }
 
-  if(GeminiAIModel && GeminiApiKey){
+  if (GeminiAIModel && GeminiApiKey) {
     const gemini = new GoogleGenerativeAI(GeminiApiKey)
     geminiProvider = new GeminiAIProvider(gemini)
   }
@@ -167,7 +167,7 @@ const getProviders = (): {
   [AIProviders.Ollama]: LLMProvider | null
   [AIProviders.Together]: LLMProvider | null
   [AIProviders.Fireworks]: LLMProvider | null
-  [AIProviders.GoogleAI]: LLMProvider | null 
+  [AIProviders.GoogleAI]: LLMProvider | null
 } => {
   initializeProviders()
   if (
@@ -175,7 +175,7 @@ const getProviders = (): {
     !openaiProvider &&
     !ollamaProvider &&
     !togetherProvidder &&
-    !fireworksProvider&&
+    !fireworksProvider &&
     !geminiProvider
   ) {
     throw new Error("No valid API keys or model provided")

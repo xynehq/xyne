@@ -234,8 +234,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Amazon_Nova_Lite]: AIProviders.AwsBedrock,
   [Models.Amazon_Nova_Pro]: AIProviders.AwsBedrock,
   [Models.Mistral_Large]: AIProviders.AwsBedrock,
-  [Models.Gemini_1_5_Flash]:AIProviders.GoogleAI,
-  [Models.Gemini_2_0_Flash]:AIProviders.GoogleAI,
+  [Models.Gemini_1_5_Flash]: AIProviders.GoogleAI,
+  [Models.Gemini_2_0_Flash]: AIProviders.GoogleAI,
   [Models.Gemini_1_5_Pro]: AIProviders.GoogleAI,
-  [Models.Gemini_2_0_Flash_Lite_Preview]: AIProviders.GoogleAI
+  [Models.Gemini_2_0_Flash_Lite_Preview]: AIProviders.GoogleAI,
 }

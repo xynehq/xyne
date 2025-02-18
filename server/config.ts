@@ -67,7 +67,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
     : (FireworksAIModel as Models)
   defaultBestModel = FireworksAIModel as Models
-} else if( process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"] ) {
+} else if (process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"]) {
   GeminiAIModel = process.env["GEMINI_MODEL"] as Models
   GeminiApiKey = process.env["GEMINI_API_KEY"]
   defaultFastModel = Models.Gemini_2_0_Flash

@@ -4,7 +4,7 @@ import type { CookieOptions } from "hono/utils/cookie"
 import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { stopwords as englishStopwords } from "@orama/stopwords/english";
+import { stopwords as englishStopwords } from "@orama/stopwords/english"
 
 const Logger = getLogger(Subsystem.Utils)
 
