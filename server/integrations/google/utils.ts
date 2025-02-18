@@ -137,11 +137,6 @@ export const getFileContent = async (
           }),
         `Getting document with documentId ${file.id}`,
       )
-    // if (!docResponse || !docResponse.data) {
-    //   throw new DocsParsingError(
-    //     `Could not get document content for file: ${file.id}`,
-    //   )
-    // }
     const documentContent: docs_v1.Schema$Document = docResponse.data
     const rawTextContent = documentContent?.body?.content
       ?.map((e) => extractText(documentContent, e))
@@ -269,13 +264,6 @@ export const getPDFContent = async (
     } else {
       return
     }
-
-    // throw new DownloadDocumentError({
-    //   message: "Error in getting file content",
-    //   cause: error as Error,
-    //   integration: Apps.GoogleDrive,
-    //   entity: DriveEntity.PDF,
-    // })
   }
 }
 

@@ -640,12 +640,6 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      // throw new SyncJobFailed({
-      //   message: `Could not complete sync job for Google Drive: ${stats.summary}`,
-      //   cause: error as Error,
-      //   integration: Apps.GoogleDrive,
-      //   entity: "",
-      // })
     }
   }
 
@@ -735,12 +729,6 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      // throw new SyncJobFailed({
-      //   message: "Could not complete sync job",
-      //   cause: error as Error,
-      //   integration: Apps.Gmail,
-      //   entity: "",
-      // })
     }
   }
 
@@ -836,12 +824,6 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      // throw new SyncJobFailed({
-      //   message: "Could not complete sync job",
-      //   cause: error as Error,
-      //   integration: Apps.GoogleCalendar,
-      //   entity: "",
-      // })
     }
   }
 }
@@ -1431,7 +1413,6 @@ export const handleGoogleServiceAccountChanges = async (
             "This is an error that is not yet implemented, it requires a full sync of the contacts api, but continuing sync engine execution for now.",
           )
         } else {
-          // throw error
           Logger.error(
             error,
             `Error syncing contacts, but continuing sync engine execution.`,
@@ -1488,7 +1469,6 @@ export const handleGoogleServiceAccountChanges = async (
             "This is an error that is not yet implemented, it requires a full sync of the other contacts api, but continuing sync engine execution for now.",
           )
         } else {
-          // throw error
           Logger.error(
             error,
             `Error syncing other contacts, but continuing sync engine execution for now.`,
@@ -1561,12 +1541,6 @@ export const handleGoogleServiceAccountChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      // throw new SyncJobFailed({
-      //   message: "Could not complete sync job",
-      //   cause: error as Error,
-      //   integration: Apps.GoogleDrive,
-      //   entity: "",
-      // })
     }
   }
   const gmailSyncJobs = await getAppSyncJobs(
@@ -1657,12 +1631,6 @@ export const handleGoogleServiceAccountChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      // throw new SyncJobFailed({
-      //   message: "Could not complete sync job",
-      //   cause: error as Error,
-      //   integration: Apps.Gmail,
-      //   entity: "",
-      // })
     }
   }
 
@@ -1764,12 +1732,6 @@ export const handleGoogleServiceAccountChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      // throw new SyncJobFailed({
-      //   message: "Could not complete sync job",
-      //   cause: error as Error,
-      //   integration: Apps.GoogleCalendar,
-      //   entity: "",
-      // })
     }
   }
 }
