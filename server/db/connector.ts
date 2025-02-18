@@ -85,6 +85,7 @@ export const getConnectors = async (workspaceId: string) => {
       type: connectors.type,
       status: connectors.status,
       createdAt: connectors.createdAt,
+      connectorId: connectors.id,
     })
     .from(connectors)
     .where(eq(connectors.workspaceExternalId, workspaceId))
@@ -116,32 +117,43 @@ export const getConnector = async (
   }
 }
 
-export const deleteAllConnectors = async (): Promise<void> => {
+export const deleteConnectors = async (
+  trx: TxnOrClient,
+  connectorId: number,
+): Promise<void> => {
   try {
-    await db.delete(connectors)
+    await trx.delete(connectors).where(eq(connectors.id, connectorId))
   } catch (error) {
     throw new Error("could not delete connectors - Error:" + error)
   }
 }
 
-export const deleteAllSyncJobs = async (): Promise<void> => {
+export const deleteSyncJobs = async (
+  trx: TxnOrClient,
+  connectorId: number,
+): Promise<void> => {
   try {
-    await db.delete(syncJobs)
+    await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
   } catch (error) {
     throw new Error("could not delete sync_jobs - Error:" + error)
   }
 }
-export const deleteAllOauthProviders = async (): Promise<void> => {
+export const deleteOauthProviders = async (
+  trx: TxnOrClient,
+  connectorId: number,
+): Promise<void> => {
   try {
-    await db.delete(oauthProviders)
+    await trx
+      .delete(oauthProviders)
+      .where(eq(oauthProviders.connectorId, connectorId))
   } catch (error) {
     throw new Error("could not delete oAuth-providers - Error:" + error)
   }
 }
 
-export const deleteAllSyncHistory = async (): Promise<void> => {
+export const deleteSyncHistory = async (trx: TxnOrClient): Promise<void> => {
   try {
-    await db.delete(syncHistory)
+    await trx.delete(syncHistory)
   } catch (error) {
     throw new Error("could not delete sync_history - Error:" + error)
   }

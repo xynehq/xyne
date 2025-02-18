@@ -115,10 +115,10 @@ import {
   updateUserStats,
 } from "./tracking"
 import {
-  deleteAllConnectors,
-  deleteAllOauthProviders,
-  deleteAllSyncHistory,
-  deleteAllSyncJobs,
+  deleteConnectors,
+  deleteOauthProviders,
+  deleteSyncHistory,
+  deleteSyncJobs,
 } from "@/db/connector"
 
 const htmlToText = require("html-to-text")
@@ -272,6 +272,7 @@ export const disconnectConnector = async (
     disconnecting: true,
     completed: false,
   }
+  const { connectorId } = job.data
 
   Logger.info(
     `Starting connector removal job jobId: ${jobId} job-name: ${jobName}`,
@@ -281,27 +282,13 @@ export const disconnectConnector = async (
   }, 2000)
 
   try {
-    const operations = [
-      { name: "deleteOauthProviders", fn: deleteAllOauthProviders },
-      { name: "deleteSyncHistory", fn: deleteAllSyncHistory },
-      { name: "deleteSyncJobs", fn: deleteAllSyncJobs },
-      { name: "deleteConnectors", fn: deleteAllConnectors },
-    ]
+    await db.transaction(async (trx) => {
+      await deleteOauthProviders(trx, connectorId)
+      await deleteSyncJobs(trx, connectorId)
+      await deleteConnectors(trx, connectorId)
 
-    for (const op of operations) {
-      try {
-        await op.fn()
-        Logger.info(
-          `Successfully completed ${op.name} for jobId: ${jobId} job-name: ${jobName}`,
-        )
-      } catch (error) {
-        Logger.error(
-          error,
-          `Error in ${op.name} for jobId: ${jobId} job-name: ${jobName}`,
-        )
-        throw error
-      }
-    }
+      // await deleteSyncHistory()
+    })
 
     // unschedule all the scheduled jobs
     const unschedulePromises = [
@@ -325,9 +312,6 @@ export const disconnectConnector = async (
     ).map(async (schema) => {
       try {
         await deleteAllDocuments(schema as VespaSchema)
-        Logger.info(
-          `Successfully deleted documents for schema ${schema} in jobId: ${jobId} job-name: ${jobName}`,
-        )
       } catch (error) {
         Logger.error(
           error,
@@ -342,20 +326,18 @@ export const disconnectConnector = async (
 
     disconnectingState.completed = true
     disconnectingState.disconnecting = false
-    Logger.info(
-      `Successfully completed connector removal jobId: ${jobId} job-name: ${jobName}`,
-    )
+    Logger.info(`Remove connector job successful`)
   } catch (error) {
     disconnectingState.completed = false
     disconnectingState.disconnecting = false
     const errMessage = getErrorMessage(error)
     Logger.error(
       error,
-      `Failed to complete connector removal job jobId: ${jobId} job-name: ${jobName}: ${errMessage}`,
+      `Remove connector job successful jobId: ${jobId} job-name: ${jobName}: ${errMessage}`,
     )
     await boss.fail(jobId, jobName)
     throw new Error(
-      `Failed to complete connector removal job jobId: ${jobId} job-name: ${jobName}: ${errMessage}`,
+      `Remove connector job failed jobId: ${jobId} job-name: ${jobName}: ${errMessage}`,
     )
   } finally {
     setTimeout(() => {

@@ -372,16 +372,20 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
-export const handleRemoveConnectors: () => Promise<any> = async () => {
-  const res = await api.admin.connector.remove.$delete()
-  if (!res.ok) {
-    if (res.status === 401) {
-      throw new Error("Unauthorized")
+export const handleRemoveConnectors: (connectorId: number) => Promise<any> =
+  async (connectorId) => {
+    const res = await api.admin.connector.remove.$delete({
+      json: { connectorId },
+    })
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        throw new Error("Unauthorized")
+      }
+      throw new Error("Could not remove connectors")
     }
-    throw new Error("Could not remove connectors")
+    return res.json()
   }
-  return res.json()
-}
 
 const UserStatsTable = ({
   userStats,
@@ -672,9 +676,16 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   }
 
   const onDisconnectConfirm = async () => {
-    const res = await handleRemoveConnectors()
-    if (res.success) {
-      setIsDisConnected({ disconnecting: true, completed: false })
+    if (data && data[0]?.connectorId) {
+      const res = await handleRemoveConnectors(data[0]?.connectorId)
+      if (res.success) {
+        setIsDisConnected({ disconnecting: true, completed: false })
+      } else {
+        toast({
+          title: "Could not remove integration",
+          variant: "destructive",
+        })
+      }
     }
   }
 

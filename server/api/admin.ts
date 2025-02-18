@@ -99,14 +99,28 @@ export const StartOAuth = async (c: Context) => {
   return c.redirect(url.toString())
 }
 
+const enqueueRemoveConnectorJob = async (
+  connectorId: string,
+): Promise<string> => {
+  const jobId = await boss.send(RemoveConnectorQueue, { connectorId })
+  if (!jobId) {
+    throw new Error(`Failed to enqueue ${RemoveConnectorQueue} job`)
+  }
+  return jobId
+}
+
 export const deleteConnectors = async (c: Context) => {
   try {
-    // Enqueue the background job
-    const jobId = await boss.send(RemoveConnectorQueue, {})
-
-    if (!jobId) {
-      throw new Error(`Failed to enqueue ${RemoveConnectorQueue} job`)
+    // @ts-ignore
+    const req = c.req.valid("json")
+    const { connectorId } = req
+    if (!connectorId) {
+      throw new HTTPException(400, {
+        message: "ConnectorId is required",
+      })
     }
+    // Enqueue the background job
+    const jobId = await enqueueRemoveConnectorJob(connectorId)
     Logger.info(`Job ${jobId} enqueued for removing connector`)
 
     return c.json({

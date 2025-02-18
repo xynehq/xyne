@@ -16,6 +16,7 @@ import { zValidator } from "@hono/zod-validator"
 import {
   addServiceConnectionSchema,
   answerSchema,
+  connectorIdSchema,
   createOAuthProvider,
   oauthStartQuerySchema,
   searchSchema,
@@ -179,7 +180,11 @@ export const AppRoutes = app
     zValidator("form", createOAuthProvider),
     CreateOAuthProvider,
   )
-  .delete("/connector/remove", deleteConnectors)
+  .delete(
+    "/connector/remove",
+    zValidator("json", connectorIdSchema),
+    deleteConnectors,
+  )
   .get("/connectors/all", GetConnectors)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
