@@ -1,7 +1,8 @@
 import { Apps } from "shared/types"
 
 const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
-const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/success`
+// const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/success`
+const successUrl = `http://localhost:5173/oauth/success`
 export class OAuthModal {
   // private authUrl: string;
   // private connectorId: string;

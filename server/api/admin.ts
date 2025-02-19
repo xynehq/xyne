@@ -127,6 +127,7 @@ export const CreateOAuthProvider = async (c: Context) => {
       {},
       null,
       null,
+      null,
       ConnectorStatus.NotConnected,
     )
     if (!connector) {

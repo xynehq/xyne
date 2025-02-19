@@ -27,6 +27,9 @@ const OAuthTab = ({
   setOAuthIntegrationStatus,
   updateStatus,
 }: OAuthTabProps) => {
+  console.log("oauthIntegrationStatus")
+  console.log(oauthIntegrationStatus)
+  console.log("oauthIntegrationStatus")
   return (
     <TabsContent value="oauth">
       {isPending ? (

@@ -6,7 +6,7 @@ import type { SelectConnector } from "@/db/schema"
 import { OAuthCallbackError } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
-import { Apps, type AuthType } from "@/shared/types"
+import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
 import { type SaaSOAuthJob, Subsystem } from "@/types"
 import { Google, type GoogleTokens } from "arctic"
 import type { Context } from "hono"
@@ -60,6 +60,7 @@ export const OAuthCallback = async (c: Context) => {
     const connector: SelectConnector = await updateConnector(db, connectorId, {
       subject: email,
       oauthCredentials: JSON.stringify(tokens),
+      status: ConnectorStatus.Connecting,
     })
     const SaasJobPayload: SaaSOAuthJob = {
       connectorId: connector.id,
@@ -74,7 +75,8 @@ export const OAuthCallback = async (c: Context) => {
     Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
     // Commit the transaction if everything is successful
-    return c.redirect(`${config.host}/oauth/success`)
+    // return c.redirect(`${config.host}/oauth/success`)
+    return c.redirect(`http://localhost:5173/oauth/success`)
   } catch (error) {
     Logger.error(
       error,
