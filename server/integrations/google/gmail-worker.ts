@@ -216,7 +216,9 @@ export const handleGmailIngestion = async (
               error,
               `AbortError occurred: ${(error as Error).message} ${(error as Error).stack}`,
             )
-            throw new IngestionAbortError({ message: `${(error as Error).message} ` })
+            throw new IngestionAbortError({
+              message: `${(error as Error).message} `,
+            })
           }
         }
         postMessage({

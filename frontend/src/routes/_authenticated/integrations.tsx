@@ -10,6 +10,7 @@ import {
   AdminPageProps,
   getConnectors,
   handleRemoveConnectors,
+  handleStopConnecting,
   minHeight,
   OAuthIntegrationStatus,
 } from "./admin/integrations"
@@ -21,12 +22,13 @@ import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
 import { wsClient } from "@/api"
 import OAuthTab from "@/components/OAuthTab"
 import { ConfirmModal } from "@/components/ui/confirmModal"
+import { toast } from "@/hooks/use-toast"
 
 const logger = console
 
 const UserLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
-  const { isPending, error, data } = useQuery<any[]>({
+  const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
@@ -41,10 +43,28 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
       }
     },
   })
-  const onDisconnectConfirm = async () => {
-    const res = await handleRemoveConnectors()
+  const onDisconnectConfirm = async (payload = data) => {
+    if (payload && payload[0]?.connectorId) {
+      const res = await handleRemoveConnectors(payload[0]?.connectorId)
+      if (res.success) {
+        setIsDisConnected({ disconnecting: true, completed: false })
+      } else {
+        toast({
+          title: "Could not remove integration",
+          variant: "destructive",
+        })
+      }
+    }
+  }
+  const onStopConfirm = async () => {
+    const res = await handleStopConnecting()
     if (res.success) {
-      setIsDisConnected({ disconnecting: true, completed: false })
+      setStopIntegration({ inProgess: true, completed: false })
+    } else {
+      toast({
+        title: "Could not stop integration",
+        variant: "destructive",
+      })
     }
   }
 
@@ -64,10 +84,19 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     disconnecting: false,
     completed: false,
   })
-  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState({
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState<{
+    open: boolean
+    title: string
+    description: string
+    onConfirm?: () => void
+  }>({
     open: false,
     title: "",
     description: "",
+  })
+  const [stopIntegration, setStopIntegration] = useState({
+    inProgess: false,
+    completed: false,
   })
 
   useEffect(() => {
@@ -127,12 +156,26 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     socket?.addEventListener("close", () => {
       logger.info("remove-connector ws close")
     })
-    socket?.addEventListener("message", (e) => {
+    socket?.addEventListener("message", async (e) => {
       const statusJson = JSON.parse(JSON.parse(e.data).message)
-      if (statusJson.completed) {
-        setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+      if (statusJson["disconnect"]) {
+        const { completed } = statusJson["disconnect"]
+        if (completed) {
+          setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+        }
+        setIsDisConnected(statusJson["disconnect"])
+      } else if (statusJson["stop"]) {
+        const { isStopIngestionCompleted } = statusJson["stop"]
+        if (isStopIngestionCompleted) {
+          // refetch connectors, at first it stored empty
+          const { data } = await refetch()
+          if (data) await onDisconnectConfirm(data)
+        }
+        setStopIntegration({
+          inProgess: !isStopIngestionCompleted,
+          completed: isStopIngestionCompleted,
+        })
       }
-      setIsDisConnected(statusJson)
     })
     return () => {
       socket?.close()
@@ -144,8 +187,10 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     <div className="flex w-full h-full">
       <ConfirmModal
         showModal={isConfirmationModalOpen.open}
-        setShowModal={setIsConfirmationModalOpen}
-        onConfirm={onDisconnectConfirm}
+        setShowModal={(v) =>
+          setIsConfirmationModalOpen({ ...isConfirmationModalOpen, ...v })
+        }
+        onConfirm={isConfirmationModalOpen.onConfirm}
         modalTitle={isConfirmationModalOpen.title}
         modalMessage={isConfirmationModalOpen.description}
       />
@@ -169,10 +214,21 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
                   open: true,
                   title: "Confirm",
                   description:
-                    "Are you sure you want to disconnect? This action will erase all your indexed data.",
+                    "Are you sure you want to DISCONNECT? This action will erase all your indexed data.",
+                  onConfirm: onDisconnectConfirm,
                 })
               }
               disconnected={isDisConnected}
+              stopIntegration={stopIntegration}
+              stopConnector={() =>
+                setIsConfirmationModalOpen({
+                  open: true,
+                  title: "Confirm",
+                  description:
+                    "Are you sure you want to STOP INTEGRATION? This action will erase all your ingestion progress",
+                  onConfirm: onStopConfirm,
+                })
+              }
             />
           </Tabs>
         </div>

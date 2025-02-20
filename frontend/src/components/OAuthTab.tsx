@@ -22,6 +22,11 @@ interface OAuthTabProps {
   updateStatus: string
   removeConnector: () => void
   disconnected: { disconnecting: boolean; completed: boolean }
+  stopConnector: () => void
+  stopIntegration: {
+    inProgess: boolean
+    completed: boolean
+  }
 }
 
 const OAuthTab = ({
@@ -30,8 +35,43 @@ const OAuthTab = ({
   setOAuthIntegrationStatus,
   updateStatus,
   removeConnector,
+  stopConnector,
   disconnected,
+  stopIntegration,
 }: OAuthTabProps) => {
+  const getStatusMessage = () => {
+    if (stopIntegration.inProgess) {
+      return "stopping"
+    }
+    if (disconnected.disconnecting) {
+      return "disconnecting"
+    }
+    switch (oauthIntegrationStatus) {
+      case OAuthIntegrationStatus.OAuthConnected:
+        return "Connected"
+      case OAuthIntegrationStatus.OAuthConnecting:
+        return "Connecting"
+      default:
+        return "failed"
+    }
+  }
+
+  const renderActionButton = () => {
+    if (stopIntegration.inProgess || disconnected.disconnecting) {
+      return (
+        <div>
+          <LoaderContent />
+        </div>
+      )
+    }
+
+    const handleClick =
+      oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
+        ? removeConnector
+        : stopConnector
+
+    return <X className="cursor-pointer" onClick={handleClick} />
+  }
   return (
     <TabsContent value="oauth">
       {isPending ? (
@@ -62,20 +102,8 @@ const OAuthTab = ({
             <CardTitle>Google OAuth</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center justify-between">
-            {disconnected.disconnecting
-              ? "disconnecting"
-              : oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
-                ? "Connected"
-                : "Connecting"}
-
-            {!disconnected.disconnecting &&
-            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ? (
-              <X className="cursor-pointer" onClick={removeConnector} />
-            ) : (
-              <div>
-                <LoaderContent />
-              </div>
-            )}
+            {getStatusMessage()}
+            {renderActionButton()}
           </CardContent>
         </Card>
       )}

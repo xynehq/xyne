@@ -387,6 +387,18 @@ export const handleRemoveConnectors: (connectorId: number) => Promise<any> =
     return res.json()
   }
 
+export const handleStopConnecting: () => Promise<any> = async () => {
+  const res = await api.admin.connector.stop.$delete()
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized")
+    }
+    throw new Error("Could not remove connectors")
+  }
+  return res.json()
+}
+
 const UserStatsTable = ({
   userStats,
   type,
@@ -439,6 +451,8 @@ const ServiceAccountTab = ({
   refetch,
   removeConnector,
   disconnected,
+  stopConnector,
+  stopIntegration,
 }: {
   connectors: Connectors[]
   updateStatus: string
@@ -449,10 +463,51 @@ const ServiceAccountTab = ({
   refetch: any
   removeConnector: () => void
   disconnected: { disconnecting: boolean; completed: boolean }
+  stopConnector: () => void
+  stopIntegration: {
+    inProgess: boolean
+    completed: boolean
+  }
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
   )
+
+  const getStatusMessage = () => {
+    if (stopIntegration.inProgess) {
+      return "stopping"
+    }
+    if (disconnected.disconnecting) {
+      return "disconnecting"
+    }
+
+    switch (googleSAConnector?.status) {
+      case ConnectorStatus.Connected:
+        return "Connected"
+      case ConnectorStatus.Connecting:
+        return "Connecting"
+      default:
+        return "Not-Connected"
+    }
+  }
+
+  const renderActionButton = () => {
+    if (stopIntegration.inProgess || disconnected.disconnecting) {
+      return (
+        <div>
+          <LoaderContent />
+        </div>
+      )
+    }
+
+    const handleClick =
+      googleSAConnector?.status === ConnectorStatus.Connected
+        ? removeConnector
+        : stopConnector
+
+    return <X className="cursor-pointer" onClick={handleClick} />
+  }
+
   if (!isIntegrating && !googleSAConnector) {
     return (
       <Card>
@@ -478,19 +533,8 @@ const ServiceAccountTab = ({
           </>
         ) : (
           <CardContent className="flex items-center justify-between">
-            <CardDescription>Connected</CardDescription>
-            {disconnected.disconnecting ? (
-              <LoaderContent />
-            ) : (
-              <X
-                className="cursor-pointer"
-                onClick={
-                  googleSAConnector.status === ConnectorStatus.Connected
-                    ? removeConnector
-                    : () => {}
-                }
-              />
-            )}
+            <CardDescription>{getStatusMessage()}</CardDescription>
+            {renderActionButton()}
           </CardContent>
         )}
       </CardHeader>
@@ -556,12 +600,20 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     disconnecting: false,
     completed: false,
   })
-  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState({
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState<{
+    open: boolean
+    title: string
+    description: string
+    onConfirm?: () => void
+  }>({
     open: false,
     title: "",
     description: "",
   })
-
+  const [stopIntegration, setStopIntegration] = useState({
+    inProgess: false,
+    completed: false,
+  })
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(
       data
@@ -635,7 +687,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
 
   useEffect(() => {
     let socket: WebSocket | null = null
-    // if(isConnectorRemove){
+    // if(isConnectorRemoveWsOpen){
     socket = wsClient.ws.$ws({
       query: {
         id: "remove-connector",
@@ -647,12 +699,26 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     socket?.addEventListener("close", () => {
       logger.info("remove-connector ws close")
     })
-    socket?.addEventListener("message", (e) => {
+    socket?.addEventListener("message", async (e) => {
       const statusJson = JSON.parse(JSON.parse(e.data).message)
-      if (statusJson.completed) {
-        setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+      if (statusJson["disconnect"]) {
+        const { completed } = statusJson["disconnect"]
+        if (completed) {
+          setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+        }
+        setIsDisConnected(statusJson["disconnect"])
+      } else if (statusJson["stop"]) {
+        const { isStopIngestionCompleted } = statusJson["stop"]
+        if (isStopIngestionCompleted) {
+          // refetch connectors, at first it stored empty
+          const { data } = await refetch()
+          if (data) await onDisconnectConfirm(data)
+        }
+        setStopIntegration({
+          inProgess: !isStopIngestionCompleted,
+          completed: isStopIngestionCompleted,
+        })
       }
-      setIsDisConnected(statusJson)
     })
     // }
 
@@ -675,11 +741,12 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     )
   }
 
-  const onDisconnectConfirm = async () => {
-    if (data && data[0]?.connectorId) {
-      const res = await handleRemoveConnectors(data[0]?.connectorId)
+  const onDisconnectConfirm = async (payload = data) => {
+    if (payload && payload[0]?.connectorId) {
+      const res = await handleRemoveConnectors(payload[0]?.connectorId)
       if (res.success) {
         setIsDisConnected({ disconnecting: true, completed: false })
+        setUserStats({})
       } else {
         toast({
           title: "Could not remove integration",
@@ -688,15 +755,27 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       }
     }
   }
-
+  const onStopConfirm = async () => {
+    const res = await handleStopConnecting()
+    if (res.success) {
+      setStopIntegration({ inProgess: true, completed: false })
+    } else {
+      toast({
+        title: "Could not stop integration",
+        variant: "destructive",
+      })
+    }
+  }
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
       <ConfirmModal
         showModal={isConfirmationModalOpen.open}
-        setShowModal={setIsConfirmationModalOpen}
-        onConfirm={onDisconnectConfirm}
+        setShowModal={(v) =>
+          setIsConfirmationModalOpen({ ...isConfirmationModalOpen, ...v })
+        }
+        onConfirm={isConfirmationModalOpen.onConfirm}
         modalTitle={isConfirmationModalOpen.title}
         modalMessage={isConfirmationModalOpen.description}
       />
@@ -730,9 +809,20 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                       title: "Confirm",
                       description:
                         "Are you sure you want to disconnect? This action will erase all your indexed data.",
+                      onConfirm: onDisconnectConfirm,
                     })
                   }
                   disconnected={isDisConnected}
+                  stopIntegration={stopIntegration}
+                  stopConnector={() =>
+                    setIsConfirmationModalOpen({
+                      open: true,
+                      title: "Confirm",
+                      description:
+                        "Are you sure you want to STOP INTEGRATION? This action will erase all your ingestion progress",
+                      onConfirm: onStopConfirm,
+                    })
+                  }
                 />
               )}
             </TabsContent>
@@ -746,10 +836,21 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                   open: true,
                   title: "Confirm",
                   description:
-                    "Are you sure you want to disconnect? This action will erase all your indexed data.",
+                    "Are you sure you want to DISCONNECT? This action will erase all your indexed data.",
+                  onConfirm: onDisconnectConfirm,
                 })
               }
               disconnected={isDisConnected}
+              stopIntegration={stopIntegration}
+              stopConnector={() =>
+                setIsConfirmationModalOpen({
+                  open: true,
+                  title: "Confirm",
+                  description:
+                    "Are you sure you want to STOP INTEGRATION? This action will erase all your ingestion progress",
+                  onConfirm: onStopConfirm,
+                })
+              }
             />
           </Tabs>
           {showUserStats(userStats, activeTab) && (
