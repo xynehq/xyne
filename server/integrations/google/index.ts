@@ -107,6 +107,7 @@ import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
 import {
+  emptyUserStats,
   getProgress,
   markUserComplete,
   oAuthTracker,
@@ -328,6 +329,7 @@ export const disconnectConnector = async (
 
     await Promise.all(deleteDocsPromises)
     await boss.complete(RemoveConnectorQueue, jobId)
+    emptyUserStats()
 
     disconnectingState[disConnectingKey].completed = true
     disconnectingState[disConnectingKey].disconnecting = false
@@ -812,6 +814,7 @@ export const handleGoogleOAuthIngestion = async (
     )
     if (isAbortError(error)) {
       stopProgess[stopKey].isStopIngestionCompleted = true
+      emptyUserStats()
       setTimeout(() => {
         clearInterval(stopProgressInterval)
       }, 4000)
@@ -1023,9 +1026,16 @@ export const handleGoogleServiceAccountIngestion = async (
     )
 
     // Wait for all promises to complete
-    const results = await Promise.all(promises)
-    ingestionMetadata.push(...results)
-
+    try {
+      const results = await Promise.all(promises)
+      ingestionMetadata.push(...results)
+    } catch (error) {
+      if (isAbortError(error)) {
+        emptyUserStats()
+        clearInterval(interval)
+        throw error
+      }
+    }
     // Rest of the function remains the same...
     // insert all the workspace users
     await insertUsersForWorkspace(users, signal)
