@@ -574,6 +574,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       })
       socket?.addEventListener("close", () => {
         logger.info("close")
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
       })
       socket?.addEventListener("message", (e) => {
         // const message = JSON.parse(e.data);
@@ -589,6 +590,14 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       // setWs(null)
     }
   }, [data, isPending])
+
+  // TODO Also check if it goes from Connecting to Connected and also how it handles the OAuth Toast Err
+
+  useEffect(() => {
+    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting) {
+      refetch()
+    }
+  }, [oauthIntegrationStatus, refetch])
 
   const showUserStats = (
     userStats: { [email: string]: any },
