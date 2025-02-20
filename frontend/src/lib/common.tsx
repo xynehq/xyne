@@ -19,6 +19,7 @@ import {
   CalendarEntity,
   isMailAttachment,
 } from "shared/types"
+import { LoadingSpinner, minHeight } from "@/routes/_authenticated/admin/integrations"
 
 export const getIcon = (
   app: Apps,
@@ -83,4 +84,18 @@ export const getIcon = (
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
+}
+
+
+
+export const LoaderContent = () => {
+  return (
+    <div
+      className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}
+    >
+      <div className="items-center justify-center">
+        <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
+      </div>
+    </div>
+  )
 }
