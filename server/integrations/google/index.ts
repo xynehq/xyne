@@ -35,6 +35,7 @@ import {
   UpdateEventCancelledInstances,
 } from "@/search/vespa"
 import {
+  initSyncJobs,
   RemoveConnectorQueue,
   SaaSQueue,
   SyncGoogleWorkspace,
@@ -59,7 +60,7 @@ import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob"
 import type { GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
-import { getErrorMessage, retryWithBackoff } from "@/utils"
+import { getErrorMessage, isAbortError, retryWithBackoff } from "@/utils"
 import {
   createJwtClient,
   DocsParsingError,
@@ -87,6 +88,7 @@ import {
   DeleteDocumentError,
   DownloadDocumentError,
   CalendarEventsListingError,
+  IngestionAbortError,
 } from "@/errors"
 import fs, { existsSync, mkdirSync } from "node:fs"
 import path, { join } from "node:path"
@@ -268,9 +270,12 @@ export const disconnectConnector = async (
 ) => {
   const jobId = job.id
   const jobName = job.name
+  const disConnectingKey = "disconnect"
   let disconnectingState = {
-    disconnecting: true,
-    completed: false,
+    [disConnectingKey]: {
+      disconnecting: true,
+      completed: false,
+    },
   }
   const { connectorId } = job.data
 
@@ -324,12 +329,12 @@ export const disconnectConnector = async (
     await Promise.all(deleteDocsPromises)
     await boss.complete(RemoveConnectorQueue, jobId)
 
-    disconnectingState.completed = true
-    disconnectingState.disconnecting = false
+    disconnectingState[disConnectingKey].completed = true
+    disconnectingState[disConnectingKey].disconnecting = false
     Logger.info(`Remove connector job successful`)
   } catch (error) {
-    disconnectingState.completed = false
-    disconnectingState.disconnecting = false
+    disconnectingState[disConnectingKey].completed = false
+    disconnectingState[disConnectingKey].disconnecting = false
     const errMessage = getErrorMessage(error)
     Logger.error(
       error,
@@ -509,13 +514,14 @@ export const maxCalendarEventResults = 2500
 const insertCalendarEvents = async (
   client: GoogleClient,
   userEmail: string,
+  signal: AbortSignal | undefined,
 ) => {
   let nextPageToken = ""
   // will be returned in the end
   let newSyncTokenCalendarEvents: string = ""
 
   let events: calendar_v3.Schema$Event[] = []
-  const calendar = google.calendar({ version: "v3", auth: client })
+  const calendar = google.calendar({ version: "v3", auth: client, signal })
 
   const currentDateTime = new Date()
   const nextYearDateTime = new Date(currentDateTime)
@@ -599,8 +605,20 @@ const insertCalendarEvents = async (
       defaultStartTime: isDefaultStartTime,
     }
 
-    await insert(eventToBeIngested, eventSchema)
-    updateUserStats(userEmail, StatType.Events, 1)
+    try {
+      await insert(eventToBeIngested, eventSchema, signal)
+      updateUserStats(userEmail, StatType.Events, 1)
+    } catch (error) {
+      // only throw if user stopped Integration
+      const errMessage = getErrorMessage(error)
+      if (isAbortError(error)) {
+        Logger.error(
+          error,
+          `AbortError occurred: ${errMessage} ${(error as Error).stack}`,
+        )
+        throw new IngestionAbortError({ message: errMessage })
+      }
+    }
   }
 
   // Add the cancelled events into cancelledInstances array of their respective main event
@@ -658,6 +676,14 @@ export const handleGoogleOAuthIngestion = async (
 ) => {
   Logger.info("handleGoogleOauthIngestion", job.data)
   const data: SaaSOAuthJob = job.data as SaaSOAuthJob
+  const signal = AbortControllerMap.get(job.name)?.signal
+  const stopKey = "stop"
+  const stopProgess = {
+    [stopKey]: {
+      isStopIngestionCompleted: false,
+    },
+  }
+  let stopProgressInterval: Timer
   try {
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
@@ -680,13 +706,25 @@ export const handleGoogleOAuthIngestion = async (
       )
     }, 4000)
 
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        stopProgressInterval = setInterval(() => {
+          sendWebsocketMessage(JSON.stringify(stopProgess), "remove-connector")
+        }, 2000)
+      })
+    }
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
     oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
-    const driveClient = google.drive({ version: "v3", auth: oauth2Client })
+    const driveClient = google.drive({
+      version: "v3",
+      auth: oauth2Client,
+      signal,
+    })
+
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
-      await listAllContacts(oauth2Client)
-    await insertContactsToVespa(contacts, otherContacts, userEmail)
+      await listAllContacts(oauth2Client, signal)
+    await insertContactsToVespa(contacts, otherContacts, userEmail, signal)
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -696,9 +734,9 @@ export const handleGoogleOAuthIngestion = async (
     }
 
     const [_, historyId, { calendarEventsToken }] = await Promise.all([
-      insertFilesForUser(oauth2Client, userEmail, connector),
-      handleGmailIngestion(oauth2Client, userEmail),
-      insertCalendarEvents(oauth2Client, userEmail),
+      insertFilesForUser(oauth2Client, userEmail, connector, signal),
+      handleGmailIngestion(oauth2Client, userEmail, signal),
+      insertCalendarEvents(oauth2Client, userEmail, signal),
     ])
 
     setTimeout(() => {
@@ -762,7 +800,8 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      await boss.complete(SaaSQueue, job.id)
+      await initSyncJobs()
+      await boss.complete(job.name, job.id)
       Logger.info("job completed")
     })
   } catch (error) {
@@ -771,21 +810,39 @@ export const handleGoogleOAuthIngestion = async (
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
       error,
     )
-    await db.transaction(async (trx) => {
-      trx
-        .update(connectors)
-        .set({
-          status: ConnectorStatus.Failed,
-        })
-        .where(eq(connectors.id, data.connectorId))
-      await boss.fail(job.name, job.id)
-    })
-    throw new CouldNotFinishJobSuccessfully({
-      message: "Could not finish Oauth ingestion",
-      integration: Apps.GoogleDrive,
-      entity: "files",
-      cause: error as Error,
-    })
+    if (isAbortError(error)) {
+      stopProgess[stopKey].isStopIngestionCompleted = true
+      setTimeout(() => {
+        clearInterval(stopProgressInterval)
+      }, 4000)
+
+      await db.transaction(async (trx) => {
+        trx
+          .update(connectors)
+          .set({
+            status: ConnectorStatus.Stopped,
+          })
+          .where(eq(connectors.id, data.connectorId))
+        await boss.cancel(job.name, job.id)
+      })
+      Logger.info("Ingestion Aborted")
+    } else {
+      await db.transaction(async (trx) => {
+        trx
+          .update(connectors)
+          .set({
+            status: ConnectorStatus.Failed,
+          })
+          .where(eq(connectors.id, data.connectorId))
+        await boss.fail(job.name, job.id)
+      })
+      throw new CouldNotFinishJobSuccessfully({
+        message: "Could not finish Oauth ingestion",
+        integration: Apps.GoogleDrive,
+        entity: "files",
+        cause: error as Error,
+      })
+    }
   }
 }
 
@@ -801,6 +858,7 @@ type IngestionMetadata = {
 }
 
 import { z } from "zod"
+import { AbortControllerMap } from "@/integrations/google/controller"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -857,6 +915,7 @@ gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
 const handleGmailIngestionForServiceAccount = async (
   userEmail: string,
   serviceAccountKey: GoogleServiceAccount,
+  job: { jobId: string; jobName: string },
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     pendingRequests.set(userEmail, { resolve, reject })
@@ -864,6 +923,7 @@ const handleGmailIngestionForServiceAccount = async (
       type: MessageTypes.JwtParams,
       userEmail,
       serviceAccountKey,
+      job,
     })
     Logger.info(`Sent message to worker for ${userEmail}`)
   })
@@ -876,6 +936,14 @@ export const handleGoogleServiceAccountIngestion = async (
   job: PgBoss.Job<any>,
 ) => {
   Logger.info("handleGoogleServiceAccountIngestion", job.data)
+  const signal = AbortControllerMap.get(job.name)?.signal
+  const stopKey = "stop"
+  const stopProgess = {
+    [stopKey]: {
+      isStopIngestionCompleted: false,
+    },
+  }
+  let stopProgressInterval: Timer
   const data: SaaSJob = job.data as SaaSJob
   try {
     const connector = await getConnector(db, data.connectorId)
@@ -887,6 +955,7 @@ export const handleGoogleServiceAccountIngestion = async (
     const admin = google.admin({
       version: "directory_v1",
       auth: adminJwtClient,
+      signal,
     })
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
@@ -907,6 +976,13 @@ export const handleGoogleServiceAccountIngestion = async (
       )
     }, 4000)
 
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        stopProgressInterval = setInterval(() => {
+          sendWebsocketMessage(JSON.stringify(stopProgess), "remove-connector")
+        }, 2000)
+      })
+    }
     // Map each user to a promise but limit concurrent execution
     const promises = users.map((user) =>
       limit(async () => {
@@ -915,8 +991,8 @@ export const handleGoogleServiceAccountIngestion = async (
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
-          await listAllContacts(jwtClient)
-        await insertContactsToVespa(contacts, otherContacts, userEmail)
+          await listAllContacts(jwtClient, signal)
+        await insertContactsToVespa(contacts, otherContacts, userEmail, signal)
 
         const { startPageToken }: drive_v3.Schema$StartPageToken = (
           await driveClient.changes.getStartPageToken()
@@ -926,9 +1002,12 @@ export const handleGoogleServiceAccountIngestion = async (
         }
 
         const [_, historyId, { calendarEventsToken }] = await Promise.all([
-          insertFilesForUser(jwtClient, userEmail, connector),
-          handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
-          insertCalendarEvents(jwtClient, userEmail),
+          insertFilesForUser(jwtClient, userEmail, connector, signal),
+          handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey, {
+            jobId: job.id,
+            jobName: job.name,
+          }),
+          insertCalendarEvents(jwtClient, userEmail, signal),
         ])
 
         markUserComplete(userEmail)
@@ -949,7 +1028,7 @@ export const handleGoogleServiceAccountIngestion = async (
 
     // Rest of the function remains the same...
     // insert all the workspace users
-    await insertUsersForWorkspace(users)
+    await insertUsersForWorkspace(users, signal)
 
     setTimeout(() => {
       clearInterval(interval)
@@ -1034,7 +1113,9 @@ export const handleGoogleServiceAccountIngestion = async (
         })
         .where(eq(connectors.id, connector.id))
       Logger.info("status updated")
-      await boss.complete(SaaSQueue, job.id)
+      // init syncJobs once integration completes
+      await initSyncJobs()
+      await boss.complete(job.name, job.id)
       Logger.info("job completed")
     })
   } catch (error) {
@@ -1043,21 +1124,39 @@ export const handleGoogleServiceAccountIngestion = async (
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
       error,
     )
-    await db.transaction(async (trx) => {
-      trx
-        .update(connectors)
-        .set({
-          status: ConnectorStatus.Failed,
-        })
-        .where(eq(connectors.id, data.connectorId))
-      await boss.fail(job.name, job.id)
-    })
-    throw new CouldNotFinishJobSuccessfully({
-      message: "Could not finish Service Account ingestion",
-      integration: Apps.GoogleWorkspace,
-      entity: "files and users",
-      cause: error as Error,
-    })
+    if (isAbortError(error)) {
+      stopProgess[stopKey].isStopIngestionCompleted = true
+      setTimeout(() => {
+        clearInterval(stopProgressInterval)
+      }, 4000)
+
+      await db.transaction(async (trx) => {
+        trx
+          .update(connectors)
+          .set({
+            status: ConnectorStatus.Stopped,
+          })
+          .where(eq(connectors.id, data.connectorId))
+        await boss.cancel(job.name, job.id)
+      })
+      Logger.info("Ingestion Aborted")
+    } else {
+      await db.transaction(async (trx) => {
+        trx
+          .update(connectors)
+          .set({
+            status: ConnectorStatus.Failed,
+          })
+          .where(eq(connectors.id, data.connectorId))
+        await boss.fail(job.name, job.id)
+      })
+      throw new CouldNotFinishJobSuccessfully({
+        message: "Could not finish Service Account ingestion",
+        integration: Apps.GoogleWorkspace,
+        entity: "files and users",
+        cause: error as Error,
+      })
+    }
   }
 }
 
@@ -1206,10 +1305,11 @@ const insertFilesForUser = async (
   googleClient: GoogleClient,
   userEmail: string,
   connector: SelectConnector,
+  signal: AbortSignal | undefined,
 ) => {
   try {
     let processedFiles = 0
-    const iterator = listFiles(googleClient)
+    const iterator = listFiles(googleClient, signal)
     for await (const pageFiles of iterator) {
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
@@ -1243,7 +1343,7 @@ const insertFilesForUser = async (
       })
       for (const doc of pdfs) {
         processedFiles += 1
-        await insertDocument(doc)
+        await insertDocument(doc, signal)
         updateUserStats(userEmail, StatType.Drive, 1)
       }
       const [documents, slides, sheets]: [
@@ -1281,7 +1381,7 @@ const insertFilesForUser = async (
 
       for (const doc of allFiles) {
         processedFiles += 1
-        await insertDocument(doc)
+        await insertDocument(doc, signal)
         updateUserStats(userEmail, StatType.Drive, 1)
       }
 
@@ -1293,6 +1393,14 @@ const insertFilesForUser = async (
       error,
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
+    // Check if the error is an AbortError
+    if (isAbortError(error)) {
+      Logger.error(
+        error,
+        `AbortError occurred: ${errorMessage} ${(error as Error).stack}`,
+      )
+      throw new IngestionAbortError({ message: errorMessage })
+    }
   }
 }
 
@@ -1733,6 +1841,7 @@ type Lang = { preference: string; languageCode: string }
 // insert all the people data into vespa
 const insertUsersForWorkspace = async (
   users: admin_directory_v1.Schema$User[],
+  signal?: AbortSignal,
 ) => {
   for (const user of users) {
     const currentOrg =
@@ -1741,34 +1850,50 @@ const insertUsersForWorkspace = async (
     const preferredLanguage =
       user.languages?.find((lang: Lang) => lang.preference === "preferred")
         ?.languageCode ?? user.languages?.[0]?.languageCode
-    // TODO: remove ts-ignore and fix correctly
-    // @ts-ignore
-    await insertUser({
-      docId: user.id!,
-      name: user.name?.displayName ?? user.name?.fullName ?? "",
-      email: user.primaryEmail ?? user.emails?.[0],
-      app: Apps.GoogleWorkspace,
-      entity: GooglePeopleEntity.AdminDirectory,
-      gender: user.gender,
-      photoLink: user.thumbnailPhotoUrl ?? "",
-      aliases: user.aliases ?? [],
-      language: preferredLanguage,
-      includeInGlobalAddressList: user.includeInGlobalAddressList ?? false,
-      isAdmin: user.isAdmin ?? false,
-      isDelegatedAdmin: user.isDelegatedAdmin ?? false,
-      suspended: user.suspended ?? false,
-      archived: user.archived ?? false,
-      orgName: currentOrg?.name,
-      orgJobTitle: currentOrg?.title,
-      orgDepartment: currentOrg?.department,
-      orgLocation: currentOrg?.location,
-      orgDescription: currentOrg?.description,
-      creationTime:
-        (user.creationTime && new Date(user.creationTime).getTime()) || 0,
-      lastLoggedIn:
-        (user.lastLoginTime && new Date(user.lastLoginTime).getTime()) || 0,
-      customerId: user.customerId ?? "",
-    })
+
+    try {
+      // TODO: remove ts-ignore and fix correctly
+      await insertUser(
+        // @ts-ignore
+        {
+          docId: user.id!,
+          name: user.name?.displayName ?? user.name?.fullName ?? "",
+          email: user.primaryEmail ?? user.emails?.[0],
+          app: Apps.GoogleWorkspace,
+          entity: GooglePeopleEntity.AdminDirectory,
+          gender: user.gender,
+          photoLink: user.thumbnailPhotoUrl ?? "",
+          aliases: user.aliases ?? [],
+          language: preferredLanguage,
+          includeInGlobalAddressList: user.includeInGlobalAddressList ?? false,
+          isAdmin: user.isAdmin ?? false,
+          isDelegatedAdmin: user.isDelegatedAdmin ?? false,
+          suspended: user.suspended ?? false,
+          archived: user.archived ?? false,
+          orgName: currentOrg?.name,
+          orgJobTitle: currentOrg?.title,
+          orgDepartment: currentOrg?.department,
+          orgLocation: currentOrg?.location,
+          orgDescription: currentOrg?.description,
+          creationTime:
+            (user.creationTime && new Date(user.creationTime).getTime()) || 0,
+          lastLoggedIn:
+            (user.lastLoginTime && new Date(user.lastLoginTime).getTime()) || 0,
+          customerId: user.customerId ?? "",
+        },
+        signal,
+      )
+    } catch (error) {
+      if (isAbortError(error)) {
+        Logger.error(
+          error,
+          `AbortError occurred: ${(error as Error).message} ${(error as Error).stack}`,
+        )
+        throw new IngestionAbortError({
+          message: `${(error as Error).message}`,
+        })
+      }
+    }
   }
 }
 
@@ -1782,8 +1907,9 @@ type ContactsResponse = {
 // get both contacts and other contacts and return the sync tokens
 const listAllContacts = async (
   client: GoogleClient,
+  signal: AbortSignal | undefined,
 ): Promise<ContactsResponse> => {
-  const peopleService = google.people({ version: "v1", auth: client })
+  const peopleService = google.people({ version: "v1", auth: client, signal })
   const keys = [
     "names",
     "emailAddresses",
@@ -1870,6 +1996,7 @@ export const insertContact = async (
   contact: people_v1.Schema$Person,
   entity: GooglePeopleEntity,
   owner: string,
+  signal?: AbortSignal | undefined,
 ) => {
   const docId = contact.resourceName || ""
   if (!docId) {
@@ -1948,22 +2075,40 @@ export const insertContact = async (
     userDefined,
     owner,
   }
-  // @ts-ignore
-  await insertUser(vespaContact)
+  try {
+    // @ts-ignore
+    await insertUser(vespaContact, signal)
+  } catch (error) {
+    // Check if the error is an AbortError
+    const errMessage = getErrorMessage(error)
+    if (isAbortError(error)) {
+      Logger.error(
+        error,
+        `AbortError occurred: ${errMessage} ${(error as Error).stack}`,
+      )
+      throw new IngestionAbortError({ message: errMessage })
+    }
+  }
 }
 
 const insertContactsToVespa = async (
   contacts: people_v1.Schema$Person[],
   otherContacts: people_v1.Schema$Person[],
   owner: string,
+  signal: AbortSignal | undefined,
 ): Promise<void> => {
   try {
     for (const contact of contacts) {
-      await insertContact(contact, GooglePeopleEntity.Contacts, owner)
+      await insertContact(contact, GooglePeopleEntity.Contacts, owner, signal)
       updateUserStats(owner, StatType.Contacts, 1)
     }
     for (const contact of otherContacts) {
-      await insertContact(contact, GooglePeopleEntity.OtherContacts, owner)
+      await insertContact(
+        contact,
+        GooglePeopleEntity.OtherContacts,
+        owner,
+        signal,
+      )
       updateUserStats(owner, StatType.Contacts, 1)
     }
   } catch (error) {
@@ -1971,26 +2116,37 @@ const insertContactsToVespa = async (
     if (error instanceof ErrorInsertingDocument) {
       Logger.error(error, `Could not insert contact: ${(error as Error).stack}`)
       throw error
-    } else {
-      Logger.error(
-        error,
-        `Error mapping contact: ${error} ${(error as Error).stack}`,
-        error,
-      )
-      throw new ContactMappingError({
-        message: "Error in the catch of mapping google contact",
-        integration: Apps.GoogleDrive,
-        entity: GooglePeopleEntity.Contacts,
-        cause: error as Error,
-      })
+    } else if (isAbortError(error)) {
+      // Check if the error is an AbortError
+      const errMessage = getErrorMessage(error)
+      if (isAbortError(error)) {
+        Logger.error(
+          error,
+          `AbortError occurred: ${errMessage} ${(error as Error).stack}`,
+        )
+        throw new IngestionAbortError({ message: errMessage })
+      } else {
+        Logger.error(
+          error,
+          `Error mapping contact: ${error} ${(error as Error).stack}`,
+          error,
+        )
+        throw new ContactMappingError({
+          message: "Error in the catch of mapping google contact",
+          integration: Apps.GoogleDrive,
+          entity: GooglePeopleEntity.Contacts,
+          cause: error as Error,
+        })
+      }
     }
   }
 }
 
 export async function* listFiles(
   client: GoogleClient,
+  signal: AbortSignal | undefined,
 ): AsyncIterableIterator<drive_v3.Schema$File[]> {
-  const drive = google.drive({ version: "v3", auth: client })
+  const drive = google.drive({ version: "v3", auth: client, signal })
   let nextPageToken = ""
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
