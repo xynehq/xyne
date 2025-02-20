@@ -27,6 +27,7 @@ import {
   deleteConnectors,
   GetConnectors,
   StartOAuth,
+  stopConnecting,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -185,6 +186,7 @@ export const AppRoutes = app
     zValidator("json", connectorIdSchema),
     deleteConnectors,
   )
+  .delete("/connector/stop", stopConnecting)
   .get("/connectors/all", GetConnectors)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)

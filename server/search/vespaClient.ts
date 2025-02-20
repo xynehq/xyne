@@ -64,8 +64,10 @@ class VespaClient {
 
       return response
     } catch (error) {
+      if ((error as any) === "User Stopped Integration") {
+        throw new Error("AbortError: User Stopped Integration")
+      }
       const errorMessage = getErrorMessage(error)
-
       if (
         retryCount < this.maxRetries &&
         !errorMessage.includes("Non-retryable error")
@@ -135,10 +137,12 @@ class VespaClient {
   async insertDocument(
     document: VespaFile,
     options: VespaConfigValues,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
       const url = `${this.vespaEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${document.docId}`
       const response = await this.fetchWithRetry(url, {
+        signal,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -159,9 +163,7 @@ class VespaClient {
         error,
         `Error inserting document ${document.docId}: ${errMessage}`,
       )
-      throw new Error(
-        `Error inserting document ${document.docId}: ${errMessage}`,
-      )
+      throw new Error(`Error inserting document ${document.docId}: ${error}`)
     }
   }
 
@@ -174,10 +176,12 @@ class VespaClient {
       | VespaUserQueryHistory
       | VespaMailAttachment,
     options: VespaConfigValues,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
       const url = `${this.vespaEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${document.docId}`
       const response = await this.fetchWithRetry(url, {
+        signal,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -211,10 +215,15 @@ class VespaClient {
     }
   }
 
-  async insertUser(user: VespaUser, options: VespaConfigValues): Promise<void> {
+  async insertUser(
+    user: VespaUser,
+    options: VespaConfigValues,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
     try {
       const url = `${this.vespaEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${user.docId}`
       const response = await this.fetchWithRetry(url, {
+        signal,
         method: "POST",
         headers: {
           "Content-Type": "application/json",

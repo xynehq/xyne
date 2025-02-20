@@ -93,7 +93,11 @@ export const getRelativeTime = (oldTimestamp: number) => {
 const MAX_RETRIES = 10
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
+export const isAbortError = (error: any) =>
+  error?.message.includes("The operation was aborted.") ||
+  error?.message.includes("User Stopped Integration") ||
+  error?.message.includes("AbortError") ||
+  error.code === "ABORTED"
 /**
  * Retry logic with exponential backoff and jitter.
  * @param fn - The function to retry.
@@ -108,6 +112,10 @@ export const retryWithBackoff = async <T>(
   try {
     return await fn() // Attempt the function
   } catch (error: any) {
+    if (isAbortError(error)) {
+      throw error
+    }
+
     const isQuotaError =
       error.message.includes("Quota exceeded") ||
       error.code === 429 ||

@@ -374,3 +374,10 @@ export class CalendarEventsListingError extends IntegrationsError {
     this.name = this.constructor.name
   }
 }
+
+export class IngestionAbortError extends DbError {
+  constructor({ message, cause }: BaseErrorOpts) {
+    super({ message, model: Model.Connectors, dbOp: DbOp.Create, cause })
+    this.name = this.constructor.name
+  }
+}

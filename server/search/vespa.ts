@@ -65,17 +65,25 @@ export async function deleteAllDocuments(schema: VespaSchema) {
   }
 }
 
-export const insertDocument = async (document: VespaFile) => {
+export const insertDocument = async (
+  document: VespaFile,
+  signal?: AbortSignal,
+) => {
   try {
-    await vespa.insertDocument(document, {
-      namespace: NAMESPACE,
-      schema: fileSchema,
-    })
+    await vespa.insertDocument(
+      document,
+      {
+        namespace: NAMESPACE,
+        schema: fileSchema,
+      },
+      signal,
+    )
   } catch (error) {
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
       sources: fileSchema,
+      message: (error as Error).message,
     })
   }
 }
@@ -90,26 +98,36 @@ export const insert = async (
     | VespaUserQueryHistory
     | VespaMailAttachment,
   schema: VespaSchema,
+  signal?: AbortSignal,
 ) => {
   try {
-    await vespa.insert(document, { namespace: NAMESPACE, schema })
+    await vespa.insert(document, { namespace: NAMESPACE, schema }, signal)
   } catch (error) {
     throw new ErrorInsertingDocument({
       docId: document.docId,
       cause: error as Error,
       sources: schema,
+      message: (error as Error).message,
     })
   }
 }
 
-export const insertUser = async (user: VespaUser) => {
+export const insertUser = async (
+  user: VespaUser,
+  signal: AbortSignal | undefined,
+) => {
   try {
-    await vespa.insertUser(user, { namespace: NAMESPACE, schema: userSchema })
+    await vespa.insertUser(
+      user,
+      { namespace: NAMESPACE, schema: userSchema },
+      signal,
+    )
   } catch (error) {
     throw new ErrorInsertingDocument({
       docId: user.docId,
       cause: error as Error,
       sources: userSchema,
+      message: (error as Error).message,
     })
   }
 }

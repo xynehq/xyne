@@ -30,6 +30,7 @@ import {
   ConnectorNotCreated,
   NoUserFound,
 } from "@/errors"
+import { AbortControllerMap } from "@/integrations/google/controller"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -135,6 +136,22 @@ export const deleteConnectors = async (c: Context) => {
       success: false,
       message: "Failed to enqueue job for removing connectors",
       error: errMsg,
+    })
+  }
+}
+
+export const stopConnecting = async (c: Context) => {
+  const controller = AbortControllerMap.get(SaaSQueue)
+  if (controller) {
+    controller.abort("User Stopped Integration")
+    return c.json({
+      success: true,
+      message: "Stop Integration in progress",
+    })
+  } else {
+    return c.json({
+      success: false,
+      message: "Could not able to stop Integration",
     })
   }
 }
