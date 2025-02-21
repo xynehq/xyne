@@ -24,7 +24,7 @@ import type {
   VespaSchema,
   VespaMailAttachment,
 } from "@/search/types"
-import { getErrorMessage, removeStopwords } from "@/utils"
+import { getErrorMessage } from "@/utils"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -186,7 +186,7 @@ export const autocomplete = async (
 
   const searchPayload = {
     yql: yqlQuery,
-    query: query,
+    query,
     email,
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
@@ -426,7 +426,7 @@ export const searchVespa = async (
   const hybridDefaultPayload = {
     yql,
     q: query, // Original user input query
-    query: removeStopwords(query), // removing stopwords for only bm25, to keep semantic meaning for embeddings
+    query,
     email,
     "ranking.profile": profile,
     "input.query(e)": "embed(@q)",

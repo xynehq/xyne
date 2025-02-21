@@ -41,8 +41,17 @@ import {
 } from "@/shared/types"
 import type { z } from "zod"
 import type { AppEntityCounts } from "@/search/vespa"
+import { chunkDocument } from "@/chunks"
+
+function countHiTags(str: string): number {
+  // Regular expression to match both <hi> and </hi> tags
+  const regex = /<\/?hi>/g
+  const matches = str.match(regex)
+  return matches ? matches.length : 0
+}
 
 // Vespa -> Backend/App -> Client
+const maxSearchChunks = 1
 
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
@@ -54,45 +63,87 @@ export const VespaSearchResponseToSearchResult = (
       ? root.children.map((child: VespaSearchResult) => {
           // Narrow down the type based on `sddocname`
           if ((child.fields as VespaFileSearch).sddocname === fileSchema) {
-            ;(child.fields as any).type = fileSchema
-            ;(child.fields as any).relevance = child.relevance
-            ;(child.fields as any).chunks_summary = (
-              child.fields as VespaFileSearch
-            ).chunks_summary
-            return FileResponseSchema.parse(child.fields)
+            const fields = child.fields as VespaFileSearch & {
+              type?: string
+              chunks_summary?: string[]
+            }
+            fields.type = fileSchema
+            fields.relevance = child.relevance
+            fields.chunks_summary?.sort(
+              (a, b) => countHiTags(b) - countHiTags(a),
+            )
+            fields.chunks_summary = fields.chunks_summary?.slice(
+              0,
+              maxSearchChunks,
+            )
+            return FileResponseSchema.parse(fields)
           } else if ((child.fields as VespaUser).sddocname === userSchema) {
-            ;(child.fields as any).type = userSchema
-            ;(child.fields as any).relevance = child.relevance
-            return UserResponseSchema.parse(child.fields)
+            const fields = child.fields as VespaUser & {
+              type?: string
+              chunks_summary?: string[]
+            }
+            fields.type = userSchema
+            fields.relevance = child.relevance
+            fields.chunks_summary?.sort(
+              (a, b) => countHiTags(b) - countHiTags(a),
+            )
+            fields.chunks_summary = fields.chunks_summary?.slice(
+              0,
+              maxSearchChunks,
+            )
+            return UserResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaMailSearch).sddocname === mailSchema
           ) {
-            ;(child.fields as any).type = mailSchema
-            ;(child.fields as any).relevance = child.relevance
-            if ((child.fields as any).chunks_summary) {
-              ;(child.fields as any).chunks_summary = (
-                child.fields as VespaMailSearch
-              ).chunks_summary
-            }
-            return MailResponseSchema.parse(child.fields)
+            const fields = child.fields as VespaMailSearch & { type?: string }
+            fields.type = mailSchema
+            fields.relevance = child.relevance
+            fields.chunks_summary?.sort(
+              (a, b) => countHiTags(b) - countHiTags(a),
+            )
+            fields.chunks_summary = fields.chunks_summary?.slice(
+              0,
+              maxSearchChunks,
+            )
+            return MailResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaEventSearch).sddocname === eventSchema
           ) {
-            ;(child.fields as any).type = eventSchema
-            ;(child.fields as any).relevance = child.relevance
-            if ((child.fields as any).description) {
-              ;(child.fields as any).description = (
-                child.fields as VespaEventSearch
-              ).description
+            const fields = child.fields as VespaEventSearch & {
+              type?: string
+              chunks_summary?: string[]
             }
-            return EventResponseSchema.parse(child.fields)
+            fields.type = eventSchema
+            fields.relevance = child.relevance
+            // creating a new property
+            fields.chunks_summary = fields.description
+              ? chunkDocument(fields.description)
+                  .map((v) => v.chunk)
+                  .sort((a, b) => countHiTags(b) - countHiTags(a))
+                  .slice(0, maxSearchChunks)
+              : []
+            fields.chunks_summary = fields.chunks_summary?.slice(
+              0,
+              maxSearchChunks,
+            )
+            return EventResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaMailAttachmentSearch).sddocname ===
             mailAttachmentSchema
           ) {
-            ;(child.fields as any).type = mailAttachmentSchema
-            ;(child.fields as any).relevance = child.relevance
-            return MailAttachmentResponseSchema.parse(child.fields)
+            const fields = child.fields as VespaMailAttachmentSearch & {
+              type?: string
+            }
+            fields.type = mailAttachmentSchema
+            fields.relevance = child.relevance
+            fields.chunks_summary?.sort(
+              (a, b) => countHiTags(b) - countHiTags(a),
+            )
+            fields.chunks_summary = fields.chunks_summary?.slice(
+              0,
+              maxSearchChunks,
+            )
+            return MailAttachmentResponseSchema.parse(fields)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname}`,
@@ -116,41 +167,59 @@ export const VespaAutocompleteResponseToResult = (
       .map((child: VespaAutocomplete) => {
         // Narrow down the type based on `sddocname`
         if ((child.fields as VespaAutocompleteFile).sddocname === fileSchema) {
-          ;(child.fields as any).type = fileSchema
-          ;(child.fields as any).relevance = child.relevance
-          return AutocompleteFileSchema.parse(child.fields)
+          const fields = child.fields as VespaAutocompleteFile & {
+            type?: string
+          }
+          fields.type = fileSchema
+          fields.relevance = child.relevance
+          return AutocompleteFileSchema.parse(fields)
         } else if (
           (child.fields as VespaAutocompleteUser).sddocname === userSchema
         ) {
-          ;(child.fields as any).type = userSchema
-          ;(child.fields as any).relevance = child.relevance
-          return AutocompleteUserSchema.parse(child.fields)
+          const fields = child.fields as VespaAutocompleteUser & {
+            type?: string
+          }
+          fields.type = userSchema
+          fields.relevance = child.relevance
+          return AutocompleteUserSchema.parse(fields)
         } else if (
           (child.fields as VespaAutocompleteMail).sddocname === mailSchema
         ) {
-          ;(child.fields as any).type = mailSchema
-          ;(child.fields as any).relevance = child.relevance
-          return AutocompleteMailSchema.parse(child.fields)
+          const fields = child.fields as VespaAutocompleteMail & {
+            type?: string
+          }
+          fields.type = mailSchema
+          fields.relevance = child.relevance
+          return AutocompleteMailSchema.parse(fields)
         } else if (
           (child.fields as VespaAutocompleteEvent).sddocname === eventSchema
         ) {
-          ;(child.fields as any).type = eventSchema
-          ;(child.fields as any).relevance = child.relevance
-          return AutocompleteEventSchema.parse(child.fields)
+          const fields = child.fields as VespaAutocompleteEvent & {
+            type?: string
+          }
+          fields.type = eventSchema
+          fields.relevance = child.relevance
+          return AutocompleteEventSchema.parse(fields)
         } else if (
           (child.fields as VespaAutocompleteUserQueryHistory).sddocname ===
           userQuerySchema
         ) {
-          ;(child.fields as any).type = userQuerySchema
-          ;(child.fields as any).relevance = child.relevance
-          return AutocompleteUserQueryHSchema.parse(child.fields)
+          const fields = child.fields as VespaAutocompleteUserQueryHistory & {
+            type?: string
+          }
+          fields.type = userQuerySchema
+          fields.relevance = child.relevance
+          return AutocompleteUserQueryHSchema.parse(fields)
         } else if (
           (child.fields as VespaAutocompleteMailAttachment).sddocname ===
           mailAttachmentSchema
         ) {
-          ;(child.fields as any).type = mailAttachmentSchema
-          ;(child.fields as any).relevance = child.relevance
-          return AutocompleteMailAttachmentSchema.parse(child.fields)
+          const fields = child.fields as VespaAutocompleteMailAttachment & {
+            type?: string
+          }
+          fields.type = mailAttachmentSchema
+          fields.relevance = child.relevance
+          return AutocompleteMailAttachmentSchema.parse(fields)
         } else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,

@@ -4,7 +4,6 @@ import type { CookieOptions } from "hono/utils/cookie"
 import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { stopwords as englishStopwords } from "@orama/stopwords/english"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -166,15 +165,4 @@ export const splitGroupedCitationsWithSpaces = (text: string): string => {
       return numbers.map((num: string) => `[${num}]`).join(" ")
     },
   )
-}
-
-export const removeStopwords = (text: string) => {
-  const words = text.split(/\s+/)
-
-  // Filter out stopwords
-  const filteredWords = words.filter((word) => {
-    const cleanWord = word.toLowerCase().replace(/[^\w]/g, "")
-    return !englishStopwords.includes(cleanWord)
-  })
-  return filteredWords.join(" ")
 }

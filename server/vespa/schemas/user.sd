@@ -6,18 +6,13 @@ schema user {
         }
         field name type string {
             indexing: index | attribute | summary
-            index {
-                enable-bm25
-            }
         }
 
         # primary email
         field email type string {
             indexing: index | attribute | summary
-            index {
-                enable-bm25
-            }
         }
+
         field app type string {
             indexing: attribute | summary
             attribute: fast-search
@@ -188,30 +183,27 @@ schema user {
     }
 
     rank-profile default {
-        constants {
-            DECAY: 0.6
-        }
-
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
         }
 
-        function combined_bm25(){
-            expression: bm25(name) + bm25(email)
+        function combined_nativeRank(){
+            expression: nativeRank(name) + nativeRank(email)
         }
 
         global-phase {
-            # Added decay to mitigate the disproportionate increase in BM25 scores 
-            # for shorter content with minimal matches, preventing them from 
-            # overpowering more relevant documents.
+            # bm25 gives a very high score as this has less text to match
+            # compared to other schemas
             expression {
-               (DECAY * scale(combined_bm25))
+               scale(combined_nativeRank + (bm25(email)/2 + bm25(name))/2)
             }
         }
 
         match-features {
-            bm25(name)
+            nativeRank(name)
+            nativeRank(email)
             bm25(email)
+            bm25(name)
         }
     }
 
