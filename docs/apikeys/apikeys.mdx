@@ -33,7 +33,9 @@ To use **AI chat**, you need to configure access credentials. You can use one of
     OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
     ```
 <Tip> If you're using Ollama, ensure the specified model is downloaded locally. </Tip> 
-<Tip> Also ensure that you're able to generate chat output using your downloaded ollama model , you can use ```ollama run your_model_name Hello```. This should return an output confirming ollama is working.</Tip> 
+<Tip> Also ensure that your downloaded ollama model is working in the host machine, you can use ```ollama run your_model_name your_message```. This should return an output confirming ollama is working.</Tip> 
+
+<Warning> For ```quickstart``` mode ensure Ollama is listening from all addresses, so that docker is able to reach it. </Warning>
 
 ### Together AI
 - Create your API key in [Together AI](https://www.together.ai/)
