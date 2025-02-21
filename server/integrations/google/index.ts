@@ -710,6 +710,7 @@ export const handleGoogleOAuthIngestion = async (
 
     if (signal) {
       signal.addEventListener("abort", () => {
+        clearInterval(interval)
         stopProgressInterval = setInterval(() => {
           sendWebsocketMessage(JSON.stringify(stopProgess), "remove-connector")
         }, 2000)
