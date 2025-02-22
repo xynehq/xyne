@@ -565,7 +565,8 @@ export const handleGoogleOAuthIngestion = async (
       data.connectorId,
     )
     const userEmail = job.data.email
-    const oauthTokens: GoogleTokens = connector.oauthCredentials
+    const oauthTokens: GoogleTokens = connector.oauthCredentials.data
+    console.log(oauthTokens)
     const oauth2Client = new google.auth.OAuth2()
 
     setOAuthUser(userEmail)
@@ -581,7 +582,7 @@ export const handleGoogleOAuthIngestion = async (
 
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
-    oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+    oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)

@@ -29,7 +29,7 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import type { GoogleTokens } from "arctic"
+// import { OAuth2Tokens } from "arctic"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
@@ -347,6 +347,7 @@ const contactKeys = [
   "userDefined",
 ]
 
+
 // TODO: check early, if new change token is same as last
 // return early
 export const handleGoogleOAuthChanges = async (
@@ -356,6 +357,7 @@ export const handleGoogleOAuthChanges = async (
   Logger.info("handleGoogleOAuthChanges")
   const data = job.data
   const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
+  // console.log(connector)
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {
@@ -365,8 +367,15 @@ export const handleGoogleOAuthChanges = async (
         db,
         syncJob.connectorId,
       )
+      console.log(connector)
+      Logger.info("OAuth Credentials Check:", {
+        hasAccessToken: !!connector.oauthCredentials.accessToken,
+        hasRefreshToken: !!connector.oauthCredentials.refreshToken,
+        tokenExpiry: connector.oauthCredentials.expiryDate,
+        currentTime: Date.now(),
+      })
       const user = await getUserById(db, connector.userId)
-      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauthTokens:any = connector.oauthCredentials
       const oauth2Client = new google.auth.OAuth2()
       let config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // we have guarantee that when we started this job access Token at least
@@ -704,6 +713,8 @@ export const handleGoogleOAuthChanges = async (
         Logger.info(`No Google Calendar Event changes to sync`)
       }
     } catch (error) {
+      console.log(Bun.inspect(error, { colors: true }));
+
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
@@ -739,6 +750,14 @@ export const handleGoogleOAuthChanges = async (
     }
   }
 }
+
+
+// const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
+//   const connector = await getOAuthConnectorWithCredentials(
+//     db,
+//     syncJobs[0].connectorId,
+//   )
+// handleGoogleOAuthChanges(undefined as any, {data: {}})
 
 const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
   const { baseUrl, joiningUrl } = getJoiningLink(event)

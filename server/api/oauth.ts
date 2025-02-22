@@ -8,7 +8,7 @@ import { boss, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
 import { Apps, type AuthType } from "@/shared/types"
 import { type SaaSOAuthJob, Subsystem } from "@/types"
-import { Google, type GoogleTokens } from "arctic"
+import { Google, OAuth2Tokens } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
@@ -47,15 +47,17 @@ export const OAuthCallback = async (c: Context) => {
 
     const provider = await getOAuthProvider(db, app)
     const { clientId, clientSecret } = provider
+    console.log(clientId, clientSecret, provider)
     const google = new Google(
       clientId as string,
       clientSecret,
       `${config.host}/oauth/callback`,
     )
-    const tokens: GoogleTokens = await google.validateAuthorizationCode(
+    const tokens: OAuth2Tokens = await google.validateAuthorizationCode(
       code,
       codeVerifier as string,
     )
+    console.log(tokens)
     const connectorId = provider.connectorId
     const connector: SelectConnector = await updateConnector(db, connectorId, {
       subject: email,
