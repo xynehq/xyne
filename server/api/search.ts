@@ -142,6 +142,10 @@ export const SearchApi = async (c: Context) => {
     isQueryTyped,
     // @ts-ignore
   } = c.req.valid("query")
+  if(!page) {
+    // @ts-ignore
+    page = config.page
+  }
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const timestampRange = getTimestamp(lastUpdated)
@@ -150,7 +154,7 @@ export const SearchApi = async (c: Context) => {
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
     const tasks: Array<any> = [
-      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      groupVespaSearch(decodedQuery, email, page, timestampRange),
       searchVespa(
         decodedQuery,
         email,

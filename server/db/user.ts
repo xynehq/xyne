@@ -7,6 +7,7 @@ import {
   users,
   workspacePublicSchema,
   workspaces,
+  type InsertUser,
   type InternalUserWorkspace,
   type PublicUserWorkspace,
   type SelectUser,
@@ -129,6 +130,18 @@ export const createUser = async (
       lastLogin: new Date(),
       role,
     })
+    .returning()
+}
+
+export const updateUser = async (
+  trx: TxnOrClient,
+  userId: number,
+  update: Partial<InsertUser>,
+) => {
+  return await trx
+    .update(users)
+    .set(update)
+    .where(eq(users.id, userId))
     .returning()
 }
 

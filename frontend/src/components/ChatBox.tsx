@@ -1,12 +1,14 @@
-import { ArrowRight, Globe } from "lucide-react"
-import { useEffect, useRef } from "react"
-import Attach from "@/assets/attach.svg?react"
+import { ArrowRight, Atom, Globe } from "lucide-react";
+import { useEffect, useRef } from "react";
+import Attach from "@/assets/attach.svg?react";
 
 interface ChatBoxProps {
-  query: string
-  setQuery: (query: string) => void
-  handleSend: (messageToSend: string) => void
-  isStreaming?: boolean
+  query: string;
+  setQuery: (query: string) => void;
+  handleSend: (messageToSend: string) => void;
+  isStreaming?: boolean;
+  isReasoning?: boolean;
+  setIsReasoning: any;
 }
 
 export const ChatBox = ({
@@ -14,20 +16,22 @@ export const ChatBox = ({
   setQuery,
   handleSend,
   isStreaming = false,
+  isReasoning = false,
+  setIsReasoning,
 }: ChatBoxProps) => {
-  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     if (inputRef.current) {
-      inputRef.current.focus()
+      inputRef.current.focus();
       if (query) {
-        const length = query.length
-        inputRef.current.setSelectionRange(length, length)
+        const length = query.length;
+        inputRef.current.setSelectionRange(length, length);
       }
     }
-  }, [])
+  }, []);
   return (
     <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white  max-w-3xl">
-      <div className="relative flex items-center">
+      <div className={`relative flex items-center ${query.length === 0 ? "select-none" : ""}`}>
         <textarea
           ref={inputRef}
           rows={1}
@@ -37,8 +41,8 @@ export const ChatBox = ({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault()
-              handleSend(query)
+              e.preventDefault();
+              handleSend(query);
             }
           }}
           style={{
@@ -49,13 +53,26 @@ export const ChatBox = ({
         />
       </div>
       <div
-        className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-2 cursor-text"
+        className="flex ml-[16px] mr-[6px] mb-[6px] items-center pt-2 cursor-text"
         onClick={() => {
-          inputRef?.current?.focus()
+          inputRef?.current?.focus();
         }}
       >
-        <Attach className="text-[#464D53] cursor-pointer" />
-        <Globe size={16} className="text-[#464D53] cursor-pointer" />
+        <Attach className="text-[#464D53] cursor-pointer mr-[18px]" />
+        <Globe size={16} className="text-[#464D53] cursor-pointer mr-[18px]" />
+        <div
+          className="flex items-center cursor-pointer"
+          onClick={() => setIsReasoning((reasoning: boolean) => !reasoning)}
+          onMouseDown={(e) => e.stopPropagation()} // Prevents selection shift
+        >
+          <Atom
+            size={16}
+            className={`${isReasoning ? "text-[#0EBB34]" : "text-[#464D53]"}`}
+          />
+          {isReasoning && (
+            <span className="text-[#0EBB34] ml-[4px] select-none">Reasoning</span>
+          )}
+        </div>
         <button
           disabled={isStreaming}
           onClick={() => handleSend(query)}
@@ -66,5 +83,5 @@ export const ChatBox = ({
         </button>
       </div>
     </div>
-  )
-}
+  );
+};

@@ -53,9 +53,10 @@ interface ChatPageProps {
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
-  let chatParams: XyneChat = useSearch({
+  let chatParams: XyneChat = chatParamsSchema.parse(useSearch({
     from: "/_authenticated/chat",
-  })
+  }))
+
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -102,6 +103,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [isEditing, setIsEditing] = useState<boolean>(false)
   const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
   const titleRef = useRef<HTMLInputElement | null>(null)
+
+  const [isReasoning, setIsReasoning] = useState<boolean>(chatParams.isReasoning ?? false)
+
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string }, // The type of data returned from the mutation
@@ -971,6 +975,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               setQuery={setQuery}
               handleSend={handleSend}
               isStreaming={isStreaming}
+              isReasoning={isReasoning}
+              setIsReasoning={setIsReasoning}
             />
           </div>
           <Sources
@@ -1304,11 +1310,15 @@ const ChatMessage = ({
   )
 }
 
-const chatParams = z.object({
-  q: z.string(),
+const chatParamsSchema = z.object({
+  q: z.string().optional(),
+  isReasoning: z.union([z.string(), z.undefined(), z.null()])
+  .transform((x) => (x ? x === "true" : false))
+  .pipe(z.boolean())
+  .optional(),
 })
 
-type XyneChat = z.infer<typeof chatParams>
+type XyneChat = z.infer<typeof chatParamsSchema>
 
 export const Route = createFileRoute("/_authenticated/chat")({
   beforeLoad: (params) => {

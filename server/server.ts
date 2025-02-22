@@ -37,7 +37,7 @@ import { sign } from "hono/jwt"
 import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
-import { createUser, getUserByEmail } from "@/db/user"
+import { createUser, getUserByEmail, updateUser } from "@/db/user"
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
@@ -268,11 +268,16 @@ app.get(
         "User found and authenticated",
       )
       const existingUser = existingUserRes[0]
+      // update the profile pic
       const jwtToken = await generateToken(
         existingUser.email,
         existingUser.role,
         existingUser.workspaceExternalId,
       )
+      // each login we update the profile pic
+      // when this was not done then it would get expired and
+      // show a default profile pic
+      await updateUser(db, existingUser.id, { photoLink: photoLink})
       setCookieByEnv(c, CookieName, jwtToken)
       return c.redirect(postOauthRedirect)
     }

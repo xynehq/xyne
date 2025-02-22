@@ -393,6 +393,10 @@ export type SelectSyncHistory = z.infer<typeof selectSyncHistorySchema>
 
 export const selectUserSchema = createSelectSchema(users)
 export type SelectUser = z.infer<typeof selectUserSchema>
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+})
+export type InsertUser = z.infer<typeof insertUserSchema>
 
 export const selectWorkspaceSchema = createSelectSchema(workspaces)
 export type SelectWorkspace = z.infer<typeof selectWorkspaceSchema>

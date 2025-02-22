@@ -38,6 +38,7 @@ const Index = () => {
 
   const [_, setOffset] = useState(0)
   const [filter, setFilter] = useState({})
+  const [isReasoning, setIsReasoning] = useState<boolean>(false)
 
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
@@ -108,7 +109,10 @@ const Index = () => {
     if (query.trim()) {
       navigate({
         to: "/chat",
-        search: { q: encodeURIComponent(messageToSend.trim()) },
+        search: {
+          q: encodeURIComponent(messageToSend.trim()) ,
+          isReasoning: isReasoning.toString()
+        },
       })
     }
   }
@@ -142,7 +146,7 @@ const Index = () => {
                       activeTab === Tabs.Ask
                         ? "bg-[#EDF2F7] text-[#33383D]"
                         : "text-[#728395]"
-                    }`}
+                    } select-none`}
                     onClick={() => setActiveTab(Tabs.Ask)}
                   >
                     <Sparkle
@@ -161,7 +165,7 @@ const Index = () => {
                       activeTab === Tabs.Search
                         ? "bg-[#EDF2F7] text-[#33383D]"
                         : "text-[#728395]"
-                    }`}
+                    } select-none`}
                     onClick={() => setActiveTab(Tabs.Search)}
                   >
                     <SearchIcon
@@ -200,6 +204,8 @@ const Index = () => {
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}
+                  isReasoning={isReasoning}
+                  setIsReasoning={setIsReasoning}
                 />
               </div>
             )}
