@@ -17,10 +17,11 @@ const {
   TogetherAIModel,
   defaultBestModel,
   defaultFastModel,
-  isReasoning,
+  isReasoningModel,
   EndThinkingToken,
   GeminiAIModel,
   GeminiApiKey,
+  defaultBestReasoningModel
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -505,7 +506,7 @@ export const generateTitleUsingQuery = async (
       ],
       params,
     )
-    if (isReasoning && text?.includes(EndThinkingToken)) {
+    if (isReasoningModel && text?.includes(EndThinkingToken)) {
       text = text?.split(EndThinkingToken)[1]
     }
     if (text) {
@@ -879,11 +880,11 @@ export const baselineRAGJsonStream = (
     params.modelId = defaultFastModel
   }
 
-  let defaultReasoning = isReasoning
+  let defaultReasoning = params.modelId === defaultBestReasoningModel
 
-  if (params.reasoning !== undefined) {
-    defaultReasoning = params.reasoning
-  }
+  // if (params.reasoning !== undefined) {
+  //   defaultReasoning = params.reasoning
+  // }
   if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
@@ -1029,11 +1030,12 @@ export function generateSearchQueryOrAnswerFromConversation(
 ): AsyncIterableIterator<ConverseResponse> {
   //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
-  let defaultReasoning = isReasoning
+  
+  let defaultReasoning = params.modelId === defaultBestReasoningModel
 
-  if (params.reasoning !== undefined) {
-    defaultReasoning = params.reasoning
-  }
+  // if (params.reasoning !== undefined) {
+  //   defaultReasoning = params.reasoning
+  // }
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
   } else {

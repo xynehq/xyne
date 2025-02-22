@@ -81,10 +81,11 @@ const {
   defaultBestModel,
   defaultFastModel,
   maxDefaultSummary,
-  isReasoning,
+  // isReasoning,
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
+  defaultBestReasoningModel,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -109,7 +110,7 @@ const ragPipelineConfig = {
     reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerOrSearch]: {
-    modelId: defaultFastModel, //defaultBestModel,
+    modelId: defaultFastModel,
     reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerWithList]: {
@@ -357,6 +358,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
+  isReasoning: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -448,7 +450,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           // maxPageNumber,
           {
             stream: true,
-            modelId: defaultBestModel,
+            // modelId: defaultBestModel,
+            modelId: isReasoning ? defaultBestReasoningModel : defaultBestModel,
             messages,
             reasoning: isReasoning,
           },
@@ -584,7 +587,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
-      modelId: defaultBestModel,
+      // modelId: defaultBestModel,
+      modelId: isReasoning ? defaultBestReasoningModel : defaultBestModel,
       reasoning: isReasoning,
     })
 
@@ -711,6 +715,7 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
+  isReasoning: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -804,7 +809,7 @@ async function* generatePointQueryTimeExpansion(
     // Stream LLM response
     const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
-      modelId: defaultBestModel,
+      modelId: isReasoning ? defaultBestReasoningModel : defaultBestModel,
     })
 
     let buffer = ""
@@ -911,6 +916,7 @@ export async function* UnderstandMessageAndAnswer(
   message: string,
   classification: TemporalClassifier & { cost: number },
   messages: Message[],
+  isReasoning: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -928,6 +934,7 @@ export async function* UnderstandMessageAndAnswer(
       0.5,
       20,
       5,
+      isReasoning,
     )
   } else {
     Logger.info(
@@ -943,6 +950,7 @@ export async function* UnderstandMessageAndAnswer(
       20,
       3,
       maxDefaultSummary,
+      isReasoning,
     )
   }
 }
@@ -979,7 +987,13 @@ export const MessageApi = async (c: Context) => {
     const email = sub
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId }: MessageReqType = body
+    let { message, chatId, modelId, isReasoning }: MessageReqType = body
+
+    // by default reasoning is considered false
+    if (isReasoning == null) {
+      isReasoning = false
+    }
+
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1217,6 +1231,7 @@ export const MessageApi = async (c: Context) => {
               message,
               classification,
               messagesWithNoErrResponse,
+              isReasoning,
             )
 
             stream.writeSSE({
@@ -1489,6 +1504,7 @@ export const MessageRetryApi = async (c: Context) => {
       async (stream) => {
         try {
           let message = prevUserMessage.message
+          const isReasoning = prevUserMessage.thinking ? true : false
           const convWithNoErrMsg = isUserMessage
             ? conversation
                 .filter((con) => !con?.errorMessage)
@@ -1621,6 +1637,7 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               classification,
               convWithNoErrMsg,
+              isReasoning,
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({

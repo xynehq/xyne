@@ -20,6 +20,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
+let defaultBestReasoningModel: Models = "" as Models
 let AwsAccessKey = ""
 let AwsSecretKey = ""
 let OpenAIKey = ""
@@ -30,9 +31,13 @@ let GeminiAIModel = ""
 let TogetherApiKey = ""
 let FireworksApiKey = ""
 let GeminiApiKey = ""
-let isReasoning = false
+let isReasoningModel = false
 let fastModelReasoning = false
 
+
+if (process.env["REASONING"] === "true") {
+  isReasoningModel = true
+}
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -43,31 +48,45 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_3_5_SonnetV2
-} else if (process.env["OPENAI_API_KEY"]) {
+}
+
+if (process.env["OPENAI_API_KEY"]) {
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
-} else if (process.env["OLLAMA_MODEL"]) {
+}
+
+if (process.env["OLLAMA_MODEL"]) {
   OllamaModel = process.env["OLLAMA_MODEL"]
   defaultFastModel = process.env["OLLAMA_FAST_MODEL"]
     ? (process.env["OLLAMA_FAST_MODEL"] as Models)
     : (OllamaModel as Models)
   defaultBestModel = OllamaModel as Models
-} else if (process.env["TOGETHER_MODEL"] && process.env["TOGETHER_API_KEY"]) {
+}
+
+if (process.env["TOGETHER_MODEL"] && process.env["TOGETHER_API_KEY"]) {
   TogetherAIModel = process.env["TOGETHER_MODEL"]
   TogetherApiKey = process.env["TOGETHER_API_KEY"]
   defaultFastModel = process.env["TOGETHER_FAST_MODEL"]
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
-  defaultBestModel = TogetherAIModel as Models
-} else if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
+  if(isReasoningModel) {
+    defaultBestReasoningModel = TogetherAIModel as Models
+  } else {
+    defaultBestModel = TogetherAIModel as Models
+  }
+}
+
+if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
   FireworksAIModel = process.env["FIREWORKS_MODEL"] as Models
   FireworksApiKey = process.env["FIREWORKS_API_KEY"]
   defaultFastModel = process.env["FIREWORKS_FAST_MODEL"]
     ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
     : (FireworksAIModel as Models)
   defaultBestModel = FireworksAIModel as Models
-} else if (process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"]) {
+}
+
+if (process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"]) {
   GeminiAIModel = process.env["GEMINI_MODEL"] as Models
   GeminiApiKey = process.env["GEMINI_API_KEY"]
   defaultFastModel = process.env["GEMINI_FAST_MODEL"]
@@ -75,12 +94,9 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     : (GeminiAIModel as Models)
   defaultBestModel = GeminiAIModel as Models
 }
+
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
-
-if (process.env["REASONING"] === "true") {
-  isReasoning = true
-}
 
 if (
   process.env["FAST_MODEL_REASONING"] &&
@@ -122,8 +138,9 @@ export default {
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 8,
-  isReasoning,
+  isReasoningModel,
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
+  defaultBestReasoningModel
 }

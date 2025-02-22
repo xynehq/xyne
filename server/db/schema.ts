@@ -460,3 +460,5 @@ export const selectPublicChatSchema = selectChatSchema.omit({
   userId: true,
 })
 export type SelectPublicChat = z.infer<typeof selectPublicChatSchema>
+
+

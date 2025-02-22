@@ -276,6 +276,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       url.searchParams.append("chatId", chatId)
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
+    url.searchParams.append("isReasoning", isReasoning.toString())
     url.searchParams.append("message", encodeURIComponent(messageToSend))
 
     const eventSource = new EventSource(url.toString(), {
