@@ -135,7 +135,6 @@ schema user {
         # for who has this contact
         field owner type string {
             indexing: index | attribute | summary
-            attribute: fast-search
             match: exact
         }
     }
