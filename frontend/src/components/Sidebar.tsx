@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Plug, Plus, History } from "lucide-react"
+import { Plug, Plus, History, LogOut } from "lucide-react"
 import { useState } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { UserRole } from "shared/types"
@@ -22,6 +22,11 @@ export const Sidebar = ({
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
+
+  const signOut = () => {
+    document.cookie = "auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"
+    window.location.href = "/auth"
+  }
 
   return (
     <TooltipProvider>
@@ -87,6 +92,18 @@ export const Sidebar = ({
               <Tip side="right" info="Integrations" />
             </Tooltip>
           </Link>
+
+          <div
+            onClick={signOut}
+            className="flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px] cursor-pointer"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <LogOut size={18} stroke="#384049" />
+              </TooltipTrigger>
+              <Tip side="right" info="Sign Out" />
+            </Tooltip>
+          </div>
         </div>
 
         <a

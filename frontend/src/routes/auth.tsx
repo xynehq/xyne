@@ -61,6 +61,9 @@ export const Route = createFileRoute("/auth")({
         throw redirect({ to: "/" })
       }
       return await res.json()
+    } else {
+      // Ensure the user is redirected to the login page if they are not authenticated
+      throw redirect({ to: "/auth" })
     }
   },
   component: LoginForm,
