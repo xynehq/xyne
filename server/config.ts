@@ -42,7 +42,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
-  defaultBestModel = Models.Claude_3_5_SonnetV2
+  defaultBestModel = Models.Claude_3_7_Sonnet
 } else if (process.env["OPENAI_API_KEY"]) {
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
