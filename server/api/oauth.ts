@@ -47,7 +47,6 @@ export const OAuthCallback = async (c: Context) => {
 
     const provider = await getOAuthProvider(db, app)
     const { clientId, clientSecret } = provider
-    console.log(clientId, clientSecret, provider)
     const google = new Google(
       clientId as string,
       clientSecret,

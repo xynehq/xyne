@@ -566,7 +566,9 @@ export const handleGoogleOAuthIngestion = async (
     )
     const userEmail = job.data.email
     const oauthTokens: GoogleTokens = connector.oauthCredentials.data
+    console.log("oauthTokens")
     console.log(oauthTokens)
+    console.log("oauthTokens")
     const oauth2Client = new google.auth.OAuth2()
 
     setOAuthUser(userEmail)
