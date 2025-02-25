@@ -120,13 +120,20 @@ const IsTokenExpired = (
   bufferInSeconds: number,
   tokenUpdatedAt: Date,
 ): boolean => {
-  const tokens: OAuth2Tokens = oauthCredentials.data
-  const now: Date = new Date()
-  // make the type as Date, currently the date is stringified
-  const lastUpdatedAt = new Date(tokenUpdatedAt).getTime()
-  const expirationTime = lastUpdatedAt + tokens.expires_in * 1000
-  const currentTime = now.getTime()
-  return currentTime + bufferInSeconds * 1000 > expirationTime
+  if (
+    app === Apps.GoogleDrive ||
+    app === Apps.Gmail ||
+    app === Apps.GoogleCalendar
+  ) {
+    const tokens: OAuth2Tokens = oauthCredentials.data
+    const now: Date = new Date()
+    // make the type as Date, currently the date is stringified
+    const lastUpdatedAt = new Date(tokenUpdatedAt).getTime()
+    const expirationTime = lastUpdatedAt + tokens.expires_in * 1000
+    const currentTime = now.getTime()
+    return currentTime + bufferInSeconds * 1000 > expirationTime
+  }
+  return false
 }
 
 // this method ensures that if it retuns the connector then the access token will always be valid
@@ -174,7 +181,11 @@ export const getOAuthConnectorWithCredentials = async (
     Logger.info("Token is expired")
     // token is expired. We should get new tokens
     // update it in place
-    if (oauthRes.app === Apps.GoogleDrive) {
+    if (
+      oauthRes.app === Apps.GoogleDrive ||
+      oauthRes.app === Apps.Gmail ||
+      oauthRes.app === Apps.GoogleCalendar
+    ) {
       // we will need the provider now to refresh the token
       const providers: SelectOAuthProvider[] = await trx
         .select()

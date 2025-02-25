@@ -367,12 +367,7 @@ export const handleGoogleOAuthChanges = async (
         db,
         syncJob.connectorId,
       )
-      // Logger.info("OAuth Credentials Check:", {
-      //   hasAccessToken: !!connector.oauthCredentials.accessToken,
-      //   hasRefreshToken: !!connector.oauthCredentials.refreshToken,
-      //   tokenExpiry: connector.oauthCredentials.expiryDate,
-      //   currentTime: Date.now(),
-      // })
+      
       const user = await getUserById(db, connector.userId)
       const oauthTokens: any = connector.oauthCredentials.data
       const oauth2Client = new google.auth.OAuth2()
@@ -551,201 +546,201 @@ export const handleGoogleOAuthChanges = async (
     }
   }
 
-  // const gmailSyncJobs = await getAppSyncJobs(db, Apps.Gmail, AuthType.OAuth)
-  // let stats = newStats()
-  // for (const syncJob of gmailSyncJobs) {
-  //   try {
-  //     // flag to know if there were any updates
-  //     const connector = await getOAuthConnectorWithCredentials(
-  //       db,
-  //       syncJob.connectorId,
-  //     )
-  //     const user = await getUserById(db, connector.userId)
-  //     const oauthTokens = connector.oauthCredentials.data
-  //     const oauth2Client = new google.auth.OAuth2()
-  //     let config: GmailChangeToken = syncJob.config as GmailChangeToken
-  //     // we have guarantee that when we started this job access Token at least
-  //     // hand one hour, we should increase this time
-  //     oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
-  //     const gmail = google.gmail({ version: "v1", auth: oauth2Client })
+  const gmailSyncJobs = await getAppSyncJobs(db, Apps.Gmail, AuthType.OAuth)
+  let stats = newStats()
+  for (const syncJob of gmailSyncJobs) {
+    try {
+      // flag to know if there were any updates
+      const connector = await getOAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+      const user = await getUserById(db, connector.userId)
+      const oauthTokens = connector.oauthCredentials.data
+      const oauth2Client = new google.auth.OAuth2()
+      let config: GmailChangeToken = syncJob.config as GmailChangeToken
+      // we have guarantee that when we started this job access Token at least
+      // hand one hour, we should increase this time
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
+      const gmail = google.gmail({ version: "v1", auth: oauth2Client })
 
-  //     let { historyId, stats, changesExist } = await handleGmailChanges(
-  //       gmail,
-  //       config.historyId,
-  //       syncJob.id,
-  //       syncJob.email,
-  //     )
+      let { historyId, stats, changesExist } = await handleGmailChanges(
+        gmail,
+        config.historyId,
+        syncJob.id,
+        syncJob.email,
+      )
 
-  //     if (changesExist) {
-  //       // update the change token
-  //       config.historyId = historyId
-  //       await db.transaction(async (trx) => {
-  //         await updateSyncJob(trx, syncJob.id, {
-  //           config,
-  //           lastRanOn: new Date(),
-  //           status: SyncJobStatus.Successful,
-  //         })
-  //         // make it compatible with sync history config type
-  //         await insertSyncHistory(trx, {
-  //           workspaceId: syncJob.workspaceId,
-  //           workspaceExternalId: syncJob.workspaceExternalId,
-  //           dataAdded: stats.added,
-  //           dataDeleted: stats.removed,
-  //           dataUpdated: stats.updated,
-  //           authType: AuthType.OAuth,
-  //           summary: { description: stats.summary },
-  //           errorMessage: "",
-  //           app: Apps.Gmail,
-  //           status: SyncJobStatus.Successful,
-  //           config: {
-  //             ...config,
-  //             lastSyncedAt: config.lastSyncedAt.toISOString(),
-  //           },
-  //           type: SyncCron.ChangeToken,
-  //           lastRanOn: new Date(),
-  //         })
-  //       })
-  //       Logger.info(
-  //         `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
-  //       )
-  //     } else {
-  //       Logger.info(`No Gmail changes to sync`)
-  //     }
-  //   } catch (error) {
-  //     const errorMessage = getErrorMessage(error)
-  //     Logger.error(
-  //       error,
-  //       `Could not successfully complete Oauth sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
-  //     )
-  //     const config: GmailChangeToken = syncJob.config as GmailChangeToken
-  //     const newConfig = {
-  //       ...config,
-  //       lastSyncedAt: config.lastSyncedAt.toISOString(),
-  //     }
-  //     await insertSyncHistory(db, {
-  //       workspaceId: syncJob.workspaceId,
-  //       workspaceExternalId: syncJob.workspaceExternalId,
-  //       dataAdded: stats.added,
-  //       dataDeleted: stats.removed,
-  //       dataUpdated: stats.updated,
-  //       authType: AuthType.OAuth,
-  //       summary: { description: stats.summary },
-  //       errorMessage,
-  //       app: Apps.Gmail,
-  //       status: SyncJobStatus.Failed,
-  //       config: newConfig,
-  //       type: SyncCron.ChangeToken,
-  //       lastRanOn: new Date(),
-  //     })
-  //     throw new SyncJobFailed({
-  //       message: "Could not complete sync job",
-  //       cause: error as Error,
-  //       integration: Apps.Gmail,
-  //       entity: "",
-  //     })
-  //   }
-  // }
+      if (changesExist) {
+        // update the change token
+        config.historyId = historyId
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+          // make it compatible with sync history config type
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: stats.added,
+            dataDeleted: stats.removed,
+            dataUpdated: stats.updated,
+            authType: AuthType.OAuth,
+            summary: { description: stats.summary },
+            errorMessage: "",
+            app: Apps.Gmail,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+        Logger.info(
+          `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
+        )
+      } else {
+        Logger.info(`No Gmail changes to sync`)
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Could not successfully complete Oauth sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+      const config: GmailChangeToken = syncJob.config as GmailChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.OAuth,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.Gmail,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+      throw new SyncJobFailed({
+        message: "Could not complete sync job",
+        cause: error as Error,
+        integration: Apps.Gmail,
+        entity: "",
+      })
+    }
+  }
 
-  // // For Calendar Events Sync
-  // const gCalEventSyncJobs = await getAppSyncJobs(
-  //   db,
-  //   Apps.GoogleCalendar,
-  //   AuthType.OAuth,
-  // )
-  // for (const syncJob of gCalEventSyncJobs) {
-  //   let stats = newStats()
-  //   try {
-  //     // flag to know if there were any updates
-  //     const connector = await getOAuthConnectorWithCredentials(
-  //       db,
-  //       syncJob.connectorId,
-  //     )
-  //     const oauthTokens = connector.oauthCredentials.data
-  //     const oauth2Client = new google.auth.OAuth2()
-  //     let config: CalendarEventsChangeToken =
-  //       syncJob.config as CalendarEventsChangeToken
-  //     // we have guarantee that when we started this job access Token at least
-  //     // hand one hour, we should increase this time
-  //     oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
-  //     const calendar = google.calendar({ version: "v3", auth: oauth2Client })
+  // For Calendar Events Sync
+  const gCalEventSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.GoogleCalendar,
+    AuthType.OAuth,
+  )
+  for (const syncJob of gCalEventSyncJobs) {
+    let stats = newStats()
+    try {
+      // flag to know if there were any updates
+      const connector = await getOAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+      const oauthTokens = connector.oauthCredentials.data
+      const oauth2Client = new google.auth.OAuth2()
+      let config: CalendarEventsChangeToken =
+        syncJob.config as CalendarEventsChangeToken
+      // we have guarantee that when we started this job access Token at least
+      // hand one hour, we should increase this time
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
+      const calendar = google.calendar({ version: "v3", auth: oauth2Client })
 
-  //     let { eventChanges, stats, newCalendarEventsSyncToken, changesExist } =
-  //       await handleGoogleCalendarEventsChanges(
-  //         calendar,
-  //         config.calendarEventsToken,
-  //         syncJob.email,
-  //       )
+      let { eventChanges, stats, newCalendarEventsSyncToken, changesExist } =
+        await handleGoogleCalendarEventsChanges(
+          calendar,
+          config.calendarEventsToken,
+          syncJob.email,
+        )
 
-  //     if (changesExist) {
-  //       // update the change token
-  //       config.calendarEventsToken = newCalendarEventsSyncToken
-  //       await db.transaction(async (trx) => {
-  //         await updateSyncJob(trx, syncJob.id, {
-  //           config,
-  //           lastRanOn: new Date(),
-  //           status: SyncJobStatus.Successful,
-  //         })
-  //         // make it compatible with sync history config type
-  //         await insertSyncHistory(trx, {
-  //           workspaceId: syncJob.workspaceId,
-  //           workspaceExternalId: syncJob.workspaceExternalId,
-  //           dataAdded: stats.added,
-  //           dataDeleted: stats.removed,
-  //           dataUpdated: stats.updated,
-  //           authType: AuthType.OAuth,
-  //           summary: { description: stats.summary },
-  //           errorMessage: "",
-  //           app: Apps.GoogleCalendar,
-  //           status: SyncJobStatus.Successful,
-  //           config: {
-  //             ...config,
-  //             lastSyncedAt: config.lastSyncedAt.toISOString(),
-  //           },
-  //           type: SyncCron.ChangeToken,
-  //           lastRanOn: new Date(),
-  //         })
-  //       })
-  //       Logger.info(
-  //         `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
-  //       )
-  //     } else {
-  //       Logger.info(`No Google Calendar Event changes to sync`)
-  //     }
-  //   } catch (error) {
-  //     const errorMessage = getErrorMessage(error)
-  //     Logger.error(
-  //       error,
-  //       `Could not successfully complete Oauth sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
-  //     )
-  //     const config: CalendarEventsChangeToken =
-  //       syncJob.config as CalendarEventsChangeToken
-  //     const newConfig = {
-  //       ...config,
-  //       lastSyncedAt: config.lastSyncedAt.toISOString(),
-  //     }
-  //     await insertSyncHistory(db, {
-  //       workspaceId: syncJob.workspaceId,
-  //       workspaceExternalId: syncJob.workspaceExternalId,
-  //       dataAdded: stats.added,
-  //       dataDeleted: stats.removed,
-  //       dataUpdated: stats.updated,
-  //       authType: AuthType.OAuth,
-  //       summary: { description: stats.summary },
-  //       errorMessage,
-  //       app: Apps.GoogleCalendar,
-  //       status: SyncJobStatus.Failed,
-  //       config: newConfig,
-  //       type: SyncCron.ChangeToken,
-  //       lastRanOn: new Date(),
-  //     })
-  //     throw new SyncJobFailed({
-  //       message: "Could not complete sync job",
-  //       cause: error as Error,
-  //       integration: Apps.GoogleCalendar,
-  //       entity: "",
-  //     })
-  //   }
-  // }
+      if (changesExist) {
+        // update the change token
+        config.calendarEventsToken = newCalendarEventsSyncToken
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+          // make it compatible with sync history config type
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: stats.added,
+            dataDeleted: stats.removed,
+            dataUpdated: stats.updated,
+            authType: AuthType.OAuth,
+            summary: { description: stats.summary },
+            errorMessage: "",
+            app: Apps.GoogleCalendar,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...config,
+              lastSyncedAt: config.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+        Logger.info(
+          `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
+        )
+      } else {
+        Logger.info(`No Google Calendar Event changes to sync`)
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Could not successfully complete Oauth sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+      )
+      const config: CalendarEventsChangeToken =
+        syncJob.config as CalendarEventsChangeToken
+      const newConfig = {
+        ...config,
+        lastSyncedAt: config.lastSyncedAt.toISOString(),
+      }
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.OAuth,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.GoogleCalendar,
+        status: SyncJobStatus.Failed,
+        config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+      throw new SyncJobFailed({
+        message: "Could not complete sync job",
+        cause: error as Error,
+        integration: Apps.GoogleCalendar,
+        entity: "",
+      })
+    }
+  }
 }
 
 const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
