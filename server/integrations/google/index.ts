@@ -680,7 +680,7 @@ export const handleGoogleOAuthIngestion = async (
   const data: SaaSOAuthJob = job.data as SaaSOAuthJob
   const signal = AbortControllerMap.get(job.name)?.signal
   const stopKey = "stop"
-  const stopProgess = {
+  const stopProgress = {
     [stopKey]: {
       isStopIngestionCompleted: false,
     },
@@ -712,7 +712,7 @@ export const handleGoogleOAuthIngestion = async (
       signal.addEventListener("abort", () => {
         clearInterval(interval)
         stopProgressInterval = setInterval(() => {
-          sendWebsocketMessage(JSON.stringify(stopProgess), "remove-connector")
+          sendWebsocketMessage(JSON.stringify(stopProgress), "remove-connector")
         }, 2000)
       })
     }
@@ -814,7 +814,7 @@ export const handleGoogleOAuthIngestion = async (
       error,
     )
     if (isAbortError(error)) {
-      stopProgess[stopKey].isStopIngestionCompleted = true
+      stopProgress[stopKey].isStopIngestionCompleted = true
       emptyUserStats()
       setTimeout(() => {
         clearInterval(stopProgressInterval)
@@ -942,7 +942,7 @@ export const handleGoogleServiceAccountIngestion = async (
   Logger.info("handleGoogleServiceAccountIngestion", job.data)
   const signal = AbortControllerMap.get(job.name)?.signal
   const stopKey = "stop"
-  const stopProgess = {
+  const stopProgress = {
     [stopKey]: {
       isStopIngestionCompleted: false,
     },
@@ -983,7 +983,7 @@ export const handleGoogleServiceAccountIngestion = async (
     if (signal) {
       signal.addEventListener("abort", () => {
         stopProgressInterval = setInterval(() => {
-          sendWebsocketMessage(JSON.stringify(stopProgess), "remove-connector")
+          sendWebsocketMessage(JSON.stringify(stopProgress), "remove-connector")
         }, 2000)
       })
     }
@@ -1136,7 +1136,7 @@ export const handleGoogleServiceAccountIngestion = async (
       error,
     )
     if (isAbortError(error)) {
-      stopProgess[stopKey].isStopIngestionCompleted = true
+      stopProgress[stopKey].isStopIngestionCompleted = true
       setTimeout(() => {
         clearInterval(stopProgressInterval)
       }, 4000)

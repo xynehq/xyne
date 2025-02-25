@@ -59,7 +59,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
   const onStopConfirm = async () => {
     const res = await handleStopConnecting()
     if (res.success) {
-      setStopIntegration({ inProgess: true, completed: false })
+      setStopIntegration({ inProgress: true, completed: false })
     } else {
       toast({
         title: "Could not stop integration",
@@ -95,7 +95,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     description: "",
   })
   const [stopIntegration, setStopIntegration] = useState({
-    inProgess: false,
+    inProgress: false,
     completed: false,
   })
 
@@ -172,7 +172,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
           if (data) await onDisconnectConfirm(data)
         }
         setStopIntegration({
-          inProgess: !isStopIngestionCompleted,
+          inProgress: !isStopIngestionCompleted,
           completed: isStopIngestionCompleted,
         })
       }

@@ -24,7 +24,7 @@ interface OAuthTabProps {
   disconnected: { disconnecting: boolean; completed: boolean }
   stopConnector: () => void
   stopIntegration: {
-    inProgess: boolean
+    inProgress: boolean
     completed: boolean
   }
 }
@@ -40,7 +40,7 @@ const OAuthTab = ({
   stopIntegration,
 }: OAuthTabProps) => {
   const getStatusMessage = () => {
-    if (stopIntegration.inProgess) {
+    if (stopIntegration.inProgress) {
       return "stopping"
     }
     if (disconnected.disconnecting) {
@@ -56,8 +56,8 @@ const OAuthTab = ({
     }
   }
 
-  const renderActionButton = () => {
-    if (stopIntegration.inProgess || disconnected.disconnecting) {
+  const ActionBtn = () => {
+    if (stopIntegration.inProgress || disconnected.disconnecting) {
       return (
         <div>
           <LoaderContent />
@@ -103,7 +103,7 @@ const OAuthTab = ({
           </CardHeader>
           <CardContent className="flex items-center justify-between">
             {getStatusMessage()}
-            {renderActionButton()}
+            <ActionBtn />
           </CardContent>
         </Card>
       )}

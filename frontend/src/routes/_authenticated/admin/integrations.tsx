@@ -465,7 +465,7 @@ const ServiceAccountTab = ({
   disconnected: { disconnecting: boolean; completed: boolean }
   stopConnector: () => void
   stopIntegration: {
-    inProgess: boolean
+    inProgress: boolean
     completed: boolean
   }
 }) => {
@@ -474,7 +474,7 @@ const ServiceAccountTab = ({
   )
 
   const getStatusMessage = () => {
-    if (stopIntegration.inProgess) {
+    if (stopIntegration.inProgress) {
       return "stopping"
     }
     if (disconnected.disconnecting) {
@@ -491,8 +491,8 @@ const ServiceAccountTab = ({
     }
   }
 
-  const renderActionButton = () => {
-    if (stopIntegration.inProgess || disconnected.disconnecting) {
+  const ActionBtn = () => {
+    if (stopIntegration.inProgress || disconnected.disconnecting) {
       return (
         <div>
           <LoaderContent />
@@ -534,7 +534,7 @@ const ServiceAccountTab = ({
         ) : (
           <CardContent className="flex items-center justify-between">
             <CardDescription>{getStatusMessage()}</CardDescription>
-            {renderActionButton()}
+            <ActionBtn />
           </CardContent>
         )}
       </CardHeader>
@@ -611,7 +611,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     description: "",
   })
   const [stopIntegration, setStopIntegration] = useState({
-    inProgess: false,
+    inProgress: false,
     completed: false,
   })
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
@@ -715,7 +715,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
           if (data) await onDisconnectConfirm(data)
         }
         setStopIntegration({
-          inProgess: !isStopIngestionCompleted,
+          inProgress: !isStopIngestionCompleted,
           completed: isStopIngestionCompleted,
         })
       }
@@ -758,7 +758,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const onStopConfirm = async () => {
     const res = await handleStopConnecting()
     if (res.success) {
-      setStopIntegration({ inProgess: true, completed: false })
+      setStopIntegration({ inProgress: true, completed: false })
     } else {
       toast({
         title: "Could not stop integration",
