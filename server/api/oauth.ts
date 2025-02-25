@@ -56,7 +56,10 @@ export const OAuthCallback = async (c: Context) => {
       code,
       codeVerifier as string,
     )
+    tokens.data.accessTokenExpiresAt = tokens.accessTokenExpiresAt()
+    console.log("tokens at the start")
     console.log(tokens)
+    console.log("tokens at the start")
     const connectorId = provider.connectorId
     const connector: SelectConnector = await updateConnector(db, connectorId, {
       subject: email,

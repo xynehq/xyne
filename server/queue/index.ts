@@ -83,7 +83,7 @@ const initWorkers = async () => {
   })
 
   // do not retry
-  // await boss.schedule(SyncOAuthSaaSQueue, EveryMin, {}, { retryLimit: 0 })
+  await boss.schedule(SyncOAuthSaaSQueue, EveryMin, {}, { retryLimit: 0 })
   await boss.schedule(
     CheckDownloadsFolderQueue,
     EveryWeek,

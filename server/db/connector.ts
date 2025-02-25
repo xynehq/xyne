@@ -118,18 +118,16 @@ const IsTokenExpired = (
   app: Apps,
   oauthCredentials: OAuthCredentials,
   bufferInSeconds: number,
-  tokenUpdatedAt: Date,
 ): boolean => {
   if (
     app === Apps.GoogleDrive ||
     app === Apps.Gmail ||
     app === Apps.GoogleCalendar
   ) {
-    const tokens: OAuth2Tokens = oauthCredentials.data
+    const tokens = oauthCredentials.data
     const now: Date = new Date()
     // make the type as Date, currently the date is stringified
-    const lastUpdatedAt = new Date(tokenUpdatedAt).getTime()
-    const expirationTime = lastUpdatedAt + tokens.expires_in * 1000
+    const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime()
     const currentTime = now.getTime()
     return currentTime + bufferInSeconds * 1000 > expirationTime
   }
@@ -175,7 +173,6 @@ export const getOAuthConnectorWithCredentials = async (
       oauthRes.app,
       oauthRes.oauthCredentials,
       5 * 60,
-      oauthRes.updatedAt,
     )
   ) {
     Logger.info("Token is expired")
@@ -213,13 +210,12 @@ export const getOAuthConnectorWithCredentials = async (
       console.log(tokens)
       console.log("old tokens\n")
       // update the token values
-      tokens.access_token = refreshedTokens.data.access_token
-      tokens.expires_in = refreshedTokens.data.expires_in
+      tokens.access_token = refreshedTokens.accessToken()
+      tokens.accessTokenExpiresAt = new Date(refreshedTokens.accessTokenExpiresAt())
 
       oauthRes.oauthCredentials.data = tokens
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
         oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
-        updatedAt: new Date(),
       })
       Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
       Logger.info(`New token saved...`)
