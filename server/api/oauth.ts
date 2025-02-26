@@ -52,10 +52,11 @@ export const OAuthCallback = async (c: Context) => {
       clientSecret,
       `${config.host}/oauth/callback`,
     )
-    const tokens: any = await google.validateAuthorizationCode(
+    const tokens = await google.validateAuthorizationCode(
       code,
       codeVerifier as string,
     )
+    //@ts-ignore
     tokens.data.accessTokenExpiresAt = tokens.accessTokenExpiresAt()
     const connectorId = provider.connectorId
     const connector: SelectConnector = await updateConnector(db, connectorId, {

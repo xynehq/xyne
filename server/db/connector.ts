@@ -22,6 +22,7 @@ import {
   FetchProviderFailed,
   UpdateConnectorFailed,
 } from "@/errors"
+import { IsGoogleApp } from "@/utils"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -119,11 +120,7 @@ const IsTokenExpired = (
   oauthCredentials: OAuthCredentials,
   bufferInSeconds: number,
 ): boolean => {
-  if (
-    app === Apps.GoogleDrive ||
-    app === Apps.Gmail ||
-    app === Apps.GoogleCalendar
-  ) {
+  if (IsGoogleApp(app)) {
     const tokens = oauthCredentials.data
     const now: Date = new Date()
     // make the type as Date, currently the date is stringified
@@ -170,11 +167,7 @@ export const getOAuthConnectorWithCredentials = async (
   if (IsTokenExpired(oauthRes.app, oauthRes.oauthCredentials, 5 * 60)) {
     // token is expired. We should get new tokens
     // update it in place
-    if (
-      oauthRes.app === Apps.GoogleDrive ||
-      oauthRes.app === Apps.Gmail ||
-      oauthRes.app === Apps.GoogleCalendar
-    ) {
+    if (IsGoogleApp(oauthRes.app)) {
       // we will need the provider now to refresh the token
       const providers: SelectOAuthProvider[] = await trx
         .select()

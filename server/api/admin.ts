@@ -55,14 +55,16 @@ const getAuthorizationUrl = async (
   Logger.info(`code verifier  ${codeVerifier}`)
   // adding some data to state
   const newState = JSON.stringify({ app, random: state })
-
   const url: URL = google.createAuthorizationURL(
     newState,
     codeVerifier,
     oauthScopes,
   )
-  url.searchParams.set("access_type", "offline")
-  url.searchParams.set("prompt", "consent")
+  // for google refresh token
+  if (app === Apps.GoogleDrive) {
+    url.searchParams.set("access_type", "offline")
+    url.searchParams.set("prompt", "consent")
+  }
 
   // store state verifier as cookie
   setCookieByEnv(c, `${app}-state`, state, {

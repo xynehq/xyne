@@ -5,6 +5,7 @@ import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
+import { Apps } from "@/search/types"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -177,4 +178,16 @@ export const removeStopwords = (text: string) => {
     return !englishStopwords.includes(cleanWord)
   })
   return filteredWords.join(" ")
+}
+
+export const IsGoogleApp = (app: Apps) => {
+  if (
+    app === Apps.GoogleDrive ||
+    app === Apps.Gmail ||
+    app === Apps.GoogleCalendar
+  ) {
+    return true
+  } else {
+    return false
+  }
 }
