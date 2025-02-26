@@ -11,7 +11,7 @@ import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
-import { Google, OAuth2Tokens } from "arctic"
+import { Google } from "arctic"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import {
@@ -162,20 +162,12 @@ export const getOAuthConnectorWithCredentials = async (
   if (!oauthRes.oauthCredentials) {
     throw new MissingOauthConnectorCredentialsError({})
   }
-
   // parse the string
   oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials)
 
   // google tokens have expiry of 1 hour
   // 5 minutes before expiry we refresh them
-  if (
-    IsTokenExpired(
-      oauthRes.app,
-      oauthRes.oauthCredentials,
-      5 * 60,
-    )
-  ) {
-    Logger.info("Token is expired")
+  if (IsTokenExpired(oauthRes.app, oauthRes.oauthCredentials, 5 * 60)) {
     // token is expired. We should get new tokens
     // update it in place
     if (
@@ -202,29 +194,21 @@ export const getOAuthConnectorWithCredentials = async (
         googleProvider.clientSecret,
         `${config.host}/oauth/callback`,
       )
-      const tokens: OAuth2Tokens = oauthRes.oauthCredentials.data
-      const refreshedTokens: OAuth2Tokens = await google.refreshAccessToken(
+      const tokens = oauthRes.oauthCredentials.data
+      const refreshedTokens = await google.refreshAccessToken(
         tokens.refresh_token,
       )
-      console.log("\nold tokens")
-      console.log(tokens)
-      console.log("old tokens\n")
       // update the token values
       tokens.access_token = refreshedTokens.accessToken()
-      tokens.accessTokenExpiresAt = new Date(refreshedTokens.accessTokenExpiresAt())
+      tokens.accessTokenExpiresAt = new Date(
+        refreshedTokens.accessTokenExpiresAt(),
+      )
 
       oauthRes.oauthCredentials.data = tokens
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
         oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
       })
       Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
-      Logger.info(`New token saved...`)
-      console.log("\nnewly made tokens")
-      console.log(tokens)
-      console.log("newly made tokens\n")
-      console.log("\nupdatedConnector")
-      console.log(updatedConnector)
-      console.log("updatedConnector\n")
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,

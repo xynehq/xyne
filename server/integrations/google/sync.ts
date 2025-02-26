@@ -29,7 +29,6 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-// import { OAuth2Tokens } from "arctic"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
@@ -72,7 +71,6 @@ import {
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
 import type { GaxiosError } from "gaxios"
-import type { OAuth2Tokens } from "arctic"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -357,7 +355,6 @@ export const handleGoogleOAuthChanges = async (
   Logger.info("handleGoogleOAuthChanges")
   const data = job.data
   const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
-  // console.log(connector)
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {
@@ -367,7 +364,6 @@ export const handleGoogleOAuthChanges = async (
         db,
         syncJob.connectorId,
       )
-      
       const user = await getUserById(db, connector.userId)
       const oauthTokens: any = connector.oauthCredentials.data
       const oauth2Client = new google.auth.OAuth2()

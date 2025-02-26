@@ -48,7 +48,6 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob"
 import type { GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
@@ -565,10 +564,7 @@ export const handleGoogleOAuthIngestion = async (
       data.connectorId,
     )
     const userEmail = job.data.email
-    const oauthTokens: GoogleTokens = connector.oauthCredentials.data
-    console.log("oauthTokens")
-    console.log(oauthTokens)
-    console.log("oauthTokens")
+    const oauthTokens = connector.oauthCredentials.data
     const oauth2Client = new google.auth.OAuth2()
 
     setOAuthUser(userEmail)
