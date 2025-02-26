@@ -8,6 +8,7 @@ import {
   type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
+  type OAuthCredentials,
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
@@ -365,7 +366,7 @@ export const handleGoogleOAuthChanges = async (
         syncJob.connectorId,
       )
       const user = await getUserById(db, connector.userId)
-      const oauthTokens: any = connector.oauthCredentials.data
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // we have guarantee that when we started this job access Token at least
@@ -552,7 +553,7 @@ export const handleGoogleOAuthChanges = async (
         syncJob.connectorId,
       )
       const user = await getUserById(db, connector.userId)
-      const oauthTokens = connector.oauthCredentials.data
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: GmailChangeToken = syncJob.config as GmailChangeToken
       // we have guarantee that when we started this job access Token at least
@@ -651,7 +652,7 @@ export const handleGoogleOAuthChanges = async (
         db,
         syncJob.connectorId,
       )
-      const oauthTokens = connector.oauthCredentials.data
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken

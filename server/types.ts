@@ -3,7 +3,6 @@ import { z } from "zod"
 import { Apps, AuthType } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
-import type { GoogleTokens } from "arctic"
 import { JWT, type OAuth2Client } from "google-auth-library"
 
 // type GoogleContacts = people_v1.Schema$Person
@@ -110,7 +109,13 @@ export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
 export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
 
-export type OAuthCredentials = GoogleTokens | any
+export type OAuthCredentials = {
+  data: {
+    access_token: string
+    refresh_token: string
+    accessTokenExpiresAt: Date
+  }
+}
 
 export enum SyncCron {
   // Sync based on a token provided by the external API

@@ -194,7 +194,7 @@ export const getOAuthConnectorWithCredentials = async (
         googleProvider.clientSecret,
         `${config.host}/oauth/callback`,
       )
-      const tokens = oauthRes.oauthCredentials.data
+      const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
       const refreshedTokens = await google.refreshAccessToken(
         tokens.refresh_token,
       )

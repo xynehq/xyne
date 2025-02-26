@@ -21,6 +21,7 @@ import {
   WorkerResponseTypes,
   type GoogleClient,
   type GoogleServiceAccount,
+  type OAuthCredentials,
   type SaaSJob,
   type SaaSOAuthJob,
 } from "@/types"
@@ -564,7 +565,7 @@ export const handleGoogleOAuthIngestion = async (
       data.connectorId,
     )
     const userEmail = job.data.email
-    const oauthTokens = connector.oauthCredentials.data
+    const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
     const oauth2Client = new google.auth.OAuth2()
 
     setOAuthUser(userEmail)
