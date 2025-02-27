@@ -80,7 +80,7 @@ export const createOAuthProvider = z.object({
 })
 
 export const connectorIdSchema = z.object({
-  connectorExternalId: z.string(),
+  connectorId: z.string(),
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
