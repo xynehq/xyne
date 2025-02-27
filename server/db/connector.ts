@@ -13,7 +13,7 @@ import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
-import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic"
+import { Google } from "arctic"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import {
@@ -24,6 +24,7 @@ import {
   FetchProviderFailed,
   UpdateConnectorFailed,
 } from "@/errors"
+import { IsGoogleApp } from "@/utils"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -167,8 +168,8 @@ const IsTokenExpired = (
   oauthCredentials: OAuthCredentials,
   bufferInSeconds: number,
 ): boolean => {
-  if (app === Apps.GoogleDrive) {
-    const tokens: GoogleTokens = oauthCredentials
+  if (IsGoogleApp(app)) {
+    const tokens = oauthCredentials.data
     const now: Date = new Date()
     // make the type as Date, currently the date is stringified
     const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime()
@@ -214,7 +215,7 @@ export const getOAuthConnectorWithCredentials = async (
   if (IsTokenExpired(oauthRes.app, oauthRes.oauthCredentials, 5 * 60)) {
     // token is expired. We should get new tokens
     // update it in place
-    if (oauthRes.app === Apps.GoogleDrive) {
+    if (IsGoogleApp(oauthRes.app)) {
       // we will need the provider now to refresh the token
       const providers: SelectOAuthProvider[] = await trx
         .select()
@@ -234,19 +235,21 @@ export const getOAuthConnectorWithCredentials = async (
         googleProvider.clientSecret,
         `${config.host}/oauth/callback`,
       )
-      const tokens: GoogleTokens = oauthRes.oauthCredentials
-      const refreshedTokens: GoogleRefreshedTokens =
-        await google.refreshAccessToken(tokens.refreshToken!)
-      // update the token values
-      tokens.accessToken = refreshedTokens.accessToken
-      tokens.accessTokenExpiresAt = new Date(
-        refreshedTokens.accessTokenExpiresAt,
+      const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
+      const refreshedTokens = await google.refreshAccessToken(
+        tokens.refresh_token,
       )
+      // update the token values
+      tokens.access_token = refreshedTokens.accessToken()
+      tokens.accessTokenExpiresAt = new Date(
+        refreshedTokens.accessTokenExpiresAt(),
+      )
+
+      oauthRes.oauthCredentials.data = tokens
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
-        oauthCredentials: JSON.stringify(tokens),
+        oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
       })
       Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
-      oauthRes.oauthCredentials = tokens
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,

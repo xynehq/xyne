@@ -21,6 +21,7 @@ import {
   WorkerResponseTypes,
   type GoogleClient,
   type GoogleServiceAccount,
+  type OAuthCredentials,
   type SaaSJob,
   type SaaSOAuthJob,
 } from "@/types"
@@ -56,9 +57,8 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob"
-import type { GaxiosResponse } from "gaxios"
+import { GaxiosError, type GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
 import { getErrorMessage, isAbortError, retryWithBackoff } from "@/utils"
 import {
@@ -694,7 +694,7 @@ export const handleGoogleOAuthIngestion = async (
       data.connectorId,
     )
     const userEmail = job.data.email
-    const oauthTokens: GoogleTokens = connector.oauthCredentials
+    const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
     const oauth2Client = new google.auth.OAuth2()
 
     setOAuthUser(userEmail)
@@ -718,13 +718,8 @@ export const handleGoogleOAuthIngestion = async (
     }
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
-    oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
-    const driveClient = google.drive({
-      version: "v3",
-      auth: oauth2Client,
-      signal,
-    })
-
+    oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
+    const driveClient = google.drive({ version: "v3", auth: oauth2Client, signal })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client, signal)
     await insertContactsToVespa(contacts, otherContacts, userEmail, signal)
@@ -1202,83 +1197,91 @@ export const getPresentationToBeIngested = async (
   client: GoogleClient,
 ) => {
   const slides = google.slides({ version: "v1", auth: client })
-  const presentationData = await retryWithBackoff(
-    () =>
-      slides.presentations.get({
-        presentationId: presentation.id!,
-      }),
-    `Fetching presentation with id ${presentation.id}`,
-  )
-  const slidesData = presentationData.data.slides!
-  let chunks: string[] = []
-  let totalTextLen = 0
+  try {
+    const presentationData = await retryWithBackoff(
+      () =>
+        slides.presentations.get({
+          presentationId: presentation.id!,
+        }),
+      `Fetching presentation with id ${presentation.id}`,
+    )
+    const slidesData = presentationData?.data?.slides!
+    let chunks: string[] = []
+    let totalTextLen = 0
 
-  slidesData.forEach((slide) => {
-    let slideText = ""
-    slide.pageElements!.forEach((element) => {
-      if (
-        element.shape &&
-        element.shape.text &&
-        element.shape.text.textElements
-      ) {
-        element.shape.text.textElements.forEach((textElement) => {
-          if (textElement.textRun) {
-            const textContent = textElement.textRun.content!.trim()
-            slideText += textContent + " "
-            totalTextLen += textContent.length
-          }
-        })
+    slidesData?.forEach((slide) => {
+      let slideText = ""
+      slide?.pageElements!?.forEach((element) => {
+        if (
+          element.shape &&
+          element.shape.text &&
+          element.shape.text.textElements
+        ) {
+          element.shape.text.textElements.forEach((textElement) => {
+            if (textElement.textRun) {
+              const textContent = textElement.textRun.content!.trim()
+              slideText += textContent + " "
+              totalTextLen += textContent.length
+            }
+          })
+        }
+      })
+
+      if (totalTextLen <= MAX_GD_SLIDES_TEXT_LEN) {
+        // Only chunk if the total text length is within the limit
+        const slideChunks = chunkDocument(slideText)
+        chunks.push(...slideChunks.map((c) => c.chunk))
       }
     })
 
-    if (totalTextLen <= MAX_GD_SLIDES_TEXT_LEN) {
-      // Only chunk if the total text length is within the limit
-      const slideChunks = chunkDocument(slideText)
-      chunks.push(...slideChunks.map((c) => c.chunk))
+    // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
+    if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
+      Logger.error(
+        `Text Length excedded for ${presentation.name}, indexing with empty content`,
+      )
+      chunks = []
     }
-  })
 
-  // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
-  if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
+    const parentsForMetadata = []
+    if (presentation?.parents) {
+      for (const parentId of presentation.parents!) {
+        const parentData = await getFile(client, parentId)
+        const folderName = parentData?.name!
+        parentsForMetadata.push({ folderName, folderId: parentId })
+      }
+    }
+
+    const presentationToBeIngested = {
+      title: presentation.name!,
+      url: presentation.webViewLink ?? "",
+      app: Apps.GoogleDrive,
+      docId: presentation.id!,
+      owner: presentation.owners
+        ? (presentation.owners[0].displayName ?? "")
+        : "",
+      photoLink: presentation.owners
+        ? (presentation.owners[0].photoLink ?? "")
+        : "",
+      ownerEmail: presentation.owners
+        ? (presentation.owners[0]?.emailAddress ?? "")
+        : "",
+      entity: DriveEntity.Slides,
+      chunks,
+      permissions: presentation.permissions ?? [],
+      mimeType: presentation.mimeType ?? "",
+      metadata: JSON.stringify({ parents: parentsForMetadata }),
+      createdAt: new Date(presentation.createdTime!).getTime(),
+      updatedAt: new Date(presentation.modifiedTime!).getTime(),
+    }
+
+    return presentationToBeIngested
+  } catch (error) {
     Logger.error(
-      `Text Length excedded for ${presentation.name}, indexing with empty content`,
+      error,
+      `Error in getting presentation data with id ${presentation?.id}`,
     )
-    chunks = []
+    return null
   }
-
-  const parentsForMetadata = []
-  if (presentation?.parents) {
-    for (const parentId of presentation.parents!) {
-      const parentData = await getFile(client, parentId)
-      const folderName = parentData.name!
-      parentsForMetadata.push({ folderName, folderId: parentId })
-    }
-  }
-
-  const presentationToBeIngested = {
-    title: presentation.name!,
-    url: presentation.webViewLink ?? "",
-    app: Apps.GoogleDrive,
-    docId: presentation.id!,
-    owner: presentation.owners
-      ? (presentation.owners[0].displayName ?? "")
-      : "",
-    photoLink: presentation.owners
-      ? (presentation.owners[0].photoLink ?? "")
-      : "",
-    ownerEmail: presentation.owners
-      ? (presentation.owners[0]?.emailAddress ?? "")
-      : "",
-    entity: DriveEntity.Slides,
-    chunks,
-    permissions: presentation.permissions ?? [],
-    mimeType: presentation.mimeType ?? "",
-    metadata: JSON.stringify({ parents: parentsForMetadata }),
-    createdAt: new Date(presentation.createdTime!).getTime(),
-    updatedAt: new Date(presentation.modifiedTime!).getTime(),
-  }
-
-  return presentationToBeIngested
 }
 
 const googleSlidesVespa = async (
@@ -1301,7 +1304,9 @@ const googleSlidesVespa = async (
         presentation,
         client,
       )
-      presentationsList.push(presentationToBeIngested)
+      if (presentationToBeIngested) {
+        presentationsList.push(presentationToBeIngested)
+      }
       count += 1
 
       // if (count % 5 === 0) {
@@ -1508,6 +1513,7 @@ export const getAllSheetsFromSpreadSheet = async (
         error,
         `Failed to fetch sheets '${ranges.join(", ")}' from spreadsheet: ${(error as Error).message}`,
       )
+      continue
     }
   }
   return allSheets
@@ -1518,11 +1524,27 @@ export const getAllSheetsFromSpreadSheet = async (
 export const getSpreadsheet = async (
   sheets: sheets_v4.Sheets,
   id: string,
-): Promise<GaxiosResponse<sheets_v4.Schema$Spreadsheet>> => {
-  return retryWithBackoff(
-    () => sheets.spreadsheets.get({ spreadsheetId: id }),
-    `Fetching spreadsheet with ID ${id}`,
-  )
+): Promise<GaxiosResponse<sheets_v4.Schema$Spreadsheet> | null> => {
+  try {
+    return retryWithBackoff(
+      () => sheets.spreadsheets.get({ spreadsheetId: id }),
+      `Fetching spreadsheet with ID ${id}`,
+    )
+  } catch (error) {
+    if (error instanceof GaxiosError) {
+      Logger.error(
+        `GaxiosError while fetching drive changes: status ${error.response?.status}, ` +
+          `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`,
+      )
+    } else if (error instanceof Error) {
+      Logger.error(
+        `Unexpected error while fetching drive changes: ${error.message}`,
+      )
+    } else {
+      Logger.error(`An unknown error occurred while fetching drive changes.`)
+    }
+    return null
+  }
 }
 
 // Function to chunk rows of text data into manageable batches
@@ -1581,83 +1603,95 @@ export const getSheetsListFromOneSpreadsheet = async (
   spreadsheet: drive_v3.Schema$File,
 ): Promise<VespaFileWithDrivePermission[]> => {
   const sheetsArr = []
-  const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
+  try {
+    const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
 
-  // Now we should get all sheets inside this spreadsheet using the spreadSheetData
-  const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
-    sheets,
-    spreadSheetData.data,
-    spreadsheet.id!,
-  )
+    if (spreadSheetData) {
+      // Now we should get all sheets inside this spreadsheet using the spreadSheetData
+      const allSheetsFromSpreadSheet = await getAllSheetsFromSpreadSheet(
+        sheets,
+        spreadSheetData.data,
+        spreadsheet.id!,
+      )
 
-  // There can be multiple parents
-  // Element of parents array contains folderId and folderName
-  const parentsForMetadata = []
-  // Shared files cannot have parents
-  // There can be some files that user has access to may not have parents as they are shared
-  if (spreadsheet?.parents) {
-    for (const parentId of spreadsheet?.parents!) {
-      const parentData = await getFile(client, parentId)
-      const folderName = parentData.name!
-      parentsForMetadata.push({ folderName, folderId: parentId })
-    }
-  }
+      // There can be multiple parents
+      // Element of parents array contains folderId and folderName
+      const parentsForMetadata = []
+      // Shared files cannot have parents
+      // There can be some files that user has access to may not have parents as they are shared
+      if (spreadsheet?.parents) {
+        for (const parentId of spreadsheet?.parents!) {
+          const parentData = await getFile(client, parentId)
+          const folderName = parentData?.name!
+          parentsForMetadata.push({ folderName, folderId: parentId })
+        }
+      }
 
-  for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet.entries()) {
-    const finalRows = cleanSheetAndGetValidRows(sheet.valueRanges ?? [])
+      for (const [sheetIndex, sheet] of allSheetsFromSpreadSheet?.entries()) {
+        const finalRows = cleanSheetAndGetValidRows(sheet?.valueRanges ?? [])
 
-    if (finalRows.length === 0) {
-      // Logger.warn(
-      //   `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
-      // )
-      continue
-    }
+        if (finalRows?.length === 0) {
+          // Logger.warn(
+          //   `${spreadsheet.name} -> ${sheet.sheetTitle} found no rows. Skipping it`,
+          // )
+          continue
+        }
 
-    let chunks: string[] = []
+        let chunks: string[] = []
 
-    if (finalRows.length > MAX_GD_SHEET_ROWS) {
-      // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-      // Logger.warn(
-      //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-      // )
-      chunks = []
+        if (finalRows?.length > MAX_GD_SHEET_ROWS) {
+          // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+          // Logger.warn(
+          //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+          // )
+          chunks = []
+        } else {
+          chunks = chunkFinalRows(finalRows)
+        }
+
+        const sheetDataToBeIngested = {
+          title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
+          url: spreadsheet.webViewLink ?? "",
+          app: Apps.GoogleDrive,
+          // TODO Document it eveyrwhere
+          // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
+          docId: `${spreadsheet?.id}_${sheetIndex}`,
+          owner: spreadsheet.owners
+            ? (spreadsheet.owners[0].displayName ?? "")
+            : "",
+          photoLink: spreadsheet.owners
+            ? (spreadsheet.owners[0].photoLink ?? "")
+            : "",
+          ownerEmail: spreadsheet.owners
+            ? (spreadsheet.owners[0]?.emailAddress ?? "")
+            : "",
+          entity: DriveEntity.Sheets,
+          chunks,
+          permissions: spreadsheet.permissions ?? [],
+          mimeType: spreadsheet.mimeType ?? "",
+          metadata: JSON.stringify({
+            parents: parentsForMetadata,
+            ...(sheetIndex === 0 && {
+              spreadsheetId: spreadsheet.id!,
+              totalSheets: spreadSheetData.data.sheets?.length!,
+            }),
+          }),
+          createdAt: new Date(spreadsheet.createdTime!).getTime(),
+          updatedAt: new Date(spreadsheet.modifiedTime!).getTime(),
+        }
+        sheetsArr.push(sheetDataToBeIngested)
+      }
+      return sheetsArr
     } else {
-      chunks = chunkFinalRows(finalRows)
+      return []
     }
-
-    const sheetDataToBeIngested = {
-      title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
-      url: spreadsheet.webViewLink ?? "",
-      app: Apps.GoogleDrive,
-      // TODO Document it eveyrwhere
-      // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
-      docId: `${spreadsheet?.id}_${sheetIndex}`,
-      owner: spreadsheet.owners
-        ? (spreadsheet.owners[0].displayName ?? "")
-        : "",
-      photoLink: spreadsheet.owners
-        ? (spreadsheet.owners[0].photoLink ?? "")
-        : "",
-      ownerEmail: spreadsheet.owners
-        ? (spreadsheet.owners[0]?.emailAddress ?? "")
-        : "",
-      entity: DriveEntity.Sheets,
-      chunks,
-      permissions: spreadsheet.permissions ?? [],
-      mimeType: spreadsheet.mimeType ?? "",
-      metadata: JSON.stringify({
-        parents: parentsForMetadata,
-        ...(sheetIndex === 0 && {
-          spreadsheetId: spreadsheet.id!,
-          totalSheets: spreadSheetData.data.sheets?.length!,
-        }),
-      }),
-      createdAt: new Date(spreadsheet.createdTime!).getTime(),
-      updatedAt: new Date(spreadsheet.modifiedTime!).getTime(),
-    }
-    sheetsArr.push(sheetDataToBeIngested)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error getting all sheets list from spreadhseet with id ${spreadsheet.id}`,
+    )
+    return []
   }
-  return sheetsArr
 }
 
 const googleSheetsVespa = async (
@@ -1807,7 +1841,7 @@ export const googlePDFsVespa = async (
         if (pdf?.parents) {
           for (const parentId of pdf.parents!) {
             const parentData = await getFile(client, parentId)
-            const folderName = parentData.name!
+            const folderName = parentData?.name!
             parentsForMetadata.push({ folderName, folderId: parentId })
           }
         }
@@ -2252,7 +2286,7 @@ export const googleDocsVespa = async (
         if (doc?.parents) {
           for (const parentId of doc?.parents!) {
             const parentData = await getFile(client, parentId)
-            const folderName = parentData.name!
+            const folderName = parentData?.name!
             parentsForMetadata.push({ folderName, folderId: parentId })
           }
         }
@@ -2300,7 +2334,10 @@ export const driveFilesToDoc = async (
 ): Promise<VespaFileWithDrivePermission[]> => {
   let results: VespaFileWithDrivePermission[] = []
   for (const doc of rest) {
-    results.push(await driveFileToIndexed(client, doc))
+    const file = await driveFileToIndexed(client, doc)
+    if (file) {
+      results.push(file)
+    }
   }
   return results
 }

@@ -127,6 +127,19 @@ export const modelDetailsMap: Record<
       },
     },
   },
+[Models.Claude_3_7_Sonnet]: {
+  name: "Claude 3.7 Sonnet",
+  cost: {
+      onDemand: {
+          pricePerThousandInputTokens: 0.003,
+          pricePerThousandOutputTokens: 0.015,
+      },
+      batch: {
+          pricePerThousandInputTokens: 0,
+          pricePerThousandOutputTokens: 0,
+      },
+  },
+},
   [Models.Claude_3_5_SonnetV2]: {
     name: "Claude 3.5 Sonnet v2",
     cost: {
@@ -228,6 +241,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
   [Models.CohereCmdR]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
+  [Models.Claude_3_7_Sonnet]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_Sonnet]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_Haiku]: AIProviders.AwsBedrock,
   [Models.Amazon_Nova_Micro]: AIProviders.AwsBedrock,

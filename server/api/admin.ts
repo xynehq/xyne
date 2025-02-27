@@ -22,7 +22,7 @@ import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey } = config
 import { generateCodeVerifier, generateState, Google } from "arctic"
 import type { SelectOAuthProvider } from "@/db/schema"
-import { getErrorMessage, setCookieByEnv } from "@/utils"
+import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
 import { getLogger } from "@/logger"
 import { getPath } from "hono/utils/url"
 import {
@@ -56,13 +56,17 @@ const getAuthorizationUrl = async (
   Logger.info(`code verifier  ${codeVerifier}`)
   // adding some data to state
   const newState = JSON.stringify({ app, random: state })
-  const url: URL = await google.createAuthorizationURL(newState, codeVerifier, {
-    scopes: oauthScopes,
-  })
+  const url: URL = google.createAuthorizationURL(
+    newState,
+    codeVerifier,
+    oauthScopes,
+  )
   // for google refresh token
-  if (app === Apps.GoogleDrive) {
+  if (IsGoogleApp(app)) {
     url.searchParams.set("access_type", "offline")
+    url.searchParams.set("prompt", "consent")
   }
+
   // store state verifier as cookie
   setCookieByEnv(c, `${app}-state`, state, {
     secure: true, // set to false in localhost
