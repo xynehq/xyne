@@ -16,7 +16,7 @@ import { zValidator } from "@hono/zod-validator"
 import {
   addServiceConnectionSchema,
   answerSchema,
-  connectorExternalIdSchema,
+  connectorIdSchema,
   createOAuthProvider,
   oauthStartQuerySchema,
   searchSchema,
@@ -183,7 +183,7 @@ export const AppRoutes = app
   )
   .delete(
     "/connector/remove",
-    zValidator("json", connectorExternalIdSchema),
+    zValidator("json", connectorIdSchema),
     deleteConnectors,
   )
   .delete("/connector/stop", stopConnecting)

@@ -44,7 +44,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     },
   })
   const onDisconnectConfirm = async (payload = data) => {
-    if (payload && payload[0]?.id) {
+    if (payload && payload.length && payload[0]?.id) {
       const res = await handleRemoveConnectors(payload[0].id)
       if (res.success) {
         setIsDisConnected({ disconnecting: true, completed: false })
@@ -180,7 +180,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     return () => {
       socket?.close()
     }
-  }, [isDisConnected])
+  }, [])
 
   if (error) return "An error has occurred: " + error.message
   return (

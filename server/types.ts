@@ -80,7 +80,7 @@ export const createOAuthProvider = z.object({
   app: z.nativeEnum(Apps),
 })
 
-export const connectorExternalIdSchema = z.object({
+export const connectorIdSchema = z.object({
   connectorExternalId: z.string(),
 })
 

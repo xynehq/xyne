@@ -278,7 +278,7 @@ export const disconnectConnector = async (
       completed: false,
     },
   }
-  const { connectorExternalId } = job.data
+  const { connectorId } = job.data
 
   Logger.info(
     `Starting connector removal job jobId: ${jobId} job-name: ${jobName}`,
@@ -289,9 +289,9 @@ export const disconnectConnector = async (
 
   try {
     await db.transaction(async (trx) => {
-      await deleteOauthProviders(trx, connectorExternalId)
-      await deleteSyncJobs(trx, connectorExternalId)
-      await deleteConnectors(trx, connectorExternalId)
+      await deleteOauthProviders(trx, connectorId)
+      await deleteSyncJobs(trx, connectorId)
+      await deleteConnectors(trx, connectorId)
 
       // await deleteSyncHistory()
     })
