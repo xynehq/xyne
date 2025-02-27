@@ -85,7 +85,6 @@ export const getConnectors = async (workspaceId: string) => {
       type: connectors.type,
       status: connectors.status,
       createdAt: connectors.createdAt,
-      connectorId: connectors.id,
     })
     .from(connectors)
     .where(eq(connectors.workspaceExternalId, workspaceId))
@@ -119,10 +118,12 @@ export const getConnector = async (
 
 export const deleteConnectors = async (
   trx: TxnOrClient,
-  connectorId: number,
+  connectorExternalId: string,
 ): Promise<void> => {
   try {
-    await trx.delete(connectors).where(eq(connectors.id, connectorId))
+    await trx
+      .delete(connectors)
+      .where(eq(connectors.externalId, connectorExternalId))
   } catch (error) {
     throw new Error("could not delete connectors - Error:" + error)
   }
@@ -130,22 +131,24 @@ export const deleteConnectors = async (
 
 export const deleteSyncJobs = async (
   trx: TxnOrClient,
-  connectorId: number,
+  connectorExternalId: string,
 ): Promise<void> => {
   try {
-    await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
+    await trx
+      .delete(syncJobs)
+      .where(eq(syncJobs.connectorExternalId, connectorExternalId))
   } catch (error) {
     throw new Error("could not delete sync_jobs - Error:" + error)
   }
 }
 export const deleteOauthProviders = async (
   trx: TxnOrClient,
-  connectorId: number,
+  connectorExternalId: string,
 ): Promise<void> => {
   try {
     await trx
       .delete(oauthProviders)
-      .where(eq(oauthProviders.connectorId, connectorId))
+      .where(eq(oauthProviders.connectorExternalId, connectorExternalId))
   } catch (error) {
     throw new Error("could not delete oAuth-providers - Error:" + error)
   }

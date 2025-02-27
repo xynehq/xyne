@@ -44,8 +44,8 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     },
   })
   const onDisconnectConfirm = async (payload = data) => {
-    if (payload && payload[0]?.connectorId) {
-      const res = await handleRemoveConnectors(payload[0]?.connectorId)
+    if (payload && payload[0]?.id) {
+      const res = await handleRemoveConnectors(payload[0].id)
       if (res.success) {
         setIsDisConnected({ disconnecting: true, completed: false })
       } else {

@@ -372,20 +372,21 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
-export const handleRemoveConnectors: (connectorId: number) => Promise<any> =
-  async (connectorId) => {
-    const res = await api.admin.connector.remove.$delete({
-      json: { connectorId },
-    })
+export const handleRemoveConnectors: (
+  connectorExternalId: string,
+) => Promise<any> = async (connectorExternalId) => {
+  const res = await api.admin.connector.remove.$delete({
+    json: { connectorExternalId },
+  })
 
-    if (!res.ok) {
-      if (res.status === 401) {
-        throw new Error("Unauthorized")
-      }
-      throw new Error("Could not remove connectors")
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized")
     }
-    return res.json()
+    throw new Error("Could not remove connectors")
   }
+  return res.json()
+}
 
 export const handleStopConnecting: () => Promise<any> = async () => {
   const res = await api.admin.connector.stop.$delete()
@@ -742,8 +743,8 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   }
 
   const onDisconnectConfirm = async (payload = data) => {
-    if (payload && payload[0]?.connectorId) {
-      const res = await handleRemoveConnectors(payload[0]?.connectorId)
+    if (payload && payload[0]?.id) {
+      const res = await handleRemoveConnectors(payload[0].id)
       if (res.success) {
         setIsDisConnected({ disconnecting: true, completed: false })
         setUserStats({})

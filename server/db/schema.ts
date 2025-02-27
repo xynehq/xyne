@@ -175,6 +175,9 @@ export const oauthProviders = pgTable("oauth_providers", {
   connectorId: integer("container_id")
     .notNull()
     .references(() => connectors.id),
+  connectorExternalId: text("connector_external_id")
+    .notNull()
+    .references(() => connectors.externalId),
   clientId: text("client_id"),
   clientSecret: encryptedText(accesskeyEncryption)("client_secret"),
   oauthScopes: text("oauth_scopes")
@@ -214,6 +217,9 @@ export const syncJobs = pgTable("sync_jobs", {
   connectorId: integer("connector_id")
     .notNull()
     .references(() => connectors.id),
+  connectorExternalId: text("connector_external_id")
+    .notNull()
+    .references(() => connectors.externalId),
   type: syncJobEnum("type").notNull(),
   status: syncJobStatusEnum("status")
     .notNull()

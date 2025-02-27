@@ -278,7 +278,7 @@ export const disconnectConnector = async (
       completed: false,
     },
   }
-  const { connectorId } = job.data
+  const { connectorExternalId } = job.data
 
   Logger.info(
     `Starting connector removal job jobId: ${jobId} job-name: ${jobName}`,
@@ -289,9 +289,9 @@ export const disconnectConnector = async (
 
   try {
     await db.transaction(async (trx) => {
-      await deleteOauthProviders(trx, connectorId)
-      await deleteSyncJobs(trx, connectorId)
-      await deleteConnectors(trx, connectorId)
+      await deleteOauthProviders(trx, connectorExternalId)
+      await deleteSyncJobs(trx, connectorExternalId)
+      await deleteConnectors(trx, connectorExternalId)
 
       // await deleteSyncHistory()
     })
@@ -764,6 +764,7 @@ export const handleGoogleOAuthIngestion = async (
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
         workspaceExternalId: connector.workspaceExternalId,
+        connectorExternalId: connector.externalId,
         app: Apps.GoogleDrive,
         connectorId: connector.id,
         authType: AuthType.OAuth,
@@ -775,6 +776,7 @@ export const handleGoogleOAuthIngestion = async (
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
         workspaceExternalId: connector.workspaceExternalId,
+        connectorExternalId: connector.externalId,
         app: Apps.Gmail,
         connectorId: connector.id,
         authType: AuthType.OAuth,
@@ -791,6 +793,7 @@ export const handleGoogleOAuthIngestion = async (
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
         workspaceExternalId: connector.workspaceExternalId,
+        connectorExternalId: connector.externalId,
         app: Apps.GoogleCalendar,
         connectorId: connector.id,
         authType: AuthType.OAuth,
@@ -1057,6 +1060,7 @@ export const handleGoogleServiceAccountIngestion = async (
         await insertSyncJob(trx, {
           workspaceId: connector.workspaceId,
           workspaceExternalId: connector.workspaceExternalId,
+          connectorExternalId: connector.externalId,
           app: Apps.GoogleDrive,
           connectorId: connector.id,
           authType: AuthType.ServiceAccount,
@@ -1075,6 +1079,7 @@ export const handleGoogleServiceAccountIngestion = async (
         await insertSyncJob(trx, {
           workspaceId: connector.workspaceId,
           workspaceExternalId: connector.workspaceExternalId,
+          connectorExternalId: connector.externalId,
           app: Apps.Gmail,
           connectorId: connector.id,
           authType: AuthType.ServiceAccount,
@@ -1091,6 +1096,7 @@ export const handleGoogleServiceAccountIngestion = async (
         await insertSyncJob(trx, {
           workspaceId: connector.workspaceId,
           workspaceExternalId: connector.workspaceExternalId,
+          connectorExternalId: connector.externalId,
           app: Apps.GoogleCalendar,
           connectorId: connector.id,
           authType: AuthType.ServiceAccount,
@@ -1108,6 +1114,7 @@ export const handleGoogleServiceAccountIngestion = async (
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
         workspaceExternalId: connector.workspaceExternalId,
+        connectorExternalId: connector.externalId,
         app: Apps.GoogleWorkspace,
         connectorId: connector.id,
         authType: AuthType.ServiceAccount,
