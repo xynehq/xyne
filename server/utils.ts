@@ -181,13 +181,9 @@ export const removeStopwords = (text: string) => {
 }
 
 export const IsGoogleApp = (app: Apps) => {
-  if (
+  return (
     app === Apps.GoogleDrive ||
     app === Apps.Gmail ||
     app === Apps.GoogleCalendar
-  ) {
-    return true
-  } else {
-    return false
-  }
+  )
 }

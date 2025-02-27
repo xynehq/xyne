@@ -7,7 +7,7 @@ import { OAuthCallbackError } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
 import { Apps, type AuthType } from "@/shared/types"
-import { type SaaSOAuthJob, Subsystem } from "@/types"
+import { type OAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
 import { Google } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
@@ -56,12 +56,12 @@ export const OAuthCallback = async (c: Context) => {
       code,
       codeVerifier as string,
     )
-    //@ts-ignore
-    tokens.data.accessTokenExpiresAt = tokens.accessTokenExpiresAt()
+    const oauthTokens = tokens as OAuthCredentials
+    oauthTokens.data.accessTokenExpiresAt = tokens.accessTokenExpiresAt()
     const connectorId = provider.connectorId
     const connector: SelectConnector = await updateConnector(db, connectorId, {
       subject: email,
-      oauthCredentials: JSON.stringify(tokens),
+      oauthCredentials: JSON.stringify(oauthTokens),
     })
     const SaasJobPayload: SaaSOAuthJob = {
       connectorId: connector.id,
