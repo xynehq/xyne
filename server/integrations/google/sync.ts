@@ -8,6 +8,7 @@ import {
   type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
+  type OAuthCredentials,
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
@@ -29,7 +30,6 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
@@ -450,12 +450,12 @@ export const handleGoogleOAuthChanges = async (
         syncJob.connectorId,
       )
       const user = await getUserById(db, connector.userId)
-      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
-      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
 
       const driveClient = google.drive({ version: "v3", auth: oauth2Client })
       // TODO: add pagination for all the possible changes
@@ -653,12 +653,12 @@ export const handleGoogleOAuthChanges = async (
         syncJob.connectorId,
       )
       const user = await getUserById(db, connector.userId)
-      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: GmailChangeToken = syncJob.config as GmailChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
-      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
       const gmail = google.gmail({ version: "v1", auth: oauth2Client })
 
       let { historyId, stats, changesExist } = await handleGmailChanges(
@@ -746,13 +746,13 @@ export const handleGoogleOAuthChanges = async (
         db,
         syncJob.connectorId,
       )
-      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
-      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
       const calendar = google.calendar({ version: "v3", auth: oauth2Client })
 
       let { eventChanges, stats, newCalendarEventsSyncToken, changesExist } =

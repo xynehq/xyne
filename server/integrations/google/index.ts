@@ -21,6 +21,7 @@ import {
   WorkerResponseTypes,
   type GoogleClient,
   type GoogleServiceAccount,
+  type OAuthCredentials,
   type SaaSJob,
   type SaaSOAuthJob,
 } from "@/types"
@@ -48,7 +49,6 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, insertSyncJob, updateSyncJob } from "@/db/syncJob"
 import { GaxiosError, type GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
@@ -565,7 +565,7 @@ export const handleGoogleOAuthIngestion = async (
       data.connectorId,
     )
     const userEmail = job.data.email
-    const oauthTokens: GoogleTokens = connector.oauthCredentials
+    const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
     const oauth2Client = new google.auth.OAuth2()
 
     setOAuthUser(userEmail)
@@ -581,7 +581,7 @@ export const handleGoogleOAuthIngestion = async (
 
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
-    oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+    oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
