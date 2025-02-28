@@ -94,11 +94,16 @@ export const getRelativeTime = (oldTimestamp: number) => {
 const MAX_RETRIES = 10
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Util to check if an error is due to an aborted operation.
+// Instead of hardcoding conditions, we should be using a global error map
+// to categorize and handle errors more systematically
 export const isAbortError = (error: any) =>
   error?.message.includes("The operation was aborted.") ||
   error?.message.includes("User Stopped Integration") ||
   error?.message.includes("AbortError") ||
   error.code === "ABORTED"
+
 /**
  * Retry logic with exponential backoff and jitter.
  * @param fn - The function to retry.

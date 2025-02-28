@@ -719,7 +719,11 @@ export const handleGoogleOAuthIngestion = async (
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
     oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
-    const driveClient = google.drive({ version: "v3", auth: oauth2Client, signal })
+    const driveClient = google.drive({
+      version: "v3",
+      auth: oauth2Client,
+      signal,
+    })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client, signal)
     await insertContactsToVespa(contacts, otherContacts, userEmail, signal)
