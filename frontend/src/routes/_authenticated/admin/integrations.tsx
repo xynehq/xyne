@@ -572,9 +572,11 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       socket?.addEventListener("open", () => {
         logger.info("open")
       })
-      socket?.addEventListener("close", () => {
+      socket?.addEventListener("close", (e) => {
         logger.info("close")
-        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+        if (e.reason === "Job finished") {
+          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+        }
       })
       socket?.addEventListener("message", (e) => {
         // const message = JSON.parse(e.data);
@@ -602,7 +604,10 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   const showUserStats = (
     userStats: { [email: string]: any },
     activeTab: string,
+    oauthIntegrationStatus: OAuthIntegrationStatus,
   ) => {
+    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
+      return false
     if (!Object.keys(userStats).length) return false
     if (activeTab !== "service_account" && activeTab !== "oauth") return false
 
@@ -650,7 +655,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               updateStatus={updateStatus}
             />
           </Tabs>
-          {showUserStats(userStats, activeTab) && (
+          {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
             <UserStatsTable
               userStats={userStats}
               type={
