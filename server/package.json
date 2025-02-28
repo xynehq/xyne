@@ -1,5 +1,5 @@
 {
-  "name": "xyne-search",
+  "name": "xyne",
   "module": "server/server.ts",
   "type": "module",
   "version": "0.3.0",
