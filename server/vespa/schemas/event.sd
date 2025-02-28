@@ -163,7 +163,7 @@ schema event {
         }
 
         constants {
-          THREE_MONTHS_IN_SECONDS: 7890000
+          THREE_MONTHS_IN_SECONDS: 7776000
           ONE_YEAR_IN_SECONDS: 31536000
           MAX_DOC_DECAY: 0.5
           META_FIELDS_DECAY: 0.8
@@ -228,10 +228,17 @@ schema event {
         }
     }
 
+    document-summary default {
+        summary description {
+            bolding: on
+        }
+    }
+
     document-summary autocomplete {
         summary name {
             source: name
         }
+
         summary app {
             source: app
         }

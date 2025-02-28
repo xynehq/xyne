@@ -186,7 +186,7 @@ export const autocomplete = async (
 
   const searchPayload = {
     yql: yqlQuery,
-    query: query,
+    query,
     email,
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
@@ -423,15 +423,16 @@ export const searchVespa = async (
     excludedIds,
     notInMailLabels,
   )
+
+  console.log(query, yql)
   const hybridDefaultPayload = {
     yql,
     q: query, // Original user input query
-    query: removeStopwords(query), // removing stopwords for only bm25, to keep semantic meaning for embeddings
+    query: removeStopwords(query),
     email,
     "ranking.profile": profile,
     "input.query(e)": "embed(@q)",
     "input.query(alpha)": alpha,
-    "input.query(bm25ChunkWeight)": 0.7,
     hits: limit,
     ...(offset
       ? {
