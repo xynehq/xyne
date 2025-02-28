@@ -8,6 +8,7 @@ import {
   type GoogleChangeToken,
   type GoogleClient,
   type GoogleServiceAccount,
+  type OAuthCredentials,
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
@@ -29,7 +30,6 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import type { GoogleTokens } from "arctic"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
@@ -71,7 +71,7 @@ import {
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
-import type { GaxiosError } from "gaxios"
+import { GaxiosError } from "gaxios"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -91,7 +91,10 @@ const getDocumentOrSpreadsheet = async (docId: string) => {
       Logger.error(
         `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
       )
-      const sheetsForSpreadSheet = await GetDocument(fileSchema, `${docId}_0`)
+      const sheetsForSpreadSheet = await getDocumentOrNull(
+        fileSchema,
+        `${docId}_0`,
+      )
       return sheetsForSpreadSheet
     }
     return doc
@@ -108,46 +111,57 @@ const deleteUpdateStatsForGoogleSheets = async (
 ) => {
   const spreadsheetId = docId
   const sheets = google.sheets({ version: "v4", auth: client })
-  const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
-  const totalSheets = spreadsheet.data.sheets?.length!
+  try {
+    const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
+    if (spreadsheet) {
+      const totalSheets = spreadsheet?.data?.sheets?.length!
 
-  // Case where the whole spreadsheet is not deleted but some sheets are deleted
-  // If the sheets in vespa don't match the current sheets, we delete the rest of them
-  // Check if the sheets we have in vespa are same as we get
-  // If not, it means maybe sheet/s can be deleted
-  const spreadSheetFromVespa = await GetDocument(
-    fileSchema,
-    `${spreadsheetId}_0`,
-  )
-  const metadata = JSON.parse(
-    //@ts-ignore
-    (spreadSheetFromVespa.fields as VespaFile)?.metadata,
-  )!
-  const totalSheetsFromVespa = metadata?.totalSheets!
+      // Case where the whole spreadsheet is not deleted but some sheets are deleted
+      // If the sheets in vespa don't match the current sheets, we delete the rest of them
+      // Check if the sheets we have in vespa are same as we get
+      // If not, it means maybe sheet/s can be deleted
+      const spreadSheetFromVespa = await getDocumentOrNull(
+        fileSchema,
+        `${spreadsheetId}_0`,
+      )
+      if (spreadSheetFromVespa) {
+        const metadata = JSON.parse(
+          //@ts-ignore
+          (spreadSheetFromVespa?.fields as VespaFile)?.metadata,
+        )!
+        const totalSheetsFromVespa = metadata?.totalSheets!
 
-  if (
-    totalSheets !== totalSheetsFromVespa &&
-    totalSheets < totalSheetsFromVespa
-  ) {
-    // Condition will be true, if some sheets are deleted and not whole spreadsheet
-    for (let id = totalSheets; id < totalSheetsFromVespa; id++) {
-      await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
-      stats.removed += 1
-      stats.summary += `${spreadsheetId}_${id} sheet removed\n`
+        if (
+          totalSheets !== totalSheetsFromVespa &&
+          totalSheets < totalSheetsFromVespa
+        ) {
+          // Condition will be true, if some sheets are deleted and not whole spreadsheet
+          for (let id = totalSheets; id < totalSheetsFromVespa; id++) {
+            await DeleteDocument(`${spreadsheetId}_${id}`, fileSchema)
+            stats.removed += 1
+            stats.summary += `${spreadsheetId}_${id} sheet removed\n`
+          }
+        }
+
+        // Check for each sheetIndex, if that sheet if already there in vespa or not
+        for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
+          const id = `${spreadsheetId}_${sheetIndex}`
+          const doc = await getDocumentOrNull(fileSchema, id)
+          if (doc) {
+            stats.updated += 1
+            continue
+          } else {
+            stats.added += 1
+            continue
+          }
+        }
+      }
     }
-  }
-
-  // Check for each sheetIndex, if that sheet if already there in vespa or not
-  for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
-    const id = `${spreadsheetId}_${sheetIndex}`
-    try {
-      await GetDocument(fileSchema, id)
-      stats.updated += 1
-      continue
-    } catch (e) {
-      stats.added += 1
-      continue
-    }
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error in deleteUpdateStatsForGoogleSheets function, but continuing sync engine execution.`,
+    )
   }
 }
 
@@ -161,37 +175,44 @@ const deleteWholeSpreadsheet = async (
   // Metadata contains all sheets ids inside that specific spreadsheet
   // @ts-ignore
   const metadata = JSON.parse(docFields?.metadata)!
-  const totalSheets = metadata.totalSheets!
+  const totalSheets = metadata?.totalSheets!
   // A Google spreadsheet can have multiple sheets inside it
   // Admin can take away permissions from any of that sheets of the spreadsheet
   const spreadsheetId = docId
   // Remove all sheets inside that spreadsheet
   for (let sheetIndex = 0; sheetIndex < totalSheets; sheetIndex++) {
     const id = `${spreadsheetId}_${sheetIndex}`
-    const doc = await GetDocument(fileSchema, id)
-    const permissions = (doc.fields as VespaFile).permissions
-    if (permissions.length === 1) {
-      // remove it
-      try {
-        // also ensure that we are that permission
-        if (!(permissions[0] === email)) {
-          throw new Error(
-            "We got a change for us that we didn't have access to in Vespa",
-          )
+    try {
+      const doc = await getDocumentOrNull(fileSchema, id)
+      if (doc) {
+        const permissions = (doc.fields as VespaFile)?.permissions
+        if (permissions.length === 1) {
+          // remove it
+
+          // also ensure that we are that permission
+          if (!(permissions[0] === email)) {
+            throw new Error(
+              "We got a change for us that we didn't have access to in Vespa",
+            )
+          }
+          await DeleteDocument(id, fileSchema)
+          stats.removed += 1
+          stats.summary += `${id} sheet removed\n`
+        } else {
+          // remove our user's permission from the email
+          const newPermissions = permissions.filter((v) => v !== email)
+          await UpdateDocumentPermissions(fileSchema, id, newPermissions)
+          stats.updated += 1
+          stats.summary += `user lost permission for sheet: ${id}\n`
         }
-        await DeleteDocument(id, fileSchema)
-        stats.removed += 1
-        stats.summary += `${id} sheet removed\n`
-      } catch (e) {
-        // TODO: detect vespa 404 and only ignore for that case
-        // otherwise throw it further
+      } else {
+        Logger.error(`No spreadsheet found with id ${id} to delete`)
       }
-    } else {
-      // remove our user's permission from the email
-      const newPermissions = permissions.filter((v) => v !== email)
-      await UpdateDocumentPermissions(fileSchema, id, newPermissions)
-      stats.updated += 1
-      stats.summary += `user lost permission for sheet: ${id}\n`
+    } catch (err) {
+      Logger.error(
+        err,
+        `Error deleting spreadsheet with id ${docId}, but continuing sync engine execution.`,
+      )
     }
   }
 }
@@ -208,123 +229,152 @@ const handleGoogleDriveChange = async (
     if (docId) {
       try {
         const doc = await getDocumentOrSpreadsheet(docId)
-        // Check if its spreadsheet
-        if ((doc.fields as VespaFile).mimeType === DriveMime.Sheets) {
-          await deleteWholeSpreadsheet(
-            doc.fields as VespaFile,
-            docId,
-            stats,
-            email,
-          )
-        } else {
-          const permissions = (doc.fields as VespaFile).permissions
-          if (permissions.length === 1) {
-            // remove it
-            try {
-              // also ensure that we are that permission
-              if (!(permissions[0] === email)) {
-                throw new Error(
-                  "We got a change for us that we didn't have access to in Vespa",
-                )
-              }
-              await DeleteDocument(docId, fileSchema)
-              stats.removed += 1
-              stats.summary += `${docId} removed\n`
-            } catch (e) {
-              // TODO: detect vespa 404 and only ignore for that case
-              // otherwise throw it further
-            }
+        if (doc) {
+          // Check if its spreadsheet
+          if ((doc?.fields as VespaFile).mimeType === DriveMime.Sheets) {
+            await deleteWholeSpreadsheet(
+              doc?.fields as VespaFile,
+              docId,
+              stats,
+              email,
+            )
           } else {
-            // remove our user's permission from the email
-            const newPermissions = permissions.filter((v) => v !== email)
-            await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
-            stats.updated += 1
-            stats.summary += `user lost permission for doc: ${docId}\n`
+            const permissions = (doc?.fields as VespaFile)?.permissions
+            if (permissions.length === 1) {
+              // remove it
+              try {
+                // also ensure that we are that permission
+                if (!(permissions[0] === email)) {
+                  throw new Error(
+                    "We got a change for us that we didn't have access to in Vespa",
+                  )
+                }
+                await DeleteDocument(docId, fileSchema)
+                stats.removed += 1
+                stats.summary += `${docId} removed\n`
+              } catch (e) {
+                Logger.error(`Couldn't delete document with id ${docId}`)
+              }
+            } else {
+              // remove our user's permission from the email
+              const newPermissions = permissions.filter((v) => v !== email)
+              await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
+              stats.updated += 1
+              stats.summary += `user lost permission for doc: ${docId}\n`
+            }
           }
+        } else {
+          Logger.error(
+            `No document with docId ${docId} found to delete in Vespa`,
+          )
         }
       } catch (err) {
-        Logger.error(err, `Failed to delete document in Vespa \n ${err}`)
+        Logger.error(
+          err,
+          `Failed to delete document in Vespa \n ${err}, but continuing sync engine execution.`,
+        )
       }
     }
   } else if (docId && change.file) {
-    const file = await getFile(client, docId)
-    // we want to check if the doc already existed in vespa
-    // and we are just updating the content of it
-    // or user got access to a completely new doc
-    let doc = null
     try {
-      if (
-        file.mimeType &&
-        MimeMapForContent[file.mimeType] &&
-        file.mimeType === DriveMime.Sheets
-      ) {
-        await deleteUpdateStatsForGoogleSheets(docId, client, stats)
+      const file = await getFile(client, docId)
+      // we want to check if the doc already existed in vespa
+      // and we are just updating the content of it
+      // or user got access to a completely new doc
+      let doc = null
+      if (file) {
+        try {
+          if (
+            file.mimeType &&
+            MimeMapForContent[file.mimeType] &&
+            file.mimeType === DriveMime.Sheets
+          ) {
+            await deleteUpdateStatsForGoogleSheets(docId, client, stats)
+          } else {
+            doc = await getDocumentOrNull(fileSchema, docId)
+            if (doc) {
+              stats.updated += 1
+            } else {
+              Logger.warn(
+                `Could not get document ${docId}, probably does not exist`,
+              )
+              stats.added += 1
+            }
+          }
+
+          // for these mime types we fetch the file
+          // with the full processing
+          let vespaData
+          // TODO: make this generic
+          if (file.mimeType && MimeMapForContent[file.mimeType]) {
+            if (file.mimeType === DriveMime.PDF) {
+              vespaData = await getPDFContent(client, file, DriveEntity.PDF)
+              stats.summary += `indexed new content ${docId}\n`
+            } else if (file.mimeType === DriveMime.Sheets) {
+              vespaData = await getSheetsFromSpreadSheet(
+                client,
+                file,
+                DriveEntity.Sheets,
+              )
+              stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
+            } else if (file.mimeType === DriveMime.Slides) {
+              vespaData = await getPresentationToBeIngested(file, client)
+              if (doc) {
+                stats.summary += `updated the content for ${docId}\n`
+              } else {
+                stats.summary += `indexed new content ${docId}\n`
+              }
+            } else {
+              vespaData = await getFileContent(client, file, DriveEntity.Docs)
+              if (doc) {
+                stats.summary += `updated the content for ${docId}\n`
+              } else {
+                stats.summary += `indexed new content ${docId}\n`
+              }
+            }
+          } else {
+            if (doc) {
+              stats.summary += `updated file ${docId}\n`
+            } else {
+              stats.summary += `added new file ${docId}\n`
+            }
+            // just update it as is
+            vespaData = await driveFileToIndexed(client, file)
+          }
+          if (vespaData) {
+            // If vespaData is of array type containing multiple things
+            if (Array.isArray(vespaData)) {
+              let allData: VespaFileWithDrivePermission[] = [...vespaData].map(
+                (v) => {
+                  v.permissions = toPermissionsList(v.permissions, email)
+                  return v
+                },
+              )
+              for (const data of allData) {
+                insertDocument(data)
+              }
+            } else {
+              vespaData.permissions = toPermissionsList(
+                vespaData.permissions,
+                email,
+              )
+              insertDocument(vespaData)
+            }
+          }
+        } catch (err) {
+          Logger.error(
+            err,
+            `Couldn't add or update document with docId ${docId}, but continuing sync engine execution.`,
+          )
+        }
       } else {
-        doc = await GetDocument(fileSchema, docId)
-        stats.updated += 1
+        Logger.error(`Couldn't get file with id ${docId}`)
       }
-    } catch (e) {
-      // catch the 404 error
-      Logger.warn(
-        `Could not get document ${docId}, probably does not exist, ${e}`,
+    } catch (err) {
+      Logger.error(
+        err,
+        `Error syncing file with id ${docId}, but continuing sync engine execution.`,
       )
-      stats.added += 1
-    }
-    // for these mime types we fetch the file
-    // with the full processing
-    let vespaData
-    // TODO: make this generic
-    if (file.mimeType && MimeMapForContent[file.mimeType]) {
-      if (file.mimeType === DriveMime.PDF) {
-        vespaData = await getPDFContent(client, file, DriveEntity.PDF)
-        stats.summary += `indexed new content ${docId}\n`
-      } else if (file.mimeType === DriveMime.Sheets) {
-        vespaData = await getSheetsFromSpreadSheet(
-          client,
-          file,
-          DriveEntity.Sheets,
-        )
-        stats.summary += `added ${stats.added} sheets & updated ${stats.updated} for ${docId}\n`
-      } else if (file.mimeType === DriveMime.Slides) {
-        vespaData = await getPresentationToBeIngested(file, client)
-        if (doc) {
-          stats.summary += `updated the content for ${docId}\n`
-        } else {
-          stats.summary += `indexed new content ${docId}\n`
-        }
-      } else {
-        vespaData = await getFileContent(client, file, DriveEntity.Docs)
-        if (doc) {
-          stats.summary += `updated the content for ${docId}\n`
-        } else {
-          stats.summary += `indexed new content ${docId}\n`
-        }
-      }
-    } else {
-      if (doc) {
-        stats.summary += `updated file ${docId}\n`
-      } else {
-        stats.summary += `added new file ${docId}\n`
-      }
-      // just update it as is
-      vespaData = await driveFileToIndexed(client, file)
-    }
-    if (vespaData) {
-      // If vespaData is of array type containing multiple things
-      if (Array.isArray(vespaData)) {
-        let allData: VespaFileWithDrivePermission[] = [...vespaData].map(
-          (v) => {
-            v.permissions = toPermissionsList(v.permissions, email)
-            return v
-          },
-        )
-        for (const data of allData) {
-          insertDocument(data)
-        }
-      } else {
-        vespaData.permissions = toPermissionsList(vespaData.permissions, email)
-        insertDocument(vespaData)
-      }
     }
   } else if (change.driveId) {
     // TODO: handle this once we support multiple drives
@@ -347,6 +397,40 @@ const contactKeys = [
   "userDefined",
 ]
 
+const getDriveChanges = async (
+  driveClient: drive_v3.Drive,
+  config: GoogleChangeToken,
+): Promise<{
+  changes: drive_v3.Schema$Change[] | undefined
+  newStartPageToken: string | null | undefined
+} | null> => {
+  try {
+    const response = await retryWithBackoff(
+      () => driveClient.changes.list({ pageToken: config.driveToken }),
+      `Fetching drive changes with pageToken ${config.driveToken}`,
+    )
+    const { changes, newStartPageToken } = response.data
+    return { changes, newStartPageToken }
+  } catch (error: unknown) {
+    // Final catch: log the error details without breaking the sync job.
+    if (error instanceof GaxiosError) {
+      Logger.error(
+        `GaxiosError while fetching drive changes, but continuing sync engine execution.: status ${error.response?.status}, ` +
+          `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`,
+      )
+    } else if (error instanceof Error) {
+      Logger.error(
+        `Unexpected error while fetching drive changes, but continuing sync engine execution.: ${error.message}`,
+      )
+    } else {
+      Logger.error(
+        `An unknown error occurred while fetching drive changes, but continuing sync engine execution.`,
+      )
+    }
+    return null
+  }
+}
+
 // TODO: check early, if new change token is same as last
 // return early
 export const handleGoogleOAuthChanges = async (
@@ -366,21 +450,17 @@ export const handleGoogleOAuthChanges = async (
         syncJob.connectorId,
       )
       const user = await getUserById(db, connector.userId)
-      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
-      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
 
       const driveClient = google.drive({ version: "v3", auth: oauth2Client })
       // TODO: add pagination for all the possible changes
-      const { changes, newStartPageToken } = (
-        await retryWithBackoff(
-          () => driveClient.changes.list({ pageToken: config.driveToken }),
-          `Fetching drive changes with pageToken ${config.driveToken}`,
-        )
-      ).data
+      const driveChanges = await getDriveChanges(driveClient, config)
+      const { changes = [], newStartPageToken = "" } = driveChanges ?? {}
       // there are changes
 
       // Potential issues:
@@ -395,13 +475,20 @@ export const handleGoogleOAuthChanges = async (
       ) {
         Logger.info(`total changes:  ${changes.length}`)
         for (const change of changes) {
-          let changeStats = await handleGoogleDriveChange(
-            change,
-            oauth2Client,
-            user.email,
-          )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+          try {
+            let changeStats = await handleGoogleDriveChange(
+              change,
+              oauth2Client,
+              user.email,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          } catch (err) {
+            Logger.error(
+              err,
+              `Error syncing drive change, but continuing sync engine execution.`,
+            )
+          }
         }
       }
       const peopleService = google.people({ version: "v1", auth: oauth2Client })
@@ -409,29 +496,37 @@ export const handleGoogleOAuthChanges = async (
       let contactsToken = config.contactsToken
       let otherContactsToken = config.otherContactsToken
       do {
-        const response = await retryWithBackoff(
-          () =>
-            peopleService.people.connections.list({
-              resourceName: "people/me",
-              personFields: contactKeys.join(","),
-              syncToken: config.contactsToken,
-              requestSyncToken: true,
-              pageSize: 1000, // Adjust the page size based on your quota and needs
-              pageToken: nextPageToken, // Use the nextPageToken for pagination
-            }),
-          `Fetching contacts changes with syncToken ${config.contactsToken}`,
-        )
-        contactsToken = response.data.nextSyncToken ?? contactsToken
-        nextPageToken = response.data.nextPageToken ?? ""
-        if (response.data.connections) {
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.connections,
-            user.email,
-            GooglePeopleEntity.Contacts,
+        try {
+          const response = await retryWithBackoff(
+            () =>
+              peopleService.people.connections.list({
+                resourceName: "people/me",
+                personFields: contactKeys.join(","),
+                syncToken: config.contactsToken,
+                requestSyncToken: true,
+                pageSize: 1000, // Adjust the page size based on your quota and needs
+                pageToken: nextPageToken, // Use the nextPageToken for pagination
+              }),
+            `Fetching contacts changes with syncToken ${config.contactsToken}`,
           )
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+          contactsToken = response.data.nextSyncToken ?? contactsToken
+          nextPageToken = response.data.nextPageToken ?? ""
+          if (response.data.connections) {
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.connections,
+              user.email,
+              GooglePeopleEntity.Contacts,
+            )
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } catch (err) {
+          Logger.error(
+            err,
+            `Error syncing contacts, but continuing sync engine execution.`,
+          )
+          break
         }
       } while (nextPageToken)
 
@@ -439,30 +534,41 @@ export const handleGoogleOAuthChanges = async (
       nextPageToken = ""
 
       do {
-        const response = await retryWithBackoff(
-          () =>
-            peopleService.otherContacts.list({
-              pageSize: 1000,
-              readMask: contactKeys.join(","),
-              syncToken: otherContactsToken,
-              pageToken: nextPageToken,
-              requestSyncToken: true,
-              sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
-            }),
-          `Fetching other contacts changes with syncToken ${otherContactsToken}`,
-        )
-        otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
-        nextPageToken = response.data.nextPageToken ?? ""
-        if (response.data.otherContacts) {
-          let changeStats = await syncContacts(
-            peopleService,
-            response.data.otherContacts,
-            user.email,
-            GooglePeopleEntity.OtherContacts,
+        try {
+          const response = await retryWithBackoff(
+            () =>
+              peopleService.otherContacts.list({
+                pageSize: 1000,
+                readMask: contactKeys.join(","),
+                syncToken: otherContactsToken,
+                pageToken: nextPageToken,
+                requestSyncToken: true,
+                sources: [
+                  "READ_SOURCE_TYPE_PROFILE",
+                  "READ_SOURCE_TYPE_CONTACT",
+                ],
+              }),
+            `Fetching other contacts changes with syncToken ${otherContactsToken}`,
           )
+          otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+          nextPageToken = response.data.nextPageToken ?? ""
+          if (response.data.otherContacts) {
+            let changeStats = await syncContacts(
+              peopleService,
+              response.data.otherContacts,
+              user.email,
+              GooglePeopleEntity.OtherContacts,
+            )
 
-          stats = mergeStats(stats, changeStats)
-          changesExist = true
+            stats = mergeStats(stats, changeStats)
+            changesExist = true
+          }
+        } catch (err) {
+          Logger.error(
+            err,
+            `Error syncing other contacts, but continuing sync engine execution.`,
+          )
+          break
         }
       } while (nextPageToken)
       if (changesExist) {
@@ -512,7 +618,7 @@ export const handleGoogleOAuthChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
+        `Could not successfully complete sync for Google Drive, but continuing sync engine execution.: ${syncJob.id} due to ${errorMessage} :  ${(error as Error).stack}`,
       )
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       const newConfig = {
@@ -534,12 +640,6 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: `Could not complete sync job: ${stats.summary}`,
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: "",
-      })
     }
   }
 
@@ -553,12 +653,12 @@ export const handleGoogleOAuthChanges = async (
         syncJob.connectorId,
       )
       const user = await getUserById(db, connector.userId)
-      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: GmailChangeToken = syncJob.config as GmailChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
-      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
       const gmail = google.gmail({ version: "v1", auth: oauth2Client })
 
       let { historyId, stats, changesExist } = await handleGmailChanges(
@@ -607,7 +707,7 @@ export const handleGoogleOAuthChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete Oauth sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete Oauth sync for Gmail, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
       const newConfig = {
@@ -629,12 +729,6 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.Gmail,
-        entity: "",
-      })
     }
   }
 
@@ -652,13 +746,13 @@ export const handleGoogleOAuthChanges = async (
         db,
         syncJob.connectorId,
       )
-      const oauthTokens: GoogleTokens = connector.oauthCredentials
+      const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
       const oauth2Client = new google.auth.OAuth2()
       let config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken
       // we have guarantee that when we started this job access Token at least
       // hand one hour, we should increase this time
-      oauth2Client.setCredentials({ access_token: oauthTokens.accessToken })
+      oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
       const calendar = google.calendar({ version: "v3", auth: oauth2Client })
 
       let { eventChanges, stats, newCalendarEventsSyncToken, changesExist } =
@@ -707,7 +801,7 @@ export const handleGoogleOAuthChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete Oauth sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete Oauth sync for Google Calendar, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken
@@ -730,61 +824,62 @@ export const handleGoogleOAuthChanges = async (
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.GoogleCalendar,
-        entity: "",
-      })
     }
   }
 }
 
 const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
-  const { baseUrl, joiningUrl } = getJoiningLink(event)
-  const { attendeesInfo, attendeesEmails, attendeesNames } =
-    getAttendeesOfEvent(event.attendees ?? [])
-  const { attachmentsInfo, attachmentFilenames } = getAttachments(
-    event.attachments ?? [],
-  )
-  const { isDefaultStartTime, startTime } = getEventStartTime(event)
-  const eventToBeIngested = {
-    docId: event.id ?? "",
-    name: event.summary ?? "",
-    description: getTextFromEventDescription(event?.description ?? ""),
-    url: event.htmlLink ?? "", // eventLink, not joiningLink
-    status: event.status ?? "",
-    location: event.location ?? "",
-    createdAt: new Date(event.created!).getTime(),
-    updatedAt: new Date(event.updated!).getTime(),
-    app: Apps.GoogleCalendar,
-    entity: CalendarEntity.Event,
-    creator: {
-      email: event.creator?.email ?? "",
-      displayName: event.creator?.displayName ?? "",
-    },
-    organizer: {
-      email: event.organizer?.email ?? "",
-      displayName: event.organizer?.displayName ?? "",
-    },
-    attendees: attendeesInfo,
-    attendeesNames: attendeesNames,
-    startTime: startTime,
-    endTime: new Date(event.end?.dateTime!).getTime(),
-    attachmentFilenames,
-    attachments: attachmentsInfo,
-    recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
-    baseUrl,
-    joiningLink: joiningUrl,
-    permissions: getUniqueEmails([
-      event.organizer?.email ?? "",
-      ...attendeesEmails,
-    ]),
-    cancelledInstances: [],
-    defaultStartTime: isDefaultStartTime,
-  }
+  try {
+    const { baseUrl, joiningUrl } = getJoiningLink(event)
+    const { attendeesInfo, attendeesEmails, attendeesNames } =
+      getAttendeesOfEvent(event.attendees ?? [])
+    const { attachmentsInfo, attachmentFilenames } = getAttachments(
+      event.attachments ?? [],
+    )
+    const { isDefaultStartTime, startTime } = getEventStartTime(event)
+    const eventToBeIngested = {
+      docId: event.id ?? "",
+      name: event.summary ?? "",
+      description: getTextFromEventDescription(event?.description ?? ""),
+      url: event.htmlLink ?? "", // eventLink, not joiningLink
+      status: event.status ?? "",
+      location: event.location ?? "",
+      createdAt: new Date(event.created!).getTime(),
+      updatedAt: new Date(event.updated!).getTime(),
+      app: Apps.GoogleCalendar,
+      entity: CalendarEntity.Event,
+      creator: {
+        email: event.creator?.email ?? "",
+        displayName: event.creator?.displayName ?? "",
+      },
+      organizer: {
+        email: event.organizer?.email ?? "",
+        displayName: event.organizer?.displayName ?? "",
+      },
+      attendees: attendeesInfo,
+      attendeesNames: attendeesNames,
+      startTime: startTime,
+      endTime: new Date(event.end?.dateTime!).getTime(),
+      attachmentFilenames,
+      attachments: attachmentsInfo,
+      recurrence: event.recurrence ?? [], // Contains recurrence metadata of recurring events like RRULE, etc
+      baseUrl,
+      joiningLink: joiningUrl,
+      permissions: getUniqueEmails([
+        event.organizer?.email ?? "",
+        ...attendeesEmails,
+      ]),
+      cancelledInstances: [],
+      defaultStartTime: isDefaultStartTime,
+    }
 
-  await insert(eventToBeIngested, eventSchema)
+    await insert(eventToBeIngested, eventSchema)
+  } catch (e) {
+    Logger.error(
+      e,
+      `Error inserting Calendar event with id ${event?.id} into Vespa`,
+    )
+  }
 }
 
 const maxCalendarEventChangeResults = 2500
@@ -850,32 +945,42 @@ const handleGoogleCalendarEventsChanges = async (
               )
               // Update this event and add a instanceDateTime cancelledInstances property
               try {
-                const eventFromVespa = await GetDocument(eventSchema, eventId)
-                const oldCancelledInstances =
-                  (eventFromVespa.fields as VespaEvent).cancelledInstances ?? []
+                const eventFromVespa = await getDocumentOrNull(
+                  eventSchema,
+                  eventId,
+                )
+                if (eventFromVespa) {
+                  const oldCancelledInstances =
+                    (eventFromVespa?.fields as VespaEvent)
+                      ?.cancelledInstances ?? []
 
-                if (!oldCancelledInstances?.includes(instanceDateTime)) {
-                  // Do this only if instanceDateTime not already inside oldCancelledInstances
-                  const newCancelledInstances = [
-                    ...oldCancelledInstances,
-                    instanceDateTime,
-                  ]
+                  if (!oldCancelledInstances?.includes(instanceDateTime)) {
+                    // Do this only if instanceDateTime not already inside oldCancelledInstances
+                    const newCancelledInstances = [
+                      ...oldCancelledInstances,
+                      instanceDateTime,
+                    ]
 
-                  if (eventFromVespa) {
-                    await UpdateEventCancelledInstances(
-                      eventSchema,
-                      eventId,
-                      newCancelledInstances,
-                    )
-                    stats.updated += 1
-                    stats.summary += `updated cancelledInstances of event: ${docId}\n`
-                    changesExist = true
+                    if (eventFromVespa) {
+                      await UpdateEventCancelledInstances(
+                        eventSchema,
+                        eventId,
+                        newCancelledInstances,
+                      )
+                      stats.updated += 1
+                      stats.summary += `updated cancelledInstances of event: ${docId}\n`
+                      changesExist = true
+                    }
                   }
+                } else {
+                  Logger.error(
+                    `Can't find event to delete, probably doesn't exist`,
+                  )
                 }
               } catch (error) {
                 Logger.error(
                   error,
-                  `Can't find document to delete, probably doesn't exist`,
+                  `Error deleting Calendar event, but continuing sync engine execution.`,
                 )
               } finally {
                 continue
@@ -896,8 +1001,9 @@ const handleGoogleCalendarEventsChanges = async (
                 stats.summary += `${docId} event removed\n`
                 changesExist = true
               } catch (e) {
-                // TODO: detect vespa 404 and only ignore for that case
-                // otherwise throw it further
+                Logger.error(
+                  `Couldn't delete document with id ${docId}, but continuing sync engine execution.`,
+                )
               }
             } else {
               // remove our user's permission to change event
@@ -914,16 +1020,15 @@ const handleGoogleCalendarEventsChanges = async (
           } catch (err: any) {
             Logger.error(
               err,
-              `Error getting document: ${err.message} ${err.stack}`,
+              `Error getting document, but continuing sync engine execution: ${err.message} ${err.stack}`,
             )
-            throw err
           }
         } else if (docId) {
           let event = null
-          try {
-            event = await GetDocument(eventSchema, docId!)
-          } catch (error) {
-            Logger.error(error, `Event doesn't exist in Vepsa`)
+
+          event = await getDocumentOrNull(eventSchema, docId!)
+          if (!event) {
+            Logger.error(`Event doesn't exist in Vepsa`)
           }
 
           await insertEventIntoVespa(eventChange)
@@ -951,7 +1056,16 @@ const handleGoogleCalendarEventsChanges = async (
       changesExist,
     }
   } catch (err) {
-    throw err
+    Logger.error(
+      err,
+      `Error handling Calendar event changes, but continuing sync engine execution.`,
+    )
+    return {
+      eventChanges,
+      stats,
+      newCalendarEventsSyncToken: newSyncTokenCalendarEvents,
+      changesExist,
+    }
   }
 }
 
@@ -1034,7 +1148,7 @@ const handleGmailChanges = async (
                 // Handle errors if the message no longer exists
                 Logger.error(
                   error,
-                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to fetch added message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1042,27 +1156,33 @@ const handleGmailChanges = async (
           if (history.messagesDeleted) {
             for (const { message } of history.messagesDeleted) {
               try {
-                const mailMsg = await GetDocument(mailSchema, message?.id!)
-                const permissions = (mailMsg.fields as VespaMail).permissions
-                if (permissions.length === 1) {
-                  await DeleteDocument(message?.id!, mailSchema)
-                } else {
-                  const newPermissions = permissions.filter(
-                    (v) => v !== userEmail,
-                  )
-                  await UpdateDocumentPermissions(
-                    mailSchema,
-                    message?.id!,
-                    newPermissions,
-                  )
+                const mailMsg = await getDocumentOrNull(
+                  mailSchema,
+                  message?.id!,
+                )
+                if (mailMsg) {
+                  const permissions = (mailMsg?.fields as VespaMail)
+                    ?.permissions
+                  if (permissions?.length === 1) {
+                    await DeleteDocument(message?.id!, mailSchema)
+                  } else {
+                    const newPermissions = permissions?.filter(
+                      (v) => v !== userEmail,
+                    )
+                    await UpdateDocumentPermissions(
+                      mailSchema,
+                      message?.id!,
+                      newPermissions,
+                    )
+                  }
+                  stats.removed += 1
+                  changesExist = true
                 }
-                stats.removed += 1
-                changesExist = true
               } catch (error) {
                 // Handle errors if the document no longer exists
                 Logger.error(
                   error,
-                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to delete message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1070,16 +1190,21 @@ const handleGmailChanges = async (
           if (history.labelsAdded) {
             for (const { message, labelIds } of history.labelsAdded) {
               try {
-                const mailMsg = await GetDocument(mailSchema, message?.id!)
-                let labels = (mailMsg.fields as VespaMail).labels || []
-                labels = labels.concat(labelIds || [])
-                await UpdateDocument(mailSchema, message?.id!, { labels })
-                stats.updated += 1
-                changesExist = true
+                const mailMsg = await getDocumentOrNull(
+                  mailSchema,
+                  message?.id!,
+                )
+                if (mailMsg) {
+                  let labels = (mailMsg?.fields as VespaMail)?.labels || []
+                  labels = labels.concat(labelIds || [])
+                  await UpdateDocument(mailSchema, message?.id!, { labels })
+                  stats.updated += 1
+                  changesExist = true
+                }
               } catch (error) {
                 Logger.error(
                   error,
-                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to add labels to message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1087,18 +1212,23 @@ const handleGmailChanges = async (
           if (history.labelsRemoved) {
             for (const { message, labelIds } of history.labelsRemoved) {
               try {
-                const mailMsg = await GetDocument(mailSchema, message?.id!)
-                let labels = (mailMsg.fields as VespaMail).labels || []
-                labels = labels.filter(
-                  (label) => !(labelIds || []).includes(label),
+                const mailMsg = await getDocumentOrNull(
+                  mailSchema,
+                  message?.id!,
                 )
-                await UpdateDocument(mailSchema, message?.id!, { labels })
-                stats.updated += 1
-                changesExist = true
+                if (mailMsg) {
+                  let labels = (mailMsg?.fields as VespaMail)?.labels || []
+                  labels = labels.filter(
+                    (label) => !(labelIds || []).includes(label),
+                  )
+                  await UpdateDocument(mailSchema, message?.id!, { labels })
+                  stats.updated += 1
+                  changesExist = true
+                }
               } catch (error) {
                 Logger.error(
                   error,
-                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${error}`,
+                  `Failed to remove labels from message ${message?.id} in historyId ${history.id}: ${error}, but continuing sync engine execution.`,
                 )
               }
             }
@@ -1109,17 +1239,21 @@ const handleGmailChanges = async (
     } while (nextPageToken)
   } catch (error) {
     if (
-      (error as any).code === 404 ||
-      (error as any).message.includes("Requested entity was not found")
+      (error as any)?.code === 404 ||
+      (error as any)?.message.includes("Requested entity was not found")
     ) {
       // Log the error and return without updating the historyId
       Logger.error(
         error,
-        `Invalid historyId ${historyId}. Sync cannot proceed: ${error}`,
+        `Invalid historyId ${historyId}, but continuing sync engine execution: ${error}`,
       )
       return { stats, historyId: newHistoryId, changesExist }
     } else {
-      throw error
+      Logger.error(
+        error,
+        `Error handling Gmail changes, but continuing sync engine execution.`,
+      )
+      return { stats, historyId: newHistoryId, changesExist }
     }
   }
 
@@ -1136,31 +1270,38 @@ const syncContacts = async (
   const connections = contacts || [] // Get contacts from current page
   // check if deleted else update/add
   for (const contact of connections) {
-    // if the contact is deleted
-    if (contact.metadata?.deleted && contact.resourceName) {
-      await DeleteDocument(contact.resourceName, userSchema)
-      stats.removed += 1
-    } else {
-      // TODO: distinction between insert vs update
-      if (contact.resourceName) {
-        if (entity === GooglePeopleEntity.Contacts) {
-          // we probably don't need this get
-          const contactResp = await retryWithBackoff(
-            () =>
-              client.people.get({
-                resourceName: contact.resourceName!,
-                personFields: contactKeys.join(","),
-              }),
-            `Fetching contact with resourceName ${contact.resourceName}`,
-          )
-          await insertContact(contactResp.data, entity, email)
-        } else if (entity === GooglePeopleEntity.OtherContacts) {
-          // insert as is what we got for the changes
-          await insertContact(contact, entity, email)
+    try {
+      // if the contact is deleted
+      if (contact.metadata?.deleted && contact.resourceName) {
+        await DeleteDocument(contact.resourceName, userSchema)
+        stats.removed += 1
+      } else {
+        // TODO: distinction between insert vs update
+        if (contact.resourceName) {
+          if (entity === GooglePeopleEntity.Contacts) {
+            // we probably don't need this get
+            const contactResp = await retryWithBackoff(
+              () =>
+                client.people.get({
+                  resourceName: contact.resourceName!,
+                  personFields: contactKeys.join(","),
+                }),
+              `Fetching contact with resourceName ${contact.resourceName}`,
+            )
+            await insertContact(contactResp.data, entity, email)
+          } else if (entity === GooglePeopleEntity.OtherContacts) {
+            // insert as is what we got for the changes
+            await insertContact(contact, entity, email)
+          }
+          stats.added += 1
+          Logger.info(`Updated contact ${contact.resourceName}`)
         }
-        stats.added += 1
-        Logger.info(`Updated contact ${contact.resourceName}`)
       }
+    } catch (e) {
+      Logger.error(
+        e,
+        `Error in syncing contact, but continuing sync engine execution.`,
+      )
     }
   }
   return stats
@@ -1211,14 +1352,21 @@ export const handleGoogleServiceAccountChanges = async (
       ) {
         Logger.info(`About to Sync Drive changes:  ${changes.length}`)
         for (const change of changes) {
-          let changeStats = await handleGoogleDriveChange(
-            change,
-            jwtClient,
-            user.email,
-          )
-          stats = mergeStats(stats, changeStats)
+          try {
+            let changeStats = await handleGoogleDriveChange(
+              change,
+              jwtClient,
+              user.email,
+            )
+            stats = mergeStats(stats, changeStats)
+          } catch (err) {
+            Logger.error(
+              err,
+              `Error syncing drive change, but continuing sync engine execution.`,
+            )
+          }
+          changesExist = true
         }
-        changesExist = true
       }
       const peopleService = google.people({
         version: "v1",
@@ -1265,10 +1413,13 @@ export const handleGoogleServiceAccountChanges = async (
             "Sync token is expired. Clear local cache and retry call without the sync token."
         ) {
           Logger.warn(
-            "This is an error that is not yet implemented, it requires a full sync of the contacts api",
+            "This is an error that is not yet implemented, it requires a full sync of the contacts api, but continuing sync engine execution for now.",
           )
         } else {
-          throw error
+          Logger.error(
+            error,
+            `Error syncing contacts, but continuing sync engine execution.`,
+          )
         }
       }
       // reset
@@ -1318,10 +1469,13 @@ export const handleGoogleServiceAccountChanges = async (
             "Sync token is expired. Clear local cache and retry call without the sync token."
         ) {
           Logger.warn(
-            "This is an error that is not yet implemented, it requires a full sync of the other contacts api",
+            "This is an error that is not yet implemented, it requires a full sync of the other contacts api, but continuing sync engine execution for now.",
           )
         } else {
-          throw error
+          Logger.error(
+            error,
+            `Error syncing other contacts, but continuing sync engine execution for now.`,
+          )
         }
       }
       if (changesExist) {
@@ -1368,7 +1522,7 @@ export const handleGoogleServiceAccountChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete sync job: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete ServiceAccount sync for Google Drive, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: ChangeToken = syncJob.config as ChangeToken
       const newConfig = {
@@ -1389,12 +1543,6 @@ export const handleGoogleServiceAccountChanges = async (
         config: newConfig,
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
-      })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.GoogleDrive,
-        entity: "",
       })
     }
   }
@@ -1464,7 +1612,7 @@ export const handleGoogleServiceAccountChanges = async (
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Could not successfully complete ServiceAccount sync job for Gmail: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete ServiceAccount sync for Gmail, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
       const config: GmailChangeToken = syncJob.config as GmailChangeToken
       const newConfig = {
@@ -1485,12 +1633,6 @@ export const handleGoogleServiceAccountChanges = async (
         config: newConfig,
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
-      })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.Gmail,
-        entity: "",
       })
     }
   }
@@ -1569,15 +1711,9 @@ export const handleGoogleServiceAccountChanges = async (
 
       Logger.error(
         error,
-        `Could not successfully complete ServiceAccount sync job for Google Calendar: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
+        `Could not successfully complete ServiceAccount sync for Google Calendar, but continuing sync engine execution: ${syncJob.id} due to ${errorMessage} ${(error as Error).stack}`,
       )
 
-      if (
-        errorMessage ===
-        "Sync token is no longer valid, a full sync is required."
-      ) {
-        continue
-      }
       const config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken
       const newConfig = {
@@ -1598,12 +1734,6 @@ export const handleGoogleServiceAccountChanges = async (
         config: newConfig,
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
-      })
-      throw new SyncJobFailed({
-        message: "Could not complete sync job",
-        cause: error as Error,
-        integration: Apps.GoogleCalendar,
-        entity: "",
       })
     }
   }

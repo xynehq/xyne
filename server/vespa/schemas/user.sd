@@ -134,7 +134,8 @@ schema user {
         # we just put the email
         # for who has this contact
         field owner type string {
-            indexing: attribute | summary
+            indexing: index | attribute | summary
+            match: exact
         }
     }
     # Fuzzy matching for the 'name' field
@@ -189,21 +190,29 @@ schema user {
 
     rank-profile default {
         constants {
-            decay: 0.8
+            DECAY: 0.6
+        }
+
+        function scale(val) {
+            expression: 2*atan(val/4)/(3.14159)
+        }
+
+        function combined_bm25(){
+            expression: bm25(name) + bm25(email)
+        }
+
+        global-phase {
+            # Added decay to mitigate the disproportionate increase in BM25 scores 
+            # for shorter content with minimal matches, preventing them from 
+            # overpowering more relevant documents.
+            expression {
+               (DECAY * scale(combined_bm25))
+            }
         }
 
         match-features {
             bm25(name)
             bm25(email)
-        }
-
-        global-phase {
-            # Added slight decay to mitigate the disproportionate increase in BM25 scores 
-            # for shorter content with minimal matches, preventing them from 
-            # overpowering more relevant documents.
-            expression {
-               (decay * normalize_linear(bm25(name))) + (decay * normalize_linear(bm25(email)))
-            }
         }
     }
 

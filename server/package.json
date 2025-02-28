@@ -4,6 +4,7 @@
   "type": "module",
   "version": "0.3.0",
   "devDependencies": {
+    "@faker-js/faker": "^9.3.0",
     "@biomejs/biome": "1.9.4",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
@@ -25,14 +26,16 @@
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.721.0",
     "@aws-sdk/client-bedrock-runtime": "^3.721.0",
+    "@google/generative-ai": "^0.21.0",
     "@hono/oauth-providers": "^0.6.2",
     "@hono/zod-validator": "^0.2.2",
     "@jrmdayn/googleapis-batcher": "^0.8.0",
     "@langchain/community": "^0.3.22",
     "@langchain/core": "^0.3.27",
     "@notionhq/client": "^2.2.15",
+    "@orama/stopwords": "^3.0.6",
     "@paralleldrive/cuid2": "^2.2.2",
-    "arctic": "^1.9.2",
+    "arctic": "^3.3.0",
     "autoevals": "^0.0.119",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.33.0",
@@ -57,8 +60,8 @@
     "pino-pretty": "^13.0.0",
     "playwright": "^1.45.3",
     "postgres": "^3.4.5",
-    "uuid": "^11.0.0",
     "together-ai": "^0.13.0",
+    "uuid": "^11.0.0",
     "zod": "^3.24.1"
   }
 }
