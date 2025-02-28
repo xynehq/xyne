@@ -15,7 +15,7 @@ import {
   type ServiceAccountConnection,
   Subsystem,
 } from "@/types"
-import { boss, SaaSQueue } from "@/queue"
+import { boss, initWorkers, RemoveConnectorQueue, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
@@ -30,6 +30,7 @@ import {
   ConnectorNotCreated,
   NoUserFound,
 } from "@/errors"
+import { AbortControllerMap } from "@/integrations/google/controller"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -103,6 +104,62 @@ export const StartOAuth = async (c: Context) => {
   return c.redirect(url.toString())
 }
 
+const enqueueRemoveConnectorJob = async (
+  connectorId: string,
+): Promise<string> => {
+  const jobId = await boss.send(RemoveConnectorQueue, { connectorId })
+  if (!jobId) {
+    throw new Error(`Failed to enqueue ${RemoveConnectorQueue} job`)
+  }
+  return jobId
+}
+
+export const deleteConnectors = async (c: Context) => {
+  try {
+    // @ts-ignore
+    const req = c.req.valid("json")
+    const { connectorId } = req
+    if (!connectorId) {
+      throw new HTTPException(400, {
+        message: "connectorId is required",
+      })
+    }
+    // Enqueue the background job
+    const jobId = await enqueueRemoveConnectorJob(connectorId)
+    Logger.info(`Job ${jobId} enqueued for removing connector`)
+
+    return c.json({
+      success: true,
+      message: "Job enqueued for removing connectors",
+      jobId,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(error, "Failed to enqueue connector removal job")
+    return c.json({
+      success: false,
+      message: "Failed to enqueue job for removing connectors",
+      error: errMsg,
+    })
+  }
+}
+
+export const stopConnecting = async (c: Context) => {
+  const controller = AbortControllerMap.get(SaaSQueue)
+  if (controller) {
+    controller.abort("User Stopped Integration")
+    return c.json({
+      success: true,
+      message: "Stop Integration in progress",
+    })
+  } else {
+    return c.json({
+      success: false,
+      message: "Could not able to stop Integration",
+    })
+  }
+}
+
 export const CreateOAuthProvider = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
@@ -144,6 +201,7 @@ export const CreateOAuthProvider = async (c: Context) => {
       userId: user.id,
       workspaceExternalId: user.workspaceExternalId,
       connectorId: connector.id,
+      connectorExternalId: connector.externalId,
       app,
     })
     return c.json({
@@ -196,6 +254,7 @@ export const AddServiceConnection = async (c: Context) => {
         email: sub,
       }
       // Enqueue the background job within the same transaction
+      await initWorkers()
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
         singletonKey: connector.externalId,
         priority: 1,

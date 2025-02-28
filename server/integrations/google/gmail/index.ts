@@ -1,5 +1,5 @@
 import { chunkTextByParagraph } from "@/chunks"
-import { EmailParsingError } from "@/errors"
+import { EmailParsingError, IngestionAbortError } from "@/errors"
 import { getLogger } from "@/logger"
 import {
   Apps,
@@ -18,7 +18,7 @@ import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
 import pLimit from "p-limit"
 import { GmailConcurrency } from "@/integrations/google/config"
-import { retryWithBackoff } from "@/utils"
+import { getErrorMessage, isAbortError, retryWithBackoff } from "@/utils"
 import { StatType, updateUserStats } from "../tracking"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
@@ -28,16 +28,47 @@ import {
   parseAttachments,
 } from "@/integrations/google/worker-utils"
 
+const createAbortableFetchImplementation = (
+  fetchImpl: any,
+  abortSignal?: AbortSignal,
+) => {
+  return async (input: any, init: FetchRequestInit) => {
+    // Explicitly handle abort errors to avoid issues with gaxios.
+    // When an AbortError occurs, gaxios expects the error to be an object with a `code` property.
+    // If the error is not in the expected format, gaxios throws a confusing error:
+    // "Failed to process message: error is not an Object (evaluating 'code in error')".
+    // To prevent this, we throw a custom error object with a `code` property when the request is aborted.
+    if (abortSignal?.aborted) {
+      throw {
+        code: "ABORTED",
+        message: `The operation was aborted. - ${abortSignal?.reason}`,
+      }
+    }
+    // Pass the abort signal to the fetch implementation to ensure the request can be aborted.
+    const fetchOptions = { ...init, signal: abortSignal }
+
+    return fetchImpl(input, fetchOptions)
+  }
+}
+
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
+  signal: AbortSignal | undefined,
 ): Promise<string> => {
   const batchSize = 100
   const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
+  // batch scheduler signal
+  const abortableFetchImpl = createAbortableFetchImplementation(
+    fetchImpl,
+    signal,
+  )
+
+  // @ts-ignore
   const gmail = google.gmail({
     version: "v1",
     auth: client,
-    fetchImplementation: fetchImpl,
+    fetchImplementation: abortableFetchImpl,
   })
   let totalMails = 0
   let nextPageToken = ""
@@ -52,61 +83,88 @@ export const handleGmailIngestion = async (
     throw new Error("Could not get historyId from getProfile")
   }
 
-  do {
-    const resp = await retryWithBackoff(
-      () =>
-        gmail.users.messages.list({
-          userId: "me",
-          includeSpamTrash: false,
-          maxResults: batchSize,
-          pageToken: nextPageToken,
-          fields: "messages(id), nextPageToken",
-        }),
-      `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
-    )
-
-    nextPageToken = resp.data.nextPageToken ?? ""
-    if (resp.data.messages) {
-      let messageBatch = resp.data.messages.slice(0, batchSize)
-      let batchRequests = messageBatch.map((message) =>
-        limit(async () => {
-          let msgResp
-          try {
-            msgResp = await retryWithBackoff(
-              () =>
-                gmail.users.messages.get({
-                  userId: "me",
-                  id: message.id!,
-                  format: "full",
-                }),
-              `Fetching Gmail message (id: ${message.id})`,
-            )
-            await insert(
-              await parseMail(msgResp.data, gmail, email),
-              mailSchema,
-            )
-            updateUserStats(email, StatType.Gmail, 1)
-          } catch (error) {
-            Logger.error(
-              error,
-              `Failed to process message ${message.id}: ${(error as Error).message}`,
-            )
-          } finally {
-            // release from memory
-            msgResp = null
-          }
-        }),
+  try {
+    do {
+      const resp = await retryWithBackoff(
+        () =>
+          gmail.users.messages.list({
+            userId: "me",
+            includeSpamTrash: false,
+            maxResults: batchSize,
+            pageToken: nextPageToken,
+            fields: "messages(id), nextPageToken",
+          }),
+        `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
       )
 
-      // Process batch of messages in parallel
-      await Promise.allSettled(batchRequests)
-      totalMails += messageBatch.length
+      nextPageToken = resp.data.nextPageToken ?? ""
+      if (resp.data.messages) {
+        let messageBatch = resp.data.messages.slice(0, batchSize)
+        let batchRequests = messageBatch.map((message) =>
+          limit(async () => {
+            let msgResp
+            try {
+              msgResp = await retryWithBackoff(
+                () =>
+                  gmail.users.messages.get({
+                    userId: "me",
+                    id: message.id!,
+                    format: "full",
+                  }),
+                `Fetching Gmail message (id: ${message.id})`,
+              )
+              await insert(
+                await parseMail(msgResp.data, gmail, email, signal),
+                mailSchema,
+                signal,
+              )
+              updateUserStats(email, StatType.Gmail, 1)
+            } catch (error) {
+              Logger.error(
+                error,
+                `Failed to process message ${message.id}: ${(error as Error).message}`,
+              )
+              if (isAbortError(error)) {
+                Logger.error(
+                  error,
+                  `AbortError occurred: ${(error as Error).message} ${(error as Error).stack}`,
+                )
+                throw new IngestionAbortError({
+                  message: "AbortError: User Stopped Integration",
+                })
+              }
+            } finally {
+              // release from memory
+              msgResp = null
+            }
+          }),
+        )
 
-      // clean up explicitly
-      batchRequests = []
-      messageBatch = []
+        try {
+          // Process batch of messages in parallel
+          await Promise.allSettled(batchRequests)
+          totalMails += messageBatch.length
+        } catch (error) {
+          const errMessage = getErrorMessage(error)
+          if (isAbortError(error)) {
+            Logger.error(
+              error,
+              `AbortError occurred: ${errMessage} ${(error as Error).stack}`,
+            )
+            throw new IngestionAbortError({ message: errMessage })
+          }
+        }
+
+        // clean up explicitly
+        batchRequests = []
+        messageBatch = []
+      }
+    } while (nextPageToken)
+  } catch (error) {
+    if (error instanceof IngestionAbortError) {
+      throw error
     }
-  } while (nextPageToken)
+  }
 
   Logger.info(`Inserted ${totalMails} mails`)
   return historyId
@@ -144,6 +202,7 @@ export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   userEmail: string,
+  signal?: AbortSignal,
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
@@ -253,7 +312,7 @@ export const parseMail = async (
               permissions,
             }
 
-            await insert(attachmentDoc, mailAttachmentSchema)
+            await insert(attachmentDoc, mailAttachmentSchema, signal)
             updateUserStats(userEmail, StatType.Mail_Attachments, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
@@ -263,6 +322,16 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
+            // only throw when ingestion aborted
+            if (isAbortError(error)) {
+              Logger.error(
+                error,
+                `AbortError occurred: ${(error as Error).message} ${(error as Error).stack}`,
+              )
+              throw new IngestionAbortError({
+                message: `${(error as Error).message}`,
+              })
+            }
           }
         }
       }

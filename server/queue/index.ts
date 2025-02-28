@@ -1,6 +1,7 @@
 import {
   handleGoogleOAuthIngestion,
   handleGoogleServiceAccountIngestion,
+  disconnectConnector,
   syncGoogleWorkspace,
 } from "@/integrations/google"
 import { ConnectorType, Subsystem, type SaaSJob } from "@/types"
@@ -14,6 +15,7 @@ import {
 import { checkDownloadsFolder } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
+import { AbortControllerMap } from "@/integrations/google/controller"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -31,6 +33,7 @@ export const SyncOAuthSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.OAuth}`
 export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`
 export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`
 export const CheckDownloadsFolderQueue = `check-downloads-folder`
+export const RemoveConnectorQueue = `remove-connector`
 
 const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
@@ -46,6 +49,7 @@ export const init = async () => {
   await boss.createQueue(SyncServiceAccountSaaSQueue)
   await boss.createQueue(SyncGoogleWorkspace)
   await boss.createQueue(CheckDownloadsFolderQueue)
+  await boss.createQueue(RemoveConnectorQueue)
   await initWorkers()
 }
 
@@ -60,9 +64,44 @@ export const setupServiceAccountCronjobs = async () => {
   await boss.schedule(SyncGoogleWorkspace, Every6Hours, {}, { retryLimit: 0 })
 }
 
-const initWorkers = async () => {
+export const initSyncJobs = async () => {
+  Logger.info("initSyncWorkers")
+  await setupServiceAccountCronjobs()
+
+  // do not retry
+  await boss.schedule(SyncOAuthSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
+  await boss.schedule(
+    CheckDownloadsFolderQueue,
+    EveryWeek,
+    {},
+    { retryLimit: 0 },
+  )
+  await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
+    try {
+      await handleGoogleOAuthChanges(boss, job)
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
+      )
+    }
+  })
+  await boss.work(SyncGoogleWorkspace, async ([job]) => {
+    await syncGoogleWorkspace(boss, job)
+  })
+
+  // Any Service account related SaaS jobs
+  await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
+    // call all the service account handlers in parallel
+    await handleGoogleServiceAccountChanges(boss, job)
+  })
+}
+
+export const initWorkers = async () => {
   Logger.info("initWorkers")
   await boss.work(SaaSQueue, async ([job]) => {
+    AbortControllerMap.set(job.name, new AbortController())
     const start = new Date()
     Logger.info(`boss.work SaaSQueue Job ${job.id} started at ${start}`)
     const jobData: SaaSJob = job.data as SaaSJob
@@ -82,41 +121,12 @@ const initWorkers = async () => {
     }
   })
 
-  // do not retry
-  await boss.schedule(SyncOAuthSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
-  await boss.schedule(
-    CheckDownloadsFolderQueue,
-    EveryWeek,
-    {},
-    { retryLimit: 0 },
-  )
-
-  await setupServiceAccountCronjobs()
-
-  await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
-    try {
-      await handleGoogleOAuthChanges(boss, job)
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
-      )
-    }
-  })
-
-  // Any Service account related SaaS jobs
-  await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
-    // call all the service account handlers in parallel
-    await handleGoogleServiceAccountChanges(boss, job)
-  })
-
-  await boss.work(SyncGoogleWorkspace, async ([job]) => {
-    await syncGoogleWorkspace(boss, job)
-  })
-
   await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
     await checkDownloadsFolder(boss, job)
+  })
+
+  await boss.work(RemoveConnectorQueue, async ([job]) => {
+    await disconnectConnector(boss, job)
   })
 }
 

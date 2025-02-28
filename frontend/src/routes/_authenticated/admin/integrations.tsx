@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
 import OAuthTab from "@/components/OAuthTab"
+import { X } from "lucide-react"
+import { ConfirmModal } from "@/components/ui/confirmModal"
 
 const logger = console
 
@@ -370,6 +372,33 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
+export const handleRemoveConnectors: (connectorId: string) => Promise<any> =
+  async (connectorId) => {
+    const res = await api.admin.connector.remove.$delete({
+      json: { connectorId },
+    })
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        throw new Error("Unauthorized")
+      }
+      throw new Error("Could not remove connectors")
+    }
+    return res.json()
+  }
+
+export const handleStopConnecting: () => Promise<any> = async () => {
+  const res = await api.admin.connector.stop.$delete()
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized")
+    }
+    throw new Error("Could not remove connectors")
+  }
+  return res.json()
+}
+
 const UserStatsTable = ({
   userStats,
   type,
@@ -420,6 +449,10 @@ const ServiceAccountTab = ({
   isIntegrating,
   progress,
   refetch,
+  removeConnector,
+  disconnected,
+  stopConnector,
+  stopIntegration,
 }: {
   connectors: Connectors[]
   updateStatus: string
@@ -428,10 +461,53 @@ const ServiceAccountTab = ({
   progress: number
   userStats: any
   refetch: any
+  removeConnector: () => void
+  disconnected: { disconnecting: boolean; completed: boolean }
+  stopConnector: () => void
+  stopIntegration: {
+    inProgress: boolean
+    completed: boolean
+  }
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
   )
+
+  const getStatusMessage = () => {
+    if (stopIntegration.inProgress) {
+      return "stopping"
+    }
+    if (disconnected.disconnecting) {
+      return "disconnecting"
+    }
+
+    switch (googleSAConnector?.status) {
+      case ConnectorStatus.Connected:
+        return "Connected"
+      case ConnectorStatus.Connecting:
+        return "Connecting"
+      default:
+        return "Not-Connected"
+    }
+  }
+
+  const ActionBtn = () => {
+    if (stopIntegration.inProgress || disconnected.disconnecting) {
+      return (
+        <div>
+          <LoaderContent />
+        </div>
+      )
+    }
+
+    const handleClick =
+      googleSAConnector?.status === ConnectorStatus.Connected
+        ? removeConnector
+        : stopConnector
+
+    return <X className="cursor-pointer" onClick={handleClick} />
+  }
+
   if (!isIntegrating && !googleSAConnector) {
     return (
       <Card>
@@ -456,9 +532,10 @@ const ServiceAccountTab = ({
             <Progress value={progress} className="p-0 w-[60%]" />
           </>
         ) : (
-          <>
-            <CardDescription>Connected</CardDescription>
-          </>
+          <CardContent className="flex items-center justify-between">
+            <CardDescription>{getStatusMessage()}</CardDescription>
+            <ActionBtn />
+          </CardContent>
         )}
       </CardHeader>
     )
@@ -519,6 +596,24 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
         )
       : false,
   )
+  const [isDisConnected, setIsDisConnected] = useState({
+    disconnecting: false,
+    completed: false,
+  })
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState<{
+    open: boolean
+    title: string
+    description: string
+    onConfirm?: () => void
+  }>({
+    open: false,
+    title: "",
+    description: "",
+  })
+  const [stopIntegration, setStopIntegration] = useState({
+    inProgress: false,
+    completed: false,
+  })
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(
       data
@@ -590,6 +685,48 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }, [data, isPending])
 
+  useEffect(() => {
+    let socket: WebSocket | null = null
+    // if(isConnectorRemoveWsOpen){
+    socket = wsClient.ws.$ws({
+      query: {
+        id: "remove-connector",
+      },
+    })
+    socket?.addEventListener("open", () => {
+      logger.info("remove-connector ws open")
+    })
+    socket?.addEventListener("close", () => {
+      logger.info("remove-connector ws close")
+    })
+    socket?.addEventListener("message", async (e) => {
+      const statusJson = JSON.parse(JSON.parse(e.data).message)
+      if (statusJson["disconnect"]) {
+        const { completed } = statusJson["disconnect"]
+        if (completed) {
+          setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+        }
+        setIsDisConnected(statusJson["disconnect"])
+      } else if (statusJson["stop"]) {
+        const { isStopIngestionCompleted } = statusJson["stop"]
+        if (isStopIngestionCompleted) {
+          // refetch connectors, at first it stored empty
+          const { data } = await refetch()
+          if (data) await onDisconnectConfirm(data)
+        }
+        setStopIntegration({
+          inProgress: !isStopIngestionCompleted,
+          completed: isStopIngestionCompleted,
+        })
+      }
+    })
+    // }
+
+    return () => {
+      socket?.close()
+    }
+  }, [])
+
   const showUserStats = (
     userStats: { [email: string]: any },
     activeTab: string,
@@ -603,10 +740,45 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       (stats) => stats.type === currentAuthType,
     )
   }
+
+  const onDisconnectConfirm = async (payload = data) => {
+    if (payload && payload.length && payload[0]?.id) {
+      const res = await handleRemoveConnectors(payload[0].id)
+      if (res.success) {
+        setIsDisConnected({ disconnecting: true, completed: false })
+        setUserStats({})
+      } else {
+        toast({
+          title: "Could not remove integration",
+          variant: "destructive",
+        })
+      }
+    }
+  }
+  const onStopConfirm = async () => {
+    const res = await handleStopConnecting()
+    if (res.success) {
+      setStopIntegration({ inProgress: true, completed: false })
+    } else {
+      toast({
+        title: "Could not stop integration",
+        variant: "destructive",
+      })
+    }
+  }
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
+      <ConfirmModal
+        showModal={isConfirmationModalOpen.open}
+        setShowModal={(v) =>
+          setIsConfirmationModalOpen({ ...isConfirmationModalOpen, ...v })
+        }
+        onConfirm={isConfirmationModalOpen.onConfirm}
+        modalTitle={isConfirmationModalOpen.title}
+        modalMessage={isConfirmationModalOpen.description}
+      />
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
@@ -631,6 +803,26 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                   progress={progress}
                   userStats={userStats}
                   refetch={refetch}
+                  removeConnector={() =>
+                    setIsConfirmationModalOpen({
+                      open: true,
+                      title: "Confirm",
+                      description:
+                        "Are you sure you want to disconnect? This action will erase all your indexed data.",
+                      onConfirm: onDisconnectConfirm,
+                    })
+                  }
+                  disconnected={isDisConnected}
+                  stopIntegration={stopIntegration}
+                  stopConnector={() =>
+                    setIsConfirmationModalOpen({
+                      open: true,
+                      title: "Confirm",
+                      description:
+                        "Are you sure you want to STOP INTEGRATION? This action will erase all your ingestion progress",
+                      onConfirm: onStopConfirm,
+                    })
+                  }
                 />
               )}
             </TabsContent>
@@ -639,6 +831,26 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
+              removeConnector={() =>
+                setIsConfirmationModalOpen({
+                  open: true,
+                  title: "Confirm",
+                  description:
+                    "Are you sure you want to DISCONNECT? This action will erase all your indexed data.",
+                  onConfirm: onDisconnectConfirm,
+                })
+              }
+              disconnected={isDisConnected}
+              stopIntegration={stopIntegration}
+              stopConnector={() =>
+                setIsConfirmationModalOpen({
+                  open: true,
+                  title: "Confirm",
+                  description:
+                    "Are you sure you want to STOP INTEGRATION? This action will erase all your ingestion progress",
+                  onConfirm: onStopConfirm,
+                })
+              }
             />
           </Tabs>
           {showUserStats(userStats, activeTab) && (

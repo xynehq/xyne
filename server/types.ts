@@ -79,6 +79,10 @@ export const createOAuthProvider = z.object({
   app: z.nativeEnum(Apps),
 })
 
+export const connectorIdSchema = z.object({
+  connectorId: z.string(),
+})
+
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 // Define an enum for connection types

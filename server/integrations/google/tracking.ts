@@ -41,6 +41,11 @@ export const oAuthTracker: OAuthProgress = {
   user: "",
   userStats: {},
 }
+
+export const emptyUserStats = () => {
+  serviceAccountTracker.userStats = {}
+  oAuthTracker.userStats = {}
+}
 // Helper functions to update tracker
 const initializeUserStats = (email: string) => {
   if (!serviceAccountTracker.userStats[email]) {

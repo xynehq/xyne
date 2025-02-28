@@ -13,12 +13,20 @@ import {
   CardTitle,
 } from "./ui/card"
 import { Apps } from "shared/types"
+import { X } from "lucide-react"
 
 interface OAuthTabProps {
   isPending: boolean
   oauthIntegrationStatus: OAuthIntegrationStatus
   setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
   updateStatus: string
+  removeConnector: () => void
+  disconnected: { disconnecting: boolean; completed: boolean }
+  stopConnector: () => void
+  stopIntegration: {
+    inProgress: boolean
+    completed: boolean
+  }
 }
 
 const OAuthTab = ({
@@ -26,7 +34,44 @@ const OAuthTab = ({
   oauthIntegrationStatus,
   setOAuthIntegrationStatus,
   updateStatus,
+  removeConnector,
+  stopConnector,
+  disconnected,
+  stopIntegration,
 }: OAuthTabProps) => {
+  const getStatusMessage = () => {
+    if (stopIntegration.inProgress) {
+      return "stopping"
+    }
+    if (disconnected.disconnecting) {
+      return "disconnecting"
+    }
+    switch (oauthIntegrationStatus) {
+      case OAuthIntegrationStatus.OAuthConnected:
+        return "Connected"
+      case OAuthIntegrationStatus.OAuthConnecting:
+        return "Connecting"
+      default:
+        return "failed"
+    }
+  }
+
+  const ActionBtn = () => {
+    if (stopIntegration.inProgress || disconnected.disconnecting) {
+      return (
+        <div>
+          <LoaderContent />
+        </div>
+      )
+    }
+
+    const handleClick =
+      oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
+        ? removeConnector
+        : stopConnector
+
+    return <X className="cursor-pointer" onClick={handleClick} />
+  }
   return (
     <TabsContent value="oauth">
       {isPending ? (
@@ -56,10 +101,9 @@ const OAuthTab = ({
           <CardHeader>
             <CardTitle>Google OAuth</CardTitle>
           </CardHeader>
-          <CardContent>
-            {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
-              ? "Connected"
-              : "Connecting"}
+          <CardContent className="flex items-center justify-between">
+            {getStatusMessage()}
+            <ActionBtn />
           </CardContent>
         </Card>
       )}

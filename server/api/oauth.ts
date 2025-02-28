@@ -4,7 +4,7 @@ import { getConnector, updateConnector } from "@/db/connector"
 import { getOAuthProvider } from "@/db/oauthProvider"
 import type { SelectConnector } from "@/db/schema"
 import { OAuthCallbackError } from "@/errors"
-import { boss, SaaSQueue } from "@/queue"
+import { boss, initWorkers, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
 import { Apps, type AuthType } from "@/shared/types"
 import { type OAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
@@ -71,6 +71,7 @@ export const OAuthCallback = async (c: Context) => {
       email: sub,
     }
     // Enqueue the background job within the same transaction
+    await initWorkers()
     const jobId = await boss.send(SaaSQueue, SaasJobPayload)
 
     Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)

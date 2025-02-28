@@ -59,6 +59,8 @@ export enum ConnectorStatus {
   Failed = "failed",
   // for oauth we will default to this
   NotConnected = "not-connected",
+  // for stop while connecting
+  Stopped = "stopped",
 }
 
 export enum SyncJobStatus {

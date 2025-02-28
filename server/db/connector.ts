@@ -4,6 +4,8 @@ import {
   connectors,
   oauthProviders,
   selectConnectorSchema,
+  syncHistory,
+  syncJobs,
   type SelectConnector,
   type SelectOAuthProvider,
 } from "./schema"
@@ -112,6 +114,52 @@ export const getConnector = async (
     throw new NoConnectorsFound({
       message: `Could not get the connector with id: ${connectorId}`,
     })
+  }
+}
+
+export const deleteConnectors = async (
+  trx: TxnOrClient,
+  connectorExternalId: string,
+): Promise<void> => {
+  try {
+    await trx
+      .delete(connectors)
+      .where(eq(connectors.externalId, connectorExternalId))
+  } catch (error) {
+    throw new Error("could not delete connectors - Error:" + error)
+  }
+}
+
+export const deleteSyncJobs = async (
+  trx: TxnOrClient,
+  connectorExternalId: string,
+): Promise<void> => {
+  try {
+    await trx
+      .delete(syncJobs)
+      .where(eq(syncJobs.connectorExternalId, connectorExternalId))
+  } catch (error) {
+    throw new Error("could not delete sync_jobs - Error:" + error)
+  }
+}
+export const deleteOauthProviders = async (
+  trx: TxnOrClient,
+  connectorExternalId: string,
+): Promise<void> => {
+  try {
+    await trx
+      .delete(oauthProviders)
+      .where(eq(oauthProviders.connectorExternalId, connectorExternalId))
+  } catch (error) {
+    throw new Error("could not delete oAuth-providers - Error:" + error)
+  }
+}
+
+export const deleteSyncHistory = async (trx: TxnOrClient): Promise<void> => {
+  try {
+    await trx.delete(syncHistory)
+  } catch (error) {
+    throw new Error("could not delete sync_history - Error:" + error)
   }
 }
 
