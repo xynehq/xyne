@@ -24,7 +24,7 @@ const logger = console
 
 const UserLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
-  const { isPending, error, data } = useQuery<any[]>({
+  const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
@@ -83,8 +83,11 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
       socket?.addEventListener("open", () => {
         logger.info("open")
       })
-      socket?.addEventListener("close", () => {
+      socket?.addEventListener("close", (e) => {
         logger.info("close")
+        if (e.reason === "Job finished") {
+          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+        }
       })
       socket?.addEventListener("message", (e) => {
         const data = JSON.parse(e.data)
@@ -95,6 +98,12 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
       socket?.close()
     }
   }, [data, isPending])
+
+  useEffect(() => {
+    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting) {
+      refetch()
+    }
+  }, [oauthIntegrationStatus, refetch])
 
   if (error) return "An error has occurred: " + error.message
   return (
