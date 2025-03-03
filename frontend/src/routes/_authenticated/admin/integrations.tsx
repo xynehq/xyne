@@ -593,8 +593,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }, [data, isPending])
 
-  // TODO Also check if it goes from Connecting to Connected and also how it handles the OAuth Toast Err
-
   useEffect(() => {
     if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting) {
       refetch()
