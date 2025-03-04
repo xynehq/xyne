@@ -663,6 +663,7 @@ export const handleGoogleOAuthIngestion = async (
       })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
+      wsConnections.get(connector.externalId)?.close(1000, "Job finished")
     })
   } catch (error) {
     Logger.error(

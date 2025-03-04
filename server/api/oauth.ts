@@ -6,7 +6,7 @@ import type { SelectConnector } from "@/db/schema"
 import { OAuthCallbackError } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
-import { Apps, type AuthType } from "@/shared/types"
+import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
 import { type OAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
 import { Google } from "arctic"
 import type { Context } from "hono"
@@ -62,6 +62,7 @@ export const OAuthCallback = async (c: Context) => {
     const connector: SelectConnector = await updateConnector(db, connectorId, {
       subject: email,
       oauthCredentials: JSON.stringify(oauthTokens),
+      status: ConnectorStatus.Connecting,
     })
     const SaasJobPayload: SaaSOAuthJob = {
       connectorId: connector.id,
