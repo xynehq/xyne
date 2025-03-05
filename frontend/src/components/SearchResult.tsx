@@ -5,7 +5,10 @@ import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
 export const SearchResult = ({
   result,
   index,
-}: { result: SearchResultDiscriminatedUnion; index: number }) => {
+}: {
+  result: SearchResultDiscriminatedUnion
+  index: number
+}) => {
   let content = <></>
   let commonClassVals = "pr-[60px]"
   if (result.type === "file") {
@@ -41,9 +44,9 @@ export const SearchResult = ({
         </div>
         {result.chunks_summary &&
           result.chunks_summary?.length &&
-          result.chunks_summary
-            .slice(0, 1)
-            .map((summary) => <HighlightedText chunk_summary={summary} />)}
+          result.chunks_summary.map((summary, idx) => (
+            <HighlightedText key={idx} chunk_summary={summary} />
+          ))}
       </div>
     )
   } else if (result.type === "user") {
@@ -89,9 +92,9 @@ export const SearchResult = ({
         </div>
         {result.chunks_summary &&
           result.chunks_summary?.length &&
-          result.chunks_summary
-            .slice(0, 1)
-            .map((summary) => <HighlightedText chunk_summary={summary} />)}
+          result.chunks_summary.map((summary, idx) => (
+            <HighlightedText key={idx} chunk_summary={summary} />
+          ))}
       </div>
     )
   } else if (result.type === "event") {
@@ -114,8 +117,12 @@ export const SearchResult = ({
             {result.name}
           </a>
         </div>
-        <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden ml-[44px]">
-          {result.description ?? ""}
+        <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden">
+          {result.chunks_summary &&
+            !!result.chunks_summary.length &&
+            result.chunks_summary.map((summary, idx) => (
+              <HighlightedText chunk_summary={summary} key={idx} />
+            ))}
         </p>
       </div>
     )
@@ -135,9 +142,9 @@ export const SearchResult = ({
         </div>
         {result.chunks_summary &&
           result.chunks_summary?.length &&
-          result.chunks_summary
-            .slice(0, 1)
-            .map((summary) => <HighlightedText chunk_summary={summary} />)}
+          result.chunks_summary.map((summary, idx) => (
+            <HighlightedText key={idx} chunk_summary={summary} />
+          ))}
       </div>
     )
   }
