@@ -424,7 +424,6 @@ export const searchVespa = async (
     notInMailLabels,
   )
 
-  console.log(query, yql)
   const hybridDefaultPayload = {
     yql,
     q: query, // Original user input query

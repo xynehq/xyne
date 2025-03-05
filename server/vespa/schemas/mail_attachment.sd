@@ -101,7 +101,6 @@ schema mail_attachment {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
-      query(bm25ChunkWeight) double 
     }
 
     constants {
@@ -146,7 +145,7 @@ schema mail_attachment {
     }
 
     function combined_bm25() {
-      expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_filename
+      expression: scaled_bm25_chunks + scaled_bm25_filename
     }
 
     first-phase {
@@ -157,8 +156,8 @@ schema mail_attachment {
       expression {
         (
           (query(alpha) * scale(vector_score)) +
-          ((1 - query(alpha)) * max(scaled_bm25_filename,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
-        ) * doc_recency
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
       }
       rerank-count: 1000
     }
@@ -170,7 +169,6 @@ schema mail_attachment {
       scaled_bm25_filename
       doc_recency
       query(alpha)
-      query(bm25ChunkWeight)
     }
   }
 
