@@ -195,6 +195,8 @@ schema event {
             expression: scale(bm25(description))
         }
 
+        # Adjusting the ranking by reducing the weight of vector_score and metadata fields in BM25,  
+        # while giving higher importance to BM25 scores for 'name' and 'url'
         function combined_bm25() {
             expression {
                 scale(bm25(name) + bm25(url) + bm25(description)) +
@@ -202,18 +204,18 @@ schema event {
             }
         }
 
-        # Adjusting the ranking by reducing the weight of vector_score and metadata fields in BM25,  
-        # while giving higher importance to BM25 scores for 'name' and 'url'
+        # Have to slightly reduce the weightage for bm25
+        # just reducing 25% weightage to ensure it is balanced across schemas
         first-phase {
-            expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+            expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * (0.75 * scale(combined_bm25)))
         }
 
         global-phase {
             expression {
               (
                 (query(alpha) * scale(vector_score)) +
-                ((1 - query(alpha)) * max(scale(bm25(name)),scale(bm25(description)))) 
-              ) * doc_recency
+                ((1 - query(alpha)) * ((0.75 * scale(combined_bm25)))) 
+              )
             }
             rerank-count: 1000
         }

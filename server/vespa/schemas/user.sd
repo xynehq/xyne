@@ -6,13 +6,18 @@ schema user {
         }
         field name type string {
             indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
         }
 
         # primary email
         field email type string {
             indexing: index | attribute | summary
+            index {
+                enable-bm25
+            }
         }
-
         field app type string {
             indexing: attribute | summary
             attribute: fast-search
@@ -188,23 +193,19 @@ schema user {
             expression: 2*atan(val/4)/(3.14159)
         }
 
-        function combined_nativeRank(){
-            expression: nativeRank(name) + nativeRank(email)
+        function combined_bm25(){
+            expression: bm25(name) + bm25(email)
         }
 
         global-phase {
             # bm25 gives a very high score as this has less text to match
             # compared to other schemas
-            expression {
-               scale(combined_nativeRank + (bm25(email)/2 + bm25(name))/2)
-            }
+            expression: (scale(combined_bm25) / 4)
         }
 
         match-features {
-            nativeRank(name)
-            nativeRank(email)
-            bm25(email)
             bm25(name)
+            bm25(email)
         }
     }
 
