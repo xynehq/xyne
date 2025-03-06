@@ -691,7 +691,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
        - If not ambiguous, leave the query as is.
 
-    2. Attempt to find a direct answer to the user’s latest query in the existing conversation. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
+    2. Attempt to find a direct answer to the user’s latest query in the existing conversation, only if the query is conversational. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
 
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
 
@@ -707,6 +707,8 @@ export const searchQueryPrompt = (userContext: string): string => {
     5. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
 
     6. If user makes a statement leading to a regular conversation then you can put response in answer
+
+    7. For factual queries, always use RAG, even if there has been similar questions before.
 
     Make sure you always comply with these steps and only produce the JSON output described.
   `
@@ -728,7 +730,7 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
        - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
        - If not ambiguous, leave the query as is.
 
-    3. Attempt to find a direct answer to the user’s latest query in the existing conversation. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
+    3.  2. Attempt to find a direct answer to the user’s latest query in the existing conversation, only if the query is conversational. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
 
     4. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
 
@@ -744,8 +746,9 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
 
     7. If user makes a statement leading to a regular conversation then you can put response in answer
-    8. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
-    9. You do not think on this stage for long, this is a decision node, you keep it minimal
+    8. For factual queries, always use RAG, even if there has been similar questions before.
+    9. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
+    10. You do not think on this stage for long, this is a decision node, you keep it minimal
 
     Make sure you always comply with these steps and only produce the JSON output described.
     </answer>
