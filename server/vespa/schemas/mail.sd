@@ -134,7 +134,6 @@ schema mail {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
-      query(bm25ChunkWeight) double 
     }
 
     function chunk_vector_score() {
@@ -212,7 +211,7 @@ schema mail {
       }
 
       function combined_bm25() {
-        expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_subject
+        expression: scaled_bm25_chunks + scaled_bm25_subject
       }
 
       first-phase {
@@ -223,8 +222,8 @@ schema mail {
         expression {
           (
             (query(alpha) * scale(vector_score)) +
-            ((1 - query(alpha)) * max(scaled_bm25_subject,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
-          ) * doc_recency
+            ((1 - query(alpha)) * scale(combined_bm25))
+          )
         }
         rerank-count: 1000
       }

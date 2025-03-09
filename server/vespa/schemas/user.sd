@@ -189,10 +189,6 @@ schema user {
     }
 
     rank-profile default {
-        constants {
-            DECAY: 0.6
-        }
-
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
         }
@@ -202,12 +198,9 @@ schema user {
         }
 
         global-phase {
-            # Added decay to mitigate the disproportionate increase in BM25 scores 
-            # for shorter content with minimal matches, preventing them from 
-            # overpowering more relevant documents.
-            expression {
-               (DECAY * scale(combined_bm25))
-            }
+            # bm25 gives a very high score as this has less text to match
+            # compared to other schemas
+            expression: (scale(combined_bm25) / 4)
         }
 
         match-features {
