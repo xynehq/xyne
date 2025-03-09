@@ -180,6 +180,7 @@ export const handleGmailIngestion = async (
       // clean up explicitly
       batchRequests = []
       messageBatch = []
+      attachmentCount = 0
     }
     // clean up explicitly
   } while (nextPageToken)
