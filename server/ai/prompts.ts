@@ -730,7 +730,7 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
        - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
        - If not ambiguous, leave the query as is.
 
-    3.  2. Attempt to find a direct answer to the user’s latest query in the existing conversation, only if the query is conversational. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
+    3.Attempt to find a direct answer to the user’s latest query in the existing conversation, only if the query is conversational. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
 
     4. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
 
