@@ -70,13 +70,6 @@ schema mail_attachment {
     }
   }
 
-  field filename_embeddings type tensor<bfloat16>(v[DIMS])  {
-    indexing: input filename | embed | attribute | index
-    attribute {
-        distance-metric: angular
-    }
-  }
-
   # filename
   field name_fuzzy type string {
     indexing: input filename | index
@@ -123,17 +116,8 @@ schema mail_attachment {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
 
-    function chunk_vector_score() {
-      expression: closeness(field, chunk_embeddings)
-    }
-
-    function filename_vector_score() {
-      expression: closeness(field, filename_embeddings)
-    }
-
     function vector_score() {
-      # taking whichever has a good matching
-      expression: max(chunk_vector_score,filename_vector_score)
+      expression: closeness(field, chunk_embeddings)
     }
 
     function scaled_bm25_chunks() {
@@ -163,8 +147,7 @@ schema mail_attachment {
     }
 
     match-features {
-      chunk_vector_score
-      filename_vector_score
+      vector_score
       scaled_bm25_chunks
       scaled_bm25_filename
       doc_recency

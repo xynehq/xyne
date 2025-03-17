@@ -103,13 +103,6 @@ schema mail {
     }
   }
 
-  field subject_embeddings type tensor<bfloat16>(v[DIMS])  {
-    indexing: input subject | embed | attribute | index
-    attribute {
-        distance-metric: angular
-    }
-  }
-
   field subject_fuzzy type string {
     indexing: input subject | index
     index {
@@ -189,17 +182,9 @@ schema mail {
       function doc_recency() {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
       }
-
-      function subject_vector_score() {
-        expression: closeness(field, subject_embeddings)
-      }
       
-      function chunk_vector_score() {
-        expression: closeness(field, chunk_embeddings)
-      }
-
       function vector_score() {
-        expression: max(chunk_vector_score,subject_vector_score)
+        expression: closeness(field, chunk_embeddings)
       }
 
       function scaled_bm25_chunks() {
@@ -229,8 +214,7 @@ schema mail {
       }
 
     match-features {
-      chunk_vector_score
-      subject_vector_score
+      vector_score
       scaled_bm25_chunks
       scaled_bm25_subject
       doc_recency
