@@ -76,12 +76,6 @@ schema file {
     }
   }
   
-  field title_embeddings type tensor<bfloat16>(v[DIMS])  {
-    indexing: input title | embed | attribute | index
-    attribute {
-        distance-metric: angular
-    }
-  }
 
   field title_fuzzy type string {
     indexing: input title | index
@@ -165,12 +159,8 @@ schema file {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
 
-    function chunk_vector_score() {
+    function vector_score() {
       expression: closeness(field, chunk_embeddings)
-    }
-
-    function title_vector_score() {
-      expression: closeness(field, title_embeddings)
     }
 
     function scaled_bm25_chunks() {
@@ -179,11 +169,6 @@ schema file {
 
     function scaled_bm25_title() {
       expression: scale(bm25(title))
-    }
-
-    function vector_score() {
-      # taking whichever has a good matching
-      expression: max(chunk_vector_score,title_vector_score)
     }
 
     function combined_bm25() {
@@ -206,8 +191,7 @@ schema file {
     }
 
     match-features {
-      chunk_vector_score
-      title_vector_score
+      vector_score
       scaled_bm25_chunks
       scaled_bm25_title
       doc_recency
