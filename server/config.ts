@@ -5,6 +5,7 @@ let postgresBaseHost = "0.0.0.0"
 let port = 3000
 let host = "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
+let prettifyLogs = false
 let postOauthRedirect = "/"
 if (process.env.NODE_ENV === "production") {
   postgresBaseHost = process.env.DATABASE_HOST!
@@ -18,6 +19,12 @@ if (process.env.NODE_ENV === "production") {
 if (process.env.NODE_ENV !== "production") {
   postOauthRedirect = "http://localhost:5173/"
 }
+
+// Prettify Logs option
+if (process.env["PRETTIFY_LOGS"]=== "true") {
+  prettifyLogs = true
+}
+
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
 let AwsAccessKey = ""
@@ -126,4 +133,5 @@ export default {
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
+  prettifyLogs
 }
