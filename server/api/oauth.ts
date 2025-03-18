@@ -16,6 +16,8 @@ const { JwtPayloadKey } = config
 
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
 
+const JOB_EXPIRY_HOURS = 23
+
 interface OAuthCallbackQuery {
   state: string
   code: string
@@ -73,7 +75,7 @@ export const OAuthCallback = async (c: Context) => {
     }
     // Enqueue the background job within the same transaction
     const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-      expireInHours: 23,
+      expireInHours: JOB_EXPIRY_HOURS,
     })
 
     Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
