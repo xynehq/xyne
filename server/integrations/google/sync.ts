@@ -112,7 +112,7 @@ const deleteUpdateStatsForGoogleSheets = async (
   const spreadsheetId = docId
   const sheets = google.sheets({ version: "v4", auth: client })
   try {
-    const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!)
+    const spreadsheet = await getSpreadsheet(sheets, spreadsheetId!, client)
     if (spreadsheet) {
       const totalSheets = spreadsheet?.data?.sheets?.length!
 
@@ -400,6 +400,7 @@ const contactKeys = [
 const getDriveChanges = async (
   driveClient: drive_v3.Drive,
   config: GoogleChangeToken,
+  oauth2Client: GoogleClient,
 ): Promise<{
   changes: drive_v3.Schema$Change[] | undefined
   newStartPageToken: string | null | undefined
@@ -408,6 +409,8 @@ const getDriveChanges = async (
     const response = await retryWithBackoff(
       () => driveClient.changes.list({ pageToken: config.driveToken }),
       `Fetching drive changes with pageToken ${config.driveToken}`,
+      0,
+      oauth2Client,
     )
     const { changes, newStartPageToken } = response.data
     return { changes, newStartPageToken }
@@ -459,7 +462,11 @@ export const handleGoogleOAuthChanges = async (
 
       const driveClient = google.drive({ version: "v3", auth: oauth2Client })
       // TODO: add pagination for all the possible changes
-      const driveChanges = await getDriveChanges(driveClient, config)
+      const driveChanges = await getDriveChanges(
+        driveClient,
+        config,
+        oauth2Client,
+      )
       const { changes = [], newStartPageToken = "" } = driveChanges ?? {}
       // there are changes
 
@@ -508,6 +515,8 @@ export const handleGoogleOAuthChanges = async (
                 pageToken: nextPageToken, // Use the nextPageToken for pagination
               }),
             `Fetching contacts changes with syncToken ${config.contactsToken}`,
+            0,
+            oauth2Client,
           )
           contactsToken = response.data.nextSyncToken ?? contactsToken
           nextPageToken = response.data.nextPageToken ?? ""
@@ -517,6 +526,7 @@ export const handleGoogleOAuthChanges = async (
               response.data.connections,
               user.email,
               GooglePeopleEntity.Contacts,
+              oauth2Client,
             )
             stats = mergeStats(stats, changeStats)
             changesExist = true
@@ -549,6 +559,8 @@ export const handleGoogleOAuthChanges = async (
                 ],
               }),
             `Fetching other contacts changes with syncToken ${otherContactsToken}`,
+            0,
+            oauth2Client,
           )
           otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
           nextPageToken = response.data.nextPageToken ?? ""
@@ -666,6 +678,7 @@ export const handleGoogleOAuthChanges = async (
         config.historyId,
         syncJob.id,
         syncJob.email,
+        oauth2Client,
       )
 
       if (changesExist) {
@@ -760,6 +773,7 @@ export const handleGoogleOAuthChanges = async (
           calendar,
           config.calendarEventsToken,
           syncJob.email,
+          oauth2Client,
         )
 
       if (changesExist) {
@@ -888,6 +902,7 @@ const handleGoogleCalendarEventsChanges = async (
   calendar: calendar_v3.Calendar,
   syncToken: string,
   userEmail: string,
+  oauth2Client?: GoogleClient,
 ) => {
   let changesExist = false
   const stats = newStats()
@@ -909,6 +924,8 @@ const handleGoogleCalendarEventsChanges = async (
             fields: eventFields,
           }),
         `Fetching calendar events changes with syncToken ${syncToken}`,
+        0,
+        oauth2Client,
       )
 
       newSyncTokenCalendarEvents = res.data.nextSyncToken ?? syncToken
@@ -1086,6 +1103,7 @@ const handleGmailChanges = async (
   historyId: string,
   syncJobId: number,
   userEmail: string,
+  client?: GoogleClient,
 ): Promise<{
   historyId: string
   stats: ChangeStats
@@ -1107,6 +1125,8 @@ const handleGmailChanges = async (
             pageToken: nextPageToken,
           }),
         `Fetching gmail changes with historyId ${historyId}`,
+        0,
+        client,
       )
       newHistoryId = res.data.historyId ?? historyId
 
@@ -1136,10 +1156,12 @@ const handleGmailChanges = async (
                       format: "full",
                     }),
                   `Fetching gmail email with id ${message?.id}`,
+                  0,
+                  client,
                 )
 
                 await insert(
-                  await parseMail(msgResp.data, gmail, userEmail),
+                  await parseMail(msgResp.data, gmail, userEmail, client!),
                   mailSchema,
                 )
                 stats.added += 1
@@ -1265,6 +1287,7 @@ const syncContacts = async (
   contacts: people_v1.Schema$Person[],
   email: string,
   entity: GooglePeopleEntity,
+  oauth2Client?: GoogleClient,
 ): Promise<ChangeStats> => {
   const stats = newStats()
   const connections = contacts || [] // Get contacts from current page
@@ -1287,6 +1310,8 @@ const syncContacts = async (
                   personFields: contactKeys.join(","),
                 }),
               `Fetching contact with resourceName ${contact.resourceName}`,
+              0,
+              oauth2Client,
             )
             await insertContact(contactResp.data, entity, email)
           } else if (entity === GooglePeopleEntity.OtherContacts) {

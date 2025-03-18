@@ -46,6 +46,8 @@ export const handleGmailIngestion = async (
   const profile = await retryWithBackoff(
     () => gmail.users.getProfile({ userId: "me" }),
     "Fetching Gmail user profile",
+    0,
+    client,
   )
   const historyId = profile.data.historyId!
   if (!historyId) {
@@ -63,6 +65,8 @@ export const handleGmailIngestion = async (
           fields: "messages(id), nextPageToken",
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
+      0,
+      client,
     )
 
     nextPageToken = resp.data.nextPageToken ?? ""
@@ -80,9 +84,11 @@ export const handleGmailIngestion = async (
                   format: "full",
                 }),
               `Fetching Gmail message (id: ${message.id})`,
+              0,
+              client,
             )
             await insert(
-              await parseMail(msgResp.data, gmail, email),
+              await parseMail(msgResp.data, gmail, email, client),
               mailSchema,
             )
             updateUserStats(email, StatType.Gmail, 1)
@@ -144,6 +150,7 @@ export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   userEmail: string,
+  client: GoogleClient,
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
@@ -230,12 +237,16 @@ export const parseMail = async (
         ) {
           try {
             const { attachmentId, size } = body
-            const attachmentChunks = await getGmailAttachmentChunks(gmail, {
-              attachmentId: attachmentId,
-              filename: filename,
-              size: size ? size : 0,
-              messageId: messageId,
-            })
+            const attachmentChunks = await getGmailAttachmentChunks(
+              gmail,
+              {
+                attachmentId: attachmentId,
+                filename: filename,
+                size: size ? size : 0,
+                messageId: messageId,
+              },
+              client,
+            )
             if (!attachmentChunks) continue
 
             const attachmentDoc: MailAttachment = {

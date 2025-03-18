@@ -1,4 +1,4 @@
-import { Subsystem } from "@/types"
+import { Subsystem, type GoogleClient } from "@/types"
 import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { gmail_v1 } from "googleapis"
@@ -44,6 +44,7 @@ export const getGmailAttachmentChunks = async (
     filename: string
     size: number
   },
+  client: GoogleClient,
 ): Promise<string[] | null> => {
   const { attachmentId, filename, messageId, size } = attachmentMetadata
   let attachmentChunks: string[] = []
@@ -68,6 +69,8 @@ export const getGmailAttachmentChunks = async (
           userId: "me",
         }),
       "Fetching Gmail Attachments",
+      0,
+      client,
     )
 
     await saveGmailAttachment(

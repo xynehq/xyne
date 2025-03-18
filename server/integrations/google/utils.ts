@@ -101,6 +101,8 @@ export const getFile = async (
           fields,
         }),
       `Getting file with fileId ${fileId}`,
+      0,
+      client
     )
 
     return file?.data
@@ -136,6 +138,8 @@ export const getFileContent = async (
             documentId: file.id as string,
           }),
         `Getting document with documentId ${file.id}`,
+        0,
+        client
       )
     const documentContent: docs_v1.Schema$Document = docResponse.data
     const rawTextContent = documentContent?.body?.content
@@ -198,7 +202,7 @@ export const getPDFContent = async (
     return
   }
   try {
-    await downloadPDF(drive, pdfFile.id!, pdfFile.name!)
+    await downloadPDF(drive, pdfFile.id!, pdfFile.name!, client)
     const pdfPath = `${downloadDir}/${pdfFile?.name}`
     let docs: Document[] = []
 
