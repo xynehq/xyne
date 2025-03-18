@@ -25,22 +25,12 @@ const time = (start: number) => {
 
 export const getLogger = (loggerType: Subsystem) => {
 
-  if(prettifyLogs === true) {
     if (process.env.NODE_ENV === "production") {
       return pino({
-        name: `${loggerType}`,
-        transport: {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            colorizeObjects: true,
-            errorLikeObjectKeys: [
-              "err",
-              "error",
-              "error_stack",
-              "stack",
-              "apiErrorHandlerCallStack",
-            ],
+        name: loggerType,
+        formatters: {
+          level(label) {
+            return { level: label }
           },
         },
       })
@@ -64,29 +54,64 @@ export const getLogger = (loggerType: Subsystem) => {
         },
       })
     }
-  }else { 
-    return pino({
-    name: loggerType,
-    formatters: {
-      level(label) {
-        return { level: label }
-      },
-    },
-  })
-  }
 }
 
 export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
   const logger = getLogger(loggerType)
 
-  if (prettifyLogs === true) {
-    return async (c: Context, next: Next, optionalMessage?: object) => {
+  if (process.env.NODE_ENV === "production") {
+    return async (c: Context, next: Next) => {
       const requestId = uuidv4()
       const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
       c.set("requestId", c_reqId)
       const { method } = c.req
       const path = getPath(c.req.raw)
   
+      logger.info({
+        requestId,
+        method,
+        path,
+        query: c.req.query("query") || c.req.query("prompt") || null,
+        message: "Incoming request",
+      })
+  
+      const start = Date.now()
+      await next()
+      const elapsed = time(start)
+      const { status } = c.res
+  
+      if (status >= 400) {
+        logger.error({
+          requestId,
+          status,
+          error: c.res.body,
+          elapsed,
+          message: "Request error",
+        })
+      } else if (status === 302) {
+        logger.info({
+          requestId,
+          status,
+          elapsed,
+          message: "Request redirected",
+        })
+      } else {
+        logger.info({
+          requestId,
+          status,
+          elapsed,
+          message: "Request completed",
+        })
+      }
+    }
+  }else {
+    return async (c: Context, next: Next, optionalMessage?: object) => {
+      const requestId = uuidv4()
+      const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
+      c.set("requestId", c_reqId)
+      const { method } = c.req
+      const path = getPath(c.req.raw)
+    
       logger.info(
         {
           requestId: c_reqId,
@@ -100,13 +125,13 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
         },
         "Incoming request",
       )
-  
+    
       const start = Date.now()
-  
+    
       await next()
-  
+    
       const { status } = c.res
-  
+    
       const elapsed: string = time(start)
       if (c.res.ok) {
         logger.info(
@@ -156,50 +181,8 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
         )
       }
     }
-  }else {
-    return async (c: Context, next: Next) => {
-      const requestId = uuidv4()
-      const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
-      c.set("requestId", c_reqId)
-      const { method } = c.req
-      const path = getPath(c.req.raw)
-  
-      logger.info({
-        requestId,
-        method,
-        path,
-        query: c.req.query("query") || c.req.query("prompt") || null,
-        message: "Incoming request",
-      })
-  
-      const start = Date.now()
-      await next()
-      const elapsed = time(start)
-      const { status } = c.res
-  
-      if (status >= 400) {
-        logger.error({
-          requestId,
-          status,
-          error: c.res.body,
-          elapsed,
-          message: "Request error",
-        })
-      } else if (status === 302) {
-        logger.info({
-          requestId,
-          status,
-          elapsed,
-          message: "Request redirected",
-        })
-      } else {
-        logger.info({
-          requestId,
-          status,
-          elapsed,
-          message: "Request completed",
-        })
-      }
-    }
   }
 }
+
+
+
