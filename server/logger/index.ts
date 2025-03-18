@@ -3,9 +3,8 @@ import { Subsystem } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
-import config from "@/config"
 
-const prettifyLogs = config.prettifyLogs;
+
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
 
