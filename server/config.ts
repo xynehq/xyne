@@ -125,5 +125,5 @@ export default {
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
-  EndThinkingToken,
+  EndThinkingToken
 }

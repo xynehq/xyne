@@ -4,6 +4,7 @@ import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
 
+
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
 
@@ -22,123 +23,69 @@ const time = (start: number) => {
 }
 
 export const getLogger = (loggerType: Subsystem) => {
-  if (process.env.NODE_ENV === "production") {
-    return pino({
-      name: `${loggerType}`,
-      transport: {
-        target: "pino-pretty",
-        options: {
-          colorize: true,
-          colorizeObjects: true,
-          errorLikeObjectKeys: [
-            "err",
-            "error",
-            "error_stack",
-            "stack",
-            "apiErrorHandlerCallStack",
-          ],
-        },
-      },
-    })
+  const isProduction = process.env.NODE_ENV === "production";
+
+  return pino({
+    name: loggerType,
+    ...(isProduction
+      ? { formatters: { level: (label) => ({ level: label }) } }
+      : {
+          transport: {
+            target: "pino-pretty",
+            options: {
+              colorize: true,
+              colorizeObjects: true,
+              errorLikeObjectKeys: ["err", "error", "error_stack", "stack", "apiErrorHandlerCallStack"],
+              ignore: "pid,hostname",
+            },
+          },
+        }),
+  });
+};
+
+const logRequest = (logger: Logger, c: Context, requestId: any, start: number, status: number) => {
+  const elapsed = time(start);
+  const isError = status >= 400;
+  const isRedirect = status === 302;
+
+  const logData = {
+    requestId,
+    status,
+    elapsed,
+    ...(isError ? { error: c.res.body } : {}),
+  };
+
+  if (isError) {
+    logger.error(logData, "Request error");
+  } else if (isRedirect) {
+    logger.info(logData, "Request redirected");
   } else {
-    return pino({
-      name: `${loggerType}`,
-      transport: {
-        target: "pino-pretty",
-        options: {
-          colorize: true,
-          colorizeObjects: true,
-          errorLikeObjectKeys: [
-            "err",
-            "error",
-            "error_stack",
-            "stack",
-            "apiErrorHandlerCallStack",
-          ],
-          ignore: "pid,hostname",
-        },
-      },
-    })
+    logger.info(logData, "Request completed");
   }
-}
+};
 
 export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
-  const logger = getLogger(loggerType)
+  const logger = getLogger(loggerType);
 
-  return async (c: Context, next: Next, optionalMessage?: object) => {
-    const requestId = uuidv4()
-    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
-    c.set("requestId", c_reqId)
-    const { method } = c.req
-    const path = getPath(c.req.raw)
+  return async (c: Context, next: Next) => {
+    const requestId = uuidv4();
+    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId;
+    c.set("requestId", c_reqId);
 
-    logger.info(
-      {
-        requestId: c_reqId,
-        request: {
-          method,
-          path,
-        },
-        query: c.req.query("query")
-          ? c.req.query("query")
-          : c.req.query("prompt"),
-      },
-      "Incoming request",
-    )
+    const { method } = c.req;
+    const path = getPath(c.req.raw);
 
-    const start = Date.now()
+    logger.info({
+      requestId: c_reqId,
+      method,
+      path,
+      query: c.req.query("query") || c.req.query("prompt") || null,
+      message: "Incoming request",
+    });
 
-    await next()
+    const start = Date.now();
+    await next();
 
-    const { status } = c.res
-
-    const elapsed: string = time(start)
-    if (c.res.ok) {
-      logger.info(
-        {
-          requestId: "requestId" in c.req ? c.req.requestId : c_reqId,
-          response: {
-            status,
-            ok: String(c.res.ok),
-            elapsed,
-          },
-        },
-        "Request completed",
-      )
-    } else if (c.res.status >= 400) {
-      logger.error(
-        {
-          requestId: c_reqId,
-          response: {
-            status,
-            err: c.res.body,
-            elapsed,
-          },
-        },
-        "Request Error",
-      )
-    } else if (c.res.status === 302) {
-      logger.info(
-        {
-          requestId: c_reqId,
-          response: {
-            status,
-            elapsed,
-          },
-        },
-        "Request redirected",
-      )
-    } else {
-      logger.info(
-        {
-          requestId: c_reqId,
-          response: {
-            status,
-            elapsed,
-          },
-        },
-        "Request completed",
-      )
-    }
-  }
-}
+    logRequest(logger, c, c_reqId, start, c.res.status);
+  };
+};
