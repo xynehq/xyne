@@ -101,8 +101,9 @@ export const getFile = async (
           fields,
         }),
       `Getting file with fileId ${fileId}`,
+      Apps.GoogleDrive,
       0,
-      client
+      client,
     )
 
     return file?.data
@@ -138,8 +139,9 @@ export const getFileContent = async (
             documentId: file.id as string,
           }),
         `Getting document with documentId ${file.id}`,
+        Apps.GoogleDrive,
         0,
-        client
+        client,
       )
     const documentContent: docs_v1.Schema$Document = docResponse.data
     const rawTextContent = documentContent?.body?.content

@@ -138,6 +138,7 @@ const listUsers = async (
               ...(nextPageToken! ? { pageToken: nextPageToken } : {}),
             }),
           `Fetching all users`,
+          Apps.GoogleDrive,
         )
       if (res.data.users) {
         users = users.concat(res.data.users)
@@ -446,6 +447,7 @@ const insertCalendarEvents = async (
           fields: eventFields,
         }),
       `Fetching all calendar events`,
+      Apps.GoogleCalendar,
       0,
       client,
     )
@@ -1050,6 +1052,7 @@ export const getPresentationToBeIngested = async (
           presentationId: presentation.id!,
         }),
       `Fetching presentation with id ${presentation.id}`,
+      Apps.GoogleDrive,
       0,
       client,
     )
@@ -1329,6 +1332,7 @@ export const getAllSheetsFromSpreadSheet = async (
             valueRenderOption: "FORMATTED_VALUE",
           }),
         `Fetching sheets '${ranges.join(", ")}' from spreadsheet`,
+        Apps.GoogleDrive,
         0,
         client,
       )
@@ -1372,6 +1376,7 @@ export const getSpreadsheet = async (
     return retryWithBackoff(
       () => sheets.spreadsheets.get({ spreadsheetId: id }),
       `Fetching spreadsheet with ID ${id}`,
+      Apps.GoogleDrive,
       0,
       client,
     )
@@ -1622,6 +1627,7 @@ export const downloadPDF = async (
         { responseType: "stream" },
       ),
     `Getting PDF content of fileId ${fileId}`,
+    Apps.GoogleDrive,
     0,
     client,
   )
@@ -1829,6 +1835,7 @@ const listAllContacts = async (
           requestSyncToken: true,
         }),
       `Fetching contacts with pageToken ${pageToken}`,
+      Apps.GoogleDrive,
       0,
       client,
     )
@@ -1855,6 +1862,7 @@ const listAllContacts = async (
           sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
         }),
       `Fetching other contacts with pageToken ${pageToken}`,
+      Apps.GoogleDrive,
       0,
       client,
     )
@@ -2029,6 +2037,7 @@ export async function* listFiles(
             pageToken: nextPageToken,
           }),
         `Fetching all files from Google Drive`,
+        Apps.GoogleDrive,
         0,
         client,
       )
@@ -2070,6 +2079,7 @@ export const googleDocsVespa = async (
                 documentId: doc.id as string,
               }),
             `Fetching document with documentId ${doc.id}`,
+            Apps.GoogleDrive,
             0,
             client,
           )

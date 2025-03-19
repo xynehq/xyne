@@ -409,6 +409,7 @@ const getDriveChanges = async (
     const response = await retryWithBackoff(
       () => driveClient.changes.list({ pageToken: config.driveToken }),
       `Fetching drive changes with pageToken ${config.driveToken}`,
+      Apps.GoogleDrive,
       0,
       oauth2Client,
     )
@@ -515,6 +516,7 @@ export const handleGoogleOAuthChanges = async (
                 pageToken: nextPageToken, // Use the nextPageToken for pagination
               }),
             `Fetching contacts changes with syncToken ${config.contactsToken}`,
+            Apps.GoogleDrive,
             0,
             oauth2Client,
           )
@@ -559,6 +561,7 @@ export const handleGoogleOAuthChanges = async (
                 ],
               }),
             `Fetching other contacts changes with syncToken ${otherContactsToken}`,
+            Apps.GoogleDrive,
             0,
             oauth2Client,
           )
@@ -924,6 +927,7 @@ const handleGoogleCalendarEventsChanges = async (
             fields: eventFields,
           }),
         `Fetching calendar events changes with syncToken ${syncToken}`,
+        Apps.GoogleCalendar,
         0,
         oauth2Client,
       )
@@ -1125,6 +1129,7 @@ const handleGmailChanges = async (
             pageToken: nextPageToken,
           }),
         `Fetching gmail changes with historyId ${historyId}`,
+        Apps.Gmail,
         0,
         client,
       )
@@ -1156,6 +1161,7 @@ const handleGmailChanges = async (
                       format: "full",
                     }),
                   `Fetching gmail email with id ${message?.id}`,
+                  Apps.Gmail,
                   0,
                   client,
                 )
@@ -1310,6 +1316,7 @@ const syncContacts = async (
                   personFields: contactKeys.join(","),
                 }),
               `Fetching contact with resourceName ${contact.resourceName}`,
+              Apps.GoogleDrive,
               0,
               oauth2Client,
             )
@@ -1361,6 +1368,7 @@ export const handleGoogleServiceAccountChanges = async (
         await retryWithBackoff(
           () => driveClient.changes.list({ pageToken: config.driveToken }),
           `Fetching drive changes with pageToken ${config.driveToken}`,
+          Apps.GoogleDrive,
         )
       ).data
       // there are changes
@@ -1413,6 +1421,7 @@ export const handleGoogleServiceAccountChanges = async (
                 pageToken: nextPageToken, // Use the nextPageToken for pagination
               }),
             `Fetching contacts changes with syncToken ${config.contactsToken}`,
+            Apps.GoogleDrive,
           )
           if (response.data.connections && response.data.connections.length) {
             Logger.info(
@@ -1465,6 +1474,7 @@ export const handleGoogleServiceAccountChanges = async (
                 ],
               }),
             `Fetching other contacts changes with syncToken ${otherContactsToken}`,
+            Apps.GoogleDrive,
           )
           otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
           if (

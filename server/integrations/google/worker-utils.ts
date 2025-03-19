@@ -10,7 +10,7 @@ import {
 } from "@/integrations/google/pdf-utils"
 import { retryWithBackoff } from "@/utils"
 import { chunkDocument } from "@/chunks"
-import type { Attachment } from "@/search/types"
+import { Apps, type Attachment } from "@/search/types"
 import { MAX_ATTACHMENT_PDF_SIZE } from "@/integrations/google/config"
 import path from "node:path"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
@@ -69,6 +69,7 @@ export const getGmailAttachmentChunks = async (
           userId: "me",
         }),
       "Fetching Gmail Attachments",
+      Apps.Gmail,
       0,
       client,
     )

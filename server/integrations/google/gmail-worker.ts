@@ -110,6 +110,7 @@ export const handleGmailIngestion = async (
   const profile = await retryWithBackoff(
     () => gmail.users.getProfile({ userId: "me" }),
     "Fetching Gmail user profile",
+    Apps.Gmail,
     0,
     client,
   )
@@ -129,6 +130,7 @@ export const handleGmailIngestion = async (
           fields: "messages(id), nextPageToken",
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
+      Apps.Gmail,
       0,
       client,
     )
@@ -148,6 +150,7 @@ export const handleGmailIngestion = async (
                   format: "full",
                 }),
               `Fetching Gmail message (id: ${message.id})`,
+              Apps.Gmail,
               0,
               client,
             )
