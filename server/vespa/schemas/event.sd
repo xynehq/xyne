@@ -253,7 +253,7 @@ schema event {
         }
 
          match-features {
-          vector_score
+          scale(vector_score)
           scale(bm25(name))
           scale(bm25(description))
           scale(bm25(attachmentFilenames))
@@ -261,6 +261,7 @@ schema event {
           scale(combined_bm25)
         }
     }
+    
     document-summary default {
         summary description {
             bolding: on
