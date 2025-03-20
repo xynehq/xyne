@@ -156,17 +156,17 @@ schema event {
         fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl, attendees
     }
 
-    rank-profile default {
+    rank-profile initial {
         inputs {
             query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
         }
 
         constants {
-          THREE_MONTHS_IN_SECONDS: 7776000
-          ONE_YEAR_IN_SECONDS: 31536000
-          MAX_DOC_DECAY: 0.5
-          META_FIELDS_DECAY: 0.8
+            THREE_MONTHS_IN_SECONDS: 7776000
+            ONE_YEAR_IN_SECONDS: 31536000
+            MAX_DOC_DECAY: 0.5
+            META_FIELDS_DECAY: 0.8
         }
 
         function scale(val) {
@@ -180,56 +180,87 @@ schema event {
 
         # Document score decays min to 0.5
         function doc_recency() {
-            expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+            expression: max(1 / (1 + query(beta) * sqrt(document_age)), MAX_DOC_DECAY)
         }
 
         function vector_score() {
             expression: closeness(field, chunk_embeddings)
         }
 
-        function scaled_bm25_name(){
-            expression: scale(bm25(name))
-        }
-
-        function scaled_bm25_description(){
-            expression: scale(bm25(description))
-        }
-
-        # Adjusting the ranking by reducing the weight of vector_score and metadata fields in BM25,  
-        # while giving higher importance to BM25 scores for 'name' and 'url'
+        # reducing weightage for metadata fields
         function combined_bm25() {
             expression {
-                scale(bm25(name) + bm25(url) + bm25(description)) +
-                (META_FIELDS_DECAY * scale(bm25(attachmentFilenames) + bm25(attendeesNames)))
+                (bm25(name) + bm25(url) + bm25(description)) +
+                (META_FIELDS_DECAY * (bm25(attachmentFilenames) + bm25(attendeesNames)))
             }
         }
 
-        # Have to slightly reduce the weightage for bm25
-        # just reducing 25% weightage to ensure it is balanced across schemas
+        function combined_nativeRank() {
+            expression {
+                (nativeRank(name,description,url)) +
+                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames,attendeesNames)))
+            }
+        }
+    }
+
+    rank-profile default inherits initial {
+        
+        # Have to increase nativeRank score by 10x, 
+        # the nativeRank score is so low to be comparable with vector_score 
         first-phase {
-            expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * (0.75 * scale(combined_bm25)))
+            expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
         }
 
         global-phase {
             expression {
               (
-                (query(alpha) * scale(vector_score)) +
-                ((1 - query(alpha)) * ((0.75 * scale(combined_bm25)))) 
+                (query(alpha) * scale(vector_score)) + 
+                ((1 - query(alpha)) * (10 * combined_nativeRank))
               )
             }
             rerank-count: 1000
         }
 
         match-features {
+          combined_nativeRank
+          vector_score
+          nativeRank(name)
+          nativeRank(description)
+          nativeRank(attachmentFilenames)
+          nativeRank(attendeesNames)
+        }
+    }
+
+    # will be use for single schema query
+    rank-profile default_bm25 inherits initial {
+
+        first-phase {
+          expression {
+            (
+              (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+            )
+          }
+        }
+
+        global-phase {
+          expression {
+            (
+              (query(alpha) * scale(vector_score)) +
+              ((1 - query(alpha)) * scale(combined_bm25))
+            )
+          }
+          rerank-count: 1000
+        }
+
+         match-features {
+          vector_score
           scale(bm25(name))
           scale(bm25(description))
           scale(bm25(attachmentFilenames))
           scale(bm25(attendeesNames))
-          vector_score
-          doc_recency
+          scale(combined_bm25)
         }
     }
-
     document-summary default {
         summary description {
             bolding: on

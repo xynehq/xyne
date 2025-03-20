@@ -96,7 +96,6 @@ schema file {
     fields: title, app, entity
   }
 
-  # Hybrid search rank profile combining BM25 for title and chunks, and vector search for chunk embeddings
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
@@ -104,47 +103,13 @@ schema file {
       query(alpha) double  # Alpha parameter for hybrid weight
     }
 
-    # Compute vector similarity for chunks
-    function chunk_vector_score() {
-      expression: closeness(field, chunk_embeddings)
-    }
-
-    # Compute BM25 score for title
-    function title_bm25_score() {
-      expression: bm25(title)
-    }
-
-    # First phase combines BM25 (title and chunks) and vector similarity (chunks)
-    first-phase {
-      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) + bm25(title)))
-    }
-
-    # Global phase (optional if more complex reranking is needed)
-    global-phase {
-      expression {
-        (
-          (query(alpha) * normalize_linear(chunk_vector_score)) +
-          ((1 - query(alpha)) * (normalize_linear(bm25(chunks)) + normalize_linear(bm25(title))))
-        )
-      }
-      rerank-count: 1000
-    }
-
-    match-features {
-      bm25(title)
-      bm25(chunks)
-      closeness(field, chunk_embeddings)
-    }
-  }
-
- 
-  rank-profile default inherits initial {
     constants {
       THREE_MONTHS_IN_SECONDS: 7890000
       ONE_YEAR_IN_SECONDS: 31536000
       MAX_DOC_DECAY: 0.5
     }
 
+    # custom normalize function
     function scale(val) {
       expression: 2*atan(val/4)/(3.14159)
     }
@@ -156,28 +121,60 @@ schema file {
 
     # Document score decays min to 0.5
     function doc_recency() {
-        expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+      expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
 
     function vector_score() {
       expression: closeness(field, chunk_embeddings)
     }
 
-    function scaled_bm25_chunks() {
-      expression: scale(bm25(chunks))
-    }
-
-    function scaled_bm25_title() {
-      expression: scale(bm25(title))
-    }
-
     function combined_bm25() {
-      expression: scaled_bm25_chunks + scaled_bm25_title
+      expression: bm25(title) + bm25(chunks)
     }
 
-    # First phase combines BM25 (title and chunks) and vector similarity (chunks)
+    function combined_nativeRank() {
+      expression: nativeRank(title,chunks)
+    }
+  
+  }
+
+ 
+  rank-profile default inherits initial {
+
+    # Have to increase nativeRank score by 10x, 
+    # the nativeRank score is so low to be comparable with vector_score 
     first-phase {
-      expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * scale(vector_score)) + 
+          ((1 - query(alpha)) * (10 * combined_nativeRank))
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      doc_recency
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
+
+    first-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+        )
+      }
     }
 
     global-phase {
@@ -190,12 +187,11 @@ schema file {
       rerank-count: 1000
     }
 
-    match-features {
+     match-features {
       vector_score
-      scaled_bm25_chunks
-      scaled_bm25_title
-      doc_recency
-      query(alpha)
+      bm25(chunks)
+      bm25(title)
+      combined_bm25
     }
   }
 

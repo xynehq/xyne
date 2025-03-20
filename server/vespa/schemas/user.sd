@@ -188,7 +188,8 @@ schema user {
         fields: name, email, app, entity, photoLink, creationTime
     }
 
-    rank-profile default {
+    rank-profile initial {
+        
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
         }
@@ -197,13 +198,32 @@ schema user {
             expression: bm25(name) + bm25(email)
         }
 
-        global-phase {
-            # bm25 gives a very high score as this has less text to match
-            # compared to other schemas
-            expression: (scale(combined_bm25) / 4)
+        function combined_nativeRank(){
+            expression: nativeRank(name,email)
+        }
+    }
+
+    rank-profile default inherits initial {
+        # Increase the score by 10x to ensure consistency with other schemas
+        first-phase {
+            expression: (10 * combined_nativeRank)
         }
 
         match-features {
+            nativeRank(name,email)
+            nativeRank(name)
+            nativeRank(email)
+        }
+    }
+
+    rank-profile default_bm25 inherits initial {
+
+        first-phase {
+            expression: scale(combined_bm25)
+        }
+
+        match-features {
+            combined_bm25
             bm25(name)
             bm25(email)
         }
