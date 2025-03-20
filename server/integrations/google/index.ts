@@ -40,12 +40,10 @@ import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import {
   connectors,
-  oauthProviders,
-  selectConnectorSchema,
   type SelectConnector,
   type SelectOAuthProvider,
 } from "@/db/schema"
-import { and, eq } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { getWorkspaceById } from "@/db/workspace"
 import {
   Apps,
@@ -83,9 +81,6 @@ import {
   DeleteDocumentError,
   DownloadDocumentError,
   CalendarEventsListingError,
-  NoOauthConnectorFound,
-  MissingOauthConnectorCredentialsError,
-  FetchProviderFailed,
 } from "@/errors"
 import fs, { existsSync, mkdirSync } from "node:fs"
 import path, { join } from "node:path"
