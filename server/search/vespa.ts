@@ -407,7 +407,7 @@ export const searchVespa = async (
   entity: Entity | null,
   limit = config.page,
   offset: number = 0,
-  alpha: number = 0, // default will be just keyword search
+  alpha: number = 0.2,
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
