@@ -113,6 +113,7 @@ import {
   StatType,
   updateUserStats,
 } from "./tracking"
+import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -580,42 +581,9 @@ export const handleGoogleOAuthIngestion = async (
     const userEmail = job.data.email
     const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
 
-    const connectorId = data.connectorId
-    const res = await db
-      .select()
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, connectorId),
-          eq(connectors.authType, AuthType.OAuth),
-        ),
-      )
-      .limit(1)
+    const providers: SelectOAuthProvider[] =
+      await getOAuthProviderByConnectorId(db, data.connectorId)
 
-    if (!res.length) {
-      throw new NoOauthConnectorFound({
-        message: `Could not get the oauth connector with id:  ${connectorId}`,
-      })
-    }
-
-    const oauthRes: SelectConnector = selectConnectorSchema.parse(res[0])
-
-    if (!oauthRes.oauthCredentials) {
-      throw new MissingOauthConnectorCredentialsError({})
-    }
-
-    const providers: SelectOAuthProvider[] = await db
-      .select()
-      .from(oauthProviders)
-      .where(eq(oauthProviders.connectorId, oauthRes.id))
-      .limit(1)
-
-    if (!providers.length) {
-      Logger.error("Could not fetch provider while refreshing Google Token")
-      throw new FetchProviderFailed({
-        message: "Could not fetch provider while refreshing Google Token",
-      })
-    }
     const [googleProvider] = providers
 
     const oauth2Client = new google.auth.OAuth2({
