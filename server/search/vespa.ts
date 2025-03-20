@@ -205,7 +205,7 @@ export const autocomplete = async (
   }
 }
 
-type RankProfile = "default"
+type RankProfile = "default" | "default_bm25"
 type YqlProfile = {
   profile: RankProfile
   yql: string
@@ -407,10 +407,11 @@ export const searchVespa = async (
   entity: Entity | null,
   limit = config.page,
   offset: number = 0,
-  alpha: number = 0.5,
+  alpha: number = 0, // default will be just keyword search
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
+  rankProfile: RankProfile = "default",
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
@@ -418,7 +419,7 @@ export const searchVespa = async (
     limit,
     app,
     entity,
-    "default",
+    rankProfile,
     timestampRange,
     excludedIds,
     notInMailLabels,
@@ -426,11 +427,10 @@ export const searchVespa = async (
 
   const hybridDefaultPayload = {
     yql,
-    q: query, // Original user input query
-    query: removeStopwords(query),
+    query,
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@q)",
+    "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
     hits: limit,
     ...(offset
@@ -441,6 +441,7 @@ export const searchVespa = async (
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
   }
+
   try {
     return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
