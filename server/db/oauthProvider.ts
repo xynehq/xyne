@@ -48,3 +48,19 @@ export const getOAuthProvider = async (
     throw new Error("Could not get the connector")
   }
 }
+
+export const getOAuthProviderByConnectorId = async (
+  trx: TxnOrClient,
+  connectorId: number,
+): Promise<SelectOAuthProvider[]> => {
+  const res = await trx
+    .select()
+    .from(oauthProviders)
+    .where(eq(oauthProviders.connectorId, connectorId))
+    .limit(1)
+  if (res.length) {
+    return res
+  } else {
+    throw new Error("Could not get the provider")
+  }
+}
