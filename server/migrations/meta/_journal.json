@@ -15,6 +15,20 @@
       "when": 1738829424740,
       "tag": "0001_workable_molly_hayes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1739732714209,
+      "tag": "0002_natural_arclight",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1742072652377,
+      "tag": "0003_jittery_speed",
+      "breakpoints": true
     }
   ]
 }

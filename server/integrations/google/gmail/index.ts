@@ -19,7 +19,7 @@ import { parseEmailBody } from "./quote-parser"
 import pLimit from "p-limit"
 import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
-import { StatType, updateUserStats } from "../tracking"
+import { StatType, Tracker } from "@/integrations/tracker"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
@@ -31,6 +31,7 @@ import {
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
+  tracker: Tracker,
 ): Promise<string> => {
   const batchSize = 100
   const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
@@ -95,7 +96,7 @@ export const handleGmailIngestion = async (
               await parseMail(msgResp.data, gmail, email, client),
               mailSchema,
             )
-            updateUserStats(email, StatType.Gmail, 1)
+            tracker.updateUserStats(email, StatType.Gmail, 1)
           } catch (error) {
             Logger.error(
               error,
@@ -154,7 +155,11 @@ export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   userEmail: string,
+<<<<<<< HEAD
   client: GoogleClient,
+=======
+  tracker: Tracker,
+>>>>>>> a476e71 (initial slack commit)
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
@@ -269,7 +274,7 @@ export const parseMail = async (
             }
 
             await insert(attachmentDoc, mailAttachmentSchema)
-            updateUserStats(userEmail, StatType.Mail_Attachments, 1)
+            tracker.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.

@@ -3,7 +3,7 @@ import {
   oauthProviders,
   type InsertOAuthProvider,
   type SelectOAuthProvider,
-} from "./schema"
+} from "@/db/schema"
 import { createId } from "@paralleldrive/cuid2"
 import { type Apps } from "@/shared/types"
 import { and, eq } from "drizzle-orm"
