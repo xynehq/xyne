@@ -25,8 +25,14 @@ import {
   mailAttachmentSchema,
   MailAttachmentResponseSchema,
   type VespaAutocompleteMailAttachment,
+  type VespaAutocompleteChatUser,
+  chatUserSchema,
+  type VespaChatMessageSearch,
+  chatMessageSchema,
+  ChatMessageResponseSchema,
 } from "@/search/types"
 import {
+  AutocompleteChatUserSchema,
   AutocompleteEventSchema,
   AutocompleteFileSchema,
   AutocompleteMailAttachmentSchema,
@@ -79,9 +85,9 @@ export const VespaSearchResponseToSearchResult = (
             (child.fields as VespaEventSearch).sddocname === eventSchema
           ) {
             ;(child.fields as any).type = eventSchema
-            ;(child.fields as any).relevance = child.relevance
-            if ((child.fields as any).description) {
-              ;(child.fields as any).description = (
+            ;(child.fields as VespaEventSearch).relevance = child.relevance
+            if ((child.fields as VespaEventSearch).description) {
+              ;(child.fields as VespaEventSearch).description = (
                 child.fields as VespaEventSearch
               ).description
             }
@@ -93,7 +99,21 @@ export const VespaSearchResponseToSearchResult = (
             ;(child.fields as any).type = mailAttachmentSchema
             ;(child.fields as any).relevance = child.relevance
             return MailAttachmentResponseSchema.parse(child.fields)
+          } else if (
+            (child.fields as VespaChatMessageSearch).sddocname ===
+            chatMessageSchema
+          ) {
+            ;(child.fields as any).type = chatMessageSchema
+            ;(child.fields as VespaChatMessageSearch).relevance =
+              child.relevance
+            ;(child.fields as VespaChatMessageSearch).attachmentIds = []
+            ;(child.fields as VespaChatMessageSearch).mentions = []
+            if (!(child.fields as VespaChatMessageSearch).teamId) {
+              ;(child.fields as VespaChatMessageSearch).teamId = ""
+            }
+            return ChatMessageResponseSchema.parse(child.fields)
           } else {
+            console.log(JSON.stringify(child.fields))
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname}`,
             )
@@ -151,6 +171,14 @@ export const VespaAutocompleteResponseToResult = (
           ;(child.fields as any).type = mailAttachmentSchema
           ;(child.fields as any).relevance = child.relevance
           return AutocompleteMailAttachmentSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteChatUser).sddocname ===
+          chatUserSchema
+        ) {
+          ;(child.fields as any).type = chatUserSchema
+          ;(child.fields as any).relevance = child.relevance
+          console.log(child, JSON.stringify(child.fields))
+          return AutocompleteChatUserSchema.parse(child.fields)
         } else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,

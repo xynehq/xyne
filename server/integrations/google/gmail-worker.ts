@@ -39,7 +39,7 @@ import {
   getGmailAttachmentChunks,
   parseAttachments,
 } from "@/integrations/google/worker-utils"
-import { StatType } from "@/integrations/google/tracking"
+import { StatType } from "@/integrations/tracker"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),

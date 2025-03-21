@@ -8,21 +8,32 @@ import { boss, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
 import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
 import { type OAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
-import { Google } from "arctic"
+import { Google, Slack } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
-const { JwtPayloadKey, JobExpiryHours } = config
-
+const { JwtPayloadKey, JobExpiryHours, slackHost } = config
+import { IsGoogleApp } from "@/utils"
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
 
 interface OAuthCallbackQuery {
   state: string
   code: string
 }
+interface SlackOAuthResp {
+  appId: string
+  userId: string
+  scope: string
+  accessToken: string
+  tokenType: string
+  teamName: string
+  teamId: string
+}
 
 export const OAuthCallback = async (c: Context) => {
   try {
+    console.log(c.req.header("cookie"))
+    console.log("OAuth Callback")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     const { state, code } = c.req.query()
@@ -34,6 +45,8 @@ export const OAuthCallback = async (c: Context) => {
       throw new HTTPException(500)
     }
     const stateInCookie = getCookie(c, `${app}-state`)
+    console.log(`${app}-state`, stateInCookie)
+    console.log(random, stateInCookie, random === stateInCookie)
     if (random !== stateInCookie) {
       throw new HTTPException(500, {
         message: "Invalid state, potential CSRF attack.",
@@ -41,27 +54,62 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     const codeVerifier = getCookie(c, `${app}-code-verifier`)
+    console.log(codeVerifier)
     if (!codeVerifier && app === Apps.GoogleDrive) {
       throw new HTTPException(500, { message: "Could not verify the code" })
     }
+    let tokens: SlackOAuthResp | OAuthCredentials
 
     const provider = await getOAuthProvider(db, app)
     const { clientId, clientSecret } = provider
-    const google = new Google(
-      clientId as string,
-      clientSecret,
-      `${config.host}/oauth/callback`,
-    )
-    const tokens = await google.validateAuthorizationCode(
-      code,
-      codeVerifier as string,
-    )
-    const oauthTokens = tokens as OAuthCredentials
-    oauthTokens.data.accessTokenExpiresAt = tokens.accessTokenExpiresAt()
+    console.log("provider", provider)
+    if (app === Apps.Slack) {
+      const response = await fetch("https://slack.com/api/oauth.v2.access", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          client_id: clientId!,
+          client_secret: clientSecret,
+          code, // Use the code from the callback
+          redirect_uri: `${slackHost}/oauth/callback`,
+        }).toString(),
+      })
+
+      const tokenData = (await response.json()) as any
+      if (!tokenData.ok) {
+        throw new Error("Could not get Slack token")
+      }
+
+      tokens = {
+        appId: tokenData.app_id,
+        userId: tokenData.authed_user.id,
+        accessToken: tokenData.authed_user.access_token,
+        tokenType: tokenData.authed_user.token_type,
+        teamName: tokenData.team.name,
+        teamId: tokenData.team.id,
+        scope: tokenData.authed_user.scope,
+      }
+    } else if (IsGoogleApp(app)) {
+      const google = new Google(
+        clientId as string,
+        clientSecret,
+        `${config.host}/oauth/callback`,
+      )
+      const oauthTokens = await google.validateAuthorizationCode(
+        code,
+        codeVerifier as string,
+      )
+      tokens = oauthTokens as OAuthCredentials
+      tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
+    } else {
+      throw new HTTPException(500, { message: "Invalid App" })
+    }
     const connectorId = provider.connectorId
     const connector: SelectConnector = await updateConnector(db, connectorId, {
       subject: email,
-      oauthCredentials: JSON.stringify(oauthTokens),
+      oauthCredentials: JSON.stringify(tokens),
       status: ConnectorStatus.Connecting,
     })
     const SaasJobPayload: SaaSOAuthJob = {
@@ -79,6 +127,9 @@ export const OAuthCallback = async (c: Context) => {
     Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
     // Commit the transaction if everything is successful
+    if (app === Apps.Slack) {
+      return c.redirect(`${slackHost}/oauth/success`)
+    }
     return c.redirect(`${config.host}/oauth/success`)
   } catch (error) {
     Logger.error(
