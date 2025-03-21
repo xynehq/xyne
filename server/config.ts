@@ -125,5 +125,6 @@ export default {
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
-  EndThinkingToken
+  EndThinkingToken,
+  JobExpiryHours: 23,
 }

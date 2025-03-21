@@ -19,7 +19,7 @@ import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
-const { JwtPayloadKey } = config
+const { JwtPayloadKey, JobExpiryHours } = config
 import { generateCodeVerifier, generateState, Google } from "arctic"
 import type { SelectOAuthProvider } from "@/db/schema"
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
@@ -201,6 +201,7 @@ export const AddServiceConnection = async (c: Context) => {
         singletonKey: connector.externalId,
         priority: 1,
         retryLimit: 0,
+        expireInHours: JobExpiryHours,
       })
 
       Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
