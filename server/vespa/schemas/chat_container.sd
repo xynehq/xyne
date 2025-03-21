@@ -1,0 +1,146 @@
+# this is created for slack channel
+# in future same can be used for other apps that have this
+# channel like concept
+schema chat_container {
+    document chat_container {
+        # channel id
+        field docId type string {
+            indexing: attribute | summary
+        }
+
+        field name type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        field teamId type string {
+            indexing: attribute | summary
+        }
+
+        field creator type string {
+            indexing: attribute | summary
+        }
+
+        field app type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+    
+        # dm
+        field isIm type bool {
+            indexing: attribute | summary
+        }
+
+        # group dm
+        field isMpim type bool {
+            indexing: attribute | summary
+        }
+
+        field isPrivate type bool {
+            indexing: attribute | summary
+        }
+
+        field createdAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field updatedAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field topic type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        field description type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        field isArchived type bool {
+            indexing: attribute | summary
+        }
+
+        field isGeneral type bool {
+            indexing: attribute | summary
+        }
+
+        # member count
+        field count type int {
+            indexing: attribute | summary
+        }
+    }
+
+    field name_fuzzy type string {
+        indexing: input name | index
+        index: enable-bm25
+        match {
+            gram
+            gram-size: 3
+        }
+    }
+
+    field chunk_embeddings type tensor<bfloat16>(v[384]) {
+        indexing: (input name || "") . " " . (input topic || "") . " " . (input description || "") | embed | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+    }
+
+    fieldset default {
+        fields: name, topic, description
+    }
+
+    rank-profile default {
+        inputs {
+            query(e) tensor<bfloat16>(v[384])
+        }
+
+        function scale(val) {
+            expression: 2*atan(val/4)/(3.14159)
+        }
+        
+        function freshness_score() {
+            expression: exp(-1 * (now() - attribute(updatedAt)) / (3600 * 24))
+        }
+
+        function vector_score() {
+            expression: closeness(field, chunk_embeddings)
+        }
+
+        function combined_bm25() {
+            expression: scale(bm25(name)) + scale(bm25(topic)) + scale(bm25(description))
+        }
+
+        first-phase {
+            expression: (vector_score) + combined_bm25
+        }
+
+        global-phase {
+            expression {
+                (normalize_linear(vector_score)) +
+                combined_bm25 + 
+                freshness_score
+            }
+            rerank-count: 1000
+        }
+
+        match-features {
+            scale(bm25(name))
+            scale(bm25(topic))
+            scale(bm25(description))
+            vector_score
+            freshness_score
+        }
+    }
+
+    rank-profile autocomplete inherits default {
+        first-phase {
+            expression: bm25(name_fuzzy)
+        }
+    }
+}

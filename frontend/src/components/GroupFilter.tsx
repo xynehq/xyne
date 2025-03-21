@@ -5,6 +5,7 @@ import {
   Entity,
   GooglePeopleEntity,
   isMailAttachment,
+  SlackEntity,
 } from "shared/types"
 import { Filter, Groups } from "@/types"
 import { getIcon } from "@/lib/common"
@@ -92,6 +93,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "People"
   } else if (app == Apps.GoogleCalendar && entity === CalendarEntity.Event) {
     return "Event"
+  } else if (app === Apps.Slack && entity === SlackEntity.Message) {
+    return "Slack Message"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

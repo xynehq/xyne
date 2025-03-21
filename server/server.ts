@@ -14,6 +14,7 @@ import {
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
+  addApiKeyConnectorSchema,
   addServiceConnectionSchema,
   answerSchema,
   createOAuthProvider,
@@ -21,6 +22,7 @@ import {
   searchSchema,
 } from "@/types"
 import {
+  AddApiKeyConnector,
   AddServiceConnection,
   CreateOAuthProvider,
   GetConnectors,
@@ -57,7 +59,7 @@ import {
   MessageRetryApi,
 } from "./api/chat"
 import { UserRole } from "./shared/types"
-import { wsConnections } from "@/integrations/google/ws"
+import { wsConnections } from "@/integrations/metricStream"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -177,6 +179,11 @@ export const AppRoutes = app
     "/oauth/create",
     zValidator("form", createOAuthProvider),
     CreateOAuthProvider,
+  )
+  .post(
+    "/apikey/create",
+    zValidator("form", addApiKeyConnectorSchema),
+    AddApiKeyConnector,
   )
   .get("/connectors/all", GetConnectors)
 

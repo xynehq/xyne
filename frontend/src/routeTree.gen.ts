@@ -16,10 +16,14 @@ import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as OauthSuccessImport } from './routes/oauth/success'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
-import { Route as AuthenticatedIntegrationsImport } from './routes/_authenticated/integrations'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
+import { Route as AuthenticatedIntegrationsIndexImport } from './routes/_authenticated/integrations/index'
+import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authenticated/integrations/slack'
+import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
-import { Route as AuthenticatedAdminIntegrationsImport } from './routes/_authenticated/admin/integrations'
+import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
+import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
+import { Route as AuthenticatedAdminIntegrationsGoogleImport } from './routes/_authenticated/admin/integrations/google'
 
 // Create/Update Routes
 
@@ -52,17 +56,32 @@ const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
-const AuthenticatedIntegrationsRoute = AuthenticatedIntegrationsImport.update({
-  id: '/integrations',
-  path: '/integrations',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-
 const AuthenticatedChatRoute = AuthenticatedChatImport.update({
   id: '/chat',
   path: '/chat',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+
+const AuthenticatedIntegrationsIndexRoute =
+  AuthenticatedIntegrationsIndexImport.update({
+    id: '/integrations/',
+    path: '/integrations/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedIntegrationsSlackRoute =
+  AuthenticatedIntegrationsSlackImport.update({
+    id: '/integrations/slack',
+    path: '/integrations/slack',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedIntegrationsGoogleRoute =
+  AuthenticatedIntegrationsGoogleImport.update({
+    id: '/integrations/google',
+    path: '/integrations/google',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdImport.update({
   id: '/$chatId',
@@ -70,10 +89,24 @@ const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdImport.update({
   getParentRoute: () => AuthenticatedChatRoute,
 } as any)
 
-const AuthenticatedAdminIntegrationsRoute =
-  AuthenticatedAdminIntegrationsImport.update({
-    id: '/admin/integrations',
-    path: '/admin/integrations',
+const AuthenticatedAdminIntegrationsIndexRoute =
+  AuthenticatedAdminIntegrationsIndexImport.update({
+    id: '/admin/integrations/',
+    path: '/admin/integrations/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedAdminIntegrationsSlackRoute =
+  AuthenticatedAdminIntegrationsSlackImport.update({
+    id: '/admin/integrations/slack',
+    path: '/admin/integrations/slack',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedAdminIntegrationsGoogleRoute =
+  AuthenticatedAdminIntegrationsGoogleImport.update({
+    id: '/admin/integrations/google',
+    path: '/admin/integrations/google',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -102,13 +135,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatImport
       parentRoute: typeof AuthenticatedImport
     }
-    '/_authenticated/integrations': {
-      id: '/_authenticated/integrations'
-      path: '/integrations'
-      fullPath: '/integrations'
-      preLoaderRoute: typeof AuthenticatedIntegrationsImport
-      parentRoute: typeof AuthenticatedImport
-    }
     '/_authenticated/search': {
       id: '/_authenticated/search'
       path: '/search'
@@ -130,19 +156,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexImport
       parentRoute: typeof AuthenticatedImport
     }
-    '/_authenticated/admin/integrations': {
-      id: '/_authenticated/admin/integrations'
-      path: '/admin/integrations'
-      fullPath: '/admin/integrations'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsImport
-      parentRoute: typeof AuthenticatedImport
-    }
     '/_authenticated/chat/$chatId': {
       id: '/_authenticated/chat/$chatId'
       path: '/$chatId'
       fullPath: '/chat/$chatId'
       preLoaderRoute: typeof AuthenticatedChatChatIdImport
       parentRoute: typeof AuthenticatedChatImport
+    }
+    '/_authenticated/integrations/google': {
+      id: '/_authenticated/integrations/google'
+      path: '/integrations/google'
+      fullPath: '/integrations/google'
+      preLoaderRoute: typeof AuthenticatedIntegrationsGoogleImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/slack': {
+      id: '/_authenticated/integrations/slack'
+      path: '/integrations/slack'
+      fullPath: '/integrations/slack'
+      preLoaderRoute: typeof AuthenticatedIntegrationsSlackImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/': {
+      id: '/_authenticated/integrations/'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof AuthenticatedIntegrationsIndexImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/google': {
+      id: '/_authenticated/admin/integrations/google'
+      path: '/admin/integrations/google'
+      fullPath: '/admin/integrations/google'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsGoogleImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/slack': {
+      id: '/_authenticated/admin/integrations/slack'
+      path: '/admin/integrations/slack'
+      fullPath: '/admin/integrations/slack'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsSlackImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/': {
+      id: '/_authenticated/admin/integrations/'
+      path: '/admin/integrations'
+      fullPath: '/admin/integrations'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsIndexImport
+      parentRoute: typeof AuthenticatedImport
     }
   }
 }
@@ -162,18 +223,29 @@ const AuthenticatedChatRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
-  AuthenticatedIntegrationsRoute: typeof AuthenticatedIntegrationsRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
+  AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
+  AuthenticatedIntegrationsSlackRoute: typeof AuthenticatedIntegrationsSlackRoute
+  AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
+  AuthenticatedAdminIntegrationsGoogleRoute: typeof AuthenticatedAdminIntegrationsGoogleRoute
+  AuthenticatedAdminIntegrationsSlackRoute: typeof AuthenticatedAdminIntegrationsSlackRoute
+  AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
-  AuthenticatedIntegrationsRoute: AuthenticatedIntegrationsRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
-  AuthenticatedAdminIntegrationsRoute: AuthenticatedAdminIntegrationsRoute,
+  AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
+  AuthenticatedIntegrationsSlackRoute: AuthenticatedIntegrationsSlackRoute,
+  AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
+  AuthenticatedAdminIntegrationsGoogleRoute:
+    AuthenticatedAdminIntegrationsGoogleRoute,
+  AuthenticatedAdminIntegrationsSlackRoute:
+    AuthenticatedAdminIntegrationsSlackRoute,
+  AuthenticatedAdminIntegrationsIndexRoute:
+    AuthenticatedAdminIntegrationsIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -184,23 +256,31 @@ export interface FileRoutesByFullPath {
   '': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
-  '/integrations': typeof AuthenticatedIntegrationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
+  '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
+  '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/integrations': typeof AuthenticatedIntegrationsIndexRoute
+  '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
+  '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
-  '/integrations': typeof AuthenticatedIntegrationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
+  '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
+  '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/integrations': typeof AuthenticatedIntegrationsIndexRoute
+  '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
+  '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
 export interface FileRoutesById {
@@ -208,12 +288,16 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
-  '/_authenticated/integrations': typeof AuthenticatedIntegrationsRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
+  '/_authenticated/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
+  '/_authenticated/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/_authenticated/integrations/': typeof AuthenticatedIntegrationsIndexRoute
+  '/_authenticated/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
+  '/_authenticated/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
 export interface FileRouteTypes {
@@ -222,33 +306,45 @@ export interface FileRouteTypes {
     | ''
     | '/auth'
     | '/chat'
-    | '/integrations'
     | '/search'
     | '/oauth/success'
     | '/'
-    | '/admin/integrations'
     | '/chat/$chatId'
+    | '/integrations/google'
+    | '/integrations/slack'
+    | '/integrations'
+    | '/admin/integrations/google'
+    | '/admin/integrations/slack'
+    | '/admin/integrations'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
     | '/chat'
-    | '/integrations'
     | '/search'
     | '/oauth/success'
     | '/'
-    | '/admin/integrations'
     | '/chat/$chatId'
+    | '/integrations/google'
+    | '/integrations/slack'
+    | '/integrations'
+    | '/admin/integrations/google'
+    | '/admin/integrations/slack'
+    | '/admin/integrations'
   id:
     | '__root__'
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/chat'
-    | '/_authenticated/integrations'
     | '/_authenticated/search'
     | '/oauth/success'
     | '/_authenticated/'
-    | '/_authenticated/admin/integrations'
     | '/_authenticated/chat/$chatId'
+    | '/_authenticated/integrations/google'
+    | '/_authenticated/integrations/slack'
+    | '/_authenticated/integrations/'
+    | '/_authenticated/admin/integrations/google'
+    | '/_authenticated/admin/integrations/slack'
+    | '/_authenticated/admin/integrations/'
   fileRoutesById: FileRoutesById
 }
 
@@ -283,10 +379,14 @@ export const routeTree = rootRoute
       "filePath": "_authenticated.tsx",
       "children": [
         "/_authenticated/chat",
-        "/_authenticated/integrations",
         "/_authenticated/search",
         "/_authenticated/",
-        "/_authenticated/admin/integrations"
+        "/_authenticated/integrations/google",
+        "/_authenticated/integrations/slack",
+        "/_authenticated/integrations/",
+        "/_authenticated/admin/integrations/google",
+        "/_authenticated/admin/integrations/slack",
+        "/_authenticated/admin/integrations/"
       ]
     },
     "/auth": {
@@ -299,10 +399,6 @@ export const routeTree = rootRoute
         "/_authenticated/chat/$chatId"
       ]
     },
-    "/_authenticated/integrations": {
-      "filePath": "_authenticated/integrations.tsx",
-      "parent": "/_authenticated"
-    },
     "/_authenticated/search": {
       "filePath": "_authenticated/search.tsx",
       "parent": "/_authenticated"
@@ -314,13 +410,33 @@ export const routeTree = rootRoute
       "filePath": "_authenticated/index.tsx",
       "parent": "/_authenticated"
     },
-    "/_authenticated/admin/integrations": {
-      "filePath": "_authenticated/admin/integrations.tsx",
-      "parent": "/_authenticated"
-    },
     "/_authenticated/chat/$chatId": {
       "filePath": "_authenticated/chat.$chatId.tsx",
       "parent": "/_authenticated/chat"
+    },
+    "/_authenticated/integrations/google": {
+      "filePath": "_authenticated/integrations/google.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/slack": {
+      "filePath": "_authenticated/integrations/slack.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/": {
+      "filePath": "_authenticated/integrations/index.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/google": {
+      "filePath": "_authenticated/admin/integrations/google.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/slack": {
+      "filePath": "_authenticated/admin/integrations/slack.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/": {
+      "filePath": "_authenticated/admin/integrations/index.tsx",
+      "parent": "/_authenticated"
     }
   }
 }

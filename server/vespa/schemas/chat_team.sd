@@ -1,0 +1,70 @@
+# this is created for slack channel
+# in future same can be used for other apps that have this
+# channel like concept
+schema chat_team {
+    document chat_team {
+        # channel id
+        field docId type string {
+            indexing: attribute | summary
+        }
+
+        field icon type string {
+            indexing: attribute | summary
+        }
+
+
+        field url type string {
+            indexing: attribute | summary
+        }
+
+        field domain type string {
+            indexing: attribute | summary
+        }
+
+        field email_domain type string {
+            indexing: attribute | summary
+        }
+
+        field name type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        field app type string {
+            indexing: attribute | summary
+            attribute: fast-search
+            match: exact
+        }
+
+        field createdAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field updatedAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
+        field description type string {
+            indexing: index | attribute | summary
+            index: enable-bm25
+        }
+
+        # member count
+        field count type int {
+            indexing: attribute | summary
+        }
+
+        field own type bool {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+    }
+    # Simple rank-profile for document retrieval
+    rank-profile default {
+        first-phase {
+            expression: nativeRank
+        }
+    }
+}

@@ -12,6 +12,8 @@ import type {
   VespaUserQueryHistory,
   VespaSchema,
   VespaMailAttachment,
+  VespaChatContainer,
+  Inserts,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
@@ -165,16 +167,7 @@ class VespaClient {
     }
   }
 
-  async insert(
-    document:
-      | VespaUser
-      | VespaFile
-      | VespaMail
-      | VespaEvent
-      | VespaUserQueryHistory
-      | VespaMailAttachment,
-    options: VespaConfigValues,
-  ): Promise<void> {
+  async insert(document: Inserts, options: VespaConfigValues): Promise<void> {
     try {
       const url = `${this.vespaEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${document.docId}`
       const response = await this.fetchWithRetry(url, {
@@ -185,19 +178,24 @@ class VespaClient {
         body: JSON.stringify({ fields: document }),
       })
 
+      if (!response.ok) {
+        // Using status text since response.text() return Body Already used Error
+        const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(`Vespa error: ${errorBody}`)
+        // Logger.error(
+        //   `Error inserting document ${document.docId} for ${options.schema} ${data.message}`,
+        // )
+        throw new Error(
+          `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
       const data = await response.json()
 
       if (response.ok) {
         // Logger.info(`Document ${document.docId} inserted successfully`)
       } else {
-        // Using status text since response.text() return Body Already used Error
-        const errorText = response.statusText
-        Logger.error(
-          `Error inserting document ${document.docId} for ${options.schema} ${data.message}`,
-        )
-        throw new Error(
-          `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
-        )
       }
     } catch (error) {
       const errMessage = getErrorMessage(error)

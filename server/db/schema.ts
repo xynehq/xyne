@@ -37,6 +37,7 @@ if (!serviceAccountEncryptionKey) {
 }
 
 const accesskeyEncryption = new Encryption(encryptionKey)
+const apiKeyEncryption = new Encryption(encryptionKey)
 
 const serviceAccountEncryption = new Encryption(serviceAccountEncryptionKey)
 
@@ -142,6 +143,7 @@ export const connectors = pgTable(
     // for oauth this can be used as created by
     subject: encryptedText(accesskeyEncryption)("subject"),
     oauthCredentials: encryptedText(accesskeyEncryption)("oauth_credentials"),
+    apiKey: encryptedText(apiKeyEncryption)("api_key"),
     // by default when created will be in the connecting status
     // for oauth we must send not connected when first created
     status: statusEnum("status").notNull().default(ConnectorStatus.Connecting),
@@ -172,7 +174,7 @@ export const oauthProviders = pgTable("oauth_providers", {
     .references(() => users.id),
   externalId: text("external_id").unique().notNull(),
   workspaceExternalId: text("workspace_external_id").notNull(),
-  connectorId: integer("container_id")
+  connectorId: integer("connector_id")
     .notNull()
     .references(() => connectors.id),
   clientId: text("client_id"),

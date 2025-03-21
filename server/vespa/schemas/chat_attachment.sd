@@ -1,0 +1,136 @@
+schema chat_attachment {
+  document chat_attachment {
+    field docId type string {
+      indexing: attribute | summary
+    }
+
+    field messageId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field title type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    field filename type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    field mimeType type string {
+      indexing: attribute | summary
+    }
+
+    field fileType type string {
+      indexing: attribute | summary
+    }
+
+    field size type long {
+      indexing: attribute | summary
+    }
+
+    field url type string {
+      indexing: attribute | summary
+    }
+
+    field urlPrivate type string {
+      indexing: attribute | summary
+    }
+
+    field urlPrivateDownload type string {
+      indexing: attribute | summary
+    }
+
+    field thumbnailUrl type string {
+      indexing: attribute | summary
+    }
+
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field teamId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field userId type string {
+      indexing: attribute | summary
+    }
+
+    field dimensions type tensor<int8>(x[2]) {
+      indexing: attribute | summary
+    }
+
+    field duration type long {
+      indexing: attribute | summary
+    }
+
+    field metadata type string {
+      indexing: attribute | summary
+    }
+
+    field chunks type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+  }
+
+  field content_embeddings type tensor<bfloat16>(p{}, v[384]) {
+    indexing: input chunks | embed | attribute | index
+    attribute {
+      distance-metric: angular
+    }
+  }
+
+  fieldset default {
+    fields: title, filename, chunks, teamId, messageId
+  }
+
+  rank-profile default {
+    inputs {
+      query(e) tensor<bfloat16>(v[384])
+    }
+
+    function vector_score() {
+      expression: closeness(field, content_embeddings)
+    }
+
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
+    }
+
+    function scaled_bm25() {
+      expression: scale(bm25(title)) + scale(bm25(filename)) + scale(bm25(chunks))
+    }
+
+    first-phase {
+      expression: (0.5 * vector_score) + scaled_bm25
+    }
+
+    global-phase {
+      expression {
+        (0.5 * normalize_linear(vector_score)) + scaled_bm25
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      scaled_bm25
+    }
+  }
+
+  document-summary default {
+    summary title {}
+    summary filename {}
+    summary dimensions {}
+    summary chunks_summary {
+      source: chunks
+      bolding: on
+    }
+  }
+}

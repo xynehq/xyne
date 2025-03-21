@@ -35,7 +35,6 @@ import {
   UpdateEventCancelledInstances,
 } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
-import { wsConnections } from "@/integrations/google/ws"
 import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import { connectors, type SelectConnector } from "@/db/schema"
@@ -95,15 +94,16 @@ import { handleGmailIngestion } from "@/integrations/google/gmail"
 import pLimit from "p-limit"
 import { GoogleDocsConcurrency } from "./config"
 import {
-  getProgress,
-  markUserComplete,
-  oAuthTracker,
-  serviceAccountTracker,
-  setOAuthUser,
-  setTotalUsers,
+  // getProgress,
+  // markUserComplete,
+  // oAuthTracker,
+  // serviceAccountTracker,
+  // setOAuthUser,
+  // setTotalUsers,
   StatType,
-  updateUserStats,
-} from "./tracking"
+  Tracker,
+  // updateUserStats,
+} from "@/integrations/tracker"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -408,6 +408,7 @@ export const maxCalendarEventResults = 2500
 const insertCalendarEvents = async (
   client: GoogleClient,
   userEmail: string,
+  tracker: Tracker,
 ) => {
   let nextPageToken = ""
   // will be returned in the end
@@ -499,7 +500,7 @@ const insertCalendarEvents = async (
     }
 
     await insert(eventToBeIngested, eventSchema)
-    updateUserStats(userEmail, StatType.Events, 1)
+    tracker.updateUserStats(userEmail, StatType.Events, 1)
   }
 
   // Add the cancelled events into cancelledInstances array of their respective main event
@@ -568,12 +569,14 @@ export const handleGoogleOAuthIngestion = async (
     const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
     const oauth2Client = new google.auth.OAuth2()
 
-    setOAuthUser(userEmail)
+    const tracker = new Tracker(Apps.GoogleDrive)
+    tracker.setOAuthUser(userEmail)
+
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
           progress: () => {},
-          userStats: oAuthTracker.userStats,
+          userStats: tracker.getOAuthProgress().userStats,
         }),
         connector.externalId,
       )
@@ -585,7 +588,7 @@ export const handleGoogleOAuthIngestion = async (
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
-    await insertContactsToVespa(contacts, otherContacts, userEmail)
+    await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -595,9 +598,9 @@ export const handleGoogleOAuthIngestion = async (
     }
 
     const [_, historyId, { calendarEventsToken }] = await Promise.all([
-      insertFilesForUser(oauth2Client, userEmail, connector),
-      handleGmailIngestion(oauth2Client, userEmail),
-      insertCalendarEvents(oauth2Client, userEmail),
+      insertFilesForUser(oauth2Client, userEmail, connector, tracker),
+      handleGmailIngestion(oauth2Client, userEmail, tracker),
+      insertCalendarEvents(oauth2Client, userEmail, tracker),
     ])
 
     setTimeout(() => {
@@ -663,7 +666,8 @@ export const handleGoogleOAuthIngestion = async (
       })
       await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
-      wsConnections.get(connector.externalId)?.close(1000, "Job finished")
+      // wsConnections.get(connector.externalId)?.close(1000, "Job finished")
+      closeWs(connector.externalId)
     })
   } catch (error) {
     Logger.error(
@@ -701,6 +705,7 @@ type IngestionMetadata = {
 }
 
 import { z } from "zod"
+import { closeWs, sendWebsocketMessage } from "@/integrations/metricStream"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -727,31 +732,49 @@ const pendingRequests = new Map<
   { resolve: Function; reject: Function }
 >()
 
-// Set up a centralized `onmessage` handler
-gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
-  const { type, userEmail } = message.data
+// // Set up a centralized `onmessage` handler
+// gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
+//   const { type, userEmail } = message.data
 
-  if (type === WorkerResponseTypes.HistoryId) {
-    const { historyId } = message.data
-    const promiseHandlers = pendingRequests.get(userEmail)
-    if (promiseHandlers) {
-      promiseHandlers.resolve(historyId)
-      pendingRequests.delete(userEmail)
+//   if (type === WorkerResponseTypes.HistoryId) {
+//     const { historyId } = message.data
+//     const promiseHandlers = pendingRequests.get(userEmail)
+//     if (promiseHandlers) {
+//       promiseHandlers.resolve(historyId)
+//       pendingRequests.delete(userEmail)
+//     }
+//   } else if (message.data.type === WorkerResponseTypes.Stats) {
+//     const { userEmail, count, statType } = message.data
+//     tracker.updateUserStats(userEmail, statType, count)
+//   }
+
+const setupGmailWorkerHandler = (tracker: Tracker) => {
+  gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
+    const { type, userEmail } = message.data
+
+    if (type === WorkerResponseTypes.HistoryId) {
+      const { historyId } = message.data
+      const promiseHandlers = pendingRequests.get(userEmail)
+      if (promiseHandlers) {
+        promiseHandlers.resolve(historyId)
+        pendingRequests.delete(userEmail)
+      }
+    } else if (message.data.type === WorkerResponseTypes.Stats) {
+      const { userEmail, count, statType } = message.data
+      tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
     }
-  } else if (message.data.type === WorkerResponseTypes.Stats) {
-    const { userEmail, count, statType } = message.data
-    updateUserStats(userEmail, statType, count)
   }
-
-  // else if (type === WorkerResponseTypes.Error) {
-  //     const { error } = message.data;
-  //     const promiseHandlers = pendingRequests.get(userEmail);
-  //     if (promiseHandlers) {
-  //         promiseHandlers.reject(new Error(error));
-  //         pendingRequests.delete(userEmail);
-  //     }
-  // }
 }
+
+// else if (type === WorkerResponseTypes.Error) {
+//     const { error } = message.data;
+//     const promiseHandlers = pendingRequests.get(userEmail);
+//     if (promiseHandlers) {
+//         promiseHandlers.reject(new Error(error));
+//         pendingRequests.delete(userEmail);
+//     }
+// }
+// }
 
 // Define a function to handle ingestion
 const handleGmailIngestionForServiceAccount = async (
@@ -783,6 +806,8 @@ export const handleGoogleServiceAccountIngestion = async (
       connector.credentials as string,
     )
     const subject: string = connector.subject as string
+    const tracker = new Tracker(Apps.GoogleWorkspace)
+    setupGmailWorkerHandler(tracker)
     const adminJwtClient = createJwtClient(serviceAccountKey, subject)
     const admin = google.admin({
       version: "directory_v1",
@@ -791,7 +816,7 @@ export const handleGoogleServiceAccountIngestion = async (
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
     const users = await listUsers(admin, workspace.domain)
-    setTotalUsers(users.length)
+    tracker.setTotalUsers(users.length)
     const ingestionMetadata: IngestionMetadata[] = []
 
     // Use p-limit to handle concurrency
@@ -800,8 +825,8 @@ export const handleGoogleServiceAccountIngestion = async (
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
-          progress: getProgress(),
-          userStats: serviceAccountTracker.userStats,
+          progress: tracker.getProgress(),
+          userStats: tracker.getServiceAccountProgress().userStats,
         }),
         connector.externalId,
       )
@@ -816,7 +841,7 @@ export const handleGoogleServiceAccountIngestion = async (
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
           await listAllContacts(jwtClient)
-        await insertContactsToVespa(contacts, otherContacts, userEmail)
+        await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
 
         const { startPageToken }: drive_v3.Schema$StartPageToken = (
           await driveClient.changes.getStartPageToken()
@@ -826,12 +851,12 @@ export const handleGoogleServiceAccountIngestion = async (
         }
 
         const [_, historyId, { calendarEventsToken }] = await Promise.all([
-          insertFilesForUser(jwtClient, userEmail, connector),
+          insertFilesForUser(jwtClient, userEmail, connector, tracker),
           handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
-          insertCalendarEvents(jwtClient, userEmail),
+          insertCalendarEvents(jwtClient, userEmail, tracker),
         ])
 
-        markUserComplete(userEmail)
+        tracker.markUserComplete(userEmail)
         return {
           email: userEmail,
           driveToken: startPageToken,
@@ -1116,6 +1141,7 @@ const insertFilesForUser = async (
   googleClient: GoogleClient,
   userEmail: string,
   connector: SelectConnector,
+  tracker: Tracker,
 ) => {
   try {
     let processedFiles = 0
@@ -1154,7 +1180,7 @@ const insertFilesForUser = async (
       for (const doc of pdfs) {
         processedFiles += 1
         await insertDocument(doc)
-        updateUserStats(userEmail, StatType.Drive, 1)
+        tracker.updateUserStats(userEmail, StatType.Drive, 1)
       }
       const [documents, slides, sheets]: [
         VespaFileWithDrivePermission[],
@@ -1192,7 +1218,7 @@ const insertFilesForUser = async (
       for (const doc of allFiles) {
         processedFiles += 1
         await insertDocument(doc)
-        updateUserStats(userEmail, StatType.Drive, 1)
+        tracker.updateUserStats(userEmail, StatType.Drive, 1)
       }
 
       Logger.info(`finished ${pageFiles.length} files`)
@@ -1895,15 +1921,16 @@ const insertContactsToVespa = async (
   contacts: people_v1.Schema$Person[],
   otherContacts: people_v1.Schema$Person[],
   owner: string,
+  tracker: Tracker,
 ): Promise<void> => {
   try {
     for (const contact of contacts) {
       await insertContact(contact, GooglePeopleEntity.Contacts, owner)
-      updateUserStats(owner, StatType.Contacts, 1)
+      tracker.updateUserStats(owner, StatType.Contacts, 1)
     }
     for (const contact of otherContacts) {
       await insertContact(contact, GooglePeopleEntity.OtherContacts, owner)
-      updateUserStats(owner, StatType.Contacts, 1)
+      tracker.updateUserStats(owner, StatType.Contacts, 1)
     }
   } catch (error) {
     // error is related to vespa and not mapping
@@ -1960,12 +1987,12 @@ export async function* listFiles(
   } while (nextPageToken)
 }
 
-const sendWebsocketMessage = (message: string, connectorId: string) => {
-  const ws: WSContext = wsConnections.get(connectorId)
-  if (ws) {
-    ws.send(JSON.stringify({ message }))
-  }
-}
+// const sendWebsocketMessage = (message: string, connectorId: string) => {
+//   const ws: WSContext = wsConnections.get(connectorId)
+//   if (ws) {
+//     ws.send(JSON.stringify({ message }))
+//   }
+// }
 
 export const googleDocsVespa = async (
   client: GoogleClient,
