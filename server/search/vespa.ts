@@ -300,6 +300,7 @@ export const HybridDefaultProfile = (
               or
               ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
             )
+              ${appOrEntityFilter}
               and permissions contains @email
             )
           or
@@ -440,6 +441,7 @@ export const searchVespa = async (
     excludedIds,
     notInMailLabels,
   )
+
   const hybridDefaultPayload = {
     yql,
     q: query, // Original user input query
