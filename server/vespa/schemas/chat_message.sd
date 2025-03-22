@@ -21,10 +21,12 @@ schema chat_message {
 
     field name type string {
       indexing: index | attribute | summary
+      index: enable-bm25
     }
 
     field username type string {
-      indexing: attribute | summary
+      indexing: index | attribute | summary
+      index: enable-bm25
     }
 
     field image type string {
@@ -132,13 +134,13 @@ schema chat_message {
     }
 
     first-phase {
-      expression: bm25(text) + bm25(username) + bm25(name)
+      expression: (bm25(text) + bm25(username)/2 + bm25(name)/2)/3
     }
 
     global-phase {
       expression {
         (
-          nativeRank(text, username, name)
+          nativeRank(text, username, name) * 5
         )
       }
       rerank-count: 1000
