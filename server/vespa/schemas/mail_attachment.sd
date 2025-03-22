@@ -70,13 +70,6 @@ schema mail_attachment {
     }
   }
 
-  field filename_embeddings type tensor<bfloat16>(v[DIMS])  {
-    indexing: input filename | embed | attribute | index
-    attribute {
-        distance-metric: angular
-    }
-  }
-
   # filename
   field name_fuzzy type string {
     indexing: input filename | index
@@ -97,11 +90,10 @@ schema mail_attachment {
     fields: filename
   }
 
-  rank-profile default {
+  rank-profile initial {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
-      query(bm25ChunkWeight) double 
     }
 
     constants {
@@ -124,53 +116,72 @@ schema mail_attachment {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
 
-    function chunk_vector_score() {
+    function vector_score() {
       expression: closeness(field, chunk_embeddings)
     }
 
-    function filename_vector_score() {
-      expression: closeness(field, filename_embeddings)
-    }
-
-    function vector_score() {
-      # taking whichever has a good matching
-      expression: max(chunk_vector_score,filename_vector_score)
-    }
-
-    function scaled_bm25_chunks() {
-      expression: scale(bm25(chunks))
-    }
-
-    function scaled_bm25_filename() {
-      expression: scale(bm25(filename))
-    }
-
     function combined_bm25() {
-      expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_filename
+      expression: bm25(filename) + bm25(chunks)
     }
+
+    function combined_nativeRank() {
+      expression: nativeRank(filename,chunks)
+    }
+  }
+
+  rank-profile default inherits initial {
+
+    # Have to increase nativeRank score by 10x, 
+    # the nativeRank score is so low to be comparable with vector_score 
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * scale(vector_score)) + 
+          ((1 - query(alpha)) * (10 * combined_nativeRank))
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(filename)
+      nativeRank(chunks)
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
 
     first-phase {
-      expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+      expression {
+        (
+          (query(alpha) * scale(vector_score)) +
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
+      }
     }
 
     global-phase {
       expression {
         (
           (query(alpha) * scale(vector_score)) +
-          ((1 - query(alpha)) * max(scaled_bm25_filename,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
-        ) * doc_recency
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
       }
       rerank-count: 1000
     }
 
-    match-features {
-      chunk_vector_score
-      filename_vector_score
-      scaled_bm25_chunks
-      scaled_bm25_filename
-      doc_recency
-      query(alpha)
-      query(bm25ChunkWeight)
+     match-features {
+      vector_score
+      combined_bm25
+      bm25(filename)
+      bm25(chunks)
     }
   }
 

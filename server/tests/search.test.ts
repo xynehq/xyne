@@ -12,7 +12,6 @@ import { describe, expect, test, beforeAll, mock, beforeEach } from "bun:test"
 
 type MatchFeatures = {
   "query(alpha)": number
-  "query(bm25ChunkWeight)": number
   chunk_vector_score: number
   doc_recency: number
   scaled_bm25_chunks: number
