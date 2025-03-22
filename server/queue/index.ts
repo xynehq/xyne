@@ -16,6 +16,7 @@ import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 
 const Logger = getLogger(Subsystem.Queue)
+const JobExpiryHours = config.JobExpiryHours
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss({
@@ -55,9 +56,14 @@ export const setupServiceAccountCronjobs = async () => {
     SyncServiceAccountSaaSQueue,
     Every10Minutes,
     {},
-    { retryLimit: 0 },
+    { retryLimit: 0, expireInHours: JobExpiryHours },
   )
-  await boss.schedule(SyncGoogleWorkspace, Every6Hours, {}, { retryLimit: 0 })
+  await boss.schedule(
+    SyncGoogleWorkspace,
+    Every6Hours,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
 }
 
 const initWorkers = async () => {
@@ -83,12 +89,17 @@ const initWorkers = async () => {
   })
 
   // do not retry
-  await boss.schedule(SyncOAuthSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
+  await boss.schedule(
+    SyncOAuthSaaSQueue,
+    Every10Minutes,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
   await boss.schedule(
     CheckDownloadsFolderQueue,
     EveryWeek,
     {},
-    { retryLimit: 0 },
+    { retryLimit: 0, expireInHours: JobExpiryHours },
   )
 
   await setupServiceAccountCronjobs()

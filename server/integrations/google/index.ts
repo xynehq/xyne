@@ -38,7 +38,11 @@ import { SaaSQueue } from "@/queue"
 import { wsConnections } from "@/integrations/google/ws"
 import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
-import { connectors, type SelectConnector } from "@/db/schema"
+import {
+  connectors,
+  type SelectConnector,
+  type SelectOAuthProvider,
+} from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { getWorkspaceById } from "@/db/workspace"
 import {
@@ -104,6 +108,7 @@ import {
   StatType,
   updateUserStats,
 } from "./tracking"
+import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -129,6 +134,7 @@ const listUsers = async (
               ...(nextPageToken! ? { pageToken: nextPageToken } : {}),
             }),
           `Fetching all users`,
+          Apps.GoogleDrive,
         )
       if (res.data.users) {
         users = users.concat(res.data.users)
@@ -437,6 +443,9 @@ const insertCalendarEvents = async (
           fields: eventFields,
         }),
       `Fetching all calendar events`,
+      Apps.GoogleCalendar,
+      0,
+      client,
     )
     if (res.data.items) {
       events = events.concat(res.data.items)
@@ -566,7 +575,17 @@ export const handleGoogleOAuthIngestion = async (
     )
     const userEmail = job.data.email
     const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
-    const oauth2Client = new google.auth.OAuth2()
+
+    const providers: SelectOAuthProvider[] =
+      await getOAuthProviderByConnectorId(db, data.connectorId)
+
+    const [googleProvider] = providers
+
+    const oauth2Client = new google.auth.OAuth2({
+      clientId: googleProvider.clientId!,
+      clientSecret: googleProvider.clientSecret,
+      redirectUri: `${config.host}/oauth/callback`,
+    })
 
     setOAuthUser(userEmail)
     const interval = setInterval(() => {
@@ -581,7 +600,10 @@ export const handleGoogleOAuthIngestion = async (
 
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
-    oauth2Client.setCredentials({ access_token: oauthTokens.access_token })
+    oauth2Client.setCredentials({
+      access_token: oauthTokens.access_token,
+      refresh_token: oauthTokens.refresh_token,
+    })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
@@ -701,6 +723,7 @@ type IngestionMetadata = {
 }
 
 import { z } from "zod"
+import config from "@/config"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -992,6 +1015,9 @@ export const getPresentationToBeIngested = async (
           presentationId: presentation.id!,
         }),
       `Fetching presentation with id ${presentation.id}`,
+      Apps.GoogleDrive,
+      0,
+      client,
     )
     const slidesData = presentationData?.data?.slides!
     let chunks: string[] = []
@@ -1247,6 +1273,7 @@ export const getAllSheetsFromSpreadSheet = async (
   sheets: sheets_v4.Sheets,
   spreadsheet: sheets_v4.Schema$Spreadsheet,
   spreadsheetId: string,
+  client: GoogleClient,
 ) => {
   const allSheets = []
 
@@ -1268,6 +1295,9 @@ export const getAllSheetsFromSpreadSheet = async (
             valueRenderOption: "FORMATTED_VALUE",
           }),
         `Fetching sheets '${ranges.join(", ")}' from spreadsheet`,
+        Apps.GoogleDrive,
+        0,
+        client,
       )
 
       const valueRanges = response?.data?.valueRanges
@@ -1303,11 +1333,15 @@ export const getAllSheetsFromSpreadSheet = async (
 export const getSpreadsheet = async (
   sheets: sheets_v4.Sheets,
   id: string,
+  client: GoogleClient,
 ): Promise<GaxiosResponse<sheets_v4.Schema$Spreadsheet> | null> => {
   try {
     return retryWithBackoff(
       () => sheets.spreadsheets.get({ spreadsheetId: id }),
       `Fetching spreadsheet with ID ${id}`,
+      Apps.GoogleDrive,
+      0,
+      client,
     )
   } catch (error) {
     if (error instanceof GaxiosError) {
@@ -1383,7 +1417,11 @@ export const getSheetsListFromOneSpreadsheet = async (
 ): Promise<VespaFileWithDrivePermission[]> => {
   const sheetsArr = []
   try {
-    const spreadSheetData = await getSpreadsheet(sheets, spreadsheet.id!)
+    const spreadSheetData = await getSpreadsheet(
+      sheets,
+      spreadsheet.id!,
+      client,
+    )
 
     if (spreadSheetData) {
       // Now we should get all sheets inside this spreadsheet using the spreadSheetData
@@ -1391,6 +1429,7 @@ export const getSheetsListFromOneSpreadsheet = async (
         sheets,
         spreadSheetData.data,
         spreadsheet.id!,
+        client,
       )
 
       // There can be multiple parents
@@ -1539,6 +1578,7 @@ export const downloadPDF = async (
   drive: drive_v3.Drive,
   fileId: string,
   fileName: string,
+  client: GoogleClient,
 ): Promise<void> => {
   const filePath = path.join(downloadDir, fileName)
   const file = Bun.file(filePath)
@@ -1550,6 +1590,9 @@ export const downloadPDF = async (
         { responseType: "stream" },
       ),
     `Getting PDF content of fileId ${fileId}`,
+    Apps.GoogleDrive,
+    0,
+    client,
   )
   return new Promise((resolve, reject) => {
     res.data.on("data", (chunk) => {
@@ -1606,7 +1649,7 @@ export const googlePDFsVespa = async (
       const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
-        await downloadPDF(drive, pdf.id!, pdfFileName)
+        await downloadPDF(drive, pdf.id!, pdfFileName, client)
 
         const docs: Document[] = await safeLoadPDF(pdfPath)
         if (!docs || docs.length === 0) {
@@ -1755,6 +1798,9 @@ const listAllContacts = async (
           requestSyncToken: true,
         }),
       `Fetching contacts with pageToken ${pageToken}`,
+      Apps.GoogleDrive,
+      0,
+      client,
     )
 
     if (response.data.connections) {
@@ -1779,6 +1825,9 @@ const listAllContacts = async (
           sources: ["READ_SOURCE_TYPE_PROFILE", "READ_SOURCE_TYPE_CONTACT"],
         }),
       `Fetching other contacts with pageToken ${pageToken}`,
+      Apps.GoogleDrive,
+      0,
+      client,
     )
 
     if (response.data.otherContacts) {
@@ -1951,6 +2000,9 @@ export async function* listFiles(
             pageToken: nextPageToken,
           }),
         `Fetching all files from Google Drive`,
+        Apps.GoogleDrive,
+        0,
+        client,
       )
 
     if (res.data.files) {
@@ -1990,6 +2042,9 @@ export const googleDocsVespa = async (
                 documentId: doc.id as string,
               }),
             `Fetching document with documentId ${doc.id}`,
+            Apps.GoogleDrive,
+            0,
+            client,
           )
         if (!docResponse || !docResponse.data) {
           throw new DocsParsingError(

@@ -23,6 +23,7 @@ import {
   UpdateConnectorFailed,
 } from "@/errors"
 import { IsGoogleApp } from "@/utils"
+import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -169,11 +170,8 @@ export const getOAuthConnectorWithCredentials = async (
     // update it in place
     if (IsGoogleApp(oauthRes.app)) {
       // we will need the provider now to refresh the token
-      const providers: SelectOAuthProvider[] = await trx
-        .select()
-        .from(oauthProviders)
-        .where(eq(oauthProviders.connectorId, oauthRes.id))
-        .limit(1)
+      const providers: SelectOAuthProvider[] =
+        await getOAuthProviderByConnectorId(trx, connectorId)
 
       if (!providers.length) {
         Logger.error("Could not fetch provider while refreshing Google Token")
