@@ -37,6 +37,7 @@ export const GetConnectors = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
   const users: SelectUser[] = await getUserByEmail(db, sub)
   if (users.length === 0) {
+    Logger.error({sub}, "No user found for sub in GetConnectors");
     throw new NoUserFound({})
   }
   const user = users[0]
