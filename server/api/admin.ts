@@ -21,7 +21,7 @@ import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey, JobExpiryHours } = config
 import { generateCodeVerifier, generateState, Google } from "arctic"
-import type { SelectOAuthProvider } from "@/db/schema"
+import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
 import { getLogger } from "@/logger"
 import { getPath } from "hono/utils/url"
@@ -34,8 +34,13 @@ import {
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
 export const GetConnectors = async (c: Context) => {
-  const { workspaceId } = c.get(JwtPayloadKey)
-  const connectors = await getConnectors(workspaceId)
+  const { workspaceId, sub } = c.get(JwtPayloadKey)
+  const users: SelectUser[] = await getUserByEmail(db, sub)
+  if (users.length === 0) {
+    throw new NoUserFound({})
+  }
+  const user = users[0]
+  const connectors = await getConnectors(workspaceId, user.id)
   return c.json(connectors)
 }
 

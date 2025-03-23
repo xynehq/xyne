@@ -31,6 +31,8 @@ export enum Models {
   Amazon_Nova_Micro = "amazon.nova-micro-v1:0",
   Amazon_Nova_Lite = "amazon.nova-lite-v1:0",
   Amazon_Nova_Pro = "amazon.nova-pro-v1:0",
+
+  DeepSeek_R1 = "us.deepseek.r1-v1:0",
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
 }
 
