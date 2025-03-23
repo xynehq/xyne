@@ -127,19 +127,19 @@ export const modelDetailsMap: Record<
       },
     },
   },
-[Models.Claude_3_7_Sonnet]: {
-  name: "Claude 3.7 Sonnet",
-  cost: {
+  [Models.Claude_3_7_Sonnet]: {
+    name: "Claude 3.7 Sonnet",
+    cost: {
       onDemand: {
-          pricePerThousandInputTokens: 0.003,
-          pricePerThousandOutputTokens: 0.015,
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
       },
       batch: {
-          pricePerThousandInputTokens: 0,
-          pricePerThousandOutputTokens: 0,
+        pricePerThousandInputTokens: 0,
+        pricePerThousandOutputTokens: 0,
       },
+    },
   },
-},
   [Models.Claude_3_5_SonnetV2]: {
     name: "Claude 3.5 Sonnet v2",
     cost: {
@@ -176,6 +176,15 @@ export const modelDetailsMap: Record<
       batch: {
         pricePerThousandInputTokens: 0.0005,
         pricePerThousandOutputTokens: 0.0025,
+      },
+    },
+  },
+  [Models.DeepSeek_R1]: {
+    name: "Deepseek R1 (v1:0)",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.00135,
+        pricePerThousandOutputTokens: 0.0054,
       },
     },
   },
@@ -248,4 +257,5 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Amazon_Nova_Lite]: AIProviders.AwsBedrock,
   [Models.Amazon_Nova_Pro]: AIProviders.AwsBedrock,
   [Models.Mistral_Large]: AIProviders.AwsBedrock,
+  [Models.DeepSeek_R1]: AIProviders.AwsBedrock,
 }
