@@ -3,7 +3,7 @@ import { db } from "@/db/client"
 import { getConnector, updateConnector } from "@/db/connector"
 import { getOAuthProvider } from "@/db/oauthProvider"
 import type { SelectConnector } from "@/db/schema"
-import { OAuthCallbackError } from "@/errors"
+import { NoUserFound, OAuthCallbackError } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
 import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
@@ -14,6 +14,7 @@ import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
 const { JwtPayloadKey, JobExpiryHours, slackHost } = config
 import { IsGoogleApp } from "@/utils"
+import { getUserByEmail } from "@/db/user"
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
 
 interface OAuthCallbackQuery {
@@ -60,7 +61,12 @@ export const OAuthCallback = async (c: Context) => {
     }
     let tokens: SlackOAuthResp | OAuthCredentials
 
-    const provider = await getOAuthProvider(db, app)
+    const userRes = await getUserByEmail(db, sub)
+    if(!userRes || !userRes.length) {
+      Logger.error('Could not find user in OAuth Callback')
+      throw new NoUserFound({})
+    }
+    const provider = await getOAuthProvider(db, userRes[0].id, app)
     const { clientId, clientSecret } = provider
     console.log("provider", provider)
     if (app === Apps.Slack) {

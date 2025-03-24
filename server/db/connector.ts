@@ -78,7 +78,7 @@ export const insertConnector = async (
 }
 
 // for the admin we can get all the connectors
-export const getConnectors = async (workspaceId: string) => {
+export const getConnectors = async (workspaceId: string, userId: number) => {
   const res = await db
     .select({
       id: connectors.externalId,
@@ -89,7 +89,12 @@ export const getConnectors = async (workspaceId: string) => {
       createdAt: connectors.createdAt,
     })
     .from(connectors)
-    .where(eq(connectors.workspaceExternalId, workspaceId))
+    .where(
+      and(
+        eq(connectors.workspaceExternalId, workspaceId),
+        eq(connectors.userId, userId),
+      ),
+    )
   return res
 }
 

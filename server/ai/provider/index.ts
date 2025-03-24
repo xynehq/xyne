@@ -905,6 +905,7 @@ export const baselineRAGJsonStream = (
       },
     ],
   }
+
   params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]

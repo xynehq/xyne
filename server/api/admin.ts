@@ -19,9 +19,11 @@ import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
+
 const { JwtPayloadKey, JobExpiryHours, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
-import type { SelectOAuthProvider } from "@/db/schema"
+import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
+
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
 import { getLogger } from "@/logger"
 import { getPath } from "hono/utils/url"
@@ -35,8 +37,14 @@ import { scopes } from "@/integrations/google/config"
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
 export const GetConnectors = async (c: Context) => {
-  const { workspaceId } = c.get(JwtPayloadKey)
-  const connectors = await getConnectors(workspaceId)
+  const { workspaceId, sub } = c.get(JwtPayloadKey)
+  const users: SelectUser[] = await getUserByEmail(db, sub)
+  if (users.length === 0) {
+    Logger.error({sub}, "No user found for sub in GetConnectors");
+    throw new NoUserFound({})
+  }
+  const user = users[0]
+  const connectors = await getConnectors(workspaceId, user.id)
   return c.json(connectors)
 }
 
@@ -108,7 +116,12 @@ export const StartOAuth = async (c: Context) => {
   // @ts-ignore
   const { app }: OAuthStartQuery = c.req.valid("query")
   Logger.info(`${sub} started ${app} OAuth`)
-  const provider = await getOAuthProvider(db, app)
+  const userRes = await getUserByEmail(db, sub)
+  if(!userRes || !userRes.length) {
+    Logger.error('Could not find user by email when starting OAuth')
+    throw new NoUserFound({})
+  }
+  const provider = await getOAuthProvider(db, userRes[0].id, app)
   const url = await getAuthorizationUrl(c, app, provider)
   return c.redirect(url.toString())
 }
