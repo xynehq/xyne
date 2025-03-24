@@ -243,40 +243,6 @@ class Fireworks {
   }
 }
 
-// Example usage with types
-async function example() {
-  // Initialize with types
-  const fireworks = new Fireworks({
-    apiKey: "your-api-key",
-    timeout: 4 * 60 * 1000,
-    maxRetries: 10,
-  })
-
-  // Non-streaming with types
-  const messages: ChatMessage[] = [{ role: "user", content: "Hello!" }]
-
-  const options: Partial<ModelParameters> = {
-    temperature: 0.8,
-    max_tokens: 1000,
-  }
-
-  try {
-    // Non-streaming call
-    const response: CompletionResponse = await fireworks.complete(
-      messages,
-      options,
-    )
-    console.log("Complete response:", response)
-
-    // Streaming call
-    for await (const chunk of fireworks.streamComplete(messages, options)) {
-      console.log("Chunk:", chunk)
-    }
-  } catch (error) {
-    console.error("Error:", error)
-  }
-}
-
 export type {
   FireworksConfig,
   ChatMessage,
