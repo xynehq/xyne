@@ -1,4 +1,4 @@
-import type { GaxiosError, GaxiosResponse } from "gaxios"
+import { GaxiosError, type GaxiosResponse } from "gaxios"
 import {
   Subsystem,
   type GoogleClient,
@@ -89,79 +89,105 @@ export class DocsParsingError extends Error {}
 export const getFile = async (
   client: GoogleClient,
   fileId: string,
-): Promise<drive_v3.Schema$File> => {
+): Promise<drive_v3.Schema$File | null> => {
   const drive = google.drive({ version: "v3", auth: client })
   const fields =
     "id, webViewLink, createdTime, modifiedTime, name, size, parents, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
-  const file: GaxiosResponse<drive_v3.Schema$File> = await retryWithBackoff(
-    () =>
-      drive.files.get({
-        fileId,
-        fields,
-      }),
-    `Getting file with fileId ${fileId}`,
-  )
+  try {
+    const file: GaxiosResponse<drive_v3.Schema$File> = await retryWithBackoff(
+      () =>
+        drive.files.get({
+          fileId,
+          fields,
+        }),
+      `Getting file with fileId ${fileId}`,
+      Apps.GoogleDrive,
+      0,
+      client,
+    )
 
-  return file.data
+    return file?.data
+  } catch (error) {
+    // Final catch: log the error details without breaking the sync job.
+    if (error instanceof GaxiosError) {
+      Logger.error(
+        `GaxiosError while fetching drive changes: status ${error.response?.status}, ` +
+          `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`,
+      )
+    } else if (error instanceof Error) {
+      Logger.error(
+        `Unexpected error while fetching drive changes: ${error.message}`,
+      )
+    } else {
+      Logger.error(`An unknown error occurred while fetching drive changes.`)
+    }
+    return null
+  }
 }
 
 export const getFileContent = async (
   client: GoogleClient,
   file: drive_v3.Schema$File,
   entity: DriveEntity,
-): Promise<VespaFileWithDrivePermission> => {
+): Promise<VespaFileWithDrivePermission | null> => {
   const docs = google.docs({ version: "v1", auth: client })
-  const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
-    await retryWithBackoff(
-      () =>
-        docs.documents.get({
-          documentId: file.id as string,
-        }),
-      `Getting document with documentId ${file.id}`,
+  try {
+    const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
+      await retryWithBackoff(
+        () =>
+          docs.documents.get({
+            documentId: file.id as string,
+          }),
+        `Getting document with documentId ${file.id}`,
+        Apps.GoogleDrive,
+        0,
+        client,
+      )
+    const documentContent: docs_v1.Schema$Document = docResponse.data
+    const rawTextContent = documentContent?.body?.content
+      ?.map((e) => extractText(documentContent, e))
+      .join("")
+
+    const footnotes = extractFootnotes(documentContent)
+    const headerFooter = extractHeadersAndFooters(documentContent)
+
+    const cleanedTextContent = postProcessText(
+      rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
     )
-  if (!docResponse || !docResponse.data) {
-    throw new DocsParsingError(
-      `Could not get document content for file: ${file.id}`,
-    )
-  }
-  const documentContent: docs_v1.Schema$Document = docResponse.data
-  const rawTextContent = documentContent?.body?.content
-    ?.map((e) => extractText(documentContent, e))
-    .join("")
 
-  const footnotes = extractFootnotes(documentContent)
-  const headerFooter = extractHeadersAndFooters(documentContent)
+    const chunks = chunkDocument(cleanedTextContent)
 
-  const cleanedTextContent = postProcessText(
-    rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter,
-  )
-
-  const chunks = chunkDocument(cleanedTextContent)
-
-  const parentsForMetadata = []
-  if (file?.parents) {
-    for (const parentId of file.parents!) {
-      const parentData = await getFile(client, parentId)
-      const folderName = parentData.name!
-      parentsForMetadata.push({ folderName, folderId: parentId })
+    const parentsForMetadata = []
+    if (file?.parents) {
+      for (const parentId of file.parents!) {
+        const parentData = await getFile(client, parentId)
+        const folderName = parentData?.name!
+        parentsForMetadata.push({ folderName, folderId: parentId })
+      }
     }
-  }
 
-  return {
-    title: file.name!,
-    url: file.webViewLink ?? "",
-    app: Apps.GoogleDrive,
-    docId: file.id!,
-    owner: file.owners ? (file.owners[0].displayName ?? "") : "",
-    photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
-    ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
-    entity,
-    chunks: chunks.map((v) => v.chunk),
-    permissions: file.permissions ?? [],
-    mimeType: file.mimeType ?? "",
-    metadata: JSON.stringify({ parents: parentsForMetadata }),
-    createdAt: new Date(file.createdTime!).getTime(),
-    updatedAt: new Date(file.modifiedTime!).getTime(),
+    return {
+      title: file.name!,
+      url: file.webViewLink ?? "",
+      app: Apps.GoogleDrive,
+      docId: file.id!,
+      owner: file.owners ? (file.owners[0].displayName ?? "") : "",
+      photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
+      ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
+      entity,
+      chunks: chunks.map((v) => v.chunk),
+      permissions: file.permissions ?? [],
+      mimeType: file.mimeType ?? "",
+      metadata: JSON.stringify({ parents: parentsForMetadata }),
+      createdAt: new Date(file.createdTime!).getTime(),
+      updatedAt: new Date(file.modifiedTime!).getTime(),
+    }
+  } catch (err) {
+    Logger.error(
+      err,
+      `Error in getting document content of document with id ${file?.id}, but continuing sync engine execution.`,
+    )
+    return null
   }
 }
 
@@ -178,7 +204,7 @@ export const getPDFContent = async (
     return
   }
   try {
-    await downloadPDF(drive, pdfFile.id!, pdfFile.name!)
+    await downloadPDF(drive, pdfFile.id!, pdfFile.name!, client)
     const pdfPath = `${downloadDir}/${pdfFile?.name}`
     let docs: Document[] = []
 
@@ -199,7 +225,7 @@ export const getPDFContent = async (
     if (pdfFile?.parents) {
       for (const parentId of pdfFile.parents!) {
         const parentData = await getFile(client, parentId)
-        const folderName = parentData.name!
+        const folderName = parentData?.name!
         parentsForMetadata.push({ folderName, folderId: parentId })
       }
     }
@@ -225,31 +251,25 @@ export const getPDFContent = async (
   } catch (error) {
     Logger.error(
       error,
-      `Error getting file: ${error} ${(error as Error).stack}`,
-      error,
+      `Error getting file: ${error} ${(error as Error).stack} but continuing sync engine execution.`,
     )
 
     // previously sync was breaking for these 2 cases
     // so we return null (TODO: confirm if we ingest atleast the metadata)
     if (
-      (error as Error).message === "No password given" &&
-      (error as any).code === 1
+      (error as Error)?.message === "No password given" &&
+      (error as any)?.code === 1
     ) {
       return
     } else if (
-      (error as Error).message === "Permission denied" &&
-      (error as GaxiosError).code === "EACCES"
+      (error as Error)?.message === "Permission denied" &&
+      (error as GaxiosError)?.code === "EACCES"
     ) {
       // this is pdf someone else has shared but we don't have access to download it
       return
+    } else {
+      return
     }
-
-    throw new DownloadDocumentError({
-      message: "Error in getting file content",
-      cause: error as Error,
-      integration: Apps.GoogleDrive,
-      entity: DriveEntity.PDF,
-    })
   }
 }
 
@@ -276,35 +296,39 @@ export const getSheetsFromSpreadSheet = async (
 export const driveFileToIndexed = async (
   client: GoogleClient,
   file: drive_v3.Schema$File,
-): Promise<VespaFileWithDrivePermission> => {
+): Promise<VespaFileWithDrivePermission | null> => {
   let entity = mimeTypeMap[file.mimeType!] ?? DriveEntity.Misc
-
-  const parentsForMetadata = []
-  if (file?.parents) {
-    for (const parentId of file.parents!) {
-      const parentData = await getFile(client, parentId)
-      const folderName = parentData.name!
-      parentsForMetadata.push({ folderName, folderId: parentId })
+  try {
+    const parentsForMetadata = []
+    if (file?.parents) {
+      for (const parentId of file.parents!) {
+        const parentData = await getFile(client, parentId)
+        const folderName = parentData?.name!
+        parentsForMetadata.push({ folderName, folderId: parentId })
+      }
     }
-  }
 
-  // TODO: fix this correctly
-  // @ts-ignore
-  return {
-    title: file.name!,
-    url: file.webViewLink ?? "",
-    app: Apps.GoogleDrive,
-    docId: file.id!,
-    entity,
-    chunks: [],
-    owner: file.owners ? (file.owners[0].displayName ?? "") : "",
-    photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
-    ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
-    permissions: file.permissions ?? [],
-    mimeType: file.mimeType ?? "",
-    metadata: JSON.stringify({ parents: parentsForMetadata }),
-    createdAt: new Date(file.createdTime!).getTime(),
-    updatedAt: new Date(file.modifiedTime!).getTime(),
+    // TODO: fix this correctly
+    // @ts-ignore
+    return {
+      title: file.name!,
+      url: file.webViewLink ?? "",
+      app: Apps.GoogleDrive,
+      docId: file.id!,
+      entity,
+      chunks: [],
+      owner: file.owners ? (file.owners[0].displayName ?? "") : "",
+      photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
+      ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
+      permissions: file.permissions ?? [],
+      mimeType: file.mimeType ?? "",
+      metadata: JSON.stringify({ parents: parentsForMetadata }),
+      createdAt: new Date(file.createdTime!).getTime(),
+      updatedAt: new Date(file.modifiedTime!).getTime(),
+    }
+  } catch (err) {
+    Logger.error(`Error indexing file with id ${file?.id}`)
+    return null
   }
 }
 

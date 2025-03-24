@@ -5,6 +5,8 @@ import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
+import { Apps } from "@/search/types"
+import type { OAuth2Client } from "google-auth-library"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -103,7 +105,9 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 export const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
   context: string,
+  app: Apps,
   retries = 0,
+  googleOauth2Client?: OAuth2Client,
 ): Promise<T> => {
   try {
     return await fn() // Attempt the function
@@ -132,8 +136,22 @@ export const retryWithBackoff = async <T>(
         )}ms (Attempt ${retries + 1}/${MAX_RETRIES})`,
       )
       await delay(waitTime)
-
-      return retryWithBackoff(fn, context, retries + 1) // Retry recursively
+      return retryWithBackoff(fn, context, app, retries + 1, googleOauth2Client) // Retry recursively
+    } else if (error.code === 401 && retries < MAX_RETRIES) {
+      if (IsGoogleApp(app)) {
+        Logger.info(`401 encountered, refreshing OAuth access token...`)
+        const { credentials } = await googleOauth2Client?.refreshAccessToken()!
+        googleOauth2Client?.setCredentials(credentials)
+        return retryWithBackoff(
+          fn,
+          context,
+          app,
+          retries + 1,
+          googleOauth2Client,
+        )
+      } else {
+        throw new Error("401 error for unsupported app")
+      }
     } else {
       Logger.error(
         `[${context}] Failed after ${retries} retries: ${error.message}`,
@@ -177,4 +195,12 @@ export const removeStopwords = (text: string) => {
     return !englishStopwords.includes(cleanWord)
   })
   return filteredWords.join(" ")
+}
+
+export const IsGoogleApp = (app: Apps) => {
+  return (
+    app === Apps.GoogleDrive ||
+    app === Apps.Gmail ||
+    app === Apps.GoogleCalendar
+  )
 }

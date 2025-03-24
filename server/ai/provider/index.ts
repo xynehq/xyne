@@ -77,7 +77,7 @@ import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenerativeAI } from "@google/generative-ai"
-import { GeminiAIProvider } from "./gemini"
+import { GeminiAIProvider } from "@/ai/provider/gemini"
 const Logger = getLogger(Subsystem.AI)
 
 const askQuestionSystemPrompt =
@@ -904,6 +904,7 @@ export const baselineRAGJsonStream = (
       },
     ],
   }
+
   params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]

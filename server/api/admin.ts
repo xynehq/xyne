@@ -19,10 +19,10 @@ import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
-const { JwtPayloadKey } = config
+const { JwtPayloadKey, JobExpiryHours } = config
 import { generateCodeVerifier, generateState, Google } from "arctic"
-import type { SelectOAuthProvider } from "@/db/schema"
-import { getErrorMessage, setCookieByEnv } from "@/utils"
+import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
+import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
 import { getLogger } from "@/logger"
 import { getPath } from "hono/utils/url"
 import {
@@ -34,8 +34,14 @@ import {
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
 export const GetConnectors = async (c: Context) => {
-  const { workspaceId } = c.get(JwtPayloadKey)
-  const connectors = await getConnectors(workspaceId)
+  const { workspaceId, sub } = c.get(JwtPayloadKey)
+  const users: SelectUser[] = await getUserByEmail(db, sub)
+  if (users.length === 0) {
+    Logger.error({sub}, "No user found for sub in GetConnectors");
+    throw new NoUserFound({})
+  }
+  const user = users[0]
+  const connectors = await getConnectors(workspaceId, user.id)
   return c.json(connectors)
 }
 
@@ -55,13 +61,17 @@ const getAuthorizationUrl = async (
   Logger.info(`code verifier  ${codeVerifier}`)
   // adding some data to state
   const newState = JSON.stringify({ app, random: state })
-  const url: URL = await google.createAuthorizationURL(newState, codeVerifier, {
-    scopes: oauthScopes,
-  })
+  const url: URL = google.createAuthorizationURL(
+    newState,
+    codeVerifier,
+    oauthScopes,
+  )
   // for google refresh token
-  if (app === Apps.GoogleDrive) {
+  if (IsGoogleApp(app)) {
     url.searchParams.set("access_type", "offline")
+    url.searchParams.set("prompt", "consent")
   }
+
   // store state verifier as cookie
   setCookieByEnv(c, `${app}-state`, state, {
     secure: true, // set to false in localhost
@@ -125,6 +135,7 @@ export const CreateOAuthProvider = async (c: Context) => {
       AuthType.OAuth,
       app,
       {},
+      null,
       null,
       null,
       ConnectorStatus.NotConnected,
@@ -196,6 +207,7 @@ export const AddServiceConnection = async (c: Context) => {
         singletonKey: connector.externalId,
         priority: 1,
         retryLimit: 0,
+        expireInHours: JobExpiryHours,
       })
 
       Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
