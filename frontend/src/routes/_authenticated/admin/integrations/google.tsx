@@ -24,7 +24,7 @@ import { useForm } from "@tanstack/react-form"
 
 import { cn, getErrorMessage } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
-import { Connectors } from "@/types"
+import { Connectors, OAuthIntegrationStatus } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
 import OAuthTab from "@/components/OAuthTab"
+import { LoaderContent } from "@/lib/common"
+import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 
 const logger = console
 
@@ -218,7 +220,10 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
 export const ServiceAccountForm = ({
   onSuccess,
   refetch,
-}: { onSuccess: any; refetch: any }) => {
+}: {
+  onSuccess: any
+  refetch: any
+}) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const { toast } = useToast()
@@ -321,7 +326,11 @@ export const OAuthButton = ({
   app,
   text,
   setOAuthIntegrationStatus,
-}: { app: Apps; text: string; setOAuthIntegrationStatus: any }) => {
+}: {
+  app: Apps
+  text: string
+  setOAuthIntegrationStatus: any
+}) => {
   const handleOAuth = async () => {
     const oauth = new OAuthModal()
     try {
@@ -373,7 +382,10 @@ export const getConnectors = async (): Promise<any> => {
 const UserStatsTable = ({
   userStats,
   type,
-}: { userStats: { [email: string]: any }; type: AuthType }) => {
+}: {
+  userStats: { [email: string]: any }
+  type: AuthType
+}) => {
   return (
     <Table
       className={
@@ -465,24 +477,6 @@ const ServiceAccountTab = ({
   }
 }
 
-export const LoaderContent = () => {
-  return (
-    <div
-      className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}
-    >
-      <div className="items-center justify-center">
-        <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
-      </div>
-    </div>
-  )
-}
-
-export enum OAuthIntegrationStatus {
-  Provider = "Provider", // yet to create provider
-  OAuth = "OAuth", // provider created but OAuth not yet connected
-  OAuthConnecting = "OAuthConnecting",
-  OAuthConnected = "OAuthConnected",
-}
 export interface AdminPageProps {
   user: PublicUser
   workspace: PublicWorkspace
@@ -542,7 +536,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       const connector = data.find(
         (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
       )
-      logger.info(connector)
       if (connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
@@ -563,9 +556,10 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   useEffect(() => {
     let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
+      const googleConnector = data.find((d) => d.app === Apps.GoogleDrive)
       socket = wsClient.ws.$ws({
         query: {
-          id: data[0]?.id,
+          id: googleConnector?.id,
         },
       })
       // setWs(socket)
@@ -620,6 +614,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <IntegrationsSidebar role={user.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
@@ -667,7 +662,9 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   )
 }
 
-export const Route = createFileRoute("/_authenticated/admin/integrations")({
+export const Route = createFileRoute(
+  "/_authenticated/admin/integrations/google",
+)({
   beforeLoad: async ({ params, context }) => {
     const userWorkspace = context
     // Normal users shouldn't be allowed to visit /admin/integrations
@@ -675,7 +672,7 @@ export const Route = createFileRoute("/_authenticated/admin/integrations")({
       userWorkspace?.user?.role !== UserRole.SuperAdmin &&
       userWorkspace?.user?.role !== UserRole.Admin
     ) {
-      throw redirect({ to: "/integrations" })
+      throw redirect({ to: "/admin/integrations/google" })
     }
     return params
   },

@@ -72,6 +72,13 @@ export type ServiceAccountConnection = z.infer<
   typeof addServiceConnectionSchema
 >
 
+export const addApiKeyConnectorSchema = z.object({
+  app: z.nativeEnum(Apps),
+  apiKey: z.string(),
+})
+
+export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
+
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),

@@ -1,18 +1,18 @@
-import { TabsContent } from "./ui/tabs"
+import { TabsContent } from "@/components/ui/tabs"
 import {
-  LoaderContent,
   OAuthButton,
   OAuthForm,
-  OAuthIntegrationStatus,
-} from "@/routes/_authenticated/admin/integrations"
+} from "@/routes/_authenticated/admin/integrations/google"
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "./ui/card"
+} from "@/components/ui/card"
 import { Apps } from "shared/types"
+import { LoaderContent } from "@/lib/common"
+import { OAuthIntegrationStatus } from "@/types"
 
 interface OAuthTabProps {
   isPending: boolean

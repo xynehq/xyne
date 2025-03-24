@@ -14,6 +14,7 @@ import {
 import { checkDownloadsFolder } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
+import { handleSlackIngestion } from "@/integrations/slack"
 
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
@@ -83,7 +84,17 @@ const initWorkers = async () => {
       jobData.authType === AuthType.OAuth
     ) {
       await handleGoogleOAuthIngestion(boss, job)
-    } else {
+    } else if (
+      jobData.app == Apps.Slack &&
+      jobData.authType === AuthType.OAuth
+    ) {
+      await handleSlackIngestion(boss, job)
+    }
+
+    // else if (jobData.app == Apps.Slack && jobData.authType === AuthType.ApiKey) {
+    //   await handleSlackIngestion(boss, job)
+    // }
+    else {
       throw new Error("Unsupported job")
     }
   })

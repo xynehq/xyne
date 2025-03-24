@@ -71,18 +71,16 @@ export const Sidebar = ({
 
           <Link
             to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}
-            className="flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px]"
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px] ${
+              location.pathname.includes("/admin/integrations") ||
+              location.pathname.includes("/integrations")
+                ? "bg-[#D8DFE680]"
+                : ""
+            }`}
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Plug
-                  stroke="#384049"
-                  size={18}
-                  {...(location.pathname === "/admin/integrations" ||
-                  location.pathname === "/integrations"
-                    ? { className: "text-blue-500 hover:text-blue-600" }
-                    : { className: "hover:text-blue-600" })}
-                />
+                <Plug stroke="#384049" size={18} />
               </TooltipTrigger>
               <Tip side="right" info="Integrations" />
             </Tooltip>

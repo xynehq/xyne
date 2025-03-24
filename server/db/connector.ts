@@ -39,6 +39,7 @@ export const insertConnector = async (
   credentials: string | null,
   subject: string | null,
   oauthCredentials?: string | null,
+  apiKey?: string | null,
   status?: ConnectorStatus | null,
 ) => {
   const externalId = createId() // Generate unique external ID
@@ -58,6 +59,7 @@ export const insertConnector = async (
         credentials, // Encrypted credentials
         subject,
         oauthCredentials,
+        apiKey,
         ...(status ? { status } : {}),
       })
       .returning()

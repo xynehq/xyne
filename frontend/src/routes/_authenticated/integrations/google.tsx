@@ -10,8 +10,7 @@ import {
   AdminPageProps,
   getConnectors,
   minHeight,
-  OAuthIntegrationStatus,
-} from "./admin/integrations"
+} from "@/routes/_authenticated/admin/integrations/google"
 import { getErrorMessage } from "@/lib/utils"
 import { Sidebar } from "@/components/Sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,6 +18,8 @@ import { useEffect, useState } from "react"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
 import { wsClient } from "@/api"
 import OAuthTab from "@/components/OAuthTab"
+import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
+import { OAuthIntegrationStatus } from "@/types"
 
 const logger = console
 
@@ -57,7 +58,6 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
       const connector = data.find(
         (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
       )
-      logger.info(connector)
       if (connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
@@ -109,6 +109,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <IntegrationsSidebar role={user.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
@@ -131,7 +132,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
   )
 }
 
-export const Route = createFileRoute("/_authenticated/integrations")({
+export const Route = createFileRoute("/_authenticated/integrations/google")({
   beforeLoad: async ({ params, context }) => {
     const userWorkspace = context
     // Admins should be redirected to visit /admin/integrations
@@ -139,7 +140,7 @@ export const Route = createFileRoute("/_authenticated/integrations")({
       userWorkspace?.user?.role === UserRole.SuperAdmin ||
       userWorkspace?.user?.role === UserRole.Admin
     ) {
-      throw redirect({ to: "/admin/integrations" })
+      throw redirect({ to: "/integrations/google" })
     }
     return params
   },

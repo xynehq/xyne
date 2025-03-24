@@ -201,6 +201,7 @@ export const IsGoogleApp = (app: Apps) => {
   return (
     app === Apps.GoogleDrive ||
     app === Apps.Gmail ||
-    app === Apps.GoogleCalendar
+    app === Apps.GoogleCalendar ||
+    app === Apps.GoogleWorkspace
   )
 }
