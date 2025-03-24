@@ -93,7 +93,7 @@ export const handleGmailIngestion = async (
               client,
             )
             await insert(
-              await parseMail(msgResp.data, gmail, email, client),
+              await parseMail(msgResp.data, gmail, email, client, tracker),
               mailSchema,
             )
             tracker.updateUserStats(email, StatType.Gmail, 1)
@@ -155,11 +155,8 @@ export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   userEmail: string,
-<<<<<<< HEAD
   client: GoogleClient,
-=======
   tracker: Tracker,
->>>>>>> a476e71 (initial slack commit)
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
