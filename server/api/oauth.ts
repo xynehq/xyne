@@ -48,7 +48,7 @@ export const OAuthCallback = async (c: Context) => {
 
     const userRes = await getUserByEmail(db, sub)
     if(!userRes || !userRes.length) {
-      Logger.error('Could not find user by email when starting OAuth')
+      Logger.error('Could not find user in OAuth Callback')
       throw new NoUserFound({})
     }
     const provider = await getOAuthProvider(db, userRes[0].id, app)
