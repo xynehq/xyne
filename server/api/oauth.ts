@@ -3,7 +3,7 @@ import { db } from "@/db/client"
 import { getConnector, updateConnector } from "@/db/connector"
 import { getOAuthProvider } from "@/db/oauthProvider"
 import type { SelectConnector } from "@/db/schema"
-import { OAuthCallbackError } from "@/errors"
+import { NoUserFound, OAuthCallbackError } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger } from "@/logger"
 import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
@@ -12,6 +12,7 @@ import { Google } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
+import { getUserByEmail } from "@/db/user"
 const { JwtPayloadKey, JobExpiryHours } = config
 
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
@@ -45,7 +46,12 @@ export const OAuthCallback = async (c: Context) => {
       throw new HTTPException(500, { message: "Could not verify the code" })
     }
 
-    const provider = await getOAuthProvider(db, app)
+    const userRes = await getUserByEmail(db, sub)
+    if(!userRes || !userRes.length) {
+      Logger.error('Could not find user in OAuth Callback')
+      throw new NoUserFound({})
+    }
+    const provider = await getOAuthProvider(db, userRes[0].id, app)
     const { clientId, clientSecret } = provider
     const google = new Google(
       clientId as string,
