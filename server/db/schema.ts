@@ -58,6 +58,25 @@ export const workspaces = pgTable("workspaces", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 })
 
+export const groups = pgTable("groups", {
+  id: text("id").notNull().primaryKey(),
+  name: text("name").notNull(),
+  groupEmail: text("email").notNull(),
+  description: text("description").notNull(),
+  directMembersCount: text("directMembersCount").notNull(),
+  memberEmails: text("memberEmails")
+    .array()
+    .notNull()
+    .default(sql`ARRAY[]::text[]`),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`NOW()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .default(sql`NOW()`),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+})
+
 export const userRoleEnum = pgEnum(
   "role",
   Object.values(UserRole) as [string, ...string[]],

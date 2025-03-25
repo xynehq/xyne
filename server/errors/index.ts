@@ -13,6 +13,7 @@ enum Model {
   Connectors = "connectors",
   Providers = "providers",
   Users = "users",
+  Groups = "groups",
 }
 
 // Define a base error options type
@@ -304,6 +305,14 @@ export class NoConnectorsFound extends DbError {
 
 // db/connectors/ConnectionInsertionError
 export class ConnectionInsertionError extends DbError {
+  constructor({ message, cause }: BaseErrorOpts) {
+    super({ message, model: Model.Connectors, dbOp: DbOp.Create, cause })
+    this.name = this.constructor.name
+  }
+}
+
+// db/groups/GroupInsertionError
+export class GroupInsertionError extends DbError {
   constructor({ message, cause }: BaseErrorOpts) {
     super({ message, model: Model.Connectors, dbOp: DbOp.Create, cause })
     this.name = this.constructor.name

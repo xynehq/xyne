@@ -724,6 +724,7 @@ type IngestionMetadata = {
 
 import { z } from "zod"
 import config from "@/config"
+import { insertGroup } from "@/db/group"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -792,6 +793,38 @@ const handleGmailIngestionForServiceAccount = async (
   })
 }
 
+const getAndSaveAllGroupsMembers = async (
+  admin: admin_directory_v1.Admin,
+  domain: string,
+) => {
+  // todo paginate this
+  const groups = await admin.groups.list({ domain })
+  const mainGrps = groups.data.groups!
+  for (const grp of mainGrps) {
+    const membersOfGroups: string[] = []
+    const membersList = await admin.members.list({ groupKey: grp.id! })
+    const members = membersList?.data?.members
+    if (members && members?.length) {
+      for (const mem of members) {
+        if (mem.type === "USER" && mem.status === "ACTIVE" && mem?.email) {
+          membersOfGroups.push(mem?.email)
+        }
+      }
+      if (membersOfGroups.length) {
+        await insertGroup(
+          db,
+          grp?.id!,
+          grp?.name!,
+          grp?.email!,
+          grp?.description!,
+          grp?.directMembersCount!,
+          membersOfGroups,
+        )
+      }
+    }
+  }
+}
+
 // we make 2 sync jobs
 // one for drive and one for google workspace
 export const handleGoogleServiceAccountIngestion = async (
@@ -813,8 +846,22 @@ export const handleGoogleServiceAccountIngestion = async (
     })
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
-    const users = await listUsers(admin, workspace.domain)
-    setTotalUsers(users.length)
+    // todo Gets all groups in the workscpace, Also get all memebers of all groups
+    const groups = await getAndSaveAllGroupsMembers(admin, workspace.domain)
+
+    const oauth2Client = new google.auth.OAuth2({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri: `${config.host}/oauth/callback`,
+    })
+
+    oauth2Client.setCredentials({
+      access_token: process.env.ACCESS_TOKEN,
+      refresh_token: process.env.REFRESH_TOKEN,
+    })
+
+    // const users = await listUsers(admin, workspace.domain)
+    // setTotalUsers(users.length)
     const ingestionMetadata: IngestionMetadata[] = []
 
     // Use p-limit to handle concurrency
@@ -831,10 +878,11 @@ export const handleGoogleServiceAccountIngestion = async (
     }, 4000)
 
     // Map each user to a promise but limit concurrent execution
-    const promises = users.map((user) =>
+    const promises =
+      // users.map((user) =>
       limit(async () => {
-        const userEmail = user.primaryEmail || user.emails[0]
-        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
+        const userEmail = process.env.EMAIL!
+        const jwtClient = oauth2Client
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
@@ -850,7 +898,8 @@ export const handleGoogleServiceAccountIngestion = async (
 
         const [_, historyId, { calendarEventsToken }] = await Promise.all([
           insertFilesForUser(jwtClient, userEmail, connector),
-          handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
+          // handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
+          handleGmailIngestion(oauth2Client, userEmail),
           insertCalendarEvents(jwtClient, userEmail),
         ])
 
@@ -863,16 +912,16 @@ export const handleGoogleServiceAccountIngestion = async (
           historyId,
           calendarEventsToken,
         }
-      }),
-    )
+      })
+    // )
 
     // Wait for all promises to complete
-    const results = await Promise.all(promises)
+    const results = await Promise.all([promises])
     ingestionMetadata.push(...results)
 
     // Rest of the function remains the same...
     // insert all the workspace users
-    await insertUsersForWorkspace(users)
+    // await insertUsersForWorkspace(users)
 
     setTimeout(() => {
       clearInterval(interval)

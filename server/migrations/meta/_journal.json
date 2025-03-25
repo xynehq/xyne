@@ -15,6 +15,13 @@
       "when": 1738829424740,
       "tag": "0001_workable_molly_hayes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1742916368467,
+      "tag": "0002_sloppy_white_tiger",
+      "breakpoints": true
     }
   ]
 }
