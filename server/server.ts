@@ -58,7 +58,20 @@ import {
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/google/ws"
+import * as dotenv from 'dotenv'
+
+
 type Variables = JwtVariables
+
+// Explicitly setting order for env loading
+const envFiles = ['.env.development', `.env.${process.env.NODE_ENV}`, '.env', ];
+
+for (const file of envFiles) {
+  if (require('fs').existsSync(file)) {
+    dotenv.config({ path: file });
+    break;
+  }
+}
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
