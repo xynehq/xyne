@@ -24,6 +24,9 @@ import { proto } from "@whiskeysockets/baileys"
 import { generateQR } from "@/integrations/whatsapp/qr"
 import * as fs from 'fs'
 import * as path from 'path'
+import { eq } from "drizzle-orm"
+import { connectors } from "@/db/schema"
+import { ConnectorStatus } from "@/shared/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "whatsapp" })
 
@@ -56,6 +59,8 @@ interface WhatsAppStore {
 }
 
 const store = makeInMemoryStore({})
+store.readFromFile = () => {}
+store.writeToFile = () => {}
 
 export const getContacts = async (sock: WASocket): Promise<WhatsAppContact[]> => {
   const contacts: WhatsAppContact[] = []
@@ -188,10 +193,20 @@ export const handleWhatsAppIngestion = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
+  let sock: WASocket | undefined;
   try {
     Logger.info(`Starting WhatsApp ingestion for job ${job.id}`)
     const data: SaaSOAuthJob = job.data as SaaSOAuthJob
     Logger.info(`Job data: ${JSON.stringify(data, null, 2)}`)
+    
+    // Clear any existing WhatsApp jobs for this connector
+    Logger.info(`Clearing existing WhatsApp jobs`)
+    try {
+      await boss.purgeQueue('ingestion-SaaS')
+      Logger.info('Successfully cleared existing WhatsApp jobs')
+    } catch (error) {
+      Logger.error(error, 'Error clearing existing WhatsApp jobs')
+    }
     
     Logger.info(`Fetching connector with ID: ${data.connectorId}`)
     const connector: SelectConnector = await getConnector(
@@ -204,22 +219,54 @@ export const handleWhatsAppIngestion = async (
     const authStatePath = `auth_info_${data.email}`
     Logger.info(`Using auth state path: ${authStatePath}`)
     
+    // Check if auth state exists and try to validate it
+    if (fs.existsSync(authStatePath)) {
+      try {
+        Logger.info("Found existing auth state, attempting to validate...")
+        const { state } = await useMultiFileAuthState(authStatePath)
+        if (!state || !state.creds || !state.creds.me) {
+          Logger.info("Auth state exists but is invalid, removing...")
+          fs.rmSync(authStatePath, { recursive: true, force: true })
+        }
+      } catch (error) {
+        Logger.error(error, "Error validating existing auth state, removing...")
+        fs.rmSync(authStatePath, { recursive: true, force: true })
+      }
+    }
+    
     // Create auth directory if it doesn't exist
     if (!fs.existsSync(authStatePath)) {
       Logger.info(`Creating auth directory: ${authStatePath}`)
       fs.mkdirSync(authStatePath, { recursive: true })
     }
     
+    Logger.info("Getting auth state...")
     const { state, saveCreds } = await useMultiFileAuthState(authStatePath)
+    Logger.info("Auth state loaded successfully")
     
-    Logger.info("Creating WhatsApp socket")
-    const sock = makeWASocket({
+    Logger.info("Creating WhatsApp socket with config...")
+    sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
       qrTimeout: 60000,
       connectTimeoutMs: 60000,
       retryRequestDelayMs: 250,
+      logger: Logger as any,
+      keepAliveIntervalMs: 10000,
+      emitOwnEvents: true,
+      markOnlineOnConnect: false,
+      defaultQueryTimeoutMs: 60000,
+      customUploadHosts: [],
+      getMessage: async () => undefined
     })
+    Logger.info("WhatsApp socket created")
+
+    // Bind store to socket events before setting up other handlers
+    Logger.info("Binding store to socket events")
+    store.bind(sock.ev)
+
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 3;
 
     // Handle QR code generation
     sock.ev.on('connection.update', async (update) => {
@@ -241,27 +288,76 @@ export const handleWhatsAppIngestion = async (
       }
 
       if (connection === 'close') {
-        Logger.info(`Connection closed. Last disconnect: ${JSON.stringify(lastDisconnect, null, 2)}`)
-        const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
+        const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut && 
+                              statusCode !== DisconnectReason.connectionClosed &&
+                              reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
+        
+        Logger.info(`Connection closed. Status: ${statusCode}, Should reconnect: ${shouldReconnect}`)
+        
         if (shouldReconnect) {
-          Logger.info("Attempting to reconnect")
+          reconnectAttempts++;
+          Logger.info(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
+          await new Promise(resolve => setTimeout(resolve, 2000));
           handleWhatsAppIngestion(boss, job)
+        } else {
+          Logger.error(`Connection terminated (Status: ${statusCode}). Cleaning up...`)
+          fs.rmSync(authStatePath, { recursive: true, force: true })
         }
+      } else if (connection === 'connecting') {
+        Logger.info("Connecting to WhatsApp...")
       } else if (connection === 'open') {
-        Logger.info("Connection opened, saving credentials")
-        saveCreds()
+        Logger.info("Connection opened successfully")
+        reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        Logger.info("Saving credentials...")
+        await saveCreds()
+        Logger.info("Credentials saved")
+        
+        // Update connector status to Connected
+        Logger.info("Updating connector status to Connected")
+        await db.update(connectors)
+          .set({ status: ConnectorStatus.Connected })
+          .where(eq(connectors.id, connector.id))
+        Logger.info("Connector status updated successfully")
+        
         // Start ingestion after successful connection
         Logger.info("Starting WhatsApp data ingestion")
-        await startIngestion(sock, data.email, connector.externalId, tracker)
+        await startIngestion(sock!, data.email, connector.externalId, tracker)
       }
     })
 
-    // Handle store updates
-    Logger.info("Binding store updates")
-    store.bind(sock.ev)
+    // Handle credentials update
+    sock.ev.on('creds.update', async () => {
+      Logger.info("Credentials updated, saving...")
+      await saveCreds()
+      Logger.info("Credentials saved successfully")
+    })
+
+    // Handle messages
+    sock.ev.on('messages.upsert', async (m) => {
+      Logger.info(`New message received: ${JSON.stringify(m, null, 2)}`)
+    })
+
+    // Handle contacts
+    sock.ev.on('contacts.update', async (contacts) => {
+      Logger.info(`Contacts updated: ${JSON.stringify(contacts, null, 2)}`)
+    })
+
+    // Handle chats
+    sock.ev.on('chats.upsert', async (chats) => {
+      Logger.info(`Chats updated: ${JSON.stringify(chats, null, 2)}`)
+    })
 
   } catch (error) {
     Logger.error(error, "Error in WhatsApp ingestion")
+    // Clean up on error
+    if (sock) {
+      try {
+        await sock.end(undefined)
+      } catch (cleanupError) {
+        Logger.error(cleanupError, "Error during socket cleanup")
+      }
+    }
     throw error
   }
 }

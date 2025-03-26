@@ -184,6 +184,22 @@ export class Tracker {
     } else if (this.app === Apps.Slack) {
       return 0
       // return Math.floor(this.oAuthProgress.userStats[this.oAuthProgress.user].slackConversationCount/)
+    } else if (this.app === Apps.WhatsApp) {
+      const stats = this.oAuthProgress.userStats[this.oAuthProgress.user] as WhatsAppStats & StatMetadata;
+      if (!stats) return 0;
+      
+      // Calculate progress based on WhatsApp metrics
+      // We consider the ingestion complete when we have both messages and contacts
+      const hasMessages = stats.whatsappMessageCount > 0;
+      const hasContacts = stats.whatsappContactCount > 0;
+      const hasConversations = stats.whatsappConversationCount > 0;
+      
+      if (hasMessages && hasContacts && hasConversations) {
+        return 100;
+      } else if (hasMessages || hasContacts || hasConversations) {
+        return 50;
+      }
+      return 0;
     } else {
       throw new Error("Invalid app for progress")
     }
