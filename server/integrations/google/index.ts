@@ -797,13 +797,51 @@ const getAndSaveAllGroupsMembers = async (
   admin: admin_directory_v1.Admin,
   domain: string,
 ) => {
-  // todo paginate this
-  const groups = await admin.groups.list({ domain })
-  const mainGrps = groups.data.groups!
-  for (const grp of mainGrps) {
+  // First fetching all the groups in the workspace
+  let nextPageToken = ""
+  const maxGroupMembersResults = 200
+  let groups: admin_directory_v1.Schema$Group[] = []
+  do {
+    const res = await retryWithBackoff(
+      () =>
+        admin.groups.list({
+          domain,
+          maxResults: maxGroupMembersResults,
+          pageToken: nextPageToken,
+        }),
+      `Fetching all workspace groups`,
+      Apps.GoogleWorkspace,
+    )
+
+    if (res.data.groups) {
+      groups = groups.concat(res.data.groups)
+    }
+    nextPageToken = res.data.nextPageToken ?? ""
+  } while (nextPageToken)
+
+  // Fetching each member of each group
+  // todo Currently not saving groups with no members
+  for (const grp of groups) {
+    nextPageToken = ""
+    let members: admin_directory_v1.Schema$Member[] = []
     const membersOfGroups: string[] = []
-    const membersList = await admin.members.list({ groupKey: grp.id! })
-    const members = membersList?.data?.members
+    do {
+      const res = await retryWithBackoff(
+        () =>
+          admin.members.list({
+            groupKey: grp.id!,
+            maxResults: maxGroupMembersResults,
+            pageToken: nextPageToken,
+          }),
+        `Fetching members of group ${grp?.id}`,
+        Apps.GoogleWorkspace,
+      )
+      if (res.data.members) {
+        members = members.concat(res.data.members)
+      }
+      nextPageToken = res.data.nextPageToken ?? ""
+    } while (nextPageToken)
+
     if (members && members?.length) {
       for (const mem of members) {
         if (mem.type === "USER" && mem.status === "ACTIVE" && mem?.email) {
