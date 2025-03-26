@@ -1,10 +1,7 @@
 import { createFileRoute, useRouterState } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
-import { useForm } from "@tanstack/react-form"
 import { toast, useToast } from "@/hooks/use-toast"
 import { useNavigate } from "@tanstack/react-router"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
@@ -19,7 +16,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useQuery } from "@tanstack/react-query"
 import { ConnectorStatus } from "shared/types"
 import { Progress } from "@/components/ui/progress"
@@ -32,6 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { wsClient } from "@/api"
+import { ConnectorType, Connector } from "@/types"
 
 // Function to fetch connectors
 export const getConnectors = async (): Promise<any> => {
@@ -62,7 +59,9 @@ interface WhatsAppQRCodeProps {
 // Function to create WhatsApp connector
 const createWhatsAppConnector = async () => {
   try {
-    const res = await api.admin.connectors.whatsapp.$post()
+    const res = await api.admin.connectors.whatsapp.$post({
+      json: {}
+    })
     if (!res.ok) {
       throw new Error("Could not create WhatsApp connector")
     }
@@ -88,6 +87,40 @@ const WhatsAppQRCode = ({ qrCode, status, onRefresh }: WhatsAppQRCodeProps) => {
     }
   }
 
+  const handleRetry = async () => {
+    try {
+      // Find the existing WhatsApp connector
+      const connectors = await getConnectors()
+      const whatsappConnector = connectors.find(
+        (connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+      )
+      
+      if (!whatsappConnector) {
+        throw new Error("WhatsApp connector not found")
+      }
+
+      // Start ingestion for the existing connector
+      const res = await api.admin.connectors.whatsapp.$post({
+        json: {
+          connectorId: whatsappConnector.id,
+          action: "startIngestion"
+        }
+      })
+      
+      if (!res.ok) {
+        throw new Error("Could not start WhatsApp data ingestion")
+      }
+      onRefresh()
+    } catch (error) {
+      console.error("Error retrying WhatsApp connection:", error)
+      toast({
+        title: "Error",
+        description: "Failed to retry WhatsApp connection",
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <div className="flex flex-col items-center gap-4">
       {status === WhatsAppQRStatus.Connecting && (
@@ -100,15 +133,20 @@ const WhatsAppQRCode = ({ qrCode, status, onRefresh }: WhatsAppQRCodeProps) => {
       {status === WhatsAppQRStatus.Connected && (
         <div className="flex flex-col items-center gap-2">
           <p className="text-green-600 font-medium">WhatsApp Connected</p>
-          <Button variant="outline" onClick={onRefresh}>
-            Refresh Status
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onRefresh}>
+              Refresh Status
+            </Button>
+            <Button onClick={handleRetry}>
+              Get Info
+            </Button>
+          </div>
         </div>
       )}
       {status === WhatsAppQRStatus.Error && (
         <div className="flex flex-col items-center gap-2">
           <p className="text-red-600 font-medium">Connection Error</p>
-          <Button variant="outline" onClick={onRefresh}>
+          <Button variant="outline" onClick={handleRetry}>
             Retry Connection
           </Button>
         </div>
@@ -137,6 +175,13 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
     [phone: string]: any
   }>({})
   const startTimeRef = useRef<number | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [connectors, setConnectors] = useState<Connector[]>([])
+  const { toast } = useToast()
+
+  const whatsappConnector = connectors.find(
+    (connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+  )
 
   const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
@@ -172,67 +217,85 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
 
   useEffect(() => {
     let socket: WebSocket | null = null
-    if (!isPending && data && data.length > 0) {
-      const whatsappConnector = data.find(
-        (v) => v.app === Apps.WhatsApp && v.authType === AuthType.Custom,
-      )
-      console.log("Found WhatsApp connector:", whatsappConnector)
-      
-      if (whatsappConnector) {
-        console.log("Creating WebSocket connection for connector:", whatsappConnector.id)
-        socket = wsClient.ws.$ws({
-          query: {
-            id: whatsappConnector.id,
-            app: Apps.WhatsApp,
-          },
-        })
+    let reconnectTimeout: NodeJS.Timeout | null = null
+
+    const setupWebSocket = () => {
+      if (!isPending && data && data.length > 0) {
+        const whatsappConnector = data.find(
+          (v) => v.app === Apps.WhatsApp && v.authType === AuthType.Custom,
+        )
+        console.log("Found WhatsApp connector:", whatsappConnector)
+        
+        if (whatsappConnector) {
+          console.log("Creating WebSocket connection for connector:", whatsappConnector.externalId)
+          socket = wsClient.ws.$ws({
+            query: {
+              id: whatsappConnector.externalId,
+              app: Apps.WhatsApp,
+            },
+          })
+
+          socket.addEventListener("open", () => {
+            console.info("WhatsApp socket opened successfully")
+          })
+
+          socket.addEventListener("message", (e) => {
+            console.log("Received WebSocket message:", e.data)
+            if (startTimeRef.current === null) {
+              startTimeRef.current = Date.now()
+            }
+            const dataMsg = JSON.parse(e.data)
+            console.log("Parsed message:", dataMsg)
+            const statusJson = JSON.parse(dataMsg.message)
+            console.log("Status JSON:", statusJson)
+            
+            setWhatsappProgress(statusJson.progress ?? 0)
+            setWhatsappStats(statusJson.userStats ?? {})
+            
+            if (statusJson.qrCode) {
+              console.log("Received QR code, updating state")
+              setQrCode(statusJson.qrCode)
+            }
+          })
+
+          socket.addEventListener("close", (e) => {
+            console.info("WhatsApp WebSocket connection closed:", e.reason)
+            if (e.reason === "Job finished") {
+              setWhatsappStatus(WhatsAppQRStatus.Connected)
+            } else {
+              // Attempt to reconnect after a delay
+              if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout)
+              }
+              reconnectTimeout = setTimeout(() => {
+                console.log("Attempting to reconnect WebSocket...")
+                setupWebSocket()
+              }, 5000)
+            }
+          })
+
+          socket.addEventListener("error", (error) => {
+            console.error("WebSocket error:", error)
+            setWhatsappStatus(WhatsAppQRStatus.Error)
+            toast({
+              title: "Connection Error",
+              description: "Lost connection to WhatsApp integration service",
+              variant: "destructive",
+            })
+          })
+        }
       }
-
-      socket?.addEventListener("open", () => {
-        console.info("WhatsApp socket opened successfully")
-      })
-
-      socket?.addEventListener("message", (e) => {
-        console.log("Received WebSocket message:", e.data)
-        if (startTimeRef.current === null) {
-          startTimeRef.current = Date.now()
-        }
-        const dataMsg = JSON.parse(e.data)
-        console.log("Parsed message:", dataMsg)
-        const statusJson = JSON.parse(dataMsg.message)
-        console.log("Status JSON:", statusJson)
-        
-        setWhatsappProgress(statusJson.progress ?? 0)
-        setWhatsappStats(statusJson.userStats ?? {})
-        
-        // Handle QR code updates
-        if (statusJson.qrCode) {
-          console.log("Received QR code, updating state")
-          setQrCode(statusJson.qrCode)
-        }
-      })
-
-      socket?.addEventListener("close", (e) => {
-        console.info("WhatsApp WebSocket connection closed:", e.reason)
-        if (e.reason === "Job finished") {
-          setWhatsappStatus(WhatsAppQRStatus.Connected)
-        }
-      })
-
-      socket?.addEventListener("error", (error) => {
-        console.error("WebSocket error:", error)
-        setWhatsappStatus(WhatsAppQRStatus.Error)
-        toast({
-          title: "Connection Error",
-          description: "Lost connection to WhatsApp integration service",
-          variant: "destructive",
-        })
-      })
     }
+
+    setupWebSocket()
+
     return () => {
       if (socket) {
         console.log("Cleaning up WebSocket connection")
         socket.close()
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout)
       }
     }
   }, [data, isPending])
@@ -275,6 +338,79 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
     )
   }
 
+  const handleGetInfo = async () => {
+    try {
+      const connectors = await api.getConnectors()
+      console.log("All connectors:", JSON.stringify(connectors, null, 2))
+      
+      const whatsappConnector = connectors.find(
+        (connector: { type: ConnectorType }) => connector.type === ConnectorType.WhatsApp
+      )
+      console.log("WhatsApp connector found:", JSON.stringify(whatsappConnector, null, 2))
+
+      if (!whatsappConnector) {
+        throw new Error("WhatsApp connector not found")
+      }
+
+      console.log("Using connector ID:", whatsappConnector.id, "Type:", typeof whatsappConnector.id)
+      await api.startIngestion(whatsappConnector.id)
+      await fetchConnectors()
+    } catch (error) {
+      console.error("Error getting WhatsApp info:", error)
+      toast({
+        title: "Error",
+        description: "Failed to get WhatsApp info",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      const connectors = await getConnectors()
+      const whatsappConnector = connectors.find(
+        (connector: { app: Apps; authType: AuthType; id: number; externalId: string }) => 
+          connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+      )
+
+      if (!whatsappConnector) {
+        throw new Error("WhatsApp connector not found")
+      }
+
+      const res = await api.admin.connectors.whatsapp.$delete({
+        json: {
+          connectorId: whatsappConnector.id
+        }
+      })
+
+      if (!res.ok) {
+        throw new Error("Could not delete WhatsApp connector")
+      }
+
+      toast({
+        title: "Success",
+        description: "WhatsApp connector removed successfully",
+      })
+      refetch()
+    } catch (error) {
+      console.error("Error deleting WhatsApp connector:", error)
+      toast({
+        title: "Error",
+        description: "Failed to remove WhatsApp connector",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const fetchConnectors = async () => {
+    try {
+      const data = await api.getConnectors()
+      setConnectors(data)
+    } catch (error) {
+      console.error("Error fetching connectors:", error)
+    }
+  }
+
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
@@ -304,6 +440,35 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
               </p>
               <Progress value={whatsappProgress} className="w-[60%] mb-4" />
               <WhatsAppStatsTable userStats={whatsappStats} />
+            </div>
+          )}
+
+          {whatsappConnector && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium">WhatsApp Status</h3>
+                  <p className="text-sm text-gray-500">
+                    Status: {whatsappConnector.status}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleGetInfo}
+                    disabled={isLoading}
+                  >
+                    Get Info
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDelete}
+                    disabled={isLoading}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </div>

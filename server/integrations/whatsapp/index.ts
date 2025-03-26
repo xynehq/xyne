@@ -266,7 +266,8 @@ export const handleWhatsAppIngestion = async (
     store.bind(sock.ev)
 
     let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 3;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+    const RECONNECT_DELAY = 5000; // 5 seconds
 
     // Handle QR code generation
     sock.ev.on('connection.update', async (update) => {
@@ -298,8 +299,10 @@ export const handleWhatsAppIngestion = async (
         if (shouldReconnect) {
           reconnectAttempts++;
           Logger.info(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          handleWhatsAppIngestion(boss, job)
+          await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY));
+          // Restart the entire ingestion process
+          Logger.info("Restarting WhatsApp ingestion process")
+          await handleWhatsAppIngestion(boss, job)
         } else {
           Logger.error(`Connection terminated (Status: ${statusCode}). Cleaning up...`)
           fs.rmSync(authStatePath, { recursive: true, force: true })
@@ -372,10 +375,13 @@ const startIngestion = async (
     Logger.info(`Starting WhatsApp data ingestion for ${email}`)
     // Set up progress tracking interval
     const interval = setInterval(() => {
+      const progress = tracker.getProgress()
+      const userStats = tracker.getOAuthProgress().userStats
+      Logger.info(`Sending progress update - Progress: ${progress}%, Stats: ${JSON.stringify(userStats)}`)
       sendWebsocketMessage(
         JSON.stringify({
-          progress: tracker.getProgress(),
-          userStats: tracker.getOAuthProgress().userStats,
+          progress,
+          userStats,
         }),
         connectorId,
       )
@@ -388,6 +394,14 @@ const startIngestion = async (
     for (const contact of contacts) {
       await insertWhatsAppContact(email, contact, [email])
       tracker.updateUserStats(email, StatType.WhatsApp_Contact, 1)
+      // Send immediate update after each contact
+      sendWebsocketMessage(
+        JSON.stringify({
+          progress: tracker.getProgress(),
+          userStats: tracker.getOAuthProgress().userStats,
+        }),
+        connectorId,
+      )
     }
 
     // Get and insert conversations
@@ -397,6 +411,14 @@ const startIngestion = async (
     for (const conversation of conversations) {
       await insertWhatsAppConversation(email, conversation, conversation.contactId, [email])
       tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 1)
+      // Send immediate update after each conversation
+      sendWebsocketMessage(
+        JSON.stringify({
+          progress: tracker.getProgress(),
+          userStats: tracker.getOAuthProgress().userStats,
+        }),
+        connectorId,
+      )
 
       // Get and insert messages for each conversation
       Logger.info(`Fetching messages for conversation ${conversation.id}`)
@@ -405,8 +427,29 @@ const startIngestion = async (
       for (const message of messages) {
         await insertWhatsAppMessage(email, message, conversation.id, conversation.contactId, [email])
         tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
+        // Send immediate update after each message
+        sendWebsocketMessage(
+          JSON.stringify({
+            progress: tracker.getProgress(),
+            userStats: tracker.getOAuthProgress().userStats,
+          }),
+          connectorId,
+        )
       }
     }
+
+    // Mark ingestion as complete
+    tracker.markUserComplete(email)
+    Logger.info("WhatsApp data ingestion completed")
+
+    // Send final update
+    sendWebsocketMessage(
+      JSON.stringify({
+        progress: 100,
+        userStats: tracker.getOAuthProgress().userStats,
+      }),
+      connectorId,
+    )
 
     // Clear interval after completion
     setTimeout(() => {

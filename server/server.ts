@@ -60,7 +60,7 @@ import {
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
-import { CreateWhatsAppConnector } from "@/api/admin"
+import { CreateWhatsAppConnector, DeleteWhatsAppConnector } from "@/api/admin"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -192,6 +192,7 @@ export const AppRoutes = app
   )
   .get("/connectors/all", GetConnectors)
   .post("/connectors/whatsapp", CreateWhatsAppConnector)
+  .delete("/connectors/whatsapp", DeleteWhatsAppConnector)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(

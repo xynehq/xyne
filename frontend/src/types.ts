@@ -44,3 +44,21 @@ export enum OAuthIntegrationStatus {
   OAuthConnecting = "OAuthConnecting",
   OAuthConnected = "OAuthConnected",
 }
+
+export enum ConnectorType {
+  SaaS = "SaaS",
+  Database = "Database",
+  API = "Api",
+  File = "File",
+  Website = "Website",
+  WhatsApp = "WhatsApp"
+}
+
+export interface Connector {
+  id: number
+  app: Apps
+  authType: AuthType
+  externalId: string
+  status: ConnectorStatus
+  type: ConnectorType
+}

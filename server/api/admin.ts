@@ -6,6 +6,7 @@ import {
   getConnectorByExternalId,
   getConnectors,
   insertConnector,
+  getConnector,
 } from "@/db/connector"
 import {
   ConnectorType,
@@ -19,11 +20,10 @@ import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
-
-const { JwtPayloadKey, JobExpiryHours, slackHost } = config
+import { connectors } from "@/db/schema"
+import { eq } from "drizzle-orm"
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
-
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
 import { getLogger } from "@/logger"
 import { getPath } from "hono/utils/url"
@@ -33,6 +33,8 @@ import {
   NoUserFound,
 } from "@/errors"
 import { scopes } from "@/integrations/google/config"
+
+const { JwtPayloadKey, JobExpiryHours, slackHost } = config
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -327,10 +329,13 @@ export const AddApiKeyConnector = async (c: Context) => {
 }
 
 export const CreateWhatsAppConnector = async (c: Context) => {
-  Logger.info("Creating WhatsApp Connector")
+  Logger.info("Processing WhatsApp Connector request")
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
-  Logger.info(`Creating WhatsApp connector for user ${email} in workspace ${workspaceId}`)
+  const body = await c.req.json()
+  const { connectorId, action } = body || {}
+  
+  Logger.info(`Processing WhatsApp request for user ${email} in workspace ${workspaceId}`)
   
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
@@ -338,13 +343,71 @@ export const CreateWhatsAppConnector = async (c: Context) => {
   }
   const [user] = userRes
 
-  // Start a transaction
+  // If this is an ingestion request for an existing connector
+  if (action === "startIngestion" && connectorId) {
+    Logger.info(`Starting ingestion for existing WhatsApp connector ${connectorId}`)
+    // Ensure connectorId is a number
+    const numericConnectorId = parseInt(connectorId, 10)
+    if (isNaN(numericConnectorId)) {
+      Logger.error(`Invalid connector ID format: ${connectorId}`)
+      throw new HTTPException(400, {
+        message: "Invalid connector ID format",
+      })
+    }
+    
+    Logger.info(`Fetching connector with numeric ID: ${numericConnectorId}`)
+    const connector = await getConnector(db, numericConnectorId)
+    if (!connector) {
+      Logger.error(`WhatsApp connector not found with ID: ${numericConnectorId}`)
+      throw new HTTPException(404, {
+        message: "WhatsApp connector not found",
+      })
+    }
+
+    Logger.info(`Found connector: ${JSON.stringify(connector, null, 2)}`)
+
+    // Update connector status to Connecting
+    Logger.info("Updating connector status to Connecting")
+    await db.update(connectors)
+      .set({ status: ConnectorStatus.Connecting })
+      .where(eq(connectors.id, numericConnectorId))
+    Logger.info("Connector status updated successfully")
+
+    const SaasJobPayload: SaaSJob = {
+      connectorId: numericConnectorId,
+      workspaceId: user.workspaceId,
+      userId: user.id,
+      app: Apps.WhatsApp,
+      externalId: connector.externalId,
+      authType: connector.authType as AuthType,
+      email: sub,
+    }
+
+    Logger.info(`Enqueueing WhatsApp ingestion job with payload: ${JSON.stringify(SaasJobPayload, null, 2)}`)
+
+    const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+      singletonKey: connector.externalId,
+      priority: 1,
+      retryLimit: 0,
+      expireInHours: JobExpiryHours,
+    })
+
+    Logger.info(`WhatsApp ingestion job ${jobId} created for connector ${connector.id}`)
+
+    return c.json({
+      success: true,
+      message: "WhatsApp ingestion started",
+      id: connector.externalId,
+    })
+  }
+
+  // Start a transaction for creating a new connector
   return await db.transaction(async (trx) => {
     try {
       Logger.info(`Starting transaction to create WhatsApp connector`)
       // Insert the connection within the transaction
       const connector = await insertConnector(
-        trx, // Pass the transaction object
+        trx,
         user.workspaceId,
         user.id,
         user.workspaceExternalId,
@@ -374,7 +437,6 @@ export const CreateWhatsAppConnector = async (c: Context) => {
 
       Logger.info(`Enqueueing WhatsApp job with payload: ${JSON.stringify(SaasJobPayload, null, 2)}`)
 
-      // Enqueue the background job within the same transaction
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
         singletonKey: connector.externalId,
         priority: 1,
@@ -382,9 +444,8 @@ export const CreateWhatsAppConnector = async (c: Context) => {
         expireInHours: JobExpiryHours,
       })
 
-      Logger.info(`WhatsApp ingestion job ${jobId} created for connector ${connector.id} with externalId ${connector.externalId}`)
+      Logger.info(`WhatsApp ingestion job ${jobId} created for connector ${connector.id}`)
 
-      // Commit the transaction if everything is successful
       return c.json({
         success: true,
         message: "WhatsApp connection created, job enqueued",
@@ -394,12 +455,65 @@ export const CreateWhatsAppConnector = async (c: Context) => {
       const errMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `Error creating WhatsApp connector: ${errMessage} : ${(error as Error).stack}`,
+        `Error processing WhatsApp connector request: ${errMessage} : ${(error as Error).stack}`,
       )
-      // Rollback the transaction in case of any error
       throw new HTTPException(500, {
-        message: "Error creating WhatsApp connection or enqueuing job",
+        message: "Error processing WhatsApp connector request",
       })
     }
   })
+}
+
+export const DeleteWhatsAppConnector = async (c: Context) => {
+  Logger.info("Processing WhatsApp Connector deletion request")
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const body = await c.req.json()
+  const { connectorId } = body || {}
+  
+  Logger.info(`Processing WhatsApp deletion request for user ${email} in workspace ${workspaceId}`)
+  
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+
+  if (!connectorId) {
+    Logger.error("No connector ID provided")
+    throw new HTTPException(400, {
+      message: "Connector ID is required",
+    })
+  }
+
+  // Ensure connectorId is a number
+  const numericConnectorId = parseInt(connectorId, 10)
+  if (isNaN(numericConnectorId)) {
+    Logger.error(`Invalid connector ID format: ${connectorId}`)
+    throw new HTTPException(400, {
+      message: "Invalid connector ID format",
+    })
+  }
+
+  try {
+    // Delete the connector
+    await db.delete(connectors)
+      .where(eq(connectors.id, numericConnectorId))
+
+    Logger.info(`Successfully deleted WhatsApp connector with ID: ${numericConnectorId}`)
+
+    return c.json({
+      success: true,
+      message: "WhatsApp connector deleted successfully",
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      error,
+      `Error deleting WhatsApp connector: ${errMessage} : ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error deleting WhatsApp connector",
+    })
+  }
 }

@@ -81,7 +81,8 @@ export const insertConnector = async (
 export const getConnectors = async (workspaceId: string, userId: number) => {
   const res = await db
     .select({
-      id: connectors.externalId,
+      id: connectors.id,
+      externalId: connectors.externalId,
       app: connectors.app,
       authType: connectors.authType,
       type: connectors.type,
