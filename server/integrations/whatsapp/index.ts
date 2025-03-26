@@ -1,4 +1,4 @@
-import { getOAuthConnectorWithCredentials } from "@/db/connector"
+import { getConnector } from "@/db/connector"
 import type { SelectConnector } from "@/db/schema"
 import {
   Apps,
@@ -22,6 +22,8 @@ import type { WASocket } from "@whiskeysockets/baileys"
 import { Boom } from "@hapi/boom"
 import { proto } from "@whiskeysockets/baileys"
 import { generateQR } from "@/integrations/whatsapp/qr"
+import * as fs from 'fs'
+import * as path from 'path'
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "whatsapp" })
 
@@ -183,19 +185,34 @@ const insertWhatsAppConversation = async (
 }
 
 export const handleWhatsAppIngestion = async (
+  boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
   try {
+    Logger.info(`Starting WhatsApp ingestion for job ${job.id}`)
     const data: SaaSOAuthJob = job.data as SaaSOAuthJob
-    const connector: SelectConnector = await getOAuthConnectorWithCredentials(
+    Logger.info(`Job data: ${JSON.stringify(data, null, 2)}`)
+    
+    Logger.info(`Fetching connector with ID: ${data.connectorId}`)
+    const connector: SelectConnector = await getConnector(
       db,
       data.connectorId,
     )
+    Logger.info(`Found connector: ${JSON.stringify(connector, null, 2)}`)
 
     const tracker = new Tracker(Apps.WhatsApp)
     const authStatePath = `auth_info_${data.email}`
+    Logger.info(`Using auth state path: ${authStatePath}`)
+    
+    // Create auth directory if it doesn't exist
+    if (!fs.existsSync(authStatePath)) {
+      Logger.info(`Creating auth directory: ${authStatePath}`)
+      fs.mkdirSync(authStatePath, { recursive: true })
+    }
+    
     const { state, saveCreds } = await useMultiFileAuthState(authStatePath)
     
+    Logger.info("Creating WhatsApp socket")
     const sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
@@ -206,10 +223,13 @@ export const handleWhatsAppIngestion = async (
 
     // Handle QR code generation
     sock.ev.on('connection.update', async (update) => {
+      Logger.info(`Connection update received: ${JSON.stringify(update, null, 2)}`)
       const { connection, lastDisconnect, qr } = update
 
       if (qr) {
+        Logger.info("Generating QR code")
         const qrCode = await generateQR(qr)
+        Logger.info("QR code generated, sending via websocket")
         sendWebsocketMessage(
           JSON.stringify({
             qrCode,
@@ -221,18 +241,23 @@ export const handleWhatsAppIngestion = async (
       }
 
       if (connection === 'close') {
+        Logger.info(`Connection closed. Last disconnect: ${JSON.stringify(lastDisconnect, null, 2)}`)
         const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
         if (shouldReconnect) {
-          handleWhatsAppIngestion(job)
+          Logger.info("Attempting to reconnect")
+          handleWhatsAppIngestion(boss, job)
         }
       } else if (connection === 'open') {
+        Logger.info("Connection opened, saving credentials")
         saveCreds()
         // Start ingestion after successful connection
+        Logger.info("Starting WhatsApp data ingestion")
         await startIngestion(sock, data.email, connector.externalId, tracker)
       }
     })
 
     // Handle store updates
+    Logger.info("Binding store updates")
     store.bind(sock.ev)
 
   } catch (error) {
@@ -248,6 +273,7 @@ const startIngestion = async (
   tracker: Tracker,
 ) => {
   try {
+    Logger.info(`Starting WhatsApp data ingestion for ${email}`)
     // Set up progress tracking interval
     const interval = setInterval(() => {
       sendWebsocketMessage(
@@ -260,20 +286,26 @@ const startIngestion = async (
     }, 4000)
 
     // Get and insert contacts
+    Logger.info("Fetching WhatsApp contacts")
     const contacts = await getContacts(sock)
+    Logger.info(`Found ${contacts.length} contacts`)
     for (const contact of contacts) {
       await insertWhatsAppContact(email, contact, [email])
       tracker.updateUserStats(email, StatType.WhatsApp_Contact, 1)
     }
 
     // Get and insert conversations
+    Logger.info("Fetching WhatsApp conversations")
     const conversations = await getConversations(sock)
+    Logger.info(`Found ${conversations.length} conversations`)
     for (const conversation of conversations) {
       await insertWhatsAppConversation(email, conversation, conversation.contactId, [email])
       tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 1)
 
       // Get and insert messages for each conversation
+      Logger.info(`Fetching messages for conversation ${conversation.id}`)
       const messages = await getMessages(sock, conversation.id)
+      Logger.info(`Found ${messages.length} messages`)
       for (const message of messages) {
         await insertWhatsAppMessage(email, message, conversation.id, conversation.contactId, [email])
         tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)

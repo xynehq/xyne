@@ -122,16 +122,20 @@ export const WsApp = app.get(
     return {
       onOpen(event, ws) {
         connectorId = c.req.query("id")
+        const app = c.req.query("app")
+        Logger.info(`WebSocket connection opened for connector ${connectorId} and app ${app}`)
         wsConnections.set(connectorId, ws)
+        Logger.info(`Current active WebSocket connections: ${wsConnections.size}`)
       },
       onMessage(event, ws) {
-        Logger.info(`Message from client: ${event.data}`)
+        Logger.info(`Message from client for connector ${connectorId}: ${event.data}`)
         ws.send(JSON.stringify({ message: "Hello from server!" }))
       },
       onClose: (event, ws) => {
-        Logger.info("Connection closed")
+        Logger.info(`WebSocket connection closed for connector ${connectorId}`)
         if (connectorId) {
           wsConnections.delete(connectorId)
+          Logger.info(`Remaining active WebSocket connections: ${wsConnections.size}`)
         }
       },
     }
@@ -364,19 +368,25 @@ app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 
 export const init = async () => {
+  Logger.info("Initializing server...")
   await initQueue()
+  Logger.info("Queue initialized successfully")
+  
+  const server = Bun.serve({
+    fetch: app.fetch,
+    port: config.port,
+    websocket,
+    idleTimeout: 180,
+  })
+  Logger.info(`Server listening on port: ${config.port}`)
+  return server
 }
+
+// Initialize server
 init().catch((error) => {
+  Logger.error(error, "Failed to initialize server")
   throw new InitialisationError({ cause: error })
 })
-
-const server = Bun.serve({
-  fetch: app.fetch,
-  port: config.port,
-  websocket,
-  idleTimeout: 180,
-})
-Logger.info(`listening on port: ${config.port}`)
 
 process.on("uncaughtException", (error) => {
   Logger.error(error, "uncaughtException")

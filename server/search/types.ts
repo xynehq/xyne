@@ -892,123 +892,45 @@ export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
   })
 
 export enum WhatsAppEntity {
-  Message = "whatsapp_message",
-  Contact = "whatsapp_contact",
-  Conversation = "whatsapp_conversation"
+  Message = "message",
+  Contact = "contact",
+  Conversation = "conversation",
 }
 
-export const whatsappMessageSchema = `
-  schema whatsapp_message {
-    field docId type string {
-      indexing: summary
-    }
-    field phoneNumber type string {
-      indexing: summary
-    }
-    field text type string {
-      indexing: summary
-    }
-    field timestamp type long {
-      indexing: summary
-    }
-    field conversationId type string {
-      indexing: summary
-    }
-    field app type string {
-      indexing: summary
-    }
-    field entity type string {
-      indexing: summary
-    }
-    field permissions type array<string> {
-      indexing: summary
-    }
-  }
-`
+export const whatsappMessageSchema = "whatsapp_message"
+export const whatsappContactSchema = "whatsapp_contact"
+export const whatsappConversationSchema = "whatsapp_conversation"
 
-export const whatsappContactSchema = `
-  schema whatsapp_contact {
-    field docId type string {
-      indexing: summary
-    }
-    field phoneNumber type string {
-      indexing: summary
-    }
-    field name type string {
-      indexing: summary
-    }
-    field app type string {
-      indexing: summary
-    }
-    field entity type string {
-      indexing: summary
-    }
-    field permissions type array<string> {
-      indexing: summary
-    }
-  }
-`
+export const VespaWhatsAppMessageSchema = z.object({
+  docId: z.string(),
+  phoneNumber: z.string(),
+  text: z.string(),
+  timestamp: z.number(),
+  conversationId: z.string(),
+  app: z.literal(Apps.WhatsApp),
+  entity: z.literal(WhatsAppEntity.Message),
+  permissions: z.array(z.string()),
+})
 
-export const whatsappConversationSchema = `
-  schema whatsapp_conversation {
-    field docId type string {
-      indexing: summary
-    }
-    field phoneNumber type string {
-      indexing: summary
-    }
-    field contactId type string {
-      indexing: summary
-    }
-    field lastMessageTimestamp type long {
-      indexing: summary
-    }
-    field app type string {
-      indexing: summary
-    }
-    field entity type string {
-      indexing: summary
-    }
-    field permissions type array<string> {
-      indexing: summary
-    }
-  }
-`
+export const VespaWhatsAppContactSchema = z.object({
+  docId: z.string(),
+  phoneNumber: z.string(),
+  name: z.string(),
+  app: z.literal(Apps.WhatsApp),
+  entity: z.literal(WhatsAppEntity.Contact),
+  permissions: z.array(z.string()),
+})
 
-export type VespaWhatsAppMessage = {
-  docId: string
-  phoneNumber: string
-  text: string
-  timestamp: number
-  conversationId: string
-  app: Apps
-  entity: WhatsAppEntity
-  permissions: string[]
-}
+export const VespaWhatsAppConversationSchema = z.object({
+  docId: z.string(),
+  phoneNumber: z.string(),
+  contactId: z.string(),
+  lastMessageTimestamp: z.number(),
+  app: z.literal(Apps.WhatsApp),
+  entity: z.literal(WhatsAppEntity.Conversation),
+  permissions: z.array(z.string()),
+})
 
-export type VespaWhatsAppContact = {
-  docId: string
-  phoneNumber: string
-  name: string
-  app: Apps
-  entity: WhatsAppEntity
-  permissions: string[]
-}
-
-export type VespaWhatsAppConversation = {
-  docId: string
-  phoneNumber: string
-  contactId: string
-  lastMessageTimestamp: number
-  app: Apps
-  entity: WhatsAppEntity
-  permissions: string[]
-}
-
-export enum StatType {
-  // ... existing code ...
-  WhatsApp_Message = "whatsapp_message",
-  WhatsApp_Contact = "whatsapp_contact",
-  WhatsApp_Conversation = "whatsapp_conversation",
-}
-// ... existing code ...
+export type VespaWhatsAppMessage = z.infer<typeof VespaWhatsAppMessageSchema>
+export type VespaWhatsAppContact = z.infer<typeof VespaWhatsAppContactSchema>
+export type VespaWhatsAppConversation = z.infer<typeof VespaWhatsAppConversationSchema>

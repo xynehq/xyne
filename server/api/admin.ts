@@ -330,6 +330,8 @@ export const CreateWhatsAppConnector = async (c: Context) => {
   Logger.info("Creating WhatsApp Connector")
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
+  Logger.info(`Creating WhatsApp connector for user ${email} in workspace ${workspaceId}`)
+  
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
     throw new NoUserFound({})
@@ -339,6 +341,7 @@ export const CreateWhatsAppConnector = async (c: Context) => {
   // Start a transaction
   return await db.transaction(async (trx) => {
     try {
+      Logger.info(`Starting transaction to create WhatsApp connector`)
       // Insert the connection within the transaction
       const connector = await insertConnector(
         trx, // Pass the transaction object
@@ -357,6 +360,8 @@ export const CreateWhatsAppConnector = async (c: Context) => {
         ConnectorStatus.Connecting
       )
 
+      Logger.info(`Created WhatsApp connector with ID: ${connector.id} and externalId: ${connector.externalId}`)
+
       const SaasJobPayload: SaaSJob = {
         connectorId: connector.id,
         workspaceId: user.workspaceId,
@@ -367,6 +372,8 @@ export const CreateWhatsAppConnector = async (c: Context) => {
         email: sub,
       }
 
+      Logger.info(`Enqueueing WhatsApp job with payload: ${JSON.stringify(SaasJobPayload, null, 2)}`)
+
       // Enqueue the background job within the same transaction
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
         singletonKey: connector.externalId,
@@ -375,7 +382,7 @@ export const CreateWhatsAppConnector = async (c: Context) => {
         expireInHours: JobExpiryHours,
       })
 
-      Logger.info(`WhatsApp ingestion job ${jobId} created for connector ${connector.id}`)
+      Logger.info(`WhatsApp ingestion job ${jobId} created for connector ${connector.id} with externalId ${connector.externalId}`)
 
       // Commit the transaction if everything is successful
       return c.json({
