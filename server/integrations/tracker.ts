@@ -14,6 +14,9 @@ export enum StatType {
   Slack_Conversation = "slackConversationCount",
   Slack_User = "slackUserCount",
   Slack_Message_Reply = "slackMessageReplyCount",
+  WhatsApp_Message = "whatsappMessageCount",
+  WhatsApp_Contact = "whatsappContactCount",
+  WhatsApp_Conversation = "whatsappConversationCount",
 }
 
 interface StatMetadata {
@@ -22,6 +25,7 @@ interface StatMetadata {
   doneAt: number
   type: AuthType
 }
+
 interface GoogleStats {
   gmailCount: number
   driveCount: number
@@ -37,8 +41,14 @@ interface SlackStats {
   slackMessageReplyCount: number
 }
 
+interface WhatsAppStats {
+  whatsappMessageCount: number
+  whatsappContactCount: number
+  whatsappConversationCount: number
+}
+
 // Union type for all possible stat types
-type UserStats = (GoogleStats | SlackStats) & StatMetadata
+type UserStats = (GoogleStats | SlackStats | WhatsAppStats) & StatMetadata
 
 // Progress tracking types
 interface ServiceAccountProgress {

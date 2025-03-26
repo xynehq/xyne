@@ -2,6 +2,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { UserRole } from "shared/types"
 import SlackSvg from "@/assets/slack.svg"
 import GoogleSvg from "@/assets/google-logo.svg"
+import WhatsappSvg from "@/assets/whatsApp.svg"
 import { useLocation, useRouter } from "@tanstack/react-router"
 
 export const IntegrationsSidebar = ({ role }: { role: string }) => {
@@ -45,6 +46,19 @@ export const IntegrationsSidebar = ({ role }: { role: string }) => {
               <img width={16} src={SlackSvg} className="ml-[8px]" />
               <span className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
                 Slack
+              </span>
+            </li>
+            <li
+              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/whatsapp") ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+              onClick={() => {
+                router.navigate({
+                  to: "/integrations/whatsapp",
+                })
+              }}
+            >
+              <img width={16} src={WhatsappSvg} className="ml-[8px]" />
+              <span className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
+                WhatsApp
               </span>
             </li>
           </ul>

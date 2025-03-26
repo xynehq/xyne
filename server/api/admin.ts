@@ -325,3 +325,74 @@ export const AddApiKeyConnector = async (c: Context) => {
     }
   })
 }
+
+export const CreateWhatsAppConnector = async (c: Context) => {
+  Logger.info("Creating WhatsApp Connector")
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+
+  // Start a transaction
+  return await db.transaction(async (trx) => {
+    try {
+      // Insert the connection within the transaction
+      const connector = await insertConnector(
+        trx, // Pass the transaction object
+        user.workspaceId,
+        user.id,
+        user.workspaceExternalId,
+        `${Apps.WhatsApp}-${ConnectorType.SaaS}-${AuthType.Custom}`,
+        ConnectorType.SaaS,
+        AuthType.Custom,
+        Apps.WhatsApp,
+        {},
+        null,
+        null,
+        null,
+        null,
+        ConnectorStatus.Connecting
+      )
+
+      const SaasJobPayload: SaaSJob = {
+        connectorId: connector.id,
+        workspaceId: user.workspaceId,
+        userId: user.id,
+        app: Apps.WhatsApp,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      }
+
+      // Enqueue the background job within the same transaction
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+        singletonKey: connector.externalId,
+        priority: 1,
+        retryLimit: 0,
+        expireInHours: JobExpiryHours,
+      })
+
+      Logger.info(`WhatsApp ingestion job ${jobId} created for connector ${connector.id}`)
+
+      // Commit the transaction if everything is successful
+      return c.json({
+        success: true,
+        message: "WhatsApp connection created, job enqueued",
+        id: connector.externalId,
+      })
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Error creating WhatsApp connector: ${errMessage} : ${(error as Error).stack}`,
+      )
+      // Rollback the transaction in case of any error
+      throw new HTTPException(500, {
+        message: "Error creating WhatsApp connection or enqueuing job",
+      })
+    }
+  })
+}

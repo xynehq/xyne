@@ -29,6 +29,13 @@
       "when": 1742072652377,
       "tag": "0003_jittery_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1742976751551,
+      "tag": "0004_condemned_enchantress",
+      "breakpoints": true
     }
   ]
 }

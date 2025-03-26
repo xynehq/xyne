@@ -15,6 +15,7 @@ import { checkDownloadsFolder } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 import { handleSlackIngestion } from "@/integrations/slack"
+import { handleWhatsAppIngestion } from "@/integrations/whatsapp"
 
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
@@ -139,6 +140,14 @@ const initWorkers = async () => {
 
   await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
     await checkDownloadsFolder(boss, job)
+  })
+
+  // Register job handlers
+  await boss.work(SaaSQueue, async ([job]) => {
+    const jobData: SaaSJob = job.data as SaaSJob
+    if (jobData.app === Apps.WhatsApp && jobData.authType === AuthType.Custom) {
+      await handleWhatsAppIngestion(job)
+    }
   })
 }
 
