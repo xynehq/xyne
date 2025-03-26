@@ -1253,50 +1253,53 @@ const insertFilesForUser = async (
           v.mimeType !== DriveMime.Sheets &&
           v.mimeType !== DriveMime.Slides,
       )
-      const pdfs = (
-        await googlePDFsVespa(
-          googleClient,
-          googlePDFsMetadata,
-          connector.externalId,
-          userEmail,
-        )
-      ).map((v) => {
-        v.permissions = toPermissionsList(v.permissions, userEmail)
-        return v
-      })
-      for (const doc of pdfs) {
-        processedFiles += 1
-        await insertDocument(doc)
-        updateUserStats(userEmail, StatType.Drive, 1)
-      }
-      const [documents, slides, sheets]: [
+      // const pdfs = (
+      //   await googlePDFsVespa(
+      //     googleClient,
+      //     googlePDFsMetadata,
+      //     connector.externalId,
+      //     userEmail,
+      //   )
+      // ).map((v) => {
+      //   v.permissions = toPermissionsList(v.permissions, userEmail)
+      //   return v
+      // })
+      // for (const doc of pdfs) {
+      //   processedFiles += 1
+      //   await insertDocument(doc)
+      //   updateUserStats(userEmail, StatType.Drive, 1)
+      // }
+      const [
+        documents,
+        // slides, sheets
+      ]: [
         VespaFileWithDrivePermission[],
-        VespaFileWithDrivePermission[],
-        VespaFileWithDrivePermission[],
+        // VespaFileWithDrivePermission[],
+        // VespaFileWithDrivePermission[],
       ] = await Promise.all([
         googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
-        googleSlidesVespa(
-          googleClient,
-          googleSlidesMetadata,
-          connector.externalId,
-        ),
-        googleSheetsVespa(
-          googleClient,
-          googleSheetsMetadata,
-          connector.externalId,
-          userEmail,
-        ),
+        // googleSlidesVespa(
+        //   googleClient,
+        //   googleSlidesMetadata,
+        //   connector.externalId,
+        // ),
+        // googleSheetsVespa(
+        //   googleClient,
+        //   googleSheetsMetadata,
+        //   connector.externalId,
+        //   userEmail,
+        // ),
       ])
-      const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
-        googleClient,
-        rest,
-      )
+      // const driveFiles: VespaFileWithDrivePermission[] = await driveFilesToDoc(
+      //   googleClient,
+      //   rest,
+      // )
 
       let allFiles: VespaFileWithDrivePermission[] = [
-        ...driveFiles,
+        // ...driveFiles,
         ...documents,
-        ...slides,
-        ...sheets,
+        // ...slides,
+        // ...sheets,
       ].map((v) => {
         v.permissions = toPermissionsList(v.permissions, userEmail)
         return v
@@ -2164,6 +2167,9 @@ export const googleDocsVespa = async (
           }
         }
 
+        console.log(`\nPermissions for ${doc.name}`)
+        console.log(doc.permissions)
+        console.log(`Permissions for ${doc.name}\n`)
         const result: VespaFileWithDrivePermission = {
           title: doc.name!,
           url: doc.webViewLink ?? "",

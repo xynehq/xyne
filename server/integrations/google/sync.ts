@@ -72,6 +72,7 @@ import {
 import { parseMail } from "./gmail"
 import { type VespaFileWithDrivePermission } from "@/search/types"
 import { GaxiosError } from "gaxios"
+import mainConfig from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -1357,10 +1358,21 @@ export const handleGoogleServiceAccountChanges = async (
       let changesExist = false
       const connector = await getConnector(db, syncJob.connectorId)
       const user = await getUserById(db, connector.userId)
+
+      const oauth2Client = new google.auth.OAuth2({
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        redirectUri: `${mainConfig.host}/oauth/callback`,
+      })
+      oauth2Client.setCredentials({
+        access_token: process.env.ACCESS_TOKEN,
+        refresh_token: process.env.REFRESH_TOKEN,
+      })
+
       const serviceAccountKey: GoogleServiceAccount = JSON.parse(
         connector.credentials as string,
       )
-      let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
+      let jwtClient = oauth2Client
       const driveClient = google.drive({ version: "v3", auth: jwtClient })
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
       // TODO: add pagination for all the possible changes
@@ -1371,6 +1383,9 @@ export const handleGoogleServiceAccountChanges = async (
           Apps.GoogleDrive,
         )
       ).data
+      console.log("changes in SA")
+      console.log(changes)
+      console.log("changes in SA")
       // there are changes
 
       // Potential issues:
@@ -1593,8 +1608,17 @@ export const handleGoogleServiceAccountChanges = async (
       const serviceAccountKey: GoogleServiceAccount = JSON.parse(
         connector.credentials as string,
       )
+      const oauth2Client = new google.auth.OAuth2({
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        redirectUri: `${mainConfig.host}/oauth/callback`,
+      })
+      oauth2Client.setCredentials({
+        access_token: process.env.ACCESS_TOKEN,
+        refresh_token: process.env.REFRESH_TOKEN,
+      })
       // const subject: string = connector.subject as string
-      let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
+      let jwtClient = oauth2Client
 
       let config: GmailChangeToken = syncJob.config as GmailChangeToken
       // we have guarantee that when we started this job access Token at least
@@ -1684,8 +1708,19 @@ export const handleGoogleServiceAccountChanges = async (
       const serviceAccountKey: GoogleServiceAccount = JSON.parse(
         connector.credentials as string,
       )
+      const oauth2Client = new google.auth.OAuth2({
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        redirectUri: `${mainConfig.host}/oauth/callback`,
+      })
+      oauth2Client.setCredentials({
+        access_token: process.env.ACCESS_TOKEN,
+        refresh_token: process.env.REFRESH_TOKEN,
+      })
       // const subject: string = connector.subject as string
-      let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
+      let jwtClient = oauth2Client
+      // const subject: string = connector.subject as string
+      // let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
 
       let config: CalendarEventsChangeToken =
         syncJob.config as CalendarEventsChangeToken
