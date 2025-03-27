@@ -12,6 +12,7 @@ import {
   userQuerySchema,
   MailAttachmentResponseSchema,
   mailAttachmentSchema,
+  scoredChunk,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -192,7 +193,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
     chunk: z.string().optional(),
     chunkIndex: z.number().optional(),
     mimeType: z.string(),
-    chunks_summary: z.array(z.string()).optional(),
+    chunks_summary: z.array(scoredChunk).optional(),
     relevance: z.number(),
   })
   .strip()

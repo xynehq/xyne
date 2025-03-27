@@ -135,7 +135,10 @@ schema file {
     function combined_nativeRank() {
       expression: nativeRank(title,chunks)
     }
-  
+
+    function chunk_scores() {
+      expression: elementwise(bm25(chunks),x,double)
+    }
   }
 
  
@@ -162,6 +165,7 @@ schema file {
       combined_nativeRank
       nativeRank(title)
       nativeRank(chunks)
+      chunk_scores
       doc_recency
     }
   }
@@ -192,6 +196,7 @@ schema file {
       bm25(chunks)
       bm25(title)
       combined_bm25
+      chunk_scores
     }
   }
 
