@@ -38,6 +38,8 @@ import {
 } from "@/errors"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
+import { getGroupEmailsFromEmail } from "@/db/group"
+import { db } from "@/db/client"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -217,6 +219,7 @@ export const HybridDefaultProfile = (
   app: Apps | null,
   entity: Entity | null,
   profile: RankProfile = "default",
+  emails: string[],
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -276,6 +279,14 @@ export const HybridDefaultProfile = (
     mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
 
+  // Build the email permissions condition using the array of emails.
+  // This creates a clause like:
+  // (permissions contains "user@example.com" or permissions contains "group@example.com")
+  let emailQuery = ""
+  if (emails && emails.length > 0) {
+    emailQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
+
   // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {
     profile: profile,
@@ -289,14 +300,14 @@ export const HybridDefaultProfile = (
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
             ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
-            and permissions contains @email ${mailLabelQuery}
+            and ${emailQuery} ${mailLabelQuery}
             ${appOrEntityFilter}
           )
           or
           (
             ({targetHits:${hits}}userInput(@query))
             ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and permissions contains @email`}
+            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and ${emailQuery}`}
           )
           or
           (
@@ -313,6 +324,7 @@ export const HybridDefaultProfile = (
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
+  emails: string[],
   notInMailLabels?: string[],
 ): YqlProfile => {
   let fileTimestamp = ""
@@ -353,11 +365,19 @@ const HybridDefaultProfileAppEntityCounts = (
     mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
 
+  // Build the email permissions condition using the array of emails.
+  // This creates a clause like:
+  // (permissions contains "user@example.com" or permissions contains "group@example.com")
+  let emailQuery = ""
+  if (emails && emails.length > 0) {
+    emailQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
+
   return {
     profile: "default",
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
+            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and ${emailQuery} ${mailLabelQuery})
             or
             (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
@@ -378,9 +398,14 @@ export const groupVespaSearch = async (
   limit = config.page,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
     timestampRange ?? null,
+    emails,
   )
 
   const hybridDefaultPayload = {
@@ -412,6 +437,10 @@ export const searchVespa = async (
   excludedIds?: string[],
   notInMailLabels?: string[],
 ): Promise<VespaSearchResponse> => {
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   let { yql, profile } = HybridDefaultProfile(
@@ -419,6 +448,7 @@ export const searchVespa = async (
     app,
     entity,
     "default",
+    emails,
     timestampRange,
     excludedIds,
     notInMailLabels,
