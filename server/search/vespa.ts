@@ -152,13 +152,24 @@ export const autocomplete = async (
   email: string,
   limit: number = 5,
 ): Promise<VespaAutocompleteResponse> => {
+  // Retrieve the groups for the user using the existing function.
+  const groupEmails = await getGroupEmailsFromEmail(db, email)
+  // Combine the original email with group emails.
+  const emails = [email, ...groupEmails]
+  // Build the email permissions condition using the array of emails.
+  // This creates a clause like:
+  // (permissions contains "user@example.com" or permissions contains "group@example.com")
+  let emailQuery = ""
+  if (emails && emails.length > 0) {
+    emailQuery = `(${emails.map((email) => `permissions contains "${email}"`).join(" or ")})`
+  }
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
   const yqlQuery = `select * from sources ${AllSources}, ${userQuerySchema}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
+        and ${emailQuery})
         or
         (
             (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
@@ -177,10 +188,10 @@ export const autocomplete = async (
         )
         or
         (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
+        and ${emailQuery})
         or
         (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
+        and ${emailQuery})
         or
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
