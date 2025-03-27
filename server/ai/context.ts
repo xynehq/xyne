@@ -16,6 +16,7 @@ import {
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
+import { getSortedScoredChunks } from "@/search/mappers"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -29,6 +30,12 @@ const constructFileContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
+
+  fields.chunks_summary = getSortedScoredChunks(
+    fields.matchfeatures,
+    fields.chunks_summary as string[],
+  ).map((v) => v.chunk)
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
@@ -64,6 +71,11 @@ const constructMailContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
+  fields.chunks_summary = getSortedScoredChunks(
+    fields.matchfeatures,
+    fields.chunks_summary as string[],
+  ).map((v) => v.chunk)
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
@@ -85,6 +97,12 @@ const constructMailAttachmentContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
+
+  fields.chunks_summary = getSortedScoredChunks(
+    fields.matchfeatures,
+    fields.chunks_summary as string[],
+  ).map((v) => v.chunk)
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
