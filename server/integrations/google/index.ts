@@ -24,6 +24,7 @@ import {
   type OAuthCredentials,
   type SaaSJob,
   type SaaSOAuthJob,
+  type TxnOrClient,
 } from "@/types"
 import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
@@ -793,7 +794,8 @@ const handleGmailIngestionForServiceAccount = async (
   })
 }
 
-const getAndSaveAllGroupsMembers = async (
+export const getAndSaveAllGroupsMembers = async (
+  trx: TxnOrClient,
   admin: admin_directory_v1.Admin,
   domain: string,
 ) => {
@@ -850,7 +852,7 @@ const getAndSaveAllGroupsMembers = async (
       }
       if (membersOfGroups.length) {
         await insertGroup(
-          db,
+          trx,
           grp?.id!,
           grp?.name!,
           grp?.email!,
@@ -885,7 +887,7 @@ export const handleGoogleServiceAccountIngestion = async (
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
     // todo Gets all groups in the workscpace, Also get all memebers of all groups
-    const groups = await getAndSaveAllGroupsMembers(admin, workspace.domain)
+    const groups = await getAndSaveAllGroupsMembers(db, admin, workspace.domain)
 
     const oauth2Client = new google.auth.OAuth2({
       clientId: process.env.GOOGLE_CLIENT_ID,
