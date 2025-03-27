@@ -160,6 +160,10 @@ schema mail {
       function combined_nativeRank() {
         expression: nativeRank(subject,chunks)
       }
+
+      function chunk_scores() {
+        expression: elementwise(bm25(chunks),x,double)
+      }
       
     }
 
@@ -186,6 +190,7 @@ schema mail {
       combined_nativeRank
       nativeRank(subject)
       nativeRank(chunks)
+      chunk_scores
     }
   }
 
@@ -215,6 +220,7 @@ schema mail {
       bm25(chunks)
       bm25(subject)
       combined_bm25
+      chunk_scores
     }
   }
 

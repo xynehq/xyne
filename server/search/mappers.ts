@@ -25,6 +25,8 @@ import {
   mailAttachmentSchema,
   MailAttachmentResponseSchema,
   type VespaAutocompleteMailAttachment,
+  type ScoredChunk,
+  VespaMatchFeatureSchema,
 } from "@/search/types"
 import {
   AutocompleteEventSchema,
@@ -42,12 +44,45 @@ import {
 import type { z } from "zod"
 import type { AppEntityCounts } from "@/search/vespa"
 import { chunkDocument } from "@/chunks"
+import { scale } from "@/utils"
 
 function countHiTags(str: string): number {
   // Regular expression to match both <hi> and </hi> tags
   const regex = /<\/?hi>/g
   const matches = str.match(regex)
   return matches ? matches.length : 0
+}
+
+export const getSortedScoredChunks = (
+  matchfeatures: z.infer<typeof VespaMatchFeatureSchema>,
+  existingChunksSummary: string[],
+  maxChunks?: number,
+): ScoredChunk[] => {
+  // return if no chunks summary
+  if (!existingChunksSummary?.length) {
+    return []
+  }
+
+  if (!matchfeatures?.chunk_scores?.cells) {
+    return existingChunksSummary.map((v) => ({ chunk: v, score: 0 }))
+  }
+
+  const chunkScores = matchfeatures.chunk_scores.cells
+
+  // add chunks with chunk scores
+  const chunksWithIndices = existingChunksSummary.map((chunk, index) => ({
+    index,
+    chunk,
+    score: scale(chunkScores[index]) || 0, // Default to 0 if doesn't have score
+  }))
+
+  const filteredChunks = chunksWithIndices.filter(
+    ({ index }) => index in chunkScores,
+  )
+
+  const sortedChunks = filteredChunks.sort((a, b) => b.score - a.score)
+
+  return maxChunks ? sortedChunks.slice(0, maxChunks) : sortedChunks
 }
 
 // Vespa -> Backend/App -> Client
@@ -65,17 +100,16 @@ export const VespaSearchResponseToSearchResult = (
           if ((child.fields as VespaFileSearch).sddocname === fileSchema) {
             const fields = child.fields as VespaFileSearch & {
               type?: string
-              chunks_summary?: string[]
             }
+
             fields.type = fileSchema
             fields.relevance = child.relevance
-            fields.chunks_summary?.sort(
-              (a, b) => countHiTags(b) - countHiTags(a),
-            )
-            fields.chunks_summary = fields.chunks_summary?.slice(
-              0,
+            fields.chunks_summary = getSortedScoredChunks(
+              fields.matchfeatures,
+              fields.chunks_summary as string[],
               maxSearchChunks,
             )
+
             return FileResponseSchema.parse(fields)
           } else if ((child.fields as VespaUser).sddocname === userSchema) {
             const fields = child.fields as VespaUser & {
@@ -98,13 +132,12 @@ export const VespaSearchResponseToSearchResult = (
             const fields = child.fields as VespaMailSearch & { type?: string }
             fields.type = mailSchema
             fields.relevance = child.relevance
-            fields.chunks_summary?.sort(
-              (a, b) => countHiTags(b) - countHiTags(a),
-            )
-            fields.chunks_summary = fields.chunks_summary?.slice(
-              0,
+            fields.chunks_summary = getSortedScoredChunks(
+              fields.matchfeatures,
+              fields.chunks_summary as string[],
               maxSearchChunks,
             )
+
             return MailResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaEventSearch).sddocname === eventSchema
@@ -136,13 +169,12 @@ export const VespaSearchResponseToSearchResult = (
             }
             fields.type = mailAttachmentSchema
             fields.relevance = child.relevance
-            fields.chunks_summary?.sort(
-              (a, b) => countHiTags(b) - countHiTags(a),
-            )
-            fields.chunks_summary = fields.chunks_summary?.slice(
-              0,
+            fields.chunks_summary = getSortedScoredChunks(
+              fields.matchfeatures,
+              fields.chunks_summary as string[],
               maxSearchChunks,
             )
+
             return MailAttachmentResponseSchema.parse(fields)
           } else {
             throw new Error(

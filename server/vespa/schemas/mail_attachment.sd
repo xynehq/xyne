@@ -127,6 +127,10 @@ schema mail_attachment {
     function combined_nativeRank() {
       expression: nativeRank(filename,chunks)
     }
+
+    function chunk_scores() {
+      expression: elementwise(bm25(chunks),x,double)
+    }
   }
 
   rank-profile default inherits initial {
@@ -152,6 +156,7 @@ schema mail_attachment {
       combined_nativeRank
       nativeRank(filename)
       nativeRank(chunks)
+      chunk_scores
     }
   }
 
@@ -182,6 +187,7 @@ schema mail_attachment {
       combined_bm25
       bm25(filename)
       bm25(chunks)
+      chunk_scores
     }
   }
 

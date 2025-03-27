@@ -204,3 +204,8 @@ export const IsGoogleApp = (app: Apps) => {
     app === Apps.GoogleCalendar
   )
 }
+
+export function scale(val: number): number | null {
+  if (!val) return null
+  return (2 * Math.atan(val / 4)) / Math.PI
+}
