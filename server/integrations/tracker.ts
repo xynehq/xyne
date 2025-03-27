@@ -120,6 +120,13 @@ export class Tracker {
           slackMessageReplyCount: 0,
           ...baseStats,
         }
+      } else if (this.app === Apps.WhatsApp) {
+        this.serviceAccountProgress.userStats[email] = {
+          whatsappMessageCount: 0,
+          whatsappContactCount: 0,
+          whatsappConversationCount: 0,
+          ...baseStats,
+        }
       }
       // Add more else-if blocks for additional apps here
     }
@@ -140,6 +147,13 @@ export class Tracker {
           slackMessageCount: 0,
           slackConversationCount: 0,
           slackMessageReplyCount: 0,
+          ...baseOAuthStats,
+        }
+      } else if (this.app === Apps.WhatsApp) {
+        this.oAuthProgress.userStats[email] = {
+          whatsappMessageCount: 0,
+          whatsappContactCount: 0,
+          whatsappConversationCount: 0,
           ...baseOAuthStats,
         }
       }

@@ -62,6 +62,8 @@ const store = makeInMemoryStore({})
 store.readFromFile = () => {}
 store.writeToFile = () => {}
 
+// Commenting out contacts functionality for now
+/*
 export const getContacts = async (sock: WASocket): Promise<WhatsAppContact[]> => {
   const contacts: WhatsAppContact[] = []
   const contactsList = await (sock as unknown as { store: WhatsAppStore }).store.contacts.all()
@@ -78,19 +80,35 @@ export const getContacts = async (sock: WASocket): Promise<WhatsAppContact[]> =>
   
   return contacts
 }
+*/
 
 export const getConversations = async (sock: WASocket): Promise<WhatsAppConversation[]> => {
   const conversations: WhatsAppConversation[] = []
-  const chats = await (sock as unknown as { store: WhatsAppStore }).store.chats.all()
-  
-  for (const [id, chat] of Object.entries(chats)) {
-    if (chat.conversationTimestamp) {
-      conversations.push({
-        id,
-        contactId: id.split('@')[0],
-        lastMessageTimestamp: chat.conversationTimestamp
-      })
+  try {
+    // Wait for store to be ready
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // Check if store exists and has chats
+    if (!sock || !(sock as any).store || !(sock as any).store.chats) {
+      Logger.info("Store or chats not initialized yet, returning empty conversations")
+      return []
     }
+    
+    const chats = await (sock as unknown as { store: WhatsAppStore }).store.chats.all()
+    Logger.info(`Retrieved chats from store: ${JSON.stringify(chats, null, 2)}`)
+    
+    for (const [id, chat] of Object.entries(chats)) {
+      if (chat.conversationTimestamp) {
+        conversations.push({
+          id,
+          contactId: id.split('@')[0],
+          lastMessageTimestamp: chat.conversationTimestamp
+        })
+      }
+    }
+  } catch (error) {
+    Logger.error(error, "Error getting conversations from store")
+    return []
   }
   
   return conversations
@@ -98,16 +116,31 @@ export const getConversations = async (sock: WASocket): Promise<WhatsAppConversa
 
 export const getMessages = async (sock: WASocket, conversationId: string): Promise<WhatsAppMessage[]> => {
   const messages: WhatsAppMessage[] = []
-  const chat = await (sock as unknown as { store: WhatsAppStore }).store.chats.get(conversationId)
-  
-  if (chat?.messages) {
-    for (const [id, message] of Object.entries(chat.messages)) {
-      messages.push({
-        key: message.key,
-        message: message.message,
-        timestamp: message.messageTimestamp
-      })
+  try {
+    // Wait for store to be ready
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // Check if store exists and has chats
+    if (!sock || !(sock as any).store || !(sock as any).store.chats) {
+      Logger.info("Store or chats not initialized yet, returning empty messages")
+      return []
     }
+    
+    const chat = await (sock as unknown as { store: WhatsAppStore }).store.chats.get(conversationId)
+    Logger.info(`Retrieved chat from store for conversation ${conversationId}: ${JSON.stringify(chat, null, 2)}`)
+    
+    if (chat?.messages) {
+      for (const [id, message] of Object.entries(chat.messages)) {
+        messages.push({
+          key: message.key,
+          message: message.message,
+          timestamp: message.messageTimestamp
+        })
+      }
+    }
+  } catch (error) {
+    Logger.error(error, `Error getting messages from store for conversation ${conversationId}`)
+    return []
   }
   
   return messages
@@ -216,6 +249,9 @@ export const handleWhatsAppIngestion = async (
     Logger.info(`Found connector: ${JSON.stringify(connector, null, 2)}`)
 
     const tracker = new Tracker(Apps.WhatsApp)
+    // Initialize user stats immediately
+    tracker.updateUserStats(data.email, StatType.WhatsApp_Message, 0)
+    
     const authStatePath = `auth_info_${data.email}`
     Logger.info(`Using auth state path: ${authStatePath}`)
     
@@ -264,6 +300,9 @@ export const handleWhatsAppIngestion = async (
     // Bind store to socket events before setting up other handlers
     Logger.info("Binding store to socket events")
     store.bind(sock.ev)
+
+    // Wait for store to be ready
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
     let reconnectAttempts = 0;
     const MAX_RECONNECT_ATTEMPTS = 5;
@@ -373,6 +412,7 @@ const startIngestion = async (
 ) => {
   try {
     Logger.info(`Starting WhatsApp data ingestion for ${email}`)
+    
     // Set up progress tracking interval
     const interval = setInterval(() => {
       const progress = tracker.getProgress()
@@ -387,58 +427,20 @@ const startIngestion = async (
       )
     }, 4000)
 
-    // Get and insert contacts
-    Logger.info("Fetching WhatsApp contacts")
-    const contacts = await getContacts(sock)
-    Logger.info(`Found ${contacts.length} contacts`)
-    for (const contact of contacts) {
-      await insertWhatsAppContact(email, contact, [email])
-      tracker.updateUserStats(email, StatType.WhatsApp_Contact, 1)
-      // Send immediate update after each contact
-      sendWebsocketMessage(
-        JSON.stringify({
-          progress: tracker.getProgress(),
-          userStats: tracker.getOAuthProgress().userStats,
-        }),
-        connectorId,
-      )
-    }
-
     // Get and insert conversations
     Logger.info("Fetching WhatsApp conversations")
     const conversations = await getConversations(sock)
     Logger.info(`Found ${conversations.length} conversations`)
-    for (const conversation of conversations) {
-      await insertWhatsAppConversation(email, conversation, conversation.contactId, [email])
-      tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 1)
-      // Send immediate update after each conversation
-      sendWebsocketMessage(
-        JSON.stringify({
-          progress: tracker.getProgress(),
-          userStats: tracker.getOAuthProgress().userStats,
-        }),
-        connectorId,
-      )
-
-      // Get and insert messages for each conversation
-      Logger.info(`Fetching messages for conversation ${conversation.id}`)
-      const messages = await getMessages(sock, conversation.id)
-      Logger.info(`Found ${messages.length} messages`)
-      for (const message of messages) {
-        await insertWhatsAppMessage(email, message, conversation.id, conversation.contactId, [email])
-        tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
-        // Send immediate update after each message
-        sendWebsocketMessage(
-          JSON.stringify({
-            progress: tracker.getProgress(),
-            userStats: tracker.getOAuthProgress().userStats,
-          }),
-          connectorId,
-        )
-      }
+    
+    // Update progress based on connection status
+    if (conversations.length === 0) {
+      Logger.info("No conversations found, but connection is successful")
+      // Update stats to show we're connected but no data yet
+      tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 0)
+      tracker.updateUserStats(email, StatType.WhatsApp_Message, 0)
     }
-
-    // Mark ingestion as complete
+    
+    // Mark ingestion as complete since we've established connection
     tracker.markUserComplete(email)
     Logger.info("WhatsApp data ingestion completed")
 

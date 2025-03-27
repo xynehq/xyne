@@ -87,40 +87,6 @@ const WhatsAppQRCode = ({ qrCode, status, onRefresh }: WhatsAppQRCodeProps) => {
     }
   }
 
-  const handleRetry = async () => {
-    try {
-      // Find the existing WhatsApp connector
-      const connectors = await getConnectors()
-      const whatsappConnector = connectors.find(
-        (connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
-      )
-      
-      if (!whatsappConnector) {
-        throw new Error("WhatsApp connector not found")
-      }
-
-      // Start ingestion for the existing connector
-      const res = await api.admin.connectors.whatsapp.$post({
-        json: {
-          connectorId: whatsappConnector.id,
-          action: "startIngestion"
-        }
-      })
-      
-      if (!res.ok) {
-        throw new Error("Could not start WhatsApp data ingestion")
-      }
-      onRefresh()
-    } catch (error) {
-      console.error("Error retrying WhatsApp connection:", error)
-      toast({
-        title: "Error",
-        description: "Failed to retry WhatsApp connection",
-        variant: "destructive",
-      })
-    }
-  }
-
   return (
     <div className="flex flex-col items-center gap-4">
       {status === WhatsAppQRStatus.Connecting && (
@@ -137,7 +103,7 @@ const WhatsAppQRCode = ({ qrCode, status, onRefresh }: WhatsAppQRCodeProps) => {
             <Button variant="outline" onClick={onRefresh}>
               Refresh Status
             </Button>
-            <Button onClick={handleRetry}>
+            <Button onClick={onRefresh}>
               Get Info
             </Button>
           </div>
@@ -146,7 +112,7 @@ const WhatsAppQRCode = ({ qrCode, status, onRefresh }: WhatsAppQRCodeProps) => {
       {status === WhatsAppQRStatus.Error && (
         <div className="flex flex-col items-center gap-2">
           <p className="text-red-600 font-medium">Connection Error</p>
-          <Button variant="outline" onClick={handleRetry}>
+          <Button variant="outline" onClick={onRefresh}>
             Retry Connection
           </Button>
         </div>
@@ -198,6 +164,47 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
       }
     },
   })
+
+  const handleRetry = async () => {
+    try {
+      // Find the existing WhatsApp connector
+      const connectors = await getConnectors()
+      const whatsappConnector = connectors.find(
+        (connector: Connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+      )
+      
+      if (!whatsappConnector) {
+        throw new Error("WhatsApp connector not found")
+      }
+
+      // Set status to connecting to show QR code
+      setWhatsappStatus(WhatsAppQRStatus.Connecting)
+      setQrCode("") // Reset QR code to trigger re-render
+
+      // Start ingestion for the existing connector
+      const res = await api.admin.connectors.whatsapp.$post({
+        json: {
+          connectorId: whatsappConnector.id,
+          action: "startIngestion"
+        }
+      })
+      
+      if (!res.ok) {
+        throw new Error("Could not start WhatsApp data ingestion")
+      }
+
+      // Refresh connectors to update status
+      await refetch()
+    } catch (error) {
+      console.error("Error retrying WhatsApp connection:", error)
+      toast({
+        title: "Error",
+        description: "Failed to retry WhatsApp connection",
+        variant: "destructive",
+      })
+      setWhatsappStatus(WhatsAppQRStatus.Error)
+    }
+  }
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
@@ -428,7 +435,7 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
               <WhatsAppQRCode
                 qrCode={qrCode}
                 status={whatsappStatus}
-                onRefresh={refetch}
+                onRefresh={handleRetry}
               />
             </CardContent>
           </Card>
@@ -455,7 +462,7 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
-                    onClick={handleGetInfo}
+                    onClick={handleRetry}
                     disabled={isLoading}
                   >
                     Get Info
