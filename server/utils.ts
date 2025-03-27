@@ -205,6 +205,7 @@ export const IsGoogleApp = (app: Apps) => {
   )
 }
 
-export function scale(val: number): number {
+export function scale(val: number): number | null {
+  if (!val) return null
   return (2 * Math.atan(val / 4)) / Math.PI
 }
