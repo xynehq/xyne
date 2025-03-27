@@ -45,7 +45,7 @@ export const SearchResult = ({
         {result.chunks_summary &&
           result.chunks_summary?.length &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={summary} />
+            <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
       </div>
     )
@@ -93,7 +93,7 @@ export const SearchResult = ({
         {result.chunks_summary &&
           result.chunks_summary?.length &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={summary} />
+            <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
       </div>
     )
@@ -143,7 +143,7 @@ export const SearchResult = ({
         {result.chunks_summary &&
           result.chunks_summary?.length &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={summary} />
+            <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
       </div>
     )
