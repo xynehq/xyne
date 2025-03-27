@@ -220,6 +220,7 @@ schema mail {
       bm25(chunks)
       bm25(subject)
       combined_bm25
+      chunk_scores
     }
   }
 
