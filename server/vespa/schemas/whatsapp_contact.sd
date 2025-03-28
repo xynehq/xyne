@@ -1,0 +1,81 @@
+schema whatsapp_contact {
+  document whatsapp_contact {
+    field docId type string {
+      indexing: attribute | summary
+    }
+
+    field phoneNumber type string {
+      indexing: index | attribute | summary
+      index: enable-bm25
+      match: text
+      stemming: best
+      normalizing: accent
+    }
+
+    field name type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field permissions type array<string> {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+  }
+
+  fieldset default {
+    fields: name, phoneNumber
+  }
+
+  rank-profile default {
+    inputs {
+      query(alpha) double
+    }
+
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
+    }
+
+    function scaled_bm25_name() {
+      expression: scale(bm25(name))
+    }
+
+    first-phase {
+      expression: bm25(name)
+    }
+
+    global-phase {
+      expression {
+        (
+          nativeRank(name) * 5
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      scaled_bm25_name
+    }
+  }
+
+  document-summary default {
+    summary name {
+      bolding: on
+    }
+    summary phoneNumber {
+      bolding: on
+    }
+  }
+} 

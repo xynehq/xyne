@@ -1,0 +1,70 @@
+schema whatsapp_conversation {
+  document whatsapp_conversation {
+    field docId type string {
+      indexing: attribute | summary
+    }
+
+    field phoneNumber type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field contactId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field lastMessageTimestamp type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field permissions type array<string> {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+  }
+
+  fieldset default {
+    fields: phoneNumber, contactId, app, entity
+  }
+
+  rank-profile default {
+    inputs {
+      query(alpha) double
+    }
+
+    function freshness_score() {
+      expression: exp(-1 * (now() - attribute(lastMessageTimestamp)) / (3600 * 24))
+    }
+
+    first-phase {
+      expression: freshness_score()
+    }
+
+    match-features {
+      freshness_score
+    }
+  }
+
+  document-summary default {
+    summary phoneNumber {
+      bolding: on
+    }
+    summary contactId {
+      bolding: on
+    }
+  }
+} 
