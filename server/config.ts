@@ -89,6 +89,11 @@ if (
   fastModelReasoning = true
 }
 
+let serviceAccountWhitelistedEmails: string[] = []
+if(process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
+  serviceAccountWhitelistedEmails = process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"].split(",").map(v => v.trim())
+}
+
 export default {
   // default page size for regular search
   page: 8,
@@ -127,4 +132,5 @@ export default {
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
+  serviceAccountWhitelistedEmails
 }

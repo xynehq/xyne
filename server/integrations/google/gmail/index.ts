@@ -64,6 +64,7 @@ export const handleGmailIngestion = async (
           maxResults: batchSize,
           pageToken: nextPageToken,
           fields: "messages(id), nextPageToken",
+          q: "-in:promotions",
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
       Apps.Gmail,
