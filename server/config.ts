@@ -90,8 +90,12 @@ if (
 }
 
 let serviceAccountWhitelistedEmails: string[] = []
-if(process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
-  serviceAccountWhitelistedEmails = process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"].split(",").map(v => v.trim())
+if (process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
+  serviceAccountWhitelistedEmails = process.env[
+    "SERVICE_ACCOUNT_WHITELISTED_EMAILS"
+  ]
+    .split(",")
+    .map((v) => v.trim())
 }
 
 export default {
@@ -132,5 +136,5 @@ export default {
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
-  serviceAccountWhitelistedEmails
+  serviceAccountWhitelistedEmails,
 }

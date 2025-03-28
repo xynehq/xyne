@@ -4,7 +4,6 @@ import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
 
-
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
 
@@ -23,7 +22,7 @@ const time = (start: number) => {
 }
 
 export const getLogger = (loggerType: Subsystem) => {
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = process.env.NODE_ENV === "production"
 
   return pino({
     name: loggerType,
@@ -35,45 +34,57 @@ export const getLogger = (loggerType: Subsystem) => {
             options: {
               colorize: true,
               colorizeObjects: true,
-              errorLikeObjectKeys: ["err", "error", "error_stack", "stack", "apiErrorHandlerCallStack"],
+              errorLikeObjectKeys: [
+                "err",
+                "error",
+                "error_stack",
+                "stack",
+                "apiErrorHandlerCallStack",
+              ],
               ignore: "pid,hostname",
             },
           },
         }),
-  });
-};
+  })
+}
 
-const logRequest = (logger: Logger, c: Context, requestId: any, start: number, status: number) => {
-  const elapsed = time(start);
-  const isError = status >= 400;
-  const isRedirect = status === 302;
+const logRequest = (
+  logger: Logger,
+  c: Context,
+  requestId: any,
+  start: number,
+  status: number,
+) => {
+  const elapsed = time(start)
+  const isError = status >= 400
+  const isRedirect = status === 302
 
   const logData = {
     requestId,
     status,
     elapsed,
     ...(isError ? { error: c.res.body } : {}),
-  };
+  }
 
   if (isError) {
-    logger.error(logData, "Request error");
+    logger.error(logData, "Request error")
   } else if (isRedirect) {
-    logger.info(logData, "Request redirected");
+    logger.info(logData, "Request redirected")
   } else {
-    logger.info(logData, "Request completed");
+    logger.info(logData, "Request completed")
   }
-};
+}
 
 export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
-  const logger = getLogger(loggerType);
+  const logger = getLogger(loggerType)
 
   return async (c: Context, next: Next) => {
-    const requestId = uuidv4();
-    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId;
-    c.set("requestId", c_reqId);
+    const requestId = uuidv4()
+    const c_reqId = "requestId" in c.req ? c.req.requestId : requestId
+    c.set("requestId", c_reqId)
 
-    const { method } = c.req;
-    const path = getPath(c.req.raw);
+    const { method } = c.req
+    const path = getPath(c.req.raw)
 
     logger.info({
       requestId: c_reqId,
@@ -81,11 +92,11 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
       path,
       query: c.req.query("query") || c.req.query("prompt") || null,
       message: "Incoming request",
-    });
+    })
 
-    const start = Date.now();
-    await next();
+    const start = Date.now()
+    await next()
 
-    logRequest(logger, c, c_reqId, start, c.res.status);
-  };
-};
+    logRequest(logger, c, c_reqId, start, c.res.status)
+  }
+}

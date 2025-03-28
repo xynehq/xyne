@@ -561,35 +561,65 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   }, [data, isPending])
 
   useEffect(() => {
-    let socket: WebSocket | null = null
+    let serviceAccountSocket: WebSocket | null = null
+    let oauthSocket: WebSocket | null = null
+
     if (!isPending && data && data.length > 0) {
-      socket = wsClient.ws.$ws({
-        query: {
-          id: data[0]?.id,
-        },
-      })
-      // setWs(socket)
-      socket?.addEventListener("open", () => {
-        logger.info("open")
-      })
-      socket?.addEventListener("close", (e) => {
-        logger.info("close")
-        if (e.reason === "Job finished") {
-          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
-        }
-      })
-      socket?.addEventListener("message", (e) => {
-        // const message = JSON.parse(e.data);
-        const data = JSON.parse(e.data)
-        const statusJson = JSON.parse(JSON.parse(e.data).message)
-        setProgress(statusJson.progress ?? 0)
-        setUserStats(statusJson.userStats ?? {})
-        setUpateStatus(data.message)
-      })
+      const serviceAccountConnector = data.find(
+        (c) => c.authType === AuthType.ServiceAccount,
+      )
+      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+
+      if (serviceAccountConnector) {
+        serviceAccountSocket = wsClient.ws.$ws({
+          query: { id: serviceAccountConnector.id }, // externalId
+        })
+        serviceAccountSocket?.addEventListener("open", () => {
+          logger.info(
+            `Service Account WebSocket opened for ${serviceAccountConnector.id}`,
+          )
+        })
+        serviceAccountSocket?.addEventListener("message", (e) => {
+          const data = JSON.parse(e.data)
+          const statusJson = JSON.parse(data.message)
+          setProgress(statusJson.progress ?? 0) // Could split to serviceAccountProgress
+          setUserStats(statusJson.userStats ?? {})
+          setUpateStatus(data.message)
+        })
+        serviceAccountSocket?.addEventListener("close", (e) => {
+          logger.info("Service Account WebSocket closed")
+          if (e.reason === "Job finished") {
+            setIsIntegratingSA(true)
+          }
+        })
+      }
+
+      if (oauthConnector) {
+        oauthSocket = wsClient.ws.$ws({
+          query: { id: oauthConnector.id }, // externalId
+        })
+        oauthSocket?.addEventListener("open", () => {
+          logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
+        })
+        oauthSocket?.addEventListener("message", (e) => {
+          const data = JSON.parse(e.data)
+          const statusJson = JSON.parse(data.message)
+          setProgress(statusJson.progress ?? 0) // Could split to oauthProgress
+          setUserStats(statusJson.userStats ?? {})
+          setUpateStatus(data.message)
+        })
+        oauthSocket?.addEventListener("close", (e) => {
+          logger.info("OAuth WebSocket closed")
+          if (e.reason === "Job finished") {
+            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+          }
+        })
+      }
     }
+
     return () => {
-      socket?.close()
-      // setWs(null)
+      serviceAccountSocket?.close()
+      oauthSocket?.close()
     }
   }, [data, isPending])
 

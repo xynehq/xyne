@@ -119,6 +119,7 @@ export const WsApp = app.get(
     return {
       onOpen(event, ws) {
         connectorId = c.req.query("id")
+        Logger.info(`Websocket connection with id ${connectorId}`)
         wsConnections.set(connectorId, ws)
       },
       onMessage(event, ws) {
