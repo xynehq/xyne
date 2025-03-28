@@ -29,6 +29,20 @@
       "when": 1742072652377,
       "tag": "0003_jittery_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1743015841870,
+      "tag": "0004_perpetual_shard",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1743118729384,
+      "tag": "0005_empty_gertrude_yorkes",
+      "breakpoints": true
     }
   ]
 }

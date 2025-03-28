@@ -12,6 +12,8 @@ import { Apps, AuthType } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
+import { Square, Pause, Play, X } from 'lucide-react';
+
 import {
   Card,
   CardContent,
@@ -34,6 +36,38 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { wsClient } from "@/api" // ensure wsClient is imported
+
+export const updateConnectorStatus = async (connectorId: string, status: ConnectorStatus) => {
+  const res = await api.admin.connector.update_status.$post({
+    form: {
+      connectorId,
+      status
+    },
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized");
+    }
+    throw new Error("Could not update connector status");
+  }
+  return res.json();
+};
+
+// Delete connector
+export const deleteConnector = async (connectorId: string) => {
+  const res = await api.admin.connector.delete.$delete({
+    form: {
+      connectorId
+    },
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized");
+    }
+    throw new Error("Could not delete connector");
+  }
+  return res.json();
+};
 
 const submitSlackBotToken = async (
   value: { botToken: string },
@@ -102,6 +136,9 @@ interface SlackOAuthTabProps {
   setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
   updateStatus: string
   refetch: () => void
+  connectAction: ConnectAction
+  setConnectAction: (status: ConnectAction) => void
+  connector: any
 }
 
 const submitSlackOAuth = async (
@@ -302,7 +339,47 @@ const SlackOAuthTab = ({
   setOAuthIntegrationStatus,
   updateStatus,
   refetch,
+  connectAction,
+  setConnectAction,
+  connector
+
 }: SlackOAuthTabProps) => {
+
+  const handleStatusUpdate = async (connectorId: string, newStatus: ConnectorStatus) => {
+    try {
+      await updateConnectorStatus(connectorId, newStatus);
+      toast({
+        title: "Status Updated",
+        description: `Connector status changed to ${newStatus}`,
+      });
+      refetch();
+    } catch (error) {
+      toast({
+        title: "Status Update Failed",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  }
+
+  const handleDelete = async (connectorId: string) => {
+    try {
+      await deleteConnector(connectorId);
+      toast({
+        title: "Connector Deleted",
+        description: "Slack connector has been removed",
+      });
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider);
+      refetch();
+    } catch (error) {
+      toast({
+        title: "Deletion Failed",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  }
+
   return (
     <TabsContent value="oauth">
       <Card>
@@ -352,10 +429,22 @@ const SlackOAuthTab = ({
               />
             </div>
           ) : oauthIntegrationStatus ===
-            OAuthIntegrationStatus.OAuthConnecting ? (
+            OAuthIntegrationStatus.OAuthConnecting || oauthIntegrationStatus === OAuthIntegrationStatus.OAuthPaused? (
             <div className="flex flex-col items-center gap-4">
               <p>Connecting to Slack...</p>
               <div className="flex items-center gap-2"></div>
+              <div className="flex">
+                <Square onClick={() => {
+                  handleStatusUpdate(connector.id, ConnectorStatus.NotConnected)
+                }} />
+                {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting ? <Pause onClick={() => {
+                  handleStatusUpdate(connector.id, ConnectorStatus.Paused)
+                }} /> : <Play onClick={() => {}} />}
+
+                <X onClick={() => {
+                  handleDelete(connector.id)
+                }} />
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4">
@@ -373,12 +462,23 @@ const SlackOAuthTab = ({
   )
 }
 
+enum ConnectAction {
+  Nil,
+  Pause,
+  Start,
+  Stop,
+  Remove,
+  Edit
+}
+
 export const Slack = ({ user, workspace }: IntegrationProps) => {
   const navigate = useNavigate()
   const [slackStatus, setSlackStatus] = useState("")
   // @ts-ignore
   const [activeTab, setActiveTab] = useState("oauth")
   const startTimeRef = useRef<number | null>(null)
+
+  const [connectAction, setConnectAction] = useState<ConnectAction>(ConnectAction.Nil)
 
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(OAuthIntegrationStatus.Provider)
@@ -417,6 +517,8 @@ export const Slack = ({ user, workspace }: IntegrationProps) => {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+      } else if(connector?.status === ConnectorStatus.Paused) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthPaused)
       } else {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
       }
@@ -425,6 +527,9 @@ export const Slack = ({ user, workspace }: IntegrationProps) => {
     }
   }, [data, isPending])
 
+  const slackConnector = data?.find(
+    (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
+  )
   useEffect(() => {
     let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
@@ -565,6 +670,9 @@ export const Slack = ({ user, workspace }: IntegrationProps) => {
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={slackStatus}
               refetch={refetch}
+              connectAction={connectAction}
+              setConnectAction={setConnectAction}
+              connector={slackConnector}
             />
           </Tabs>
 

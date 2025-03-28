@@ -25,7 +25,7 @@
             <document type="user_query" mode="index" />
             <document type="event" mode="index" />
             <document type="chat_message" mode="index" />
-            <document type="chat_container" mode="index" />
+            <document type="chat_container" mode="index" global="true" />
             <document type="chat_user" mode="index" global="true" />
             <document type="chat_team" mode="index" global="true" />
         </documents>

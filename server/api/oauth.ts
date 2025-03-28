@@ -12,11 +12,13 @@ import { Google, Slack } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
-import { getUserByEmail } from "@/db/user"
 import { handleGoogleOAuthIngestion } from "@/integrations/google"
 
 const { JwtPayloadKey, JobExpiryHours, slackHost } = config
 import { IsGoogleApp } from "@/utils"
+import { getUserByEmail } from "@/db/user"
+import { handleSlackIngestion } from "@/integrations/slack"
+import { globalAbortControllers } from "@/integrations/abortManager"
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
 
 interface OAuthCallbackQuery {
@@ -35,8 +37,6 @@ interface SlackOAuthResp {
 
 export const OAuthCallback = async (c: Context) => {
   try {
-    console.log(c.req.header("cookie"))
-    console.log("OAuth Callback")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     const { state, code } = c.req.query()
@@ -48,8 +48,6 @@ export const OAuthCallback = async (c: Context) => {
       throw new HTTPException(500)
     }
     const stateInCookie = getCookie(c, `${app}-state`)
-    console.log(`${app}-state`, stateInCookie)
-    console.log(random, stateInCookie, random === stateInCookie)
     if (random !== stateInCookie) {
       throw new HTTPException(500, {
         message: "Invalid state, potential CSRF attack.",
@@ -57,7 +55,6 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     const codeVerifier = getCookie(c, `${app}-code-verifier`)
-    console.log(codeVerifier)
     if (!codeVerifier && app === Apps.GoogleDrive) {
       throw new HTTPException(500, { message: "Could not verify the code" })
     }
@@ -130,7 +127,24 @@ export const OAuthCallback = async (c: Context) => {
 
     if (IsGoogleApp(app)) {
       handleGoogleOAuthIngestion(SaasJobPayload)
+    } else if (app === Apps.Slack) {
+      const abortController = new AbortController();
+      globalAbortControllers.set(`${connector.id}`, abortController);
+      handleSlackIngestion({
+        connectorId: connector.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      })
     } else {
+      const SaasJobPayload: SaaSOAuthJob = {
+        connectorId: connector.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      }
       // Enqueue the background job within the same transaction
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
         expireInHours: JobExpiryHours,

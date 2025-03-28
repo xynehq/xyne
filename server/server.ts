@@ -18,15 +18,19 @@ import {
   addServiceConnectionSchema,
   answerSchema,
   createOAuthProvider,
+  deleteConnectorSchema,
   oauthStartQuerySchema,
   searchSchema,
+  updateConnectorStatusSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
   AddServiceConnection,
   CreateOAuthProvider,
+  DeleteConnector,
   GetConnectors,
   StartOAuth,
+  UpdateConnectorStatus,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -43,8 +47,8 @@ import { createUser, getUserByEmail } from "@/db/user"
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
-import { OAuthCallback } from "./api/oauth"
-import { setCookieByEnv } from "./utils"
+import { OAuthCallback } from "@/api/oauth"
+import { setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
@@ -187,6 +191,16 @@ export const AppRoutes = app
     AddApiKeyConnector,
   )
   .get("/connectors/all", GetConnectors)
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .delete(
+    "/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteConnector,
+  )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -238,6 +252,7 @@ app.get(
     redirect_uri: redirectURI,
   }),
   async (c: Context) => {
+    console.log("here")
     const token = c.get("token")
     const grantedScopes = c.get("granted-scopes")
     const user = c.get("user-google")

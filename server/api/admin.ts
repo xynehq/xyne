@@ -3,9 +3,11 @@ import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import {
+  deleteConnector,
   getConnectorByExternalId,
   getConnectors,
   insertConnector,
+  updateConnector,
 } from "@/db/connector"
 import {
   ConnectorType,
@@ -327,5 +329,45 @@ export const AddApiKeyConnector = async (c: Context) => {
         message: "Error creating connection or enqueuing job",
       })
     }
+  })
+}
+
+export const UpdateConnectorStatus = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const { connectorId, status, }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
+  const connector = await getConnectorByExternalId(connectorId, user.id)
+  if (!connector) {
+    throw new HTTPException(500, {
+      message: "could not get connector",
+    })
+  }
+  await updateConnector(db, connector.id, { status: status })
+  return c.json({
+    success: true,
+    message: "connector updated",
+  })
+}
+
+export const DeleteConnector = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const { connectorId }: { connectorId: string } = c.req.valid("form")
+  await deleteConnector(db, connectorId, user.id)
+  return c.json({
+    success: true,
+    message: "Connector deleted",
   })
 }

@@ -55,6 +55,10 @@ schema chat_message {
       indexing: attribute
     }
 
+    field chatRef type reference<chat_container> {
+      indexing: attribute
+    }
+
     # field userRef type reference<chat_user> {
     #   indexing: attribute
     # }
@@ -80,9 +84,17 @@ schema chat_message {
       attribute: fast-search
     }
 
-    # field reactions type array<string> {
-    #   indexing: attribute | summary
-    # }
+    field reactions type int {
+      indexing: attribute | summary
+    }
+
+    field replyCount type int {
+      indexing: attribute | summary
+    }
+
+    field replyUsersCount type int {
+      indexing: attribute | summary
+    }
 
     field mentions type array<string> {
       indexing: index | attribute | summary
@@ -99,6 +111,7 @@ schema chat_message {
     }
   }
   import field teamRef.domain as domain {}
+  import field chatRef.isPrivate as isPrivate {}
 
   field text_embeddings type tensor<bfloat16>(v[384]) {
     indexing: input text | embed | attribute | index
@@ -108,7 +121,7 @@ schema chat_message {
   }
 
   fieldset default {
-    fields: text, mentions, teamId, channelId, userId, threadId, app, entity, attachmentIds, domain
+    fields: text, mentions, teamId, channelId, userId, threadId, app, entity, attachmentIds, domain, isPrivate
   }
 
   rank-profile default {
@@ -152,6 +165,22 @@ schema chat_message {
       freshness_score
     }
   }
+ rank-profile unranked inherits default {
+    # Simple constant expression - returns same score for all documents
+    first-phase {
+      expression: 0
+    }
+    # Skip second phase ranking completely
+    second-phase {
+      expression: 0
+    }
+    # Skip global phase
+    global-phase {
+      expression: 0
+    }
+    # No need to calculate features for unranked results
+    match-features {}
+  }
 
   document-summary default {
     summary text {
@@ -161,6 +190,9 @@ schema chat_message {
     summary mentions {}
     summary attachmentIds {}
     summary domain {}
+    summary isPrivate {}
     # summary reactions {}
   }
 }
+
+  

@@ -43,4 +43,5 @@ export enum OAuthIntegrationStatus {
   OAuth = "OAuth", // provider created but OAuth not yet connected
   OAuthConnecting = "OAuthConnecting",
   OAuthConnected = "OAuthConnected",
+  OAuthPaused = "OAuthPaused"
 }
