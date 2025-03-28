@@ -103,6 +103,7 @@ export type SaaSJob = {
   externalId: string
   authType: AuthType
   email: string
+  whiteListedEmails?: string[]
 }
 
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">

@@ -109,6 +109,9 @@ import {
   updateUserStats,
 } from "./tracking"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
+import config from "@/config"
+
+// const { serviceAccountWhitelistedEmails } = config
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -560,12 +563,9 @@ const insertCalendarEvents = async (
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
-export const handleGoogleOAuthIngestion = async (
-  boss: PgBoss,
-  job: PgBoss.Job<any>,
-) => {
-  Logger.info("handleGoogleOauthIngestion", job.data)
-  const data: SaaSOAuthJob = job.data as SaaSOAuthJob
+export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
+  // Logger.info("handleGoogleOauthIngestion", job.data)
+  // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
   try {
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
@@ -573,7 +573,7 @@ export const handleGoogleOAuthIngestion = async (
       db,
       data.connectorId,
     )
-    const userEmail = job.data.email
+    const userEmail = data.email
     const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
 
     const providers: SelectOAuthProvider[] =
@@ -683,7 +683,7 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      await boss.complete(SaaSQueue, job.id)
+      // await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
       wsConnections.get(connector.externalId)?.close(1000, "Job finished")
     })
@@ -693,15 +693,15 @@ export const handleGoogleOAuthIngestion = async (
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
       error,
     )
-    await db.transaction(async (trx) => {
-      trx
-        .update(connectors)
-        .set({
-          status: ConnectorStatus.Failed,
-        })
-        .where(eq(connectors.id, data.connectorId))
-      await boss.fail(job.name, job.id)
-    })
+    // await db.transaction(async (trx) => {
+    await db
+      .update(connectors)
+      .set({
+        status: ConnectorStatus.Failed,
+      })
+      .where(eq(connectors.id, data.connectorId))
+    // await boss.fail(job.name, job.id)
+    // })
     throw new CouldNotFinishJobSuccessfully({
       message: "Could not finish Oauth ingestion",
       integration: Apps.GoogleDrive,
@@ -723,7 +723,6 @@ type IngestionMetadata = {
 }
 
 import { z } from "zod"
-import config from "@/config"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -794,12 +793,8 @@ const handleGmailIngestionForServiceAccount = async (
 
 // we make 2 sync jobs
 // one for drive and one for google workspace
-export const handleGoogleServiceAccountIngestion = async (
-  boss: PgBoss,
-  job: PgBoss.Job<any>,
-) => {
-  Logger.info("handleGoogleServiceAccountIngestion", job.data)
-  const data: SaaSJob = job.data as SaaSJob
+export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
+  Logger.info("handleGoogleServiceAccountIngestion", data)
   try {
     const connector = await getConnector(db, data.connectorId)
     const serviceAccountKey: GoogleServiceAccount = JSON.parse(
@@ -813,7 +808,17 @@ export const handleGoogleServiceAccountIngestion = async (
     })
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
-    const users = await listUsers(admin, workspace.domain)
+    const allUsers = await listUsers(admin, workspace.domain)
+
+    let users = allUsers
+    const whiteListedEmails = data.whiteListedEmails || []
+    if (whiteListedEmails.length) {
+      users = allUsers.filter(
+        (user) =>
+          user.primaryEmail && whiteListedEmails.includes(user.primaryEmail),
+      )
+    }
+
     setTotalUsers(users.length)
     const ingestionMetadata: IngestionMetadata[] = []
 
@@ -957,7 +962,7 @@ export const handleGoogleServiceAccountIngestion = async (
         })
         .where(eq(connectors.id, connector.id))
       Logger.info("status updated")
-      await boss.complete(SaaSQueue, job.id)
+      // await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
   } catch (error) {
@@ -973,7 +978,7 @@ export const handleGoogleServiceAccountIngestion = async (
           status: ConnectorStatus.Failed,
         })
         .where(eq(connectors.id, data.connectorId))
-      await boss.fail(job.name, job.id)
+      // await boss.fail(job.name, job.id)
     })
     throw new CouldNotFinishJobSuccessfully({
       message: "Could not finish Service Account ingestion",

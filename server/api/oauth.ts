@@ -13,6 +13,8 @@ import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
 import { getUserByEmail } from "@/db/user"
+import { handleGoogleOAuthIngestion } from "@/integrations/google"
+import { IsGoogleApp } from "@/utils"
 const { JwtPayloadKey, JobExpiryHours } = config
 
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
@@ -47,8 +49,8 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     const userRes = await getUserByEmail(db, sub)
-    if(!userRes || !userRes.length) {
-      Logger.error('Could not find user in OAuth Callback')
+    if (!userRes || !userRes.length) {
+      Logger.error("Could not find user in OAuth Callback")
       throw new NoUserFound({})
     }
     const provider = await getOAuthProvider(db, userRes[0].id, app)
@@ -77,12 +79,16 @@ export const OAuthCallback = async (c: Context) => {
       authType: connector.authType as AuthType,
       email: sub,
     }
-    // Enqueue the background job within the same transaction
-    const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-      expireInHours: JobExpiryHours,
-    })
 
-    Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+    if (IsGoogleApp(app)) {
+      handleGoogleOAuthIngestion(SaasJobPayload)
+    } else {
+      // Enqueue the background job within the same transaction
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+        expireInHours: JobExpiryHours,
+      })
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+    }
 
     // Commit the transaction if everything is successful
     return c.redirect(`${config.host}/oauth/success`)
