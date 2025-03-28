@@ -17,6 +17,7 @@ export enum StatType {
   WhatsApp_Message = "whatsappMessageCount",
   WhatsApp_Contact = "whatsappContactCount",
   WhatsApp_Conversation = "whatsappConversationCount",
+  WhatsApp_Group = "whatsappGroupCount",
 }
 
 interface StatMetadata {
@@ -45,6 +46,7 @@ interface WhatsAppStats {
   whatsappMessageCount: number
   whatsappContactCount: number
   whatsappConversationCount: number
+  whatsappGroupCount: number
 }
 
 // Union type for all possible stat types
@@ -125,6 +127,7 @@ export class Tracker {
           whatsappMessageCount: 0,
           whatsappContactCount: 0,
           whatsappConversationCount: 0,
+          whatsappGroupCount: 0,
           ...baseStats,
         }
       }
@@ -154,6 +157,7 @@ export class Tracker {
           whatsappMessageCount: 0,
           whatsappContactCount: 0,
           whatsappConversationCount: 0,
+          whatsappGroupCount: 0,
           ...baseOAuthStats,
         }
       }

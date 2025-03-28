@@ -35,6 +35,7 @@ export type VespaSchema =
   | typeof whatsappMessageSchema
   | typeof whatsappContactSchema
   | typeof whatsappConversationSchema
+  | typeof whatsappGroupSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -366,6 +367,13 @@ export const VespaMailAttachmentGetSchema = VespaMailAttachmentSchema.merge(
   defaultVespaFieldsSchema,
 )
 
+export enum WhatsAppEntity {
+  Message = "message",
+  Contact = "contact",
+  Conversation = "conversation",
+  Group = "group",
+}
+
 export const VespaChatMessageSchema = z.object({
   docId: z.string(), // client_msg_id from Slack
   teamId: z.string(), // Slack team ID (e.g., "T05N1EJSE0K")
@@ -373,13 +381,13 @@ export const VespaChatMessageSchema = z.object({
   text: z.string(),
   userId: z.string(), // Slack user ID (e.g., "U032QT45V53")
   app: z.nativeEnum(Apps), // App (e.g., "slack")
-  entity: z.nativeEnum(SlackEntity), // Entity (e.g., "message")
+  entity: z.union([z.nativeEnum(SlackEntity), z.nativeEnum(WhatsAppEntity)]), // Entity (e.g., "message")
   name: z.string(),
   username: z.string(),
   image: z.string(),
   domain: z.string().optional(), // probably should be made mandatory but for now making optional
   createdAt: z.number(), // Slack ts (e.g., 1734442791.514519)
-  teamRef: z.string(), // vespa id for team
+  teamRef: z.string().optional(), // vespa id for team
   // messageType: z.string(), // Slack type (e.g., "message")
   threadId: z.string().default(""), // Slack thread_ts, null if not in thread
   attachmentIds: z.array(z.string()).default([]), // Slack file IDs (e.g., ["F0857N0FF4N"])
@@ -662,6 +670,7 @@ export type Inserts =
   | VespaWhatsAppMessage
   | VespaWhatsAppContact
   | VespaWhatsAppConversation
+  | VespaWhatsAppGroup
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
@@ -891,15 +900,10 @@ export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
     chunks_summary: z.array(z.string()).optional(),
   })
 
-export enum WhatsAppEntity {
-  Message = "message",
-  Contact = "contact",
-  Conversation = "conversation",
-}
-
 export const whatsappMessageSchema = "whatsapp_message"
 export const whatsappContactSchema = "whatsapp_contact"
 export const whatsappConversationSchema = "whatsapp_conversation"
+export const whatsappGroupSchema = "whatsapp_group"
 
 export const VespaWhatsAppMessageSchema = z.object({
   docId: z.string(),
@@ -931,6 +935,22 @@ export const VespaWhatsAppConversationSchema = z.object({
   permissions: z.array(z.string()),
 })
 
+export const VespaWhatsAppGroupSchema = z
+  .object({
+    docId: z.string(),
+    subject: z.string(),
+    creation: z.number(),
+    owner: z.string(),
+    description: z.string(),
+    participants: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: z.nativeEnum(WhatsAppEntity),
+    permissions: z.array(z.string()),
+    sddocname: z.literal(whatsappGroupSchema),
+  })
+  .merge(defaultVespaFieldsSchema)
+
 export type VespaWhatsAppMessage = z.infer<typeof VespaWhatsAppMessageSchema>
 export type VespaWhatsAppContact = z.infer<typeof VespaWhatsAppContactSchema>
 export type VespaWhatsAppConversation = z.infer<typeof VespaWhatsAppConversationSchema>
+export type VespaWhatsAppGroup = z.infer<typeof VespaWhatsAppGroupSchema>

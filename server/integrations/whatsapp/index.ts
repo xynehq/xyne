@@ -3,14 +3,17 @@ import type { SelectConnector } from "@/db/schema"
 import {
   Apps,
   WhatsAppEntity,
-  whatsappMessageSchema,
   whatsappContactSchema,
   whatsappConversationSchema,
-  type VespaWhatsAppMessage,
+  chatContainerSchema,
+  chatMessageSchema,
+  SlackEntity,
   type VespaWhatsAppContact,
   type VespaWhatsAppConversation,
+  type VespaChatContainer,
+  type VespaChatMessage,
 } from "@/search/types"
-import { insert, NAMESPACE } from "@/search/vespa"
+import { insert, NAMESPACE, GetDocument } from "@/search/vespa"
 import { Subsystem, type SaaSOAuthJob } from "@/types"
 import type PgBoss from "pg-boss"
 import { db } from "@/db/client"
@@ -46,6 +49,19 @@ interface WhatsAppConversation {
   id: string
   contactId: string
   lastMessageTimestamp: number
+}
+
+interface WhatsAppGroup {
+  id: string
+  subject: string
+  creation: any // allow Long type
+  owner?: string
+  desc?: string
+  participants: {
+    id: string
+    admin?: string
+    isSuperAdmin?: boolean
+  }[]
 }
 
 interface WhatsAppStore {
@@ -161,18 +177,28 @@ const insertWhatsAppMessage = async (
                      message.message?.extendedTextMessage?.text || 
                      ''
 
+  const now = Date.now()
   return insert(
     {
       docId: message.key.id!,
-      phoneNumber,
+      teamId: conversationId,
+      channelId: conversationId,
       text: messageText,
-      timestamp: message.timestamp,
-      conversationId,
+      name: phoneNumber,
+      username: phoneNumber,
+      image: '',
+      userId: message.key.participant || phoneNumber,
       app: Apps.WhatsApp,
       entity: WhatsAppEntity.Message,
+      createdAt: message.timestamp,
+      updatedAt: now,
+      threadId: '',
+      attachmentIds: [],
       permissions,
-    } as VespaWhatsAppMessage,
-    whatsappMessageSchema,
+      mentions: [],
+      metadata: JSON.stringify({ type: 'whatsapp_message' }),
+    } as VespaChatMessage,
+    chatMessageSchema,
   )
 }
 
@@ -208,18 +234,125 @@ const insertWhatsAppConversation = async (
     permissions = permissions.concat(email)
   }
 
+  const now = Date.now()
   return insert(
     {
       docId: conversation.id,
-      phoneNumber,
-      contactId: conversation.contactId,
-      lastMessageTimestamp: conversation.lastMessageTimestamp,
+      name: phoneNumber, // Using phone number as name for direct messages
+      teamId: conversation.id, // Using conversation ID as team ID
+      creator: phoneNumber, // Using phone number as creator
       app: Apps.WhatsApp,
-      entity: WhatsAppEntity.Conversation,
-      permissions,
-    } as VespaWhatsAppConversation,
-    whatsappConversationSchema,
+      isIm: true, // This is a direct message
+      isMpim: false,
+      createdAt: conversation.lastMessageTimestamp,
+      updatedAt: now,
+      description: `Chat with ${phoneNumber}`,
+      count: 2, // Direct message has 2 participants
+      isPrivate: false,
+      isArchived: false,
+      isGeneral: false,
+      topic: `Chat with ${phoneNumber}`,
+    } as VespaChatContainer,
+    chatContainerSchema,
   )
+}
+
+const insertWhatsAppGroup = async (
+  email: string,
+  group: WhatsAppGroup,
+  permissions: string[],
+) => {
+  if (!permissions.length || permissions.indexOf(email) === -1) {
+    permissions = permissions.concat(email)
+  }
+
+  const now = Date.now()
+  return insert(
+    {
+      docId: group.id,
+      name: group.subject,
+      teamId: group.id,
+      creator: group.owner || '',
+      app: Apps.WhatsApp,
+      isIm: false,
+      isMpim: true,
+      createdAt: parseInt(String(group.creation), 10),
+      updatedAt: now,
+      description: group.desc || '',
+      count: group.participants.length,
+      isPrivate: false,
+      isArchived: false,
+      isGeneral: false,
+      topic: group.desc || '',
+    } as VespaChatContainer,
+    chatContainerSchema,
+  )
+}
+
+/**
+ * Verifies if a document exists in Vespa by its ID and schema type
+ * @param docId Document ID to check
+ * @param schema Schema type (e.g., chatMessageSchema)
+ * @returns Promise<boolean> true if document exists, false otherwise
+ */
+const verifyVespaPush = async (docId: string, schema: string): Promise<boolean> => {
+  try {
+    Logger.info(`Verifying document exists in Vespa: ${docId} (schema: ${schema})`)
+    // Cast schema to VespaSchema type to satisfy type checking
+    const result = await GetDocument(schema as any, docId)
+    
+    if (result && result.fields && result.fields.docId === docId) {
+      Logger.info(`Document ${docId} found in Vespa`)
+      return true
+    } else {
+      Logger.info(`Document ${docId} not found in Vespa`)
+      return false
+    }
+  } catch (error) {
+    Logger.error(error, `Error verifying document ${docId} in Vespa`)
+    return false
+  }
+}
+
+/**
+ * Helper function to insert data into Vespa and verify it was pushed successfully
+ * @param docId Document ID
+ * @param schema Schema type
+ * @param insertFn The insert function to call
+ * @returns Promise<boolean> true if insert and verification succeeded
+ */
+const insertAndVerify = async (
+  docId: string,
+  schema: string,
+  insertFn: () => Promise<any>,
+  maxRetries = 3
+): Promise<boolean> => {
+  let retries = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      // Attempt to insert the document
+      await insertFn();
+      
+      // Wait a moment for Vespa to process the document
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Verify the document exists
+      const exists = await verifyVespaPush(docId, schema);
+      if (exists) {
+        return true;
+      }
+      
+      Logger.info(`Document ${docId} verification failed, retrying (${retries + 1}/${maxRetries})...`);
+      retries++;
+    } catch (error) {
+      Logger.error(error, `Error inserting document ${docId}`);
+      retries++;
+    }
+  }
+  
+  Logger.error(`Failed to insert and verify document ${docId} after ${maxRetries} attempts`);
+  return false;
 }
 
 export const handleWhatsAppIngestion = async (
@@ -378,16 +511,117 @@ export const handleWhatsAppIngestion = async (
     // Handle messages
     sock.ev.on('messages.upsert', async (m) => {
       Logger.info(`New message received: ${JSON.stringify(m, null, 2)}`)
+      
+      try {
+        if (m.type === 'append' || m.type === 'notify') {
+          for (const msg of m.messages) {
+            if (msg.key && msg.message) {
+              const conversationId = msg.key.remoteJid || ''
+              const phoneNumber = conversationId.split('@')[0]
+              
+              const whatsappMessage: WhatsAppMessage = {
+                key: msg.key,
+                message: msg.message,
+                timestamp: typeof msg.messageTimestamp === 'number' ? 
+                  msg.messageTimestamp : 
+                  Number(msg.messageTimestamp)
+              }
+              
+              Logger.info(`Inserting message into Vespa: ${JSON.stringify(whatsappMessage, null, 2)}`)
+              const messageId = msg.key.id!;
+              const success = await insertAndVerify(
+                messageId,
+                chatMessageSchema,
+                () => insertWhatsAppMessage(data.email, whatsappMessage, conversationId, phoneNumber, [data.email])
+              );
+              
+              if (success) {
+                Logger.info(`Message ${messageId} successfully pushed to Vespa`);
+                // Update tracker
+                tracker.updateUserStats(data.email, StatType.WhatsApp_Message, 1)
+              } else {
+                Logger.error(`Failed to push message ${messageId} to Vespa`)
+              }
+            }
+          }
+        }
+      } catch (error) {
+        Logger.error(error, "Error processing new message")
+      }
     })
 
     // Handle contacts
     sock.ev.on('contacts.update', async (contacts) => {
       Logger.info(`Contacts updated: ${JSON.stringify(contacts, null, 2)}`)
+      
+      try {
+        for (const contact of contacts) {
+          if (contact.id && (contact.name || contact.notify)) {
+            const phoneNumber = contact.id.split('@')[0]
+            
+            const whatsappContact: WhatsAppContact = {
+              id: contact.id,
+              name: contact.name || contact.notify || phoneNumber,
+              phoneNumber
+            }
+            
+            Logger.info(`Inserting contact into Vespa: ${JSON.stringify(whatsappContact, null, 2)}`)
+            const success = await insertAndVerify(
+              contact.id,
+              whatsappContactSchema,
+              () => insertWhatsAppContact(data.email, whatsappContact, [data.email])
+            );
+            
+            if (success) {
+              Logger.info(`Contact ${contact.id} successfully pushed to Vespa`);
+              // Update tracker
+              tracker.updateUserStats(data.email, StatType.WhatsApp_Contact, 1)
+            } else {
+              Logger.error(`Failed to push contact ${contact.id} to Vespa`)
+            }
+          }
+        }
+      } catch (error) {
+        Logger.error(error, "Error processing contacts update")
+      }
     })
 
     // Handle chats
     sock.ev.on('chats.upsert', async (chats) => {
       Logger.info(`Chats updated: ${JSON.stringify(chats, null, 2)}`)
+      
+      try {
+        for (const chat of chats) {
+          if (chat.id) {
+            const phoneNumber = chat.id.split('@')[0]
+            
+            const whatsappConversation: WhatsAppConversation = {
+              id: chat.id,
+              contactId: phoneNumber,
+              lastMessageTimestamp: typeof chat.conversationTimestamp === 'number' ? 
+                chat.conversationTimestamp : 
+                parseInt(String(chat.conversationTimestamp), 10)
+            }
+            
+            Logger.info(`Inserting conversation into Vespa: ${JSON.stringify(whatsappConversation, null, 2)}`)
+            const success = await insertAndVerify(
+              chat.id,
+              chatContainerSchema,
+              () => insertWhatsAppConversation(data.email, whatsappConversation, phoneNumber, [data.email])
+            );
+            
+            if (success) {
+              Logger.info(`Conversation ${chat.id} successfully pushed to Vespa`);
+              // Update tracker
+              tracker.updateUserStats(data.email, StatType.WhatsApp_Conversation, 1)
+            } else {
+              Logger.error(`Failed to push conversation ${chat.id} to Vespa`)
+            }
+          }
+        }
+      } catch (error) {
+        Logger.error(error, "Error processing chats update")
+      }
     })
 
   } catch (error) {
@@ -432,12 +666,77 @@ const startIngestion = async (
     const conversations = await getConversations(sock)
     Logger.info(`Found ${conversations.length} conversations`)
     
+    // Insert conversations into Vespa
+    for (const conversation of conversations) {
+      const phoneNumber = conversation.contactId
+      Logger.info(`Inserting conversation into Vespa: ${JSON.stringify(conversation, null, 2)}`)
+      const success = await insertAndVerify(
+        conversation.id,
+        chatContainerSchema,
+        () => insertWhatsAppConversation(email, conversation, phoneNumber, [email])
+      );
+      
+      if (success) {
+        Logger.info(`Conversation ${conversation.id} successfully pushed to Vespa`);
+        // Update tracker
+        tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 1)
+      } else {
+        Logger.error(`Failed to push conversation ${conversation.id} to Vespa`)
+      }
+    }
+    
+    // Fetch and insert groups
+    Logger.info("Fetching WhatsApp groups")
+    try {
+      const groupsData = await sock.groupFetchAllParticipating()
+      Logger.info(`Retrieved groups data: ${Object.keys(groupsData).length}`)
+      
+      const groups = Object.values(groupsData).map((group: any) => ({
+        id: group.id,
+        subject: group.subject,
+        creation: parseInt(String(group.creation), 10),
+        owner: group.owner,
+        desc: group.desc,
+        participants: group.participants.map((p: any) => ({
+          id: p.id,
+          admin: p.admin,
+          isSuperAdmin: p.isSuperAdmin
+        }))
+      }));
+      
+      Logger.info(`Found ${groups.length} groups`)
+      
+      // Insert groups into Vespa
+      for (const group of groups) {
+        Logger.info(`Inserting group into Vespa: ${JSON.stringify(group, null, 2)}`)
+        const success = await insertAndVerify(
+          group.id,
+          chatContainerSchema,
+          () => insertWhatsAppGroup(email, group as WhatsAppGroup, [email])
+        );
+        
+        if (success) {
+          Logger.info(`Group ${group.id} successfully pushed to Vespa`);
+          // Update stats
+          tracker.updateUserStats(email, StatType.WhatsApp_Group, 1)
+        } else {
+          Logger.error(`Failed to push group ${group.id} to Vespa`)
+        }
+      }
+      
+      // Update stats
+      tracker.updateUserStats(email, StatType.WhatsApp_Group, groups.length)
+    } catch (error) {
+      Logger.error(error, "Error fetching and inserting groups")
+    }
+    
     // Update progress based on connection status
     if (conversations.length === 0) {
       Logger.info("No conversations found, but connection is successful")
       // Update stats to show we're connected but no data yet
       tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 0)
       tracker.updateUserStats(email, StatType.WhatsApp_Message, 0)
+      tracker.updateUserStats(email, StatType.WhatsApp_Group, 0)
     }
     
     // Mark ingestion as complete since we've established connection
