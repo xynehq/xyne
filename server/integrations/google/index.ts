@@ -694,7 +694,8 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       error,
     )
     // await db.transaction(async (trx) => {
-    await db.update(connectors)
+    await db
+      .update(connectors)
       .set({
         status: ConnectorStatus.Failed,
       })
@@ -812,8 +813,9 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     let users = allUsers
     const whiteListedEmails = data.whiteListedEmails || []
     if (whiteListedEmails.length) {
-      users = allUsers.filter((user) =>
-        user.primaryEmail && whiteListedEmails.includes(user.primaryEmail),
+      users = allUsers.filter(
+        (user) =>
+          user.primaryEmail && whiteListedEmails.includes(user.primaryEmail),
       )
     }
 
