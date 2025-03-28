@@ -50,6 +50,8 @@ interface ServiceAccountProgress {
 interface OAuthProgress {
   user: string
   userStats: Record<string, UserStats>
+  current: number
+  total: number
 }
 // Global tracker object
 export const serviceAccountTracker: ServiceAccountProgress = {
@@ -62,9 +64,12 @@ export class Tracker {
   private app: Apps
   private serviceAccountProgress: ServiceAccountProgress
   private oAuthProgress: OAuthProgress
+  private authType: AuthType
+  private startTime: number
 
-  constructor(app: Apps) {
+  constructor(app: Apps, authType: AuthType) {
     this.app = app
+    this.authType = authType
     this.serviceAccountProgress = {
       totalUsers: 0,
       completedUsers: 0,
@@ -73,7 +78,10 @@ export class Tracker {
     this.oAuthProgress = {
       user: "",
       userStats: {},
+      current: 0,
+      total: 0
     }
+    this.startTime = new Date().getTime()
   }
 
   private initializeUserStats(email: string) {
@@ -166,13 +174,17 @@ export class Tracker {
 
   getProgress(): number {
     if (IsGoogleApp(this.app)) {
+      if(this.authType === AuthType.ServiceAccount) {
       return Math.floor(
         (this.serviceAccountProgress.completedUsers /
           this.serviceAccountProgress.totalUsers) *
           100,
       )
+      } else {
+        return 0
+      }
     } else if (this.app === Apps.Slack) {
-      return 0
+      return Math.floor(this.oAuthProgress.current/this.oAuthProgress.total)
       // return Math.floor(this.oAuthProgress.userStats[this.oAuthProgress.user].slackConversationCount/)
     } else {
       throw new Error("Invalid app for progress")
@@ -188,83 +200,17 @@ export class Tracker {
   }
 
   getOAuthProgress(): OAuthProgress {
-    return { ...this.oAuthProgress }
+    return { ...this.oAuthProgress, }
+  }
+
+  getStartTime(): number {
+    return this.startTime
+  }
+
+  setCurrent(curr: number) {
+    this.oAuthProgress.current = curr
+  }
+  setTotal(total: number) {
+    this.oAuthProgress.total = total
   }
 }
-
-// export const newServiceAccountTracker = (app: Apps): ServiceAccountProgress => {
-//   return {
-//     totalUsers: 0,
-//     completedUsers: 0,
-//     userStats: {},
-//   }
-// }
-
-// export const oAuthTracker: OAuthProgress = {
-//   user: "",
-//   userStats: {},
-// }
-// // Helper functions to update tracker
-// const initializeUserStats = (app: Apps, email: string) => {
-//   if (!serviceAccountTracker.userStats[email]) {
-//     serviceAccountTracker.userStats[email] = {
-//       gmailCount: 0,
-//       driveCount: 0,
-//       contactsCount: 0,
-//       eventsCount: 0,
-//       mailAttachmentCount: 0,
-//       done: false,
-//       startedAt: new Date().getTime(),
-//       doneAt: 0,
-//       type: AuthType.ServiceAccount,
-//     }
-//   }
-//   if (!oAuthTracker.userStats[email]) {
-//     oAuthTracker.userStats[email] = {
-//       gmailCount: 0,
-//       driveCount: 0,
-//       contactsCount: 0,
-//       eventsCount: 0,
-//       mailAttachmentCount: 0,
-//       done: false,
-//       startedAt: new Date().getTime(),
-//       doneAt: 0,
-//       type: AuthType.OAuth,
-//     }
-//   }
-
-// }
-
-// export const updateUserStats = (
-//   app: Apps,
-//   email: string,
-//   type: StatType,
-//   count: number,
-// ) => {
-//   initializeUserStats(email)
-//   serviceAccountTracker.userStats[email][type] += count
-//   oAuthTracker.userStats[email][type] += count
-// }
-
-// export const markUserComplete = (email: string) => {
-//   if (!serviceAccountTracker.userStats[email].done) {
-//     serviceAccountTracker.userStats[email].done = true
-//     serviceAccountTracker.userStats[email].doneAt = new Date().getTime()
-//     serviceAccountTracker.completedUsers++
-//   }
-// }
-
-// export const setTotalUsers = (total: number) => {
-//   serviceAccountTracker.totalUsers = total
-// }
-
-// export const getProgress = (): number => {
-//   return Math.floor(
-//     (serviceAccountTracker.completedUsers / serviceAccountTracker.totalUsers) *
-//       100,
-//   )
-// }
-
-// export const setOAuthUser = (mail: string) => {
-//   oAuthTracker.user = mail
-// }

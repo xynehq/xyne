@@ -88,7 +88,7 @@ const initWorkers = async () => {
       jobData.app == Apps.Slack &&
       jobData.authType === AuthType.OAuth
     ) {
-      await handleSlackIngestion(boss, job)
+      // await handleSlackIngestion(boss, job)
     }
 
     // else if (jobData.app == Apps.Slack && jobData.authType === AuthType.ApiKey) {

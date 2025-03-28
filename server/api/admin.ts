@@ -3,9 +3,11 @@ import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import {
+  deleteConnector,
   getConnectorByExternalId,
   getConnectors,
   insertConnector,
+  updateConnector,
 } from "@/db/connector"
 import {
   ConnectorType,
@@ -40,7 +42,7 @@ export const GetConnectors = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
   const users: SelectUser[] = await getUserByEmail(db, sub)
   if (users.length === 0) {
-    Logger.error({sub}, "No user found for sub in GetConnectors");
+    Logger.error({ sub }, "No user found for sub in GetConnectors")
     throw new NoUserFound({})
   }
   const user = users[0]
@@ -117,8 +119,8 @@ export const StartOAuth = async (c: Context) => {
   const { app }: OAuthStartQuery = c.req.valid("query")
   Logger.info(`${sub} started ${app} OAuth`)
   const userRes = await getUserByEmail(db, sub)
-  if(!userRes || !userRes.length) {
-    Logger.error('Could not find user by email when starting OAuth')
+  if (!userRes || !userRes.length) {
+    Logger.error("Could not find user by email when starting OAuth")
     throw new NoUserFound({})
   }
   const provider = await getOAuthProvider(db, userRes[0].id, app)
@@ -323,5 +325,45 @@ export const AddApiKeyConnector = async (c: Context) => {
         message: "Error creating connection or enqueuing job",
       })
     }
+  })
+}
+
+export const UpdateConnectorStatus = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const { connectorId, status, }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
+  const connector = await getConnectorByExternalId(connectorId, user.id)
+  if (!connector) {
+    throw new HTTPException(500, {
+      message: "could not get connector",
+    })
+  }
+  await updateConnector(db, connector.id, { status: status })
+  return c.json({
+    success: true,
+    message: "connector updated",
+  })
+}
+
+export const DeleteConnector = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const { connectorId }: { connectorId: string } = c.req.valid("form")
+  await deleteConnector(db, connectorId, user.id)
+  return c.json({
+    success: true,
+    message: "Connector deleted",
   })
 }

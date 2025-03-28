@@ -15,6 +15,8 @@ import { HTTPException } from "hono/http-exception"
 const { JwtPayloadKey, JobExpiryHours, slackHost } = config
 import { IsGoogleApp } from "@/utils"
 import { getUserByEmail } from "@/db/user"
+import { handleSlackIngestion } from "@/integrations/slack"
+import { globalAbortControllers } from "@/integrations/abortManager"
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
 
 interface OAuthCallbackQuery {
@@ -33,8 +35,6 @@ interface SlackOAuthResp {
 
 export const OAuthCallback = async (c: Context) => {
   try {
-    console.log(c.req.header("cookie"))
-    console.log("OAuth Callback")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     const { state, code } = c.req.query()
@@ -46,8 +46,6 @@ export const OAuthCallback = async (c: Context) => {
       throw new HTTPException(500)
     }
     const stateInCookie = getCookie(c, `${app}-state`)
-    console.log(`${app}-state`, stateInCookie)
-    console.log(random, stateInCookie, random === stateInCookie)
     if (random !== stateInCookie) {
       throw new HTTPException(500, {
         message: "Invalid state, potential CSRF attack.",
@@ -55,15 +53,14 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     const codeVerifier = getCookie(c, `${app}-code-verifier`)
-    console.log(codeVerifier)
     if (!codeVerifier && app === Apps.GoogleDrive) {
       throw new HTTPException(500, { message: "Could not verify the code" })
     }
     let tokens: SlackOAuthResp | OAuthCredentials
 
     const userRes = await getUserByEmail(db, sub)
-    if(!userRes || !userRes.length) {
-      Logger.error('Could not find user in OAuth Callback')
+    if (!userRes || !userRes.length) {
+      Logger.error("Could not find user in OAuth Callback")
       throw new NoUserFound({})
     }
     const provider = await getOAuthProvider(db, userRes[0].id, app)
@@ -118,19 +115,31 @@ export const OAuthCallback = async (c: Context) => {
       oauthCredentials: JSON.stringify(tokens),
       status: ConnectorStatus.Connecting,
     })
-    const SaasJobPayload: SaaSOAuthJob = {
-      connectorId: connector.id,
-      app,
-      externalId: connector.externalId,
-      authType: connector.authType as AuthType,
-      email: sub,
-    }
-    // Enqueue the background job within the same transaction
-    const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-      expireInHours: JobExpiryHours,
-    })
 
-    Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+    if (app === Apps.Slack) {
+      const abortController = new AbortController();
+      globalAbortControllers.set(`${connector.id}`, abortController);
+      handleSlackIngestion({
+        connectorId: connector.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      })
+    } else {
+      const SaasJobPayload: SaaSOAuthJob = {
+        connectorId: connector.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      }
+      // Enqueue the background job within the same transaction
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+        expireInHours: JobExpiryHours,
+      })
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+    }
 
     // Commit the transaction if everything is successful
     if (app === Apps.Slack) {

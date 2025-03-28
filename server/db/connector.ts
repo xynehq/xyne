@@ -2,8 +2,10 @@ import { createId } from "@paralleldrive/cuid2"
 import { db } from "./client"
 import {
   connectors,
+  ingestionStateSchema,
   oauthProviders,
   selectConnectorSchema,
+  type IngestionStateUnion,
   type SelectConnector,
   type SelectOAuthProvider,
 } from "./schema"
@@ -219,11 +221,16 @@ export const getOAuthConnectorWithCredentials = async (
   return oauthRes
 }
 
-export const getConnectorByExternalId = async (connectorId: string) => {
+export const getConnectorByExternalId = async (connectorId: string, userId: number) => {
   const res = await db
     .select()
     .from(connectors)
-    .where(eq(connectors.externalId, connectorId))
+    .where(
+      and(
+        eq(connectors.externalId, connectorId),
+        eq(connectors.userId, userId)
+      )
+    )
     .limit(1)
   if (res.length) {
     return res[0]
@@ -238,6 +245,7 @@ export const getConnectorByExternalId = async (connectorId: string) => {
 export const updateConnector = async (
   trx: TxnOrClient,
   connectorId: number,
+  
   updateData: Partial<SelectConnector>,
 ): Promise<SelectConnector> => {
   const updatedConnectors = await trx
@@ -252,4 +260,84 @@ export const updateConnector = async (
   }
   const [connectorVal] = updatedConnectors
   return selectConnectorSchema.parse(connectorVal)
+}
+
+export const deleteConnector = async (
+  trx: TxnOrClient,
+  connectorId: string,
+  userId: number
+): Promise<void> => {
+return await trx
+    .delete(connectors)
+    .where(and(eq(connectors.externalId, connectorId),
+      eq(connectors.userId, userId)))
+}
+
+export async function loadConnectorState<T extends IngestionStateUnion>(
+  trx: TxnOrClient,
+  connectorId: number,
+  workspaceId: number,
+  userId: number,
+): Promise<T | null> {
+  const result = await trx
+    .select({ state: connectors.state })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        eq(connectors.workspaceId, workspaceId),
+        eq(connectors.userId, userId)
+      )
+    )
+    .limit(1);
+
+  if (result.length === 0) {
+    Logger.warn(
+      `No connector found for id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`
+    );
+    return null;
+  }
+
+  const state = result[0].state as Record<string, any>;
+  if (Object.keys(state).length === 0) {
+    return null; // Treat empty object as no state
+  }
+  const parsedState = ingestionStateSchema.safeParse(result[0].state);
+  if (parsedState.success) {
+    return parsedState.data as T;
+  } else {
+    Logger.warn(`Invalid state format for connector ${connectorId}: ${parsedState.error}`);
+    return null;
+  }
+}
+
+export async function saveConnectorState<T extends IngestionStateUnion>(
+  trx: TxnOrClient,
+  connectorId: number,
+  workspaceId: number,
+  userId: number,
+  state: T,
+): Promise<void> {
+  const updated = await trx
+    .update(connectors)
+    .set({ state })
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        eq(connectors.workspaceId, workspaceId),
+        eq(connectors.userId, userId)
+      )
+    )
+    .returning({ id: connectors.id });
+
+  if (updated.length === 0) {
+    Logger.error(
+      `Failed to update state for connector id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`
+    );
+    throw new UpdateConnectorFailed(
+      `Could not update state for connector ${connectorId}`
+    );
+  }
+
+  Logger.debug(`State saved for connector ${connectorId}`);
 }

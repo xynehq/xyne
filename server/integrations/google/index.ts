@@ -587,14 +587,15 @@ export const handleGoogleOAuthIngestion = async (
       redirectUri: `${config.host}/oauth/callback`,
     })
 
-    const tracker = new Tracker(Apps.GoogleDrive)
+    const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth)
     tracker.setOAuthUser(userEmail)
 
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
-          progress: () => {},
+          progress: tracker.getProgress(),
           userStats: tracker.getOAuthProgress().userStats,
+          startTime: tracker.getStartTime()
         }),
         connector.externalId,
       )
@@ -828,7 +829,7 @@ export const handleGoogleServiceAccountIngestion = async (
       connector.credentials as string,
     )
     const subject: string = connector.subject as string
-    const tracker = new Tracker(Apps.GoogleWorkspace)
+    const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
     setupGmailWorkerHandler(tracker)
     const adminJwtClient = createJwtClient(serviceAccountKey, subject)
     const admin = google.admin({
@@ -849,6 +850,7 @@ export const handleGoogleServiceAccountIngestion = async (
         JSON.stringify({
           progress: tracker.getProgress(),
           userStats: tracker.getServiceAccountProgress().userStats,
+          startTime: tracker.getStartTime()
         }),
         connector.externalId,
       )

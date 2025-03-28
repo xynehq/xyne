@@ -1,0 +1,1 @@
+ALTER TABLE "connectors" ADD COLUMN "state" jsonb DEFAULT '{}'::jsonb NOT NULL;

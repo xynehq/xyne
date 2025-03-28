@@ -27,6 +27,7 @@ import type {
   VespaMailAttachment,
   VespaChatContainer,
   Inserts,
+  VespaSearchResults,
 } from "@/search/types"
 import { getErrorMessage, removeStopwords } from "@/utils"
 import config from "@/config"
@@ -503,6 +504,21 @@ export const GetDocument = async (
       sources: schema,
       message: errMessage,
     })
+  }
+}
+
+export const GetDocumentWithField = async (
+  fieldName: string,
+  schema: VespaSchema,
+  limit: number = 100,
+  offset: number = 0
+): Promise<VespaSearchResponse> => {
+  try {
+    const options = { namespace: NAMESPACE, schema }
+    return await vespa.getDocumentsWithField(fieldName, options, limit, offset)
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
   }
 }
 
