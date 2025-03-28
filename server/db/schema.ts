@@ -11,6 +11,7 @@ import {
   pgEnum,
   unique,
   index,
+  primaryKey,
 } from "drizzle-orm/pg-core"
 import { encryptedText } from "./customType"
 import { Encryption } from "@/utils/encryption"
@@ -64,10 +65,6 @@ export const groups = pgTable("groups", {
   groupEmail: text("email").notNull(),
   description: text("description").notNull(),
   directMembersCount: text("directMembersCount").notNull(),
-  memberEmails: text("memberEmails")
-    .array()
-    .notNull()
-    .default(sql`ARRAY[]::text[]`),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
@@ -76,6 +73,17 @@ export const groups = pgTable("groups", {
     .default(sql`NOW()`),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 })
+
+export const groupMembers = pgTable(
+  "group_members",
+  {
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id),
+    memberEmail: text("member_email").notNull(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.groupId, t.memberEmail] }) }),
+)
 
 export const userRoleEnum = pgEnum(
   "role",

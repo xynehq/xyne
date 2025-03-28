@@ -1,5 +1,5 @@
 {
-  "id": "bba6310b-f778-4f9f-ba19-25c774164b7d",
+  "id": "2d9f2124-04b2-46a4-a8c1-add4e1471f8d",
   "prevId": "d23bd51c-e666-4731-8e26-3469882e2c70",
   "version": "7",
   "dialect": "postgresql",
@@ -298,6 +298,50 @@
         }
       }
     },
+    "public.group_members": {
+      "name": "group_members",
+      "schema": "",
+      "columns": {
+        "group_id": {
+          "name": "group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_email": {
+          "name": "member_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "group_members_group_id_groups_id_fk": {
+          "name": "group_members_group_id_groups_id_fk",
+          "tableFrom": "group_members",
+          "tableTo": "groups",
+          "columnsFrom": [
+            "group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "group_members_group_id_member_email_pk": {
+          "name": "group_members_group_id_member_email_pk",
+          "columns": [
+            "group_id",
+            "member_email"
+          ]
+        }
+      },
+      "uniqueConstraints": {}
+    },
     "public.groups": {
       "name": "groups",
       "schema": "",
@@ -331,13 +375,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "memberEmails": {
-          "name": "memberEmails",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "ARRAY[]::text[]"
         },
         "created_at": {
           "name": "created_at",

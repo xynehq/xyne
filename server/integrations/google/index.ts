@@ -725,7 +725,7 @@ type IngestionMetadata = {
 
 import { z } from "zod"
 import config from "@/config"
-import { insertGroup } from "@/db/group"
+import { insertGroup, insertGroupMembers } from "@/db/group"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -858,8 +858,8 @@ export const getAndSaveAllGroupsMembers = async (
           grp?.email!,
           grp?.description!,
           grp?.directMembersCount!,
-          membersOfGroups,
         )
+        await insertGroupMembers(trx, grp.id!, membersOfGroups)
       }
     }
   }

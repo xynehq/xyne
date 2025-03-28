@@ -1,8 +1,8 @@
 import { Subsystem, type TxnOrClient } from "@/types"
-import { groups } from "./schema"
+import { groupMembers, groups } from "./schema"
 import { getLogger } from "@/logger"
 import { GroupInsertionError } from "@/errors"
-import { sql } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "group" })
 
@@ -13,7 +13,6 @@ export const insertGroup = async (
   groupEmail: string,
   description: string,
   directMembersCount: string,
-  memberEmails: string[],
 ) => {
   try {
     const inserted = await trx
@@ -24,7 +23,6 @@ export const insertGroup = async (
         groupEmail,
         description,
         directMembersCount,
-        memberEmails,
       })
       .returning()
     Logger.info("Group inserted successfully")
@@ -41,17 +39,41 @@ export const insertGroup = async (
   }
 }
 
+export const insertGroupMembers = async (
+  trx: TxnOrClient,
+  groupId: string,
+  memberEmails: string[],
+) => {
+  try {
+    const rows = memberEmails.map((email) => ({
+      groupId,
+      memberEmail: email,
+    }))
+
+    const inserted = await trx.insert(groupMembers).values(rows).returning()
+    Logger.info(`Group members for group ${groupId} inserted successfully`)
+    return inserted[0]
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error inserting group members for group ${groupId}: ${error} \n ${(error as Error).stack}`,
+    )
+    throw new GroupInsertionError({
+      message: "Could not insert group members",
+      cause: error as Error,
+    })
+  }
+}
+
 export const getGroupEmailsFromEmail = async (
   trx: TxnOrClient,
   userEmail: string,
 ): Promise<string[]> => {
-  // Query the groups table and select only the groupEmail field
   const rows = await trx
     .select({ groupEmail: groups.groupEmail })
     .from(groups)
-    // Check if the provided userEmail is in the memberEmails array using the ANY operator
-    .where(sql`${userEmail} = ANY(${groups.memberEmails})`)
+    .innerJoin(groupMembers, eq(groups.id, groupMembers.groupId))
+    .where(eq(groupMembers.memberEmail, userEmail))
 
-  // Return an array of group emails
   return rows.map((row) => row.groupEmail)
 }
