@@ -119,7 +119,44 @@ const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
-const listUsers = async (
+export const listUsersByEmails = async (
+  admin: admin_directory_v1.Admin,
+  emails: string[],
+): Promise<admin_directory_v1.Schema$User[]> => {
+  const users: admin_directory_v1.Schema$User[] = []
+
+  try {
+    for (const email of emails) {
+      try {
+        const res = await retryWithBackoff(
+          () =>
+            admin.users.get({
+              userKey: email,
+            }),
+          `Fetching user ${email}`,
+          Apps.GoogleDrive,
+        )
+        users.push(res.data)
+      } catch (error) {
+        Logger.warn(`User ${email} not found: ${error}`)
+        // Skip if user doesn’t exist
+      }
+    }
+    return users
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching users: ${error} ${(error as Error).stack}`,
+    )
+    throw new UserListingError({
+      cause: error as Error,
+      integration: Apps.GoogleWorkspace,
+      entity: "user",
+    })
+  }
+}
+
+export const listUsers = async (
   admin: admin_directory_v1.Admin,
   domain: string,
 ): Promise<admin_directory_v1.Schema$User[]> => {
@@ -808,18 +845,17 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     })
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
-    const allUsers = await listUsers(admin, workspace.domain)
 
-    let users = allUsers
+    let users = []
     const whiteListedEmails = data.whiteListedEmails || []
     if (whiteListedEmails.length) {
-      users = allUsers.filter(
-        (user) =>
-          user.primaryEmail && whiteListedEmails.includes(user.primaryEmail),
-      )
+      users = await listUsersByEmails(admin, whiteListedEmails)
+    } else {
+      users = await listUsers(admin, workspace.domain)
     }
 
     setTotalUsers(users.length)
+    Logger.info(`Ingesting for ${users.length} users`)
     const ingestionMetadata: IngestionMetadata[] = []
 
     // Use p-limit to handle concurrency
@@ -839,6 +875,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     const promises = users.map((user) =>
       limit(async () => {
         const userEmail = user.primaryEmail || user.emails[0]
+        Logger.info(`started for ${userEmail}`)
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
 
@@ -992,7 +1029,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
 export const deleteDocument = async (filePath: string) => {
   try {
     await unlink(filePath)
-    Logger.info(`File at ${filePath} deleted successfully`)
+    Logger.debug(`File at ${filePath} deleted successfully`)
   } catch (err) {
     Logger.error(
       err,
