@@ -11,13 +11,13 @@ export const scopes = [
   "https://www.googleapis.com/auth/calendar.events.readonly",
 ]
 
-export const MAX_GD_PDF_SIZE = 20 // In MB
+export const MAX_GD_PDF_SIZE = 15 // In MB
 export const MAX_GD_SHEET_ROWS = 3000
 export const MAX_GD_SHEET_TEXT_LEN = 300000
 export const MAX_GD_SLIDES_TEXT_LEN = 300000
 export const ServiceAccountUserConcurrency = 2
-export const GoogleDocsConcurrency = 15
-export const GmailConcurrency = 15
-export const PDFProcessingConcurrency = 15
+export const GoogleDocsConcurrency = 3
+export const GmailConcurrency = 3
+export const PDFProcessingConcurrency = 3
 
-export const MAX_ATTACHMENT_PDF_SIZE = 20
+export const MAX_ATTACHMENT_PDF_SIZE = 15

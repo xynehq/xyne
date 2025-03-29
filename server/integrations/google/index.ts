@@ -106,6 +106,7 @@ import {
   setOAuthUser,
   setTotalUsers,
   StatType,
+  updateTotal,
   updateUserStats,
 } from "./tracking"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
@@ -878,6 +879,12 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         Logger.info(`started for ${userEmail}`)
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
+
+        const [totalFiles, { messagesExcludingPromotions }] = await Promise.all(
+          [countDriveFiles(jwtClient), getGmailCounts(jwtClient)],
+        )
+
+        updateTotal(userEmail, messagesExcludingPromotions, totalFiles)
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
           await listAllContacts(jwtClient)
@@ -1685,7 +1692,9 @@ export const googlePDFsVespa = async (
       const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
       // Ignore the PDF files larger than Max PDF Size
       if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
-        Logger.warn(`Ignoring ${pdf.name} as its more than 20 MB`)
+        Logger.warn(
+          `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
+        )
         return null
       }
       const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
@@ -2168,4 +2177,84 @@ export const driveFilesToDoc = async (
     }
   }
   return results
+}
+
+export async function getGmailCounts(client: GoogleClient): Promise<{
+  messagesTotal: number
+  messagesExcludingPromotions: number
+}> {
+  const gmail = google.gmail({ version: "v1", auth: client })
+
+  // Get total messages from profile
+  const profile = await retryWithBackoff(
+    () => gmail.users.getProfile({ userId: "me", fields: "messagesTotal" }),
+    "Fetching Gmail profile for total count",
+    Apps.Gmail,
+    0,
+    client,
+  )
+  const messagesTotal = profile.data.messagesTotal ?? 0
+
+  // Get Promotions category count
+  let promotionMessages = 0
+  try {
+    const promoLabel = await retryWithBackoff(
+      () =>
+        gmail.users.labels.get({
+          userId: "me",
+          id: "CATEGORY_PROMOTIONS",
+          fields: "messagesTotal",
+        }),
+      "Fetching Promotions label count",
+      Apps.Gmail,
+      0,
+      client,
+    )
+    promotionMessages = promoLabel.data.messagesTotal ?? 0
+  } catch (error: any) {
+    if (error.code === 404) {
+      Logger.warn("Promotions label not found, assuming 0 promotion messages")
+    } else {
+      Logger.error(error, `Error fetching Promotions count: ${error.message}`)
+    }
+    promotionMessages = 0 // Default to 0 on error
+  }
+
+  const messagesExcludingPromotions = Math.max(
+    0,
+    messagesTotal - promotionMessages,
+  )
+  Logger.info(
+    `Gmail: Total=${messagesTotal}, Promotions=${promotionMessages}, Excl. Promo=${messagesExcludingPromotions}`,
+  )
+  return { messagesTotal, messagesExcludingPromotions }
+}
+
+// Count Drive Files
+export async function countDriveFiles(client: GoogleClient): Promise<number> {
+  const drive = google.drive({ version: "v3", auth: client })
+  let fileCount = 0
+  let nextPageToken: string | undefined
+
+  do {
+    const res: GaxiosResponse<drive_v3.Schema$FileList> =
+      await retryWithBackoff(
+        () =>
+          drive.files.list({
+            q: "trashed = false",
+            pageSize: 1000,
+            fields: "nextPageToken, files(id)",
+            pageToken: nextPageToken,
+          }),
+        `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
+        Apps.GoogleDrive,
+        0,
+        client,
+      )
+    fileCount += res.data.files?.length || 0
+    nextPageToken = res.data.nextPageToken as string | undefined
+  } while (nextPageToken)
+
+  Logger.info(`Counted ${fileCount} Drive files`)
+  return fileCount
 }
