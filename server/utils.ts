@@ -112,7 +112,7 @@ export const retryWithBackoff = async <T>(
   try {
     return await fn() // Attempt the function
   } catch (error: any) {
-    Logger.error(error)
+    Logger.warn(error)
     const isQuotaError =
       error.message.includes("Quota exceeded") || error.code === 429
     // error.code === 403
