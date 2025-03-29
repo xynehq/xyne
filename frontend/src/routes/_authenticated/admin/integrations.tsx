@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import { RotateCcw } from "lucide-react"
 import {
   createFileRoute,
   redirect,
@@ -218,7 +219,10 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
 export const ServiceAccountForm = ({
   onSuccess,
   refetch,
-}: { onSuccess: any; refetch: any }) => {
+}: {
+  onSuccess: any
+  refetch: any
+}) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const { toast } = useToast()
@@ -321,7 +325,11 @@ export const OAuthButton = ({
   app,
   text,
   setOAuthIntegrationStatus,
-}: { app: Apps; text: string; setOAuthIntegrationStatus: any }) => {
+}: {
+  app: Apps
+  text: string
+  setOAuthIntegrationStatus: any
+}) => {
   const handleOAuth = async () => {
     const oauth = new OAuthModal()
     try {
@@ -373,7 +381,10 @@ export const getConnectors = async (): Promise<any> => {
 const UserStatsTable = ({
   userStats,
   type,
-}: { userStats: { [email: string]: any }; type: AuthType }) => {
+}: {
+  userStats: { [email: string]: any }
+  type: AuthType
+}) => {
   return (
     <Table
       className={
@@ -390,25 +401,37 @@ const UserStatsTable = ({
           <TableHead>Contacts</TableHead>
           <TableHead>Events</TableHead>
           <TableHead>Attachments</TableHead>
-          {/* <TableHead>Status</TableHead> */}
+          <TableHead>%</TableHead>
+          <TableHead>Est (minutes)</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {Object.entries(userStats).map(([email, stats]) => (
-          <TableRow key={email}>
-            {type !== AuthType.OAuth && (
-              <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
-                {email}
-              </TableCell>
-            )}
-            <TableCell>{stats.gmailCount}</TableCell>
-            <TableCell>{stats.driveCount}</TableCell>
-            <TableCell>{stats.contactsCount}</TableCell>
-            <TableCell>{stats.eventsCount}</TableCell>
-            <TableCell>{stats.mailAttachmentCount}</TableCell>
-            {/* <TableCell className={`${stats.done ? "text-lime-600": ""}`}>{stats.done ? "Done" : "In Progress"}</TableCell> */}
-          </TableRow>
-        ))}
+        {Object.entries(userStats).map(([email, stats]) => {
+          const percentage: number = parseFloat(
+            (
+              ((stats.gmailCount + stats.driveCount) * 100) /
+              (stats.totalDrive + stats.totalMail)
+            ).toFixed(2),
+          )
+          const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
+          const eta = (elapsed * 100) / percentage - elapsed
+          return (
+            <TableRow key={email}>
+              {type !== AuthType.OAuth && (
+                <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+                  {email}
+                </TableCell>
+              )}
+              <TableCell>{stats.gmailCount}</TableCell>
+              <TableCell>{stats.driveCount}</TableCell>
+              <TableCell>{stats.contactsCount}</TableCell>
+              <TableCell>{stats.eventsCount}</TableCell>
+              <TableCell>{stats.mailAttachmentCount}</TableCell>
+              <TableCell>{percentage}</TableCell>
+              <TableCell>{eta.toFixed(0)}</TableCell>
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -457,9 +480,20 @@ const ServiceAccountTab = ({
           </>
         ) : (
           <>
-            <CardDescription>Connected</CardDescription>
+            <CardDescription>
+              Status: {googleSAConnector.status}
+            </CardDescription>
           </>
         )}
+
+        <button
+          className="flex justify-end w-full"
+          onClick={() => {
+            // restart the ingestion of that connector
+          }}
+        >
+          <RotateCcw stroke={"hsl(220 8.9% 46.1%)"} size={18} />
+        </button>
       </CardHeader>
     )
   }

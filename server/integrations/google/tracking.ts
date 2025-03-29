@@ -16,6 +16,8 @@ interface StatMetadata {
   startedAt: number
   doneAt: number
   type: AuthType
+  totalMail: number
+  totalDrive: number
 }
 
 type UserStats = Record<StatType, number> & StatMetadata
@@ -54,6 +56,8 @@ const initializeUserStats = (email: string) => {
       startedAt: new Date().getTime(),
       doneAt: 0,
       type: AuthType.ServiceAccount,
+      totalMail: 0,
+      totalDrive: 0,
     }
   }
   if (!oAuthTracker.userStats[email]) {
@@ -67,6 +71,8 @@ const initializeUserStats = (email: string) => {
       startedAt: new Date().getTime(),
       doneAt: 0,
       type: AuthType.OAuth,
+      totalMail: 0,
+      totalDrive: 0,
     }
   }
 }
@@ -79,6 +85,18 @@ export const updateUserStats = (
   initializeUserStats(email)
   serviceAccountTracker.userStats[email][type] += count
   oAuthTracker.userStats[email][type] += count
+}
+
+export const updateTotal = (
+  email: string,
+  totalMail: number,
+  totalDrive: number,
+) => {
+  initializeUserStats(email)
+  serviceAccountTracker.userStats[email].totalMail = totalMail
+  serviceAccountTracker.userStats[email].totalDrive = totalDrive
+  oAuthTracker.userStats[email].totalMail = totalMail
+  oAuthTracker.userStats[email].totalDrive = totalDrive
 }
 
 export const markUserComplete = (email: string) => {
