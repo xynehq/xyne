@@ -63,8 +63,15 @@ export const getSortedScoredChunks = (
     return []
   }
 
-  if (!matchfeatures?.chunk_scores?.cells) {
-    return existingChunksSummary.map((v) => ({ chunk: v, score: 0 }))
+  if (
+    matchfeatures?.chunk_scores?.cells &&
+    !Object.keys(matchfeatures?.chunk_scores?.cells).length
+  ) {
+    const mappedChunks = existingChunksSummary.map((v) => ({
+      chunk: v,
+      score: 0,
+    }))
+    return maxChunks ? mappedChunks.slice(0, maxChunks) : mappedChunks
   }
 
   const chunkScores = matchfeatures.chunk_scores.cells
