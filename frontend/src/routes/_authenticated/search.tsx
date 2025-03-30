@@ -269,6 +269,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         }),
         state: { isQueryTyped: QueryTyped },
         replace: true,
+        resetScroll: false, // Prevent scroll jump on pagination
       })
 
       // Send a GET request to the backend with the search query
@@ -304,6 +305,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           }),
           state: { isQueryTyped: false },
           replace: true,
+          resetScroll: false
         })
 
         if (groupCount) {
