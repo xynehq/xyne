@@ -99,11 +99,18 @@ const maxSearchChunks = 1
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
 ): SearchResponse => {
-  const { root } = resp
+  const { root, trace } = resp;
+  const children = root.children || [];
+  // Access the nested children array within the trace object
+  const traceInfo = trace.children
+
+  // Filter out any potential trace items from children if they exist
+  const searchHits = children.filter((child: any) => !child.id?.startsWith("trace:"));
+
   return {
     count: root.fields?.totalCount ?? 0,
-    results: root.children
-      ? root.children.map((child: VespaSearchResult) => {
+    results: searchHits
+      ? searchHits.map((child: VespaSearchResult) => {
           // Narrow down the type based on `sddocname`
           if ((child.fields as VespaFileSearch).sddocname === fileSchema) {
             // Directly use child.fields which includes matchfeatures
@@ -118,7 +125,7 @@ export const VespaSearchResponseToSearchResult = (
               maxSearchChunks,
             );
 
-            return FileResponseSchema.parse(fields) // Schema now expects matchfeatures
+            return FileResponseSchema.parse(fields)
           } else if ((child.fields as VespaUser).sddocname === userSchema) {
             // Directly use child.fields
             const fields = child.fields as VespaUser & { type?: string, chunks_summary?: string[] }
@@ -133,7 +140,7 @@ export const VespaSearchResponseToSearchResult = (
               0,
               maxSearchChunks,
             )
-            return UserResponseSchema.parse(fields) // Schema now expects matchfeatures
+            return UserResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaMailSearch).sddocname === mailSchema
           ) {
@@ -147,7 +154,7 @@ export const VespaSearchResponseToSearchResult = (
               fields.chunks_summary as string[],
               maxSearchChunks,
             );
-            return MailResponseSchema.parse(fields) // Schema now expects matchfeatures
+            return MailResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaEventSearch).sddocname === eventSchema
           ) {
@@ -169,7 +176,7 @@ export const VespaSearchResponseToSearchResult = (
               0,
               maxSearchChunks,
             )
-            return EventResponseSchema.parse(fields) // Schema now expects matchfeatures
+            return EventResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaMailAttachmentSearch).sddocname ===
             mailAttachmentSchema
@@ -184,14 +191,15 @@ export const VespaSearchResponseToSearchResult = (
               fields.chunks_summary as string[],
               maxSearchChunks,
             );
-            return MailAttachmentResponseSchema.parse(fields) // Schema now expects matchfeatures
+            return MailAttachmentResponseSchema.parse(fields)
           } else {
             throw new Error(
-              `Unknown schema type: ${(child.fields as any)?.sddocname}`,
+              `Unknown schema type: ${(child.fields as any)?.sddocname ?? 'undefined'}`,
             )
           }
         })
       : [],
+    trace: traceInfo, // Add trace information to the top-level response
   }
 }
 

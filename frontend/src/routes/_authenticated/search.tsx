@@ -105,6 +105,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const [showDebugInfo, setShowDebugInfo] = useState(import.meta.env.VITE_SHOW_DEBUG_INFO === 'true') // State for debug info visibility, initialized from env var
+  const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -280,6 +281,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
       })
       if (response.ok) {
         const data: SearchResponse = await response.json()
+        console.log(data)
 
         if (newOffset > 0) {
           setResults((prevResults) => [...prevResults, ...data.results])
@@ -317,6 +319,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
             setSearchMeta({ totalCount: data.count })
           }
           setGroups(data.groupCount)
+          setTraceData(data.trace || null) // Store trace data from response
         }
       } else {
         const errorText = await response.text()
@@ -460,6 +463,16 @@ export const Search = ({ user, workspace }: IndexProps) => {
                   </div>
                 </div>
               </div>
+            )}
+            {/* Top-level Trace Info Display */}
+            {console.log(traceData)}
+            {showDebugInfo && traceData && (
+              <details className="mt-4 mb-4 text-xs">
+                 <summary className="text-gray-500 cursor-pointer">Vespa Trace</summary>
+                 <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96"> {/* Increased max-height */}
+                   {JSON.stringify(traceData, null, 2)}
+                 </pre>
+              </details>
             )}
             {!!results?.length && (
               <div className="flex flex-col w-full max-w-3xl mb-[52px]">

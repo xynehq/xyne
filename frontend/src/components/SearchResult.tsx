@@ -49,13 +49,13 @@ export const SearchResult = ({
           result.chunks_summary.map((summary, idx) => (
             <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
-        {/* Debug Info Display */}
-        {showDebugInfo && result.matchfeatures && (
-          <details className="mt-2 ml-[44px]">
-            <summary className="text-xs text-gray-500 cursor-pointer">Debug Info</summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">
-              {JSON.stringify({ matchfeatures: result.matchfeatures }, null, 2)}
-            </pre>
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+          <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">Debug Info</summary>
+             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+               {JSON.stringify({ matchfeatures: result.matchfeatures, rankfeatures: result.rankfeatures }, null, 2)}
+             </pre>
           </details>
         )}
       </div>
@@ -79,13 +79,13 @@ export const SearchResult = ({
             {result.name || result.email}
           </a>
         </div>
-        {/* Debug Info Display */}
-        {showDebugInfo && result.matchfeatures && (
-          <details className="mt-2 ml-[44px]">
-            <summary className="text-xs text-gray-500 cursor-pointer">Debug Info</summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">
-              {JSON.stringify({ matchfeatures: result.matchfeatures }, null, 2)}
-            </pre>
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+           <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">Debug Info</summary>
+             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+               {JSON.stringify({ matchfeatures: result.matchfeatures, rankfeatures: result.rankfeatures }, null, 2)}
+             </pre>
           </details>
         )}
       </div>
@@ -115,13 +115,13 @@ export const SearchResult = ({
           result.chunks_summary.map((summary, idx) => (
             <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
-        {/* Debug Info Display */}
-        {showDebugInfo && result.matchfeatures && (
-          <details className="mt-2 ml-[44px]">
-            <summary className="text-xs text-gray-500 cursor-pointer">Debug Info</summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">
-              {JSON.stringify({ matchfeatures: result.matchfeatures }, null, 2)}
-            </pre>
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+           <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">Debug Info</summary>
+             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+               {JSON.stringify({ matchfeatures: result.matchfeatures, rankfeatures: result.rankfeatures }, null, 2)}
+             </pre>
           </details>
         )}
       </div>
@@ -153,13 +153,13 @@ export const SearchResult = ({
               <HighlightedText chunk_summary={summary} key={idx} />
             ))}
         </p>
-        {/* Debug Info Display */}
-        {showDebugInfo && result.matchfeatures && (
-          <details className="mt-2 ml-[44px]">
-            <summary className="text-xs text-gray-500 cursor-pointer">Debug Info</summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">
-              {JSON.stringify({ matchfeatures: result.matchfeatures }, null, 2)}
-            </pre>
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+           <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">Debug Info</summary>
+             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+               {JSON.stringify({ matchfeatures: result.matchfeatures, rankfeatures: result.rankfeatures }, null, 2)}
+             </pre>
           </details>
         )}
       </div>
@@ -183,13 +183,13 @@ export const SearchResult = ({
           result.chunks_summary.map((summary, idx) => (
             <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
-        {/* Debug Info Display */}
-        {showDebugInfo && result.matchfeatures && (
-          <details className="mt-2 ml-[44px]">
-            <summary className="text-xs text-gray-500 cursor-pointer">Debug Info</summary>
-            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">
-              {JSON.stringify({ matchfeatures: result.matchfeatures }, null, 2)}
-            </pre>
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+           <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">Debug Info</summary>
+             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+               {JSON.stringify({ matchfeatures: result.matchfeatures, rankfeatures: result.rankfeatures }, null, 2)}
+             </pre>
           </details>
         )}
       </div>
