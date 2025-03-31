@@ -39,7 +39,6 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
-  Info, // Import Info icon for the button
   MessageSquareShare,
 } from "lucide-react"
 import { LastUpdated } from "@/components/SearchFilter"
@@ -104,7 +103,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-  const [showDebugInfo, setShowDebugInfo] = useState(
+  const [showDebugInfo, _] = useState(
     import.meta.env.VITE_SHOW_DEBUG_INFO === "true",
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
