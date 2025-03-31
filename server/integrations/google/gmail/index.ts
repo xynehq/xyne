@@ -156,7 +156,7 @@ export const parseMail = async (
   gmail: gmail_v1.Gmail,
   userEmail: string,
   client: GoogleClient,
-  tracker: Tracker,
+  tracker?: Tracker,
 ): Promise<Mail> => {
   const messageId = email.id
   const threadId = email.threadId
@@ -271,7 +271,7 @@ export const parseMail = async (
             }
 
             await insert(attachmentDoc, mailAttachmentSchema)
-            tracker.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
+            tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.

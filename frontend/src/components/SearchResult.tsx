@@ -145,15 +145,15 @@ export const SearchResult = ({
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">
-            <a
-              href={`https://${result.domain}.slack.com/archives/${result.channelId}/p${result.createdAt}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center text-blue-800 space-x-2"
-            >
-              {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
-            </a>
-          </div>
+          <a
+            href={`https://${result.domain}.slack.com/archives/${result.channelId}/p${result.createdAt}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-blue-800 space-x-2"
+          >
+            {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
+          </a>
+        </div>
         <div className="flex flex-row items-center mt-1 ml-[44px]">
           <img
             referrerPolicy="no-referrer"

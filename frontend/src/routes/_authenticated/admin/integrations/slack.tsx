@@ -12,7 +12,7 @@ import { Apps, AuthType } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
-import { Square, Pause, Play, X } from 'lucide-react';
+import { Square, Pause, Play, X } from "lucide-react"
 
 import {
   Card,
@@ -37,37 +37,40 @@ import {
 } from "@/components/ui/table"
 import { wsClient } from "@/api" // ensure wsClient is imported
 
-export const updateConnectorStatus = async (connectorId: string, status: ConnectorStatus) => {
+export const updateConnectorStatus = async (
+  connectorId: string,
+  status: ConnectorStatus,
+) => {
   const res = await api.admin.connector.update_status.$post({
     form: {
       connectorId,
-      status
+      status,
     },
-  });
+  })
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error("Unauthorized");
+      throw new Error("Unauthorized")
     }
-    throw new Error("Could not update connector status");
+    throw new Error("Could not update connector status")
   }
-  return res.json();
-};
+  return res.json()
+}
 
 // Delete connector
 export const deleteConnector = async (connectorId: string) => {
   const res = await api.admin.connector.delete.$delete({
     form: {
-      connectorId
+      connectorId,
     },
-  });
+  })
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error("Unauthorized");
+      throw new Error("Unauthorized")
     }
-    throw new Error("Could not delete connector");
+    throw new Error("Could not delete connector")
   }
-  return res.json();
-};
+  return res.json()
+}
 
 const submitSlackBotToken = async (
   value: { botToken: string },
@@ -341,42 +344,43 @@ const SlackOAuthTab = ({
   refetch,
   connectAction,
   setConnectAction,
-  connector
-
+  connector,
 }: SlackOAuthTabProps) => {
-
-  const handleStatusUpdate = async (connectorId: string, newStatus: ConnectorStatus) => {
+  const handleStatusUpdate = async (
+    connectorId: string,
+    newStatus: ConnectorStatus,
+  ) => {
     try {
-      await updateConnectorStatus(connectorId, newStatus);
+      await updateConnectorStatus(connectorId, newStatus)
       toast({
         title: "Status Updated",
         description: `Connector status changed to ${newStatus}`,
-      });
-      refetch();
+      })
+      refetch()
     } catch (error) {
       toast({
         title: "Status Update Failed",
         description: getErrorMessage(error),
         variant: "destructive",
-      });
+      })
     }
   }
 
   const handleDelete = async (connectorId: string) => {
     try {
-      await deleteConnector(connectorId);
+      await deleteConnector(connectorId)
       toast({
         title: "Connector Deleted",
         description: "Slack connector has been removed",
-      });
-      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider);
-      refetch();
+      })
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+      refetch()
     } catch (error) {
       toast({
         title: "Deletion Failed",
         description: getErrorMessage(error),
         variant: "destructive",
-      });
+      })
     }
   }
 
@@ -429,21 +433,36 @@ const SlackOAuthTab = ({
               />
             </div>
           ) : oauthIntegrationStatus ===
-            OAuthIntegrationStatus.OAuthConnecting || oauthIntegrationStatus === OAuthIntegrationStatus.OAuthPaused? (
+              OAuthIntegrationStatus.OAuthConnecting ||
+            oauthIntegrationStatus === OAuthIntegrationStatus.OAuthPaused ? (
             <div className="flex flex-col items-center gap-4">
               <p>Connecting to Slack...</p>
               <div className="flex items-center gap-2"></div>
               <div className="flex">
-                <Square onClick={() => {
-                  handleStatusUpdate(connector.id, ConnectorStatus.NotConnected)
-                }} />
-                {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting ? <Pause onClick={() => {
-                  handleStatusUpdate(connector.id, ConnectorStatus.Paused)
-                }} /> : <Play onClick={() => {}} />}
+                <Square
+                  onClick={() => {
+                    handleStatusUpdate(
+                      connector.id,
+                      ConnectorStatus.NotConnected,
+                    )
+                  }}
+                />
+                {oauthIntegrationStatus ===
+                OAuthIntegrationStatus.OAuthConnecting ? (
+                  <Pause
+                    onClick={() => {
+                      handleStatusUpdate(connector.id, ConnectorStatus.Paused)
+                    }}
+                  />
+                ) : (
+                  <Play onClick={() => {}} />
+                )}
 
-                <X onClick={() => {
-                  handleDelete(connector.id)
-                }} />
+                <X
+                  onClick={() => {
+                    handleDelete(connector.id)
+                  }}
+                />
               </div>
             </div>
           ) : (
@@ -468,7 +487,7 @@ enum ConnectAction {
   Start,
   Stop,
   Remove,
-  Edit
+  Edit,
 }
 
 export const Slack = ({ user, workspace }: IntegrationProps) => {
@@ -478,7 +497,9 @@ export const Slack = ({ user, workspace }: IntegrationProps) => {
   const [activeTab, setActiveTab] = useState("oauth")
   const startTimeRef = useRef<number | null>(null)
 
-  const [connectAction, setConnectAction] = useState<ConnectAction>(ConnectAction.Nil)
+  const [connectAction, setConnectAction] = useState<ConnectAction>(
+    ConnectAction.Nil,
+  )
 
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(OAuthIntegrationStatus.Provider)
@@ -517,7 +538,7 @@ export const Slack = ({ user, workspace }: IntegrationProps) => {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-      } else if(connector?.status === ConnectorStatus.Paused) {
+      } else if (connector?.status === ConnectorStatus.Paused) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthPaused)
       } else {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)

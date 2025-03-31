@@ -154,7 +154,7 @@ export const connectors = pgTable(
     // connector now contains the state needed to resume / restart from a crash
     // it will contain different state for different app and auth types
     // Ingestion state, default to empty object
-    state: jsonb("state").notNull().default(sql`'{}'::jsonb`), 
+    state: jsonb("state").notNull().default(sql`'{}'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
@@ -370,7 +370,7 @@ export const slackOAuthIngestionStateSchema = z.object({
   currentChannelId: z.string().optional(),
   lastMessageTs: z.string().optional(),
   lastUpdated: z.string(),
-});
+})
 
 export const googleDriveOAuthIngestionStateSchema = z.object({
   app: z.literal(Apps.GoogleDrive),
@@ -380,13 +380,13 @@ export const googleDriveOAuthIngestionStateSchema = z.object({
   // lastChangeId: z.string().optional(),
   // completedFolders: z.array(z.string()),
   lastUpdated: z.string(),
-});
+})
 
 export const ingestionStateSchema = z.discriminatedUnion("app", [
   slackOAuthIngestionStateSchema,
   googleDriveOAuthIngestionStateSchema,
   // googleDriveServiceAccountIngestionStateSchema,
-]);
+])
 
 export const selectConnectorSchema = createSelectSchema(connectors, {
   app: z.nativeEnum(Apps),
@@ -394,8 +394,10 @@ export const selectConnectorSchema = createSelectSchema(connectors, {
   state: ingestionStateSchema.or(z.object({}).optional()),
 })
 
-export type IngestionStateUnion = z.infer<typeof ingestionStateSchema>;
-export type SlackOAuthIngestionState = z.infer<typeof slackOAuthIngestionStateSchema>;
+export type IngestionStateUnion = z.infer<typeof ingestionStateSchema>
+export type SlackOAuthIngestionState = z.infer<
+  typeof slackOAuthIngestionStateSchema
+>
 
 export type SelectConnector = z.infer<typeof selectConnectorSchema>
 

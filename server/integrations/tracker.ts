@@ -3,6 +3,15 @@ import { IsGoogleApp } from "@/utils"
 
 type Email = string
 type WorkspaceStats = Record<Email, UserStats>
+interface GoogleTotalStats {
+  totalMail: number
+  totalDrive: number
+}
+
+interface SlackTotalStats {
+  totalMessages: number
+  totalConversations: number
+}
 
 export enum StatType {
   Gmail = "gmailCount",
@@ -37,8 +46,11 @@ interface SlackStats {
   slackMessageReplyCount: number
 }
 
-// Union type for all possible stat types
-type UserStats = (GoogleStats | SlackStats) & StatMetadata
+type UserStats = (
+  | (GoogleStats & Partial<GoogleTotalStats>)
+  | (SlackStats & Partial<SlackTotalStats>)
+) &
+  StatMetadata
 
 // Progress tracking types
 interface ServiceAccountProgress {
@@ -79,9 +91,49 @@ export class Tracker {
       user: "",
       userStats: {},
       current: 0,
-      total: 0
+      total: 0,
     }
     this.startTime = new Date().getTime()
+  }
+
+  public updateTotal(
+    email: string,
+    appSpecificTotals: GoogleTotalStats | SlackTotalStats,
+  ) {
+    this.initializeUserStats(email)
+
+    const serviceStats = this.serviceAccountProgress.userStats[email]
+    const oAuthStats = this.oAuthProgress.userStats[email]
+
+    if (IsGoogleApp(this.app)) {
+      const totals = appSpecificTotals as GoogleTotalStats
+      if ("totalMail" in serviceStats) {
+        ;(serviceStats as GoogleStats & GoogleTotalStats).totalMail =
+          totals.totalMail
+        ;(serviceStats as GoogleStats & GoogleTotalStats).totalDrive =
+          totals.totalDrive
+      }
+      if ("totalMail" in oAuthStats) {
+        ;(oAuthStats as GoogleStats & GoogleTotalStats).totalMail =
+          totals.totalMail
+        ;(oAuthStats as GoogleStats & GoogleTotalStats).totalDrive =
+          totals.totalDrive
+      }
+    } else if (this.app === Apps.Slack) {
+      const totals = appSpecificTotals as SlackTotalStats
+      if ("totalMessages" in serviceStats) {
+        ;(serviceStats as SlackStats & SlackTotalStats).totalMessages =
+          totals.totalMessages
+        ;(serviceStats as SlackStats & SlackTotalStats).totalConversations =
+          totals.totalConversations
+      }
+      if ("totalMessages" in oAuthStats) {
+        ;(oAuthStats as SlackStats & SlackTotalStats).totalMessages =
+          totals.totalMessages
+        ;(oAuthStats as SlackStats & SlackTotalStats).totalConversations =
+          totals.totalConversations
+      }
+    }
   }
 
   private initializeUserStats(email: string) {
@@ -100,26 +152,27 @@ export class Tracker {
 
     if (!this.serviceAccountProgress.userStats[email]) {
       if (IsGoogleApp(this.app)) {
-        // Assuming Apps.Google exists
         this.serviceAccountProgress.userStats[email] = {
           gmailCount: 0,
           driveCount: 0,
           contactsCount: 0,
           eventsCount: 0,
           mailAttachmentCount: 0,
+          totalMail: 0,
+          totalDrive: 0,
           ...baseStats,
         }
       } else if (this.app === Apps.Slack) {
-        // Assuming Apps.Slack exists
         this.serviceAccountProgress.userStats[email] = {
           slackMessageCount: 0,
           slackConversationCount: 0,
           slackUserCount: 0,
           slackMessageReplyCount: 0,
+          totalMessages: 0,
+          totalConversations: 0,
           ...baseStats,
         }
       }
-      // Add more else-if blocks for additional apps here
     }
 
     if (!this.oAuthProgress.userStats[email]) {
@@ -130,6 +183,8 @@ export class Tracker {
           contactsCount: 0,
           eventsCount: 0,
           mailAttachmentCount: 0,
+          totalMail: 0,
+          totalDrive: 0,
           ...baseOAuthStats,
         }
       } else if (this.app === Apps.Slack) {
@@ -138,10 +193,11 @@ export class Tracker {
           slackMessageCount: 0,
           slackConversationCount: 0,
           slackMessageReplyCount: 0,
+          totalMessages: 0,
+          totalConversations: 0,
           ...baseOAuthStats,
         }
       }
-      // Add more else-if blocks for additional apps here
     }
   }
 
@@ -174,17 +230,17 @@ export class Tracker {
 
   getProgress(): number {
     if (IsGoogleApp(this.app)) {
-      if(this.authType === AuthType.ServiceAccount) {
-      return Math.floor(
-        (this.serviceAccountProgress.completedUsers /
-          this.serviceAccountProgress.totalUsers) *
-          100,
-      )
+      if (this.authType === AuthType.ServiceAccount) {
+        return Math.floor(
+          (this.serviceAccountProgress.completedUsers /
+            this.serviceAccountProgress.totalUsers) *
+            100,
+        )
       } else {
         return 0
       }
     } else if (this.app === Apps.Slack) {
-      return Math.floor(this.oAuthProgress.current/this.oAuthProgress.total)
+      return Math.floor(this.oAuthProgress.current / this.oAuthProgress.total)
       // return Math.floor(this.oAuthProgress.userStats[this.oAuthProgress.user].slackConversationCount/)
     } else {
       throw new Error("Invalid app for progress")
@@ -200,7 +256,7 @@ export class Tracker {
   }
 
   getOAuthProgress(): OAuthProgress {
-    return { ...this.oAuthProgress, }
+    return { ...this.oAuthProgress }
   }
 
   getStartTime(): number {

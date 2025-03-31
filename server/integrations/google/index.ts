@@ -643,7 +643,7 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
         JSON.stringify({
           progress: tracker.getProgress(),
           userStats: tracker.getOAuthProgress().userStats,
-          startTime: tracker.getStartTime()
+          startTime: tracker.getStartTime(),
         }),
         connector.externalId,
       )
@@ -902,7 +902,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         JSON.stringify({
           progress: tracker.getProgress(),
           userStats: tracker.getServiceAccountProgress().userStats,
-          startTime: tracker.getStartTime()
+          startTime: tracker.getStartTime(),
         }),
         connector.externalId,
       )
@@ -920,7 +920,10 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           [countDriveFiles(jwtClient), getGmailCounts(jwtClient)],
         )
 
-        updateTotal(userEmail, messagesExcludingPromotions, totalFiles)
+        tracker.updateTotal(userEmail, {
+          totalMail: messagesExcludingPromotions,
+          totalDrive: totalFiles,
+        })
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
           await listAllContacts(jwtClient)

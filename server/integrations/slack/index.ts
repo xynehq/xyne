@@ -1,5 +1,9 @@
 import { getOAuthConnectorWithCredentials } from "@/db/connector"
-import { connectors, type SelectConnector, type SlackOAuthIngestionState } from "@/db/schema"
+import {
+  connectors,
+  type SelectConnector,
+  type SlackOAuthIngestionState,
+} from "@/db/schema"
 import {
   Apps,
   chatContainerSchema,
@@ -349,7 +353,6 @@ async function insertChannelMessages(
 
     cursor = response.response_metadata?.next_cursor
   } while (cursor)
-
 }
 
 /**
@@ -732,7 +735,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         Logger.error(`Failed to periodically save state: ${error}`)
       }
     }, periodicSaveState)
-    
+
     if (isFreshSync) {
       let conversationIndex = 0
       for (const conversation of conversations) {
@@ -838,7 +841,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
             permissionMap,
             tracker,
             ingestionState,
-            lastMessageTs
+            lastMessageTs,
           )
         } else {
           console.log("skipping conversation", conversation)
@@ -856,12 +859,12 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
 
     db.transaction(async (trx) => {
       await trx
-      .update(connectors)
-      .set({
-        status: ConnectorStatus.Connected,
-        state: JSON.stringify({})
-      })
-      .where(eq(connectors.id, connector.id))
+        .update(connectors)
+        .set({
+          status: ConnectorStatus.Connected,
+          state: JSON.stringify({}),
+        })
+        .where(eq(connectors.id, connector.id))
       await insertSyncJob(trx, {
         workspaceId: connector.workspaceId,
         workspaceExternalId: connector.workspaceExternalId,

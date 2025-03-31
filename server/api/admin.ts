@@ -340,8 +340,11 @@ export const UpdateConnectorStatus = async (c: Context) => {
     throw new NoUserFound({})
   }
   const [user] = userRes
+  const {
+    connectorId,
+    status,
   // @ts-ignore
-  const { connectorId, status, }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
+  }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
   const connector = await getConnectorByExternalId(connectorId, user.id)
   if (!connector) {
     throw new HTTPException(500, {

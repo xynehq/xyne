@@ -511,7 +511,7 @@ export const GetDocumentWithField = async (
   fieldName: string,
   schema: VespaSchema,
   limit: number = 100,
-  offset: number = 0
+  offset: number = 0,
 ): Promise<VespaSearchResponse> => {
   try {
     const options = { namespace: NAMESPACE, schema }

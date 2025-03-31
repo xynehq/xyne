@@ -655,8 +655,7 @@ class VespaClient {
   ): Promise<VespaSearchResponse> {
     const { namespace, schema, cluster } = options
 
-    const yqlQuery = `select * from sources ${schema} where ${fieldName} matches "."`;
-
+    const yqlQuery = `select * from sources ${schema} where ${fieldName} matches "."`
 
     // Construct the search payload - using "unranked" profile to just fetch without scoring
     const searchPayload = {
@@ -665,7 +664,7 @@ class VespaClient {
       timeout: "5s",
       hits: limit,
       offset,
-      maxOffset: 1000000
+      maxOffset: 1000000,
     }
 
     if (cluster) {

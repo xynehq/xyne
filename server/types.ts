@@ -93,7 +93,7 @@ export const deleteConnectorSchema = z.object({
 
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
-  status: z.nativeEnum(ConnectorStatus)
+  status: z.nativeEnum(ConnectorStatus),
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>

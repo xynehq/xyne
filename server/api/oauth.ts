@@ -128,8 +128,8 @@ export const OAuthCallback = async (c: Context) => {
     if (IsGoogleApp(app)) {
       handleGoogleOAuthIngestion(SaasJobPayload)
     } else if (app === Apps.Slack) {
-      const abortController = new AbortController();
-      globalAbortControllers.set(`${connector.id}`, abortController);
+      const abortController = new AbortController()
+      globalAbortControllers.set(`${connector.id}`, abortController)
       handleSlackIngestion({
         connectorId: connector.id,
         app,

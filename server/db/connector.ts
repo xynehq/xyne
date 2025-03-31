@@ -221,15 +221,18 @@ export const getOAuthConnectorWithCredentials = async (
   return oauthRes
 }
 
-export const getConnectorByExternalId = async (connectorId: string, userId: number) => {
+export const getConnectorByExternalId = async (
+  connectorId: string,
+  userId: number,
+) => {
   const res = await db
     .select()
     .from(connectors)
     .where(
       and(
         eq(connectors.externalId, connectorId),
-        eq(connectors.userId, userId)
-      )
+        eq(connectors.userId, userId),
+      ),
     )
     .limit(1)
   if (res.length) {
@@ -245,7 +248,7 @@ export const getConnectorByExternalId = async (connectorId: string, userId: numb
 export const updateConnector = async (
   trx: TxnOrClient,
   connectorId: number,
-  
+
   updateData: Partial<SelectConnector>,
 ): Promise<SelectConnector> => {
   const updatedConnectors = await trx
@@ -265,12 +268,16 @@ export const updateConnector = async (
 export const deleteConnector = async (
   trx: TxnOrClient,
   connectorId: string,
-  userId: number
+  userId: number,
 ): Promise<void> => {
-return await trx
+  return await trx
     .delete(connectors)
-    .where(and(eq(connectors.externalId, connectorId),
-      eq(connectors.userId, userId)))
+    .where(
+      and(
+        eq(connectors.externalId, connectorId),
+        eq(connectors.userId, userId),
+      ),
+    )
 }
 
 export async function loadConnectorState<T extends IngestionStateUnion>(
@@ -286,28 +293,30 @@ export async function loadConnectorState<T extends IngestionStateUnion>(
       and(
         eq(connectors.id, connectorId),
         eq(connectors.workspaceId, workspaceId),
-        eq(connectors.userId, userId)
-      )
+        eq(connectors.userId, userId),
+      ),
     )
-    .limit(1);
+    .limit(1)
 
   if (result.length === 0) {
     Logger.warn(
-      `No connector found for id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`
-    );
-    return null;
+      `No connector found for id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`,
+    )
+    return null
   }
 
-  const state = result[0].state as Record<string, any>;
+  const state = result[0].state as Record<string, any>
   if (Object.keys(state).length === 0) {
-    return null; // Treat empty object as no state
+    return null // Treat empty object as no state
   }
-  const parsedState = ingestionStateSchema.safeParse(result[0].state);
+  const parsedState = ingestionStateSchema.safeParse(result[0].state)
   if (parsedState.success) {
-    return parsedState.data as T;
+    return parsedState.data as T
   } else {
-    Logger.warn(`Invalid state format for connector ${connectorId}: ${parsedState.error}`);
-    return null;
+    Logger.warn(
+      `Invalid state format for connector ${connectorId}: ${parsedState.error}`,
+    )
+    return null
   }
 }
 
@@ -325,19 +334,19 @@ export async function saveConnectorState<T extends IngestionStateUnion>(
       and(
         eq(connectors.id, connectorId),
         eq(connectors.workspaceId, workspaceId),
-        eq(connectors.userId, userId)
-      )
+        eq(connectors.userId, userId),
+      ),
     )
-    .returning({ id: connectors.id });
+    .returning({ id: connectors.id })
 
   if (updated.length === 0) {
     Logger.error(
-      `Failed to update state for connector id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`
-    );
+      `Failed to update state for connector id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`,
+    )
     throw new UpdateConnectorFailed(
-      `Could not update state for connector ${connectorId}`
-    );
+      `Could not update state for connector ${connectorId}`,
+    )
   }
 
-  Logger.debug(`State saved for connector ${connectorId}`);
+  Logger.debug(`State saved for connector ${connectorId}`)
 }
