@@ -138,8 +138,8 @@ export const handleGmailIngestion = async (
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
       let messageBatch = resp.data.messages.slice(0, batchSize)
-      let successfulMessagesInBatch = 0; // Counter for successful messages
-      let successfulPdfAttachmentsInBatch = 0; // Counter for successful PDFs in this batch
+      let insertedMessagesInBatch = 0; // Counter for successful messages
+      let insertedPdfAttachmentsInBatch = 0; // Counter for successful PDFs in this batch
 
       let batchRequests = messageBatch.map((message) =>
         limit(async () => {
