@@ -120,6 +120,7 @@ export type WorkspaceEntity = DriveEntity
 export const scoredChunk = z.object({
   chunk: z.string(),
   score: z.number(),
+  index: z.number()
 })
 export type ScoredChunk = z.infer<typeof scoredChunk>
 
@@ -656,6 +657,7 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
     type: z.literal("mail"),
     mimeType: z.string(),
     chunks_summary: z.array(scoredChunk).optional(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
   })
 
 export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
@@ -673,4 +675,5 @@ export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
   .extend({
     type: z.literal("mail_attachment"),
     chunks_summary: z.array(scoredChunk).optional(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
   })

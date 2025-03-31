@@ -195,6 +195,7 @@ export const FileResponseSchema = VespaFileSchema.pick({
     mimeType: z.string(),
     chunks_summary: z.array(scoredChunk).optional(),
     relevance: z.number(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
   })
   .strip()
 
@@ -212,6 +213,7 @@ export const EventResponseSchema = VespaEventSchema.pick({
     description: z.string().optional(),
     chunks_summary: z.array(z.string()).optional(),
     attendeesNames: z.array(z.string()).optional(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
   })
   .strip()
 
@@ -226,6 +228,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
   .extend({
     type: z.literal(userSchema),
     relevance: z.number(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
   })
 
 // Search Response Schema

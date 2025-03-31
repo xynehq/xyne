@@ -67,9 +67,10 @@ export const getSortedScoredChunks = (
     matchfeatures?.chunk_scores?.cells &&
     !Object.keys(matchfeatures?.chunk_scores?.cells).length
   ) {
-    const mappedChunks = existingChunksSummary.map((v) => ({
+    const mappedChunks = existingChunksSummary.map((v, index) => ({
       chunk: v,
       score: 0,
+      index,
     }))
     return maxChunks ? mappedChunks.slice(0, maxChunks) : mappedChunks
   }
@@ -105,26 +106,26 @@ export const VespaSearchResponseToSearchResult = (
       ? root.children.map((child: VespaSearchResult) => {
           // Narrow down the type based on `sddocname`
           if ((child.fields as VespaFileSearch).sddocname === fileSchema) {
-            const fields = child.fields as VespaFileSearch & {
-              type?: string
-            }
-
+            // Directly use child.fields which includes matchfeatures
+            const fields = child.fields as VespaFileSearch & { type?: string }
             fields.type = fileSchema
             fields.relevance = child.relevance
+
+            // matchfeatures is already part of fields, no need to assign separately
             fields.chunks_summary = getSortedScoredChunks(
               fields.matchfeatures,
               fields.chunks_summary as string[],
               maxSearchChunks,
-            )
+            );
 
-            return FileResponseSchema.parse(fields)
+            return FileResponseSchema.parse(fields) // Schema now expects matchfeatures
           } else if ((child.fields as VespaUser).sddocname === userSchema) {
-            const fields = child.fields as VespaUser & {
-              type?: string
-              chunks_summary?: string[]
-            }
+            // Directly use child.fields
+            const fields = child.fields as VespaUser & { type?: string, chunks_summary?: string[] }
             fields.type = userSchema
             fields.relevance = child.relevance
+            // matchfeatures is already part of fields (if returned by Vespa)
+            // Ensure chunks_summary processing happens before parsing
             fields.chunks_summary?.sort(
               (a, b) => countHiTags(b) - countHiTags(a),
             )
@@ -132,57 +133,58 @@ export const VespaSearchResponseToSearchResult = (
               0,
               maxSearchChunks,
             )
-            return UserResponseSchema.parse(fields)
+            return UserResponseSchema.parse(fields) // Schema now expects matchfeatures
           } else if (
             (child.fields as VespaMailSearch).sddocname === mailSchema
           ) {
+            // Directly use child.fields
             const fields = child.fields as VespaMailSearch & { type?: string }
             fields.type = mailSchema
             fields.relevance = child.relevance
+            // matchfeatures is already part of fields
             fields.chunks_summary = getSortedScoredChunks(
               fields.matchfeatures,
               fields.chunks_summary as string[],
               maxSearchChunks,
-            )
-
-            return MailResponseSchema.parse(fields)
+            );
+            return MailResponseSchema.parse(fields) // Schema now expects matchfeatures
           } else if (
             (child.fields as VespaEventSearch).sddocname === eventSchema
           ) {
-            const fields = child.fields as VespaEventSearch & {
-              type?: string
-              chunks_summary?: string[]
-            }
+            // Directly use child.fields
+            const fields = child.fields as VespaEventSearch & { type?: string, chunks_summary?: string[] }
             fields.type = eventSchema
             fields.relevance = child.relevance
+            // matchfeatures is already part of fields (if returned by Vespa)
             // creating a new property
+            // Ensure chunks_summary processing happens before parsing
             fields.chunks_summary = fields.description
               ? chunkDocument(fields.description)
                   .map((v) => v.chunk)
                   .sort((a, b) => countHiTags(b) - countHiTags(a))
                   .slice(0, maxSearchChunks)
               : []
+            // This line seems redundant as it's assigned above? Keeping it for now.
             fields.chunks_summary = fields.chunks_summary?.slice(
               0,
               maxSearchChunks,
             )
-            return EventResponseSchema.parse(fields)
+            return EventResponseSchema.parse(fields) // Schema now expects matchfeatures
           } else if (
             (child.fields as VespaMailAttachmentSearch).sddocname ===
             mailAttachmentSchema
           ) {
-            const fields = child.fields as VespaMailAttachmentSearch & {
-              type?: string
-            }
+            // Directly use child.fields
+            const fields = child.fields as VespaMailAttachmentSearch & { type?: string }
             fields.type = mailAttachmentSchema
             fields.relevance = child.relevance
+            // matchfeatures is already part of fields
             fields.chunks_summary = getSortedScoredChunks(
               fields.matchfeatures,
               fields.chunks_summary as string[],
               maxSearchChunks,
-            )
-
-            return MailAttachmentResponseSchema.parse(fields)
+            );
+            return MailAttachmentResponseSchema.parse(fields) // Schema now expects matchfeatures
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname}`,

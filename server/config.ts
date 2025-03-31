@@ -137,4 +137,5 @@ export default {
   EndThinkingToken,
   JobExpiryHours: 23,
   serviceAccountWhitelistedEmails,
+  isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
 }

@@ -39,6 +39,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
+  Info, // Import Info icon for the button
   MessageSquareShare,
 } from "lucide-react"
 import { LastUpdated } from "@/components/SearchFilter"
@@ -103,6 +104,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
+  const [showDebugInfo, setShowDebugInfo] = useState(import.meta.env.VITE_SHOW_DEBUG_INFO === 'true') // State for debug info visibility, initialized from env var
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -463,7 +465,12 @@ export const Search = ({ user, workspace }: IndexProps) => {
               <div className="flex flex-col w-full max-w-3xl mb-[52px]">
                 <div className="w-full max-w-3xl">
                   {results.map((result, index) => (
-                    <SearchResult key={index} result={result} index={index} />
+                    <SearchResult
+                      key={index}
+                      result={result}
+                      index={index}
+                      showDebugInfo={showDebugInfo} // Pass state down
+                    />
                   ))}
                 </div>
               </div>
