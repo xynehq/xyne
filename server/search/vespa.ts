@@ -440,7 +440,9 @@ export const searchVespa = async (
       : {}),
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
-    ...(config.isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}), // Add tracelevel based on isDebugMode
+    ...(config.isDebugMode
+      ? { "ranking.listFeatures": true, tracelevel: 4 }
+      : {}), // Add tracelevel based on isDebugMode
   }
 
   try {

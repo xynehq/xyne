@@ -414,7 +414,8 @@ const UserStatsTable = ({
             ).toFixed(2),
           )
           const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
-          const eta = percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
+          const eta =
+            percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
           return (
             <TableRow key={email}>
               {type !== AuthType.OAuth && (

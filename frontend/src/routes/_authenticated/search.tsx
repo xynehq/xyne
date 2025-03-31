@@ -104,7 +104,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-  const [showDebugInfo, setShowDebugInfo] = useState(import.meta.env.VITE_SHOW_DEBUG_INFO === 'true') // State for debug info visibility, initialized from env var
+  const [showDebugInfo, setShowDebugInfo] = useState(
+    import.meta.env.VITE_SHOW_DEBUG_INFO === "true",
+  ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
@@ -309,7 +311,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           }),
           state: { isQueryTyped: false },
           replace: true,
-          resetScroll: false
+          resetScroll: false,
         })
 
         if (groupCount) {
@@ -468,10 +470,14 @@ export const Search = ({ user, workspace }: IndexProps) => {
             {console.log(traceData)}
             {showDebugInfo && traceData && (
               <details className="mt-4 mb-4 text-xs">
-                 <summary className="text-gray-500 cursor-pointer">Vespa Trace</summary>
-                 <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96"> {/* Increased max-height */}
-                   {JSON.stringify(traceData, null, 2)}
-                 </pre>
+                <summary className="text-gray-500 cursor-pointer">
+                  Vespa Trace
+                </summary>
+                <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96">
+                  {" "}
+                  {/* Increased max-height */}
+                  {JSON.stringify(traceData, null, 2)}
+                </pre>
               </details>
             )}
             {!!results?.length && (

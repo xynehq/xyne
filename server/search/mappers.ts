@@ -99,13 +99,15 @@ const maxSearchChunks = 1
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
 ): SearchResponse => {
-  const { root, trace } = resp;
-  const children = root.children || [];
+  const { root, trace } = resp
+  const children = root.children || []
   // Access the nested children array within the trace object
   const traceInfo = trace.children
 
   // Filter out any potential trace items from children if they exist
-  const searchHits = children.filter((child: any) => !child.id?.startsWith("trace:"));
+  const searchHits = children.filter(
+    (child: any) => !child.id?.startsWith("trace:"),
+  )
 
   return {
     count: root.fields?.totalCount ?? 0,
@@ -123,12 +125,15 @@ export const VespaSearchResponseToSearchResult = (
               fields.matchfeatures,
               fields.chunks_summary as string[],
               maxSearchChunks,
-            );
+            )
 
             return FileResponseSchema.parse(fields)
           } else if ((child.fields as VespaUser).sddocname === userSchema) {
             // Directly use child.fields
-            const fields = child.fields as VespaUser & { type?: string, chunks_summary?: string[] }
+            const fields = child.fields as VespaUser & {
+              type?: string
+              chunks_summary?: string[]
+            }
             fields.type = userSchema
             fields.relevance = child.relevance
             // matchfeatures is already part of fields (if returned by Vespa)
@@ -153,13 +158,16 @@ export const VespaSearchResponseToSearchResult = (
               fields.matchfeatures,
               fields.chunks_summary as string[],
               maxSearchChunks,
-            );
+            )
             return MailResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaEventSearch).sddocname === eventSchema
           ) {
             // Directly use child.fields
-            const fields = child.fields as VespaEventSearch & { type?: string, chunks_summary?: string[] }
+            const fields = child.fields as VespaEventSearch & {
+              type?: string
+              chunks_summary?: string[]
+            }
             fields.type = eventSchema
             fields.relevance = child.relevance
             // matchfeatures is already part of fields (if returned by Vespa)
@@ -182,7 +190,9 @@ export const VespaSearchResponseToSearchResult = (
             mailAttachmentSchema
           ) {
             // Directly use child.fields
-            const fields = child.fields as VespaMailAttachmentSearch & { type?: string }
+            const fields = child.fields as VespaMailAttachmentSearch & {
+              type?: string
+            }
             fields.type = mailAttachmentSchema
             fields.relevance = child.relevance
             // matchfeatures is already part of fields
@@ -190,11 +200,11 @@ export const VespaSearchResponseToSearchResult = (
               fields.matchfeatures,
               fields.chunks_summary as string[],
               maxSearchChunks,
-            );
+            )
             return MailAttachmentResponseSchema.parse(fields)
           } else {
             throw new Error(
-              `Unknown schema type: ${(child.fields as any)?.sddocname ?? 'undefined'}`,
+              `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
             )
           }
         })
