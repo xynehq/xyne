@@ -457,9 +457,7 @@ const insertCalendarEvents = async (
   userEmail: string,
 ) => {
   let nextPageToken = ""
-  // will be returned in the end
   let newSyncTokenCalendarEvents: string = ""
-
   let events: calendar_v3.Schema$Event[] = []
   const calendar = google.calendar({ version: "v3", auth: client })
 
@@ -467,43 +465,55 @@ const insertCalendarEvents = async (
   const nextYearDateTime = new Date(currentDateTime)
 
   // Set the date one year later
-  // To get all events from current Date to One Year later
   nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
 
-  // we will fetch from one year back
+  // Fetch from one year back
   currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
-  do {
-    const res = await retryWithBackoff(
-      () =>
-        calendar.events.list({
-          calendarId: "primary",
-          timeMin: currentDateTime.toISOString(),
-          timeMax: nextYearDateTime.toISOString(),
-          maxResults: maxCalendarEventResults, // Limit the number of results
-          pageToken: nextPageToken,
-          fields: eventFields,
-        }),
-      `Fetching all calendar events`,
-      Apps.GoogleCalendar,
-      0,
-      client,
-    )
-    if (res.data.items) {
-      events = events.concat(res.data.items)
+
+  try {
+    do {
+      const res = await retryWithBackoff(
+        () =>
+          calendar.events.list({
+            calendarId: "primary",
+            timeMin: currentDateTime.toISOString(),
+            timeMax: nextYearDateTime.toISOString(),
+            maxResults: maxCalendarEventResults,
+            pageToken: nextPageToken,
+            fields: eventFields,
+          }),
+        `Fetching all calendar events`,
+        Apps.GoogleCalendar,
+        0,
+        client,
+      )
+      if (res.data.items) {
+        events = events.concat(res.data.items)
+      }
+      nextPageToken = res.data.nextPageToken ?? ""
+      newSyncTokenCalendarEvents = res.data.nextSyncToken ?? ""
+    } while (nextPageToken)
+  } catch (error: any) {
+    // Check if the error is specifically the "notACalendarUser" error
+    if (error?.response?.status === 403) {
+      // Log the issue and return empty results
+      Logger.warn(
+        `User ${userEmail} is not signed up for Google Calendar. Returning empty event set.`,
+      )
+      return { events: [], calendarEventsToken: "" }
     }
-    nextPageToken = res.data.nextPageToken ?? ""
-    newSyncTokenCalendarEvents = res.data.nextSyncToken ?? ""
-  } while (nextPageToken)
+    // If it's a different error, rethrow it to be handled upstream
+    throw error
+  }
 
   if (events.length === 0) {
     return { events: [], calendarEventsToken: newSyncTokenCalendarEvents }
   }
 
   const confirmedEvents = events.filter((e) => e.status === "confirmed")
-  // Handle cancelledEvents separately
   const cancelledEvents = events.filter((e) => e.status === "cancelled")
 
-  // First insert only the confirmed events
+  // Insert confirmed events
   for (const event of confirmedEvents) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
     const { attendeesInfo, attendeesEmails, attendeesNames } =
@@ -516,7 +526,7 @@ const insertCalendarEvents = async (
       docId: event.id ?? "",
       name: event.summary ?? "",
       description: getTextFromEventDescription(event?.description ?? ""),
-      url: event.htmlLink ?? "", // eventLink, not joiningLink
+      url: event.htmlLink ?? "",
       status: event.status ?? "",
       location: event.location ?? "",
       createdAt: new Date(event.created!).getTime(),
@@ -556,6 +566,7 @@ const insertCalendarEvents = async (
   for (const event of cancelledEvents) {
     // add this instance to the cancelledInstances arr of main recurring event
     // don't add it as seperate event
+
     const instanceEventId = event.id ?? ""
     const splittedId = instanceEventId?.split("_") ?? ""
     const mainEventId = splittedId[0]
