@@ -104,7 +104,6 @@ export const handleGmailIngestion = async (
   })
   let totalMails = 0
   let nextPageToken = ""
-  let attachmentCount = 0
   const limit = pLimit(GmailConcurrency)
 
   const profile = await retryWithBackoff(
@@ -139,9 +138,12 @@ export const handleGmailIngestion = async (
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
       let messageBatch = resp.data.messages.slice(0, batchSize)
+      let successfulMessagesInBatch = 0; // Counter for successful messages
+      let successfulPdfAttachmentsInBatch = 0; // Counter for successful PDFs in this batch
+
       let batchRequests = messageBatch.map((message) =>
         limit(async () => {
-          let msgResp
+          let msgResp;
           try {
             msgResp = await retryWithBackoff(
               () =>
@@ -155,10 +157,12 @@ export const handleGmailIngestion = async (
               0,
               client,
             )
-            const mail = await parseMail(msgResp.data, gmail, client)
-            attachmentCount += mail.attachments.length
-            await insert(mail, mailSchema)
-            // updateUserStats(email, StatType.Gmail, 1)
+            // Call modified parseMail to get data and PDF count
+            const { mailData, insertedPdfCount } = await parseMail(msgResp.data, gmail, client);
+            await insert(mailData, mailSchema); // Insert the main mail data
+            // Increment counters only on success
+            successfulMessagesInBatch++;
+            successfulPdfAttachmentsInBatch += insertedPdfCount; // Add count of successfully inserted PDFs
           } catch (error) {
             Logger.error(
               error,
@@ -172,25 +176,31 @@ export const handleGmailIngestion = async (
       )
 
       await Promise.allSettled(batchRequests)
-      totalMails += messageBatch.length
+      totalMails += successfulMessagesInBatch // Update total based on success
 
-      postMessage({
-        type: WorkerResponseTypes.Stats,
-        userEmail: email,
-        count: messageBatch.length,
-        statType: StatType.Gmail,
-      })
-      postMessage({
-        type: WorkerResponseTypes.Stats,
-        userEmail: email,
-        count: attachmentCount,
-        statType: StatType.Mail_Attachments,
-      })
+      // Post stats based on successful operations in this batch
+      // Only post Gmail count if successful messages > 0
+      if (successfulMessagesInBatch > 0) {
+          postMessage({
+              type: WorkerResponseTypes.Stats,
+              userEmail: email,
+              count: successfulMessagesInBatch,
+              statType: StatType.Gmail,
+          });
+      }
+      // Post PDF attachment count only if > 0
+      if (successfulPdfAttachmentsInBatch > 0) {
+          postMessage({
+              type: WorkerResponseTypes.Stats,
+              userEmail: email,
+              count: successfulPdfAttachmentsInBatch,
+              statType: StatType.Mail_Attachments,
+          });
+      }
 
       // clean up explicitly
       batchRequests = []
       messageBatch = []
-      attachmentCount = 0
     }
     // clean up explicitly
   } while (nextPageToken)
@@ -227,13 +237,15 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 }
 
 // Function to parse and validate email data
+// Returns the parsed Mail object and the count of successfully inserted PDF attachments
 export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   client: GoogleClient,
-): Promise<Mail> => {
-  const messageId = email.id
-  const threadId = email.threadId
+): Promise<{ mailData: Mail; insertedPdfCount: number }> => {
+  const messageId = email.id;
+  const threadId = email.threadId;
+  let insertedPdfCount = 0;
   let timestamp = parseInt(email.internalDate ?? "", 10)
   const labels = email.labelIds
 
@@ -292,8 +304,8 @@ export const parseMail = async (
     throw new Error("Invalid message")
   }
 
-  let attachments: Attachment[] = []
-  let filenames: string[] = []
+  let attachments: Attachment[] = [];
+  let filenames: string[] = [];
   if (payload) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
@@ -338,7 +350,8 @@ export const parseMail = async (
               permissions,
             }
 
-            await insert(attachmentDoc, mailAttachmentSchema)
+            await insert(attachmentDoc, mailAttachmentSchema);
+            insertedPdfCount++;
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -370,10 +383,10 @@ export const parseMail = async (
     attachmentFilenames: filenames,
     attachments,
     labels: labels ?? [],
-  }
+  };
 
-  return emailData
-}
+  return { mailData: emailData, insertedPdfCount };
+};
 
 const getBody = (payload: any): string => {
   let body = ""
