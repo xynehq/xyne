@@ -456,19 +456,19 @@ const insertCalendarEvents = async (
   client: GoogleClient,
   userEmail: string,
 ) => {
-  let nextPageToken = "";
-  let newSyncTokenCalendarEvents: string = "";
-  let events: calendar_v3.Schema$Event[] = [];
-  const calendar = google.calendar({ version: "v3", auth: client });
+  let nextPageToken = ""
+  let newSyncTokenCalendarEvents: string = ""
+  let events: calendar_v3.Schema$Event[] = []
+  const calendar = google.calendar({ version: "v3", auth: client })
 
-  const currentDateTime = new Date();
-  const nextYearDateTime = new Date(currentDateTime);
+  const currentDateTime = new Date()
+  const nextYearDateTime = new Date(currentDateTime)
 
   // Set the date one year later
-  nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1);
+  nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
 
   // Fetch from one year back
-  currentDateTime.setFullYear(currentDateTime.getFullYear() - 1);
+  currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
 
   try {
     do {
@@ -486,44 +486,43 @@ const insertCalendarEvents = async (
         Apps.GoogleCalendar,
         0,
         client,
-      );
+      )
       if (res.data.items) {
-        events = events.concat(res.data.items);
+        events = events.concat(res.data.items)
       }
-      nextPageToken = res.data.nextPageToken ?? "";
-      newSyncTokenCalendarEvents = res.data.nextSyncToken ?? "";
-    } while (nextPageToken);
+      nextPageToken = res.data.nextPageToken ?? ""
+      newSyncTokenCalendarEvents = res.data.nextSyncToken ?? ""
+    } while (nextPageToken)
   } catch (error: any) {
     // Check if the error is specifically the "notACalendarUser" error
-    console.log('got error', error)
-    if (
-      error?.response?.status === 403) {
+    console.log("got error", error)
+    if (error?.response?.status === 403) {
       // Log the issue and return empty results
       Logger.warn(
         `User ${userEmail} is not signed up for Google Calendar. Returning empty event set.`,
-      );
-      return { events: [], calendarEventsToken: "" };
+      )
+      return { events: [], calendarEventsToken: "" }
     }
     // If it's a different error, rethrow it to be handled upstream
-    throw error;
+    throw error
   }
 
   if (events.length === 0) {
-    return { events: [], calendarEventsToken: newSyncTokenCalendarEvents };
+    return { events: [], calendarEventsToken: newSyncTokenCalendarEvents }
   }
 
-  const confirmedEvents = events.filter((e) => e.status === "confirmed");
-  const cancelledEvents = events.filter((e) => e.status === "cancelled");
+  const confirmedEvents = events.filter((e) => e.status === "confirmed")
+  const cancelledEvents = events.filter((e) => e.status === "cancelled")
 
   // Insert confirmed events
   for (const event of confirmedEvents) {
-    const { baseUrl, joiningUrl } = getJoiningLink(event);
+    const { baseUrl, joiningUrl } = getJoiningLink(event)
     const { attendeesInfo, attendeesEmails, attendeesNames } =
-      getAttendeesOfEvent(event.attendees ?? []);
+      getAttendeesOfEvent(event.attendees ?? [])
     const { attachmentsInfo, attachmentFilenames } = getAttachments(
       event.attachments ?? [],
-    );
-    const { isDefaultStartTime, startTime } = getEventStartTime(event);
+    )
+    const { isDefaultStartTime, startTime } = getEventStartTime(event)
     const eventToBeIngested = {
       docId: event.id ?? "",
       name: event.summary ?? "",
@@ -558,10 +557,10 @@ const insertCalendarEvents = async (
       ]),
       cancelledInstances: [],
       defaultStartTime: isDefaultStartTime,
-    };
+    }
 
-    await insert(eventToBeIngested, eventSchema);
-    updateUserStats(userEmail, StatType.Events, 1);
+    await insert(eventToBeIngested, eventSchema)
+    updateUserStats(userEmail, StatType.Events, 1)
   }
 
   // Add the cancelled events into cancelledInstances array of their respective main event
@@ -569,37 +568,37 @@ const insertCalendarEvents = async (
     // add this instance to the cancelledInstances arr of main recurring event
     // don't add it as seperate event
 
-    const instanceEventId = event.id ?? "";
-    const splittedId = instanceEventId?.split("_") ?? "";
-    const mainEventId = splittedId[0];
-    const instanceDateTime = splittedId[1];
+    const instanceEventId = event.id ?? ""
+    const splittedId = instanceEventId?.split("_") ?? ""
+    const mainEventId = splittedId[0]
+    const instanceDateTime = splittedId[1]
 
     try {
       // Get the main event from Vespa
       // Add the new instanceDateTime to its cancelledInstances
-      const eventFromVespa = await GetDocument(eventSchema, mainEventId);
+      const eventFromVespa = await GetDocument(eventSchema, mainEventId)
       const oldCancelledInstances =
-        (eventFromVespa.fields as VespaEvent).cancelledInstances ?? [];
+        (eventFromVespa.fields as VespaEvent).cancelledInstances ?? []
 
       if (!oldCancelledInstances?.includes(instanceDateTime)) {
         // Do this only if instanceDateTime not already inside oldCancelledInstances
         const newCancelledInstances = [
           ...oldCancelledInstances,
           instanceDateTime,
-        ];
+        ]
         if (eventFromVespa) {
           await UpdateEventCancelledInstances(
             eventSchema,
             mainEventId,
             newCancelledInstances,
-          );
+          )
         }
       }
     } catch (error) {
       Logger.error(
         error,
         `Main Event ${mainEventId} not found in Vespa to update cancelled instance ${instanceDateTime} of ${instanceEventId}`,
-      );
+      )
     }
   }
 
@@ -608,11 +607,11 @@ const insertCalendarEvents = async (
       message: "Could not get sync tokens for Google Calendar Events",
       integration: Apps.GoogleCalendar,
       entity: CalendarEntity.Event,
-    });
+    })
   }
 
-  return { events, calendarEventsToken: newSyncTokenCalendarEvents };
-};
+  return { events, calendarEventsToken: newSyncTokenCalendarEvents }
+}
 
 export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
   // Logger.info("handleGoogleOauthIngestion", job.data)
