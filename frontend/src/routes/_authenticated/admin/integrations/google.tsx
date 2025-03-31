@@ -726,7 +726,7 @@ export const Route = createFileRoute(
       userWorkspace?.user?.role !== UserRole.SuperAdmin &&
       userWorkspace?.user?.role !== UserRole.Admin
     ) {
-      throw redirect({ to: "/admin/integrations/google" })
+      throw redirect({ to: "/integrations/google" })
     }
     return params
   },
