@@ -495,7 +495,6 @@ const insertCalendarEvents = async (
     } while (nextPageToken)
   } catch (error: any) {
     // Check if the error is specifically the "notACalendarUser" error
-    console.log("got error", error)
     if (error?.response?.status === 403) {
       // Log the issue and return empty results
       Logger.warn(
