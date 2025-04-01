@@ -114,7 +114,7 @@ export const SlackOAuthButton = ({
 }: {
   app: Apps
   text: string
-  setIntegrationStatus: any
+  setIntegrationStatus: (status: OAuthIntegrationStatus) => void
 }) => {
   const handleOAuth = async () => {
     const oauth = new OAuthModal()
@@ -169,7 +169,7 @@ const submitSlackOAuth = async (
   return response.json()
 }
 
-export const SlackOAuthForm = ({ onSuccess }: { onSuccess: any }) => {
+export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<{
@@ -236,7 +236,7 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: any }) => {
         children={(field) => (
           <>
             <Input
-              id="clientId"
+              id="clientSecret"
               type="text"
               value={field.state.value}
               onChange={(e) => field.handleChange(e.target.value)}
@@ -274,7 +274,7 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: any }) => {
   )
 }
 
-export const SlackBotTokenForm = ({ onSuccess }: { onSuccess: any }) => {
+export const SlackBotTokenForm = ({ onSuccess }: { onSuccess: () => void }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<{ botToken: string }>({
