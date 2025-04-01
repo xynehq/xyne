@@ -1,0 +1,308 @@
+import { GaxiosError } from "gaxios";
+import { Subsystem } from "../../types.js"
+import { docs_v1, drive_v3, gmail_v1, google } from "googleapis";
+import {
+  extractFootnotes,
+  extractHeadersAndFooters,
+  extractText,
+  postProcessText,
+} from "../../doc.js"
+import { chunkDocument } from "../../chunks.js"
+import { Apps, DriveEntity } from "../../shared/types.js"
+import { JWT } from "google-auth-library";
+import {
+  MAX_ATTACHMENT_PDF_SIZE,
+  MAX_GD_PDF_SIZE,
+  scopes,
+} from "../../integrations/google/config.js"
+import { DownloadDocumentError } from "../../errors/index.js";
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
+import {
+  deleteDocument,
+  downloadDir,
+  downloadPDF,
+  getSheetsListFromOneSpreadsheet,
+  safeLoadPDF,
+} from "../../integrations/google/index.js"
+import { getLogger } from "../../logger/index.js";
+import fs from "node:fs/promises";
+import path from "path";
+import { retryWithBackoff } from "../../utils.js"
+const Logger = getLogger(Subsystem.Integrations).child({ module: "google" });
+// TODO: make it even more extensive
+export const mimeTypeMap = {
+    "application/vnd.google-apps.document": DriveEntity.Docs,
+    "application/vnd.google-apps.spreadsheet": DriveEntity.Sheets,
+    "application/vnd.google-apps.presentation": DriveEntity.Presentation,
+    "application/vnd.google-apps.folder": DriveEntity.Folder,
+    "application/vnd.google-apps.drawing": DriveEntity.Drawing,
+    "application/vnd.google-apps.form": DriveEntity.Form,
+    "application/vnd.google-apps.script": DriveEntity.Script,
+    "application/vnd.google-apps.site": DriveEntity.Site,
+    "application/vnd.google-apps.map": DriveEntity.Map,
+    "application/vnd.google-apps.audio": DriveEntity.Audio,
+    "application/vnd.google-apps.video": DriveEntity.Video,
+    "application/vnd.google-apps.photo": DriveEntity.Photo,
+    "application/vnd.google-apps.drive-sdk": DriveEntity.ThirdPartyApp,
+    "application/pdf": DriveEntity.PDF,
+    "image/jpeg": DriveEntity.Image,
+    "image/png": DriveEntity.Image,
+    "application/zip": DriveEntity.Zip,
+    "application/msword": DriveEntity.WordDocument,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DriveEntity.WordDocument,
+    "application/vnd.ms-excel": DriveEntity.ExcelSpreadsheet,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": DriveEntity.ExcelSpreadsheet,
+    "application/vnd.ms-powerpoint": DriveEntity.PowerPointPresentation,
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": DriveEntity.PowerPointPresentation,
+    "text/plain": DriveEntity.Text,
+    "text/csv": DriveEntity.CSV,
+};
+export var DriveMime;
+(function (DriveMime) {
+    DriveMime["Docs"] = "application/vnd.google-apps.document";
+    DriveMime["Sheets"] = "application/vnd.google-apps.spreadsheet";
+    DriveMime["Slides"] = "application/vnd.google-apps.presentation";
+    DriveMime["PDF"] = "application/pdf";
+})(DriveMime || (DriveMime = {}));
+export const MimeMapForContent = {
+    [DriveMime.Docs]: true,
+    [DriveMime.PDF]: true,
+    [DriveMime.Sheets]: true,
+    [DriveMime.Slides]: true,
+};
+export class DocsParsingError extends Error {
+}
+export const getFile = async (client, fileId) => {
+    const drive = google.drive({ version: "v3", auth: client });
+    const fields = "id, webViewLink, createdTime, modifiedTime, name, size, parents, owners, fileExtension, mimeType, permissions(id, type, emailAddress)";
+    try {
+        const file = await retryWithBackoff(() => drive.files.get({
+            fileId,
+            fields,
+        }), `Getting file with fileId ${fileId}`, Apps.GoogleDrive, 0, client);
+        return file?.data;
+    }
+    catch (error) {
+        // Final catch: log the error details without breaking the sync job.
+        if (error instanceof GaxiosError) {
+            Logger.error(`GaxiosError while fetching drive changes: status ${error.response?.status}, ` +
+                `statusText: ${error.response?.statusText}, data: ${JSON.stringify(error.response?.data)}`);
+        }
+        else if (error instanceof Error) {
+            Logger.error(`Unexpected error while fetching drive changes: ${error.message}`);
+        }
+        else {
+            Logger.error(`An unknown error occurred while fetching drive changes.`);
+        }
+        return null;
+    }
+};
+export const getFileContent = async (client, file, entity) => {
+    const docs = google.docs({ version: "v1", auth: client });
+    try {
+        const docResponse = await retryWithBackoff(() => docs.documents.get({
+            documentId: file.id,
+        }), `Getting document with documentId ${file.id}`, Apps.GoogleDrive, 0, client);
+        const documentContent = docResponse.data;
+        const rawTextContent = documentContent?.body?.content
+            ?.map((e) => extractText(documentContent, e))
+            .join("");
+        const footnotes = extractFootnotes(documentContent);
+        const headerFooter = extractHeadersAndFooters(documentContent);
+        const cleanedTextContent = postProcessText(rawTextContent + "\n\n" + footnotes + "\n\n" + headerFooter);
+        const chunks = chunkDocument(cleanedTextContent);
+        const parentsForMetadata = [];
+        if (file?.parents) {
+            for (const parentId of file.parents) {
+                const parentData = await getFile(client, parentId);
+                const folderName = parentData?.name;
+                parentsForMetadata.push({ folderName, folderId: parentId });
+            }
+        }
+        return {
+            title: file.name,
+            url: file.webViewLink ?? "",
+            app: Apps.GoogleDrive,
+            docId: file.id,
+            owner: file.owners ? (file.owners[0].displayName ?? "") : "",
+            photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
+            ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
+            entity,
+            chunks: chunks.map((v) => v.chunk),
+            permissions: file.permissions ?? [],
+            mimeType: file.mimeType ?? "",
+            metadata: JSON.stringify({ parents: parentsForMetadata }),
+            createdAt: new Date(file.createdTime).getTime(),
+            updatedAt: new Date(file.modifiedTime).getTime(),
+        };
+    }
+    catch (err) {
+        Logger.error(err, `Error in getting document content of document with id ${file?.id}, but continuing sync engine execution.`);
+        return null;
+    }
+};
+export const getPDFContent = async (client, pdfFile, entity) => {
+    const drive = google.drive({ version: "v3", auth: client });
+    const pdfSizeInMB = parseInt(pdfFile.size) / (1024 * 1024);
+    // Ignore the PDF files larger than Max PDF Size
+    if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
+        Logger.error(`Ignoring ${pdfFile.name} as its more than ${MAX_GD_PDF_SIZE} MB`);
+        return;
+    }
+    try {
+        await downloadPDF(drive, pdfFile.id, pdfFile.name, client);
+        const pdfPath = `${downloadDir}/${pdfFile?.name}`;
+        let docs = [];
+        const loader = new PDFLoader(pdfPath);
+        docs = await loader.load();
+        if (!docs || docs.length === 0) {
+            Logger.warn(`Could not get content for file: ${pdfFile.name}. Skipping it`);
+            await deleteDocument(pdfPath);
+            return;
+        }
+        const chunks = docs.flatMap((doc) => chunkDocument(doc.pageContent));
+        const parentsForMetadata = [];
+        if (pdfFile?.parents) {
+            for (const parentId of pdfFile.parents) {
+                const parentData = await getFile(client, parentId);
+                const folderName = parentData?.name;
+                parentsForMetadata.push({ folderName, folderId: parentId });
+            }
+        }
+        // Deleting document
+        await deleteDocument(pdfPath);
+        return {
+            title: pdfFile.name,
+            url: pdfFile.webViewLink ?? "",
+            app: Apps.GoogleDrive,
+            docId: pdfFile.id,
+            owner: pdfFile.owners ? (pdfFile.owners[0].displayName ?? "") : "",
+            photoLink: pdfFile.owners ? (pdfFile.owners[0].photoLink ?? "") : "",
+            ownerEmail: pdfFile.owners ? (pdfFile.owners[0]?.emailAddress ?? "") : "",
+            entity,
+            chunks: chunks.map((v) => v.chunk),
+            permissions: pdfFile.permissions ?? [],
+            mimeType: pdfFile.mimeType ?? "",
+            metadata: JSON.stringify({ parents: parentsForMetadata }),
+            createdAt: new Date(pdfFile.createdTime).getTime(),
+            updatedAt: new Date(pdfFile.modifiedTime).getTime(),
+        };
+    }
+    catch (error) {
+        Logger.error(error, `Error getting file: ${error} ${error.stack} but continuing sync engine execution.`);
+        // previously sync was breaking for these 2 cases
+        // so we return null (TODO: confirm if we ingest atleast the metadata)
+        if (error?.message === "No password given" &&
+            error?.code === 1) {
+            return;
+        }
+        else if (error?.message === "Permission denied" &&
+            error?.code === "EACCES") {
+            // this is pdf someone else has shared but we don't have access to download it
+            return;
+        }
+        else {
+            return;
+        }
+    }
+};
+export const getSheetsFromSpreadSheet = async (client, spreadsheet, entity) => {
+    try {
+        const sheets = google.sheets({ version: "v4", auth: client });
+        const sheetsListFromOneSpreadsheet = await getSheetsListFromOneSpreadsheet(sheets, client, spreadsheet);
+        return sheetsListFromOneSpreadsheet;
+    }
+    catch (err) {
+        Logger.error(err, `Error in catch of getSheetsFromSpreadSheet`, err);
+        return [];
+    }
+};
+export const driveFileToIndexed = async (client, file) => {
+    let entity = mimeTypeMap[file.mimeType] ?? DriveEntity.Misc;
+    try {
+        const parentsForMetadata = [];
+        if (file?.parents) {
+            for (const parentId of file.parents) {
+                const parentData = await getFile(client, parentId);
+                const folderName = parentData?.name;
+                parentsForMetadata.push({ folderName, folderId: parentId });
+            }
+        }
+        // TODO: fix this correctly
+        // @ts-ignore
+        return {
+            title: file.name,
+            url: file.webViewLink ?? "",
+            app: Apps.GoogleDrive,
+            docId: file.id,
+            entity,
+            chunks: [],
+            owner: file.owners ? (file.owners[0].displayName ?? "") : "",
+            photoLink: file.owners ? (file.owners[0].photoLink ?? "") : "",
+            ownerEmail: file.owners ? (file.owners[0]?.emailAddress ?? "") : "",
+            permissions: file.permissions ?? [],
+            mimeType: file.mimeType ?? "",
+            metadata: JSON.stringify({ parents: parentsForMetadata }),
+            createdAt: new Date(file.createdTime).getTime(),
+            updatedAt: new Date(file.modifiedTime).getTime(),
+        };
+    }
+    catch (err) {
+        Logger.error(`Error indexing file with id ${file?.id}`);
+        return null;
+    }
+};
+// we need to support alias?
+export const toPermissionsList = (drivePermissions, ownerEmail) => {
+    if (!drivePermissions) {
+        return [ownerEmail];
+    }
+    let permissions = [];
+    if (drivePermissions && drivePermissions.length) {
+        permissions = drivePermissions
+            .filter((p) => p.type === "user" || p.type === "group" || p.type === "domain")
+            .map((p) => {
+            if (p.type === "domain") {
+                return "domain";
+            }
+            return p.emailAddress;
+        });
+    }
+    else {
+        // permissions don't exist for you
+        // but the user who is able to fetch
+        // the metadata, can read it
+        permissions = [ownerEmail];
+    }
+    return permissions;
+};
+export const createJwtClient = (serviceAccountKey, subject) => {
+    return new JWT({
+        email: serviceAccountKey.client_email,
+        key: serviceAccountKey.private_key,
+        scopes,
+        subject,
+    });
+};
+export const checkDownloadsFolder = async (boss, job) => {
+    Logger.info("Checking downloads folder...");
+    try {
+        // Read the contents of the downloads directory
+        const files = await fs.readdir(downloadDir);
+        if (files.length === 0) {
+            Logger.info("No files found in downloads folder.");
+            return;
+        }
+        Logger.info(`Found ${files.length} file(s) in downloads folder. Deleting...`);
+        // Loop through each file and delete it
+        for (const file of files) {
+            const filePath = path.join(downloadDir, file);
+            await fs.unlink(filePath);
+            Logger.info(`Deleted file: ${filePath}`);
+        }
+        Logger.info("All files deleted successfully.");
+    }
+    catch (error) {
+        Logger.error(error, `Error checking or deleting files in downloads folder: ${error} ${error.stack}`);
+    }
+};
