@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import { RotateCcw } from "lucide-react"
 import {
   createFileRoute,
   redirect,
@@ -24,7 +25,7 @@ import { useForm } from "@tanstack/react-form"
 
 import { cn, getErrorMessage } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
-import { Connectors } from "@/types"
+import { Connectors, OAuthIntegrationStatus } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -39,6 +40,8 @@ import {
 } from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
 import OAuthTab from "@/components/OAuthTab"
+import { LoaderContent } from "@/lib/common"
+import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 
 const logger = console
 
@@ -218,7 +221,10 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
 export const ServiceAccountForm = ({
   onSuccess,
   refetch,
-}: { onSuccess: any; refetch: any }) => {
+}: {
+  onSuccess: any
+  refetch: any
+}) => {
   //@ts-ignore
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const { toast } = useToast()
@@ -321,7 +327,11 @@ export const OAuthButton = ({
   app,
   text,
   setOAuthIntegrationStatus,
-}: { app: Apps; text: string; setOAuthIntegrationStatus: any }) => {
+}: {
+  app: Apps
+  text: string
+  setOAuthIntegrationStatus: any
+}) => {
   const handleOAuth = async () => {
     const oauth = new OAuthModal()
     try {
@@ -373,7 +383,10 @@ export const getConnectors = async (): Promise<any> => {
 const UserStatsTable = ({
   userStats,
   type,
-}: { userStats: { [email: string]: any }; type: AuthType }) => {
+}: {
+  userStats: { [email: string]: any }
+  type: AuthType
+}) => {
   return (
     <Table
       className={
@@ -390,25 +403,38 @@ const UserStatsTable = ({
           <TableHead>Contacts</TableHead>
           <TableHead>Events</TableHead>
           <TableHead>Attachments</TableHead>
-          {/* <TableHead>Status</TableHead> */}
+          <TableHead>%</TableHead>
+          <TableHead>Est (minutes)</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {Object.entries(userStats).map(([email, stats]) => (
-          <TableRow key={email}>
-            {type !== AuthType.OAuth && (
-              <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
-                {email}
-              </TableCell>
-            )}
-            <TableCell>{stats.gmailCount}</TableCell>
-            <TableCell>{stats.driveCount}</TableCell>
-            <TableCell>{stats.contactsCount}</TableCell>
-            <TableCell>{stats.eventsCount}</TableCell>
-            <TableCell>{stats.mailAttachmentCount}</TableCell>
-            {/* <TableCell className={`${stats.done ? "text-lime-600": ""}`}>{stats.done ? "Done" : "In Progress"}</TableCell> */}
-          </TableRow>
-        ))}
+        {Object.entries(userStats).map(([email, stats]) => {
+          const percentage: number = parseFloat(
+            (
+              ((stats.gmailCount + stats.driveCount) * 100) /
+              (stats.totalDrive + stats.totalMail)
+            ).toFixed(2),
+          )
+          const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
+          const eta =
+            percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
+          return (
+            <TableRow key={email}>
+              {type !== AuthType.OAuth && (
+                <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+                  {email}
+                </TableCell>
+              )}
+              <TableCell>{stats.gmailCount}</TableCell>
+              <TableCell>{stats.driveCount}</TableCell>
+              <TableCell>{stats.contactsCount}</TableCell>
+              <TableCell>{stats.eventsCount}</TableCell>
+              <TableCell>{stats.mailAttachmentCount}</TableCell>
+              <TableCell>{percentage}</TableCell>
+              <TableCell>{eta.toFixed(0)}</TableCell>
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -457,32 +483,25 @@ const ServiceAccountTab = ({
           </>
         ) : (
           <>
-            <CardDescription>Connected</CardDescription>
+            <CardDescription>
+              Status: {googleSAConnector.status}
+            </CardDescription>
           </>
         )}
+
+        <button
+          className="flex justify-end w-full"
+          onClick={() => {
+            // restart the ingestion of that connector
+          }}
+        >
+          <RotateCcw stroke={"hsl(220 8.9% 46.1%)"} size={18} />
+        </button>
       </CardHeader>
     )
   }
 }
 
-export const LoaderContent = () => {
-  return (
-    <div
-      className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}
-    >
-      <div className="items-center justify-center">
-        <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
-      </div>
-    </div>
-  )
-}
-
-export enum OAuthIntegrationStatus {
-  Provider = "Provider", // yet to create provider
-  OAuth = "OAuth", // provider created but OAuth not yet connected
-  OAuthConnecting = "OAuthConnecting",
-  OAuthConnected = "OAuthConnected",
-}
 export interface AdminPageProps {
   user: PublicUser
   workspace: PublicWorkspace
@@ -542,7 +561,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       const connector = data.find(
         (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
       )
-      logger.info(connector)
       if (connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
@@ -561,39 +579,81 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   }, [data, isPending])
 
   useEffect(() => {
-    let socket: WebSocket | null = null
+    let serviceAccountSocket: WebSocket | null = null
+    let oauthSocket: WebSocket | null = null
+
     if (!isPending && data && data.length > 0) {
-      socket = wsClient.ws.$ws({
-        query: {
-          id: data[0]?.id,
-        },
-      })
-      // setWs(socket)
-      socket?.addEventListener("open", () => {
-        logger.info("open")
-      })
-      socket?.addEventListener("close", () => {
-        logger.info("close")
-      })
-      socket?.addEventListener("message", (e) => {
-        // const message = JSON.parse(e.data);
-        const data = JSON.parse(e.data)
-        const statusJson = JSON.parse(JSON.parse(e.data).message)
-        setProgress(statusJson.progress ?? 0)
-        setUserStats(statusJson.userStats ?? {})
-        setUpateStatus(data.message)
-      })
+      const serviceAccountConnector = data.find(
+        (c) => c.authType === AuthType.ServiceAccount,
+      )
+      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+
+      if (serviceAccountConnector) {
+        serviceAccountSocket = wsClient.ws.$ws({
+          query: { id: serviceAccountConnector.id }, // externalId
+        })
+        serviceAccountSocket?.addEventListener("open", () => {
+          logger.info(
+            `Service Account WebSocket opened for ${serviceAccountConnector.id}`,
+          )
+        })
+        serviceAccountSocket?.addEventListener("message", (e) => {
+          const data = JSON.parse(e.data)
+          const statusJson = JSON.parse(data.message)
+          setProgress(statusJson.progress ?? 0) // Could split to serviceAccountProgress
+          setUserStats(statusJson.userStats ?? {})
+          setUpateStatus(data.message)
+        })
+        serviceAccountSocket?.addEventListener("close", (e) => {
+          logger.info("Service Account WebSocket closed")
+          if (e.reason === "Job finished") {
+            setIsIntegratingSA(true)
+          }
+        })
+      }
+
+      if (oauthConnector) {
+        oauthSocket = wsClient.ws.$ws({
+          query: { id: oauthConnector.id }, // externalId
+        })
+        oauthSocket?.addEventListener("open", () => {
+          logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
+        })
+        oauthSocket?.addEventListener("message", (e) => {
+          const data = JSON.parse(e.data)
+          const statusJson = JSON.parse(data.message)
+          setProgress(statusJson.progress ?? 0) // Could split to oauthProgress
+          setUserStats(statusJson.userStats ?? {})
+          setUpateStatus(data.message)
+        })
+        oauthSocket?.addEventListener("close", (e) => {
+          logger.info("OAuth WebSocket closed")
+          if (e.reason === "Job finished") {
+            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+          }
+        })
+      }
     }
+
     return () => {
-      socket?.close()
-      // setWs(null)
+      serviceAccountSocket?.close()
+      oauthSocket?.close()
     }
   }, [data, isPending])
+
+  useEffect(() => {
+    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting) {
+      refetch()
+    }
+  }, [oauthIntegrationStatus, refetch])
 
   const showUserStats = (
     userStats: { [email: string]: any },
     activeTab: string,
+    oauthIntegrationStatus: OAuthIntegrationStatus,
   ) => {
+    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
+      return false
     if (!Object.keys(userStats).length) return false
     if (activeTab !== "service_account" && activeTab !== "oauth") return false
 
@@ -608,6 +668,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <IntegrationsSidebar role={user.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
@@ -641,7 +702,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               updateStatus={updateStatus}
             />
           </Tabs>
-          {showUserStats(userStats, activeTab) && (
+          {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
             <UserStatsTable
               userStats={userStats}
               type={
@@ -655,7 +716,9 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   )
 }
 
-export const Route = createFileRoute("/_authenticated/admin/integrations")({
+export const Route = createFileRoute(
+  "/_authenticated/admin/integrations/google",
+)({
   beforeLoad: async ({ params, context }) => {
     const userWorkspace = context
     // Normal users shouldn't be allowed to visit /admin/integrations
@@ -663,7 +726,7 @@ export const Route = createFileRoute("/_authenticated/admin/integrations")({
       userWorkspace?.user?.role !== UserRole.SuperAdmin &&
       userWorkspace?.user?.role !== UserRole.Admin
     ) {
-      throw redirect({ to: "/integrations" })
+      throw redirect({ to: "/integrations/google" })
     }
     return params
   },

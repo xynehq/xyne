@@ -6,6 +6,7 @@ import type {
   MailAttachmentAutocomplete,
   MailAutocomplete,
   UserAutocomplete,
+  ChatUserAutocomplete,
   UserQueryHAutocomplete,
 } from "shared/types"
 import { ForwardedRef, forwardRef } from "react"
@@ -69,6 +70,20 @@ export const UserAutocompleteElement = ({
     </div>
   )
 }
+export const ChatUserAutocompleteElement = ({
+  result,
+}: { result: ChatUserAutocomplete }) => {
+  return (
+    <div className="flex items-center">
+      <img
+        referrerPolicy="no-referrer"
+        className="mr-2 w-[16px] h-[16px] rounded-full"
+        src={result.image}
+      ></img>
+      <p className="truncate">{result.name || result.email}</p>
+    </div>
+  )
+}
 export const UserQueryHistoryAutocompleteElement = ({
   result,
   onClick,
@@ -114,6 +129,8 @@ export const AutocompleteElement = forwardRef(
       )
     } else if (result.type === "mail_attachment") {
       content = <MailAttachmentAutocompleteElement result={result} />
+    } else if (result.type === "chat_user") {
+      content = <ChatUserAutocompleteElement result={result} />
     } else {
       throw new Error("invalid type")
     }

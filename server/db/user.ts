@@ -95,7 +95,10 @@ export const getUserAndWorkspaceByOnlyEmail = async (
 }
 
 // since email is unique across the users we don't need workspaceId
-export const getUserByEmail = async (trx: TxnOrClient, email: string) => {
+export const getUserByEmail = async (
+  trx: TxnOrClient,
+  email: string,
+): Promise<SelectUser[]> => {
   return await trx
     .select()
     .from(users)

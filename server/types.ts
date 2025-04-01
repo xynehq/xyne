@@ -1,10 +1,10 @@
 import config from "@/config"
 import { z } from "zod"
-import { Apps, AuthType } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
-import type { GoogleTokens } from "arctic"
 import { JWT, type OAuth2Client } from "google-auth-library"
+import { connect } from "bun"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -73,11 +73,27 @@ export type ServiceAccountConnection = z.infer<
   typeof addServiceConnectionSchema
 >
 
+export const addApiKeyConnectorSchema = z.object({
+  app: z.nativeEnum(Apps),
+  apiKey: z.string(),
+})
+
+export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
+
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
   scopes: z.array(z.string()),
   app: z.nativeEnum(Apps),
+})
+
+export const deleteConnectorSchema = z.object({
+  connectorId: z.string(),
+})
+
+export const updateConnectorStatusSchema = z.object({
+  connectorId: z.string(),
+  status: z.nativeEnum(ConnectorStatus),
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
@@ -104,13 +120,20 @@ export type SaaSJob = {
   externalId: string
   authType: AuthType
   email: string
+  whiteListedEmails?: string[]
 }
 
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
 export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
 
-export type OAuthCredentials = GoogleTokens | any
+export type OAuthCredentials = {
+  data: {
+    access_token: string
+    refresh_token: string
+    accessTokenExpiresAt: Date
+  }
+}
 
 export enum SyncCron {
   // Sync based on a token provided by the external API

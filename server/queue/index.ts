@@ -14,8 +14,10 @@ import {
 import { checkDownloadsFolder } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
+import { handleSlackIngestion } from "@/integrations/slack"
 
 const Logger = getLogger(Subsystem.Queue)
+const JobExpiryHours = config.JobExpiryHours
 
 const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
 export const boss = new PgBoss({
@@ -55,9 +57,14 @@ export const setupServiceAccountCronjobs = async () => {
     SyncServiceAccountSaaSQueue,
     Every10Minutes,
     {},
-    { retryLimit: 0 },
+    { retryLimit: 0, expireInHours: JobExpiryHours },
   )
-  await boss.schedule(SyncGoogleWorkspace, Every6Hours, {}, { retryLimit: 0 })
+  await boss.schedule(
+    SyncGoogleWorkspace,
+    Every6Hours,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
 }
 
 const initWorkers = async () => {
@@ -71,24 +78,29 @@ const initWorkers = async () => {
       jobData.authType === AuthType.ServiceAccount
     ) {
       Logger.info("Handling Google Service Account Ingestion from Queue")
-      await handleGoogleServiceAccountIngestion(boss, job)
+      // await handleGoogleServiceAccountIngestion(boss, job)
     } else if (
       jobData.app === Apps.GoogleDrive &&
       jobData.authType === AuthType.OAuth
     ) {
-      await handleGoogleOAuthIngestion(boss, job)
+      // await handleGoogleOAuthIngestion(boss, job)
     } else {
       throw new Error("Unsupported job")
     }
   })
 
   // do not retry
-  await boss.schedule(SyncOAuthSaaSQueue, Every10Minutes, {}, { retryLimit: 0 })
+  await boss.schedule(
+    SyncOAuthSaaSQueue,
+    Every10Minutes,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
   await boss.schedule(
     CheckDownloadsFolderQueue,
     EveryWeek,
     {},
-    { retryLimit: 0 },
+    { retryLimit: 0, expireInHours: JobExpiryHours },
   )
 
   await setupServiceAccountCronjobs()

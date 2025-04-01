@@ -25,11 +25,14 @@ export enum Models {
   CohereCmdRPlus = "cohere.command-r-plus-v1:0",
   CohereCmdR = "cohere.command-r-v1:0",
   Claude_3_5_SonnetV2 = "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+  Claude_3_7_Sonnet = "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
   Claude_3_5_Sonnet = "anthropic.claude-3-5-sonnet-20240620-v1:0",
   Claude_3_5_Haiku = "anthropic.claude-3-5-haiku-20241022-v1:0",
   Amazon_Nova_Micro = "amazon.nova-micro-v1:0",
   Amazon_Nova_Lite = "amazon.nova-lite-v1:0",
   Amazon_Nova_Pro = "amazon.nova-pro-v1:0",
+
+  DeepSeek_R1 = "us.deepseek.r1-v1:0",
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
 }
 

@@ -1,10 +1,26 @@
 import { z } from "zod"
 export const fileSchema = "file" // Replace with your actual schema name
 export const userSchema = "user"
-export const mailSchema = "mail"
+
+// calendar
 export const eventSchema = "event"
-export const userQuerySchema = "user_query"
+
+// mail
 export const mailAttachmentSchema = "mail_attachment"
+export const mailSchema = "mail"
+
+// chat
+export const chatContainerSchema = "chat_container"
+// this is not meant to be searched but we will
+// store the data in vespa and fetch it as needed
+export const chatTeamSchema = "chat_team"
+export const chatMessageSchema = "chat_message"
+export const chatUserSchema = "chat_user"
+export const chatAttachment = "chat_attachment"
+
+// previous queries
+export const userQuerySchema = "user_query"
+
 export type VespaSchema =
   | typeof fileSchema
   | typeof userSchema
@@ -12,6 +28,10 @@ export type VespaSchema =
   | typeof eventSchema
   | typeof userQuerySchema
   | typeof mailAttachmentSchema
+  | typeof chatContainerSchema
+  | typeof chatTeamSchema
+  | typeof chatMessageSchema
+  | typeof chatUserSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -24,6 +44,8 @@ export enum Apps {
 
   Notion = "notion",
   GoogleCalendar = "google-calendar",
+
+  Slack = "slack",
 }
 
 export enum GooglePeopleEntity {
@@ -31,6 +53,7 @@ export enum GooglePeopleEntity {
   OtherContacts = "OtherContacts",
   AdminDirectory = "AdminDirectory",
 }
+
 // the vespa schemas
 const Schemas = z.union([
   z.literal(fileSchema),
@@ -39,6 +62,10 @@ const Schemas = z.union([
   z.literal(eventSchema),
   z.literal(userQuerySchema),
   z.literal(mailAttachmentSchema),
+  z.literal(chatContainerSchema),
+  z.literal(chatTeamSchema),
+  z.literal(chatUserSchema),
+  z.literal(chatMessageSchema),
 ])
 
 export enum MailEntity {
@@ -47,6 +74,14 @@ export enum MailEntity {
 
 export enum CalendarEntity {
   Event = "event",
+}
+
+export enum SlackEntity {
+  Team = "team",
+  User = "user",
+  Message = "message",
+  Channel = "channel",
+  File = "file",
 }
 
 export enum DriveEntity {
@@ -83,6 +118,7 @@ export const isMailAttachment = (entity: Entity): boolean =>
   Object.values(MailAttachmentEntity).includes(entity as MailAttachmentEntity)
 
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
+export const ChatEntitySchema = z.nativeEnum(SlackEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
 
@@ -105,6 +141,7 @@ export const entitySchema = z.union([
   MailEntitySchema,
   EventEntitySchema,
   MailAttachmentEntitySchema,
+  ChatEntitySchema,
 ])
 
 export type Entity =
@@ -114,6 +151,7 @@ export type Entity =
   | MailEntity
   | CalendarEntity
   | MailAttachmentEntity
+  | SlackEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -221,6 +259,7 @@ export const MailSchema = z.object({
   attachments: z.array(AttachmentSchema),
   labels: z.array(z.string()),
 })
+
 export const VespaMailSchema = MailSchema.extend({
   docId: z.string().min(1),
 })
@@ -323,6 +362,112 @@ export const VespaMailAttachmentGetSchema = VespaMailAttachmentSchema.merge(
   defaultVespaFieldsSchema,
 )
 
+export const VespaChatMessageSchema = z.object({
+  docId: z.string(), // client_msg_id from Slack
+  teamId: z.string(), // Slack team ID (e.g., "T05N1EJSE0K")
+  channelId: z.string(), // Slack channel ID (e.g., "C123ABC456")
+  text: z.string(),
+  userId: z.string(), // Slack user ID (e.g., "U032QT45V53")
+  app: z.nativeEnum(Apps), // App (e.g., "slack")
+  entity: z.nativeEnum(SlackEntity), // Entity (e.g., "message")
+  name: z.string(),
+  username: z.string(),
+  image: z.string(),
+  domain: z.string().optional(), // probably should be made mandatory but for now making optional
+  createdAt: z.number(), // Slack ts (e.g., 1734442791.514519)
+  teamRef: z.string(), // vespa id for team
+  // messageType: z.string(), // Slack type (e.g., "message")
+  threadId: z.string().default(""), // Slack thread_ts, null if not in thread
+  attachmentIds: z.array(z.string()).default([]), // Slack file IDs (e.g., ["F0857N0FF4N"])
+  permissions: z.array(z.string()), // emails of all from the workspace who have access to that channel
+  // reactions: z.array(z.string()), // Commented out in Vespa schema, so excluded
+  mentions: z.array(z.string()), // Extracted from text (e.g., ["U032QT45V53"])
+  updatedAt: z.number(), // Slack edited.ts (e.g., 1734442538.0), null if not edited
+  metadata: z.string(), // JSON string for subtype, etc. (e.g., "{\"subtype\": null}")
+})
+
+export const VespaChatMessageSearchSchema = VespaChatMessageSchema.extend({
+  sddocname: z.literal(chatMessageSchema),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.string()).optional(),
+  })
+
+export const VespaChatUserSchema = z.object({
+  docId: z.string(),
+  name: z.string(),
+  title: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: z.nativeEnum(SlackEntity),
+  image: z.string(),
+  email: z.string(),
+  statusText: z.string(),
+  tz: z.string(),
+  teamId: z.string(),
+  deleted: z.boolean(),
+  isAdmin: z.boolean(),
+  updatedAt: z.number(),
+})
+
+export const VespaChatUserSearchSchema = VespaChatUserSchema.extend({
+  sddocname: z.literal(chatUserSchema),
+}).merge(defaultVespaFieldsSchema)
+
+export const VespaChatContainerSchema = z.object({
+  docId: z.string(),
+  name: z.string(),
+  creator: z.string(),
+  app: z.nativeEnum(Apps),
+
+  isPrivate: z.boolean(),
+  isArchived: z.boolean(),
+  isGeneral: z.boolean(),
+  isIm: z.boolean(),
+  isMpim: z.boolean(),
+
+  createdAt: z.number(),
+  updatedAt: z.number(),
+
+  topic: z.string(),
+  description: z.string(),
+
+  count: z.number().int(),
+})
+
+// Schema for search results that includes Vespa fields
+export const VespaChatContainerSearchSchema = VespaChatContainerSchema.extend({
+  sddocname: z.literal(chatContainerSchema),
+}).merge(defaultVespaFieldsSchema)
+
+export const ChatContainerMatchFeaturesSchema = z.object({
+  "bm25(name)": z.number().optional(),
+  "bm25(topic)": z.number().optional(),
+  "bm25(description)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+})
+
+export const VespaChatTeamSchema = z.object({
+  docId: z.string(),
+  name: z.string(),
+  app: z.nativeEnum(Apps),
+  icon: z.string(),
+  url: z.string(),
+  domain: z.string(),
+  email_domain: z.string(),
+  own: z.boolean(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  count: z.number().int(),
+})
+
+export const VespaChatTeamGetSchema = VespaChatTeamSchema.extend({
+  sddocname: z.literal(chatTeamSchema),
+}).merge(defaultVespaFieldsSchema)
+
+export type VespaChatTeam = z.infer<typeof VespaChatTeamSchema>
+export type VespaChatTeamGet = z.infer<typeof VespaChatTeamGetSchema>
+
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
@@ -330,6 +475,9 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaEventSearchSchema,
   VespaUserQueryHGetSchema,
   VespaMailAttachmentSearchSchema,
+  VespaChatContainerSearchSchema,
+  VespaChatUserSearchSchema,
+  VespaChatMessageSearchSchema,
 ])
 
 // Match features for file schema
@@ -365,13 +513,21 @@ const MailAttachmentMatchFeaturesSchema = z.object({
   scaled_bm25_filename: z.number().optional(),
 })
 
+const ChatMessageMatchFeaturesSchema = z.object({
+  vector_score: z.number().optional(),
+  scaled_bm25_text: z.number().optional(),
+  freshness_score: z.number().optional(),
+})
+
 const SearchMatchFeaturesSchema = z.union([
   FileMatchFeaturesSchema,
   UserMatchFeaturesSchema,
   MailMatchFeaturesSchema,
   EventMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
+  ChatMessageMatchFeaturesSchema,
 ])
+
 const VespaSearchFieldsSchema = z
   .object({
     matchfeatures: SearchMatchFeaturesSchema,
@@ -475,6 +631,10 @@ export type VespaMailSearch = z.infer<typeof VespaMailSearchSchema>
 export type VespaMailAttachmentSearch = z.infer<
   typeof VespaMailAttachmentSearchSchema
 >
+
+export type VespaChatMessageSearch = z.infer<
+  typeof VespaChatMessageSearchSchema
+>
 export type VespaEventSearch = z.infer<typeof VespaEventSearchSchema>
 export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaUser = z.infer<typeof VespaUserSchema>
@@ -483,6 +643,18 @@ export type VespaUserQueryHistory = z.infer<typeof VespaUserQueryHistorySchema>
 export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
   permissions: any[]
 }
+
+export type Inserts =
+  | VespaUser
+  | VespaFile
+  | VespaMail
+  | VespaEvent
+  | VespaUserQueryHistory
+  | VespaMailAttachment
+  | VespaChatContainer
+  | VespaChatTeam
+  | VespaChatUser
+  | VespaChatMessage
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
@@ -531,6 +703,19 @@ const VespaAutocompleteMailSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
+const VespaAutocompleteChatUserSchema = z
+  .object({
+    docId: z.string(),
+    // optional due to contacts
+    name: z.string().optional(),
+    email: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    image: z.string(),
+    sddocname: Schemas,
+  })
+  .merge(defaultVespaFieldsSchema)
+
 const VespaAutocompleteMailAttachmentSchema = z
   .object({
     docId: z.string(),
@@ -558,12 +743,23 @@ const VespaAutocompleteUserQueryHSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
+export const VespaAutocompleteChatContainerSchema = z
+  .object({
+    docId: z.string(),
+    name: z.string(),
+    app: z.nativeEnum(Apps),
+    sddocname: Schemas,
+  })
+  .merge(defaultVespaFieldsSchema)
+
 const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteFileSchema,
   VespaAutocompleteUserSchema,
   VespaAutocompleteMailSchema,
   VespaAutocompleteUserQueryHSchema,
   VespaAutocompleteMailAttachmentSchema,
+  VespaAutocompleteChatContainerSchema,
+  VespaAutocompleteChatUserSchema,
 ])
 
 const VespaAutocompleteFieldsSchema = z
@@ -596,6 +792,10 @@ export type VespaAutocompleteMail = z.infer<typeof VespaAutocompleteMailSchema>
 export type VespaAutocompleteMailAttachment = z.infer<
   typeof VespaAutocompleteMailAttachmentSchema
 >
+
+export type VespaAutocompleteChatUser = z.infer<
+  typeof VespaAutocompleteChatUserSchema
+>
 export type VespaAutocompleteEvent = z.infer<
   typeof VespaAutocompleteEventSchema
 >
@@ -613,6 +813,17 @@ export type MailAttachment = z.infer<typeof MailAttachmentSchema>
 export type VespaMailAttachment = z.infer<typeof VespaMailAttachmentSchema>
 
 export type VespaEvent = z.infer<typeof VespaEventSchema>
+
+export type VespaChatContainer = z.infer<typeof VespaChatContainerSchema>
+export type VespaChatContainerSearch = z.infer<
+  typeof VespaChatContainerSearchSchema
+>
+export type VespaChatUser = z.infer<typeof VespaChatUserSchema>
+export type VespaChatMessage = z.infer<typeof VespaChatMessageSchema>
+export type VespaChatUserSearch = z.infer<typeof VespaChatUserSearchSchema>
+export type VespaAutocompleteChatContainer = z.infer<
+  typeof VespaAutocompleteChatContainerSchema
+>
 
 export const MailResponseSchema = VespaMailGetSchema.pick({
   docId: true,
@@ -645,5 +856,30 @@ export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
   .strip()
   .extend({
     type: z.literal("mail_attachment"),
+    chunks_summary: z.array(z.string()).optional(),
+  })
+
+export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
+  docId: true,
+  teamId: true,
+  channelId: true,
+  text: true,
+  userId: true,
+  app: true,
+  entity: true,
+  createdAt: true,
+  threadId: true,
+  image: true,
+  name: true,
+  domain: true,
+  username: true,
+  attachmentIds: true,
+  mentions: true,
+  // relevance: true,
+  updatedAt: true,
+})
+  .strip()
+  .extend({
+    type: z.literal("chat_message"),
     chunks_summary: z.array(z.string()).optional(),
   })

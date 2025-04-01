@@ -2,8 +2,10 @@ import { createId } from "@paralleldrive/cuid2"
 import { db } from "./client"
 import {
   connectors,
+  ingestionStateSchema,
   oauthProviders,
   selectConnectorSchema,
+  type IngestionStateUnion,
   type SelectConnector,
   type SelectOAuthProvider,
 } from "./schema"
@@ -11,7 +13,7 @@ import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
-import { Google, type GoogleRefreshedTokens, type GoogleTokens } from "arctic"
+import { Google } from "arctic"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import {
@@ -22,6 +24,8 @@ import {
   FetchProviderFailed,
   UpdateConnectorFailed,
 } from "@/errors"
+import { IsGoogleApp } from "@/utils"
+import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -37,6 +41,7 @@ export const insertConnector = async (
   credentials: string | null,
   subject: string | null,
   oauthCredentials?: string | null,
+  apiKey?: string | null,
   status?: ConnectorStatus | null,
 ) => {
   const externalId = createId() // Generate unique external ID
@@ -56,6 +61,7 @@ export const insertConnector = async (
         credentials, // Encrypted credentials
         subject,
         oauthCredentials,
+        apiKey,
         ...(status ? { status } : {}),
       })
       .returning()
@@ -74,7 +80,7 @@ export const insertConnector = async (
 }
 
 // for the admin we can get all the connectors
-export const getConnectors = async (workspaceId: string) => {
+export const getConnectors = async (workspaceId: string, userId: number) => {
   const res = await db
     .select({
       id: connectors.externalId,
@@ -85,7 +91,12 @@ export const getConnectors = async (workspaceId: string) => {
       createdAt: connectors.createdAt,
     })
     .from(connectors)
-    .where(eq(connectors.workspaceExternalId, workspaceId))
+    .where(
+      and(
+        eq(connectors.workspaceExternalId, workspaceId),
+        eq(connectors.userId, userId),
+      ),
+    )
   return res
 }
 
@@ -119,8 +130,8 @@ const IsTokenExpired = (
   oauthCredentials: OAuthCredentials,
   bufferInSeconds: number,
 ): boolean => {
-  if (app === Apps.GoogleDrive) {
-    const tokens: GoogleTokens = oauthCredentials
+  if (IsGoogleApp(app)) {
+    const tokens = oauthCredentials.data
     const now: Date = new Date()
     // make the type as Date, currently the date is stringified
     const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime()
@@ -166,13 +177,10 @@ export const getOAuthConnectorWithCredentials = async (
   if (IsTokenExpired(oauthRes.app, oauthRes.oauthCredentials, 5 * 60)) {
     // token is expired. We should get new tokens
     // update it in place
-    if (oauthRes.app === Apps.GoogleDrive) {
+    if (IsGoogleApp(oauthRes.app)) {
       // we will need the provider now to refresh the token
-      const providers: SelectOAuthProvider[] = await trx
-        .select()
-        .from(oauthProviders)
-        .where(eq(oauthProviders.connectorId, oauthRes.id))
-        .limit(1)
+      const providers: SelectOAuthProvider[] =
+        await getOAuthProviderByConnectorId(trx, connectorId)
 
       if (!providers.length) {
         Logger.error("Could not fetch provider while refreshing Google Token")
@@ -186,19 +194,21 @@ export const getOAuthConnectorWithCredentials = async (
         googleProvider.clientSecret,
         `${config.host}/oauth/callback`,
       )
-      const tokens: GoogleTokens = oauthRes.oauthCredentials
-      const refreshedTokens: GoogleRefreshedTokens =
-        await google.refreshAccessToken(tokens.refreshToken!)
-      // update the token values
-      tokens.accessToken = refreshedTokens.accessToken
-      tokens.accessTokenExpiresAt = new Date(
-        refreshedTokens.accessTokenExpiresAt,
+      const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
+      const refreshedTokens = await google.refreshAccessToken(
+        tokens.refresh_token,
       )
+      // update the token values
+      tokens.access_token = refreshedTokens.accessToken()
+      tokens.accessTokenExpiresAt = new Date(
+        refreshedTokens.accessTokenExpiresAt(),
+      )
+
+      oauthRes.oauthCredentials.data = tokens
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
-        oauthCredentials: JSON.stringify(tokens),
+        oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
       })
       Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
-      oauthRes.oauthCredentials = tokens
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,
@@ -211,11 +221,19 @@ export const getOAuthConnectorWithCredentials = async (
   return oauthRes
 }
 
-export const getConnectorByExternalId = async (connectorId: string) => {
+export const getConnectorByExternalId = async (
+  connectorId: string,
+  userId: number,
+) => {
   const res = await db
     .select()
     .from(connectors)
-    .where(eq(connectors.externalId, connectorId))
+    .where(
+      and(
+        eq(connectors.externalId, connectorId),
+        eq(connectors.userId, userId),
+      ),
+    )
     .limit(1)
   if (res.length) {
     return res[0]
@@ -230,6 +248,7 @@ export const getConnectorByExternalId = async (connectorId: string) => {
 export const updateConnector = async (
   trx: TxnOrClient,
   connectorId: number,
+
   updateData: Partial<SelectConnector>,
 ): Promise<SelectConnector> => {
   const updatedConnectors = await trx
@@ -244,4 +263,90 @@ export const updateConnector = async (
   }
   const [connectorVal] = updatedConnectors
   return selectConnectorSchema.parse(connectorVal)
+}
+
+export const deleteConnector = async (
+  trx: TxnOrClient,
+  connectorId: string,
+  userId: number,
+): Promise<void> => {
+  return await trx
+    .delete(connectors)
+    .where(
+      and(
+        eq(connectors.externalId, connectorId),
+        eq(connectors.userId, userId),
+      ),
+    )
+}
+
+export async function loadConnectorState<T extends IngestionStateUnion>(
+  trx: TxnOrClient,
+  connectorId: number,
+  workspaceId: number,
+  userId: number,
+): Promise<T | null> {
+  const result = await trx
+    .select({ state: connectors.state })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        eq(connectors.workspaceId, workspaceId),
+        eq(connectors.userId, userId),
+      ),
+    )
+    .limit(1)
+
+  if (result.length === 0) {
+    Logger.warn(
+      `No connector found for id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`,
+    )
+    return null
+  }
+
+  const state = result[0].state as Record<string, any>
+  if (Object.keys(state).length === 0) {
+    return null // Treat empty object as no state
+  }
+  const parsedState = ingestionStateSchema.safeParse(result[0].state)
+  if (parsedState.success) {
+    return parsedState.data as T
+  } else {
+    Logger.warn(
+      `Invalid state format for connector ${connectorId}: ${parsedState.error}`,
+    )
+    return null
+  }
+}
+
+export async function saveConnectorState<T extends IngestionStateUnion>(
+  trx: TxnOrClient,
+  connectorId: number,
+  workspaceId: number,
+  userId: number,
+  state: T,
+): Promise<void> {
+  const updated = await trx
+    .update(connectors)
+    .set({ state })
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        eq(connectors.workspaceId, workspaceId),
+        eq(connectors.userId, userId),
+      ),
+    )
+    .returning({ id: connectors.id })
+
+  if (updated.length === 0) {
+    Logger.error(
+      `Failed to update state for connector id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`,
+    )
+    throw new UpdateConnectorFailed(
+      `Could not update state for connector ${connectorId}`,
+    )
+  }
+
+  Logger.debug(`State saved for connector ${connectorId}`)
 }

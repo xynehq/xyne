@@ -32,6 +32,7 @@ let FireworksApiKey = ""
 let GeminiApiKey = ""
 let isReasoning = false
 let fastModelReasoning = false
+let slackHost = process.env.SLACK_HOST
 
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
@@ -42,7 +43,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
-  defaultBestModel = Models.Claude_3_5_SonnetV2
+  defaultBestModel = Models.DeepSeek_R1
 } else if (process.env["OPENAI_API_KEY"]) {
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
@@ -89,6 +90,19 @@ if (
   fastModelReasoning = true
 }
 
+let serviceAccountWhitelistedEmails: string[] = []
+if (process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
+  serviceAccountWhitelistedEmails = process.env[
+    "SERVICE_ACCOUNT_WHITELISTED_EMAILS"
+  ]
+    .split(",")
+    .map((v) => v.trim())
+}
+
+if (!slackHost) {
+  slackHost = host
+}
+
 export default {
   // default page size for regular search
   page: 8,
@@ -102,6 +116,8 @@ export default {
   postgresBaseHost,
   port,
   host,
+  // slack oauth does not work on http
+  slackHost,
   AwsAccessKey,
   AwsSecretKey,
   OpenAIKey,
@@ -126,4 +142,6 @@ export default {
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
+  JobExpiryHours: 23,
+  serviceAccountWhitelistedEmails,
 }

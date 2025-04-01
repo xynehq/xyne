@@ -134,7 +134,8 @@ schema user {
         # we just put the email
         # for who has this contact
         field owner type string {
-            indexing: attribute | summary
+            indexing: index | attribute | summary
+            match: exact
         }
     }
     # Fuzzy matching for the 'name' field
