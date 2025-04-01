@@ -29,6 +29,7 @@ import PgBoss from "pg-boss"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   GetDocument,
+  ifDocumentsExist,
   insert,
   insertDocument,
   insertUser,
@@ -1226,6 +1227,21 @@ const googleSlidesVespa = async (
   return presentationsList
 }
 
+const filterUnchanged = (
+  existenceMap: Record<string, { exists: boolean; updatedAt: number | null }>,
+  files: drive_v3.Schema$File[],
+) =>
+  files.filter((file) => {
+    const fileId = file.id!
+    const driveModifiedTime = new Date(file.modifiedTime!).getTime()
+    const vespaInfo = existenceMap[fileId]
+
+    if (vespaInfo.exists && vespaInfo.updatedAt !== null) {
+      return driveModifiedTime > vespaInfo.updatedAt // Process if modified
+    }
+    return true // Process if not in Vespa or no timestamp
+  })
+
 const insertFilesForUser = async (
   googleClient: GoogleClient,
   userEmail: string,
@@ -1235,11 +1251,23 @@ const insertFilesForUser = async (
   try {
     let processedFiles = 0
     const iterator = listFiles(googleClient)
-    for await (const pageFiles of iterator) {
+    for await (let pageFiles of iterator) {
+      // Check existence and timestamps for all files in this page right away
+      const fileIds = pageFiles.map((file) => file.id!)
+      const existenceMap = await ifDocumentsExist(fileIds)
+      let initialCount = pageFiles.length
+      pageFiles = filterUnchanged(existenceMap, pageFiles)
+
+      const skippedFilesCount = initialCount - pageFiles.length
+      if (skippedFilesCount > 0) {
+        processedFiles += skippedFilesCount
+        tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
+        Logger.info(`Skipped ${skippedFilesCount} unchanged Drive files`)
+      }
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
       )
-      const googlePDFsMetadata = pageFiles.filter(
+      let googlePDFsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.PDF,
       )
       const googleSheetsMetadata = pageFiles.filter(
@@ -1255,6 +1283,7 @@ const insertFilesForUser = async (
           v.mimeType !== DriveMime.Sheets &&
           v.mimeType !== DriveMime.Slides,
       )
+
       const pdfs = (
         await googlePDFsVespa(
           googleClient,
@@ -1314,7 +1343,7 @@ const insertFilesForUser = async (
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
 
-      Logger.info(`finished ${pageFiles.length} files`)
+      Logger.info(`finished ${initialCount} files`)
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)

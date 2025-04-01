@@ -15,7 +15,7 @@ import {
   type Mail,
   type MailAttachment,
 } from "@/search/types"
-import { insert } from "@/search/vespa"
+import { ifDocumentsExist, insert } from "@/search/vespa"
 import {
   MessageTypes,
   Subsystem,
@@ -141,8 +141,16 @@ export const handleGmailIngestion = async (
       let insertedMessagesInBatch = 0 // Counter for successful messages
       let insertedPdfAttachmentsInBatch = 0 // Counter for successful PDFs in this batch
 
+      const messageIds = messageBatch.map((msg) => msg.id!)
+      const existenceMap = await ifDocumentsExist(messageIds)
+
       let batchRequests = messageBatch.map((message) =>
         limit(async () => {
+          const messageId = message.id!
+          if (existenceMap[messageId]) {
+            insertedMessagesInBatch++ // Count as "processed" since it exists
+            return
+          }
           let msgResp
           try {
             msgResp = await retryWithBackoff(
