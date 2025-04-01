@@ -55,12 +55,13 @@ import {
 import { UserRole } from "./shared/types.js"
 import { wsConnections } from "./integrations/google/ws.js"
 import { serve } from "@hono/node-server"
+import { WebSocketServer } from "ws"
+import { parse } from "url"
 
 import dotenv from "dotenv"
 dotenv.config()
 // Import serveStatic and upgradeWebSocket helpers
 import { serveStatic } from "hono/serve-static"
-// import { upgradeWebSocket } from "hono/websocket"
 
 const clientId = process.env.GOOGLE_CLIENT_ID
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET
@@ -95,31 +96,6 @@ const AuthRedirect = async (c, next) => {
 
 const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 app.use("*", honoMiddlewareLogger)
-
-// WebSocket route using Hono's upgradeWebSocket helper
-// export const WsApp = app.get(
-//   "/ws",
-//   upgradeWebSocket((c) => {
-//     let connectorId
-//     return {
-//       onOpen(event, ws) {
-//         connectorId = c.req.query("id")
-//         Logger.info(`Websocket connection with id ${connectorId}`)
-//         wsConnections.set(connectorId, ws)
-//       },
-//       onMessage(event, ws) {
-//         Logger.info(`Message from client: ${event.data}`)
-//         ws.send(JSON.stringify({ message: "Hello from server!" }))
-//       },
-//       onClose(event, ws) {
-//         Logger.info("Connection closed")
-//         if (connectorId) {
-//           wsConnections.delete(connectorId)
-//         }
-//       },
-//     }
-//   }),
-// )
 
 export const AppRoutes = app
   .get("/", (c) => c.text("Hello Node.js!"))
@@ -316,7 +292,46 @@ init().catch((error) => {
 
 // Start the server using Node.js
 
-serve({ fetch: app.fetch, port: config.port })
+const server = serve({ fetch: app.fetch, port: config.port })
+
+const wss = new WebSocketServer({ noServer: true })
+
+server.on("upgrade", (req, socket, head) => {
+  const { pathname, query } = parse(req.url, true)
+
+  if (pathname === "/ws") {
+    // If the request is for the /ws endpoint, upgrade the connection.
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req)
+    })
+  } else {
+    // Otherwise, destroy the socket.
+    socket.destroy()
+  }
+})
+
+wss.on("connection", (ws, req) => {
+  const { query } = parse(req.url, true)
+  const connectorId = query.id
+
+  Logger.info(`WebSocket connection with id ${connectorId}`)
+
+  if (connectorId) {
+    wsConnections.set(connectorId, ws)
+  }
+
+  ws.on("message", (message) => {
+    Logger.info(`Message from client: ${message}`)
+    ws.send(JSON.stringify({ message: "Hello from server!" }))
+  })
+
+  ws.on("close", () => {
+    Logger.info("Connection closed")
+    if (connectorId) {
+      wsConnections.delete(connectorId)
+    }
+  })
+})
 
 // process.on("uncaughtException", (error) => {
 //   Logger.error(error, "uncaughtException")
