@@ -375,7 +375,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // we are going to do 4 months answer
   // if not found we go back to iterative page search
   const message = input
-  const searchTerms = removeStopwords(input)
+  let searchTerms = removeStopwords(input)
+  // Ensure we have search terms even after stopword removal
+  if (!searchTerms.trim()) {
+     searchTerms = message
+  }
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
     await searchVespa(searchTerms, email, null, null, pageSize, 0, alpha, {
@@ -726,7 +730,11 @@ async function* generatePointQueryTimeExpansion(
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   const message = input
-  const searchTerms = removeStopwords(input)
+  let searchTerms = removeStopwords(input)
+  // Ensure we have search terms even after stopword removal
+  if (!searchTerms.trim()) {
+     searchTerms = message
+  }
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
   const direction = classification.direction as string
