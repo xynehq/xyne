@@ -106,9 +106,13 @@ import {
   setOAuthUser,
   setTotalUsers,
   StatType,
+  updateTotal,
   updateUserStats,
 } from "./tracking"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
+import config from "@/config"
+
+// const { serviceAccountWhitelistedEmails } = config
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -116,7 +120,44 @@ const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
-const listUsers = async (
+export const listUsersByEmails = async (
+  admin: admin_directory_v1.Admin,
+  emails: string[],
+): Promise<admin_directory_v1.Schema$User[]> => {
+  const users: admin_directory_v1.Schema$User[] = []
+
+  try {
+    for (const email of emails) {
+      try {
+        const res = await retryWithBackoff(
+          () =>
+            admin.users.get({
+              userKey: email,
+            }),
+          `Fetching user ${email}`,
+          Apps.GoogleDrive,
+        )
+        users.push(res.data)
+      } catch (error) {
+        Logger.warn(`User ${email} not found: ${error}`)
+        // Skip if user doesn’t exist
+      }
+    }
+    return users
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching users: ${error} ${(error as Error).stack}`,
+    )
+    throw new UserListingError({
+      cause: error as Error,
+      integration: Apps.GoogleWorkspace,
+      entity: "user",
+    })
+  }
+}
+
+export const listUsers = async (
   admin: admin_directory_v1.Admin,
   domain: string,
 ): Promise<admin_directory_v1.Schema$User[]> => {
@@ -560,12 +601,9 @@ const insertCalendarEvents = async (
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
-export const handleGoogleOAuthIngestion = async (
-  boss: PgBoss,
-  job: PgBoss.Job<any>,
-) => {
-  Logger.info("handleGoogleOauthIngestion", job.data)
-  const data: SaaSOAuthJob = job.data as SaaSOAuthJob
+export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
+  // Logger.info("handleGoogleOauthIngestion", job.data)
+  // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
   try {
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
@@ -573,7 +611,7 @@ export const handleGoogleOAuthIngestion = async (
       db,
       data.connectorId,
     )
-    const userEmail = job.data.email
+    const userEmail = data.email
     const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
 
     const providers: SelectOAuthProvider[] =
@@ -683,7 +721,7 @@ export const handleGoogleOAuthIngestion = async (
         type: SyncCron.ChangeToken,
         status: SyncJobStatus.NotStarted,
       })
-      await boss.complete(SaaSQueue, job.id)
+      // await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
       wsConnections.get(connector.externalId)?.close(1000, "Job finished")
     })
@@ -693,15 +731,15 @@ export const handleGoogleOAuthIngestion = async (
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
       error,
     )
-    await db.transaction(async (trx) => {
-      trx
-        .update(connectors)
-        .set({
-          status: ConnectorStatus.Failed,
-        })
-        .where(eq(connectors.id, data.connectorId))
-      await boss.fail(job.name, job.id)
-    })
+    // await db.transaction(async (trx) => {
+    await db
+      .update(connectors)
+      .set({
+        status: ConnectorStatus.Failed,
+      })
+      .where(eq(connectors.id, data.connectorId))
+    // await boss.fail(job.name, job.id)
+    // })
     throw new CouldNotFinishJobSuccessfully({
       message: "Could not finish Oauth ingestion",
       integration: Apps.GoogleDrive,
@@ -723,7 +761,6 @@ type IngestionMetadata = {
 }
 
 import { z } from "zod"
-import config from "@/config"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -794,12 +831,8 @@ const handleGmailIngestionForServiceAccount = async (
 
 // we make 2 sync jobs
 // one for drive and one for google workspace
-export const handleGoogleServiceAccountIngestion = async (
-  boss: PgBoss,
-  job: PgBoss.Job<any>,
-) => {
-  Logger.info("handleGoogleServiceAccountIngestion", job.data)
-  const data: SaaSJob = job.data as SaaSJob
+export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
+  Logger.info("handleGoogleServiceAccountIngestion", data)
   try {
     const connector = await getConnector(db, data.connectorId)
     const serviceAccountKey: GoogleServiceAccount = JSON.parse(
@@ -813,8 +846,17 @@ export const handleGoogleServiceAccountIngestion = async (
     })
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
-    const users = await listUsers(admin, workspace.domain)
+
+    let users = []
+    const whiteListedEmails = data.whiteListedEmails || []
+    if (whiteListedEmails.length) {
+      users = await listUsersByEmails(admin, whiteListedEmails)
+    } else {
+      users = await listUsers(admin, workspace.domain)
+    }
+
     setTotalUsers(users.length)
+    Logger.info(`Ingesting for ${users.length} users`)
     const ingestionMetadata: IngestionMetadata[] = []
 
     // Use p-limit to handle concurrency
@@ -834,8 +876,15 @@ export const handleGoogleServiceAccountIngestion = async (
     const promises = users.map((user) =>
       limit(async () => {
         const userEmail = user.primaryEmail || user.emails[0]
+        Logger.info(`started for ${userEmail}`)
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
+
+        const [totalFiles, { messagesExcludingPromotions }] = await Promise.all(
+          [countDriveFiles(jwtClient), getGmailCounts(jwtClient)],
+        )
+
+        updateTotal(userEmail, messagesExcludingPromotions, totalFiles)
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
           await listAllContacts(jwtClient)
@@ -957,7 +1006,7 @@ export const handleGoogleServiceAccountIngestion = async (
         })
         .where(eq(connectors.id, connector.id))
       Logger.info("status updated")
-      await boss.complete(SaaSQueue, job.id)
+      // await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
     })
   } catch (error) {
@@ -973,7 +1022,7 @@ export const handleGoogleServiceAccountIngestion = async (
           status: ConnectorStatus.Failed,
         })
         .where(eq(connectors.id, data.connectorId))
-      await boss.fail(job.name, job.id)
+      // await boss.fail(job.name, job.id)
     })
     throw new CouldNotFinishJobSuccessfully({
       message: "Could not finish Service Account ingestion",
@@ -987,7 +1036,7 @@ export const handleGoogleServiceAccountIngestion = async (
 export const deleteDocument = async (filePath: string) => {
   try {
     await unlink(filePath)
-    Logger.info(`File at ${filePath} deleted successfully`)
+    Logger.debug(`File at ${filePath} deleted successfully`)
   } catch (err) {
     Logger.error(
       err,
@@ -1643,7 +1692,9 @@ export const googlePDFsVespa = async (
       const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
       // Ignore the PDF files larger than Max PDF Size
       if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
-        Logger.warn(`Ignoring ${pdf.name} as its more than 20 MB`)
+        Logger.warn(
+          `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
+        )
         return null
       }
       const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
@@ -2126,4 +2177,84 @@ export const driveFilesToDoc = async (
     }
   }
   return results
+}
+
+export async function getGmailCounts(client: GoogleClient): Promise<{
+  messagesTotal: number
+  messagesExcludingPromotions: number
+}> {
+  const gmail = google.gmail({ version: "v1", auth: client })
+
+  // Get total messages from profile
+  const profile = await retryWithBackoff(
+    () => gmail.users.getProfile({ userId: "me", fields: "messagesTotal" }),
+    "Fetching Gmail profile for total count",
+    Apps.Gmail,
+    0,
+    client,
+  )
+  const messagesTotal = profile.data.messagesTotal ?? 0
+
+  // Get Promotions category count
+  let promotionMessages = 0
+  try {
+    const promoLabel = await retryWithBackoff(
+      () =>
+        gmail.users.labels.get({
+          userId: "me",
+          id: "CATEGORY_PROMOTIONS",
+          fields: "messagesTotal",
+        }),
+      "Fetching Promotions label count",
+      Apps.Gmail,
+      0,
+      client,
+    )
+    promotionMessages = promoLabel.data.messagesTotal ?? 0
+  } catch (error: any) {
+    if (error.code === 404) {
+      Logger.warn("Promotions label not found, assuming 0 promotion messages")
+    } else {
+      Logger.error(error, `Error fetching Promotions count: ${error.message}`)
+    }
+    promotionMessages = 0 // Default to 0 on error
+  }
+
+  const messagesExcludingPromotions = Math.max(
+    0,
+    messagesTotal - promotionMessages,
+  )
+  Logger.info(
+    `Gmail: Total=${messagesTotal}, Promotions=${promotionMessages}, Excl. Promo=${messagesExcludingPromotions}`,
+  )
+  return { messagesTotal, messagesExcludingPromotions }
+}
+
+// Count Drive Files
+export async function countDriveFiles(client: GoogleClient): Promise<number> {
+  const drive = google.drive({ version: "v3", auth: client })
+  let fileCount = 0
+  let nextPageToken: string | undefined
+
+  do {
+    const res: GaxiosResponse<drive_v3.Schema$FileList> =
+      await retryWithBackoff(
+        () =>
+          drive.files.list({
+            q: "trashed = false",
+            pageSize: 1000,
+            fields: "nextPageToken, files(id)",
+            pageToken: nextPageToken,
+          }),
+        `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
+        Apps.GoogleDrive,
+        0,
+        client,
+      )
+    fileCount += res.data.files?.length || 0
+    nextPageToken = res.data.nextPageToken as string | undefined
+  } while (nextPageToken)
+
+  Logger.info(`Counted ${fileCount} Drive files`)
+  return fileCount
 }

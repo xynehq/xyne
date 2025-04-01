@@ -29,7 +29,7 @@ export async function saveGmailAttachment(
     // @ts-ignore
     await fs.writeFile(fileName, buffer)
 
-    Logger.info(`Successfully saved gmail attachment at ${fileName}`)
+    Logger.debug(`Successfully saved gmail attachment at ${fileName}`)
   } catch (error) {
     Logger.error("Error saving gmail attachment:", error)
     throw error

@@ -120,6 +120,7 @@ export type WorkspaceEntity = DriveEntity
 export const scoredChunk = z.object({
   chunk: z.string(),
   score: z.number(),
+  index: z.number(),
 })
 export type ScoredChunk = z.infer<typeof scoredChunk>
 
@@ -208,6 +209,7 @@ export const VespaMatchFeatureSchema = z.union([
 export const VespaFileSearchSchema = VespaFileSchema.extend({
   sddocname: z.literal(fileSchema),
   matchfeatures: FileMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
 })
   .merge(defaultVespaFieldsSchema)
   .extend({
@@ -237,6 +239,7 @@ export const VespaUserSchema = z
     suspended: z.boolean().optional(),
     archived: z.boolean().optional(),
     urls: z.array(z.string()).optional(),
+    rankfeatures: z.any().optional(),
     orgName: z.string().optional(),
     orgJobTitle: z.string().optional(),
     orgDepartment: z.string().optional(),
@@ -342,6 +345,7 @@ export const VespaEventSchema = z.object({
 export const VespaMailSearchSchema = VespaMailSchema.extend({
   sddocname: z.literal("mail"),
   matchfeatures: MailMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
 })
   .merge(defaultVespaFieldsSchema)
   .extend({
@@ -353,6 +357,7 @@ export const VespaMailAttachmentSearchSchema = VespaMailAttachmentSchema.extend(
   {
     sddocname: z.literal("mail_attachment"),
     matchfeatures: MailAttachmentMatchFeaturesSchema,
+    rankfeatures: z.any().optional(),
   },
 )
   .merge(defaultVespaFieldsSchema)
@@ -362,6 +367,8 @@ export const VespaMailAttachmentSearchSchema = VespaMailAttachmentSchema.extend(
 
 export const VespaEventSearchSchema = VespaEventSchema.extend({
   sddocname: z.literal("event"),
+  // Assuming events can have rankfeatures
+  rankfeatures: z.any().optional(),
 }).merge(defaultVespaFieldsSchema)
 
 export const VespaUserQueryHistorySchema = z.object({
@@ -481,6 +488,7 @@ const VespaRootBaseSchema = z.object({
     }),
     errors: z.array(VespaErrorSchema).optional(),
   }),
+  trace: z.any().optional(), // Add optional trace field to the root
 })
 
 const VespaSearchResultSchema = z.union([
@@ -656,6 +664,8 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
     type: z.literal("mail"),
     mimeType: z.string(),
     chunks_summary: z.array(scoredChunk).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
   })
 
 export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
@@ -673,4 +683,6 @@ export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
   .extend({
     type: z.literal("mail_attachment"),
     chunks_summary: z.array(scoredChunk).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
   })
