@@ -7,6 +7,8 @@ import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
 import { Apps } from "@/search/types"
 import type { OAuth2Client } from "google-auth-library"
+import dotenv from "dotenv"
+dotenv.config()
 
 const Logger = getLogger(Subsystem.Utils)
 

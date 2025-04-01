@@ -19,7 +19,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
     "dev": "bun run --watch server.ts",
-    "build": "tsc && tsc-alias -p tsconfig.json",
+    "build": "rm -rf distFinal && tsc && tsc-alias -p tsconfig.json && bunx tsc-esm-fix --target distFinal",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../"

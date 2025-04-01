@@ -111,12 +111,21 @@ import {
 } from "./tracking"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
+import { Worker as NodeWorker } from "worker_threads"
+import dotenv from "dotenv"
+dotenv.config()
 
 // const { serviceAccountWhitelistedEmails } = config
-const htmlToText = require("html-to-text")
+// @ts-ignore
+import * as htmlToText from "html-to-text"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
-const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
+let gmailWorker
+if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+  gmailWorker = new NodeWorker(new URL("./gmail-worker.js", import.meta.url))
+} else {
+  gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
+}
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
@@ -778,6 +787,7 @@ const messageTypes = z.discriminatedUnion("type", [stats, historyId])
 
 type ResponseType = z.infer<typeof messageTypes>
 
+// @ts-ignore
 gmailWorker.onerror = (error: ErrorEvent) => {
   Logger.error(error, `Error in main thread: worker: ${JSON.stringify(error)}`)
 }
@@ -788,6 +798,7 @@ const pendingRequests = new Map<
 >()
 
 // Set up a centralized `onmessage` handler
+// @ts-ignore
 gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
   const { type, userEmail } = message.data
 
@@ -1630,8 +1641,14 @@ export const downloadPDF = async (
   client: GoogleClient,
 ): Promise<void> => {
   const filePath = path.join(downloadDir, fileName)
-  const file = Bun.file(filePath)
-  const writer = file.writer()
+  let writer;
+  if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+    // Node.js environment
+    writer = fs.createWriteStream(filePath)
+  } else {
+    const file = Bun.file(filePath)
+    writer = file.writer()
+  }
   const res = await retryWithBackoff(
     () =>
       drive.files.get(
