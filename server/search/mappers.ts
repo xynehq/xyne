@@ -113,7 +113,6 @@ export const VespaSearchResponseToSearchResult = (
             }
             return ChatMessageResponseSchema.parse(child.fields)
           } else {
-            console.log(JSON.stringify(child.fields))
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname}`,
             )
@@ -177,7 +176,6 @@ export const VespaAutocompleteResponseToResult = (
         ) {
           ;(child.fields as any).type = chatUserSchema
           ;(child.fields as any).relevance = child.relevance
-          console.log(child, JSON.stringify(child.fields))
           return AutocompleteChatUserSchema.parse(child.fields)
         } else {
           throw new Error(

@@ -252,7 +252,6 @@ app.get(
     redirect_uri: redirectURI,
   }),
   async (c: Context) => {
-    console.log("here")
     const token = c.get("token")
     const grantedScopes = c.get("granted-scopes")
     const user = c.get("user-google")

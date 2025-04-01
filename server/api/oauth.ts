@@ -67,7 +67,6 @@ export const OAuthCallback = async (c: Context) => {
     }
     const provider = await getOAuthProvider(db, userRes[0].id, app)
     const { clientId, clientSecret } = provider
-    console.log("provider", provider)
     if (app === Apps.Slack) {
       const response = await fetch("https://slack.com/api/oauth.v2.access", {
         method: "POST",

@@ -527,7 +527,6 @@ export const Slack = ({ user, workspace }: IntegrationProps) => {
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
-      console.log(data)
       const connector = data.find(
         (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
       )

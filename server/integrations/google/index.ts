@@ -1271,10 +1271,10 @@ const insertFilesForUser = async (
         await insertDocument(doc)
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
       }
-      const [documents, slides, sheets]: [
+      const [documents, slides, sheetsObj]: [
         VespaFileWithDrivePermission[],
         VespaFileWithDrivePermission[],
-        VespaFileWithDrivePermission[],
+        { sheets: VespaFileWithDrivePermission[]; count: number },
       ] = await Promise.all([
         googleDocsVespa(googleClient, googleDocsMetadata, connector.externalId),
         googleSlidesVespa(
@@ -1298,17 +1298,21 @@ const insertFilesForUser = async (
         ...driveFiles,
         ...documents,
         ...slides,
-        ...sheets,
+        ...sheetsObj.sheets,
       ].map((v) => {
         v.permissions = toPermissionsList(v.permissions, userEmail)
         return v
       })
 
       for (const doc of allFiles) {
-        processedFiles += 1
         await insertDocument(doc)
-        tracker.updateUserStats(userEmail, StatType.Drive, 1)
+        // do not update for Sheet as we will add the actual count later
+        if (doc.mimeType !== DriveMime.Sheets) {
+          processedFiles += 1
+          tracker.updateUserStats(userEmail, StatType.Drive, 1)
+        }
       }
+      tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
 
       Logger.info(`finished ${pageFiles.length} files`)
     }
@@ -1601,12 +1605,14 @@ export const getSheetsListFromOneSpreadsheet = async (
   }
 }
 
+// we send count so we can know the exact count of the actual
+// files that are of type sheet
 const googleSheetsVespa = async (
   client: GoogleClient,
   spreadsheetsMetadata: drive_v3.Schema$File[],
   connectorId: string,
   userEmail: string,
-): Promise<VespaFileWithDrivePermission[]> => {
+): Promise<{ sheets: VespaFileWithDrivePermission[]; count: number }> => {
   // sendWebsocketMessage(
   //   `Scanning ${spreadsheetsMetadata.length} Google Sheets`,
   //   connectorId,
@@ -1648,7 +1654,7 @@ const googleSheetsVespa = async (
   //   await insertDocument(doc)
   //   updateUserStats(userEmail, StatType.Drive, 1)
   // }
-  return sheetsList
+  return { sheets: sheetsList, count }
 }
 
 export const downloadDir = path.resolve(__dirname, "../../downloads")

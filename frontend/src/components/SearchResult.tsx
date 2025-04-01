@@ -141,7 +141,6 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "chat_message") {
-    console.log(result)
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">

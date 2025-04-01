@@ -343,7 +343,7 @@ export const UpdateConnectorStatus = async (c: Context) => {
   const {
     connectorId,
     status,
-  // @ts-ignore
+    // @ts-ignore
   }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
   const connector = await getConnectorByExternalId(connectorId, user.id)
   if (!connector) {
