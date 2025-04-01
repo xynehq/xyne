@@ -703,8 +703,9 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "What’s your purpose?"
        - "How do you process queries?"
        - "Are you using RAG right now?"
+       - "Do you know RAG?"
        
-       If the query is conversational or a meta question about you, respond naturally and appropriately. 
+       If the query is conversational or a meta question about you, respond naturally and appropriately, do not attempt RAG for these. 
        For meta questions always mention your model name and number and provider.
 
     3. Output JSON in the following structure:
