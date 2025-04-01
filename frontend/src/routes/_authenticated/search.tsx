@@ -282,7 +282,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
       })
       if (response.ok) {
         const data: SearchResponse = await response.json()
-        console.log(data)
 
         if (newOffset > 0) {
           setResults((prevResults) => [...prevResults, ...data.results])
@@ -466,7 +465,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
               </div>
             )}
             {/* Top-level Trace Info Display */}
-            {console.log(traceData)}
             {showDebugInfo && traceData && (
               <details className="mt-4 mb-4 text-xs">
                 <summary className="text-gray-500 cursor-pointer">

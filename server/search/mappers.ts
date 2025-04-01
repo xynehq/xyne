@@ -108,7 +108,7 @@ export const VespaSearchResponseToSearchResult = (
   const { root, trace } = resp
   const children = root.children || []
   // Access the nested children array within the trace object
-  const traceInfo = trace.children
+  const traceInfo = trace?.children || []
 
   // Filter out any potential trace items from children if they exist
   const searchHits = children.filter(
