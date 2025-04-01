@@ -1,5 +1,6 @@
 import type { PublicUserWorkspace } from "@/db/schema"
 import {
+  chatMessageSchema,
   eventSchema,
   fileSchema,
   mailAttachmentSchema,
@@ -12,6 +13,7 @@ import {
   type VespaMailSearch,
   type VespaSearchResults,
   type VespaUser,
+  type VespaChatMessageSearch,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
@@ -87,6 +89,19 @@ ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
 vespa relevance score: ${relevance}`
+}
+
+const constructSlackMessageContext = (
+  fields: VespaChatMessageSearch,
+  relevance: number,
+): string => {
+  return `App: ${fields.app}
+    Entity: ${fields.entity}
+    User: ${fields.name}
+    Username: ${fields.username}
+    Message: ${fields.text}
+    vespa relevance score: ${relevance}
+    `
 }
 
 const constructMailAttachmentContext = (
@@ -347,6 +362,12 @@ export const answerContextMap = (
       searchResult.fields,
       searchResult.relevance,
       maxSummaryChunks,
+    )
+  } else if (searchResult.fields.sddocname === chatMessageSchema) {
+    // later can be based on app
+    return constructSlackMessageContext(
+      searchResult.fields,
+      searchResult.relevance,
     )
   } else {
     throw new Error(

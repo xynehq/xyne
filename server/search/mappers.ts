@@ -27,8 +27,14 @@ import {
   type VespaAutocompleteMailAttachment,
   type ScoredChunk,
   VespaMatchFeatureSchema,
+  type VespaAutocompleteChatUser,
+  chatUserSchema,
+  type VespaChatMessageSearch,
+  chatMessageSchema,
+  ChatMessageResponseSchema,
 } from "@/search/types"
 import {
+  AutocompleteChatUserSchema,
   AutocompleteEventSchema,
   AutocompleteFileSchema,
   AutocompleteMailAttachmentSchema,
@@ -202,7 +208,21 @@ export const VespaSearchResponseToSearchResult = (
               maxSearchChunks,
             )
             return MailAttachmentResponseSchema.parse(fields)
-          } else {
+          } else if (
+            (child.fields as VespaChatMessageSearch).sddocname ===
+            chatMessageSchema
+          ) {
+            ;(child.fields as any).type = chatMessageSchema
+            ;(child.fields as VespaChatMessageSearch).relevance =
+              child.relevance
+            ;(child.fields as VespaChatMessageSearch).attachmentIds = []
+            ;(child.fields as VespaChatMessageSearch).mentions = []
+            if (!(child.fields as VespaChatMessageSearch).teamId) {
+              ;(child.fields as VespaChatMessageSearch).teamId = ""
+            }
+            return ChatMessageResponseSchema.parse(child.fields)
+          }
+          else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
             )
@@ -279,7 +299,15 @@ export const VespaAutocompleteResponseToResult = (
           fields.type = mailAttachmentSchema
           fields.relevance = child.relevance
           return AutocompleteMailAttachmentSchema.parse(fields)
-        } else {
+        } else if (
+          (child.fields as VespaAutocompleteChatUser).sddocname ===
+          chatUserSchema
+        ) {
+          ;(child.fields as any).type = chatUserSchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteChatUserSchema.parse(child.fields)
+        }
+         else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,
           )

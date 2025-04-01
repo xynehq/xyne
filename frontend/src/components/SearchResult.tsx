@@ -239,6 +239,39 @@ export const SearchResult = ({
         )}
       </div>
     )
+  } else if (result.type === "chat_message") {
+    content = (
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start space-x-2">
+          <a
+            href={`https://${result.domain}.slack.com/archives/${result.channelId}/p${result.createdAt}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-blue-800 space-x-2"
+          >
+            {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
+          </a>
+        </div>
+        <div className="flex flex-row items-center mt-1 ml-[44px]">
+          <img
+            referrerPolicy="no-referrer"
+            className="mr-2 w-[16px] h-[16px] rounded-full"
+            src={result.image}
+          ></img>
+          <a
+            target="_blank"
+            className="text-[#2067F5]"
+            rel="noopener noreferrer"
+            href={`https://${result.domain}.slack.com/team/${result.userId}`}
+          >
+            <p className="text-left text-sm pt-1 text-[#464B53]">
+              {result.name}
+            </p>
+          </a>
+        </div>
+        {result.text && <HighlightedText chunk_summary={result.text} />}
+      </div>
+    )
   }
   return content
 }

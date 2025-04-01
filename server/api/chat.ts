@@ -57,12 +57,14 @@ import type { chatSchema } from "@/api/search"
 import { searchVespa } from "@/search/vespa"
 import {
   Apps,
+  chatMessageSchema,
   entitySchema,
   eventSchema,
   fileSchema,
   mailAttachmentSchema,
   mailSchema,
   userSchema,
+  type VespaChatMessage,
   type VespaEvent,
   type VespaEventSearch,
   type VespaFile,
@@ -289,6 +291,13 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
       url: `https://mail.google.com/mail/u/0/#inbox/${(fields as VespaMailAttachment).mailId}?projector=1&messagePartId=0.${(fields as VespaMailAttachment).partId}&disp=safe&zw`,
       app: (fields as VespaMailAttachment).app,
       entity: (fields as VespaMailAttachment).entity,
+    }
+  } else if (result.fields.sddocname === chatMessageSchema) {
+    return {
+      title: (fields as VespaChatMessage).text,
+      url: `https://google.com`,
+      app: (fields as VespaChatMessage).app,
+      entity: (fields as VespaChatMessage).entity,
     }
   } else {
     throw new Error("Invalid search result type for citation")

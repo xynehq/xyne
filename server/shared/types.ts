@@ -13,6 +13,8 @@ import {
   MailAttachmentResponseSchema,
   mailAttachmentSchema,
   scoredChunk,
+  chatUserSchema,
+  ChatMessageResponseSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -20,6 +22,7 @@ export {
   NotionEntity,
   CalendarEntity,
   MailAttachmentEntity,
+  SlackEntity,
   Apps,
   isMailAttachment,
 } from "search/types"
@@ -57,6 +60,7 @@ export enum ConnectorStatus {
   Connected = "connected",
   // Pending = 'pending',
   Connecting = "connecting",
+  Paused = "paused",
   Failed = "failed",
   // for oauth we will default to this
   NotConnected = "not-connected",
@@ -145,6 +149,19 @@ export const AutocompleteEventSchema = z
   })
   .strip()
 
+export const AutocompleteChatUserSchema = z
+  .object({
+    type: z.literal(chatUserSchema),
+    relevance: z.number(),
+    // optional due to contacts
+    name: z.string().optional(),
+    email: z.string().optional(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    image: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
@@ -152,6 +169,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteEventSchema,
   AutocompleteUserQueryHSchema,
   AutocompleteMailAttachmentSchema,
+  AutocompleteChatUserSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -166,6 +184,7 @@ export type AutocompleteResults = z.infer<typeof AutocompleteResultsSchema>
 export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
 export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
+export type ChatUserAutocomplete = z.infer<typeof AutocompleteChatUserSchema>
 export type MailAttachmentAutocomplete = z.infer<
   typeof AutocompleteMailAttachmentSchema
 >
@@ -241,6 +260,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   MailResponseSchema,
   EventResponseSchema,
   MailAttachmentResponseSchema,
+  ChatMessageResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
