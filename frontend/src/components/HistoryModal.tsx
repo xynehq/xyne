@@ -15,7 +15,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useRef, useState } from "react"
-import { LoaderContent } from "@/routes/_authenticated/admin/integrations"
+import { LoaderContent } from "@/lib/common"
 
 export const pageSize = 21
 

@@ -9,6 +9,8 @@ import {
   userQuerySchema,
   userSchema,
   mailAttachmentSchema,
+  chatUserSchema,
+  chatMessageSchema,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -23,6 +25,9 @@ import type {
   VespaUserQueryHistory,
   VespaSchema,
   VespaMailAttachment,
+  VespaChatContainer,
+  Inserts,
+  VespaSearchResults,
 } from "@/search/types"
 import { getErrorMessage, removeStopwords } from "@/utils"
 import config from "@/config"
@@ -42,7 +47,7 @@ const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
-const NAMESPACE = "namespace" // Replace with your actual namespace
+export const NAMESPACE = "namespace" // Replace with your actual namespace
 const CLUSTER = "my_content"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
@@ -81,16 +86,7 @@ export const insertDocument = async (document: VespaFile) => {
 }
 
 // generic insert method
-export const insert = async (
-  document:
-    | VespaUser
-    | VespaFile
-    | VespaMail
-    | VespaEvent
-    | VespaUserQueryHistory
-    | VespaMailAttachment,
-  schema: VespaSchema,
-) => {
+export const insert = async (document: Inserts, schema: VespaSchema) => {
   try {
     await vespa.insert(document, { namespace: NAMESPACE, schema })
   } catch (error) {
@@ -143,6 +139,8 @@ const AllSources = [
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
+  chatUserSchema,
+  chatMessageSchema,
 ].join(", ")
 
 export const autocomplete = async (
@@ -182,6 +180,10 @@ export const autocomplete = async (
         or
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
+        or
+        (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+        and permissions contains @email
+        )
         `
 
   const searchPayload = {
@@ -292,6 +294,16 @@ export const HybridDefaultProfile = (
             and permissions contains @email ${mailLabelQuery}
             ${appOrEntityFilter}
           )
+            or
+            (
+              (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+            )
+              ${appOrEntityFilter}
+              and permissions contains @email
+            )
           or
           (
             ({targetHits:${hits}}userInput(@query))
@@ -358,8 +370,15 @@ const HybridDefaultProfileAppEntityCounts = (
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
-            or
-            (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
+            or (
+              (
+                ({targetHits:${hits}}userInput(@query))
+              or
+                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+              )
+              and permissions contains @email
+            )
+            or (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
             or
             (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestampRange ? `and ${userTimestamp} ` : ""})
             limit 0
@@ -423,6 +442,7 @@ export const searchVespa = async (
     excludedIds,
     notInMailLabels,
   )
+
   const hybridDefaultPayload = {
     yql,
     q: query, // Original user input query
@@ -484,6 +504,21 @@ export const GetDocument = async (
       sources: schema,
       message: errMessage,
     })
+  }
+}
+
+export const GetDocumentWithField = async (
+  fieldName: string,
+  schema: VespaSchema,
+  limit: number = 100,
+  offset: number = 0,
+): Promise<VespaSearchResponse> => {
+  try {
+    const options = { namespace: NAMESPACE, schema }
+    return await vespa.getDocumentsWithField(fieldName, options, limit, offset)
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
   }
 }
 

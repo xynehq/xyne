@@ -25,7 +25,7 @@ import { useForm } from "@tanstack/react-form"
 
 import { cn, getErrorMessage } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
-import { Connectors } from "@/types"
+import { Connectors, OAuthIntegrationStatus } from "@/types"
 import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -40,6 +40,8 @@ import {
 } from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
 import OAuthTab from "@/components/OAuthTab"
+import { LoaderContent } from "@/lib/common"
+import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 
 const logger = console
 
@@ -500,24 +502,6 @@ const ServiceAccountTab = ({
   }
 }
 
-export const LoaderContent = () => {
-  return (
-    <div
-      className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}
-    >
-      <div className="items-center justify-center">
-        <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
-      </div>
-    </div>
-  )
-}
-
-export enum OAuthIntegrationStatus {
-  Provider = "Provider", // yet to create provider
-  OAuth = "OAuth", // provider created but OAuth not yet connected
-  OAuthConnecting = "OAuthConnecting",
-  OAuthConnected = "OAuthConnected",
-}
 export interface AdminPageProps {
   user: PublicUser
   workspace: PublicWorkspace
@@ -577,7 +561,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       const connector = data.find(
         (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
       )
-      logger.info(connector)
       if (connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
@@ -685,6 +668,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <IntegrationsSidebar role={user.role} />
       <div className="w-full h-full flex items-center justify-center">
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
@@ -732,7 +716,9 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   )
 }
 
-export const Route = createFileRoute("/_authenticated/admin/integrations")({
+export const Route = createFileRoute(
+  "/_authenticated/admin/integrations/google",
+)({
   beforeLoad: async ({ params, context }) => {
     const userWorkspace = context
     // Normal users shouldn't be allowed to visit /admin/integrations
@@ -740,7 +726,7 @@ export const Route = createFileRoute("/_authenticated/admin/integrations")({
       userWorkspace?.user?.role !== UserRole.SuperAdmin &&
       userWorkspace?.user?.role !== UserRole.Admin
     ) {
-      throw redirect({ to: "/integrations" })
+      throw redirect({ to: "/integrations/google" })
     }
     return params
   },

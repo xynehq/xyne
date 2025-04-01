@@ -1,0 +1,198 @@
+schema chat_message {
+  document chat_message {
+    field docId type string {
+      indexing: attribute | summary
+    }
+
+    field teamId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field channelId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field text type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    field name type string {
+      indexing: index | attribute | summary
+      index: enable-bm25
+    }
+
+    field username type string {
+      indexing: index | attribute | summary
+      index: enable-bm25
+    }
+
+    field image type string {
+      indexing: attribute | summary
+    }
+
+    field userId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field createdAt type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    # field messageType type string {
+    #   indexing: attribute | summary
+    # }
+
+    field threadId type string {
+      indexing: attribute | summary
+    }
+
+    field teamRef type reference<chat_team> {
+      indexing: attribute
+    }
+
+    field chatRef type reference<chat_container> {
+      indexing: attribute
+    }
+
+    # field userRef type reference<chat_user> {
+    #   indexing: attribute
+    # }
+
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field attachmentIds type array<string> {
+      indexing: attribute | summary
+    }
+
+    field permissions type array<string> {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field reactions type int {
+      indexing: attribute | summary
+    }
+
+    field replyCount type int {
+      indexing: attribute | summary
+    }
+
+    field replyUsersCount type int {
+      indexing: attribute | summary
+    }
+
+    field mentions type array<string> {
+      indexing: index | attribute | summary
+      index: enable-bm25
+    }
+
+    field updatedAt type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field metadata type string {
+      indexing: attribute | summary
+    }
+  }
+  import field teamRef.domain as domain {}
+  import field chatRef.isPrivate as isPrivate {}
+
+  field text_embeddings type tensor<bfloat16>(v[384]) {
+    indexing: input text | embed | attribute | index
+    attribute {
+      distance-metric: angular
+    }
+  }
+
+  fieldset default {
+    fields: text, mentions, teamId, channelId, userId, threadId, app, entity, attachmentIds, domain, isPrivate
+  }
+
+  rank-profile default {
+    inputs {
+      query(e) tensor<bfloat16>(v[384])
+      query(alpha) double
+    }
+
+    function vector_score() {
+      expression: closeness(field, text_embeddings)
+    }
+
+    function scale(val) {
+      expression: 2*atan(val/4)/(3.14159)
+    }
+
+    function scaled_bm25_text() {
+      expression: scale(bm25(text))
+    }
+
+    function freshness_score() {
+      expression: exp(-1 * (now() - (attribute(createdAt) / 1000)) / (3600 * 24))
+    }
+
+    first-phase {
+      expression: (bm25(text) + bm25(username)/2 + bm25(name)/2)/3
+    }
+
+    global-phase {
+      expression {
+        (
+          nativeRank(text, username, name) * 5
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      scaled_bm25_text
+      freshness_score
+    }
+  }
+ rank-profile unranked inherits default {
+    # Simple constant expression - returns same score for all documents
+    first-phase {
+      expression: 0
+    }
+    # Skip second phase ranking completely
+    second-phase {
+      expression: 0
+    }
+    # Skip global phase
+    global-phase {
+      expression: 0
+    }
+    # No need to calculate features for unranked results
+    match-features {}
+  }
+
+  document-summary default {
+    summary text {
+      bolding: on
+    }
+
+    summary mentions {}
+    summary attachmentIds {}
+    summary domain {}
+    summary isPrivate {}
+    # summary reactions {}
+  }
+}
+
+  

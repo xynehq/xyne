@@ -32,6 +32,7 @@ let FireworksApiKey = ""
 let GeminiApiKey = ""
 let isReasoning = false
 let fastModelReasoning = false
+let slackHost = process.env.SLACK_HOST
 
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
@@ -98,6 +99,10 @@ if (process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
     .map((v) => v.trim())
 }
 
+if (!slackHost) {
+  slackHost = host
+}
+
 export default {
   // default page size for regular search
   page: 8,
@@ -111,6 +116,8 @@ export default {
   postgresBaseHost,
   port,
   host,
+  // slack oauth does not work on http
+  slackHost,
   AwsAccessKey,
   AwsSecretKey,
   OpenAIKey,
