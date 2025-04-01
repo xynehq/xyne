@@ -577,7 +577,7 @@ class VespaClient {
         {} as Record<string, { exists: boolean; updatedAt: number | null }>,
       )
 
-      return existenceMap // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
+      return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
       Logger.error(error, `Error checking documents existence:  ${errMessage}`)
