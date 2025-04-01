@@ -595,9 +595,11 @@ export interface AppEntityCounts {
   [app: string]: EntityCounts
 }
 
-export const ifDocumentsExist = async (docIds: string[]) => {
+export const ifDocumentsExist = async (
+  docIds: string[],
+): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
   try {
-    return await vespa.isDocumentExist(docIds)
+    return await vespa.ifDocumentsExist(docIds)
   } catch (error) {
     throw error
   }

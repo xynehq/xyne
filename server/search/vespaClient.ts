@@ -529,10 +529,12 @@ class VespaClient {
     }
   }
 
-  async isDocumentExist(docIds: string[]): Promise<Record<string, boolean>> {
+  async ifDocumentsExist(
+    docIds: string[],
+  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
     const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
-    const yqlQuery = `select docId from sources * where docId in (${yqlIds})`
+    const yqlQuery = `select docId, updatedAt from sources * where docId in (${yqlIds})`
 
     const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`
 
@@ -553,18 +555,26 @@ class VespaClient {
 
       const result = await response.json()
 
-      // Extract the document IDs of the found documents
-      const foundIds =
-        // @ts-ignore
-        result.root.children?.map((hit) => hit.fields.docId) || []
+      // Extract found documents with their docId and updatedAt
+      const foundDocs =
+        result.root?.children?.map((hit: any) => ({
+          docId: hit.fields.docId as string,
+          updatedAt: hit.fields.updatedAt as number | undefined, // undefined if not present
+        })) || []
 
-      // Determine which IDs exist and which do not
+      // Build the result map
       const existenceMap = docIds.reduce(
         (acc, id) => {
-          acc[id] = foundIds.includes(id)
+          const foundDoc = foundDocs.find(
+            (doc: { docId: string }) => doc.docId === id,
+          )
+          acc[id] = {
+            exists: !!foundDoc,
+            updatedAt: foundDoc?.updatedAt ?? null, // null if not found or no updatedAt
+          }
           return acc
         },
-        {} as Record<string, boolean>,
+        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
       )
 
       return existenceMap // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
