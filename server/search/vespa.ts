@@ -912,7 +912,7 @@ export const getItems = async (
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: schema, // Add missing sources property
-    }) // Close the constructor call parenthesis
-  } // Close the catch block brace
-} // Ensure the function brace is present
+      sources: schema,
+    })
+  }
+}
