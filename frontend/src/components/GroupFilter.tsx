@@ -60,6 +60,7 @@ const GroupFilterItem = ({
 }
 
 export const getName = (app: Apps, entity: Entity): string => {
+  console.log(app, entity)
   if (app === Apps.Gmail) {
     if (isMailAttachment(entity)) {
       return "Attachments"
@@ -95,6 +96,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Event"
   } else if (app === Apps.Slack && entity === SlackEntity.Message) {
     return "Slack Message"
+  } else if (app === Apps.WhatsApp && entity === SlackEntity.Message) {
+    return "WhatsApp Message"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

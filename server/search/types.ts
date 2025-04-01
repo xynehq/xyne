@@ -89,6 +89,13 @@ export enum SlackEntity {
   File = "file",
 }
 
+export enum WhatsAppEntity {
+  Message = "message",
+  Contact = "contact",
+  Conversation = "conversation",
+  Group = "group",
+}
+
 export enum DriveEntity {
   Docs = "docs",
   Sheets = "sheets",
@@ -124,6 +131,7 @@ export const isMailAttachment = (entity: Entity): boolean =>
 
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
+export const WhatsAppEntitySchema = z.nativeEnum(WhatsAppEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
 
@@ -157,6 +165,7 @@ export type Entity =
   | CalendarEntity
   | MailAttachmentEntity
   | SlackEntity
+  | WhatsAppEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -366,13 +375,6 @@ export const VespaMailGetSchema = VespaMailSchema.merge(
 export const VespaMailAttachmentGetSchema = VespaMailAttachmentSchema.merge(
   defaultVespaFieldsSchema,
 )
-
-export enum WhatsAppEntity {
-  Message = "message",
-  Contact = "contact",
-  Conversation = "conversation",
-  Group = "group",
-}
 
 export const VespaChatMessageSchema = z.object({
   docId: z.string(), // client_msg_id from Slack
