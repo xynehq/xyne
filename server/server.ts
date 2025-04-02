@@ -234,6 +234,21 @@ const generateToken = async (
   const jwtToken = await sign(payload, jwtSecret)
   return jwtToken
 }
+
+// This method is just to check of the google credentials are set or not, we want to
+// inform the user to set their Google credentials before they can login
+app.get('/v1/credential/status', async(c: Context) => {
+  if(clientId && clientSecret && redirectURI) {
+    return c.json({
+      message: "EnvSuccess: Google OAuth credentials are configured",
+    }, 200)    
+  }else {
+    return c.json({
+      message: "EnvError: Google OAuth credentials are not configured",
+    }, 500)
+    }
+})
+
 // we won't allow user to reach the login page if they are already logged in
 // or if they have an expired token
 
