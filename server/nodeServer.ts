@@ -54,7 +54,7 @@ import {
   MessageRetryApi,
 } from "./api/chat"
 import { UserRole } from "./shared/types"
-import { wsConnections } from "@/integrations/google/ws"
+import { wsConnections } from "@/integrations/metricStream"
 import { serve } from "@hono/node-server"
 import { WebSocketServer } from "ws"
 import { parse } from "url"

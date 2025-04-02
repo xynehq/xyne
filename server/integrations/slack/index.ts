@@ -17,7 +17,6 @@ import {
 import { insert, NAMESPACE, UpdateDocument } from "@/search/vespa"
 import { Subsystem, SyncCron, type SaaSOAuthJob } from "@/types"
 import {
-  retryPolicies,
   WebClient,
   type ConversationsHistoryResponse,
   type ConversationsListResponse,
@@ -26,6 +25,7 @@ import {
   type TeamInfoResponse,
   type UsersListResponse,
 } from "@slack/web-api"
+import slackPkg from "@slack/web-api"
 import type { Channel } from "@slack/web-api/dist/types/response/ChannelsListResponse"
 import type PgBoss from "pg-boss"
 import { db } from "@/db/client"
@@ -43,6 +43,8 @@ import { insertSyncJob } from "@/db/syncJob"
 import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
+
+const { retryPolicies } = slackPkg
 
 // team and workspace metadata
 // join all the public channels
