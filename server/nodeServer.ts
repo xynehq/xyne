@@ -14,17 +14,23 @@ import {
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
+  addApiKeyConnectorSchema,
   addServiceConnectionSchema,
   answerSchema,
   createOAuthProvider,
+  deleteConnectorSchema,
   oauthStartQuerySchema,
   searchSchema,
+  updateConnectorStatusSchema,
 } from "@/types"
 import {
+  AddApiKeyConnector,
   AddServiceConnection,
   CreateOAuthProvider,
+  DeleteConnector,
   GetConnectors,
   StartOAuth,
+  UpdateConnectorStatus,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -38,8 +44,8 @@ import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
 import { createUser, getUserByEmail } from "@/db/user"
 import { getCookie } from "hono/cookie"
 import config from "@/config"
-import { OAuthCallback } from "./api/oauth"
-import { setCookieByEnv } from "./utils"
+import { OAuthCallback } from "@/api/oauth"
+import { setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
@@ -157,7 +163,22 @@ export const AppRoutes = app
     zValidator("form", createOAuthProvider),
     CreateOAuthProvider,
   )
+  .post(
+    "/apikey/create",
+    zValidator("form", addApiKeyConnectorSchema),
+    AddApiKeyConnector,
+  )
   .get("/connectors/all", GetConnectors)
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .delete(
+    "/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteConnector,
+  )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(

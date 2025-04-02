@@ -25,8 +25,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
-    // "outDir": "./distBE"
-    "outDir": "./distFinal"
+    "outDir": "./distServer"
   },
   "include": ["."],
   "exclude": ["node_modules", "build"]
