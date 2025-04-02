@@ -121,9 +121,21 @@ const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 let gmailWorker
 if (typeof process !== "undefined" && !("Bun" in globalThis)) {
-  gmailWorker = new NodeWorker(new URL("./gmail-worker.js", import.meta.url))
+  gmailWorker = new NodeWorker(new URL("gmail-worker.js", import.meta.url))
+  gmailWorker.on("error", (error) => {
+    Logger.error(
+      error,
+      `[NODE] Error in main thread: worker: ${JSON.stringify(error)}`,
+    )
+  })
 } else {
   gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
+  gmailWorker.onerror = (error: ErrorEvent) => {
+    Logger.error(
+      error,
+      `Error in main thread: worker: ${JSON.stringify(error)}`,
+    )
+  }
 }
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
@@ -803,11 +815,6 @@ const messageTypes = z.discriminatedUnion("type", [stats, historyId])
 
 type ResponseType = z.infer<typeof messageTypes>
 
-// @ts-ignore
-gmailWorker.onerror = (error: ErrorEvent) => {
-  Logger.error(error, `Error in main thread: worker: ${JSON.stringify(error)}`)
-}
-
 const pendingRequests = new Map<
   string,
   { resolve: Function; reject: Function }
@@ -830,19 +837,40 @@ const pendingRequests = new Map<
 //   }
 
 const setupGmailWorkerHandler = (tracker: Tracker) => {
-  gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
-    const { type, userEmail } = message.data
+  if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+    // Node.js environment
+    ;(gmailWorker as NodeWorker).on("message", (data: ResponseType) => {
+      const { type, userEmail } = data
 
-    if (type === WorkerResponseTypes.HistoryId) {
-      const { historyId } = message.data
-      const promiseHandlers = pendingRequests.get(userEmail)
-      if (promiseHandlers) {
-        promiseHandlers.resolve(historyId)
-        pendingRequests.delete(userEmail)
+      if (type === WorkerResponseTypes.HistoryId) {
+        const { historyId } = data
+        const promiseHandlers = pendingRequests.get(userEmail)
+        if (promiseHandlers) {
+          promiseHandlers.resolve(historyId)
+          pendingRequests.delete(userEmail)
+        }
+      } else if (data.type === WorkerResponseTypes.Stats) {
+        const { userEmail, count, statType } = data
+        tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
       }
-    } else if (message.data.type === WorkerResponseTypes.Stats) {
-      const { userEmail, count, statType } = message.data
-      tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
+    })
+  } else {
+    ;(gmailWorker as Worker).onmessage = (
+      message: MessageEvent<ResponseType>,
+    ) => {
+      const { type, userEmail } = message.data
+
+      if (type === WorkerResponseTypes.HistoryId) {
+        const { historyId } = message.data
+        const promiseHandlers = pendingRequests.get(userEmail)
+        if (promiseHandlers) {
+          promiseHandlers.resolve(historyId)
+          pendingRequests.delete(userEmail)
+        }
+      } else if (message.data.type === WorkerResponseTypes.Stats) {
+        const { userEmail, count, statType } = message.data
+        tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
+      }
     }
   }
 }
