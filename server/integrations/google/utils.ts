@@ -200,7 +200,9 @@ export const getPDFContent = async (
   const pdfSizeInMB = parseInt(pdfFile.size!) / (1024 * 1024)
   // Ignore the PDF files larger than Max PDF Size
   if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
-    Logger.error(`Ignoring ${pdfFile.name} as its more than 20 MB`)
+    Logger.error(
+      `Ignoring ${pdfFile.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
+    )
     return
   }
   try {

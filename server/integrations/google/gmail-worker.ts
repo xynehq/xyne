@@ -15,7 +15,7 @@ import {
   type Mail,
   type MailAttachment,
 } from "@/search/types"
-import { insert } from "@/search/vespa"
+import { ifDocumentsExist, insert } from "@/search/vespa"
 import {
   MessageTypes,
   Subsystem,
@@ -39,7 +39,7 @@ import {
   getGmailAttachmentChunks,
   parseAttachments,
 } from "@/integrations/google/worker-utils"
-import { StatType } from "@/integrations/google/tracking"
+import { StatType } from "@/integrations/tracker"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -104,7 +104,6 @@ export const handleGmailIngestion = async (
   })
   let totalMails = 0
   let nextPageToken = ""
-  let attachmentCount = 0
   const limit = pLimit(GmailConcurrency)
 
   const profile = await retryWithBackoff(
@@ -139,8 +138,19 @@ export const handleGmailIngestion = async (
     nextPageToken = resp.data.nextPageToken ?? ""
     if (resp.data.messages) {
       let messageBatch = resp.data.messages.slice(0, batchSize)
+      let insertedMessagesInBatch = 0 // Counter for successful messages
+      let insertedPdfAttachmentsInBatch = 0 // Counter for successful PDFs in this batch
+
+      const messageIds = messageBatch.map((msg) => msg.id!)
+      const existenceMap = await ifDocumentsExist(messageIds)
+
       let batchRequests = messageBatch.map((message) =>
         limit(async () => {
+          const messageId = message.id!
+          if (existenceMap[messageId]) {
+            insertedMessagesInBatch++ // Count as "processed" since it exists
+            return
+          }
           let msgResp
           try {
             msgResp = await retryWithBackoff(
@@ -155,10 +165,16 @@ export const handleGmailIngestion = async (
               0,
               client,
             )
-            const mail = await parseMail(msgResp.data, gmail, client)
-            attachmentCount += mail.attachments.length
-            await insert(mail, mailSchema)
-            // updateUserStats(email, StatType.Gmail, 1)
+            // Call modified parseMail to get data and PDF count
+            const { mailData, insertedPdfCount } = await parseMail(
+              msgResp.data,
+              gmail,
+              client,
+            )
+            await insert(mailData, mailSchema)
+            // Increment counters only on success
+            insertedMessagesInBatch++
+            insertedPdfAttachmentsInBatch += insertedPdfCount
           } catch (error) {
             Logger.error(
               error,
@@ -172,25 +188,31 @@ export const handleGmailIngestion = async (
       )
 
       await Promise.allSettled(batchRequests)
-      totalMails += messageBatch.length
+      totalMails += insertedMessagesInBatch // Update total based on success
 
-      postMessage({
-        type: WorkerResponseTypes.Stats,
-        userEmail: email,
-        count: messageBatch.length,
-        statType: StatType.Gmail,
-      })
-      postMessage({
-        type: WorkerResponseTypes.Stats,
-        userEmail: email,
-        count: attachmentCount,
-        statType: StatType.Mail_Attachments,
-      })
+      // Post stats based on successful operations in this batch
+      // Only post Gmail count if successful messages > 0
+      if (insertedMessagesInBatch > 0) {
+        postMessage({
+          type: WorkerResponseTypes.Stats,
+          userEmail: email,
+          count: insertedMessagesInBatch,
+          statType: StatType.Gmail,
+        })
+      }
+      // Post PDF attachment count only if > 0
+      if (insertedPdfAttachmentsInBatch > 0) {
+        postMessage({
+          type: WorkerResponseTypes.Stats,
+          userEmail: email,
+          count: insertedPdfAttachmentsInBatch,
+          statType: StatType.Mail_Attachments,
+        })
+      }
 
       // clean up explicitly
       batchRequests = []
       messageBatch = []
-      attachmentCount = 0
     }
     // clean up explicitly
   } while (nextPageToken)
@@ -227,13 +249,15 @@ const extractEmailAddresses = (headerValue: string): string[] => {
 }
 
 // Function to parse and validate email data
+// Returns the parsed Mail object and the count of successfully inserted PDF attachments
 export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   client: GoogleClient,
-): Promise<Mail> => {
+): Promise<{ mailData: Mail; insertedPdfCount: number }> => {
   const messageId = email.id
   const threadId = email.threadId
+  let insertedPdfCount = 0
   let timestamp = parseInt(email.internalDate ?? "", 10)
   const labels = email.labelIds
 
@@ -339,6 +363,7 @@ export const parseMail = async (
             }
 
             await insert(attachmentDoc, mailAttachmentSchema)
+            insertedPdfCount++
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -372,7 +397,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return emailData
+  return { mailData: emailData, insertedPdfCount }
 }
 
 const getBody = (payload: any): string => {

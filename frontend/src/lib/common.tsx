@@ -10,6 +10,7 @@ import Pdf from "@/assets/pdf.svg"
 import Slides from "@/assets/slides.svg"
 import Image from "@/assets/images.svg"
 import GoogleCalendarSvg from "@/assets/googleCalendar.svg"
+import SlackSvg from "@/assets/slack.svg"
 import type { Entity } from "shared/types"
 import {
   Apps,
@@ -19,6 +20,7 @@ import {
   CalendarEntity,
   isMailAttachment,
 } from "shared/types"
+import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
 export const getIcon = (
   app: Apps,
@@ -80,7 +82,22 @@ export const getIcon = (
     if (entity === CalendarEntity.Event) {
       return <img className={classNameVal} src={GoogleCalendarSvg} />
     }
+  } else if (app === Apps.Slack) {
+    return <img className={classNameVal} src={SlackSvg} />
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
+}
+
+export const minHeight = 320
+export const LoaderContent = () => {
+  return (
+    <div
+      className={`min-h-[${minHeight}px] w-full flex items-center justify-center`}
+    >
+      <div className="items-center justify-center">
+        <LoadingSpinner className="mr-2 h-4 w-4 animate-spin" />
+      </div>
+    </div>
+  )
 }

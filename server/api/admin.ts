@@ -3,9 +3,11 @@ import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import {
+  deleteConnector,
   getConnectorByExternalId,
   getConnectors,
   insertConnector,
+  updateConnector,
 } from "@/db/connector"
 import {
   ConnectorType,
@@ -19,9 +21,8 @@ import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
-const { JwtPayloadKey, JobExpiryHours, serviceAccountWhitelistedEmails } =
-  config
-import { generateCodeVerifier, generateState, Google } from "arctic"
+const { JwtPayloadKey, serviceAccountWhitelistedEmails, slackHost } = config
+import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
 import { getLogger } from "@/logger"
@@ -32,6 +33,7 @@ import {
   NoUserFound,
 } from "@/errors"
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
+import { scopes } from "@/integrations/google/config"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -53,25 +55,34 @@ const getAuthorizationUrl = async (
   provider: SelectOAuthProvider,
 ): Promise<URL> => {
   const { clientId, clientSecret, oauthScopes } = provider
-  const google = new Google(
-    clientId as string,
-    clientSecret,
-    `${config.host}/oauth/callback`,
-  )
+  let url: URL
   const state = generateState()
   const codeVerifier = generateCodeVerifier()
-  Logger.info(`code verifier  ${codeVerifier}`)
-  // adding some data to state
-  const newState = JSON.stringify({ app, random: state })
-  const url: URL = google.createAuthorizationURL(
-    newState,
-    codeVerifier,
-    oauthScopes,
-  )
   // for google refresh token
   if (IsGoogleApp(app)) {
+    const google = new Google(
+      clientId as string,
+      clientSecret,
+      `${config.host}/oauth/callback`,
+    )
+    Logger.info(`code verifier  ${codeVerifier}`)
+
+    // adding some data to state
+    const newState = JSON.stringify({ app, random: state })
+    url = google.createAuthorizationURL(newState, codeVerifier, oauthScopes)
     url.searchParams.set("access_type", "offline")
     url.searchParams.set("prompt", "consent")
+  } else if (app === Apps.Slack) {
+    // we are not using arctic as it would only go to oidc urls
+    const newState = JSON.stringify({ app, random: state })
+    url = new URL("https://slack.com/oauth/v2/authorize")
+    url.searchParams.set("client_id", clientId!)
+    url.searchParams.set("redirect_uri", `${slackHost}/oauth/callback`)
+    url.searchParams.set("state", newState)
+    url.searchParams.set("code", codeVerifier)
+    url.searchParams.set("user_scope", oauthScopes.join(","))
+  } else {
+    throw new Error(`Unsupported app: ${app}`)
   }
 
   // store state verifier as cookie
@@ -142,6 +153,7 @@ export const CreateOAuthProvider = async (c: Context) => {
       AuthType.OAuth,
       app,
       {},
+      null,
       null,
       null,
       null,
@@ -242,4 +254,123 @@ export const AddServiceConnection = async (c: Context) => {
     })
   }
   // })
+}
+
+// adding first for slack
+// slack is using bot token for the initial ingestion and sync
+// same service will be used for any api key based connector
+export const AddApiKeyConnector = async (c: Context) => {
+  Logger.info("ApiKeyConnector")
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: ApiKeyConnector = c.req.valid("form")
+  // const data = await form["service-key"].text()
+  const apiKey = form.apiKey
+  const app = form.app
+
+  // Start a transaction
+  return await db.transaction(async (trx) => {
+    try {
+      // Insert the connection within the transaction
+      const connector = await insertConnector(
+        trx, // Pass the transaction object
+        user.workspaceId,
+        user.id,
+        user.workspaceExternalId,
+        `${app}-${ConnectorType.SaaS}-${AuthType.ApiKey}`,
+        ConnectorType.SaaS,
+        AuthType.ApiKey,
+        app,
+        {},
+        null,
+        null,
+        null,
+        apiKey,
+      )
+
+      const SaasJobPayload: SaaSJob = {
+        connectorId: connector.id,
+        workspaceId: user.workspaceId,
+        userId: user.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      }
+      // Enqueue the background job within the same transaction
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+        singletonKey: connector.externalId,
+        priority: 1,
+        retryLimit: 0,
+      })
+
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+
+      // Commit the transaction if everything is successful
+      return c.json({
+        success: true,
+        message: "Connection created, job enqueued",
+        id: connector.externalId,
+      })
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
+      )
+      // Rollback the transaction in case of any error
+      throw new HTTPException(500, {
+        message: "Error creating connection or enqueuing job",
+      })
+    }
+  })
+}
+
+export const UpdateConnectorStatus = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  const {
+    connectorId,
+    status,
+    // @ts-ignore
+  }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
+  const connector = await getConnectorByExternalId(connectorId, user.id)
+  if (!connector) {
+    throw new HTTPException(500, {
+      message: "could not get connector",
+    })
+  }
+  await updateConnector(db, connector.id, { status: status })
+  return c.json({
+    success: true,
+    message: "connector updated",
+  })
+}
+
+export const DeleteConnector = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const { connectorId }: { connectorId: string } = c.req.valid("form")
+  await deleteConnector(db, connectorId, user.id)
+  return c.json({
+    success: true,
+    message: "Connector deleted",
+  })
 }
