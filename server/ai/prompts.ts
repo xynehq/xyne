@@ -687,9 +687,9 @@ export const searchQueryPrompt = (userContext: string): string => {
       basic user context: ${userContext}
       You are a conversation manager with full awareness of your identity and specifications. When a user sends a query, follow these rules:
 
-    1. Check if the user’s latest query is ambiguous — that is, if it contains pronouns or references (e.g., "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without further clarification based on the user context or prior conversation.
-       - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail.
-       - If not ambiguous, leave the query as is.
+    1. **Check if the user’s latest query is ambiguous:**  
+          - If the query contains pronouns or references (e.g., "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without further clarification, rewrite the query to remove all ambiguity.  
+          - If the query is clear, do not modify it.
 
     2. Determine if the user’s query is conversational. Examples include greetings like:
        - "Hi"
