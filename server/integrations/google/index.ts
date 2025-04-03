@@ -26,6 +26,7 @@ import {
   type SaaSOAuthJob,
 } from "@/types"
 import PgBoss from "pg-boss"
+import { hashPdfFilename } from "@/integrations/google/utils"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   GetDocument,
@@ -1772,9 +1773,13 @@ export const googlePDFsVespa = async (
         )
         return null
       }
-      const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
+
+      const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
+        Logger.info(
+          `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
+        )
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
 
         const docs: Document[] = await safeLoadPDF(pdfPath)
