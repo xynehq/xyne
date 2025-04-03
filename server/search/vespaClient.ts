@@ -149,12 +149,6 @@ class VespaClient {
       const data = await response.json()
 
       if (response.ok) {
-        if (document.entity === "docs") {
-          console.log("\ndocument")
-          console.log(document)
-          console.log("document")
-          Logger.info(`Document ${document.title} inserted successfully`)
-        }
       } else {
         Logger.error(`Error inserting document ${document.docId}`)
       }

@@ -76,7 +76,6 @@ import { type VespaFileWithDrivePermission } from "@/search/types"
 import { GaxiosError } from "gaxios"
 import mainConfig from "@/config"
 import { getWorkspaceById } from "@/db/workspace"
-import { groups } from "@/db/schema"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -1344,11 +1343,6 @@ const syncContacts = async (
   return stats
 }
 
-const deleteAllGroups = async (trx: TxnOrClient) => {
-  await trx.delete(groups)
-  Logger.info(`Deleted all groups from groups table...`)
-}
-
 export const handleGoogleServiceAccountChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -1388,11 +1382,7 @@ export const handleGoogleServiceAccountChanges = async (
         auth: adminJwtClient,
       })
       const workspace = await getWorkspaceById(db, connector.workspaceId)
-      // Delete all previous group info from Postgres and add the latest group info into Postgres
-      await db.transaction(async (trx) => {
-        await deleteAllGroups(trx)
-        await getAndSaveAllGroupsMembers(trx, admin, workspace.domain)
-      })
+      await getAndSaveAllGroupsMembers(admin, workspace.domain)
       let jwtClient = oauth2Client
       const driveClient = google.drive({ version: "v3", auth: jwtClient })
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
@@ -1404,9 +1394,6 @@ export const handleGoogleServiceAccountChanges = async (
           Apps.GoogleDrive,
         )
       ).data
-      console.log("changes in SA")
-      console.log(changes)
-      console.log("changes in SA")
       // there are changes
 
       // Potential issues:

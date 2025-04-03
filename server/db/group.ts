@@ -77,3 +77,12 @@ export const getGroupEmailsFromEmail = async (
 
   return rows.map((row) => row.groupEmail)
 }
+
+export const getAllGroupEmails = async (
+  trx: TxnOrClient,
+): Promise<string[]> => {
+  const allGroups = await trx
+    .select({ groupEmail: groups.groupEmail })
+    .from(groups)
+  return allGroups.map((grp) => grp.groupEmail)
+}

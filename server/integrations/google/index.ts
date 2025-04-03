@@ -33,6 +33,7 @@ import {
   insert,
   insertDocument,
   insertUser,
+  updateDocumentsWithDeletedGrpEmails,
   UpdateEventCancelledInstances,
 } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
@@ -41,6 +42,8 @@ import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import {
   connectors,
+  groupMembers,
+  groups,
   type SelectConnector,
   type SelectOAuthProvider,
 } from "@/db/schema"
@@ -725,7 +728,7 @@ type IngestionMetadata = {
 
 import { z } from "zod"
 import config from "@/config"
-import { insertGroup, insertGroupMembers } from "@/db/group"
+import { getAllGroupEmails, insertGroup, insertGroupMembers } from "@/db/group"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -794,8 +797,11 @@ const handleGmailIngestionForServiceAccount = async (
   })
 }
 
+// This function gets all the groups and its members in the workspace
+// During sync it also compares the old groups with the new groups
+// and if any group is deleted then it fetches all the docs that
+// have that group email in the permissions array and deletes that group email from the permissions array of each doc
 export const getAndSaveAllGroupsMembers = async (
-  trx: TxnOrClient,
   admin: admin_directory_v1.Admin,
   domain: string,
 ) => {
@@ -820,6 +826,37 @@ export const getAndSaveAllGroupsMembers = async (
     }
     nextPageToken = res.data.nextPageToken ?? ""
   } while (nextPageToken)
+
+  // Get all the previous groups stored in postgres
+  // Compare them with the new groups
+  // If any grp is deleted then update those docs which have those grp emails in permissions array
+  await db.transaction(async (trx) => {
+    const oldGroupEmails = await getAllGroupEmails(trx)
+    // Only should happen when there are old groups to compare
+    if (oldGroupEmails.length) {
+      const newGroupEmails = groups.map((grp) => grp.email)
+
+      // Convert newGroupEmails to a Set for faster lookups
+      const newGroupEmailsSet = new Set(newGroupEmails)
+
+      // Filter oldGroupEmails to get only the deleted emails
+      const deletedGroupEmails = oldGroupEmails.filter(
+        (email) => !newGroupEmailsSet.has(email),
+      )
+
+      console.log("deletedGroupEmails")
+      console.log(deletedGroupEmails)
+      console.log("deletedGroupEmails")
+
+      // Delete these group emails from permissions array of each document having them
+      await updateDocumentsWithDeletedGrpEmails(deletedGroupEmails)
+
+      // Now after we are done comparing and doing the changes, we want we delete the older groups and its group members
+      // todo should be a transaction
+      await deleteAllGroupMembers(trx)
+      await deleteAllGroups(trx)
+    }
+  })
 
   // Fetching each member of each group
   // todo Currently not saving groups with no members
@@ -851,18 +888,30 @@ export const getAndSaveAllGroupsMembers = async (
         }
       }
       if (membersOfGroups.length) {
-        await insertGroup(
-          trx,
-          grp?.id!,
-          grp?.name!,
-          grp?.email!,
-          grp?.description!,
-          grp?.directMembersCount!,
-        )
-        await insertGroupMembers(trx, grp.id!, membersOfGroups)
+        await db.transaction(async (trx) => {
+          await insertGroup(
+            trx,
+            grp?.id!,
+            grp?.name!,
+            grp?.email!,
+            grp?.description!,
+            grp?.directMembersCount!,
+          )
+          await insertGroupMembers(trx, grp.id!, membersOfGroups)
+        })
       }
     }
   }
+}
+
+const deleteAllGroups = async (trx: TxnOrClient) => {
+  await trx.delete(groups)
+  Logger.info(`Deleted all groups from groups table...`)
+}
+
+const deleteAllGroupMembers = async (trx: TxnOrClient) => {
+  await trx.delete(groupMembers)
+  Logger.info(`Deleted all group members from groupMembers table...`)
 }
 
 // we make 2 sync jobs
@@ -887,7 +936,7 @@ export const handleGoogleServiceAccountIngestion = async (
 
     const workspace = await getWorkspaceById(db, connector.workspaceId)
     // todo Gets all groups in the workscpace, Also get all memebers of all groups
-    const groups = await getAndSaveAllGroupsMembers(db, admin, workspace.domain)
+    const groups = await getAndSaveAllGroupsMembers(admin, workspace.domain)
 
     const oauth2Client = new google.auth.OAuth2({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -1255,22 +1304,22 @@ const insertFilesForUser = async (
           v.mimeType !== DriveMime.Sheets &&
           v.mimeType !== DriveMime.Slides,
       )
-      // const pdfs = (
-      //   await googlePDFsVespa(
-      //     googleClient,
-      //     googlePDFsMetadata,
-      //     connector.externalId,
-      //     userEmail,
-      //   )
-      // ).map((v) => {
-      //   v.permissions = toPermissionsList(v.permissions, userEmail)
-      //   return v
-      // })
-      // for (const doc of pdfs) {
-      //   processedFiles += 1
-      //   await insertDocument(doc)
-      //   updateUserStats(userEmail, StatType.Drive, 1)
-      // }
+      const pdfs = (
+        await googlePDFsVespa(
+          googleClient,
+          googlePDFsMetadata,
+          connector.externalId,
+          userEmail,
+        )
+      ).map((v) => {
+        v.permissions = toPermissionsList(v.permissions, userEmail)
+        return v
+      })
+      for (const doc of pdfs) {
+        processedFiles += 1
+        await insertDocument(doc)
+        updateUserStats(userEmail, StatType.Drive, 1)
+      }
       const [
         documents,
         // slides, sheets
