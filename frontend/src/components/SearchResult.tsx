@@ -140,8 +140,50 @@ export const SearchResult = ({
             .map((summary) => <HighlightedText chunk_summary={summary} />)}
       </div>
     )
-  } else if (result.type === "chat_message") {
-    console.log(result)
+  }
+  else if (result.app === "whatsapp") {
+      // Handle WhatsApp messages
+      const whatsappMessage = {
+        id: result.docId,
+        text: result.text,
+        userId: result.userId,
+        username: result.username,
+        createdAt: result.createdAt,
+        updatedAt: result.updatedAt,
+        teamId: result.teamId,
+        channelId: result.channelId,
+        threadId: result.threadId,
+        mentions: result.mentions,
+        attachmentIds: result.attachmentIds,
+        image: result.image,
+        type: result.type,
+        app: result.app
+      }
+
+      content = (
+        <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+          <div className="flex items-center justify-start space-x-2">
+            <div className="flex items-center text-blue-800 space-x-2">
+              {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
+              <span className="font-medium">{whatsappMessage.username}</span>
+            </div>
+          </div>
+          <div className="flex flex-row items-center mt-1 ml-[44px]">
+            <img
+              referrerPolicy="no-referrer"
+              className="mr-2 w-[16px] h-[16px] rounded-full"
+              src={whatsappMessage.image}
+            ></img>
+            
+           
+          </div>
+                {result.text && <HighlightedText chunk_summary={result.text} />}
+
+        </div>
+      )
+    }
+    else if (result.type === "chat_message") {
+    
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">

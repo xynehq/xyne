@@ -14,6 +14,7 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   ChatMessageResponseSchema,
+  WhatsAppEntity,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -30,7 +31,7 @@ export type { Entity } from "search/types"
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"
-
+console.log("\n wa ==  ", WhatsAppEntity,"\n")
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
 // @ts-ignore

@@ -198,3 +198,7 @@ server/downloads
 build
 server/eval-results
 server/.venv/*
+
+contacts.json
+groups.json
+messages.json
