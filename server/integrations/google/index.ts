@@ -1777,7 +1777,7 @@ export const googlePDFsVespa = async (
       const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
-        Logger.info(
+        Logger.debug(
           `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
         )
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
