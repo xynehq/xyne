@@ -165,6 +165,7 @@ const insertWhatsAppMessage = async (
   conversationId: string,
   phoneNumber: string,
   permissions: string[],
+  pictureUrl: string | undefined
 ) => {
   if (!permissions.length || permissions.indexOf(email) === -1) {
     permissions = permissions.concat(email)
@@ -176,15 +177,16 @@ const insertWhatsAppMessage = async (
   if (messageText == '') return
   const now = Date.now()
   Logger.info(`Inserting WhatsApp message: ${messageText}`)
+
   return insert(
     {
       docId: message.key.id!,
       teamId: conversationId,
       channelId: conversationId,
       text: messageText,
-      name: phoneNumber,
+      name: message.key.participant,
       username: phoneNumber,
-      image: '',
+      image: pictureUrl || '',
       userId: message.key.participant || phoneNumber,
       app: Apps.WhatsApp,
       entity: WhatsAppEntity.Message,
@@ -514,6 +516,7 @@ export const handleWhatsAppIngestion = async (
         if (m.type === 'append' || m.type === 'notify') {
           for (const msg of m.messages) {
             if (msg.key && msg.message) {
+              Logger.info(`our msgs ${msg}`);
               const conversationId = msg.key.remoteJid || ''
               const phoneNumber = conversationId.split('@')[0]
               
@@ -524,13 +527,27 @@ export const handleWhatsAppIngestion = async (
                   msg.messageTimestamp : 
                   Number(msg.messageTimestamp)
               }
+
+              let pictureUrl : string | undefined = '';
+
+              
+                const type = 'image';  // For high resolution image ('preview' for low resolution)
+              const timeoutMs = 30000;  // Optional timeout in milliseconds (30 seconds in this example)
+
+
+              try {
+                Logger.info("started fetching profile picture")
+                 pictureUrl = await sock?.profilePictureUrl(msg.key.participant as string, type, timeoutMs) ;
+              } catch (error) {
+                Logger.error(`Error fetching profile picture: ${error}`);
+              }
               
               Logger.info(`Inserting message into Vespa: ${JSON.stringify(whatsappMessage, null, 2)}`)
               const messageId = msg.key.id!;
               const success = await insertAndVerify(
                 messageId,
                 chatMessageSchema,
-                () => insertWhatsAppMessage(data.email, whatsappMessage, conversationId, phoneNumber, [data.email])
+                () => insertWhatsAppMessage(data.email, whatsappMessage, conversationId, phoneNumber, [data.email], pictureUrl)
               );
               
               if (success) {
@@ -586,6 +603,9 @@ export const handleWhatsAppIngestion = async (
 
     // Handle chats
     sock.ev.on('chats.upsert', async (chats) => {
+
+
+
       Logger.info(`Chats updated: ${JSON.stringify(chats, null, 2)}`)
       
       try {
@@ -686,6 +706,10 @@ const startIngestion = async (
     // Fetch and insert groups
     Logger.info("Fetching WhatsApp groups")
     try {
+
+    
+
+      
       const groupsData = await sock.groupFetchAllParticipating()
       Logger.info(`Retrieved groups data: ${Object.keys(groupsData).length}`)
       
@@ -701,8 +725,16 @@ const startIngestion = async (
           isSuperAdmin: p.isSuperAdmin
         }))
       }));
+
+      
+
+      
+      
+    
       
       Logger.info(`Found ${groups.length} groups`)
+
+      console.log("\n my groups == ", groups,"\n");
       
       // Insert groups into Vespa
       for (const group of groups) {

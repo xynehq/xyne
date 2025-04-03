@@ -160,6 +160,8 @@ export const SearchResult = ({
         app: result.app
       }
 
+      console.log("\n whatsappImage == ", whatsappMessage.image,"\n");
+
       content = (
         <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
           <div className="flex items-center justify-start space-x-2">
@@ -175,7 +177,6 @@ export const SearchResult = ({
               src={whatsappMessage.image}
             ></img>
             
-           
           </div>
                 {result.text && <HighlightedText chunk_summary={result.text} />}
 

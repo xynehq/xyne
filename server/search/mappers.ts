@@ -104,8 +104,6 @@ export const VespaSearchResponseToSearchResult = (
             chatMessageSchema
           ) {
             ;(child.fields as any).type = chatMessageSchema
-            ;(child.fields as any).image = "google.com"
-            console.log(child.fields)
             ;(child.fields as VespaChatMessageSearch).relevance =
               child.relevance
             ;(child.fields as VespaChatMessageSearch).attachmentIds = []
