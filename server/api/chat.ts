@@ -378,7 +378,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   let searchTerms = removeStopwords(input)
   // Ensure we have search terms even after stopword removal
   if (!searchTerms.trim()) {
-     searchTerms = message
+    searchTerms = message
   }
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
@@ -733,7 +733,7 @@ async function* generatePointQueryTimeExpansion(
   let searchTerms = removeStopwords(input)
   // Ensure we have search terms even after stopword removal
   if (!searchTerms.trim()) {
-     searchTerms = message
+    searchTerms = message
   }
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000

@@ -203,7 +203,7 @@ schema user {
         }
     }
 
-    rank-profile default inherits initial {
+    rank-profile default_native inherits initial {
         # Increase the score by 10x to ensure consistency with other schemas
         global-phase {
             expression: (10 * combined_nativeRank)
@@ -226,6 +226,20 @@ schema user {
             combined_bm25
             bm25(name)
             bm25(email)
+        }
+    }
+
+    # change here for ai queries accordingly
+    rank-profile default_ai inherits initial {
+        # Increase the score by 10x to ensure consistency with other schemas
+        global-phase {
+            expression: (10 * combined_nativeRank)
+        }
+
+        match-features {
+            nativeRank(name,email)
+            nativeRank(name)
+            nativeRank(email)
         }
     }
 

@@ -95,7 +95,7 @@ schema mail {
     attribute: fast-search
   }
   }
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: guard { input chunks } | embed | attribute | index
     attribute {
       distance-metric: angular
@@ -166,7 +166,7 @@ schema mail {
       
     }
 
-    rank-profile default inherits initial {
+  rank-profile default_native inherits initial {
       
       # Have to increase nativeRank score by 10x, 
       # the nativeRank score is so low to be comparable with vector_score 
@@ -219,6 +219,34 @@ schema mail {
       bm25(chunks)
       bm25(subject)
       combined_bm25
+      chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+      
+      # Have to increase nativeRank score by 10x, 
+      # the nativeRank score is so low to be comparable with vector_score 
+      first-phase {
+        expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+      }
+
+      global-phase {
+        expression {
+          (
+            (query(alpha) * scale(vector_score)) + 
+            ((1 - query(alpha)) * (10 * combined_nativeRank))
+          )
+        }
+        rerank-count: 1000
+      }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(subject)
+      nativeRank(chunks)
       chunk_scores
     }
   }

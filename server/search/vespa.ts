@@ -207,9 +207,14 @@ export const autocomplete = async (
   }
 }
 
-type RankProfile = "default" | "default_bm25"
+enum SearchModes {
+  NativeRank = "default_native",
+  BM25 = "default_bm25",
+  AI = "default_ai",
+}
+
 type YqlProfile = {
-  profile: RankProfile
+  profile: SearchModes
   yql: string
 }
 
@@ -218,7 +223,7 @@ export const HybridDefaultProfile = (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
-  profile: RankProfile = "default",
+  profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -366,7 +371,7 @@ const HybridDefaultProfileAppEntityCounts = (
   }
 
   return {
-    profile: "default",
+    profile: SearchModes.NativeRank,
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
@@ -430,7 +435,7 @@ export const searchVespa = async (
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
-  rankProfile: RankProfile = "default",
+  rankProfile: SearchModes = SearchModes.NativeRank,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
