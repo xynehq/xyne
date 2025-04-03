@@ -397,10 +397,8 @@ const errorEvents: string[] = [
   `rejectionHandled`,
   `warning`,
 ]
-errorEvents.forEach((eventType: string) => {
-  process.on(eventType, catchEvent.bind(null, eventType))
-})
-
-function catchEvent(eventType: string) {
-  console.log("Caught event...", { eventType })
-}
+errorEvents.forEach((eventType: string) =>
+  process.on(eventType, (error: Error) => {
+    Logger.error(error, `Caught via event: ${eventType}`)
+  }),
+)
