@@ -24,6 +24,8 @@ import {
 } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
+import dotenv from "dotenv"
+dotenv.config()
 
 const encryptionKey = process.env.ENCRYPTION_KEY!
 if (!encryptionKey) {
