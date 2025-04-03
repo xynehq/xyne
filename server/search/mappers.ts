@@ -212,17 +212,18 @@ export const VespaSearchResponseToSearchResult = (
             (child.fields as VespaChatMessageSearch).sddocname ===
             chatMessageSchema
           ) {
-            ;(child.fields as any).type = chatMessageSchema
-            ;(child.fields as VespaChatMessageSearch).relevance =
-              child.relevance
-            ;(child.fields as VespaChatMessageSearch).attachmentIds = []
-            ;(child.fields as VespaChatMessageSearch).mentions = []
-            if (!(child.fields as VespaChatMessageSearch).teamId) {
-              ;(child.fields as VespaChatMessageSearch).teamId = ""
+            const fields = child.fields as VespaChatMessageSearch & {
+              type?: string
             }
-            return ChatMessageResponseSchema.parse(child.fields)
-          }
-          else {
+            fields.type = chatMessageSchema
+            fields.relevance = child.relevance
+            fields.attachmentIds = []
+            fields.mentions = []
+            if (!fields.teamId) {
+              fields.teamId = ""
+            }
+            return ChatMessageResponseSchema.parse(fields)
+          } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
             )
@@ -306,8 +307,7 @@ export const VespaAutocompleteResponseToResult = (
           ;(child.fields as any).type = chatUserSchema
           ;(child.fields as any).relevance = child.relevance
           return AutocompleteChatUserSchema.parse(child.fields)
-        }
-         else {
+        } else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,
           )
