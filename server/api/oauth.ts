@@ -19,6 +19,8 @@ import { IsGoogleApp } from "@/utils"
 import { getUserByEmail } from "@/db/user"
 import { handleSlackIngestion } from "@/integrations/slack"
 import { globalAbortControllers } from "@/integrations/abortManager"
+import { getErrorMessage } from "@/utils"
+
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
 
 interface OAuthCallbackQuery {
@@ -125,7 +127,13 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     if (IsGoogleApp(app)) {
-      handleGoogleOAuthIngestion(SaasJobPayload)
+      // Start ingestion in the background, but catch any errors it might throw later
+      handleGoogleOAuthIngestion(SaasJobPayload).catch((error) => {
+        Logger.error(
+          error,
+          `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+        )
+      })
     } else if (app === Apps.Slack) {
       const abortController = new AbortController()
       globalAbortControllers.set(`${connector.id}`, abortController)
