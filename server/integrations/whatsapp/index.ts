@@ -4,12 +4,9 @@ import {
   Apps,
   WhatsAppEntity,
   whatsappContactSchema,
-  whatsappConversationSchema,
   chatContainerSchema,
   chatMessageSchema,
-  SlackEntity,
   type VespaWhatsAppContact,
-  type VespaWhatsAppConversation,
   type VespaChatContainer,
   type VespaChatMessage,
 } from "@/search/types"
@@ -176,8 +173,9 @@ const insertWhatsAppMessage = async (
   const messageText = message.message?.conversation || 
                      message.message?.extendedTextMessage?.text || 
                      ''
-
+  if (messageText == '') return
   const now = Date.now()
+  Logger.info(`Inserting WhatsApp message: ${messageText}`)
   return insert(
     {
       docId: message.key.id!,

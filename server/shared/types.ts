@@ -22,6 +22,7 @@ export {
   CalendarEntity,
   MailAttachmentEntity,
   SlackEntity,
+  WhatsAppEntity,
   Apps,
   isMailAttachment,
 } from "search/types"
