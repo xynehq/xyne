@@ -921,7 +921,7 @@ export const getItems = async (
 export const updateDocumentsWithDeletedGrpEmails = async (
   deletedGrpEmails: string[],
 ) => {
-  if (deletedGrpEmails && deletedGrpEmails.length > 0) {
+  if (deletedGrpEmails && deletedGrpEmails?.length > 0) {
     // First search and get all the documents that have one of these deletedEmails
     const filterQuery = deletedGrpEmails
       ?.map((deletedGrpEmail) => `permissions contains "${deletedGrpEmail}"`)
@@ -931,26 +931,30 @@ export const updateDocumentsWithDeletedGrpEmails = async (
     const yql = `select * from sources ${AllSources} where (${filterQuery})`
 
     try {
-      const results = await vespa.search({ yql })
+      const results = (await vespa.search({ yql })) as VespaSearchResponse
       const deletedGroupEmailsDocs = results?.root?.children
 
       // Now for each document, update their permissions array by removing the deleted group email
       for (const doc of deletedGroupEmailsDocs) {
-        const currentPermissions = doc?.fields?.permissions
+        const docFields = doc?.fields as {
+          permissions: string[]
+          sddocname: VespaSchema
+          docId: string
+        }
+        const currentPermissions = docFields?.permissions
         // Filter out the deleted emails from this document's permissions.
-        // todo should set be used here
+        const deletedGrpEmailsSet = new Set(deletedGrpEmails)
         const updatedPermissions = currentPermissions?.filter(
-          (perm) => !deletedGrpEmails?.includes(perm),
+          (perm) => !deletedGrpEmailsSet?.has(perm),
         )
         await UpdateDocumentPermissions(
-          doc.fields.sddocname,
-          doc.fields.docId,
+          docFields?.sddocname,
+          docFields?.docId,
           updatedPermissions,
         )
       }
     } catch (error) {
-      // todo change this error
-      throw new ErrorPerformingSearch({
+      throw new ErrorUpdatingDocument({
         cause: error as Error,
         sources: AllSources,
       })

@@ -25,7 +25,6 @@ export const insertGroup = async (
         directMembersCount,
       })
       .returning()
-    Logger.info("Group inserted successfully")
     return inserted[0]
   } catch (error) {
     Logger.error(
@@ -51,7 +50,6 @@ export const insertGroupMembers = async (
     }))
 
     const inserted = await trx.insert(groupMembers).values(rows).returning()
-    Logger.info(`Group members for group ${groupId} inserted successfully`)
     return inserted[0]
   } catch (error) {
     Logger.error(

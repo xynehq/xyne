@@ -844,22 +844,17 @@ export const getAndSaveAllGroupsMembers = async (
         (email) => !newGroupEmailsSet.has(email),
       )
 
-      console.log("deletedGroupEmails")
-      console.log(deletedGroupEmails)
-      console.log("deletedGroupEmails")
-
       // Delete these group emails from permissions array of each document having them
       await updateDocumentsWithDeletedGrpEmails(deletedGroupEmails)
 
       // Now after we are done comparing and doing the changes, we want we delete the older groups and its group members
-      // todo should be a transaction
       await deleteAllGroupMembers(trx)
       await deleteAllGroups(trx)
     }
   })
 
   // Fetching each member of each group
-  // todo Currently not saving groups with no members
+  // Currently not saving groups with no members
   for (const grp of groups) {
     nextPageToken = ""
     let members: admin_directory_v1.Schema$Member[] = []
@@ -902,6 +897,7 @@ export const getAndSaveAllGroupsMembers = async (
       }
     }
   }
+  Logger.info(`Groups and group members inserted`)
 }
 
 const deleteAllGroups = async (trx: TxnOrClient) => {
@@ -2218,9 +2214,6 @@ export const googleDocsVespa = async (
           }
         }
 
-        console.log(`\nPermissions for ${doc.name}`)
-        console.log(doc.permissions)
-        console.log(`Permissions for ${doc.name}\n`)
         const result: VespaFileWithDrivePermission = {
           title: doc.name!,
           url: doc.webViewLink ?? "",
