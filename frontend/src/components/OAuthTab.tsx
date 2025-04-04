@@ -1,4 +1,7 @@
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
 import { TabsContent } from "@/components/ui/tabs"
+import { Pencil } from "lucide-react"
 import {
   OAuthButton,
   OAuthForm,
@@ -25,17 +28,23 @@ const OAuthTab = ({
   isPending,
   oauthIntegrationStatus,
   setOAuthIntegrationStatus,
-  updateStatus,
 }: OAuthTabProps) => {
+  const [isEditing, setIsEditing] = useState(false)
+
+  const handleEdit = () => {
+    setIsEditing(true)
+  }
   return (
     <TabsContent value="oauth">
       {isPending ? (
         <LoaderContent />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
         <OAuthForm
-          onSuccess={() =>
+          onSuccess={() => {
             setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-          }
+            setIsEditing(false)
+          }}
+          isEditing={isEditing}
         />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
         <Card>
@@ -44,11 +53,30 @@ const OAuthTab = ({
             <CardDescription>Connect using Google OAuth here.</CardDescription>
           </CardHeader>
           <CardContent>
-            <OAuthButton
-              app={Apps.GoogleDrive}
-              setOAuthIntegrationStatus={setOAuthIntegrationStatus}
-              text="Connect with Google OAuth"
-            />
+            {isEditing ? (
+              <OAuthForm
+                onSuccess={() => {
+                  setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+                  setIsEditing(false)
+                }}
+                isEditing={isEditing}
+              />
+            ) : (
+              <>
+                <div className="flex justify-between items-center">
+                  <OAuthButton
+                    app={Apps.GoogleDrive}
+                    setOAuthIntegrationStatus={setOAuthIntegrationStatus}
+                    text="Connect with Google OAuth"
+                  />
+                  <Pencil
+                    className="flex justify-end cursor-pointer  text-muted-foreground hover:text-gray-800"
+                    onClick={handleEdit}
+                    size={18}
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -57,9 +85,14 @@ const OAuthTab = ({
             <CardTitle>Google OAuth</CardTitle>
           </CardHeader>
           <CardContent>
-            {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
-              ? "Connected"
-              : "Connecting"}
+            {oauthIntegrationStatus ===
+            OAuthIntegrationStatus.OAuthConnected ? (
+              <>
+                <p className="mb-4">Connected</p>
+              </>
+            ) : (
+              "Connecting"
+            )}
           </CardContent>
         </Card>
       )}

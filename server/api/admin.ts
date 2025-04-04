@@ -34,6 +34,8 @@ import {
 } from "@/errors"
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
+import * as schema from "@/db/schema"
+import { eq, and } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -176,6 +178,38 @@ export const CreateOAuthProvider = async (c: Context) => {
       success: true,
       message: "Connection and Provider created",
     })
+  })
+}
+
+export const UpdateOAuthProvider = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: OAuthProvider = c.req.valid("form")
+  const { clientId, clientSecret, scopes, app } = form
+  // get connect_ide
+  const provider = await getOAuthProvider(db, user.id, app)
+  if (!provider) {
+    throw new HTTPException(404, { message: "OAuth Provider not found" })
+  }
+  await db
+    .update(schema.oauthProviders)
+    .set({
+      clientId: clientId,
+      clientSecret: clientSecret,
+      oauthScopes: scopes,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.oauthProviders.id, provider.id))
+
+  return c.json({
+    success: true,
+    message: "Connection and Provider updated",
   })
 }
 

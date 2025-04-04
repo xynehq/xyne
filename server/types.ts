@@ -87,6 +87,13 @@ export const createOAuthProvider = z.object({
   app: z.nativeEnum(Apps),
 })
 
+export const updateOAuthProvider = z.object({
+  clientId: z.string(),
+  clientSecret: z.string(),
+  scopes: z.array(z.string()),
+  app: z.nativeEnum(Apps),
+})
+
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
 })

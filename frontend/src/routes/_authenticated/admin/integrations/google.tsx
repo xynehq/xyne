@@ -96,6 +96,31 @@ const submitOAuthForm = async (
   return response.json()
 }
 
+const updateOAuthForm = async (
+  value: OAuthFormData,
+  navigate: ReturnType<typeof useNavigate>,
+) => {
+  const response = await api.admin.oauth.update.$put({
+    form: {
+      clientId: value.clientId,
+      clientSecret: value.clientSecret,
+      scopes: value.scopes,
+      app: Apps.GoogleDrive,
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
 type ServiceAccountFormData = {
   email: string
   file: any
@@ -107,7 +132,10 @@ type OAuthFormData = {
   scopes: string[]
 }
 
-export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
+export const OAuthForm = ({
+  onSuccess,
+  isEditing,
+}: { onSuccess: any; isEditing?: boolean }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
@@ -118,11 +146,19 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value, navigate) // Call the async function
-        toast({
-          title: "OAuth integration added",
-          description: "Perform OAuth to add the data",
-        })
+        if (isEditing) {
+          await updateOAuthForm(value, navigate)
+          toast({
+            title: "OAuth integration is Updated",
+            description: "Perform OAuth to add the data",
+          })
+        } else {
+          await submitOAuthForm(value, navigate) // Call the async function
+          toast({
+            title: "OAuth integration added",
+            description: "Perform OAuth to add the data",
+          })
+        }
         onSuccess()
       } catch (error) {
         toast({
@@ -212,8 +248,9 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
           </>
         )}
       />
-
-      <Button type="submit">Create Integration</Button>
+      <Button type="submit">
+        {isEditing ? "Update Integration" : "Create Integration"}
+      </Button>
     </form>
   )
 }
@@ -409,10 +446,15 @@ const UserStatsTable = ({
       </TableHeader>
       <TableBody>
         {Object.entries(userStats).map(([email, stats]) => {
+          // console.log(stats.,stats.totalMail);
+          useEffect(() => {
+            console.log("Fetched stats:", stats)
+          }, [stats])
+          const totalCount: number = stats.totalDrive + stats.totalMail
           const percentage: number = parseFloat(
             (
               ((stats.gmailCount + stats.driveCount) * 100) /
-              (stats.totalDrive + stats.totalMail)
+              totalCount
             ).toFixed(2),
           )
           const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
