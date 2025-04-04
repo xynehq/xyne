@@ -118,31 +118,29 @@ schema chat_container {
         }
 
         function combined_nativeRank() {
-            expression: nativeRank(name,topic,description)
+            expression: nativeRank(name) + nativeRank(topic) + nativeRank(description)
         }
 
     }
 
     rank-profile default_native inherits initial {
 
-        # Have to increase nativeRank score by 10x, 
-        # the nativeRank score is so low to be comparable with vector_score 
         first-phase {
-          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
         }
 
         global-phase {
           expression {
             (
-              (query(alpha) * scale(vector_score)) + 
-              ((1 - query(alpha)) * (10 * combined_nativeRank))
+              (query(alpha) * vector_score) + 
+              ((1 - query(alpha)) *  combined_nativeRank)
             )
           }
           rerank-count: 1000
         }
 
         match-features {
-          scale(vector_score)
+          vector_score
           combined_nativeRank
           nativeRank(name)
           nativeRank(topic)
@@ -161,7 +159,7 @@ schema chat_container {
         global-phase {
           expression {
             (
-              (query(alpha) * scale(vector_score)) + 
+              (query(alpha) * vector_score) + 
               ((1 - query(alpha)) * scale(combined_bm25))
             )
           }
@@ -169,35 +167,33 @@ schema chat_container {
         }
 
         match-features {
-          scale(vector_score)
-          scale(combined_bm25)
+          vector_score
           bm25(name)
           bm25(topic)
           bm25(description)
+          scale(combined_bm25)
         }
     }
 
     # change here for ai queries accordingly
     rank-profile default_ai inherits initial {
 
-        # Have to increase nativeRank score by 10x, 
-        # the nativeRank score is so low to be comparable with vector_score 
         first-phase {
-          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
         }
 
         global-phase {
           expression {
             (
-              (query(alpha) * scale(vector_score)) + 
-              ((1 - query(alpha)) * (10 * combined_nativeRank))
+              (query(alpha) * vector_score) + 
+              ((1 - query(alpha)) *  combined_nativeRank)
             )
           }
           rerank-count: 1000
         }
 
         match-features {
-          scale(vector_score)
+          vector_score
           combined_nativeRank
           nativeRank(name)
           nativeRank(topic)

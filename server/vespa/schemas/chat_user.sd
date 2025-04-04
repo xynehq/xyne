@@ -141,20 +141,24 @@ schema chat_user {
         }
 
         function combined_nativeRank(){
-            expression: nativeRank(name,email) + nativeRank(statusText,title)
+            expression {
+                nativeRank(name) + 
+                nativeRank(email) + 
+                nativeRank(statusText) + 
+                nativeRank(title)
+            }
         }
     }
 
     # Ranking profiles
     rank-profile default_native inherits initial {
         
-        # Increase the score by 10x to ensure consistency with other schemas
         first-phase {
-          expression: (10 * combined_nativeRank)
+          expression: combined_nativeRank
         }
 
         global-phase {
-          expression :  (10 * combined_nativeRank)
+          expression : combined_nativeRank
           rerank-count: 1000
         }
 
@@ -191,13 +195,12 @@ schema chat_user {
     # change here for ai queries accordingly
     rank-profile default_ai inherits initial {
         
-        # Increase the score by 10x to ensure consistency with other schemas
         first-phase {
-          expression: (10 * combined_nativeRank)
+          expression: combined_nativeRank
         }
 
         global-phase {
-          expression :  (10 * combined_nativeRank)
+          expression : combined_nativeRank
           rerank-count: 1000
         }
 

@@ -96,7 +96,7 @@ schema mail {
   }
   }
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
-    indexing: guard { input chunks } | embed | attribute | index
+    indexing: input chunks | embed | attribute | index
     attribute {
       distance-metric: angular
     }
@@ -157,7 +157,7 @@ schema mail {
       }
 
       function combined_nativeRank() {
-        expression: nativeRank(subject,chunks)
+        expression: nativeRank(subject) + nativeRank(chunks)
       }
 
       function chunk_scores() {
@@ -167,9 +167,7 @@ schema mail {
     }
 
   rank-profile default_native inherits initial {
-      
-      # Have to increase nativeRank score by 10x, 
-      # the nativeRank score is so low to be comparable with vector_score 
+       
       first-phase {
         expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
       }
@@ -177,15 +175,15 @@ schema mail {
       global-phase {
         expression {
           (
-            (query(alpha) * scale(vector_score)) + 
-            ((1 - query(alpha)) * (10 * combined_nativeRank))
+            (query(alpha) * vector_score) + 
+            ((1 - query(alpha)) *  combined_nativeRank)
           )
         }
         rerank-count: 1000
       }
 
     match-features {
-      scale(vector_score)
+      vector_score
       combined_nativeRank
       nativeRank(subject)
       nativeRank(chunks)
@@ -207,7 +205,7 @@ schema mail {
     global-phase {
       expression {
         (
-          (query(alpha) * scale(vector_score)) +
+          (query(alpha) * vector_score) +
           ((1 - query(alpha)) * scale(combined_bm25))
         )
       }
@@ -215,7 +213,7 @@ schema mail {
     }
 
      match-features {
-      scale(vector_score)
+      vector_score
       bm25(chunks)
       bm25(subject)
       scale(combined_bm25)
@@ -225,9 +223,7 @@ schema mail {
 
   # change here for ai queries accordingly
   rank-profile default_ai inherits initial {
-      
-      # Have to increase nativeRank score by 10x, 
-      # the nativeRank score is so low to be comparable with vector_score 
+       
       first-phase {
         expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
       }
@@ -235,15 +231,15 @@ schema mail {
       global-phase {
         expression {
           (
-            (query(alpha) * scale(vector_score)) + 
-            ((1 - query(alpha)) * (10 * combined_nativeRank))
+            (query(alpha) * vector_score) + 
+            ((1 - query(alpha)) *  combined_nativeRank)
           )
         }
         rerank-count: 1000
       }
 
     match-features {
-      scale(vector_score)
+      vector_score
       combined_nativeRank
       nativeRank(subject)
       nativeRank(chunks)

@@ -189,6 +189,9 @@ schema user {
     }
 
     rank-profile initial {
+        constants {
+            FIELD_BOOST: 4
+        }
 
         function scale(val) {
             expression: 2*atan(val/4)/(3.14159)
@@ -199,14 +202,13 @@ schema user {
         }
 
         function combined_nativeRank(){
-            expression: nativeRank(name) + nativeRank(email)
+            expression: (FIELD_BOOST * nativeRank(name)) + (FIELD_BOOST * nativeRank(email))
         }
     }
 
     rank-profile default_native inherits initial {
-        # Increase the score by 10x to ensure consistency with other schemas
         global-phase {
-            expression: (10 * combined_nativeRank)
+            expression: combined_nativeRank
         }
 
         match-features {
@@ -231,9 +233,8 @@ schema user {
 
     # change here for ai queries accordingly
     rank-profile default_ai inherits initial {
-        # Increase the score by 10x to ensure consistency with other schemas
         global-phase {
-            expression: (10 * combined_nativeRank)
+            expression: combined_nativeRank
         }
 
         match-features {

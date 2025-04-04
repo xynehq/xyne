@@ -197,25 +197,23 @@ schema event {
 
         function combined_nativeRank() {
             expression {
-                (nativeRank(name,description,url)) +
-                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames,attendeesNames)))
+                (nativeRank(name) + nativeRank(description) + nativeRank(url)) +
+                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames)))
             }
         }
     }
 
     rank-profile default_native inherits initial {
-        
-        # Have to increase nativeRank score by 10x, 
-        # the nativeRank score is so low to be comparable with vector_score 
+              
         first-phase {
-            expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+            expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
         }
 
         global-phase {
             expression {
               (
-                (query(alpha) * scale(vector_score)) + 
-                ((1 - query(alpha)) * (10 * combined_nativeRank))
+                (query(alpha) * vector_score) + 
+                ((1 - query(alpha)) *  combined_nativeRank)
               )
             }
             rerank-count: 1000
@@ -223,7 +221,7 @@ schema event {
 
         match-features {
           combined_nativeRank
-          scale(vector_score)
+          vector_score
           nativeRank(name)
           nativeRank(description)
           nativeRank(attachmentFilenames)
@@ -245,7 +243,7 @@ schema event {
         global-phase {
           expression {
             (
-              (query(alpha) * scale(vector_score)) +
+              (query(alpha) * vector_score) +
               ((1 - query(alpha)) * scale(combined_bm25))
             )
           }
@@ -253,7 +251,7 @@ schema event {
         }
 
          match-features {
-          scale(vector_score)
+          vector_score
           scale(bm25(name))
           scale(bm25(description))
           scale(bm25(attachmentFilenames))
@@ -265,18 +263,16 @@ schema event {
 
     # change here for ai queries accordingly
     rank-profile default_ai inherits initial {
-        
-        # Have to increase nativeRank score by 10x, 
-        # the nativeRank score is so low to be comparable with vector_score 
+             
         first-phase {
-            expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+            expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
         }
 
         global-phase {
             expression {
               (
-                (query(alpha) * scale(vector_score)) + 
-                ((1 - query(alpha)) * (10 * combined_nativeRank))
+                (query(alpha) * vector_score) + 
+                ((1 - query(alpha)) *  combined_nativeRank)
               )
             }
             rerank-count: 1000
@@ -284,7 +280,7 @@ schema event {
 
         match-features {
           combined_nativeRank
-          scale(vector_score)
+          vector_score
           nativeRank(name)
           nativeRank(description)
           nativeRank(attachmentFilenames)
