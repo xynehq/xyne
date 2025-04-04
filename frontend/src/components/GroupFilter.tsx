@@ -129,6 +129,7 @@ export const GroupFilter = ({
       {flattenGroups(groups).map(({ app, entity, count }, index) => {
         return (
           <GroupFilterItem
+            key={`${app}-${entity}`}
             index={index}
             title={getName(app, entity)}
             filter={filter}
