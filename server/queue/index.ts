@@ -14,6 +14,7 @@ import {
 import { checkDownloadsFolder } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
+import { handleSlackIngestion } from "@/integrations/slack"
 
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
@@ -77,12 +78,12 @@ const initWorkers = async () => {
       jobData.authType === AuthType.ServiceAccount
     ) {
       Logger.info("Handling Google Service Account Ingestion from Queue")
-      await handleGoogleServiceAccountIngestion(boss, job)
+      // await handleGoogleServiceAccountIngestion(boss, job)
     } else if (
       jobData.app === Apps.GoogleDrive &&
       jobData.authType === AuthType.OAuth
     ) {
-      await handleGoogleOAuthIngestion(boss, job)
+      // await handleGoogleOAuthIngestion(boss, job)
     } else {
       throw new Error("Unsupported job")
     }

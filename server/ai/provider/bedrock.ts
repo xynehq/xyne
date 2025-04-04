@@ -12,6 +12,8 @@ import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.AI)
+import config from "@/config"
+const { StartThinkingToken, EndThinkingToken } = config
 export class BedrockProvider extends BaseProvider {
   constructor(client: any) {
     super(client, AIProviders.AwsBedrock)
@@ -60,6 +62,7 @@ export class BedrockProvider extends BaseProvider {
       ),
     }
   }
+
   async *converseStream(
     messages: Message[],
     params: ModelParams,
@@ -85,6 +88,29 @@ export class BedrockProvider extends BaseProvider {
     try {
       const response = await this.client.send(command)
 
+      let startedReasoning = false
+      if (params.reasoning) {
+        for await (const chunk of response.stream) {
+          if (chunk.contentBlockStop) {
+            yield {
+              text: EndThinkingToken,
+            }
+            break
+          }
+          const reasoning =
+            chunk.contentBlockDelta?.delta?.reasoningContent?.text
+          if (!startedReasoning) {
+            yield {
+              text: `${StartThinkingToken}${reasoning}`,
+            }
+            startedReasoning = true
+          } else {
+            yield {
+              text: reasoning,
+            }
+          }
+        }
+      }
       if (response.stream) {
         for await (const chunk of response.stream) {
           const text = chunk.contentBlockDelta?.delta?.text

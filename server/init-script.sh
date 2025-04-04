@@ -10,11 +10,6 @@ if ! command -v bun &> /dev/null; then
   exit 1
 fi
 
-if [ ! -f ".env" ]; then
-  echo ".env file not found. Creating a new one..."
-  touch .env
-fi 
-
 echo "Running generation and migration commands for the server..."
 bun i
 bun run generate
@@ -46,6 +41,6 @@ bun run build
 
 echo "Removing orphan container....."
 
-docker rm vespa-init-container
+docker rm vespa-init
 
 echo "***************Initialization completed*******************"

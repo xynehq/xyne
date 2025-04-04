@@ -112,10 +112,17 @@ export const retryWithBackoff = async <T>(
   try {
     return await fn() // Attempt the function
   } catch (error: any) {
+    Logger.warn(error)
     const isQuotaError =
-      error.message.includes("Quota exceeded") ||
-      error.code === 429 ||
-      error.code === 403
+      error.message.includes("Quota exceeded") || error.code === 429
+    // error.code === 403
+    // Check for specific 403 Rate Limit errors that benefit from backoff
+    const is403RetryableRateLimitError =
+      error.code === 403 &&
+      ["userRateLimitExceeded", "rateLimitExceeded"].includes(
+        error.errors?.[0]?.reason,
+      )
+
     const isGoogleTimeoutError =
       error.code === "ETIMEDOUT" ||
       error.code === "ECONNABORTED" ||
@@ -125,13 +132,23 @@ export const retryWithBackoff = async <T>(
       // Specific Google API timeout indicators
       error.code === 504 || // Gateway Timeout
       error.code === 503 // Service Unavailable
-    if ((isQuotaError || isGoogleTimeoutError) && retries < MAX_RETRIES) {
+
+    // Combine checks for retryable errors
+    if (
+      (isQuotaError || isGoogleTimeoutError || is403RetryableRateLimitError) &&
+      retries < MAX_RETRIES
+    ) {
       const baseWaitTime = Math.pow(2, retries) * 3000 // Exponential backoff
       const jitter = Math.random() * 800 // Add jitter for randomness
       const waitTime = baseWaitTime + jitter
 
+      let reason = "Quota/Timeout"
+      if (is403RetryableRateLimitError) {
+        reason = "403 Rate Limit"
+      }
+
       Logger.info(
-        `[${context}] Quota error. Retrying after ${waitTime.toFixed(
+        `[${context}] ${reason} error. Retrying after ${waitTime.toFixed(
           0,
         )}ms (Attempt ${retries + 1}/${MAX_RETRIES})`,
       )
@@ -201,6 +218,7 @@ export const IsGoogleApp = (app: Apps) => {
   return (
     app === Apps.GoogleDrive ||
     app === Apps.Gmail ||
-    app === Apps.GoogleCalendar
+    app === Apps.GoogleCalendar ||
+    app === Apps.GoogleWorkspace
   )
 }

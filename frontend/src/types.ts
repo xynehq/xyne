@@ -37,3 +37,11 @@ export type Filter = {
   entity?: Entity
   lastUpdated?: LastUpdated
 }
+
+export enum OAuthIntegrationStatus {
+  Provider = "Provider", // yet to create provider
+  OAuth = "OAuth", // provider created but OAuth not yet connected
+  OAuthConnecting = "OAuthConnecting",
+  OAuthConnected = "OAuthConnected",
+  OAuthPaused = "OAuthPaused",
+}
