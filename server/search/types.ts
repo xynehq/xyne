@@ -472,6 +472,10 @@ export const VespaChatMessageSearchSchema = VespaChatMessageSchema.extend({
     chunks_summary: z.array(z.string()).optional(),
   })
 
+export const VespaChatMessageGetSchema = VespaChatMessageSchema.merge(
+  defaultVespaFieldsSchema,
+)
+
 export const VespaChatUserSchema = z.object({
   docId: z.string(),
   name: z.string(),
@@ -903,7 +907,7 @@ export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
-export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
+export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
   docId: true,
   teamId: true,
   channelId: true,
@@ -919,7 +923,7 @@ export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
   username: true,
   attachmentIds: true,
   mentions: true,
-  // relevance: true,
+  relevance: true,
   updatedAt: true,
 })
   .strip()

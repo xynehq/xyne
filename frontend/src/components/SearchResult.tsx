@@ -60,6 +60,7 @@ export const SearchResult = ({
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -99,6 +100,7 @@ export const SearchResult = ({
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -144,6 +146,7 @@ export const SearchResult = ({
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -191,6 +194,7 @@ export const SearchResult = ({
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -230,6 +234,7 @@ export const SearchResult = ({
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -281,6 +286,7 @@ export const SearchResult = ({
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,

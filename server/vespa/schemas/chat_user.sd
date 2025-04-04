@@ -119,7 +119,6 @@ schema chat_user {
 
     rank-profile initial {
         inputs {
-            query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double
         }
 
