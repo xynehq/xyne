@@ -199,7 +199,7 @@ schema user {
         }
 
         function combined_nativeRank(){
-            expression: nativeRank(name,email)
+            expression: nativeRank(name) + nativeRank(email)
         }
     }
 
@@ -223,7 +223,7 @@ schema user {
         }
 
         match-features {
-            combined_bm25
+            scale(combined_bm25)
             bm25(name)
             bm25(email)
         }

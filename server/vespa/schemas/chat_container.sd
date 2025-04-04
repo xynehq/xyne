@@ -142,7 +142,7 @@ schema chat_container {
         }
 
         match-features {
-          vector_score
+          scale(vector_score)
           combined_nativeRank
           nativeRank(name)
           nativeRank(topic)
@@ -169,7 +169,7 @@ schema chat_container {
         }
 
         match-features {
-          vector_score
+          scale(vector_score)
           scale(combined_bm25)
           bm25(name)
           bm25(topic)
@@ -197,7 +197,7 @@ schema chat_container {
         }
 
         match-features {
-          vector_score
+          scale(vector_score)
           combined_nativeRank
           nativeRank(name)
           nativeRank(topic)

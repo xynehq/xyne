@@ -141,7 +141,7 @@ schema chat_user {
         }
 
         function combined_nativeRank(){
-            expression: nativeRank(name,email,statusText,title)
+            expression: nativeRank(name,email) + nativeRank(statusText,title)
         }
     }
 

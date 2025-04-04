@@ -152,7 +152,7 @@ schema mail_attachment {
     }
 
     match-features {
-      vector_score
+      scale(vector_score)
       combined_nativeRank
       nativeRank(filename)
       nativeRank(chunks)
@@ -183,8 +183,8 @@ schema mail_attachment {
     }
 
      match-features {
-      vector_score
-      combined_bm25
+      scale(vector_score)
+      scale(combined_bm25)
       bm25(filename)
       bm25(chunks)
       chunk_scores
@@ -211,7 +211,7 @@ schema mail_attachment {
     }
 
     match-features {
-      vector_score
+      scale(vector_score)
       combined_nativeRank
       nativeRank(filename)
       nativeRank(chunks)
