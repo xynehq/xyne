@@ -69,7 +69,7 @@ schema file {
     }
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: input chunks | embed | attribute | index
     attribute {
         distance-metric: angular
@@ -99,7 +99,7 @@ schema file {
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e) tensor<bfloat16>(v[384])  # Query embedding
+      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
     }
 
@@ -133,7 +133,7 @@ schema file {
     }
 
     function combined_nativeRank() {
-      expression: nativeRank(title,chunks)
+      expression: nativeRank(title) + nativeRank(chunks)
     }
 
     function chunk_scores() {
@@ -142,19 +142,17 @@ schema file {
   }
 
  
-  rank-profile default inherits initial {
+  rank-profile default_native inherits initial {
 
-    # Have to increase nativeRank score by 10x, 
-    # the nativeRank score is so low to be comparable with vector_score 
     first-phase {
-      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
     }
 
     global-phase {
       expression {
         (
-          (query(alpha) * scale(vector_score)) + 
-          ((1 - query(alpha)) * (10 * combined_nativeRank))
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
         )
       }
       rerank-count: 1000
@@ -184,7 +182,7 @@ schema file {
     global-phase {
       expression {
         (
-          (query(alpha) * scale(vector_score)) +
+          (query(alpha) * vector_score) +
           ((1 - query(alpha)) * scale(combined_bm25))
         )
       }
@@ -195,8 +193,35 @@ schema file {
       vector_score
       bm25(chunks)
       bm25(title)
-      combined_bm25
+      scale(combined_bm25)
       chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
     }
   }
 

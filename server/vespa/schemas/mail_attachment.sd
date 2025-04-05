@@ -63,8 +63,8 @@ schema mail_attachment {
     
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
-    indexing: guard { input chunks } | embed | attribute | index
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+    indexing: input chunks | embed | attribute | index
     attribute {
       distance-metric: angular
     }
@@ -92,7 +92,7 @@ schema mail_attachment {
 
   rank-profile initial {
     inputs {
-      query(e) tensor<bfloat16>(v[384])
+      query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
     }
 
@@ -125,27 +125,25 @@ schema mail_attachment {
     }
 
     function combined_nativeRank() {
-      expression: nativeRank(filename,chunks)
+      expression: nativeRank(filename) + nativeRank(chunks)
     }
 
     function chunk_scores() {
-      expression: elementwise(bm25(chunks),x,double)
+      expression: elementwise(bm25(chunks), x, double)
     }
   }
 
-  rank-profile default inherits initial {
-
-    # Have to increase nativeRank score by 10x, 
-    # the nativeRank score is so low to be comparable with vector_score 
+  rank-profile default_native inherits initial {
+ 
     first-phase {
-      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (10 * combined_nativeRank))
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
     }
 
     global-phase {
       expression {
-        (
-          (query(alpha) * scale(vector_score)) + 
-          ((1 - query(alpha)) * (10 * combined_nativeRank))
+        0.8 * (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) * combined_nativeRank)
         )
       }
       rerank-count: 1000
@@ -166,7 +164,7 @@ schema mail_attachment {
     first-phase {
       expression {
         (
-          (query(alpha) * scale(vector_score)) +
+          (query(alpha) * vector_score) +
           ((1 - query(alpha)) * scale(combined_bm25))
         )
       }
@@ -174,8 +172,8 @@ schema mail_attachment {
 
     global-phase {
       expression {
-        (
-          (query(alpha) * scale(vector_score)) +
+        0.78 * (
+          (query(alpha) * vector_score) +
           ((1 - query(alpha)) * scale(combined_bm25))
         )
       }
@@ -184,9 +182,35 @@ schema mail_attachment {
 
      match-features {
       vector_score
-      combined_bm25
+      scale(combined_bm25)
       bm25(filename)
       bm25(chunks)
+      chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+ 
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) * combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(filename)
+      nativeRank(chunks)
       chunk_scores
     }
   }

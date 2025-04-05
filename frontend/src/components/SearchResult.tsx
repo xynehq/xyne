@@ -53,13 +53,15 @@ export const SearchResult = ({
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
             <summary className="text-gray-500 cursor-pointer">
-              Debug Info
+              {`Debug Info: ${index} : ${result.relevance}`}
+
             </summary>
             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -92,13 +94,14 @@ export const SearchResult = ({
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
             <summary className="text-gray-500 cursor-pointer">
-              Debug Info
+            {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -137,13 +140,14 @@ export const SearchResult = ({
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
             <summary className="text-gray-500 cursor-pointer">
-              Debug Info
+            {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -184,13 +188,14 @@ export const SearchResult = ({
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
             <summary className="text-gray-500 cursor-pointer">
-              Debug Info
+            {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -223,13 +228,14 @@ export const SearchResult = ({
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
             <summary className="text-gray-500 cursor-pointer">
-              Debug Info
+            {`Debug Info: ${index} : ${result.relevance}`}
             </summary>
             <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
               {JSON.stringify(
                 {
                   matchfeatures: result.matchfeatures,
                   rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
                 },
                 null,
                 2,
@@ -270,6 +276,25 @@ export const SearchResult = ({
           </a>
         </div>
         {result.text && <HighlightedText chunk_summary={result.text} />}
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+          <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">
+            {`Debug Info: ${index} : ${result.relevance}`}
+            </summary>
+            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+              {JSON.stringify(
+                {
+                  matchfeatures: result.matchfeatures,
+                  rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        )}
       </div>
     )
   }

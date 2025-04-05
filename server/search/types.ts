@@ -235,8 +235,10 @@ const MailAttachmentMatchFeaturesSchema = z.object({
 // Match features for chat message schema
 const ChatMessageMatchFeaturesSchema = z.object({
   vector_score: z.number().optional(),
-  scaled_bm25_text: z.number().optional(),
-  freshness_score: z.number().optional(),
+  combined_nativeRank: z.number().optional(),
+  "nativeRank(text)": z.number().optional(),
+  "nativeRank(username)": z.number().optional(),
+  "nativeRank(name)": z.number().optional(),
 })
 
 export type FileMatchFeatures = z.infer<typeof FileMatchFeaturesSchema>
@@ -462,11 +464,17 @@ export const VespaChatMessageSchema = z.object({
 
 export const VespaChatMessageSearchSchema = VespaChatMessageSchema.extend({
   sddocname: z.literal(chatMessageSchema),
+  matchfeatures: ChatMessageMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
 })
   .merge(defaultVespaFieldsSchema)
   .extend({
     chunks_summary: z.array(z.string()).optional(),
   })
+
+export const VespaChatMessageGetSchema = VespaChatMessageSchema.merge(
+  defaultVespaFieldsSchema,
+)
 
 export const VespaChatUserSchema = z.object({
   docId: z.string(),
@@ -899,7 +907,7 @@ export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
-export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
+export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
   docId: true,
   teamId: true,
   channelId: true,
@@ -915,11 +923,13 @@ export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
   username: true,
   attachmentIds: true,
   mentions: true,
-  // relevance: true,
+  relevance: true,
   updatedAt: true,
 })
   .strip()
   .extend({
     type: z.literal("chat_message"),
     chunks_summary: z.array(z.string()).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
   })
