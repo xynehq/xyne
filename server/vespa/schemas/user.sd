@@ -212,7 +212,6 @@ schema user {
         }
 
         match-features {
-            nativeRank(name,email)
             nativeRank(name)
             nativeRank(email)
         }
@@ -238,7 +237,6 @@ schema user {
         }
 
         match-features {
-            nativeRank(name,email)
             nativeRank(name)
             nativeRank(email)
         }

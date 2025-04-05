@@ -161,7 +161,7 @@ schema mail {
       }
 
       function chunk_scores() {
-        expression: elementwise(bm25(chunks),x,double)
+        expression: elementwise(bm25(chunks), x, double)
       }
       
     }

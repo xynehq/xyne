@@ -129,7 +129,7 @@ schema mail_attachment {
     }
 
     function chunk_scores() {
-      expression: elementwise(bm25(chunks),x,double)
+      expression: elementwise(bm25(chunks), x, double)
     }
   }
 
@@ -141,7 +141,7 @@ schema mail_attachment {
 
     global-phase {
       expression {
-        (
+        0.8 * (
           (query(alpha) * vector_score) + 
           ((1 - query(alpha)) * combined_nativeRank)
         )
@@ -172,7 +172,7 @@ schema mail_attachment {
 
     global-phase {
       expression {
-        (
+        0.78 * (
           (query(alpha) * vector_score) +
           ((1 - query(alpha)) * scale(combined_bm25))
         )
