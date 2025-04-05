@@ -157,7 +157,7 @@ schema mail {
       }
 
       function combined_nativeRank() {
-        expression: nativeRank(subject) + nativeRank(chunks)
+        expression: (nativeRank(subject) + nativeRank(chunks))/2
       }
 
       function chunk_scores() {

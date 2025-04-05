@@ -166,7 +166,7 @@ schema event {
             THREE_MONTHS_IN_SECONDS: 7776000
             ONE_YEAR_IN_SECONDS: 31536000
             MAX_DOC_DECAY: 0.5
-            META_FIELDS_DECAY: 0.8
+            META_FIELDS_DECAY: 0.2
         }
 
         function scale(val) {
@@ -197,8 +197,8 @@ schema event {
 
         function combined_nativeRank() {
             expression {
-                (nativeRank(name) + nativeRank(description) + nativeRank(url)) +
-                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames)))
+                (nativeRank(name) + nativeRank(description) + nativeRank(url))/3 +
+                 (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames)))
             }
         }
     }

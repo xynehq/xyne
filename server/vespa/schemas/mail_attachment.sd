@@ -125,7 +125,7 @@ schema mail_attachment {
     }
 
     function combined_nativeRank() {
-      expression: nativeRank(filename) + nativeRank(chunks)
+      expression: (nativeRank(filename) + nativeRank(chunks))/2
     }
 
     function chunk_scores() {

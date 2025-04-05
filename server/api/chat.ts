@@ -931,6 +931,7 @@ export async function* UnderstandMessageAndAnswer(
   message: string,
   classification: TemporalClassifier & { cost: number },
   messages: Message[],
+  alpha: number
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -945,7 +946,7 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       email,
       userCtx,
-      0.2,
+      alpha,
       chatPageSize,
       maxDefaultSummary,
     )
@@ -959,7 +960,7 @@ export async function* UnderstandMessageAndAnswer(
       messages,
       email,
       userCtx,
-      0.2,
+      alpha,
       chatPageSize,
       3,
       maxDefaultSummary,
@@ -1237,6 +1238,7 @@ export const MessageApi = async (c: Context) => {
               message,
               classification,
               messagesWithNoErrResponse,
+              0.5,
             )
 
             stream.writeSSE({
@@ -1641,6 +1643,7 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               classification,
               convWithNoErrMsg,
+              0.5
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({

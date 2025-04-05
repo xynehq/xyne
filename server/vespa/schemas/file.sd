@@ -133,11 +133,11 @@ schema file {
     }
 
     function combined_nativeRank() {
-      expression: nativeRank(title) + nativeRank(chunks)
+      expression: (nativeRank(title) + nativeRank(chunks))/2
     }
 
     function chunk_scores() {
-      expression: elementwise(bm25(chunks),x,double)
+      expression: elementwise(bm25(chunks), x, double)
     }
   }
 

@@ -190,7 +190,7 @@ schema user {
 
     rank-profile initial {
         constants {
-            FIELD_BOOST: 4
+            FIELD_BOOST: 10
         }
 
         function scale(val) {
