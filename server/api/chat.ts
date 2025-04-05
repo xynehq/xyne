@@ -931,7 +931,7 @@ export async function* UnderstandMessageAndAnswer(
   message: string,
   classification: TemporalClassifier & { cost: number },
   messages: Message[],
-  alpha: number
+  alpha: number,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1218,7 +1218,7 @@ export const MessageApi = async (c: Context) => {
             // ambigious user message
             if (parsed.queryRewrite) {
               Logger.info(
-                "The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
+                `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
               )
               message = parsed.queryRewrite
             } else {
@@ -1643,7 +1643,7 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               classification,
               convWithNoErrMsg,
-              0.5
+              0.5,
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({

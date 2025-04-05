@@ -138,7 +138,7 @@ export default {
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 6,
-  chatPageSize: 15, // default page size for ai search 
+  chatPageSize: 15, // default page size for ai search
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
