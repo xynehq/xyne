@@ -29,6 +29,13 @@ import {
 } from "@/components/ui/table"
 import { wsClient } from "@/api"
 import { ConnectorType, Connector } from "@/types"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // Function to fetch connectors
 export const getConnectors = async (): Promise<any> => {
@@ -144,6 +151,9 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
   const [isLoading, setIsLoading] = useState(false)
   const [connectors, setConnectors] = useState<Connector[]>([])
   const { toast } = useToast()
+  const [selectedGroup, setSelectedGroup] = useState<string>("")
+  const [groups, setGroups] = useState<Array<{ name: string; jid: string }>>([])
+  const [isFetchingGroups, setIsFetchingGroups] = useState(false)
 
   const whatsappConnector = connectors.find(
     (connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
@@ -418,6 +428,83 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
     }
   }
 
+  // Add function to fetch WhatsApp groups
+  const fetchWhatsAppGroups = async () => {
+    try {
+      setIsFetchingGroups(true)
+      const response = await api.whatsapp.groups.$get()
+      if (!response.ok) {
+        throw new Error("Failed to fetch groups")
+      }
+      const data = await response.json()
+      console.log("WhatsApp groups response:", data)
+      setGroups(data.groups)
+    } catch (error) {
+      console.error("Error fetching WhatsApp groups:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch WhatsApp groups",
+        variant: "destructive",
+      })
+    } finally {
+      setIsFetchingGroups(false)
+    }
+  }
+
+  // Add function to start group import
+  const handleStartImport = async () => {
+    if (!selectedGroup) {
+      toast({
+        title: "Error",
+        description: "Please select a group to import",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const whatsappConnector = connectors.find(
+        (connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+      )
+
+      if (!whatsappConnector) {
+        throw new Error("WhatsApp connector not found")
+      }
+
+      // Start ingestion for the selected group
+      const res = await api.admin.connectors.whatsapp.$post({
+        json: {
+          connectorId: whatsappConnector.id,
+          action: "startIngestion",
+          groupId: selectedGroup
+        }
+      })
+      
+      if (!res.ok) {
+        throw new Error("Could not start WhatsApp data ingestion")
+      }
+
+      toast({
+        title: "Success",
+        description: "Started importing messages from selected group",
+      })
+    } catch (error) {
+      console.error("Error starting group import:", error)
+      toast({
+        title: "Error",
+        description: "Failed to start group import",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Fetch groups when WhatsApp is connected
+  useEffect(() => {
+    if (whatsappStatus === WhatsAppQRStatus.Connected) {
+      fetchWhatsAppGroups()
+    }
+  }, [whatsappStatus])
+
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
@@ -439,6 +526,53 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
               />
             </CardContent>
           </Card>
+
+          {whatsappStatus === WhatsAppQRStatus.Connected && (
+            <Card className="w-[400px] mt-4">
+              <CardHeader>
+                <CardTitle>WhatsApp Groups</CardTitle>
+                <CardDescription>
+                  Select a group to import messages from
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-4">
+                  <Button 
+                    onClick={fetchWhatsAppGroups}
+                    disabled={isFetchingGroups}
+                    className="w-full"
+                  >
+                    {isFetchingGroups ? "Fetching Groups..." : "Fetch Groups"}
+                  </Button>
+                  {groups.length > 0 && (
+                    <Select
+                      value={selectedGroup}
+                      onValueChange={setSelectedGroup}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a group" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {groups.map((group) => (
+                          <SelectItem key={group.jid} value={group.jid}>
+                            {group.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {selectedGroup && (
+                    <Button 
+                      onClick={handleStartImport}
+                      className="w-full"
+                    >
+                      Start Import
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {Object.keys(whatsappStats).length > 0 && (
             <div className="mt-4 w-full">

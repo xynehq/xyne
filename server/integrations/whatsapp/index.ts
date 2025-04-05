@@ -159,6 +159,37 @@ export const getMessages = async (sock: WASocket, conversationId: string): Promi
   return messages
 }
 
+/**
+ * Fetch profile picture with timeout and error handling
+ */
+const safeProfilePictureUrl = async (
+  sock: WASocket | undefined, 
+  jid: string, 
+  type: 'image' | 'preview' = 'image', 
+  timeoutMs: number = 10000
+): Promise<string | undefined> => {
+  if (!sock) return undefined;
+  
+  try {
+    // Set up a promise that will automatically timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    const pictureUrl = await Promise.race([
+      sock.profilePictureUrl(jid, type),
+      new Promise<string>((_, reject) => {
+        setTimeout(() => reject(new Error('Profile picture fetch timeout')), timeoutMs);
+      })
+    ]);
+    
+    clearTimeout(timeoutId);
+    return pictureUrl;
+  } catch (error) {
+    Logger.warn(`Failed to fetch profile picture for ${jid}: ${error}`);
+    return undefined;
+  }
+};
+
 const insertWhatsAppMessage = async (
   email: string,
   message: WhatsAppMessage,
@@ -528,18 +559,13 @@ export const handleWhatsAppIngestion = async (
                   Number(msg.messageTimestamp)
               }
 
-              let pictureUrl : string | undefined = '';
-
-              
-                const type = 'image';  // For high resolution image ('preview' for low resolution)
-              const timeoutMs = 30000;  // Optional timeout in milliseconds (30 seconds in this example)
-
-
+              let pictureUrl: string | undefined;
               try {
-                Logger.info("started fetching profile picture")
-                 pictureUrl = await sock?.profilePictureUrl(msg.key.participant as string, type, timeoutMs) ;
+                Logger.info("Started fetching profile picture");
+                pictureUrl = await safeProfilePictureUrl(sock, msg.key.participant as string || msg.key.remoteJid as string);
               } catch (error) {
-                Logger.error(`Error fetching profile picture: ${error}`);
+                Logger.warn(`Error fetching profile picture: ${error}`);
+                // Continue without the picture URL
               }
               
               Logger.info(`Inserting message into Vespa: ${JSON.stringify(whatsappMessage, null, 2)}`)
@@ -554,6 +580,22 @@ export const handleWhatsAppIngestion = async (
                 Logger.info(`Message ${messageId} successfully pushed to Vespa`);
                 // Update tracker
                 tracker.updateUserStats(data.email, StatType.WhatsApp_Message, 1)
+                
+                // Log tracker stats to verify they're being updated
+                const beforeStats = tracker.getOAuthProgress().userStats[data.email]
+                Logger.info(`WhatsApp message stats AFTER update: ${JSON.stringify(beforeStats)}`)
+                
+                // Send immediate WebSocket update to reflect the new message count
+                const progress = tracker.getProgress()
+                const userStats = tracker.getOAuthProgress().userStats
+                Logger.info(`Sending immediate update after message insertion - Stats: ${JSON.stringify(userStats)}`)
+                sendWebsocketMessage(
+                  JSON.stringify({
+                    progress,
+                    userStats,
+                  }),
+                  connector.externalId,
+                )
               } else {
                 Logger.error(`Failed to push message ${messageId} to Vespa`)
               }
@@ -591,6 +633,18 @@ export const handleWhatsAppIngestion = async (
               Logger.info(`Contact ${contact.id} successfully pushed to Vespa`);
               // Update tracker
               tracker.updateUserStats(data.email, StatType.WhatsApp_Contact, 1)
+              
+              // Send immediate WebSocket update to reflect the new contact count
+              const progress = tracker.getProgress()
+              const userStats = tracker.getOAuthProgress().userStats
+              Logger.info(`Sending immediate update after contact insertion - Stats: ${JSON.stringify(userStats)}`)
+              sendWebsocketMessage(
+                JSON.stringify({
+                  progress,
+                  userStats,
+                }),
+                connector.externalId,
+              )
             } else {
               Logger.error(`Failed to push contact ${contact.id} to Vespa`)
             }
@@ -603,9 +657,6 @@ export const handleWhatsAppIngestion = async (
 
     // Handle chats
     sock.ev.on('chats.upsert', async (chats) => {
-
-
-
       Logger.info(`Chats updated: ${JSON.stringify(chats, null, 2)}`)
       
       try {
@@ -632,6 +683,18 @@ export const handleWhatsAppIngestion = async (
               Logger.info(`Conversation ${chat.id} successfully pushed to Vespa`);
               // Update tracker
               tracker.updateUserStats(data.email, StatType.WhatsApp_Conversation, 1)
+              
+              // Send immediate WebSocket update to reflect the new conversation count
+              const progress = tracker.getProgress()
+              const userStats = tracker.getOAuthProgress().userStats
+              Logger.info(`Sending immediate update after conversation insertion - Stats: ${JSON.stringify(userStats)}`)
+              sendWebsocketMessage(
+                JSON.stringify({
+                  progress,
+                  userStats,
+                }),
+                connector.externalId,
+              )
             } else {
               Logger.error(`Failed to push conversation ${chat.id} to Vespa`)
             }
@@ -706,11 +769,9 @@ const startIngestion = async (
     // Fetch and insert groups
     Logger.info("Fetching WhatsApp groups")
     try {
-
-    
-
       
       const groupsData = await sock.groupFetchAllParticipating()
+      
       Logger.info(`Retrieved groups data: ${Object.keys(groupsData).length}`)
       
       const groups = Object.values(groupsData).map((group: any) => ({
@@ -725,12 +786,6 @@ const startIngestion = async (
           isSuperAdmin: p.isSuperAdmin
         }))
       }));
-
-      
-
-      
-      
-    
       
       Logger.info(`Found ${groups.length} groups`)
 
@@ -749,6 +804,18 @@ const startIngestion = async (
           Logger.info(`Group ${group.id} successfully pushed to Vespa`);
           // Update stats
           tracker.updateUserStats(email, StatType.WhatsApp_Group, 1)
+          
+          // Send immediate WebSocket update to reflect the new group
+          const progress = tracker.getProgress()
+          const userStats = tracker.getOAuthProgress().userStats
+          Logger.info(`Sending immediate update after group insertion - Stats: ${JSON.stringify(userStats)}`)
+          sendWebsocketMessage(
+            JSON.stringify({
+              progress,
+              userStats,
+            }),
+            connectorId,
+          )
         } else {
           Logger.error(`Failed to push group ${group.id} to Vespa`)
         }
