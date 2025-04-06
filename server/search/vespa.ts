@@ -29,7 +29,7 @@ import type {
   Inserts,
   VespaSearchResults,
 } from "@/search/types"
-import { getErrorMessage, removeStopwords } from "@/utils"
+import { getErrorMessage } from "@/utils"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -188,7 +188,7 @@ export const autocomplete = async (
 
   const searchPayload = {
     yql: yqlQuery,
-    query: query,
+    query,
     email,
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
@@ -207,9 +207,14 @@ export const autocomplete = async (
   }
 }
 
-type RankProfile = "default"
+export enum SearchModes {
+  NativeRank = "default_native",
+  BM25 = "default_bm25",
+  AI = "default_ai",
+}
+
 type YqlProfile = {
-  profile: RankProfile
+  profile: SearchModes
   yql: string
 }
 
@@ -218,7 +223,7 @@ export const HybridDefaultProfile = (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
-  profile: RankProfile = "default",
+  profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -366,7 +371,7 @@ const HybridDefaultProfileAppEntityCounts = (
   }
 
   return {
-    profile: "default",
+    profile: SearchModes.NativeRank,
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
@@ -430,6 +435,7 @@ export const searchVespa = async (
   timestampRange?: { from: number; to: number } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
+  rankProfile: SearchModes = SearchModes.NativeRank,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
@@ -437,7 +443,7 @@ export const searchVespa = async (
     limit,
     app,
     entity,
-    "default",
+    rankProfile,
     timestampRange,
     excludedIds,
     notInMailLabels,
@@ -445,13 +451,11 @@ export const searchVespa = async (
 
   const hybridDefaultPayload = {
     yql,
-    q: query, // Original user input query
-    query: removeStopwords(query), // removing stopwords for only bm25, to keep semantic meaning for embeddings
+    query,
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@q)",
+    "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
-    "input.query(bm25ChunkWeight)": 0.7,
     hits: limit,
     ...(offset
       ? {
@@ -460,7 +464,11 @@ export const searchVespa = async (
       : {}),
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
+    ...(config.isDebugMode
+      ? { "ranking.listFeatures": true, tracelevel: 4 }
+      : {}), // Add tracelevel based on isDebugMode
   }
+
   try {
     return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {

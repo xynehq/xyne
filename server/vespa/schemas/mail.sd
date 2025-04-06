@@ -95,17 +95,10 @@ schema mail {
     attribute: fast-search
   }
   }
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
-    indexing: guard { input chunks } | embed | attribute | index
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+    indexing: input chunks | embed | attribute | index
     attribute {
       distance-metric: angular
-    }
-  }
-
-  field subject_embeddings type tensor<bfloat16>(v[384])  {
-    indexing: input subject | embed | attribute | index
-    attribute {
-        distance-metric: angular
     }
   }
 
@@ -129,47 +122,12 @@ schema mail {
   }
 
   # Hybrid search rank profile combining BM25 for subject and chunks, and vector search for chunk embeddings
-  rank-profile initial {
-    inputs {
-      query(e) tensor<bfloat16>(v[384])  # Query embedding
-      query(alpha) double  # Alpha parameter for hybrid weight
-      query(bm25ChunkWeight) double 
-    }
-
-    function chunk_vector_score() {
-      expression: closeness(field, chunk_embeddings)
-    }
-
-    function subject_bm25_score() {
-      expression: bm25(subject)
-    }
-    function attachment_bm25_score() {
-      expression: bm25(attachmentFilenames)
-    }
-
-    # First phase combines BM25 (subject and chunks) and vector similarity (chunks)
-    first-phase {
-      expression: (query(alpha) * chunk_vector_score()) + ((1 - query(alpha)) * (bm25(chunks) + bm25(subject)))
-    }
-
-    # Global phase (optional if more complex reranking is needed)
-    # Note: Ensure the functions are called properly in the expression
-    global-phase {
-      expression {
-        (query(alpha) * normalize_linear(chunk_vector_score)) +
-        ((1 - query(alpha)) * (normalize_linear(bm25(chunks)) + normalize_linear(bm25(subject)) + normalize_linear(attachment_bm25_score)))
+    rank-profile initial {
+      inputs {
+        query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
+        query(alpha) double  # Alpha parameter for hybrid weight
       }
-      rerank-count: 1000
-    }
 
-    match-features {
-      bm25(subject)
-      bm25(chunks)
-      closeness(field, chunk_embeddings)
-    }
-  }
-    rank-profile default inherits initial {
-    
       constants {
         THREE_MONTHS_IN_SECONDS: 7890000
         ONE_YEAR_IN_SECONDS: 31536000
@@ -189,51 +147,103 @@ schema mail {
       function doc_recency() {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
       }
-
-      function subject_vector_score() {
-        expression: closeness(field, subject_embeddings)
-      }
       
-      function chunk_vector_score() {
+      function vector_score() {
         expression: closeness(field, chunk_embeddings)
       }
 
-      function vector_score() {
-        expression: max(chunk_vector_score,subject_vector_score)
-      }
-
-      function scaled_bm25_chunks() {
-        expression: scale(bm25(chunks))
-      }
-
-      function scaled_bm25_subject() {
-        expression: scale(bm25(subject))
-      }
-
       function combined_bm25() {
-        expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_subject
+        expression: bm25(subject) + bm25(chunks)
       }
 
+      function combined_nativeRank() {
+        expression: (nativeRank(subject) + nativeRank(chunks))/2
+      }
+
+      function chunk_scores() {
+        expression: elementwise(bm25(chunks), x, double)
+      }
+      
+    }
+
+  rank-profile default_native inherits initial {
+       
       first-phase {
-        expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+        expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
       }
 
       global-phase {
         expression {
           (
-            (query(alpha) * scale(vector_score)) +
-            ((1 - query(alpha)) * max(scaled_bm25_subject,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
-          ) * doc_recency
+            (query(alpha) * vector_score) + 
+            ((1 - query(alpha)) *  combined_nativeRank)
+          )
         }
         rerank-count: 1000
       }
 
     match-features {
-      chunk_vector_score
-      subject_vector_score
-      scaled_bm25_chunks
-      scaled_bm25_subject
-      doc_recency
+      vector_score
+      combined_nativeRank
+      nativeRank(subject)
+      nativeRank(chunks)
+      chunk_scores
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
+
+    first-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+        )
+      }
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) +
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
+      }
+      rerank-count: 1000
+    }
+
+     match-features {
+      vector_score
+      bm25(chunks)
+      bm25(subject)
+      scale(combined_bm25)
+      chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+       
+      first-phase {
+        expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+      }
+
+      global-phase {
+        expression {
+          (
+            (query(alpha) * vector_score) + 
+            ((1 - query(alpha)) *  combined_nativeRank)
+          )
+        }
+        rerank-count: 1000
+      }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(subject)
+      nativeRank(chunks)
+      chunk_scores
     }
   }
 

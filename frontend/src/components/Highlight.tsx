@@ -74,10 +74,110 @@ const parseHighlight = (text: string): ReactNode[] => {
   )
 }
 
+/**
+ * Trims text to show the area with highest highlight density
+ * Only trims when first few lines don't have highlights
+ */
+function trimToHighlightHotspot(text: string): string {
+  // Constants for estimation
+  const CHARS_PER_LINE = 80
+  const INITIAL_LINES_TO_CHECK = 2
+  const WINDOW_SIZE_LINES = 4
+  const WINDOW_SIZE_CHARS = WINDOW_SIZE_LINES * CHARS_PER_LINE
+
+  // Find all highlight positions (both start and end)
+  const highlightPositions: Array<{ start: number; end: number }> = []
+  let pos = -1
+
+  // Get all highlight start and end positions
+  while ((pos = text.indexOf("<hi>", pos + 1)) !== -1) {
+    const endPos = text.indexOf("</hi>", pos)
+    if (endPos !== -1) {
+      highlightPositions.push({
+        start: pos,
+        end: endPos + 5, // +5 for the "</hi>" tag length
+      })
+    }
+  }
+
+  // If no highlights, return original text
+  if (highlightPositions.length === 0) {
+    return text
+  }
+
+  // Check if first few lines have highlights
+  const firstLinesChars = INITIAL_LINES_TO_CHECK * CHARS_PER_LINE
+  const hasHighlightsInFirstLines = highlightPositions.some(
+    (h) => h.start < firstLinesChars,
+  )
+
+  // If first few lines already have highlights, don't trim
+  if (hasHighlightsInFirstLines) {
+    return text
+  }
+
+  // Find the window with maximum highlight density
+  let bestStartPos = 0
+  let maxHighlightCount = 0
+
+  // Scan through text with a sliding window to find area with most highlights
+  for (
+    let windowStart = 0;
+    windowStart < text.length - WINDOW_SIZE_CHARS;
+    windowStart += CHARS_PER_LINE / 2
+  ) {
+    const windowEnd = windowStart + WINDOW_SIZE_CHARS
+
+    // Count highlights in this window
+    const highlightsInWindow = highlightPositions.filter(
+      (h) =>
+        (h.start >= windowStart && h.start < windowEnd) ||
+        (h.end > windowStart && h.end <= windowEnd) ||
+        (h.start < windowStart && h.end > windowEnd),
+    ).length
+
+    if (highlightsInWindow > maxHighlightCount) {
+      maxHighlightCount = highlightsInWindow
+      bestStartPos = windowStart
+    }
+  }
+
+  // If we found a good window with highlights
+  if (maxHighlightCount > 0) {
+    // Try to start at a clean word boundary
+    const spaceBeforeStart = text.lastIndexOf(" ", bestStartPos)
+    if (spaceBeforeStart > bestStartPos - 20) {
+      bestStartPos = spaceBeforeStart + 1
+    }
+
+    // Calculate end position
+    const endPos = Math.min(text.length, bestStartPos + WINDOW_SIZE_CHARS)
+
+    // Create result with ellipsis if trimmed
+    let result = text.substring(bestStartPos, endPos)
+
+    // Add ellipsis if we trimmed the text
+    if (bestStartPos > 0) {
+      result = "..." + result
+    }
+
+    if (endPos < text.length) {
+      result = result + "..."
+    }
+
+    return result
+  }
+
+  // Fallback to original text if something went wrong
+  return text
+}
+
 // Component that renders chunk summary with parsing
 const HighlightedText = ({ chunk_summary }: { chunk_summary: string }) => (
   <p className="text-left text-sm mt-1 text-[#464B53] text-ellipsis ml-[44px] line-clamp-3">
-    {chunk_summary ? parseHighlight(chunk_summary) : " "}
+    {chunk_summary
+      ? parseHighlight(trimToHighlightHotspot(chunk_summary))
+      : " "}
   </p>
 )
 
