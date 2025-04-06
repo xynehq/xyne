@@ -29,7 +29,7 @@ import type {
   Inserts,
   VespaSearchResults,
 } from "@/search/types"
-import { getErrorMessage, removeStopwords } from "@/utils"
+import { getErrorMessage } from "@/utils"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"

@@ -45,7 +45,6 @@ import { MessageRole, Subsystem } from "@/types"
 import {
   getErrorMessage,
   getRelativeTime,
-  removeStopwords,
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
@@ -375,14 +374,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // we are going to do 4 months answer
   // if not found we go back to iterative page search
   const message = input
-  let searchTerms = removeStopwords(input)
   // Ensure we have search terms even after stopword removal
-  if (!searchTerms.trim()) {
-    searchTerms = message
-  }
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
-    await searchVespa(searchTerms, email, null, null, pageSize, 0, alpha, {
+    await searchVespa(message, email, null, null, pageSize, 0, alpha, {
       from: new Date().getTime() - 4 * monthInMs,
       to: new Date().getTime(),
     })
@@ -401,7 +396,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
       // get the first page of results
       let results = await searchVespa(
-        searchTerms,
+        message,
         email,
         null,
         null,
@@ -560,7 +555,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     let results: VespaSearchResponse
     if (pageNumber === 0) {
       results = await searchVespa(
-        searchTerms,
+        message,
         email,
         null,
         null,
@@ -578,7 +573,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     } else {
       results = await searchVespa(
-        searchTerms,
+        message,
         email,
         null,
         null,
@@ -730,11 +725,6 @@ async function* generatePointQueryTimeExpansion(
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   const message = input
-  let searchTerms = removeStopwords(input)
-  // Ensure we have search terms even after stopword removal
-  if (!searchTerms.trim()) {
-    searchTerms = message
-  }
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
   const direction = classification.direction as string
@@ -765,7 +755,7 @@ async function* generatePointQueryTimeExpansion(
     // Search in both calendar events and emails
     const [eventResults, results] = await Promise.all([
       searchVespa(
-        searchTerms,
+        message,
         email,
         Apps.GoogleCalendar,
         null,
@@ -775,7 +765,7 @@ async function* generatePointQueryTimeExpansion(
         { from, to },
       ),
       searchVespa(
-        searchTerms,
+        message,
         email,
         null,
         null,
