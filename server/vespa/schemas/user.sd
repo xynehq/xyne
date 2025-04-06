@@ -138,6 +138,14 @@ schema user {
             match: exact
         }
     }
+
+    field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
+        indexing: (input name || "") . " " .(input email || "") | embed | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+    }
+
     # Fuzzy matching for the 'name' field
     field name_fuzzy type string {
         indexing: input name | index
@@ -189,8 +197,9 @@ schema user {
     }
 
     rank-profile initial {
-        constants {
-            FIELD_BOOST: 10
+       inputs {
+            query(e) tensor<bfloat16>(v[384])
+            query(alpha) double 
         }
 
         function scale(val) {
@@ -202,18 +211,24 @@ schema user {
         }
 
         function combined_nativeRank(){
-            expression: (FIELD_BOOST * nativeRank(name)) + (FIELD_BOOST * nativeRank(email))
+            expression:  nativeRank(name) +  nativeRank(email)
+        }
+
+        function vector_score() {
+            expression: closeness(field, chunk_embeddings)
         }
     }
 
     rank-profile default_native inherits initial {
+        # slight boost for people
         global-phase {
-            expression: combined_nativeRank
+            expression: 1.2 * ((query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank))
         }
 
         match-features {
             nativeRank(name)
             nativeRank(email)
+            vector_score
         }
     }
 

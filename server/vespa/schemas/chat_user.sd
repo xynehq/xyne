@@ -70,6 +70,14 @@ schema chat_user {
         }
     }
 
+    field chunk_embeddings type tensor<bfloat16>(v[384]) {
+        indexing: (input name || "")  . " " .  (input statusText || "") . " " .  (input email || "") . " " .  (input title || "") | embed | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+    }
+
+
     # Fuzzy matching fields
     field name_fuzzy type string {
         indexing: input name | index
@@ -120,6 +128,7 @@ schema chat_user {
     rank-profile initial {
         inputs {
             query(alpha) double
+            query(e) tensor<bfloat16>(v[384])
         }
 
         function scale(val) {
@@ -128,6 +137,10 @@ schema chat_user {
 
         function freshness_score() {
             expression: exp(-1 * (now() - attribute(updatedAt)) / (3600 * 24))
+        }
+
+        function vector_score() {
+            expression: closeness(field, chunk_embeddings)
         }
 
         function combined_bm25() {
@@ -153,11 +166,11 @@ schema chat_user {
     rank-profile default_native inherits initial {
         
         first-phase {
-          expression: combined_nativeRank
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
         }
 
         global-phase {
-          expression : combined_nativeRank
+          expression : (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
           rerank-count: 1000
         }
 
@@ -167,6 +180,7 @@ schema chat_user {
           nativeRank(email)
           nativeRank(statusText)
           nativeRank(title)
+          vector_score
         }
     }
 

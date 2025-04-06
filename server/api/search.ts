@@ -158,7 +158,7 @@ export const SearchApi = async (c: Context) => {
         entity,
         page,
         offset,
-        0.2,
+        0.5,
         timestampRange,
       ),
     ]
@@ -176,7 +176,7 @@ export const SearchApi = async (c: Context) => {
       entity,
       page,
       offset,
-      0.2,
+      0.5,
       timestampRange,
     )
   }
