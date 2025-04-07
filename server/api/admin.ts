@@ -16,6 +16,7 @@ import {
   type SaaSJob,
   type ServiceAccountConnection,
   Subsystem,
+  type UpdateOAuthProviderForm,
 } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
@@ -136,6 +137,7 @@ export const CreateOAuthProvider = async (c: Context) => {
   if (!userRes || !userRes.length) {
     throw new NoUserFound({})
   }
+  console.log(userRes)
   const [user] = userRes
   // @ts-ignore
   const form: OAuthProvider = c.req.valid("form")
@@ -182,7 +184,9 @@ export const CreateOAuthProvider = async (c: Context) => {
 }
 
 export const UpdateOAuthProvider = async (c: Context) => {
-  const { sub } = c.get(JwtPayloadKey)
+  const payload = c.get(JwtPayloadKey)
+  console.log("Full JWT Payload:", payload)
+  const { sub } = payload
   const email = sub
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
@@ -190,12 +194,11 @@ export const UpdateOAuthProvider = async (c: Context) => {
   }
   const [user] = userRes
   // @ts-ignore
-  const form: OAuthProvider = c.req.valid("form")
-  const { clientId, clientSecret, scopes, app } = form
-  // get connect_ide
-  const provider = await getOAuthProvider(db, user.id, app)
-  if (!provider) {
-    throw new HTTPException(404, { message: "OAuth Provider not found" })
+  const form: UpdateOAuthProviderForm = c.req.valid("form")
+  const { clientId, clientSecret, scopes, connectorId } = form
+  const connector = await getConnectorByExternalId(connectorId, user.id)
+  if (!connector) {
+    throw new HTTPException(404, { message: "Connector not found" })
   }
   await db
     .update(schema.oauthProviders)
@@ -205,8 +208,12 @@ export const UpdateOAuthProvider = async (c: Context) => {
       oauthScopes: scopes,
       updatedAt: new Date(),
     })
-    .where(eq(schema.oauthProviders.id, provider.id))
-
+    .where(
+      and(
+        eq(schema.oauthProviders.userId, user.id),
+        eq(schema.oauthProviders.connectorId, connector.id),
+      ),
+    )
   return c.json({
     success: true,
     message: "Connection and Provider updated",

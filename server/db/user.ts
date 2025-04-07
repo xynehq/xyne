@@ -11,6 +11,8 @@ import {
   type PublicUserWorkspace,
   type SelectUser,
 } from "./schema"
+import { connectors } from "./schema"
+import { type Apps } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"

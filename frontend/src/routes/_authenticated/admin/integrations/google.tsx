@@ -99,6 +99,7 @@ const submitOAuthForm = async (
 const updateOAuthForm = async (
   value: OAuthFormData,
   navigate: ReturnType<typeof useNavigate>,
+  connectorId?: string,
 ) => {
   const response = await api.admin.oauth.update.$put({
     form: {
@@ -106,6 +107,7 @@ const updateOAuthForm = async (
       clientSecret: value.clientSecret,
       scopes: value.scopes,
       app: Apps.GoogleDrive,
+      connectorId: connectorId,
     },
   })
   if (!response.ok) {
@@ -130,12 +132,14 @@ type OAuthFormData = {
   clientId: string
   clientSecret: string
   scopes: string[]
+  connectorId?: string
 }
 
 export const OAuthForm = ({
   onSuccess,
   isEditing,
-}: { onSuccess: any; isEditing?: boolean }) => {
+  connectorId,
+}: { onSuccess: any; isEditing?: boolean; connectorId?: string }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
@@ -147,7 +151,7 @@ export const OAuthForm = ({
     onSubmit: async ({ value }) => {
       try {
         if (isEditing) {
-          await updateOAuthForm(value, navigate)
+          await updateOAuthForm(value, navigate, connectorId)
           toast({
             title: "OAuth integration is Updated",
             description: "Perform OAuth to add the data",
@@ -742,6 +746,12 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
+              connectorId={
+                data?.find(
+                  (v) =>
+                    v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
+                )?.id
+              }
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
