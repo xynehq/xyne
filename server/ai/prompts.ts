@@ -697,15 +697,31 @@ export const searchQueryPrompt = (userContext: string): string => {
        - what is the time in Japan
        If the query is conversational, respond naturally and appropriately. 
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
-    4. Output JSON in the following structure:
+    4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
+      - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
+        - ✓ "When is my next meeting with John?"
+        - ✓ "When's my next review?"
+        - ✗ "Next quarter's goals"
+        - ✗ "Next version release"
+
+       - If asking about a past event or meeting,set "temporalDirection" to "prev". For example:
+       - ✓ " When was the last time I had lunch with the team"
+       - ✓ "When was my last call with Sarah?"
+       - ✓ "Previous board meeting date"
+       - ✗ "When did junaid join?",
+       - ✗ "Last time we updated the docs"
+       - Otherwise, set "temporalDirection" to null.
+    5. Output JSON in the following structure:
        {
          "answer": "<string or null>",
-         "queryRewrite": "<string or null>"
+         "queryRewrite": "<string or null>",
+         "temporalDirection": "next" | "prev" | null
        }
        - "answer" should only contain a conversational response only if it’s a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
-    5. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    6. If user makes a statement leading to a regular conversation then you can put response in answer
+       - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event, or null if unrelated.
+    6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+    7. If user makes a statement leading to a regular conversation then you can put response in answer
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
