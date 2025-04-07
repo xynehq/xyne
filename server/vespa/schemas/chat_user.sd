@@ -70,6 +70,14 @@ schema chat_user {
         }
     }
 
+    field chunk_embeddings type tensor<bfloat16>(v[384]) {
+        indexing: (input name || "")  . " " .  (input statusText || "") . " " .  (input email || "") . " " .  (input title || "") | embed | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+    }
+
+
     # Fuzzy matching fields
     field name_fuzzy type string {
         indexing: input name | index
@@ -86,14 +94,6 @@ schema chat_user {
         match {
             gram
             gram-size: 3
-        }
-    }
-
-    # Vector search field
-    field chunk_embeddings type tensor<bfloat16>(v[384]) {
-        indexing: (input name || "")  . " " .  (input statusText || "") . " " .  (input email || "") . " " .  (input title || "") | embed | attribute | index
-        attribute {
-            distance-metric: angular
         }
     }
 
@@ -124,9 +124,10 @@ schema chat_user {
         fields: name, email, app, entity, image
     }
 
-    # Ranking profiles
-    rank-profile default {
+
+    rank-profile initial {
         inputs {
+            query(alpha) double
             query(e) tensor<bfloat16>(v[384])
         }
 
@@ -144,35 +145,87 @@ schema chat_user {
 
         function combined_bm25() {
             expression {
-                scale(bm25(name)) +
-                scale(bm25(email)) +
-                scale(bm25(statusText)) +
-                scale(bm25(title))
+                bm25(name) +
+                bm25(email) +
+                bm25(statusText) +
+                bm25(title)
             }
         }
 
+        function combined_nativeRank(){
+            expression {
+                nativeRank(name) + 
+                nativeRank(email) + 
+                nativeRank(statusText) + 
+                nativeRank(title)
+            }
+        }
+    }
+
+    # Ranking profiles
+    rank-profile default_native inherits initial {
+        
         first-phase {
-            expression: (vector_score) + combined_bm25
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
         }
 
         global-phase {
-            expression {
-                (normalize_linear(vector_score)) +
-                combined_bm25 +
-                freshness_score
-            }
-            rerank-count: 1000
+          expression : (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+          rerank-count: 1000
         }
 
         match-features {
-            scale(bm25(name))
-            scale(bm25(email))
-            scale(bm25(statusText))
-            scale(bm25(title))
-            vector_score
-            freshness_score
+          combined_nativeRank
+          nativeRank(name)
+          nativeRank(email)
+          nativeRank(statusText)
+          nativeRank(title)
+          vector_score
         }
     }
+
+    # will be use for single schema query
+    rank-profile default_bm25 inherits initial {
+        
+        first-phase {
+          expression: combined_bm25
+        }
+
+        global-phase {
+          expression : scale(combined_bm25)
+          rerank-count: 1000
+        }
+
+        match-features {
+          scale(combined_bm25)
+          bm25(name)
+          bm25(email)
+          bm25(statusText)
+          bm25(title)
+        }
+    }
+
+    # change here for ai queries accordingly
+    rank-profile default_ai inherits initial {
+        
+        first-phase {
+          expression: combined_nativeRank
+        }
+
+        global-phase {
+          expression : combined_nativeRank
+          rerank-count: 1000
+        }
+
+        match-features {
+          combined_nativeRank
+          nativeRank(name)
+          nativeRank(email)
+          nativeRank(statusText)
+          nativeRank(title)
+        }
+    }
+
 
     # Autocomplete profile
     rank-profile autocomplete inherits default {

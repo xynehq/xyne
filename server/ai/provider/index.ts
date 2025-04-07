@@ -147,7 +147,6 @@ const initializeProviders = (): void => {
     togetherProvidder = new TogetherProvider(together)
   }
 
-  console.log(FireworksAIModel, FireworksApiKey)
   if (FireworksAIModel && FireworksApiKey) {
     const fireworks = new Fireworks({
       apiKey: FireworksApiKey,

@@ -138,6 +138,14 @@ schema user {
             match: exact
         }
     }
+
+    field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
+        indexing: (input name || "") . " " .(input email || "") | embed | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+    }
+
     # Fuzzy matching for the 'name' field
     field name_fuzzy type string {
         indexing: input name | index
@@ -188,9 +196,10 @@ schema user {
         fields: name, email, app, entity, photoLink, creationTime
     }
 
-    rank-profile default {
-        constants {
-            DECAY: 0.6
+    rank-profile initial {
+       inputs {
+            query(e) tensor<bfloat16>(v[384])
+            query(alpha) double 
         }
 
         function scale(val) {
@@ -201,18 +210,50 @@ schema user {
             expression: bm25(name) + bm25(email)
         }
 
+        function combined_nativeRank(){
+            expression:  nativeRank(name) +  nativeRank(email)
+        }
+
+        function vector_score() {
+            expression: closeness(field, chunk_embeddings)
+        }
+    }
+
+    rank-profile default_native inherits initial {
+        # slight boost for people
         global-phase {
-            # Added decay to mitigate the disproportionate increase in BM25 scores 
-            # for shorter content with minimal matches, preventing them from 
-            # overpowering more relevant documents.
-            expression {
-               (DECAY * scale(combined_bm25))
-            }
+            expression: 1.2 * ((query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank))
         }
 
         match-features {
+            nativeRank(name)
+            nativeRank(email)
+            vector_score
+        }
+    }
+
+    rank-profile default_bm25 inherits initial {
+
+        global-phase {
+            expression: scale(combined_bm25)
+        }
+
+        match-features {
+            scale(combined_bm25)
             bm25(name)
             bm25(email)
+        }
+    }
+
+    # change here for ai queries accordingly
+    rank-profile default_ai inherits initial {
+        global-phase {
+            expression: combined_nativeRank
+        }
+
+        match-features {
+            nativeRank(name)
+            nativeRank(email)
         }
     }
 

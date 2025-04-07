@@ -466,7 +466,14 @@ if (typeof process !== "undefined" && !("Bun" in globalThis)) {
   )
 }
 
-process.on("uncaughtException", (error) => {
-  Logger.error(error, "uncaughtException")
-  // shutdown server?
-})
+const errorEvents: string[] = [
+  `uncaughtException`,
+  `unhandledRejection`,
+  `rejectionHandled`,
+  `warning`,
+]
+errorEvents.forEach((eventType: string) =>
+  process.on(eventType, (error: Error) => {
+    Logger.error(error, `Caught via event: ${eventType}`)
+  }),
+)

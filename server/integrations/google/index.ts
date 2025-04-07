@@ -26,6 +26,7 @@ import {
   type SaaSOAuthJob,
 } from "@/types"
 import PgBoss from "pg-boss"
+import { hashPdfFilename } from "@/utils"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   GetDocument,
@@ -122,6 +123,7 @@ const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 let gmailWorker
 if (typeof process !== "undefined" && !("Bun" in globalThis)) {
   gmailWorker = new NodeWorker(new URL("gmail-worker.js", import.meta.url))
+  Logger.info("Gmail worker initialized")
   gmailWorker.on("error", (error) => {
     Logger.error(
       error,
@@ -130,6 +132,7 @@ if (typeof process !== "undefined" && !("Bun" in globalThis)) {
   })
 } else {
   gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
+  Logger.info("Gmail worker initialized")
   gmailWorker.onerror = (error: ErrorEvent) => {
     Logger.error(
       error,
@@ -1816,9 +1819,13 @@ export const googlePDFsVespa = async (
         )
         return null
       }
-      const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
+
+      const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
+        Logger.debug(
+          `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
+        )
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
 
         const docs: Document[] = await safeLoadPDF(pdfPath)

@@ -12,6 +12,7 @@ import {
   userQuerySchema,
   MailAttachmentResponseSchema,
   mailAttachmentSchema,
+  scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
 } from "search/types"
@@ -211,8 +212,10 @@ export const FileResponseSchema = VespaFileSchema.pick({
     chunk: z.string().optional(),
     chunkIndex: z.number().optional(),
     mimeType: z.string(),
-    chunks_summary: z.array(z.string()).optional(),
+    chunks_summary: z.array(scoredChunk).optional(),
     relevance: z.number(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
+    rankfeatures: z.any().optional(),
   })
   .strip()
 
@@ -228,7 +231,10 @@ export const EventResponseSchema = VespaEventSchema.pick({
     type: z.literal(eventSchema),
     relevance: z.number(),
     description: z.string().optional(),
+    chunks_summary: z.array(z.string()).optional(),
     attendeesNames: z.array(z.string()).optional(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
+    rankfeatures: z.any().optional(),
   })
   .strip()
 
@@ -243,6 +249,8 @@ export const UserResponseSchema = VespaUserSchema.pick({
   .extend({
     type: z.literal(userSchema),
     relevance: z.number(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
+    rankfeatures: z.any().optional(),
   })
 
 // Search Response Schema
@@ -261,6 +269,7 @@ export const SearchResponseSchema = z.object({
   count: z.number(),
   results: z.array(SearchResultsSchema),
   groupCount: z.any(),
+  trace: z.any().optional(),
 })
 
 export type FileResponse = z.infer<typeof FileResponseSchema>
