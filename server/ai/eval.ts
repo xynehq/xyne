@@ -856,7 +856,7 @@ const endToEndFlow = async (
   let answer = ""
   let citations = []
   let citationMap: Record<number, number> = {}
-  let parsed = { answer: "", queryRewrite: "" }
+  let parsed = { answer: "", queryRewrite: "", direction: null }
   let buffer = ""
   for await (const chunk of searchOrAnswerIterator) {
     if (chunk.text) {
@@ -880,17 +880,16 @@ const endToEndFlow = async (
       costArr.push(chunk.cost)
     }
   }
-
-  if (parsed.answer === null) {
-    // ambigious user message
+  console.log("Parsed output:", parsed)
+  if (parsed.answer === null || parsed.answer === "") {
     if (parsed.queryRewrite) {
       message = parsed.queryRewrite
     }
-    const classification: TemporalClassifier & { cost: number } =
-      await temporalEventClassification(message, {
-        modelId,
-        stream: false,
-      })
+  
+    const classification: TemporalClassifier = {
+      direction: parsed.temporalDirection,
+    }
+  
     const iterator = UnderstandMessageAndAnswer(
       email,
       ctx,
