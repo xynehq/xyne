@@ -26,7 +26,7 @@ import {
   type SaaSOAuthJob,
 } from "@/types"
 import PgBoss from "pg-boss"
-import { hashPdfFilename } from "@/integrations/google/utils"
+import { hashPdfFilename } from "@/utils"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   GetDocument,

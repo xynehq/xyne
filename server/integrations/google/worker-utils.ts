@@ -8,14 +8,14 @@ import {
   downloadPDF,
   safeLoadPDF,
 } from "@/integrations/google/pdf-utils"
-import { hashPdfFilename } from "@/integrations/google/utils"
-import { retryWithBackoff } from "@/utils"
+import { hashPdfFilename, retryWithBackoff } from "@/utils"
 import { chunkDocument } from "@/chunks"
 import { Apps, type Attachment } from "@/search/types"
 import { MAX_ATTACHMENT_PDF_SIZE } from "@/integrations/google/config"
 import path from "node:path"
 import crypto from "node:crypto"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+
 export async function saveGmailAttachment(
   attachmentData: any,
   fileName: string,
@@ -58,7 +58,6 @@ export const getGmailAttachmentChunks = async (
     )
     return null
   }
-
   try {
     const hashInput = `${filename}_${messageId}`
     const fileExt = path.extname(filename)

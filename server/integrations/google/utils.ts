@@ -36,7 +36,6 @@ import type PgBoss from "pg-boss"
 import fs from "node:fs/promises"
 import path from "path"
 import { retryWithBackoff } from "@/utils"
-import crypto from "node:crypto"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 // TODO: make it even more extensive
@@ -409,15 +408,4 @@ export const checkDownloadsFolder = async (
       `Error checking or deleting files in downloads folder: ${error} ${(error as Error).stack}`,
     )
   }
-}
-
-// Function to hash the filename to hide the filename while
-// Storing the data in the memory
-export const hashPdfFilename = (filename: string): string => {
-  const hashInput = filename
-  const hash = crypto.createHash("md5").update(hashInput).digest("hex")
-
-  const newFilename = hash
-  Logger.info(`Filename hashed: ${filename} -> ${newFilename}`)
-  return newFilename
 }
