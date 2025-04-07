@@ -8,12 +8,14 @@ import {
   downloadPDF,
   safeLoadPDF,
 } from "@/integrations/google/pdf-utils"
-import { retryWithBackoff } from "@/utils"
+import { hashPdfFilename, retryWithBackoff } from "@/utils"
 import { chunkDocument } from "@/chunks"
 import { Apps, type Attachment } from "@/search/types"
 import { MAX_ATTACHMENT_PDF_SIZE } from "@/integrations/google/config"
 import path from "node:path"
+import crypto from "node:crypto"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+
 export async function saveGmailAttachment(
   attachmentData: any,
   fileName: string,
@@ -56,11 +58,13 @@ export const getGmailAttachmentChunks = async (
     )
     return null
   }
-
   try {
-    const fileName = `${filename}_${messageId}`
-    const downloadAttachmentFilePath = path.join(downloadDir, fileName)
-
+    const hashInput = `${filename}_${messageId}`
+    const fileExt = path.extname(filename)
+    const hashFileName = hashPdfFilename(hashInput)
+    if (hashFileName == null) return null
+    const newfileName = `${hashFileName}${fileExt}`
+    const downloadAttachmentFilePath = path.join(downloadDir, newfileName)
     const attachementResp = await retryWithBackoff(
       () =>
         gmail.users.messages.attachments.get({
@@ -78,13 +82,16 @@ export const getGmailAttachmentChunks = async (
       attachementResp.data.data,
       downloadAttachmentFilePath,
     )
+
     const docs = await safeLoadPDF(downloadAttachmentFilePath)
+
     if (!docs || docs.length === 0) {
       Logger.warn(`Could not get content for file: ${filename}. Skipping it`)
 
       await deleteDocument(downloadAttachmentFilePath)
       return null
     }
+
     attachmentChunks = docs
       // @ts-ignore
       .flatMap((doc) => chunkDocument(doc.pageContent))

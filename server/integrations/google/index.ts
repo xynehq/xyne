@@ -26,6 +26,7 @@ import {
   type SaaSOAuthJob,
 } from "@/types"
 import PgBoss from "pg-boss"
+import { hashPdfFilename } from "@/utils"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   GetDocument,
@@ -116,6 +117,7 @@ const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
+Logger.info('Gmail worker initialized')
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
@@ -1772,9 +1774,13 @@ export const googlePDFsVespa = async (
         )
         return null
       }
-      const pdfFileName = `${userEmail}_${pdf.id}_${pdf.name}`
+
+      const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
+        Logger.debug(
+          `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
+        )
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
 
         const docs: Document[] = await safeLoadPDF(pdfPath)

@@ -83,6 +83,7 @@ const {
   defaultBestModel,
   defaultFastModel,
   maxDefaultSummary,
+  chatPageSize,
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
@@ -373,7 +374,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // we are going to do 4 months answer
   // if not found we go back to iterative page search
   const message = input
-
+  // Ensure we have search terms even after stopword removal
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
     await searchVespa(message, email, null, null, pageSize, 0, alpha, {
@@ -920,6 +921,7 @@ export async function* UnderstandMessageAndAnswer(
   message: string,
   classification: TemporalClassifier & { cost: number },
   messages: Message[],
+  alpha: number,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -934,9 +936,9 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       email,
       userCtx,
-      0.5,
-      20,
-      5,
+      alpha,
+      chatPageSize,
+      maxDefaultSummary,
     )
   } else {
     Logger.info(
@@ -948,8 +950,8 @@ export async function* UnderstandMessageAndAnswer(
       messages,
       email,
       userCtx,
-      0.5,
-      20,
+      alpha,
+      chatPageSize,
       3,
       maxDefaultSummary,
     )
@@ -1206,7 +1208,7 @@ export const MessageApi = async (c: Context) => {
             // ambigious user message
             if (parsed.queryRewrite) {
               Logger.info(
-                "The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
+                `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
               )
               message = parsed.queryRewrite
             } else {
@@ -1226,6 +1228,7 @@ export const MessageApi = async (c: Context) => {
               message,
               classification,
               messagesWithNoErrResponse,
+              0.5,
             )
 
             stream.writeSSE({
@@ -1630,6 +1633,7 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               classification,
               convWithNoErrMsg,
+              0.5,
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
