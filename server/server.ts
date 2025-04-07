@@ -333,42 +333,29 @@ app.get(
   },
 )
 
-let serveStaticToUse
+let feMiddleware, assetsMiddleware
+
 if (typeof process !== "undefined" && !("Bun" in globalThis)) {
-  serveStaticToUse = nodeServeStatic
+  feMiddleware = nodeServeStatic({ root: "../", path: "./dist/index.html" })
+  assetsMiddleware = nodeServeStatic({ root: "../dist" })
 } else {
   const { serveStatic } = await import("hono/bun")
-  serveStaticToUse = serveStatic
+  feMiddleware = serveStatic({ path: "./dist/index.html" })
+  assetsMiddleware = serveStatic({ root: "./dist" })
 }
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
-app.get("/", AuthRedirect, serveStaticToUse({ path: "./dist/index.html" }))
+app.get("/", AuthRedirect, feMiddleware)
 app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
-app.get("/auth", serveStaticToUse({ path: "./dist/index.html" }))
-app.get(
-  "/search",
-  AuthRedirect,
-  serveStaticToUse({ path: "./dist/index.html" }),
-)
-app.get(
-  "/chat/:param",
-  AuthRedirect,
-  serveStaticToUse({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations",
-  AuthRedirect,
-  serveStaticToUse({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations",
-  AuthRedirect,
-  serveStaticToUse({ path: "./dist/index.html" }),
-)
-app.get("/oauth/success", serveStaticToUse({ path: "./dist/index.html" }))
+app.get("/auth", feMiddleware)
+app.get("/search", AuthRedirect, feMiddleware)
+app.get("/chat/:param", AuthRedirect, feMiddleware)
+app.get("/integrations", AuthRedirect, feMiddleware)
+app.get("/admin/integrations", AuthRedirect, feMiddleware)
+app.get("/oauth/success", feMiddleware)
 
 // Serve assets (CSS, JS, etc.)
-app.get("/assets/*", serveStaticToUse({ root: "./dist" }))
+app.get("/assets/*", assetsMiddleware)
 
 export const init = async () => {
   await initQueue()
