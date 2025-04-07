@@ -7,6 +7,7 @@ import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
 import { Apps } from "@/search/types"
 import type { OAuth2Client } from "google-auth-library"
+import crypto from "node:crypto"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -226,4 +227,15 @@ export const IsGoogleApp = (app: Apps) => {
 export function scale(val: number): number | null {
   if (!val) return null
   return (2 * Math.atan(val / 4)) / Math.PI
+}
+
+// Function to hash the filename to hide the filename while
+// Storing the data in the memory
+export const hashPdfFilename = (filename: string): string => {
+  const hashInput = filename
+  const hash = crypto.createHash("md5").update(hashInput).digest("hex")
+
+  const newFilename = hash
+  Logger.info(`Filename hashed: ${filename} -> ${newFilename}`)
+  return newFilename
 }
