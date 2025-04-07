@@ -1527,7 +1527,7 @@ export const MessageRetryApi = async (c: Context) => {
           let answer = ""
           let citations: number[] = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "" }
+          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -1616,12 +1616,7 @@ export const MessageRetryApi = async (c: Context) => {
                 "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
               )
             }
-            const classification: TemporalClassifier & { cost: number } =
-              await temporalEventClassification(message, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
-                stream: false,
-              })
+            const classification: TemporalClassifier  = {direction: parsed.temporalDirection}
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,
