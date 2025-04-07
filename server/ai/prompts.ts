@@ -696,7 +696,6 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "Hey"
        - what is the time in Japan
        If the query is conversational, respond naturally and appropriately. 
-    2. Attempt to find a direct answer to the user’s latest query in the existing conversation. That is, look at prior messages only (not your broader LLM memory or external data) to see if the user’s query has already been answered or if the answer can be inferred from those messages.
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
     4. Output JSON in the following structure:
        {
