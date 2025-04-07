@@ -994,15 +994,21 @@ export const unifiedTemporalAndQueryPrompt = (userContext: string) => {
        - ✓ "Previous board meeting date"
        - ✗ "When did junaid join?",
        .
-       - Otherwise, set "temporalDirection" to null.
+       - For every other type of query, set "temporalDirection" to null. For example: 
+        - General temporal questions about the past ("When did the project start?")
+        - Questions about people/status ("When did Alice join?")
+        - Questions about deadlines ("When is this due?")
+
+        Test cases:
+          "When's my next client meeting?" -> {"direction": "next"}
+          "Last time I synced with Jane?" -> {"direction": "prev"}
+          "When did we hire Mark?" -> {"direction": null}
 
     2. If "temporalDirection" is null, check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g., "he", "she", "they", "it", "the project") that cannot be understood without prior context.
        - If ambiguous, rewrite the query by replacing pronouns or references with the appropriate details from the conversation history.
-       - If not ambiguous, leave the query unchanged.
+       - If not ambiguous, leave the query as is.
 
-    3. Attempt to find a direct answer to the user’s latest query from the existing conversation history (not broader LLM memory or external data).
-
-    4. If the user’s query is about the conversation itself (e.g., “What did I just ask?”, “What was my previous question?”, “Summarize the conversation”, etc.), use the history to answer.
+    3. If the user’s query is about the conversation itself (e.g., “What did I just ask?”, “What was my previous question?”, “Summarize the conversation”, etc.), only during this time, use the history to answer.
 
     5. Output JSON in the following format:
        {
