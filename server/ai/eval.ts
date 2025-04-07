@@ -856,7 +856,7 @@ const endToEndFlow = async (
   let answer = ""
   let citations = []
   let citationMap: Record<number, number> = {}
-  let parsed = { answer: "", queryRewrite: "", direction: null }
+  let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
   let buffer = ""
   for await (const chunk of searchOrAnswerIterator) {
     if (chunk.text) {
