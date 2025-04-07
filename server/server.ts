@@ -34,7 +34,6 @@ import {
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
-import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
 import { googleAuth } from "@hono/oauth-providers/google"
 import { jwt } from "hono/jwt"
@@ -45,7 +44,6 @@ import { HTTPException } from "hono/http-exception"
 import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
 import { createUser, getUserByEmail } from "@/db/user"
 import { getCookie } from "hono/cookie"
-import { serveStatic } from "hono/bun"
 import config from "@/config"
 import { OAuthCallback } from "@/api/oauth"
 import { setCookieByEnv } from "@/utils"
@@ -64,6 +62,16 @@ import {
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
+import { StatusCode } from "hono/utils/http-status"
+
+// For node server
+import { serve } from "@hono/node-server"
+import { WebSocketServer } from "ws"
+import { parse } from "url"
+import { serveStatic as nodeServeStatic } from "@hono/node-server/serve-static"
+import dotenv from "dotenv"
+dotenv.config()
+
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -76,8 +84,6 @@ const jwtSecret = process.env.JWT_SECRET!
 const CookieName = "auth-token"
 
 const Logger = getLogger(Subsystem.Server)
-
-const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
 const app = new Hono<{ Variables: Variables }>()
 
@@ -117,30 +123,6 @@ const AuthRedirect = async (c: Context, next: Next) => {
 const honoMiddlewareLogger = LogMiddleware(Subsystem.Server)
 
 app.use("*", honoMiddlewareLogger)
-
-export const WsApp = app.get(
-  "/ws",
-  upgradeWebSocket((c) => {
-    let connectorId: string | undefined
-    return {
-      onOpen(event, ws) {
-        connectorId = c.req.query("id")
-        Logger.info(`Websocket connection with id ${connectorId}`)
-        wsConnections.set(connectorId, ws)
-      },
-      onMessage(event, ws) {
-        Logger.info(`Message from client: ${event.data}`)
-        ws.send(JSON.stringify({ message: "Hello from server!" }))
-      },
-      onClose: (event, ws) => {
-        Logger.info("Connection closed")
-        if (connectorId) {
-          wsConnections.delete(connectorId)
-        }
-      },
-    }
-  }),
-)
 
 export const AppRoutes = app
   .basePath("/api/v1")
@@ -351,30 +333,42 @@ app.get(
   },
 )
 
+let serveStaticToUse
+if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+  serveStaticToUse = nodeServeStatic
+} else {
+  const { serveStatic } = await import("hono/bun")
+  serveStaticToUse = serveStatic
+}
+
 // Serving exact frontend routes and adding AuthRedirect wherever needed
-app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/", AuthRedirect, serveStaticToUse({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
-app.get("/auth", serveStatic({ path: "./dist/index.html" }))
-app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/auth", serveStaticToUse({ path: "./dist/index.html" }))
+app.get(
+  "/search",
+  AuthRedirect,
+  serveStaticToUse({ path: "./dist/index.html" }),
+)
 app.get(
   "/chat/:param",
   AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
+  serveStaticToUse({ path: "./dist/index.html" }),
 )
 app.get(
   "/integrations",
   AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
+  serveStaticToUse({ path: "./dist/index.html" }),
 )
 app.get(
   "/admin/integrations",
   AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
+  serveStaticToUse({ path: "./dist/index.html" }),
 )
-app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
+app.get("/oauth/success", serveStaticToUse({ path: "./dist/index.html" }))
 
 // Serve assets (CSS, JS, etc.)
-app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/assets/*", serveStaticToUse({ root: "./dist" }))
 
 export const init = async () => {
   await initQueue()
@@ -383,13 +377,107 @@ init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
 
-const server = Bun.serve({
-  fetch: app.fetch,
-  port: config.port,
-  websocket,
-  idleTimeout: 180,
-})
-Logger.info(`listening on port: ${config.port}`)
+export let WsApp: Hono<
+  {
+    Variables: Variables
+  },
+  {
+    "/ws": {
+      $get:
+        | {
+            input: {}
+            output: {}
+            outputFormat: "ws"
+            status: StatusCode
+          }
+        | {
+            input: {}
+            output: {}
+            outputFormat: "ws"
+            status: StatusCode
+          }
+    }
+  },
+  "/"
+>
+
+if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+  const server = serve({ fetch: app.fetch, port: config.port })
+
+  const wss = new WebSocketServer({ noServer: true })
+
+  server.on("upgrade", (req, socket, head) => {
+    const { pathname } = parse(req.url, true)
+
+    if (pathname === "/ws") {
+      // If the request is for the /ws endpoint, upgrade the connection.
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req)
+      })
+    } else {
+      // Otherwise, destroy the socket.
+      socket.destroy()
+    }
+  })
+
+  wss.on("connection", (ws, req) => {
+    const { query } = parse(req.url!, true)
+    const connectorId = query.id
+
+    Logger.info(`WebSocket connection with id ${connectorId}`)
+
+    if (connectorId) {
+      wsConnections.set(connectorId, ws)
+    }
+
+    ws.on("message", (message) => {
+      Logger.info(`Message from client: ${message}`)
+      ws.send(JSON.stringify({ message: "Hello from server!" }))
+    })
+
+    ws.on("close", () => {
+      Logger.info("Connection closed")
+      if (connectorId) {
+        wsConnections.delete(connectorId)
+      }
+    })
+  })
+  Logger.info(`[NODE] listening on port: ${config.port}`)
+} else {
+  const { createBunWebSocket } = await import("hono/bun")
+  const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
+  const server = Bun.serve({
+    fetch: app.fetch,
+    port: config.port,
+    websocket,
+    idleTimeout: 180,
+  })
+  Logger.info(`[BUN] listening on port: ${config.port}`)
+
+  WsApp = app.get(
+    "/ws",
+    upgradeWebSocket((c) => {
+      let connectorId: string | undefined
+      return {
+        onOpen(event, ws) {
+          connectorId = c.req.query("id")
+          Logger.info(`Websocket connection with id ${connectorId}`)
+          wsConnections.set(connectorId, ws)
+        },
+        onMessage(event, ws) {
+          Logger.info(`Message from client: ${event.data}`)
+          ws.send(JSON.stringify({ message: "Hello from server!" }))
+        },
+        onClose: (event, ws) => {
+          Logger.info("Connection closed")
+          if (connectorId) {
+            wsConnections.delete(connectorId)
+          }
+        },
+      }
+    }),
+  )
+}
 
 process.on("uncaughtException", (error) => {
   Logger.error(error, "uncaughtException")
