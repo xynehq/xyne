@@ -768,22 +768,36 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
             ingestionState,
           )
         } else if (conversation.is_channel) {
-          if (conversation.is_private) {
-            // stats.private++
+          // for public channel user has to be member
+          if (!conversation.is_private && conversation.is_member) {
+            await insertChannelMessages(
+              data.email,
+              client,
+              conversation.id!,
+              abortController,
+              memberMap,
+              teamMap,
+              permissionMap,
+              tracker,
+              ingestionState,
+            )
+          } else if (conversation.is_private) {
+            await insertChannelMessages(
+              data.email,
+              client,
+              conversation.id!,
+              abortController,
+              memberMap,
+              teamMap,
+              permissionMap,
+              tracker,
+              ingestionState,
+            )
           } else {
-            // stats.public++
+            Logger.info(
+              `not supported: ${conversation.id} ${conversation.name} ${conversation.is_private} ${conversation.is_member}`,
+            )
           }
-          await insertChannelMessages(
-            data.email,
-            client,
-            conversation.id!,
-            abortController,
-            memberMap,
-            teamMap,
-            permissionMap,
-            tracker,
-            ingestionState,
-          )
         } else {
           console.log("skipping conversation", conversation)
         }
