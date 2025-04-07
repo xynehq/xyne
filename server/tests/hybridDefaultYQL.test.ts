@@ -148,7 +148,13 @@ describe("HybridDefaultProfile", () => {
   test("query with null timestamp", () => {
     const timestampRange = { from: null, to: null }
     expect(() =>
-      HybridDefaultProfile(5, null, null, SearchModes.NativeRank, timestampRange),
+      HybridDefaultProfile(
+        5,
+        null,
+        null,
+        SearchModes.NativeRank,
+        timestampRange,
+      ),
     ).toThrow("Invalid timestamp range")
   })
 })

@@ -148,10 +148,13 @@ export const autocomplete = async (
   email: string,
   limit: number = 5,
 ): Promise<VespaAutocompleteResponse> => {
+  const sources = AllSources.split(", ")
+    .filter((s) => s !== chatMessageSchema)
+    .join(", ")
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
-  const yqlQuery = `select * from sources ${AllSources}, ${userQuerySchema}
+  const yqlQuery = `select * from sources ${sources}, ${userQuerySchema}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
@@ -181,8 +184,12 @@ export const autocomplete = async (
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
         or
-        (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email
+        (
+          (
+            name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or
+            email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+          )
+          and permissions contains @email
         )
         `
 
