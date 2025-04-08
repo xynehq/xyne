@@ -1,11 +1,64 @@
 import HighlightedText from "@/components/Highlight"
 import { getIcon } from "@/lib/common"
 import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
+import { useEffect } from "react"
 
 export const SearchResult = ({
   result,
   index,
 }: { result: SearchResultDiscriminatedUnion; index: number }) => {
+  // Add effect to fetch WhatsApp groups when component renders with WhatsApp message
+  useEffect(() => {
+    // Only fetch groups for WhatsApp messages
+    if (result.app === "whatsapp") {
+      console.log("WhatsApp message detected, fetching groups from Vespa");
+      
+      // Function to fetch groups from Vespa
+      const fetchWhatsAppGroups = async () => {
+        try {
+          // Use fetch directly to avoid import issues
+          const response = await fetch("/api/v1/whatsapp/groups");
+          if (response.ok) {
+            const data = await response.json();
+            console.log("WhatsApp groups from Vespa:", data);
+            
+            // Extract the group ID from the message
+            const whatsappResult = result as any;
+            const messageGroupId = whatsappResult.teamId || whatsappResult.channelId || whatsappResult.docId;
+            console.log("This message's group ID:", messageGroupId);
+            
+            // Try to find a matching group
+            if (data.groups && data.groups.length > 0) {
+              // Look for exact match
+              const exactMatch = data.groups.find((group: any) => group.jid === messageGroupId);
+              if (exactMatch) {
+                console.log("Exact group match found:", exactMatch.name);
+              } else {
+                // Try without @g.us suffix
+                const baseId = messageGroupId ? String(messageGroupId).split('@')[0] : '';
+                const partialMatch = data.groups.find((group: any) => group.jid.includes(baseId));
+                if (partialMatch) {
+                  console.log("Partial group match found:", partialMatch.name);
+                } else {
+                  console.log("No matching group found for this message");
+                }
+              }
+            } else {
+              console.log("No WhatsApp groups returned from Vespa");
+            }
+          } else {
+            console.error("Failed to fetch WhatsApp groups:", await response.text());
+          }
+        } catch (error) {
+          console.error("Error fetching WhatsApp groups:", error);
+        }
+      };
+      
+      // Execute the fetch
+      fetchWhatsAppGroups();
+    }
+  }, [result]); // Re-run when result changes
+
   let content = <></>
   let commonClassVals = "pr-[60px]"
   if (result.type === "file") {
