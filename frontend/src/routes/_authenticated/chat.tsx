@@ -1107,22 +1107,22 @@ const Sources = ({
   closeSources: () => void
 }) => {
   return showSources ? (
-    <div className="h-full w-1/4 top-[48px] right-0 fixed border-l-[1px] border-[#E6EBF5] bg-white overflow-y-auto">
-      <div className="ml-[40px] mt-[24px]">
-        <div className="flex items-center">
-          <span
-            className="text-[#929FBA] font-normal text-[12px] tracking-[0.08em]"
-            style={{ fontFamily: "JetBrains Mono" }}
-          >
-            SOURCES
-          </span>
-          <X
-            stroke="#9EAEBE"
-            size={14}
-            className="ml-auto mr-[40px] cursor-pointer"
-            onClick={closeSources}
-          />
-        </div>
+    <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] bg-white flex flex-col">
+      <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5]">
+        <span
+          className="text-[#929FBA] font-normal text-[12px] tracking-[0.08em]"
+          style={{ fontFamily: "JetBrains Mono" }}
+        >
+          SOURCES
+        </span>
+        <X
+          stroke="#9EAEBE"
+          size={14}
+          className="ml-auto cursor-pointer"
+          onClick={closeSources}
+        />
+      </div>
+      <div className="flex-1 overflow-y-auto px-[40px] pb-[24px]">
         <CitationList citations={citations} />
       </div>
     </div>
