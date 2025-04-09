@@ -33,7 +33,6 @@ import {
   UpdateConnectorStatus,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
-import { init as initTrace } from "@/tracer"
 import { init as initQueue } from "@/queue"
 import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
@@ -378,7 +377,6 @@ app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 
 export const init = async () => {
-  initTrace()
   await initQueue()
 }
 init().catch((error) => {

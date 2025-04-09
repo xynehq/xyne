@@ -47,11 +47,13 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "user") {
+    // Extract the actual contact ID from the docId (e.g., "otherPeople/c12345" -> "c12345")
+    const idParts = result.docId?.split("/")
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start">
           <a
-            href={`https://contacts.google.com/${result.email}`}
+            href={`https://contacts.google.com/${idParts.length > 1 ? `person/${idParts[1]}` : ""}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center text-[#2067F5]"

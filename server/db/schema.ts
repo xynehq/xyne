@@ -347,6 +347,44 @@ export const messages = pgTable(
   }),
 )
 
+export const chatTrace = pgTable(
+  "chat_trace",
+  {
+    id: serial("id").notNull().primaryKey(),
+    workspaceId: integer("workspace_id") // Add workspaceId
+      .notNull()
+      .references(() => workspaces.id),
+    userId: integer("user_id") // Add userId
+      .notNull()
+      .references(() => users.id),
+    chatId: integer("chat_id")
+      .notNull()
+      .references(() => chats.id),
+    messageId: integer("message_id")
+      .notNull()
+      .references(() => messages.id),
+    chatExternalId: text("chat_external_id").notNull(),
+    messageExternalId: text("message_external_id").notNull(),
+    email: text("email").notNull(),
+    traceJson: jsonb("trace_json").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+  },
+  (table) => ({
+    workspaceIdIndex: index("chat_trace_workspace_id_index").on(
+      table.workspaceId,
+    ), // Add index
+    userIdIndex: index("chat_trace_user_id_index").on(table.userId), // Add index
+    chatExternalIdIndex: index("chat_trace_chat_external_id_index").on(
+      table.chatExternalId,
+    ),
+    messageExternalIdIndex: index("chat_trace_message_external_id_index").on(
+      table.messageExternalId,
+    ),
+  }),
+)
+
 export const insertProviderSchema = createInsertSchema(oauthProviders, {
   // added to prevent type error
   oauthScopes: z.array(z.string()),
