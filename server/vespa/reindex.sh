@@ -54,7 +54,7 @@ while true; do
             echo "ERROR: Reindexing failed for $docType - $ERROR_MSG"
             any_error=true
             all_successful=false
-        elif [ "$STATE" = "pending" ] || [ "$STATE" = "running" ]; then
+        elif [ "$STATE" = "pending" ]; then
             echo "Reindexing in progress for $docType"
             all_successful=false
         else
