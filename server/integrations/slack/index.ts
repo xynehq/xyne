@@ -558,6 +558,7 @@ const makeMemberTeamAndPermissionMap = async (
   permissionMap: Record<string, string[]>
 }> => {
   const workspaceMembers: Member[] = await getAllUsers(client)
+  const insertLimit = pLimit(8) // Limit concurrent insertions
 
   await UpdateDocument(chatTeamSchema, workspaceMembers[0].team_id!, {
     count: workspaceMembers.length,
@@ -566,11 +567,15 @@ const makeMemberTeamAndPermissionMap = async (
   const teamMap: Record<string, Team> = {}
   Logger.info(`total members ${workspaceMembers.length}`)
   const memberMap: Record<string, Member | User> = {}
-  for (const member of workspaceMembers) {
-    memberMap[member.id!] = member
-    await insertMember(member)
-    tracker.updateUserStats(email, StatType.Slack_User, 1)
-  }
+  await Promise.all(
+    workspaceMembers.map(async (member) =>
+      insertLimit(async () => {
+        memberMap[member.id!] = member
+        await insertMember(member)
+        tracker.updateUserStats(email, StatType.Slack_User, 1)
+      }),
+    ),
+  )
   const uniqueMembers = new Set<string>()
   for (const conversationId of conversations) {
     let originalMembers = await getConversationUsers(client, conversationId)
@@ -599,12 +604,17 @@ const makeMemberTeamAndPermissionMap = async (
 
   const teamList = new Set<string>()
   const userResults = (await Promise.all(memberPromises)).filter((v) => v)
-  userResults.forEach((userResp) => {
-    memberMap[userResp?.user?.id!] = userResp?.user!
-    insertMember(userResp?.user!)
-    tracker.updateUserStats(email, StatType.Slack_User, 1)
-    teamList.add(userResp?.user?.team_id!)
-  })
+
+  await Promise.all(
+    userResults.map((userResp) =>
+      insertLimit(async () => {
+        memberMap[userResp?.user?.id!] = userResp?.user!
+        await insertMember(userResp?.user!)
+        tracker.updateUserStats(email, StatType.Slack_User, 1)
+        teamList.add(userResp?.user?.team_id!)
+      }),
+    ),
+  )
   const teamLimit = pLimit(concurrency)
   const teamPromises = [...teamList].map((teamId: string) =>
     teamLimit(async () => {
@@ -615,10 +625,14 @@ const makeMemberTeamAndPermissionMap = async (
     }),
   )
   const teamResults = await Promise.all(teamPromises)
-  teamResults.forEach((teamResp) => {
-    teamMap[teamResp.team?.id!] = teamResp.team!
-    insertTeam(teamResp.team!, false)
-  })
+  await Promise.all(
+    teamResults.map(async (teamResp) =>
+      insertLimit(async () => {
+        teamMap[teamResp.team?.id!] = teamResp.team!
+        await insertTeam(teamResp.team!, false)
+      }),
+    ),
+  )
 
   Object.entries(permissionMap).forEach(([key, value]) => {
     permissionMap[key] = value
