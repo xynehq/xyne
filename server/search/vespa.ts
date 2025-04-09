@@ -463,6 +463,9 @@ export const searchVespa = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
+    // mail decay weights
+    "input.query(social_decay)": 0.6,
+    "input.query(updates_decay)": 0.8,
     hits: limit,
     ...(offset
       ? {
