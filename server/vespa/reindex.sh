@@ -1,14 +1,17 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 
 # Get document type from user
-read -p "Enter document types to reindex (e.g., mail,file,event etc): " documentTypes
+echo -n "Enter document types to reindex (e.g., mail,file,event etc): "
+read documentTypes
 
-if ! command -v jq &> /dev/null; then
-  echo "Error: 'jq' is required but not installed. Please install it using your package manager."
+# Check for jq dependency
+if ! command -v jq >/dev/null 2>&1; then
+  echo "Error: 'jq' is required but not installed."
   exit 1
 fi
+
 
 if [ -z "$documentTypes" ]; then
   echo "Error: Document type cannot be empty"
@@ -30,7 +33,7 @@ if echo "$response" | grep -q '"error-code"'; then
 fi
 
 
-success_message=$(echo "$response")
+success_message=$(echo "$response" | jq -r '.message')
 echo "Starting reindex for document type: $success_message"
 
 vespa prepare
