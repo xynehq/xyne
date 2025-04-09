@@ -26,7 +26,7 @@ import {
   type SaaSOAuthJob,
 } from "@/types"
 import PgBoss from "pg-boss"
-import { hashPdfFilename } from "@/utils"
+import { getEnvironment, hashPdfFilename } from "@/utils"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   GetDocument,
@@ -69,6 +69,7 @@ import {
 import { getLogger } from "@/logger"
 import {
   CalendarEntity,
+  Env,
   eventSchema,
   type VespaEvent,
   type VespaFileWithDrivePermission,
@@ -112,8 +113,8 @@ import {
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
 import { Worker as NodeWorker } from "worker_threads"
-import dotenv from "dotenv"
-dotenv.config()
+
+const environment = getEnvironment()
 
 // const { serviceAccountWhitelistedEmails } = config
 // @ts-ignore
@@ -121,7 +122,7 @@ import * as htmlToText from "html-to-text"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
 let gmailWorker
-if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+if (environment === Env.Node) {
   gmailWorker = new NodeWorker(new URL("gmail-worker.js", import.meta.url))
   Logger.info("Gmail worker initialized")
   gmailWorker.on("error", (error) => {
@@ -840,7 +841,7 @@ const pendingRequests = new Map<
 //   }
 
 const setupGmailWorkerHandler = (tracker: Tracker) => {
-  if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+  if (environment === Env.Node) {
     // Node.js environment
     ;(gmailWorker as NodeWorker).on("message", (data: ResponseType) => {
       const { type, userEmail } = data
@@ -1746,8 +1747,8 @@ export const downloadPDF = async (
   client: GoogleClient,
 ): Promise<void> => {
   const filePath = path.join(downloadDir, fileName)
-  let writer;
-  if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+  let writer
+  if (environment === Env.Node) {
     // Node.js environment
     writer = fs.createWriteStream(filePath)
   } else {

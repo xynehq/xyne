@@ -1,6 +1,4 @@
 import { Models } from "@/ai/types"
-import dotenv from "dotenv"
-dotenv.config()
 
 let vespaBaseHost = "0.0.0.0"
 let postgresBaseHost = "0.0.0.0"

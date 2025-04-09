@@ -46,7 +46,7 @@ import { createUser, getUserByEmail } from "@/db/user"
 import { getCookie } from "hono/cookie"
 import config from "@/config"
 import { OAuthCallback } from "@/api/oauth"
-import { setCookieByEnv } from "@/utils"
+import { getEnvironment, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
@@ -69,8 +69,9 @@ import { serve } from "@hono/node-server"
 import { WebSocketServer } from "ws"
 import { parse } from "url"
 import { serveStatic as nodeServeStatic } from "@hono/node-server/serve-static"
-import dotenv from "dotenv"
-dotenv.config()
+import { Env } from "@/search/types"
+
+const environment = getEnvironment()
 
 type Variables = JwtVariables
 
@@ -335,7 +336,7 @@ app.get(
 
 let feMiddleware, assetsMiddleware
 
-if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+if (environment === Env.Node) {
   feMiddleware = nodeServeStatic({ root: "../", path: "./dist/index.html" })
   assetsMiddleware = nodeServeStatic({ root: "../dist" })
 } else {
@@ -388,7 +389,7 @@ export let WsApp: Hono<
   "/"
 >
 
-if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+if (environment === Env.Node) {
   const server = serve({ fetch: app.fetch, port: config.port })
 
   const wss = new WebSocketServer({ noServer: true })

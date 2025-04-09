@@ -21,6 +21,7 @@
     "dev": "bun run --watch server.ts",
     "build": "bunx --bun vite build",
     "build:server": "rm -rf distServer && tsc && tsc-alias -p tsconfig.json && bunx tsc-esm-fix --target distServer",
+    "nodeServer": "cd distServer && node --env-file=../.env server.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../"
@@ -44,7 +45,6 @@
     "async-mutex": "^0.5.0",
     "autoevals": "^0.0.119",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
     "drizzle-orm": "^0.33.0",
     "drizzle-zod": "^0.5.1",
     "google-auth-library": "^9.14.0",

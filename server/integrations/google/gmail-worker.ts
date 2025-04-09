@@ -7,6 +7,7 @@ import { EmailParsingError } from "@/errors"
 import { getLogger } from "@/logger"
 import {
   Apps,
+  Env,
   MailAttachmentEntity,
   mailAttachmentSchema,
   MailEntity,
@@ -27,7 +28,7 @@ import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "@/integrations/google/gmail/quote-parser"
 import pLimit from "p-limit"
 import { GmailConcurrency } from "@/integrations/google/config"
-import { retryWithBackoff } from "@/utils"
+import { getEnvironment, retryWithBackoff } from "@/utils"
 //@ts-ignore
 import * as htmlToText from "html-to-text"
 const Logger = getLogger(Subsystem.Integrations)
@@ -66,7 +67,8 @@ export const createJwtClient = (
   })
 }
 
-if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+const environment = getEnvironment()
+if (environment === Env.Node) {
   parentPort?.on("message", async (msg: MessageType) => {
     try {
       if (msg.type === MessageTypes.JwtParams) {

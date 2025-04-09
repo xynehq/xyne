@@ -5,11 +5,17 @@ import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
-import { Apps } from "@/search/types"
+import { Apps, Env } from "@/search/types"
 import type { OAuth2Client } from "google-auth-library"
 import crypto from "node:crypto"
-import dotenv from "dotenv"
-dotenv.config()
+
+export function getEnvironment() {
+  if (typeof process !== "undefined" && !("Bun" in globalThis)) {
+    return Env.Node
+  } else {
+    return Env.Bun
+  }
+}
 
 const Logger = getLogger(Subsystem.Utils)
 
