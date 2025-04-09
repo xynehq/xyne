@@ -690,12 +690,19 @@ export const searchQueryPrompt = (userContext: string): string => {
        - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
        - If not ambiguous, leave the query as is.
        - do not append the company name or domain to the search query unnecessarily
-    2. Determine if the user’s query is conversational or a basic calculation. Examples include greetings like:
+    2. Determine if the user’s query is conversational, a basic calculation or a meta question. Examples include greetings like:
        - "Hi"
        - "Hello"
        - "Hey"
-       - what is the time in Japan
-       If the query is conversational, respond naturally and appropriately. 
+       -  What is the time in Japan
+       Or, meta questions like :
+       - What model are you?
+       - Who created you?
+       - What is your purpose?
+       - Are you part of a RAG system?
+       - How are you supposed to help me?
+       - Do you have access to memory or past sessions?
+       If the query is conversational, a basic calculation or a meta question, respond naturally and appropriately. 
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
       - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
