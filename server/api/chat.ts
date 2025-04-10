@@ -377,7 +377,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // Ensure we have search terms even after stopword removal
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
-    await searchVespa(message, email, null, null, pageSize, 0, alpha,false, {
+    await searchVespa(message, email, null, null, pageSize, 0, alpha, false, {
       from: new Date().getTime() - 4 * monthInMs,
       to: new Date().getTime(),
     })
@@ -420,10 +420,20 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const queries = queryResp.queries
       for (const query of queries) {
         const latestResults: VespaSearchResult[] = (
-          await searchVespa(query, email, null, null, pageSize, 0, alpha, false, {
-            from: new Date().getTime() - 4 * monthInMs,
-            to: new Date().getTime(),
-          })
+          await searchVespa(
+            query,
+            email,
+            null,
+            null,
+            pageSize,
+            0,
+            alpha,
+            false,
+            {
+              from: new Date().getTime() - 4 * monthInMs,
+              to: new Date().getTime(),
+            },
+          )
         )?.root?.children
 
         let results = await searchVespa(
