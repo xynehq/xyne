@@ -207,7 +207,6 @@ export const AnswerApi = async (c: Context) => {
     VespaSearchResponse,
   ] = await Promise.all([
     getPublicUserAndWorkspaceByEmail(db, workspaceId, email),
-    // Pass debug flag to searchVespa in AnswerApi (using global config for simplicity)
     searchVespa(decodedQuery, email, app, entity, config.answerPage, 0, 0.5, undefined, undefined, undefined, undefined, config.isDebugMode), 
   ])
 

@@ -443,7 +443,7 @@ export const searchVespa = async (
   excludedIds?: string[],
   notInMailLabels?: string[],
   rankProfile: SearchModes = SearchModes.NativeRank,
-  requestDebug: boolean = (false), // Add new optional parameter
+  requestDebug: boolean = (false),
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
