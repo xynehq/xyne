@@ -140,6 +140,8 @@ export const SearchApi = async (c: Context) => {
     entity,
     lastUpdated,
     isQueryTyped,
+    debug,
+    // Extract debug query param
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
@@ -160,6 +162,10 @@ export const SearchApi = async (c: Context) => {
         offset,
         0.5,
         timestampRange,
+        undefined,
+        undefined,
+        undefined,
+        debug,
       ),
     ]
 
@@ -178,6 +184,10 @@ export const SearchApi = async (c: Context) => {
       offset,
       0.5,
       timestampRange,
+      undefined,
+      undefined,
+      undefined,
+      debug,
     )
   }
 
@@ -198,7 +208,8 @@ export const AnswerApi = async (c: Context) => {
     VespaSearchResponse,
   ] = await Promise.all([
     getPublicUserAndWorkspaceByEmail(db, workspaceId, email),
-    searchVespa(decodedQuery, email, app, entity, config.answerPage, 0),
+    // Pass debug flag to searchVespa in AnswerApi (using global config for simplicity)
+    searchVespa(decodedQuery, email, app, entity, config.answerPage, 0, 0.5, undefined, undefined, undefined, undefined, config.isDebugMode), 
   ])
 
   const costArr: number[] = []

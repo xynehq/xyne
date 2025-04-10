@@ -103,8 +103,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-  const [showDebugInfo, _] = useState(
-    import.meta.env.VITE_SHOW_DEBUG_INFO === "true",
+  const [showDebugInfo, setDebugInfo] = useState(
+    import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || search.debug || false,
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   // close autocomplete if clicked outside
@@ -177,8 +177,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
+      setDebugInfo(import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || search.debug || false);
     }
-  }, [])
+  }, [search])
 
   useEffect(() => {
     handleSearch()
@@ -244,6 +245,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         groupCount,
         lastUpdated: filter.lastUpdated || "anytime",
         isQueryTyped: QueryTyped,
+        debug: showDebugInfo,
       }
 
       let pageCount = page
@@ -530,6 +532,7 @@ const searchParams = z
     app: z.nativeEnum(Apps).optional(),
     entity: z.string().optional(),
     lastUpdated: z.string().optional(),
+    debug: z.boolean().optional().default(false),
   })
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",

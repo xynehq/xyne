@@ -443,9 +443,12 @@ export const searchVespa = async (
   excludedIds?: string[],
   notInMailLabels?: string[],
   rankProfile: SearchModes = SearchModes.NativeRank,
+  requestDebug: boolean = (false), // Add new optional parameter
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  const isDebugMode = config.isDebugMode || requestDebug || false; 
+
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
@@ -471,9 +474,9 @@ export const searchVespa = async (
       : {}),
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
-    ...(config.isDebugMode
+    ...(isDebugMode
       ? { "ranking.listFeatures": true, tracelevel: 4 }
-      : {}), // Add tracelevel based on isDebugMode
+      : {}), 
   }
 
   try {
