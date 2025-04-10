@@ -455,10 +455,10 @@ export const VespaChatMessageSchema = z.object({
   // messageType: z.string(), // Slack type (e.g., "message")
   threadId: z.string().default(""), // Slack thread_ts, null if not in thread
   attachmentIds: z.array(z.string()).default([]), // Slack file IDs (e.g., ["F0857N0FF4N"])
-  permissions: z.array(z.string()), // emails of all from the workspace who have access to that channel
   // reactions: z.array(z.string()), // Commented out in Vespa schema, so excluded
   mentions: z.array(z.string()), // Extracted from text (e.g., ["U032QT45V53"])
   updatedAt: z.number(), // Slack edited.ts (e.g., 1734442538.0), null if not edited
+  deletedAt: z.number(),
   metadata: z.string(), // JSON string for subtype, etc. (e.g., "{\"subtype\": null}")
 })
 
@@ -507,6 +507,8 @@ export const VespaChatContainerSchema = z.object({
   isGeneral: z.boolean(),
   isIm: z.boolean(),
   isMpim: z.boolean(),
+
+  permissions: z.array(z.string()),
 
   createdAt: z.number(),
   updatedAt: z.number(),

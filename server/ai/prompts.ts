@@ -882,6 +882,7 @@ export const baselineReasoningPromptJson = (
 2. User profiles
 3. Emails
 4. Calendar events
+5. Slack/Chat Messages
 The context provided will be formatted with specific fields for each type:
 ## File Context Format
 - App and Entity type
@@ -918,6 +919,7 @@ The context provided will be formatted with specific fields for each type:
 - Recurrence patterns
 - Meeting links
 - Relevance score
+## Slack Context Format
 # Context of the user talking to you
 ${userContext}
 This includes:

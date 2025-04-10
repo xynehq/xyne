@@ -79,11 +79,6 @@ schema chat_message {
       indexing: attribute | summary
     }
 
-    field permissions type array<string> {
-      indexing: attribute | summary
-      attribute: fast-search
-    }
-
     field reactions type int {
       indexing: attribute | summary
     }
