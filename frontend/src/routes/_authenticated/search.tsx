@@ -276,7 +276,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           app: params.app,
           entity: params.entity,
           lastUpdated: params.lastUpdated,
-          debug: showDebugInfo,
+          ...(showDebugInfo ? { debug: showDebugInfo } : {}),
         }),
         state: { isQueryTyped: QueryTyped },
         replace: true,

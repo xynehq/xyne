@@ -431,19 +431,32 @@ export const groupVespaSearch = async (
   }
 }
 
+type VespaQueryConfig = {
+  limit: number
+  offset: number
+  alpha: number
+  timestampRange: { from: number; to: number } | null
+  excludedIds: string[]
+  notInMailLabels: string[]
+  rankProfile: SearchModes
+  requestDebug: boolean
+}
+
 export const searchVespa = async (
   query: string,
   email: string,
   app: Apps | null,
   entity: Entity | null,
-  limit = config.page,
-  offset: number = 0,
-  alpha: number = 0.5,
-  requestDebug: boolean = false,
-  timestampRange?: { from: number; to: number } | null,
-  excludedIds?: string[],
-  notInMailLabels?: string[],
-  rankProfile: SearchModes = SearchModes.NativeRank,
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    timestampRange = null,
+    excludedIds = [],
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+  }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null

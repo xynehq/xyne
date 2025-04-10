@@ -376,10 +376,15 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   const message = input
   // Ensure we have search terms even after stopword removal
   const monthInMs = 30 * 24 * 60 * 60 * 1000
+  const timestampRange = {
+    from: new Date().getTime() - 4 * monthInMs,
+    to: new Date().getTime(),
+  }
   const latestResults = (
-    await searchVespa(message, email, null, null, pageSize, 0, alpha, false, {
-      from: new Date().getTime() - 4 * monthInMs,
-      to: new Date().getTime(),
+    await searchVespa(message, email, null, null, {
+      limit: pageSize,
+      alpha,
+      timestampRange,
     })
   ).root.children
 
@@ -395,16 +400,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     // should only do it once
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
       // get the first page of results
-      let results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
+      let results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
         alpha,
-        false,
-      )
+      })
       const initialContext = cleanContext(
         results?.root?.children
           ?.map(
@@ -420,36 +419,23 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const queries = queryResp.queries
       for (const query of queries) {
         const latestResults: VespaSearchResult[] = (
-          await searchVespa(
-            query,
-            email,
-            null,
-            null,
-            pageSize,
-            0,
+          await searchVespa(query, email, null, null, {
+            limit: pageSize,
             alpha,
-            false,
-            {
+            timestampRange: {
               from: new Date().getTime() - 4 * monthInMs,
               to: new Date().getTime(),
             },
-          )
+          })
         )?.root?.children
 
-        let results = await searchVespa(
-          query,
-          email,
-          null,
-          null,
-          pageSize,
-          0,
+        let results = await searchVespa(query, email, null, null, {
+          limit: pageSize,
           alpha,
-          false,
-          null,
-          latestResults
+          excludedIds: latestResults
             ?.map((v: VespaSearchResult) => (v.fields as any).docId)
             ?.filter((v) => !!v),
-        )
+        })
         const totalResults = (results?.root?.children || []).concat(
           latestResults || [],
         )
@@ -566,18 +552,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     let results: VespaSearchResponse
     if (pageNumber === 0) {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
         alpha,
-        false,
-        null,
-        latestIds,
-      )
+        excludedIds: latestIds,
+      })
       if (!results.root.children) {
         results.root.children = []
       }
@@ -585,16 +565,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         latestResults || [],
       )
     } else {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
         alpha,
-        false,
-      )
+      })
     }
     const startIndex = isReasoning ? previousResultsLength : 0
     const initialContext = cleanContext(
@@ -768,29 +743,17 @@ async function* generatePointQueryTimeExpansion(
 
     // Search in both calendar events and emails
     const [eventResults, results] = await Promise.all([
-      searchVespa(
-        message,
-        email,
-        Apps.GoogleCalendar,
-        null,
-        pageSize,
-        0,
+      searchVespa(message, email, Apps.GoogleCalendar, null, {
+        limit: pageSize,
         alpha,
-        false,
-        { from, to },
-      ),
-      searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
+        timestampRange: { from, to },
+      }),
+      searchVespa(message, email, null, null, {
+        limit: pageSize,
         alpha,
-        false,
-        { to, from },
-        ["CATEGORY_PROMOTIONS", "UNREAD"],
-      ),
+        timestampRange: { to, from },
+        notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
+      }),
     ])
 
     if (!results.root.children && !eventResults.root.children) {

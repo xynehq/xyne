@@ -152,17 +152,13 @@ export const SearchApi = async (c: Context) => {
   if (gc) {
     const tasks: Array<any> = [
       groupVespaSearch(decodedQuery, email, config.page, timestampRange),
-      searchVespa(
-        decodedQuery,
-        email,
-        app,
-        entity,
-        page,
+      searchVespa(decodedQuery, email, app, entity, {
+        alpha: 0.5,
+        limit: page,
+        requestDebug: debug,
         offset,
-        0.5,
-        debug,
         timestampRange,
-      ),
+      }),
     ]
 
     // ensure only update when query is typed
@@ -171,17 +167,13 @@ export const SearchApi = async (c: Context) => {
     }
     ;[groupCount, results] = await Promise.all(tasks)
   } else {
-    results = await searchVespa(
-      decodedQuery,
-      email,
-      app,
-      entity,
-      page,
+    results = await searchVespa(decodedQuery, email, app, entity, {
+      alpha: 0.5,
+      limit: page,
+      requestDebug: debug,
       offset,
-      0.5,
-      debug,
       timestampRange,
-    )
+    })
   }
 
   // TODO: deduplicate for google admin and contacts
@@ -201,16 +193,11 @@ export const AnswerApi = async (c: Context) => {
     VespaSearchResponse,
   ] = await Promise.all([
     getPublicUserAndWorkspaceByEmail(db, workspaceId, email),
-    searchVespa(
-      decodedQuery,
-      email,
-      app,
-      entity,
-      config.answerPage,
-      0,
-      0.5,
-      config.isDebugMode,
-    ),
+    searchVespa(decodedQuery, email, app, entity, {
+      requestDebug: config.isDebugMode,
+      limit: config.answerPage,
+      alpha: 0.5,
+    }),
   ])
 
   const costArr: number[] = []
