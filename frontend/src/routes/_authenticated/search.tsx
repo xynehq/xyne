@@ -537,7 +537,7 @@ const searchParams = z
   })
   .transform((data) => ({
     ...data,
-    debug: data.debug ?? false, // Ensure debug is always present
+    debug: data.debug ?? false, 
   }))
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",
