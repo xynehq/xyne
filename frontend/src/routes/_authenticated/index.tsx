@@ -99,7 +99,10 @@ const Index = () => {
     if (query.trim()) {
       navigate({
         to: "/search",
-        search: { query: encodeURIComponent(decodeURIComponent(query.trim())), debug: false },
+        search: {
+          query: encodeURIComponent(decodeURIComponent(query.trim())),
+          debug: false,
+        },
       })
     }
   }

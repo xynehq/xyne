@@ -1216,7 +1216,9 @@ export const MessageApi = async (c: Context) => {
                 "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
               )
             }
-            const classification: TemporalClassifier = { direction: parsed.temporalDirection }
+            const classification: TemporalClassifier = {
+              direction: parsed.temporalDirection,
+            }
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,
@@ -1616,7 +1618,9 @@ export const MessageRetryApi = async (c: Context) => {
                 "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
               )
             }
-            const classification: TemporalClassifier  = {direction: parsed.temporalDirection}
+            const classification: TemporalClassifier = {
+              direction: parsed.temporalDirection,
+            }
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,

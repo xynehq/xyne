@@ -160,11 +160,8 @@ export const SearchApi = async (c: Context) => {
         page,
         offset,
         0.5,
-        timestampRange,
-        undefined,
-        undefined,
-        undefined,
         debug,
+        timestampRange,
       ),
     ]
 
@@ -182,11 +179,8 @@ export const SearchApi = async (c: Context) => {
       page,
       offset,
       0.5,
-      timestampRange,
-      undefined,
-      undefined,
-      undefined,
       debug,
+      timestampRange,
     )
   }
 
@@ -207,7 +201,16 @@ export const AnswerApi = async (c: Context) => {
     VespaSearchResponse,
   ] = await Promise.all([
     getPublicUserAndWorkspaceByEmail(db, workspaceId, email),
-    searchVespa(decodedQuery, email, app, entity, config.answerPage, 0, 0.5, undefined, undefined, undefined, undefined, config.isDebugMode), 
+    searchVespa(
+      decodedQuery,
+      email,
+      app,
+      entity,
+      config.answerPage,
+      0,
+      0.5,
+      config.isDebugMode,
+    ),
   ])
 
   const costArr: number[] = []

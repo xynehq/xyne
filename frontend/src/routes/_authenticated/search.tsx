@@ -104,7 +104,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const [showDebugInfo, setDebugInfo] = useState(
-    (import.meta.env.VITE_SHOW_DEBUG_INFO === "true") || (search.debug ?? false),
+    import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || (search.debug ?? false),
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   // close autocomplete if clicked outside
@@ -177,7 +177,11 @@ export const Search = ({ user, workspace }: IndexProps) => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
-      setDebugInfo(import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || search.debug || false);
+      setDebugInfo(
+        import.meta.env.VITE_SHOW_DEBUG_INFO === "true" ||
+          search.debug ||
+          false,
+      )
     }
   }, [search])
 
@@ -537,7 +541,7 @@ const searchParams = z
   })
   .transform((data) => ({
     ...data,
-    debug: data.debug ?? false, 
+    debug: data.debug ?? false,
   }))
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",
