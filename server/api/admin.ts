@@ -137,7 +137,6 @@ export const CreateOAuthProvider = async (c: Context) => {
   if (!userRes || !userRes.length) {
     throw new NoUserFound({})
   }
-  console.log(userRes)
   const [user] = userRes
   // @ts-ignore
   const form: OAuthProvider = c.req.valid("form")

@@ -216,8 +216,6 @@ app.get(
   zValidator("query", oauthStartQuerySchema),
   StartOAuth,
 )
-
-app.get("/oauth/")
 const generateToken = async (
   email: string,
   role: string,
