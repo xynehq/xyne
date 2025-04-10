@@ -37,6 +37,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
         to: "/search",
         search: {
           query: encodeURIComponent(decodeURIComponent(query)),
+          debug: false,
         },
         state: { isQueryTyped: !!query.length },
       })

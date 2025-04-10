@@ -104,7 +104,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const [showDebugInfo, setDebugInfo] = useState(
-    import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || search.debug || false,
+    (import.meta.env.VITE_SHOW_DEBUG_INFO === "true") || (search.debug ?? false),
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   // close autocomplete if clicked outside
@@ -272,6 +272,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           app: params.app,
           entity: params.entity,
           lastUpdated: params.lastUpdated,
+          debug: showDebugInfo,
         }),
         state: { isQueryTyped: QueryTyped },
         replace: true,
@@ -534,6 +535,10 @@ const searchParams = z
     lastUpdated: z.string().optional(),
     debug: z.boolean().optional().default(false),
   })
+  .transform((data) => ({
+    ...data,
+    debug: data.debug ?? false, // Ensure debug is always present
+  }))
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",
     path: ["app", "entity"],
