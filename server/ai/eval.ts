@@ -885,11 +885,11 @@ const endToEndFlow = async (
     if (parsed.queryRewrite) {
       message = parsed.queryRewrite
     }
-  
+
     const classification: TemporalClassifier = {
       direction: parsed.temporalDirection,
     }
-  
+
     const iterator = UnderstandMessageAndAnswer(
       email,
       ctx,

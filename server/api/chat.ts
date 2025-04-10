@@ -377,7 +377,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // Ensure we have search terms even after stopword removal
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
-    await searchVespa(message, email, null, null, pageSize, 0, alpha, {
+    await searchVespa(message, email, null, null, pageSize, 0, alpha,false, {
       from: new Date().getTime() - 4 * monthInMs,
       to: new Date().getTime(),
     })
@@ -403,6 +403,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         pageSize,
         0,
         alpha,
+        false,
       )
       const initialContext = cleanContext(
         results?.root?.children
@@ -419,7 +420,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const queries = queryResp.queries
       for (const query of queries) {
         const latestResults: VespaSearchResult[] = (
-          await searchVespa(query, email, null, null, pageSize, 0, alpha, {
+          await searchVespa(query, email, null, null, pageSize, 0, alpha, false, {
             from: new Date().getTime() - 4 * monthInMs,
             to: new Date().getTime(),
           })
@@ -433,6 +434,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           pageSize,
           0,
           alpha,
+          false,
           null,
           latestResults
             ?.map((v: VespaSearchResult) => (v.fields as any).docId)
@@ -562,6 +564,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         pageSize,
         pageNumber * pageSize,
         alpha,
+        false,
         null,
         latestIds,
       )
@@ -580,6 +583,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         pageSize,
         pageNumber * pageSize,
         alpha,
+        false,
       )
     }
     const startIndex = isReasoning ? previousResultsLength : 0
@@ -762,6 +766,7 @@ async function* generatePointQueryTimeExpansion(
         pageSize,
         0,
         alpha,
+        false,
         { from, to },
       ),
       searchVespa(
@@ -772,6 +777,7 @@ async function* generatePointQueryTimeExpansion(
         pageSize,
         0,
         alpha,
+        false,
         { to, from },
         ["CATEGORY_PROMOTIONS", "UNREAD"],
       ),
