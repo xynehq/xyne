@@ -139,7 +139,13 @@ export const OAuthForm = ({
   onSuccess,
   isEditing,
   connectorId,
-}: { onSuccess: any; isEditing?: boolean; connectorId?: string }) => {
+  refetch,
+}: {
+  onSuccess: any
+  isEditing?: boolean
+  connectorId?: string
+  refetch: any
+}) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
@@ -164,6 +170,7 @@ export const OAuthForm = ({
           })
         }
         onSuccess()
+        refetch()
       } catch (error) {
         toast({
           title: "Could not create integration",
@@ -702,7 +709,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       return false
     if (!Object.keys(userStats).length) return false
     if (activeTab !== "service_account" && activeTab !== "oauth") return false
-
     const currentAuthType =
       activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
     return Object.values(userStats).some(
@@ -752,6 +758,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                     v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
                 )?.id
               }
+              refetch={refetch}
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (

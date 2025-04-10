@@ -21,7 +21,8 @@ interface OAuthTabProps {
   oauthIntegrationStatus: OAuthIntegrationStatus
   setOAuthIntegrationStatus: Dispatch<SetStateAction<OAuthIntegrationStatus>>
   updateStatus: string
-  connectorId?: string // Make connectorId optional
+  connectorId?: string
+  refetch: any
 }
 
 const OAuthTab = ({
@@ -29,22 +30,19 @@ const OAuthTab = ({
   oauthIntegrationStatus,
   setOAuthIntegrationStatus,
   connectorId,
+  refetch,
 }: OAuthTabProps) => {
   const [isEditing, setIsEditing] = useState(false)
-
   const handleEdit = (connectorId: string) => {
-    if (!connectorId) {
-      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
-      setIsEditing(false)
-    } else {
+    if (connectorId) {
       setIsEditing(true)
     }
   }
 
   const handleFormSuccess = () => {
-    // After updating, trigger the OAuth connection process
     setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
     setIsEditing(false)
+    refetch()
   }
 
   return (
@@ -56,6 +54,7 @@ const OAuthTab = ({
           onSuccess={handleFormSuccess}
           isEditing={isEditing}
           connectorId={connectorId}
+          refetch={refetch}
         />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
         <Card>
@@ -69,6 +68,7 @@ const OAuthTab = ({
                 onSuccess={handleFormSuccess}
                 isEditing={isEditing}
                 connectorId={connectorId}
+                refetch={refetch}
               />
             ) : (
               <div className="flex justify-between items-center">
@@ -77,13 +77,15 @@ const OAuthTab = ({
                   setOAuthIntegrationStatus={setOAuthIntegrationStatus}
                   text="Connect with Google OAuth"
                 />
-                <Pencil
-                  className="flex justify-end cursor-pointer text-muted-foreground hover:text-gray-800"
-                  onClick={() => {
-                    handleEdit(connectorId as string)
-                  }}
-                  size={18}
-                />
+                {!!connectorId && (
+                  <Pencil
+                    className="flex justify-end cursor-pointer text-muted-foreground hover:text-gray-800"
+                    onClick={() => {
+                      handleEdit(connectorId as string)
+                    }}
+                    size={18}
+                  />
+                )}
               </div>
             )}
           </CardContent>
