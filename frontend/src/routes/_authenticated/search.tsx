@@ -537,12 +537,8 @@ const searchParams = z
     app: z.nativeEnum(Apps).optional(),
     entity: z.string().optional(),
     lastUpdated: z.string().optional(),
-    debug: z.boolean().optional().default(false),
+    debug: z.boolean().optional(),
   })
-  .transform((data) => ({
-    ...data,
-    debug: data.debug ?? false,
-  }))
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",
     path: ["app", "entity"],
