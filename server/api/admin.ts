@@ -16,6 +16,7 @@ import {
   type SaaSJob,
   type ServiceAccountConnection,
   Subsystem,
+  type UpdateOAuthProviderForm,
 } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
@@ -34,6 +35,8 @@ import {
 } from "@/errors"
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
+import * as schema from "@/db/schema"
+import { eq, and } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -176,6 +179,43 @@ export const CreateOAuthProvider = async (c: Context) => {
       success: true,
       message: "Connection and Provider created",
     })
+  })
+}
+
+export const UpdateOAuthProvider = async (c: Context) => {
+  const payload = c.get(JwtPayloadKey)
+  console.log("Full JWT Payload:", payload)
+  const { sub } = payload
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: UpdateOAuthProviderForm = c.req.valid("form")
+  const { clientId, clientSecret, scopes, connectorId } = form
+  const connector = await getConnectorByExternalId(connectorId, user.id)
+  if (!connector) {
+    throw new HTTPException(404, { message: "Connector not found" })
+  }
+  await db
+    .update(schema.oauthProviders)
+    .set({
+      clientId: clientId,
+      clientSecret: clientSecret,
+      oauthScopes: scopes,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.oauthProviders.userId, user.id),
+        eq(schema.oauthProviders.connectorId, connector.id),
+      ),
+    )
+  return c.json({
+    success: true,
+    message: "Connection and Provider updated",
   })
 }
 

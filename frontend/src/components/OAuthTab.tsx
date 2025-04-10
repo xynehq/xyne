@@ -1,4 +1,6 @@
+import { useState, Dispatch, SetStateAction } from "react"
 import { TabsContent } from "@/components/ui/tabs"
+import { Pencil } from "lucide-react"
 import {
   OAuthButton,
   OAuthForm,
@@ -17,25 +19,42 @@ import { OAuthIntegrationStatus } from "@/types"
 interface OAuthTabProps {
   isPending: boolean
   oauthIntegrationStatus: OAuthIntegrationStatus
-  setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
+  setOAuthIntegrationStatus: Dispatch<SetStateAction<OAuthIntegrationStatus>>
   updateStatus: string
+  connectorId?: string
+  refetch: any
 }
 
 const OAuthTab = ({
   isPending,
   oauthIntegrationStatus,
   setOAuthIntegrationStatus,
-  updateStatus,
+  connectorId,
+  refetch,
 }: OAuthTabProps) => {
+  const [isEditing, setIsEditing] = useState(false)
+  const handleEdit = (connectorId: string) => {
+    if (connectorId) {
+      setIsEditing(true)
+    }
+  }
+
+  const handleFormSuccess = () => {
+    setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+    setIsEditing(false)
+    refetch()
+  }
+
   return (
     <TabsContent value="oauth">
       {isPending ? (
         <LoaderContent />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
         <OAuthForm
-          onSuccess={() =>
-            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-          }
+          onSuccess={handleFormSuccess}
+          isEditing={isEditing}
+          connectorId={connectorId}
+          refetch={refetch}
         />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
         <Card>
@@ -44,11 +63,31 @@ const OAuthTab = ({
             <CardDescription>Connect using Google OAuth here.</CardDescription>
           </CardHeader>
           <CardContent>
-            <OAuthButton
-              app={Apps.GoogleDrive}
-              setOAuthIntegrationStatus={setOAuthIntegrationStatus}
-              text="Connect with Google OAuth"
-            />
+            {isEditing ? (
+              <OAuthForm
+                onSuccess={handleFormSuccess}
+                isEditing={isEditing}
+                connectorId={connectorId}
+                refetch={refetch}
+              />
+            ) : (
+              <div className="flex justify-between items-center">
+                <OAuthButton
+                  app={Apps.GoogleDrive}
+                  setOAuthIntegrationStatus={setOAuthIntegrationStatus}
+                  text="Connect with Google OAuth"
+                />
+                {!!connectorId && (
+                  <Pencil
+                    className="flex justify-end cursor-pointer text-muted-foreground hover:text-gray-800"
+                    onClick={() => {
+                      handleEdit(connectorId as string)
+                    }}
+                    size={18}
+                  />
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -57,9 +96,12 @@ const OAuthTab = ({
             <CardTitle>Google OAuth</CardTitle>
           </CardHeader>
           <CardContent>
-            {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
-              ? "Connected"
-              : "Connecting"}
+            {oauthIntegrationStatus ===
+            OAuthIntegrationStatus.OAuthConnected ? (
+              <p className="mb-4">Connected</p>
+            ) : (
+              "Connecting"
+            )}
           </CardContent>
         </Card>
       )}
