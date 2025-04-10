@@ -101,12 +101,18 @@ schema chat_message {
       attribute: fast-search
     }
 
+    field deletedAt type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
     field metadata type string {
       indexing: attribute | summary
     }
   }
   import field teamRef.domain as domain {}
   import field chatRef.isPrivate as isPrivate {}
+  import field chatRef.permissions as permissions {}
 
   field text_embeddings type tensor<bfloat16>(v[DIMS]) {
     indexing: input text | embed | attribute | index
