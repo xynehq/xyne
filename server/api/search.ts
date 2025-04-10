@@ -141,7 +141,6 @@ export const SearchApi = async (c: Context) => {
     lastUpdated,
     isQueryTyped,
     debug,
-    // Extract debug query param
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
