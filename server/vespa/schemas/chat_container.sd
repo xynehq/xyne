@@ -13,6 +13,11 @@ schema chat_container {
             index: enable-bm25
         }
 
+        # non indexed name for chat_message import
+        field channelName type string {
+            indexing: attribute | summary
+        }
+
         field teamId type string {
             indexing: attribute | summary
         }

@@ -428,6 +428,7 @@ const insertConversation = async (
   const vespaChatContainer: VespaChatContainer = {
     docId: conversation.id!,
     name: conversation.name!,
+    channelName: (conversation as Channel).name!,
     app: Apps.Slack,
     creator: conversation.creator!,
     isPrivate: conversation.is_private ?? false,
@@ -454,6 +455,7 @@ const insertConversations = async (
       const vespaChatContainer: VespaChatContainer = {
         docId: (conversation as Channel).id!,
         name: (conversation as Channel).name!,
+        channelName: (conversation as Channel).name!,
         app: Apps.Slack,
         creator: (conversation as Channel).creator!,
         isPrivate: (conversation as Channel).is_private!,

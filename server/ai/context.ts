@@ -95,13 +95,25 @@ const constructSlackMessageContext = (
   fields: VespaChatMessageSearch,
   relevance: number,
 ): string => {
-  return `App: ${fields.app}
+  let channelCtx = ``
+  if (fields.isIm && fields.permissions) {
+    channelCtx = `It's a DM between ${fields.permissions.join(", ")}`
+  } else if (!fields.isPrivate) {
+    // mpim and public channel
+    channelCtx = `It's a message in ${fields.channelName}`
+  } else {
+    channelCtx = `It's a in private channel ${fields.channelName}`
+  }
+  return `${channelCtx}
+    App: ${fields.app}
     Entity: ${fields.entity}
     User: ${fields.name}
     Username: ${fields.username}
     Message: ${fields.text}
-    vespa relevance score: ${relevance}
-    `
+    ${fields.threadId && "it's a message thread"}
+    Time: ${getRelativeTime(fields.createdAt)}
+    User is part of Workspace: ${fields.teamName}
+    vespa relevance score: ${relevance}`
 }
 
 const constructMailAttachmentContext = (

@@ -294,7 +294,7 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
   } else if (result.fields.sddocname === chatMessageSchema) {
     return {
       title: (fields as VespaChatMessage).text,
-      url: `https://google.com`,
+      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${(fields as VespaChatMessage).channelId}/p${(fields as VespaChatMessage).updatedAt}`,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
     }

@@ -884,42 +884,40 @@ export const baselineReasoningPromptJson = (
 4. Calendar events
 5. Slack/Chat Messages
 The context provided will be formatted with specific fields for each type:
+- App and Entity type and the relevance score
 ## File Context Format
-- App and Entity type
 - Title
 - Creation and update timestamps
 - Owner information
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
 - Content chunks
-- Relevance score
 ## User Context Format
-- App and Entity type
 - Addition date
 - Name and email
 - Gender
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
-- App and Entity type
 - Timestamp
 - Subject
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 ## Event Context Format
-- App and Entity type
 - Event name and description
 - Location and URLs
 - Time information
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 ## Slack Context Format
+- User's name and username
+- Message text
+- When it was written
+- Workspace user is part of
+
 # Context of the user talking to you
 ${userContext}
 This includes:
