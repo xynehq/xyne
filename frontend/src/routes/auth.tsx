@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router"
 
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { api } from "@/api"
 import { errorComponent } from "@/components/error"
 
@@ -19,6 +21,38 @@ export const containerClassName =
 
 export default function LoginForm() {
   const logger = console
+  const [showModal, setShowModal] = useState(false);
+  const [modalMessage, setModalMessage] = useState("");
+
+  const handleLogin = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/v1/credential/status`,
+        { method: "GET"}
+      );
+      // Error - Modal pops up
+      if (response.status === 500)  {
+        const data = await response.json();
+        if (data.message === "EnvError: Google OAuth credentials are not configured") {
+          logger.warn("Google OAuth credentials are not configured.");
+          setModalMessage(
+            "EnvError: Google OAuth credentials are not configured. Please configure the Google Credentials in your .env.temp file."
+          );
+          setShowModal(true); 
+          return;
+        }
+      }
+      // No Error - Proceed with authentication
+      const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`;
+      window.location.href = redirectUrl;
+    } catch (error) {
+      logger.error("An error occurred during login:", error);
+      setModalMessage(
+        "An unexpected error occurred. Please try again later."
+      );
+      setShowModal(true); 
+    }
+  };
   return (
     <div className="flex w-full h-full justify-center">
       <div className="max-w-sm flex items-center">
@@ -26,7 +60,7 @@ export default function LoginForm() {
           <CardHeader>
             <CardTitle className="text-2xl">Login</CardTitle>
             <CardDescription>
-              Login with your workspace google account
+              Login with your workspace Google account
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -34,11 +68,7 @@ export default function LoginForm() {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={(e) => {
-                  logger.info("User Clicked login with google")
-                  const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`
-                  window.location.href = redirectUrl
-                }}
+                onClick={handleLogin}
               >
                 Login with Google
               </Button>
@@ -46,6 +76,19 @@ export default function LoginForm() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-red-600">
+              Configuration Error
+            </DialogTitle>
+            <DialogDescription className="text-gray-600">
+              {modalMessage}
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
