@@ -6,7 +6,7 @@ icon: 'key'
 
 This guide providers more details about creating and setting AI api keys in your .env file for using Xyne's chat feature.
 
-To use **AI chat**, you need to configure access credentials. You can use one of the following providers: ***AWS, OpenAI, Ollama, Together AI or Fireworks AI***.
+To use **AI chat**, you need to configure access credentials. You can use one of the following providers: ***AWS, OpenAI, Ollama, Gemini Together AI or Fireworks AI***.
 
 ### AWS (Amazon Bedrock) 
 
@@ -104,6 +104,6 @@ FAST_MODEL_REASONING=false
 ### Key Selection Order : 
 If multiple keys are set in the environment variable, our system follows this precedence:
 ```javascript 
-AWS → OpenAI → Ollama → Together AI → Fireworks AI
+AWS → OpenAI → Ollama → Gemini → Together AI → Fireworks AI
 ```
-<Tip>Only anyone provider is required to get started. This means either AWS or OpenAI, Ollama, Together AI or Fireworks AI can be used, all of them aren't required.</Tip>
+<Tip>Only anyone provider is required to get started. This means either AWS or OpenAI, Ollama, Gemini, Together AI or Fireworks AI can be used, all of them aren't required.</Tip>
