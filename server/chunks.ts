@@ -18,9 +18,12 @@ export const chunkTextByParagraph = (
   // Some PDFs may contain illegal UTF-8 code points like 0xF and 0x2
   // Vespa throws an error when ingesting such strings, so we replace those characters
   const cleanText = (str: string) => {
+    // Normalize carriage return and newline combinations to a single newline.
+    const normalized = str.replace(/\r\n|\r/g, "\n")
+    // Remove control characters except newline (\u000A)
     // Use a regular expression to remove illegal UTF-8 code points
-    return str.replace(
-      /[\u0000-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
+    return normalized.replace(
+      /[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
       "",
     )
   }

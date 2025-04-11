@@ -7,6 +7,7 @@ import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
 import { Apps } from "@/search/types"
 import type { OAuth2Client } from "google-auth-library"
+import crypto from "node:crypto"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -116,6 +117,13 @@ export const retryWithBackoff = async <T>(
     const isQuotaError =
       error.message.includes("Quota exceeded") || error.code === 429
     // error.code === 403
+    // Check for specific 403 Rate Limit errors that benefit from backoff
+    const is403RetryableRateLimitError =
+      error.code === 403 &&
+      ["userRateLimitExceeded", "rateLimitExceeded"].includes(
+        error.errors?.[0]?.reason,
+      )
+
     const isGoogleTimeoutError =
       error.code === "ETIMEDOUT" ||
       error.code === "ECONNABORTED" ||
@@ -125,13 +133,23 @@ export const retryWithBackoff = async <T>(
       // Specific Google API timeout indicators
       error.code === 504 || // Gateway Timeout
       error.code === 503 // Service Unavailable
-    if ((isQuotaError || isGoogleTimeoutError) && retries < MAX_RETRIES) {
+
+    // Combine checks for retryable errors
+    if (
+      (isQuotaError || isGoogleTimeoutError || is403RetryableRateLimitError) &&
+      retries < MAX_RETRIES
+    ) {
       const baseWaitTime = Math.pow(2, retries) * 3000 // Exponential backoff
       const jitter = Math.random() * 800 // Add jitter for randomness
       const waitTime = baseWaitTime + jitter
 
+      let reason = "Quota/Timeout"
+      if (is403RetryableRateLimitError) {
+        reason = "403 Rate Limit"
+      }
+
       Logger.info(
-        `[${context}] Quota error. Retrying after ${waitTime.toFixed(
+        `[${context}] ${reason} error. Retrying after ${waitTime.toFixed(
           0,
         )}ms (Attempt ${retries + 1}/${MAX_RETRIES})`,
       )
@@ -204,4 +222,20 @@ export const IsGoogleApp = (app: Apps) => {
     app === Apps.GoogleCalendar ||
     app === Apps.GoogleWorkspace
   )
+}
+
+export function scale(val: number): number | null {
+  if (!val) return null
+  return (2 * Math.atan(val / 4)) / Math.PI
+}
+
+// Function to hash the filename to hide the filename while
+// Storing the data in the memory
+export const hashPdfFilename = (filename: string): string => {
+  const hashInput = filename
+  const hash = crypto.createHash("md5").update(hashInput).digest("hex")
+
+  const newFilename = hash
+  Logger.info(`Filename hashed: ${filename} -> ${newFilename}`)
+  return newFilename
 }

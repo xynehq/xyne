@@ -137,11 +137,13 @@ export default {
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
-  maxDefaultSummary: 8,
+  maxDefaultSummary: 6,
+  chatPageSize: 15, // default page size for ai search
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
   serviceAccountWhitelistedEmails,
+  isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
 }
