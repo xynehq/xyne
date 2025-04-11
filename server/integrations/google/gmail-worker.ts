@@ -7,6 +7,7 @@ import { EmailParsingError } from "@/errors"
 import { getLogger } from "@/logger"
 import {
   Apps,
+  Env,
   MailAttachmentEntity,
   mailAttachmentSchema,
   MailEntity,
@@ -27,8 +28,9 @@ import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "@/integrations/google/gmail/quote-parser"
 import pLimit from "p-limit"
 import { GmailConcurrency } from "@/integrations/google/config"
-import { retryWithBackoff } from "@/utils"
-const htmlToText = require("html-to-text")
+import { getEnvironment, retryWithBackoff } from "@/utils"
+//@ts-ignore
+import * as htmlToText from "html-to-text"
 const Logger = getLogger(Subsystem.Integrations)
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"
 
@@ -40,6 +42,7 @@ import {
   parseAttachments,
 } from "@/integrations/google/worker-utils"
 import { StatType } from "@/integrations/tracker"
+import { parentPort } from "worker_threads"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -64,31 +67,55 @@ export const createJwtClient = (
   })
 }
 
-// self.addEventListener('message', async (event) => {
-// })
-self.onmessage = async (event: MessageEvent<MessageType>) => {
-  try {
-    if (event.type === "message") {
-      const msg = event.data
+const environment = getEnvironment()
+if (environment === Env.Node) {
+  parentPort?.on("message", async (msg: MessageType) => {
+    try {
       if (msg.type === MessageTypes.JwtParams) {
         const { userEmail, serviceAccountKey } = msg
         Logger.info(`Got the jwt params: ${userEmail}`)
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
         const historyId = await handleGmailIngestion(jwtClient, userEmail)
-        postMessage({
+        parentPort!.postMessage({
           type: WorkerResponseTypes.HistoryId,
           userEmail,
           historyId,
         })
       }
+    } catch (error) {
+      Logger.error(error, `Error in Gmail worker: ${error}`)
     }
-  } catch (error) {
-    Logger.error(error, `Error in Gmail worker: ${error}`)
-  }
-}
+  })
 
-self.onerror = (error: ErrorEvent) => {
-  Logger.error(error, `Error in Gmail worker: ${JSON.stringify(error)}`)
+  // Error handling for Node.js worker
+  parentPort?.on("error", (error) => {
+    Logger.error(error, `Error in Gmail worker: ${JSON.stringify(error)}`)
+  })
+} else {
+  self.onmessage = async (event: MessageEvent<MessageType>) => {
+    try {
+      if (event.type === "message") {
+        const msg = event.data
+        if (msg.type === MessageTypes.JwtParams) {
+          const { userEmail, serviceAccountKey } = msg
+          Logger.info(`Got the jwt params: ${userEmail}`)
+          const jwtClient = createJwtClient(serviceAccountKey, userEmail)
+          const historyId = await handleGmailIngestion(jwtClient, userEmail)
+          postMessage({
+            type: WorkerResponseTypes.HistoryId,
+            userEmail,
+            historyId,
+          })
+        }
+      }
+    } catch (error) {
+      Logger.error(error, `Error in Gmail worker: ${error}`)
+    }
+  }
+
+  self.onerror = (error: ErrorEvent) => {
+    Logger.error(error, `Error in Gmail worker: ${JSON.stringify(error)}`)
+  }
 }
 
 export const handleGmailIngestion = async (

@@ -54,6 +54,11 @@ export enum GooglePeopleEntity {
   AdminDirectory = "AdminDirectory",
 }
 
+export enum Env {
+  Bun = "Bun",
+  Node = "Node",
+}
+
 // the vespa schemas
 const Schemas = z.union([
   z.literal(fileSchema),

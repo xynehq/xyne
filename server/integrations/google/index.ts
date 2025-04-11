@@ -26,7 +26,7 @@ import {
   type SaaSOAuthJob,
 } from "@/types"
 import PgBoss from "pg-boss"
-import { hashPdfFilename } from "@/utils"
+import { getEnvironment, hashPdfFilename } from "@/utils"
 import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   GetDocument,
@@ -69,6 +69,7 @@ import {
 import { getLogger } from "@/logger"
 import {
   CalendarEntity,
+  Env,
   eventSchema,
   type VespaEvent,
   type VespaFileWithDrivePermission,
@@ -111,13 +112,35 @@ import {
 } from "@/integrations/tracker"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
+import { Worker as NodeWorker } from "worker_threads"
+
+const environment = getEnvironment()
 
 // const { serviceAccountWhitelistedEmails } = config
-const htmlToText = require("html-to-text")
+// @ts-ignore
+import * as htmlToText from "html-to-text"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
-const gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
-Logger.info("Gmail worker initialized")
+let gmailWorker
+if (environment === Env.Node) {
+  gmailWorker = new NodeWorker(new URL("gmail-worker.js", import.meta.url))
+  Logger.info("Gmail worker initialized")
+  gmailWorker.on("error", (error) => {
+    Logger.error(
+      error,
+      `[NODE] Error in main thread: worker: ${JSON.stringify(error)}`,
+    )
+  })
+} else {
+  gmailWorker = new Worker(new URL("gmail-worker.ts", import.meta.url).href)
+  Logger.info("Gmail worker initialized")
+  gmailWorker.onerror = (error: ErrorEvent) => {
+    Logger.error(
+      error,
+      `Error in main thread: worker: ${JSON.stringify(error)}`,
+    )
+  }
+}
 
 export type GaxiosPromise<T = any> = Promise<GaxiosResponse<T>>
 
@@ -796,10 +819,6 @@ const messageTypes = z.discriminatedUnion("type", [stats, historyId])
 
 type ResponseType = z.infer<typeof messageTypes>
 
-gmailWorker.onerror = (error: ErrorEvent) => {
-  Logger.error(error, `Error in main thread: worker: ${JSON.stringify(error)}`)
-}
-
 const pendingRequests = new Map<
   string,
   { resolve: Function; reject: Function }
@@ -822,19 +841,40 @@ const pendingRequests = new Map<
 //   }
 
 const setupGmailWorkerHandler = (tracker: Tracker) => {
-  gmailWorker.onmessage = (message: MessageEvent<ResponseType>) => {
-    const { type, userEmail } = message.data
+  if (environment === Env.Node) {
+    // Node.js environment
+    ;(gmailWorker as NodeWorker).on("message", (data: ResponseType) => {
+      const { type, userEmail } = data
 
-    if (type === WorkerResponseTypes.HistoryId) {
-      const { historyId } = message.data
-      const promiseHandlers = pendingRequests.get(userEmail)
-      if (promiseHandlers) {
-        promiseHandlers.resolve(historyId)
-        pendingRequests.delete(userEmail)
+      if (type === WorkerResponseTypes.HistoryId) {
+        const { historyId } = data
+        const promiseHandlers = pendingRequests.get(userEmail)
+        if (promiseHandlers) {
+          promiseHandlers.resolve(historyId)
+          pendingRequests.delete(userEmail)
+        }
+      } else if (data.type === WorkerResponseTypes.Stats) {
+        const { userEmail, count, statType } = data
+        tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
       }
-    } else if (message.data.type === WorkerResponseTypes.Stats) {
-      const { userEmail, count, statType } = message.data
-      tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
+    })
+  } else {
+    ;(gmailWorker as Worker).onmessage = (
+      message: MessageEvent<ResponseType>,
+    ) => {
+      const { type, userEmail } = message.data
+
+      if (type === WorkerResponseTypes.HistoryId) {
+        const { historyId } = message.data
+        const promiseHandlers = pendingRequests.get(userEmail)
+        if (promiseHandlers) {
+          promiseHandlers.resolve(historyId)
+          pendingRequests.delete(userEmail)
+        }
+      } else if (message.data.type === WorkerResponseTypes.Stats) {
+        const { userEmail, count, statType } = message.data
+        tracker.updateUserStats(userEmail, statType, count) // Use the passed tracker
+      }
     }
   }
 }
@@ -1707,8 +1747,14 @@ export const downloadPDF = async (
   client: GoogleClient,
 ): Promise<void> => {
   const filePath = path.join(downloadDir, fileName)
-  const file = Bun.file(filePath)
-  const writer = file.writer()
+  let writer
+  if (environment === Env.Node) {
+    // Node.js environment
+    writer = fs.createWriteStream(filePath)
+  } else {
+    const file = Bun.file(filePath)
+    writer = file.writer()
+  }
   const res = await retryWithBackoff(
     () =>
       drive.files.get(

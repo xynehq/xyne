@@ -4,12 +4,13 @@
   "type": "module",
   "version": "0.3.0",
   "devDependencies": {
-    "@faker-js/faker": "^9.3.0",
     "@biomejs/biome": "1.9.4",
+    "@faker-js/faker": "^9.3.0",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.24.2",
-    "p-queue": "^8.0.1"
+    "p-queue": "^8.0.1",
+    "tsc-alias": "^1.8.13"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -19,6 +20,8 @@
     "migrate": "drizzle-kit migrate",
     "dev": "bun run --watch server.ts",
     "build": "bunx --bun vite build",
+    "build:server": "rm -rf distServer && tsc && tsc-alias -p tsconfig.json && bunx tsc-esm-fix --target distServer",
+    "nodeServer": "cd distServer && node --env-file=../.env server.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../"
@@ -28,6 +31,7 @@
     "@aws-sdk/client-bedrock-runtime": "^3.721.0",
     "@google/generative-ai": "^0.21.0",
     "@hono/event-emitter": "^2.0.0",
+    "@hono/node-server": "^1.14.0",
     "@hono/oauth-providers": "^0.6.2",
     "@hono/zod-validator": "^0.2.2",
     "@jrmdayn/googleapis-batcher": "^0.8.0",
