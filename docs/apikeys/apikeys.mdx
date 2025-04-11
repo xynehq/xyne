@@ -37,6 +37,13 @@ To use **AI chat**, you need to configure access credentials. You can use one of
 
 <Warning> For ```quickstart``` mode ensure Ollama is listening from all addresses, so that docker is able to reach it. </Warning>
 
+### Google AI
+- Generate you API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+- Add them as environment variables in your ```.env.default``` file:
+    ```javascript   .env.default
+    GEMINI_API_KEY=<YOUR_GEMINI_API_KEY> 
+    GEMINI_MODEL=<YOUR_GEMINI_MODEL_NAME>  
+
 ### Together AI
 - Create your API key in [Together AI](https://www.together.ai/)
 - Select the model from your choice.
