@@ -23,7 +23,7 @@ const user = "junaid.s@xynehq.com"
 
 const search = async (query: string): Promise<SearchResponse> => {
   return VespaSearchResponseToSearchResult(
-    await searchVespa(query, user, null, null, 10, 0),
+    await searchVespa(query, user, null, null, { limit: 10 }),
   )
 }
 
@@ -193,7 +193,8 @@ describe.skip("search files", () => {
     //@ts-ignore
     const searchResults: {
       fields: VespaFileSearch & { matchfeatures: MatchFeatures }
-    }[] = (await searchVespa(query, user, null, null, 10, 0)).root.children
+    }[] = (await searchVespa(query, user, null, null, { limit: 10 })).root
+      .children
     const correctDocIndex = searchResults.findIndex(
       (i) => i.fields?.title === chunkDocTitle,
     )
@@ -210,7 +211,8 @@ describe.skip("search files", () => {
     //@ts-ignore
     const searchResults: {
       fields: VespaFileSearch & { matchfeatures: MatchFeatures }
-    }[] = (await searchVespa(query, user, null, null, 10, 0)).root.children
+    }[] = (await searchVespa(query, user, null, null, { limit: 10 })).root
+      .children
     const fileIdx = searchResults.findIndex(
       (i) => i.fields.sddocname === "file",
     )

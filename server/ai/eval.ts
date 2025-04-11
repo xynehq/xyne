@@ -299,15 +299,10 @@ async function generateAnswerJson(
 ): Promise<LLMResponse> {
   const email = myEmail
   const message = input
-  const results = await searchVespa(
-    message,
-    email,
-    null,
-    null,
-    pageSize,
-    0,
+  const results = await searchVespa(message, email, null, null, {
+    limit: pageSize,
     alpha,
-  )
+  })
   const initialContext = cleanContext(
     results.root.children
       .map(
@@ -432,9 +427,13 @@ async function generateIterativeTimeFilterAndQueryRewrite(
 
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const latestResults = (
-    await searchVespa(message, email, null, null, pageSize, 0, alpha, {
-      from: new Date().getTime() - 4 * monthInMs,
-      to: new Date().getTime(),
+    await searchVespa(message, email, null, null, {
+      limit: pageSize,
+      alpha,
+      timestampRange: {
+        from: new Date().getTime() - 4 * monthInMs,
+        to: new Date().getTime(),
+      },
     })
   ).root.children
 
@@ -446,15 +445,10 @@ async function generateIterativeTimeFilterAndQueryRewrite(
     // should only do it once
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
       // get the first page of results
-      let results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
+      let results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
         alpha,
-      )
+      })
       const initialContext = cleanContext(
         results.root.children
           .map(
@@ -470,25 +464,16 @@ async function generateIterativeTimeFilterAndQueryRewrite(
       const queries = queryResp.queries
       for (const query of queries) {
         const latestResults = (
-          await searchVespa(query, email, null, null, pageSize, 0, alpha, {
-            from: new Date().getTime() - 4 * monthInMs,
-            to: new Date().getTime(),
-          })
+          await searchVespa(query, email, null, null, { limit: page })
         ).root.children
 
-        let results = await searchVespa(
-          query,
-          email,
-          null,
-          null,
-          pageSize,
-          0,
+        let results = await searchVespa(query, email, null, null, {
+          limit: pageSize,
           alpha,
-          null,
-          latestResults
+          excludedIds: latestResults
             .map((v: VespaSearchResult) => v?.fields.docId)
             .filter((v) => !!v),
-        )
+        })
         const initialContext = cleanContext(
           results.root.children
             .concat(latestResults)
@@ -514,28 +499,19 @@ async function generateIterativeTimeFilterAndQueryRewrite(
 
     let results
     if (pageNumber === 0) {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
         alpha,
-        null,
-        latestIds,
-      )
+        excludedIds: latestIds,
+      })
       results.root.children = results.root.children.concat(latestResults)
     } else {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
         alpha,
-      )
+      })
     }
     const initialContext = cleanContext(
       results.root.children
@@ -684,22 +660,14 @@ const generatePointQueryTimeExpansion = async (
       email,
       Apps.GoogleCalendar,
       null,
-      pageSize,
-      0,
-      alpha,
-      { from, to },
+      { limit: pageSize, alpha, timestampRange: { from, to } },
     )
-    const results = await searchVespa(
-      message,
-      email,
-      null,
-      null,
-      pageSize,
-      0,
+    const results = await searchVespa(message, email, null, null, {
+      limit: pageSize,
       alpha,
-      { to, from },
-      ["CATEGORY_PROMOTIONS", "UNREAD"],
-    )
+      timestampRange: { from, to },
+      notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
+    })
     if (!results.root.children) {
       results.root.children = []
     }
@@ -885,11 +853,11 @@ const endToEndFlow = async (
     if (parsed.queryRewrite) {
       message = parsed.queryRewrite
     }
-  
+
     const classification: TemporalClassifier = {
       direction: parsed.temporalDirection,
     }
-  
+
     const iterator = UnderstandMessageAndAnswer(
       email,
       ctx,
