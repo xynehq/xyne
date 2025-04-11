@@ -78,6 +78,7 @@ import {
   type VespaSearchResultsSchema,
   type VespaUser,
 } from "@/search/types"
+import { getChatTraceByExternalId } from "@/db/chatTrace"
 import { APIError } from "openai"
 const {
   JwtPayloadKey,
@@ -181,6 +182,7 @@ export const ChatRenameApi = async (c: Context) => {
   }
 }
 
+
 export const ChatDeleteApi = async (c: Context) => {
   try {
     // @ts-ignore
@@ -256,6 +258,46 @@ interface CitationResponse {
   answer?: string
   citations?: number[]
 }
+
+
+
+export const GetChatTraceApi = async (c: Context) => {
+  console.log(c);
+  try {
+    // @ts-ignore - Assume validation is handled by middleware in server.ts
+    const { chatId, messageId } = c.req.valid("query");
+    console.log("chatId", chatId);
+    console.log("messageId", messageId);
+
+    if (!chatId || !messageId) {
+      throw new HTTPException(400, { message: "chatId and messageId are required query parameters" });
+    }
+    const trace = await getChatTraceByExternalId(chatId, messageId);
+    
+    if (!trace) {
+      // Return 404 if the trace is not found for the given IDs
+      throw new HTTPException(500, { message: "Chat trace not found" });
+    }
+
+    // The traceJson is likely already a JSON object/string in the DB, return it directly
+    return c.json(trace);
+
+  } catch (error) {
+    const errMsg = getErrorMessage(error);
+    if (error instanceof HTTPException) {
+      // Re-throw HTTPExceptions to let Hono handle them
+      throw error;
+    }
+    Logger.error(
+      error,
+      `Get Chat Trace Error: ${errMsg} ${(error as Error).stack}`,
+    );
+    throw new HTTPException(500, {
+      message: "Could not fetch chat trace",
+    });
+  }
+};
+
 
 const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
@@ -1296,16 +1338,16 @@ export const MessageApi = async (c: Context) => {
                 const vespaSpan: Span = tracer.startSpan("vespaSearch", {
                   parentSpan: ragSpan,
                 })
-                const vespaArgs = {
-                  query: message,
-                  email,
-                  context: ctx,
-                  classification: JSON.stringify(classification),
-                  threshold: 0.5,
-                }
-                const yqlQuery = `select * from sources * where userQuery() contains "${message}" and relevance > 0.5`
-                tracer.setAttribute(vespaSpan, "vespa.args", JSON.stringify(vespaArgs))
-                tracer.setAttribute(vespaSpan, "vespa.yql", yqlQuery)
+                // const vespaArgs = {
+                //   query: message,
+                //   email,
+                //   context: ctx,
+                //   classification: JSON.stringify(classification),
+                //   threshold: 0.5,
+                // }
+                // const yqlQuery = `select * from sources * where userQuery() contains "${message}" and relevance > 0.5`
+                // tracer.setAttribute(vespaSpan, "vespa.args", JSON.stringify(vespaArgs))
+                // tracer.setAttribute(vespaSpan, "vespa.yql", yqlQuery)
                 tracer.setAttribute(vespaSpan, "citation.index", index)
                 tracer.setAttribute(vespaSpan, "citation.item", JSON.stringify(item))
                 tracer.setAttribute(vespaSpan, "Doc_id",JSON.stringify(item.id))

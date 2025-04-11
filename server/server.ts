@@ -1,4 +1,5 @@
-import { type Context, Hono, type Next } from "hono"
+import { type Context, Hono, type Next } from "hono";
+import { z } from "zod";
 import {
   AnswerApi,
   AutocompleteApi,
@@ -7,12 +8,13 @@ import {
   chatDeleteSchema,
   chatHistorySchema,
   chatRenameSchema,
+  chatTraceSchema,
   chatSchema,
   messageRetrySchema,
   messageSchema,
   SearchApi,
-} from "@/api/search"
-import { zValidator } from "@hono/zod-validator"
+} from "@/api/search";
+import { zValidator } from "@hono/zod-validator";
 import {
   addApiKeyConnectorSchema,
   addServiceConnectionSchema,
@@ -22,7 +24,7 @@ import {
   oauthStartQuerySchema,
   searchSchema,
   updateConnectorStatusSchema,
-} from "@/types"
+} from "@/types";
 import {
   AddApiKeyConnector,
   AddServiceConnection,
@@ -31,28 +33,28 @@ import {
   GetConnectors,
   StartOAuth,
   UpdateConnectorStatus,
-} from "@/api/admin"
-import { ProxyUrl } from "@/api/proxy"
-import { init as initQueue } from "@/queue"
-import { createBunWebSocket } from "hono/bun"
-import type { ServerWebSocket } from "bun"
-import { googleAuth } from "@hono/oauth-providers/google"
-import { jwt } from "hono/jwt"
-import type { JwtVariables } from "hono/jwt"
-import { sign } from "hono/jwt"
-import { db } from "@/db/client"
-import { HTTPException } from "hono/http-exception"
-import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
-import { createUser, getUserByEmail } from "@/db/user"
-import { getCookie } from "hono/cookie"
-import { serveStatic } from "hono/bun"
-import config from "@/config"
-import { OAuthCallback } from "@/api/oauth"
-import { setCookieByEnv } from "@/utils"
-import { getLogger, LogMiddleware } from "@/logger"
-import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo } from "@/api/auth"
-import { AuthRedirectError, InitialisationError } from "@/errors"
+} from "@/api/admin";
+import { ProxyUrl } from "@/api/proxy";
+import { init as initQueue } from "@/queue";
+import { createBunWebSocket } from "hono/bun";
+import type { ServerWebSocket } from "bun";
+import { googleAuth } from "@hono/oauth-providers/google";
+import { jwt } from "hono/jwt";
+import type { JwtVariables } from "hono/jwt";
+import { sign } from "hono/jwt";
+import { db } from "@/db/client";
+import { HTTPException } from "hono/http-exception";
+import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace";
+import { createUser, getUserByEmail } from "@/db/user";
+import { getCookie } from "hono/cookie";
+import { serveStatic } from "hono/bun";
+import config from "@/config";
+import { OAuthCallback } from "@/api/oauth";
+import { setCookieByEnv } from "@/utils";
+import { getLogger, LogMiddleware } from "@/logger";
+import { Subsystem } from "@/types";
+import { GetUserWorkspaceInfo } from "@/api/auth";
+import { AuthRedirectError, InitialisationError } from "@/errors";
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -61,21 +63,22 @@ import {
   GetChatApi,
   MessageApi,
   MessageRetryApi,
-} from "./api/chat"
-import { UserRole } from "./shared/types"
+  GetChatTraceApi,
+} from "./api/chat";
+import { UserRole } from "./shared/types";
 import { wsConnections } from "@/integrations/metricStream"
 type Variables = JwtVariables
 
-const clientId = process.env.GOOGLE_CLIENT_ID!
-const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
-const redirectURI = config.redirectUri
-const postOauthRedirect = config.postOauthRedirect
+const clientId = process.env.GOOGLE_CLIENT_ID!;
+const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
+const redirectURI = config.redirectUri;
+const postOauthRedirect = config.postOauthRedirect;
 
-const jwtSecret = process.env.JWT_SECRET!
+const jwtSecret = process.env.JWT_SECRET!;
 
-const CookieName = "auth-token"
+const CookieName = "auth-token";
 
-const Logger = getLogger(Subsystem.Server)
+const Logger = getLogger(Subsystem.Server);
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
@@ -159,6 +162,7 @@ export const AppRoutes = app
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
+  .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
@@ -395,10 +399,10 @@ const errorEvents: string[] = [
   `uncaughtException`,
   `unhandledRejection`,
   `rejectionHandled`,
-  `warning`,
 ]
 errorEvents.forEach((eventType: string) =>
   process.on(eventType, (error: Error) => {
     Logger.error(error, `Caught via event: ${eventType}`)
   }),
 )
+

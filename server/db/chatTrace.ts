@@ -1,8 +1,9 @@
 import { db } from "./client"
 import { chatTrace } from "./schema"
-import type { InferInsertModel } from "drizzle-orm"
+import type { InferInsertModel, InferSelectModel } from "drizzle-orm"
 import { z } from "zod"
 import { createInsertSchema } from "drizzle-zod"
+import { eq } from "drizzle-orm";
 
 // Infer the schema, including workspaceId, userId, external IDs, and non-null traceJson
 export const insertChatTraceSchema = createInsertSchema(chatTrace).omit({
@@ -28,3 +29,15 @@ export async function insertChatTrace(
 
   return newTrace
 }
+
+export async function getChatTraceByExternalId(
+  chatExternalId: string,
+  messageExternalId: string,
+): Promise<InferSelectModel<typeof chatTrace> | undefined> {
+  const [trace] = await db
+    .select()
+    .from(chatTrace)
+    .where(eq(chatTrace.chatExternalId, chatExternalId) && eq(chatTrace.messageExternalId, messageExternalId));
+  return trace;
+}
+
