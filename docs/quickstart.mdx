@@ -94,7 +94,7 @@ Setup your Google Credentials for the application.
 </Card>
 
 #### Setting the environment variables: 
-Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.default``` file, this is the .env file that our docker uses.
+Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.default``` file, this is the environment file that our docker uses.
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
 
@@ -144,6 +144,9 @@ FIREWORKS_API_KEY=<YOUR_FIREWORKS_API_KEY>
 FIREWORKS_MODEL=<YOUR_FIREWORKS_MODEL>
 FIREWORKS_FAST_MODEL=<YOUR_FIREWORKS_FAST_MODEL>
 
+## OR [If using Google AI]
+GEMINI_API_KEY=<YOUR_GEMINI_API_KEY> 
+GEMINI_MODEL=<YOUR_GEMINI_MODEL_NAME>  
 
 HOST=http://localhost:3001
 ```
@@ -162,7 +165,7 @@ Setup your AI Provider.
 
 <Warning> Chat will be unavailable without a Service Account or OAuth Account connection. </Warning>
 
-And build again from the ``xyne`` folder using : 
+And build the container again from the ``xyne`` folder using : 
 
 ```javascript 
 docker-compose -f deployment/docker-compose.yml up 
