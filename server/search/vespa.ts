@@ -11,6 +11,7 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  codeRustSchema,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -45,6 +46,7 @@ import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 const vespa = new VespaClient()
+const { isCodeSearchOnly } = config // Import the config flag
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -198,8 +200,8 @@ export const autocomplete = async (
     yql: yqlQuery,
     query,
     email,
-    hits: limit, // Limit the number of suggestions
-    "ranking.profile": "autocomplete", // Use the autocomplete rank profile
+    hits: limit,
+    "ranking.profile": "autocomplete",
     "presentation.summary": "autocomplete",
   }
   try {
@@ -442,6 +444,7 @@ type VespaQueryConfig = {
   rankProfile: SearchModes
   requestDebug: boolean
   span: Span | null
+  codeOnlySearch: boolean
 }
 
 export const searchVespa = async (
@@ -457,14 +460,33 @@ export const searchVespa = async (
     excludedIds = [],
     notInMailLabels = [],
     rankProfile = SearchModes.NativeRank,
-    requestDebug = false,
+    requestDebug = false, // Destructure requestDebug here
+    codeOnlySearch, // Add codeOnlySearch to parameters
     span = null,
-  }: Partial<VespaQueryConfig>,
+}: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  // Determine the timestamp cutoff based on lastUpdated
-  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
-  const isDebugMode = config.isDebugMode || requestDebug || false
+  const isDebugMode = config.isDebugMode || requestDebug || false;
 
+  if (codeOnlySearch) {
+    Logger.info("Performing code-only search.")
+    const yql = `select * from sources ${codeRustSchema} where userInput(@query);`
+    const minimalPayload = {
+      yql,
+      query,
+      hits: limit,
+      offset,
+      "ranking.profile": "code_focused",
+      ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+    }
+    try {
+      return await vespa.search<VespaSearchResponse>(minimalPayload)
+    } catch (error) {
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: codeRustSchema,
+      })
+    }
+  }
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,

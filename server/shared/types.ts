@@ -15,8 +15,11 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
+  codeRustSchema, // Import the new schema name
+  VespaCodeRustSchema, // Import the base Vespa schema for code_rust
 } from "search/types"
 export {
+  codeRustSchema, // Export codeRustSchema
   GooglePeopleEntity,
   DriveEntity,
   NotionEntity,
@@ -253,6 +256,24 @@ export const UserResponseSchema = VespaUserSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
+// Define the response schema for code_rust results
+export const CodeRustResponseSchema = VespaCodeRustSchema.pick({
+  docId: true,
+  filename: true,
+  path: true,
+  // Add other fields needed for display, e.g., a snippet
+  // summary_content: true, // Example: Add if you create a summary field
+})
+  .extend({
+    type: z.literal(codeRustSchema),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(), // Keep consistent with others
+    rankfeatures: z.any().optional(),
+    // Add summary field, mirroring FileResponseSchema
+    chunks_summary: z.array(scoredChunk).optional(),
+  })
+  .strip()
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -261,6 +282,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
+  CodeRustResponseSchema, // Add the new response schema
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>

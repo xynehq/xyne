@@ -1,0 +1,180 @@
+schema code_rust {
+
+  document code_rust {
+
+    # --- Document ID ---
+    # Use a hash of the file path as the document ID
+    field docId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    # --- Struct Definitions ---
+    # Simplified structs without indexing settings
+    struct doc_comment {
+      field text type string {}
+      field target type string {}
+      field start_line type int {}
+    }
+
+    struct dependency {
+      field name type string {}
+      field full_path type string {}
+      field line type int {}
+    }
+
+    # --- File Metadata ---
+    field filename type string {
+      indexing: summary | attribute | index
+      match: word
+      attribute: fast-search
+    }
+
+    field path type string {
+      indexing: summary | attribute
+      attribute: fast-search
+    }
+
+    field language type string {
+      indexing: summary | attribute
+      attribute: fast-search
+    }
+
+    # --- Core Content ---
+    field raw_content type string {
+      indexing: summary | index
+      match: text
+      index: enable-bm25
+      bolding: on
+      summary: dynamic # Generate dynamic snippets from full content
+    }
+
+    field symbol_names type array<string> {
+      indexing: summary | attribute | index
+      match: word
+      attribute: fast-search
+    }
+
+    # --- Flattened Code Chunks ---
+    field code_chunk_kinds type array<string> {
+      indexing: summary | attribute
+      match: word
+      attribute: fast-search
+    }
+    field code_chunk_names type array<string> {
+      indexing: summary | index
+      match: word
+      index: enable-bm25
+    }
+    field code_chunk_contents type array<string> {
+      indexing: summary | index # Keep for potential filtering/ranking
+      match: text
+      bolding: on
+      index: enable-bm25
+      # summary: dynamic # Remove dynamic summary from here
+    }
+    field code_chunk_start_lines type array<int> {
+      indexing: summary | attribute
+    }
+    field code_chunk_end_lines type array<int> {
+      indexing: summary | attribute
+    }
+
+    # --- Documentation Comments ---
+    field doc_comments_texts type array<string> {
+      indexing: summary | index
+      match: text
+      bolding: on
+      index: enable-bm25
+    }
+    field doc_comments_targets type array<string> {
+      indexing: summary | attribute
+      match: word
+      attribute: fast-search
+    }
+    field doc_comments_start_lines type array<int> {
+      indexing: summary | attribute
+    }
+
+    # --- Dependencies ---
+    field dependencies_names type array<string> {
+      indexing: summary | index
+      match: word
+    }
+    field dependencies_full_paths type array<string> {
+      indexing: summary | index
+      match: word
+    }
+    field dependencies_lines type array<int> {
+      indexing: summary | attribute
+    }
+
+    # --- Feature Flags ---
+    field feature_flags type array<string> {
+      indexing: summary | attribute | index
+      match: word
+      attribute: fast-search
+    }
+
+    # --- Embeddings ---
+    field embedding type tensor<float>(x[1024]) {
+      indexing: attribute
+      attribute { distance-metric: angular }
+    }
+  }
+
+  # --- Fieldsets ---
+  fieldset default {
+    fields: raw_content, symbol_names, code_chunk_names, code_chunk_contents, doc_comments_texts, dependencies_names, dependencies_full_paths, feature_flags
+  }
+
+  fieldset definitions {
+    fields: code_chunk_contents
+  }
+
+  fieldset documentation {
+    fields: doc_comments_texts
+  }
+
+  # --- Rank Profiles ---
+  rank-profile default inherits default {
+    first-phase {
+      expression: bm25(raw_content) + bm25(symbol_names)*2 + bm25(code_chunk_names)*3 + bm25(doc_comments_texts)*2
+    }
+  }
+
+  rank-profile code_focused inherits default {
+    first-phase {
+      expression: bm25(code_chunk_names)*4 + bm25(code_chunk_contents)*2 + bm25(symbol_names)*2
+    }
+  }
+
+  rank-profile doc_focused inherits default {
+    first-phase {
+      expression: bm25(doc_comments_texts)*4 + bm25(code_chunk_names)*1.5 + bm25(symbol_names)
+    }
+  }
+
+  # --- Document Summaries ---
+  # Explicitly define default summary to request dynamic raw_content
+  document-summary default {
+    summary docId type string {} # Keep other summary fields as needed
+    summary filename type string {}
+    summary path type string {}
+    summary language type string {}
+    summary raw_content type string { source: raw_content } # Specify source for dynamic summary
+    summary symbol_names type array<string> {}
+    summary code_chunk_kinds type array<string> {}
+    summary code_chunk_names type array<string> {}
+    # summary code_chunk_contents type array<string> {} # Don't need full chunks in summary if using raw_content
+    summary code_chunk_start_lines type array<int> {}
+    summary code_chunk_end_lines type array<int> {}
+    summary doc_comments_texts type array<string> {}
+    summary doc_comments_targets type array<string> {}
+    summary doc_comments_start_lines type array<int> {}
+    summary dependencies_names type array<string> {}
+    summary dependencies_full_paths type array<string> {}
+    summary dependencies_lines type array<int> {}
+    summary feature_flags type array<string> {}
+  }
+}

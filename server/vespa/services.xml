@@ -5,6 +5,10 @@
             <transformer-model path="models/model.onnx" />
             <tokenizer-model path="models/tokenizer.json" />
         </component>
+        <!-- <component id="code-embedder" type="hugging-face-embedder">
+            <transformer-model path="models/code/model.quantized.onnx" />
+            <tokenizer-model path="models/code/tokenizer.json" />
+        </component> -->
         <search />
         <document-api />
     </container>
@@ -28,6 +32,8 @@
             <document type="chat_container" mode="index" global="true" />
             <document type="chat_user" mode="index" global="true" />
             <document type="chat_team" mode="index" global="true" />
+            <!-- <document type="code_file" mode="index" /> -->
+            <document type="code_rust" mode="index" />
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />

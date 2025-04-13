@@ -1,6 +1,12 @@
-import HighlightedText from "@/components/Highlight"
-import { getIcon } from "@/lib/common"
-import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
+import HighlightedText from "@/components/Highlight"; // Keep for non-code results
+import { getIcon } from "@/lib/common";
+import { SearchResultDiscriminatedUnion, codeRustSchema } from "shared/types";
+import { Code } from 'lucide-react'; // Keep Code icon
+// Remove MarkdownPreview and expand/collapse imports
+// import MarkdownPreview from "@uiw/react-markdown-preview";
+// import { ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
+// import { useState } from "react";
+
 
 export const SearchResult = ({
   result,
@@ -11,6 +17,8 @@ export const SearchResult = ({
   index: number
   showDebugInfo?: boolean
 }) => {
+  // Remove isCodeExpanded state
+  // const [isCodeExpanded, setIsCodeExpanded] = useState(false);
   let content = <></>
   let commonClassVals = "pr-[60px]"
   if (result.type === "file") {
@@ -296,6 +304,48 @@ export const SearchResult = ({
         )}
       </div>
     )
+  } else if (result.type === codeRustSchema) { // Use the imported schema name
+    content = (
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start space-x-2">
+          {/* Use a generic code icon or specific Rust icon */}
+          <Code className="w-[24px] h-[24px] mr-[20px] flex-shrink-0" />
+          {/* Link to the file path or a code viewer if available */}
+          <span className="font-medium">{result.filename}</span>
+          <span className="text-sm text-gray-500 truncate">{result.path}</span>
+        </div>
+        {/* Render snippets using HighlightedText */}
+        {result.chunks_summary &&
+          result.chunks_summary?.length > 0 &&
+          result.chunks_summary.map((summary, idx) => (
+            // Use HighlightedText for proper <hi> rendering
+            // Apply basic margin/padding
+            <div key={idx} className="ml-[44px] mt-1">
+              <HighlightedText chunk_summary={summary.chunk} />
+            </div>
+          ))}
+        {/* Remove expand/collapse button and logic */}
+        {/* Debug Info Display */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+          <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">
+              {`Debug Info: ${index} : ${result.relevance}`}
+            </summary>
+            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+              {JSON.stringify(
+                {
+                  matchfeatures: result.matchfeatures,
+                  rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        )}
+      </div>
+    );
   }
-  return content
-}
+  return content;
+};

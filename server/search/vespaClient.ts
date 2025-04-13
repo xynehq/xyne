@@ -177,6 +177,7 @@ class VespaClient {
         headers: {
           "Content-Type": "application/json",
         },
+        // Revert: Send the entire document object in the fields payload
         body: JSON.stringify({ fields: document }),
       })
 
@@ -200,6 +201,7 @@ class VespaClient {
       } else {
       }
     } catch (error) {
+      // Revert: Use document.docId in error message
       const errMessage = getErrorMessage(error)
       Logger.error(
         error,

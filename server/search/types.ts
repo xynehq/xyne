@@ -21,6 +21,9 @@ export const chatAttachment = "chat_attachment"
 // previous queries
 export const userQuerySchema = "user_query"
 
+// code search
+export const codeRustSchema = "code_rust"
+
 export type VespaSchema =
   | typeof fileSchema
   | typeof userSchema
@@ -32,6 +35,7 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
+  | typeof codeRustSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -66,6 +70,7 @@ const Schemas = z.union([
   z.literal(chatTeamSchema),
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
+  z.literal(codeRustSchema),
 ])
 
 export enum MailEntity {
@@ -550,6 +555,46 @@ export const VespaChatTeamGetSchema = VespaChatTeamSchema.extend({
 export type VespaChatTeam = z.infer<typeof VespaChatTeamSchema>
 export type VespaChatTeamGet = z.infer<typeof VespaChatTeamGetSchema>
 
+// --- Code Rust Schemas ---
+export const VespaCodeRustSchema = z.object({
+  docId: z.string(),
+  filename: z.string(),
+  path: z.string(),
+  language: z.literal("rust"), // Assuming only Rust for now
+  raw_content: z.string(),
+  symbol_names: z.array(z.string()),
+  code_chunk_kinds: z.array(z.string()),
+  code_chunk_names: z.array(z.string()),
+  code_chunk_contents: z.array(z.string()),
+  code_chunk_start_lines: z.array(z.number().int()),
+  code_chunk_end_lines: z.array(z.number().int()),
+  doc_comments_texts: z.array(z.string()),
+  doc_comments_targets: z.array(z.string()),
+  doc_comments_start_lines: z.array(z.number().int()),
+  dependencies_names: z.array(z.string()),
+  dependencies_full_paths: z.array(z.string()),
+  dependencies_lines: z.array(z.number().int()),
+  feature_flags: z.array(z.string()),
+  // embedding: z.any().optional(), // Add if needed later
+})
+
+// Placeholder for specific match features if needed later
+const CodeRustMatchFeaturesSchema = z.object({
+  // Example: "bm25(symbol_names)": z.number().optional(),
+}).optional()
+
+export const VespaCodeRustSearchSchema = VespaCodeRustSchema.extend({
+  sddocname: z.literal(codeRustSchema),
+  matchfeatures: CodeRustMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    // Assuming code might have summaries similar to other types
+    chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+  })
+// --- End Code Rust Schemas ---
+
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
@@ -560,8 +605,11 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatContainerSearchSchema,
   VespaChatUserSearchSchema,
   VespaChatMessageSearchSchema,
+  VespaCodeRustSearchSchema,
 ])
 
+// Add CodeRustMatchFeaturesSchema to the union if it's defined and needed
+// For now, assuming it's covered by the generic optional object in VespaMatchFeatureSchema
 const SearchMatchFeaturesSchema = z.union([
   FileMatchFeaturesSchema,
   UserMatchFeaturesSchema,
