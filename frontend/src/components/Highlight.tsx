@@ -1,7 +1,13 @@
-import { replaceLinks } from "@/lib/utils"
-import React, { ReactNode } from "react"
+import { replaceLinks } from "@/lib/utils";
+import React, { ReactNode } from "react";
 
-type HighlightText = { text: string; highlight: boolean }
+type HighlightText = { text: string; highlight: boolean };
+
+// Define props interface including optional isCode
+interface HighlightedTextProps {
+  chunk_summary: string;
+  isCode?: boolean; // Add optional isCode prop back
+}
 
 const cleanDocs = (text: string): string => {
   const urlPattern =
@@ -19,7 +25,7 @@ const cleanDocs = (text: string): string => {
   const controlCharsPattern = /[\x00-\x1F\x7F-\x9F]/g
   cleanedText = cleanedText.replace(controlCharsPattern, "")
   // Remove invalid or incomplete UTF characters
-  //  and �
+  //  and 
   const invalidUtfPattern = /[\uE907\uFFFD]/g
   cleanedText = cleanedText.replace(invalidUtfPattern, "")
 
@@ -32,32 +38,35 @@ const cleanDocs = (text: string): string => {
   return cleanedText
 }
 
+// Original parser for non-code text
 const parseHighlight = (text: string): ReactNode[] => {
-  // Split the text on <hi> and </hi>, including the tags in the result
   const parts: string[] = text.split(/(<hi>|<\/hi>)/)
-
   let isHighlight = false
-  let addSpace = true
+  let addSpace = true // Keep original space handling logic for non-code
   const segments: HighlightText[] = []
 
   parts.forEach((part, index) => {
     if (part === "<hi>") {
-      // if it's "<hi>text</hi>" then we don't add any spaces
-      // as original text would be "text" and we don't want " text "
       if (
         index - 1 > 0 &&
         parts[index - 1][parts[index - 1].length - 1] === '"'
       ) {
         addSpace = false
+      } else {
+        addSpace = true; // Reset for next segment
       }
       isHighlight = true
     } else if (part === "</hi>") {
       isHighlight = false
+      addSpace = true; // Reset after highlight
     } else if (part) {
+      // Only add spaces around non-highlighted parts for non-code text
       segments.push({
-        text: addSpace ? ` ${part} ` : part,
+        text: !isHighlight && addSpace ? ` ${part} ` : part,
         highlight: isHighlight,
       } as HighlightText)
+      // Reset addSpace if it was false for a quote ending
+      if (!addSpace) addSpace = true;
     }
   })
 
@@ -67,6 +76,7 @@ const parseHighlight = (text: string): ReactNode[] => {
         {segment.text}
       </span>
     ) : (
+      // Apply cleaning/links only to non-highlighted segments here
       <React.Fragment key={index}>
         {replaceLinks(cleanDocs(segment.text))}
       </React.Fragment>
@@ -172,13 +182,39 @@ function trimToHighlightHotspot(text: string): string {
   return text
 }
 
-// Component that renders chunk summary with parsing
-const HighlightedText = ({ chunk_summary }: { chunk_summary: string }) => (
-  <p className="text-left text-sm mt-1 text-[#464B53] text-ellipsis ml-[44px] line-clamp-3">
-    {chunk_summary
-      ? parseHighlight(trimToHighlightHotspot(chunk_summary))
-      : " "}
-  </p>
-)
 
-export default HighlightedText
+// Component that renders chunk summary with parsing
+const HighlightedText: React.FC<HighlightedTextProps> = ({ chunk_summary, isCode = false }) => {
+
+  if (isCode) {
+    // For code, use dangerouslySetInnerHTML within pre/code tags
+    // Replace <hi> tags with styled spans directly in the HTML string
+    const highlightedHtml = chunk_summary
+      ? chunk_summary.replace(
+          /<hi>(.*?)<\/hi>/g,
+          // Use font-bold or other classes as needed
+          `<span class="font-bold">$1</span>`
+        )
+      : "";
+
+    return (
+      <pre className="code-block-pre">
+        <code
+          className="code-block-code"
+          dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        />
+      </pre>
+    );
+  }
+
+  // Default rendering for non-code text (apply cleaning, trimming, link replacement, parsing)
+  const processedText = chunk_summary ? replaceLinks(cleanDocs(trimToHighlightHotspot(chunk_summary))) : " ";
+  const nonCodeContent = parseHighlight(processedText); // Parse highlights *after* cleaning/trimming
+  return (
+    <p className="text-left text-sm mt-1 text-[#464B53] text-ellipsis ml-[44px] line-clamp-3">
+      {nonCodeContent}
+    </p>
+  );
+};
+
+export default HighlightedText;

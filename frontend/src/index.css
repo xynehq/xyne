@@ -22,6 +22,16 @@ body {
 @tailwind components;
 @tailwind utilities;
 
+/* Remove styles related to MarkdownPreview and previous attempts */
+/* .wmde-markdown pre { ... } */
+/* .wmde-markdown code { ... } */
+/* .wmde-markdown pre code hi { ... } */
+/* .wmde-markdown pre code span { ... } */
+/* .bold-part { ... } */
+/* .code-block-pre { ... } */
+/* .code-block-code { ... } */
+
+
 html {
   @apply antialiased;
 }
