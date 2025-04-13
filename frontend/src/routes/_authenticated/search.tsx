@@ -36,7 +36,6 @@ import { SearchBar } from "@/components/SearchBar"
 import { Button } from "@/components/ui/button"
 import { z } from "zod"
 import {
-  ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
   MessageSquareShare,
@@ -111,6 +110,18 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
 
+  const totalCount = searchMeta?.totalCount || 0
+  const filterPageSize =
+    filter.app && filter.entity
+      ? groups
+        ? groups[filter.app][filter.entity]
+        : totalCount
+      : totalCount
+  
+  // Added for infinite scroll functionality
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
   // for autocomplete
   const debounceTimeout = useRef<number | null>(null) // Debounce timer
   const [autocompleteResults, setAutocompleteResults] = useState<
@@ -137,6 +148,37 @@ export const Search = ({ user, workspace }: IndexProps) => {
       document.removeEventListener("mousedown", handleClickOutside)
     }
   }, [autocompleteRef])
+
+  // Intersection observer for infinite scroll
+  useEffect(() => {
+    if (!bottomRef.current) return
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries
+        if (
+          entry.isIntersecting && 
+          results.length > 0 && 
+          filterPageSize > page && 
+          results.length < filterPageSize && 
+          !isLoading
+        ) {
+          // Load more results when bottom is visible
+          setIsLoading(true)
+          handleNext()
+        }
+      },
+      { threshold: 0.1 } // Trigger when 10% of the element is visible
+    )
+    
+    observer.observe(bottomRef.current)
+    
+    return () => {
+      if (bottomRef.current) {
+        observer.unobserve(bottomRef.current)
+      }
+    }
+  }, [results, filterPageSize, page, isLoading])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -328,6 +370,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
           setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
+        
+        // Reset loading state after results are received
+        setIsLoading(false)
       } else {
         const errorText = await response.text()
         if (!response.ok) {
@@ -344,6 +389,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
     } catch (error) {
       logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
+      setIsLoading(false) // Reset loading state on error
     }
   }
 
@@ -381,14 +427,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
       setOffset(0)
     }
   }
-  const totalCount = searchMeta?.totalCount || 0
   // if filter is selected we should keep it's count to prevent showing button for pagination
-  const filterPageSize =
-    filter.app && filter.entity
-      ? groups
-        ? groups[filter.app][filter.entity]
-        : totalCount
-      : totalCount
 
   return (
     <div className="h-full w-full flex">
@@ -499,21 +538,17 @@ export const Search = ({ user, workspace }: IndexProps) => {
               </div>
             )}
 
-            {results.length > 0 &&
-              filterPageSize > page &&
-              results.length < filterPageSize && (
-                <button
-                  className="flex flex-row text-[#464B53] mr-[60px] items-center justify-center pb-[17px] mt-[auto] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
-                  onClick={handleNext}
-                >
-                  <ChevronDown
-                    className="mr-[7px]"
-                    size={18}
-                    stroke="#464B53"
-                  />
-                  <span>More Results</span>
-                </button>
-              )}
+            {/* Infinite scroll loading indicator and bottom reference */}
+            {results.length > 0 && (
+              <div ref={bottomRef} className="py-4 flex justify-center">
+                {isLoading && filterPageSize > page && results.length < filterPageSize ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent border-blue-500 animate-spin"></div>
+                    <span className="text-gray-500">Loading more results...</span>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
           {groups && (
             <GroupFilter
