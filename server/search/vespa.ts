@@ -473,6 +473,7 @@ export const searchVespa = async (
       hits: limit,
       offset,
       "ranking.profile": "code_focused", // Use code-specific profile
+      "presentation.summary": "default", // Request default summary fields
       // No email, app, entity, permissions, timestamp, embedding, alpha needed
       ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}), // Use isDebugMode
     }

@@ -26,7 +26,7 @@ schema code_rust {
     # --- File Metadata ---
     field filename type string {
       indexing: summary | attribute | index
-      match: word
+      match: exact # Changed from word
       attribute: fast-search
     }
 
@@ -43,32 +43,32 @@ schema code_rust {
     # --- Core Content ---
     field raw_content type string {
       indexing: summary | index
-      match: text
+      match: text # Keep as text for broader matching within content
       index: enable-bm25
       bolding: on
-      summary: dynamic # Generate dynamic snippets from full content
+      # summary: dynamic # Reverted: Rely on mapper logic with code_chunk_contents
     }
 
     field symbol_names type array<string> {
       indexing: summary | attribute | index
-      match: word
+      match: exact # Changed from word
       attribute: fast-search
     }
 
     # --- Flattened Code Chunks ---
     field code_chunk_kinds type array<string> {
       indexing: summary | attribute
-      match: word
+      match: exact # Changed from word
       attribute: fast-search
     }
     field code_chunk_names type array<string> {
       indexing: summary | index
-      match: word
+      match: exact # Changed from word
       index: enable-bm25
     }
     field code_chunk_contents type array<string> {
       indexing: summary | index # Keep for potential filtering/ranking
-      match: text
+      match: text # Keep as text for broader matching within content
       bolding: on
       index: enable-bm25
       # summary: dynamic # Remove dynamic summary from here
@@ -83,13 +83,13 @@ schema code_rust {
     # --- Documentation Comments ---
     field doc_comments_texts type array<string> {
       indexing: summary | index
-      match: text
+      match: text # Keep as text
       bolding: on
       index: enable-bm25
     }
     field doc_comments_targets type array<string> {
       indexing: summary | attribute
-      match: word
+      match: exact # Changed from word
       attribute: fast-search
     }
     field doc_comments_start_lines type array<int> {
@@ -99,11 +99,11 @@ schema code_rust {
     # --- Dependencies ---
     field dependencies_names type array<string> {
       indexing: summary | index
-      match: word
+      match: exact # Changed from word
     }
     field dependencies_full_paths type array<string> {
       indexing: summary | index
-      match: word
+      match: exact # Changed from word
     }
     field dependencies_lines type array<int> {
       indexing: summary | attribute
@@ -112,7 +112,7 @@ schema code_rust {
     # --- Feature Flags ---
     field feature_flags type array<string> {
       indexing: summary | attribute | index
-      match: word
+      match: exact # Changed from word
       attribute: fast-search
     }
 
@@ -121,6 +121,7 @@ schema code_rust {
       indexing: attribute
       attribute { distance-metric: angular }
     }
+
   }
 
   # --- Fieldsets ---
@@ -138,43 +139,67 @@ schema code_rust {
 
   # --- Rank Profiles ---
   rank-profile default inherits default {
+    # Define the elementwise calculation function at the profile level
+    function chunk_scores() {
+      expression: elementwise(bm25(code_chunk_contents), x, double)
+    }
+
     first-phase {
+      # Combine overall BM25 - REMOVED max_chunk_score usage
       expression: bm25(raw_content) + bm25(symbol_names)*2 + bm25(code_chunk_names)*3 + bm25(doc_comments_texts)*2
+    }
+
+    # Add chunk_scores to match-features
+    match-features {
+      bm25(raw_content)
+      bm25(symbol_names)
+      bm25(code_chunk_names)
+      bm25(doc_comments_texts)
+      chunk_scores # Keep the elementwise scores here
     }
   }
 
   rank-profile code_focused inherits default {
+    # Define the elementwise calculation function at the profile level
+    function chunk_scores() {
+      expression: elementwise(bm25(code_chunk_contents), x, double)
+    }
+
     first-phase {
-      expression: bm25(code_chunk_names)*4 + bm25(code_chunk_contents)*2 + bm25(symbol_names)*2
+      # Prioritize chunk names and symbols - REMOVED max_chunk_score usage
+      expression: bm25(code_chunk_names)*4 + bm25(symbol_names)*2
+    }
+
+    # Add chunk_scores to match-features
+    match-features {
+      bm25(code_chunk_names)
+      bm25(symbol_names)
+      chunk_scores # Keep the elementwise scores here
     }
   }
 
   rank-profile doc_focused inherits default {
+    # Define the elementwise calculation function at the profile level
+    function chunk_scores() {
+      expression: elementwise(bm25(code_chunk_contents), x, double)
+    }
+
     first-phase {
+      # Prioritize docs - REMOVED max_chunk_score usage
       expression: bm25(doc_comments_texts)*4 + bm25(code_chunk_names)*1.5 + bm25(symbol_names)
+    }
+
+    # Add chunk_scores to match-features
+    match-features {
+      bm25(doc_comments_texts)
+      bm25(code_chunk_names)
+      bm25(symbol_names)
+      chunk_scores # Keep the elementwise scores here
     }
   }
 
   # --- Document Summaries ---
-  # Explicitly define default summary to request dynamic raw_content
-  document-summary default {
-    summary docId type string {} # Keep other summary fields as needed
-    summary filename type string {}
-    summary path type string {}
-    summary language type string {}
-    summary raw_content type string { source: raw_content } # Specify source for dynamic summary
-    summary symbol_names type array<string> {}
-    summary code_chunk_kinds type array<string> {}
-    summary code_chunk_names type array<string> {}
-    # summary code_chunk_contents type array<string> {} # Don't need full chunks in summary if using raw_content
-    summary code_chunk_start_lines type array<int> {}
-    summary code_chunk_end_lines type array<int> {}
-    summary doc_comments_texts type array<string> {}
-    summary doc_comments_targets type array<string> {}
-    summary doc_comments_start_lines type array<int> {}
-    summary dependencies_names type array<string> {}
-    summary dependencies_full_paths type array<string> {}
-    summary dependencies_lines type array<int> {}
-    summary feature_flags type array<string> {}
-  }
+  # Default summary is implicitly created containing all fields with 'indexing: summary'
+  # Explicit definition removed.
+
 }
