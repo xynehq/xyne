@@ -122,6 +122,11 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
+  const handleNext = () => {
+    const newOffset = offset + page
+    setOffset(newOffset)
+  }
+
   // for autocomplete
   const debounceTimeout = useRef<number | null>(null) // Debounce timer
   const [autocompleteResults, setAutocompleteResults] = useState<
@@ -168,7 +173,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           handleNext()
         }
       },
-      { threshold: 0.1 } // Trigger when 10% of the element is visible
+      { threshold: 0.5 } // Trigger when 10% of the element is visible
     )
     
     observer.observe(bottomRef.current)
@@ -178,7 +183,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         observer.unobserve(bottomRef.current)
       }
     }
-  }, [results, filterPageSize, page, isLoading])
+  }, [results, filterPageSize, page, isLoading, handleNext])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -393,10 +398,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
     }
   }
 
-  const handleNext = () => {
-    const newOffset = offset + page
-    setOffset(newOffset)
-  }
 
   const handleFilterChange = (appEntity: Filter) => {
     // Check if appEntity.app and appEntity.entity are defined
