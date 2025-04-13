@@ -35,6 +35,7 @@ const baseSearchSchema = z.object({
   entity: z.string().min(1).optional(),
   lastUpdated: z.string().default("anytime"),
   isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
+  codeOnlySearch: z.preprocess((val) => val === "true", z.boolean()).optional(), // Add codeOnlySearch flag
 })
 
 export const searchSchema = baseSearchSchema.refine(

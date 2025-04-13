@@ -11,6 +11,7 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  codeRustSchema, // Import codeRustSchema
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -44,6 +45,7 @@ import {
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 const vespa = new VespaClient()
+const { isCodeSearchOnly } = config // Import the config flag
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -455,12 +457,38 @@ export const searchVespa = async (
     excludedIds = [],
     notInMailLabels = [],
     rankProfile = SearchModes.NativeRank,
-    requestDebug = false,
-  }: Partial<VespaQueryConfig>,
+    requestDebug = false, // Destructure requestDebug here
+    codeOnlySearch, // Add codeOnlySearch to parameters
+}: Partial<VespaQueryConfig & { codeOnlySearch?: boolean }>, // Add to type
 ): Promise<VespaSearchResponse> => {
+  const isDebugMode = config.isDebugMode || requestDebug || false; // Calculate isDebugMode early
+
+  // --- Short Circuit for Code-Only Search ---
+  if (codeOnlySearch) {
+    Logger.info("Performing code-only search.")
+    const yql = `select * from sources ${codeRustSchema} where userInput(@query);`
+    const minimalPayload = {
+      yql,
+      query,
+      hits: limit,
+      offset,
+      "ranking.profile": "code_focused", // Use code-specific profile
+      // No email, app, entity, permissions, timestamp, embedding, alpha needed
+      ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}), // Use isDebugMode
+    }
+    try {
+      return await vespa.search<VespaSearchResponse>(minimalPayload)
+    } catch (error) {
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: codeRustSchema, // Specify the source
+      })
+    }
+  }
+  // --- End Short Circuit ---
+
   // Determine the timestamp cutoff based on lastUpdated
-  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
-  const isDebugMode = config.isDebugMode || requestDebug || false
+  // isDebugMode is already calculated above
 
   let { yql, profile } = HybridDefaultProfile(
     limit,

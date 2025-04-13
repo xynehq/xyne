@@ -141,6 +141,7 @@ export const SearchApi = async (c: Context) => {
     lastUpdated,
     isQueryTyped,
     debug,
+    codeOnlySearch, // Add codeOnlySearch
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
@@ -158,6 +159,7 @@ export const SearchApi = async (c: Context) => {
         requestDebug: debug,
         offset,
         timestampRange,
+        codeOnlySearch, // Pass codeOnlySearch
       }),
     ]
 
@@ -173,6 +175,7 @@ export const SearchApi = async (c: Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
+      codeOnlySearch, // Pass codeOnlySearch
     })
   }
 

@@ -146,4 +146,5 @@ export default {
   JobExpiryHours: 23,
   serviceAccountWhitelistedEmails,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
+  isCodeSearchOnly: process.env.CODE_SEARCH_ONLY === "true", // Add code search only flag
 }

@@ -64,6 +64,8 @@
     "playwright": "^1.45.3",
     "postgres": "^3.4.5",
     "together-ai": "^0.13.0",
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-rust": "^0.24.0",
     "uuid": "^11.0.0",
     "zod": "^3.24.1"
   }

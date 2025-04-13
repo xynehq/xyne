@@ -32,6 +32,8 @@ import {
   type VespaChatMessageSearch,
   chatMessageSchema,
   ChatMessageResponseSchema,
+  codeRustSchema, // Import codeRustSchema
+  type VespaCodeRustSearchSchema, // Import the search schema type
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -44,6 +46,7 @@ import {
   EventResponseSchema,
   FileResponseSchema,
   UserResponseSchema,
+  CodeRustResponseSchema, // Import the response schema
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -100,7 +103,8 @@ export const getSortedScoredChunks = (
 }
 
 // Vespa -> Backend/App -> Client
-const maxSearchChunks = 1
+const maxSearchChunks = 1; // Default for most types
+const maxCodeSearchChunks = 3; // Show more for code
 
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
@@ -223,7 +227,34 @@ export const VespaSearchResponseToSearchResult = (
               fields.teamId = ""
             }
             return ChatMessageResponseSchema.parse(fields)
-          } else {
+          } else if (
+            (child.fields as z.infer<typeof VespaCodeRustSearchSchema>).sddocname === // Use z.infer<typeof ...> for type
+            codeRustSchema
+          ) {
+            // Add chunks_summary to the type hint for fields
+            const fields = child.fields as z.infer<typeof VespaCodeRustSearchSchema> & { type?: string, chunks_summary?: any[], code_chunk_contents?: string[] }
+            fields.type = codeRustSchema
+            fields.relevance = child.relevance
+            // Manually select snippets from code_chunk_contents based on <hi> tags
+            if (fields.code_chunk_contents && fields.code_chunk_contents.length > 0) {
+                 const highlightedChunks = fields.code_chunk_contents.filter(chunk => chunk.includes("<hi>"));
+                 let selectedChunks: string[];
+                 if (highlightedChunks.length >= maxCodeSearchChunks) {
+                    selectedChunks = highlightedChunks.slice(0, maxCodeSearchChunks);
+                 } else {
+                    // Take all highlighted chunks and fill the rest with initial chunks
+                    const needed = maxCodeSearchChunks - highlightedChunks.length;
+                    selectedChunks = [
+                        ...highlightedChunks,
+                        ...fields.code_chunk_contents.filter(chunk => !chunk.includes("<hi>")).slice(0, needed)
+                    ];
+                 }
+                 // Map the selected chunks
+                 fields.chunks_summary = selectedChunks.map((chunk, index) => ({ chunk, score: 0, index }));
+            }
+            return CodeRustResponseSchema.parse(fields)
+          }
+           else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
             )
