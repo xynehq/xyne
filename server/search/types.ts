@@ -579,9 +579,11 @@ export const VespaCodeRustSchema = z.object({
 })
 
 // Placeholder for specific match features if needed later
-const CodeRustMatchFeaturesSchema = z.object({
-  // Example: "bm25(symbol_names)": z.number().optional(),
-}).optional()
+const CodeRustMatchFeaturesSchema = z
+  .object({
+    // Example: "bm25(symbol_names)": z.number().optional(),
+  })
+  .optional()
 
 export const VespaCodeRustSearchSchema = VespaCodeRustSchema.extend({
   sddocname: z.literal(codeRustSchema),

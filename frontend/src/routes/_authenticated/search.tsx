@@ -106,12 +106,12 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [showDebugInfo, setDebugInfo] = useState(
     import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || (search.debug ?? false),
   ) // State for debug info visibility, initialized from env var
-  const [traceData, setTraceData] = useState<any | null>(null); // State for trace data
+  const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   // Read the code only mode from Vite environment variable
-  const isCodeOnlyMode = import.meta.env.VITE_CODE_SEARCH_ONLY === "true";
+  const isCodeOnlyMode = import.meta.env.VITE_CODE_SEARCH_ONLY === "true"
   // close autocomplete if clicked outside
-  const autocompleteRef = useRef<HTMLDivElement | null>(null);
-  const [autocompleteQuery, setAutocompleteQuery] = useState("");
+  const autocompleteRef = useRef<HTMLDivElement | null>(null)
+  const [autocompleteQuery, setAutocompleteQuery] = useState("")
 
   // for autocomplete
   const debounceTimeout = useRef<number | null>(null) // Debounce timer
@@ -189,8 +189,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   // Remove isCodeOnly from dependency array as it's now constant
   useEffect(() => {
-    handleSearch();
-  }, [filter, offset]);
+    handleSearch()
+  }, [filter, offset])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing

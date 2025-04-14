@@ -103,8 +103,8 @@ export const getSortedScoredChunks = (
 }
 
 // Vespa -> Backend/App -> Client
-const maxSearchChunks = 1; // Default for most types
-const maxCodeSearchChunks = 3; // Show more for code
+const maxSearchChunks = 1 // Default for most types
+const maxCodeSearchChunks = 3 // Show more for code
 
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
@@ -228,10 +228,17 @@ export const VespaSearchResponseToSearchResult = (
             }
             return ChatMessageResponseSchema.parse(fields)
           } else if (
-            (child.fields as z.infer<typeof VespaCodeRustSearchSchema>).sddocname === // Use z.infer<typeof ...> for type
+            (child.fields as z.infer<typeof VespaCodeRustSearchSchema>)
+              .sddocname === // Use z.infer<typeof ...> for type
             codeRustSchema
           ) {
-            const fields = child.fields as z.infer<typeof VespaCodeRustSearchSchema> & { type?: string, chunks_summary?: any[], code_chunk_contents?: string[] }
+            const fields = child.fields as z.infer<
+              typeof VespaCodeRustSearchSchema
+            > & {
+              type?: string
+              chunks_summary?: any[]
+              code_chunk_contents?: string[]
+            }
             fields.type = codeRustSchema
             fields.relevance = child.relevance
 
@@ -243,10 +250,12 @@ export const VespaSearchResponseToSearchResult = (
             )
 
             // Clean up the chunk content (remove separators) after sorting/limiting
-            fields.chunks_summary = fields.chunks_summary.map(scoredChunk => ({
-              ...scoredChunk,
-              chunk: scoredChunk.chunk.replace(/<sep \/>/g, ''), // Remove separator tags
-            }));
+            fields.chunks_summary = fields.chunks_summary.map(
+              (scoredChunk) => ({
+                ...scoredChunk,
+                chunk: scoredChunk.chunk.replace(/<sep \/>/g, ""), // Remove separator tags
+              }),
+            )
 
             return CodeRustResponseSchema.parse(fields)
           } else {

@@ -1,12 +1,12 @@
-import { replaceLinks } from "@/lib/utils";
-import React, { ReactNode } from "react";
+import { replaceLinks } from "@/lib/utils"
+import React, { ReactNode } from "react"
 
-type HighlightText = { text: string; highlight: boolean };
+type HighlightText = { text: string; highlight: boolean }
 
 // Define props interface including optional isCode
 interface HighlightedTextProps {
-  chunk_summary: string;
-  isCode?: boolean; // Add optional isCode prop back
+  chunk_summary: string
+  isCode?: boolean // Add optional isCode prop back
 }
 
 const cleanDocs = (text: string): string => {
@@ -25,7 +25,7 @@ const cleanDocs = (text: string): string => {
   const controlCharsPattern = /[\x00-\x1F\x7F-\x9F]/g
   cleanedText = cleanedText.replace(controlCharsPattern, "")
   // Remove invalid or incomplete UTF characters
-  //  and 
+  //  and
   const invalidUtfPattern = /[\uE907\uFFFD]/g
   cleanedText = cleanedText.replace(invalidUtfPattern, "")
 
@@ -53,12 +53,12 @@ const parseHighlight = (text: string): ReactNode[] => {
       ) {
         addSpace = false
       } else {
-        addSpace = true; // Reset for next segment
+        addSpace = true // Reset for next segment
       }
       isHighlight = true
     } else if (part === "</hi>") {
       isHighlight = false
-      addSpace = true; // Reset after highlight
+      addSpace = true // Reset after highlight
     } else if (part) {
       // Only add spaces around non-highlighted parts for non-code text
       segments.push({
@@ -66,7 +66,7 @@ const parseHighlight = (text: string): ReactNode[] => {
         highlight: isHighlight,
       } as HighlightText)
       // Reset addSpace if it was false for a quote ending
-      if (!addSpace) addSpace = true;
+      if (!addSpace) addSpace = true
     }
   })
 
@@ -182,10 +182,11 @@ function trimToHighlightHotspot(text: string): string {
   return text
 }
 
-
 // Component that renders chunk summary with parsing
-const HighlightedText: React.FC<HighlightedTextProps> = ({ chunk_summary, isCode = false }) => {
-
+const HighlightedText: React.FC<HighlightedTextProps> = ({
+  chunk_summary,
+  isCode = false,
+}) => {
   if (isCode) {
     // For code, use dangerouslySetInnerHTML within pre/code tags
     // Replace <hi> tags with styled spans directly in the HTML string
@@ -193,9 +194,9 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({ chunk_summary, isCode
       ? chunk_summary.replace(
           /<hi>(.*?)<\/hi>/g,
           // Use font-bold or other classes as needed
-          `<span class="font-bold">$1</span>`
+          `<span class="font-bold">$1</span>`,
         )
-      : "";
+      : ""
 
     return (
       <pre className="code-block-pre">
@@ -204,17 +205,19 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({ chunk_summary, isCode
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
       </pre>
-    );
+    )
   }
 
   // Default rendering for non-code text (apply cleaning, trimming, link replacement, parsing)
-  const processedText = chunk_summary ? replaceLinks(cleanDocs(trimToHighlightHotspot(chunk_summary))) : " ";
-  const nonCodeContent = parseHighlight(processedText); // Parse highlights *after* cleaning/trimming
+  const processedText = chunk_summary
+    ? replaceLinks(cleanDocs(trimToHighlightHotspot(chunk_summary)))
+    : " "
+  const nonCodeContent = parseHighlight(processedText) // Parse highlights *after* cleaning/trimming
   return (
     <p className="text-left text-sm mt-1 text-[#464B53] text-ellipsis ml-[44px] line-clamp-3">
       {nonCodeContent}
     </p>
-  );
-};
+  )
+}
 
-export default HighlightedText;
+export default HighlightedText
