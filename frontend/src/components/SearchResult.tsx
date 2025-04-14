@@ -1,88 +1,102 @@
-import HighlightedText from "@/components/Highlight"; // Keep for non-code results
-import { getIcon } from "@/lib/common";
-import { SearchResultDiscriminatedUnion, codeRustSchema } from "shared/types";
-import { Code } from 'lucide-react';
-import CodeMirror from '@uiw/react-codemirror';
-import { rust } from '@codemirror/lang-rust';
-import { Decoration, ViewPlugin, EditorView } from '@codemirror/view'; // Import EditorView for types
-import {rosePineDawn} from 'thememirror';
-
+import HighlightedText from "@/components/Highlight" // Keep for non-code results
+import { getIcon } from "@/lib/common"
+import { SearchResultDiscriminatedUnion, codeRustSchema } from "shared/types"
+import { Code } from "lucide-react"
+import CodeMirror from "@uiw/react-codemirror"
+import { rust } from "@codemirror/lang-rust"
+import { Decoration, ViewPlugin, EditorView } from "@codemirror/view" // Import EditorView for types
+import { rosePineDawn } from "thememirror"
 
 // --- CodeMirror Plugin for Bolding <hi> ---
 const boldDecoration = Decoration.mark({
-  attributes: { style: 'font-weight: bold' },
-});
+  attributes: { style: "font-weight: bold" },
+})
 
 const boldHiTextPlugin = ViewPlugin.fromClass(
   class {
-    decorations;
-    constructor(view: EditorView) { // Add type annotation
-      this.decorations = this.getDecorations(view);
+    decorations
+    constructor(view: EditorView) {
+      // Add type annotation
+      this.decorations = this.getDecorations(view)
     }
-    update(update: { docChanged: boolean; viewportChanged: boolean; view: EditorView; startState: any; state: any }) { // Add type annotation
+    update(update: {
+      docChanged: boolean
+      viewportChanged: boolean
+      view: EditorView
+      startState: any
+      state: any
+    }) {
+      // Add type annotation
       // Check if document changed or viewport changed (important for large docs)
-      if (update.docChanged || update.viewportChanged || update.startState.doc !== update.state.doc) {
-        this.decorations = this.getDecorations(update.view);
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.startState.doc !== update.state.doc
+      ) {
+        this.decorations = this.getDecorations(update.view)
       }
     }
-    getDecorations(view: EditorView) { // Add type annotation
-      const decorations: any[] = []; // Use any[] for simplicity or define a proper range type
-      const doc = view.state.doc;
-      const hiOpen = '<hi>';
-      const hiClose = '</hi>';
-      let cursor = 0;
+    getDecorations(view: EditorView) {
+      // Add type annotation
+      const decorations: any[] = [] // Use any[] for simplicity or define a proper range type
+      const doc = view.state.doc
+      const hiOpen = "<hi>"
+      const hiClose = "</hi>"
+      let cursor = 0
 
       // Iterate through the document using a cursor
       while (cursor < doc.length) {
         // Find the next <hi> tag from the current cursor position
-        const textAfterCursor = doc.sliceString(cursor);
-        const openIndexRel = textAfterCursor.indexOf(hiOpen);
-        if (openIndexRel === -1) break; // No more <hi> tags found
+        const textAfterCursor = doc.sliceString(cursor)
+        const openIndexRel = textAfterCursor.indexOf(hiOpen)
+        if (openIndexRel === -1) break // No more <hi> tags found
 
-        const openIndexAbs = cursor + openIndexRel;
+        const openIndexAbs = cursor + openIndexRel
 
         // Find the corresponding </hi> tag after the found <hi> tag
-        const textAfterOpenTag = doc.sliceString(openIndexAbs + hiOpen.length);
-        const closeIndexRel = textAfterOpenTag.indexOf(hiClose);
+        const textAfterOpenTag = doc.sliceString(openIndexAbs + hiOpen.length)
+        const closeIndexRel = textAfterOpenTag.indexOf(hiClose)
         if (closeIndexRel === -1) {
-           // Malformed tag, move cursor past the open tag to avoid infinite loop
-           cursor = openIndexAbs + hiOpen.length;
-           continue;
+          // Malformed tag, move cursor past the open tag to avoid infinite loop
+          cursor = openIndexAbs + hiOpen.length
+          continue
         }
 
-        const closeIndexAbs = openIndexAbs + hiOpen.length + closeIndexRel;
+        const closeIndexAbs = openIndexAbs + hiOpen.length + closeIndexRel
 
         // Define ranges for tags and content
-        const tagOpenStart = openIndexAbs;
-        const tagOpenEnd = openIndexAbs + hiOpen.length;
-        const contentStart = tagOpenEnd;
-        const contentEnd = closeIndexAbs;
-        const tagCloseStart = closeIndexAbs;
-        const tagCloseEnd = closeIndexAbs + hiClose.length;
+        const tagOpenStart = openIndexAbs
+        const tagOpenEnd = openIndexAbs + hiOpen.length
+        const contentStart = tagOpenEnd
+        const contentEnd = closeIndexAbs
+        const tagCloseStart = closeIndexAbs
+        const tagCloseEnd = closeIndexAbs + hiClose.length
 
         // Hide the opening <hi> tag
-        decorations.push(Decoration.replace({}).range(tagOpenStart, tagOpenEnd));
+        decorations.push(Decoration.replace({}).range(tagOpenStart, tagOpenEnd))
 
         // Apply bold decoration to the content between tags
         if (contentStart < contentEnd) {
-          decorations.push(boldDecoration.range(contentStart, contentEnd));
+          decorations.push(boldDecoration.range(contentStart, contentEnd))
         }
 
         // Hide the closing </hi> tag
-        decorations.push(Decoration.replace({}).range(tagCloseStart, tagCloseEnd));
+        decorations.push(
+          Decoration.replace({}).range(tagCloseStart, tagCloseEnd),
+        )
 
         // Move the cursor past the closing tag for the next search
-        cursor = tagCloseEnd;
+        cursor = tagCloseEnd
       }
 
       // Return the sorted set of decorations (important for proper application)
-      return Decoration.set(decorations);
+      return Decoration.set(decorations)
     }
   },
   {
     decorations: (v) => v.decorations,
-  }
-);
+  },
+)
 // --- End CodeMirror Plugin ---
 
 export const SearchResult = ({
@@ -97,7 +111,6 @@ export const SearchResult = ({
   let content = <></>
   let commonClassVals = "pr-[60px]" // Keep existing layout class
 
-  // --- Render logic for different result types ---
   if (result.type === "file") {
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
@@ -157,7 +170,6 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "user") {
-     // ... (user rendering logic remains the same) ...
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start">
@@ -196,8 +208,7 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "mail") {
-     // ... (mail rendering logic remains the same) ...
-     content = (
+    content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start">
           {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
@@ -236,8 +247,7 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "event") {
-     // ... (event rendering logic remains the same) ...
-     content = (
+    content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start">
           {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
@@ -278,8 +288,7 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "mail_attachment") {
-     // ... (mail_attachment rendering logic remains the same) ...
-     content = (
+    content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start">
           {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
@@ -318,8 +327,7 @@ export const SearchResult = ({
       </div>
     )
   } else if (result.type === "chat_message") {
-     // ... (chat_message rendering logic remains the same) ...
-     content = (
+    content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">
           <a
@@ -369,8 +377,7 @@ export const SearchResult = ({
         )}
       </div>
     )
-  } else if (result.type === codeRustSchema) { // Use the imported schema name
-    // --- CodeMirror Rendering Logic ---
+  } else if (result.type === codeRustSchema) {
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">
@@ -389,16 +396,14 @@ export const SearchResult = ({
                 key={idx}
                 className="code-snippet-container ml-[44px] mt-1 border rounded" // Added margin, border, rounded for visual separation
                 style={{
-                  maxHeight: '150px', // Keep existing max height
-                  overflowY: 'auto',  // Enable scrolling for long snippets
-                  // Removed padding, let CodeMirror handle internal padding/styling
+                  maxHeight: "150px",
+                  overflowY: "auto",
                 }}
               >
                 <CodeMirror
                   value={summary.chunk} // Pass original chunk with <hi> tags
                   extensions={[rust(), boldHiTextPlugin, rosePineDawn]} // Add bold plugin
-                  // theme="dark" // Use a built-in or custom theme
-                  basicSetup={{ // Minimal setup
+                  basicSetup={{
                     lineNumbers: false,
                     foldGutter: false,
                     highlightActiveLine: false,
@@ -417,13 +422,13 @@ export const SearchResult = ({
                   }}
                   readOnly={true}
                   style={{
-                    fontSize: '0.875rem', // Match text-sm
-                    maxWidth: '100%', // Prevent overlap
-                    height: '100%', // Allow CodeMirror to fill the container height
+                    fontSize: "0.875rem",
+                    maxWidth: "100%",
+                    height: "100%",
                   }}
                 />
               </div>
-            );
+            )
           })}
         {/* Debug Info Display */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -445,9 +450,8 @@ export const SearchResult = ({
           </details>
         )}
       </div>
-    );
+    )
   }
 
-  // Return the content for the specific result type
-  return content;
-};
+  return content
+}

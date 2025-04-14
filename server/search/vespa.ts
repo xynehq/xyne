@@ -44,6 +44,7 @@ import {
 } from "@/errors"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
+
 const vespa = new VespaClient()
 const { isCodeSearchOnly } = config // Import the config flag
 
@@ -421,7 +422,8 @@ export const groupVespaSearch = async (
     query,
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@query)",
+    // Specify hf-embedder for the general search input 'e'
+    "input.query(e)": "embed(hf-embedder, @query)",
   }
   try {
     return await vespa.groupSearch(hybridDefaultPayload)
@@ -459,27 +461,37 @@ export const searchVespa = async (
     rankProfile = SearchModes.NativeRank,
     requestDebug = false, // Destructure requestDebug here
     codeOnlySearch, // Add codeOnlySearch to parameters
-}: Partial<VespaQueryConfig & { codeOnlySearch?: boolean }>, // Add to type
+  }: Partial<VespaQueryConfig & { codeOnlySearch?: boolean }>, // Add to type
 ): Promise<VespaSearchResponse> => {
-  const isDebugMode = config.isDebugMode || requestDebug || false; // Calculate isDebugMode early
+  const isDebugMode = config.isDebugMode || requestDebug || false // Calculate isDebugMode early
 
   // --- Short Circuit for Code-Only Search ---
   if (codeOnlySearch) {
     Logger.info("Performing code-only search.")
-    const yql = `select * from sources ${codeRustSchema} where userInput(@query);`
+    // Reverted YQL: Removed explicit 'matchfeatures' from select
+    const yql = `select * from sources ${codeRustSchema} where (userInput(@query) or ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)));`
     const minimalPayload = {
       yql,
       query,
+      // Add required inputs for the hybrid rank profile, specifying the code-embedder
+      "input.query(q_embedding)": "embed(code-embedder, @query)",
+      "input.query(alpha)": alpha, // Use the provided alpha value
       hits: limit,
       offset,
-      "ranking.profile": "code_focused", // Use code-specific profile
+      "ranking.profile": "code_focused", // Use code-specific profile (or 'default' if preferred)
       "presentation.summary": "default", // Request default summary fields
-      // No email, app, entity, permissions, timestamp, embedding, alpha needed
-      ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}), // Use isDebugMode
+      "ranking.listFeatures": true, // Always request features for code search
+      ...(isDebugMode ? { tracelevel: 4 } : {}), // Add tracelevel only if debug mode is on
     }
+    Logger.debug({ msg: "Code search payload", payload: minimalPayload }) // Log payload
     try {
       return await vespa.search<VespaSearchResponse>(minimalPayload)
     } catch (error) {
+      Logger.error({
+        msg: "Error during code search execution",
+        error: getErrorMessage(error),
+        stack: (error as Error).stack,
+      }) // Enhanced error logging
       throw new ErrorPerformingSearch({
         cause: error as Error,
         sources: codeRustSchema, // Specify the source
@@ -506,7 +518,8 @@ export const searchVespa = async (
     query,
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@query)",
+    // Specify hf-embedder for the general search input 'e'
+    "input.query(e)": "embed(hf-embedder, @query)",
     "input.query(alpha)": alpha,
     hits: limit,
     ...(offset

@@ -116,13 +116,14 @@ schema code_rust {
       attribute: fast-search
     }
 
-    # --- Embeddings ---
-    field embedding type tensor<float>(x[1024]) {
-      indexing: attribute
-      attribute { distance-metric: angular }
-    }
 
   }
+    # --- Embeddings ---
+    # Embeddings for each code chunk (function), mapped from code_chunk_contents
+    field code_chunk_embeddings type tensor<float>(p{}, x[1024]) {
+      indexing: input code_chunk_contents | embed code-embedder | attribute | summary
+      attribute { distance-metric: angular }
+    }
 
   # --- Fieldsets ---
   fieldset default {
@@ -139,62 +140,110 @@ schema code_rust {
 
   # --- Rank Profiles ---
   rank-profile default inherits default {
-    # Define the elementwise calculation function at the profile level
-    function chunk_scores() {
-      expression: elementwise(bm25(code_chunk_contents), x, double)
+    # Inputs for hybrid search
+    inputs {
+      query(q_embedding) tensor<float>(x[1024]) # Query embedding
+      query(alpha) double                     # Weight for semantic vs lexical (0.0 to 1.0)
+    }
+
+    # Define function for semantic score using the mapped tensor field
+    function code_vector_score() {
+      expression: closeness(field, code_chunk_embeddings)
+    }
+
+    # Define count of matched fields for custom averaging
+    function matchedFieldCount() {
+      expression: matches(raw_content) + matches(symbol_names) + matches(code_chunk_names) + matches(doc_comments_texts) + matches(code_chunk_contents)
+    }
+
+    # Define combined nativeRank score with custom averaging
+    function combined_nativeRank() {
+      expression: (nativeRank(raw_content) + nativeRank(symbol_names) + nativeRank(code_chunk_names) + nativeRank(doc_comments_texts) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     first-phase {
-      # Combine overall BM25 - REMOVED max_chunk_score usage
-      expression: bm25(raw_content) + bm25(symbol_names)*2 + bm25(code_chunk_names)*3 + bm25(doc_comments_texts)*2
+      # Hybrid scoring expression using custom nativeRank average
+      expression: (query(alpha) * code_vector_score) + ((1 - query(alpha)) * combined_nativeRank)
     }
 
-    # Add chunk_scores to match-features
+    # Define function for per-chunk BM25 scores
+    function chunk_scores() {
+      # Calculates BM25 score for each element in the code_chunk_contents array
+      expression: elementwise(bm25(code_chunk_contents), x, double)
+    }
+
     match-features {
-      bm25(raw_content)
-      bm25(symbol_names)
-      bm25(code_chunk_names)
-      bm25(doc_comments_texts)
-      chunk_scores # Keep the elementwise scores here
+      nativeRank(raw_content)
+      nativeRank(symbol_names)
+      nativeRank(code_chunk_names)
+      nativeRank(doc_comments_texts)
+      nativeRank(code_chunk_contents)
+      matchedFieldCount
+      combined_nativeRank
+      code_vector_score # Add semantic score
+      closeness(field, code_chunk_embeddings) # Add raw closeness
+      chunk_scores # Add per-chunk BM25 scores
     }
   }
 
   rank-profile code_focused inherits default {
-    # Define the elementwise calculation function at the profile level
-    function chunk_scores() {
-      expression: elementwise(bm25(code_chunk_contents), x, double)
+    # Inherits inputs and code_vector_score function from 'default'
+
+    # Define count of matched fields for custom averaging
+    function matchedFieldCount() {
+      expression: matches(doc_comments_texts) + matches(code_chunk_names) + matches(symbol_names) + matches(code_chunk_contents)
+    }
+
+    # Define combined nativeRank score with custom averaging
+    function combined_nativeRank() {
+      expression: (nativeRank(doc_comments_texts) + nativeRank(code_chunk_names) + nativeRank(symbol_names) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     first-phase {
-      # Prioritize chunk names and symbols - REMOVED max_chunk_score usage
-      expression: bm25(code_chunk_names)*4 + bm25(symbol_names)*2
+      # Hybrid scoring expression using custom nativeRank average
+      expression: (query(alpha) * code_vector_score) + ((1 - query(alpha)) * combined_nativeRank)
     }
 
-    # Add chunk_scores to match-features
     match-features {
-      bm25(code_chunk_names)
-      bm25(symbol_names)
-      chunk_scores # Keep the elementwise scores here
+      nativeRank(doc_comments_texts)
+      nativeRank(code_chunk_names)
+      nativeRank(symbol_names)
+      nativeRank(code_chunk_contents)
+      matchedFieldCount
+      combined_nativeRank
+      code_vector_score # Uses closeness(field, code_chunk_embeddings) internally
+      chunk_scores # Add per-chunk BM25 scores (inherited function)
     }
   }
 
   rank-profile doc_focused inherits default {
-    # Define the elementwise calculation function at the profile level
-    function chunk_scores() {
-      expression: elementwise(bm25(code_chunk_contents), x, double)
+    # Inherits inputs and code_vector_score function from 'default'
+
+    # Define count of matched fields for custom averaging
+    function matchedFieldCount() {
+      expression: matches(doc_comments_texts) + matches(code_chunk_names) + matches(symbol_names) + matches(code_chunk_contents)
+    }
+
+    # Define combined nativeRank score with custom averaging
+    function combined_nativeRank() {
+      expression: (nativeRank(doc_comments_texts) + nativeRank(code_chunk_names) + nativeRank(symbol_names) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     first-phase {
-      # Prioritize docs - REMOVED max_chunk_score usage
-      expression: bm25(doc_comments_texts)*4 + bm25(code_chunk_names)*1.5 + bm25(symbol_names)
+      # Hybrid scoring expression using custom nativeRank average
+      expression: (query(alpha) * code_vector_score) + ((1 - query(alpha)) * combined_nativeRank)
     }
 
-    # Add chunk_scores to match-features
     match-features {
-      bm25(doc_comments_texts)
-      bm25(code_chunk_names)
-      bm25(symbol_names)
-      chunk_scores # Keep the elementwise scores here
+      nativeRank(doc_comments_texts)
+      nativeRank(code_chunk_names)
+      nativeRank(symbol_names)
+      nativeRank(code_chunk_contents)
+      matchedFieldCount
+      combined_nativeRank
+      code_vector_score # Add semantic score
+      closeness(field, code_chunk_embeddings) # Add raw closeness
+      chunk_scores # Add per-chunk BM25 scores (inherited function)
     }
   }
 

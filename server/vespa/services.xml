@@ -5,10 +5,11 @@
             <transformer-model path="models/model.onnx" />
             <tokenizer-model path="models/tokenizer.json" />
         </component>
-        <!-- <component id="code-embedder" type="hugging-face-embedder">
-            <transformer-model path="models/code/model.quantized.onnx" />
+        <component id="code-embedder" type="hugging-face-embedder">
+            <!-- Assuming these paths are correct for the Salesforce model within the Vespa container -->
+            <transformer-model path="models/code/model.onnx" />
             <tokenizer-model path="models/code/tokenizer.json" />
-        </component> -->
+        </component>
         <search />
         <document-api />
     </container>
