@@ -142,8 +142,21 @@ schema chat_message {
       expression: bm25(text) + bm25(username) + bm25(name)
     }
 
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(text) + matches(username) + matches(name)
+      }
+    }
+
     function combined_nativeRank() {
-      expression: nativeRank(text) + nativeRank(username) + nativeRank(name)
+      expression { 
+        (
+          nativeRank(text) + 
+          nativeRank(username) + 
+          nativeRank(name)
+        ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      }
     }
 
     function freshness_score() {
@@ -168,6 +181,7 @@ schema chat_message {
     }
 
     match-features {
+      matchedFieldCount
       vector_score
       combined_nativeRank
       nativeRank(text)

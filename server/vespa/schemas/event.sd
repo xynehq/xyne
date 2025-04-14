@@ -195,10 +195,24 @@ schema event {
             }
         }
 
+        function matchedFieldCount() {
+            expression {
+                 # The `matches` returns 1 if the field contains a match, otherwise 0
+                 matches(name) + matches(description) + matches(url)
+            }
+        }
+
         function combined_nativeRank() {
             expression {
-                (nativeRank(name) + nativeRank(description) + nativeRank(url))/3 +
-                 (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames)))
+                (
+                    (
+                        nativeRank(name) + 
+                        nativeRank(description) + 
+                        nativeRank(url)
+                    ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+                ) 
+                +
+                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames)))
             }
         }
     }
@@ -220,6 +234,7 @@ schema event {
         }
 
         match-features {
+          matchedFieldCount
           combined_nativeRank
           vector_score
           nativeRank(name)
