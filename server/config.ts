@@ -30,6 +30,7 @@ let GeminiAIModel = ""
 let TogetherApiKey = ""
 let FireworksApiKey = ""
 let GeminiApiKey = ""
+let aiProviderBaseUrl= ""
 let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
@@ -38,13 +39,16 @@ let slackHost = process.env.SLACK_HOST
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
 
-// Priority (AWS > OpenAI > Ollama > Together)
+// Priority (AWS > OpenAI > Ollama > Together > Fireworks > Gemini)
 if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.DeepSeek_R1
 } else if (process.env["OPENAI_API_KEY"]) {
+    if(process.env["OPEN_API_BASE_URL"]) {
+      aiProviderBaseUrl = process.env["OPEN_API_BASE_URL"];
+    }
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
@@ -61,6 +65,9 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
   defaultBestModel = TogetherAIModel as Models
+  if(process.env["TOGETHER_BASE_URL"]) {
+    aiProviderBaseUrl = process.env["TOGETHER_BASE_URL"];
+  }
 } else if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
   FireworksAIModel = process.env["FIREWORKS_MODEL"] as Models
   FireworksApiKey = process.env["FIREWORKS_API_KEY"]
@@ -128,6 +135,7 @@ export default {
   FireworksApiKey,
   GeminiAIModel,
   GeminiApiKey,
+  aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
   // update user query session time
