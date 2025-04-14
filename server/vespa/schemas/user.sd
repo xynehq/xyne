@@ -198,7 +198,7 @@ schema user {
 
     rank-profile initial {
        inputs {
-            query(e) tensor<bfloat16>(v[384])
+            query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
         }
 
@@ -209,9 +209,16 @@ schema user {
         function combined_bm25(){
             expression: bm25(name) + bm25(email)
         }
+        
+        function matchedFieldCount() {
+            expression {
+                # The `matches` returns 1 if the field contains a match, otherwise 0
+                matches(name) + matches(email)
+            }
+        }
 
         function combined_nativeRank(){
-            expression:  nativeRank(name) +  nativeRank(email)
+            expression: (nativeRank(name) +  nativeRank(email)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
         }
 
         function vector_score() {
@@ -226,6 +233,7 @@ schema user {
         }
 
         match-features {
+            matchedFieldCount
             nativeRank(name)
             nativeRank(email)
             vector_score

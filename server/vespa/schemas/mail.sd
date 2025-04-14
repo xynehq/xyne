@@ -156,8 +156,15 @@ schema mail {
         expression: bm25(subject) + bm25(chunks)
       }
 
+      function matchedFieldCount() {
+        expression {
+          # The `matches` returns 1 if the field contains a match, otherwise 0
+          matches(subject) + matches(chunks)
+        }
+      }
+
       function combined_nativeRank() {
-        expression: (nativeRank(subject) + nativeRank(chunks))/2
+        expression: (nativeRank(subject) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
       }
 
       function chunk_scores() {
@@ -183,6 +190,7 @@ schema mail {
       }
 
     match-features {
+      matchedFieldCount
       vector_score
       combined_nativeRank
       nativeRank(subject)
