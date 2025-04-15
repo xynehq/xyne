@@ -92,6 +92,8 @@ class VespaClient {
 
       if (!response.ok) {
         const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(`Vespa error: ${errorBody}`)
         throw new Error(
           `Failed to fetch documents in searchVespa: ${response.status} ${response.statusText} - ${errorText}`,
         )
@@ -527,10 +529,12 @@ class VespaClient {
     }
   }
 
-  async isDocumentExist(docIds: string[]): Promise<Record<string, boolean>> {
+  async ifDocumentsExist(
+    docIds: string[],
+  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
     const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
-    const yqlQuery = `select docId from sources * where docId in (${yqlIds})`
+    const yqlQuery = `select docId, updatedAt from sources * where docId in (${yqlIds})`
 
     const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`
 
@@ -551,21 +555,29 @@ class VespaClient {
 
       const result = await response.json()
 
-      // Extract the document IDs of the found documents
-      const foundIds =
-        // @ts-ignore
-        result.root.children?.map((hit) => hit.fields.docId) || []
+      // Extract found documents with their docId and updatedAt
+      const foundDocs =
+        result.root?.children?.map((hit: any) => ({
+          docId: hit.fields.docId as string,
+          updatedAt: hit.fields.updatedAt as number | undefined, // undefined if not present
+        })) || []
 
-      // Determine which IDs exist and which do not
+      // Build the result map
       const existenceMap = docIds.reduce(
         (acc, id) => {
-          acc[id] = foundIds.includes(id)
+          const foundDoc = foundDocs.find(
+            (doc: { docId: string }) => doc.docId === id,
+          )
+          acc[id] = {
+            exists: !!foundDoc,
+            updatedAt: foundDoc?.updatedAt ?? null, // null if not found or no updatedAt
+          }
           return acc
         },
-        {} as Record<string, boolean>,
+        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
       )
 
-      return existenceMap // { "id:namespace:doctype::1": true, "id:namespace:doctype::2": false, ... }
+      return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
       Logger.error(error, `Error checking documents existence:  ${errMessage}`)
@@ -635,6 +647,54 @@ class VespaClient {
       const errMessage = getErrorMessage(error)
       Logger.error(error, `Error fetching items: ${errMessage}`)
       throw new Error(`Error fetching items: ${errMessage}`)
+    }
+  }
+  /**
+   * Get all documents where a specific field exists
+   * @param fieldName The name of the field that should exist
+   * @param options Configuration for Vespa
+   * @param limit Optional maximum number of results to return (default: 100)
+   * @param offset Optional offset for pagination (default: 0)
+   * @returns The search response containing matching documents
+   */
+  async getDocumentsWithField(
+    fieldName: string,
+    options: VespaConfigValues,
+    limit: number = 100,
+    offset: number = 0,
+  ): Promise<VespaSearchResponse> {
+    const { namespace, schema, cluster } = options
+
+    const yqlQuery = `select * from sources ${schema} where ${fieldName} matches "."`
+
+    // Construct the search payload - using "unranked" profile to just fetch without scoring
+    const searchPayload = {
+      yql: yqlQuery,
+      "ranking.profile": "unranked",
+      timeout: "5s",
+      hits: limit,
+      offset,
+      maxOffset: 1000000,
+    }
+
+    if (cluster) {
+      // @ts-ignore
+      searchPayload.cluster = cluster
+    }
+
+    try {
+      const response = await this.search<VespaSearchResponse>(searchPayload)
+
+      return response
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Error retrieving documents with field ${fieldName}: ${errMessage}`,
+      )
+      throw new Error(
+        `Error retrieving documents with field ${fieldName}: ${errMessage}`,
+      )
     }
   }
 }

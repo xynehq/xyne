@@ -84,7 +84,7 @@ schema chat_container {
         }
     }
 
-    field chunk_embeddings type tensor<bfloat16>(v[384]) {
+    field chunk_embeddings type tensor<bfloat16>(v[DIMS]) {
         indexing: (input name || "") . " " . (input topic || "") . " " . (input description || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -95,9 +95,10 @@ schema chat_container {
         fields: name, topic, description
     }
 
-    rank-profile default {
+    rank-profile initial {
         inputs {
-            query(e) tensor<bfloat16>(v[384])
+            query(e) tensor<bfloat16>(v[DIMS])
+            query(alpha) double 
         }
 
         function scale(val) {
@@ -113,28 +114,104 @@ schema chat_container {
         }
 
         function combined_bm25() {
-            expression: scale(bm25(name)) + scale(bm25(topic)) + scale(bm25(description))
+            expression: bm25(name) + bm25(topic) + bm25(description)
         }
 
+        function matchedFieldCount() {
+            expression {
+                 # The `matches` returns 1 if the field contains a match, otherwise 0
+                 matches(name) + matches(topic) + matches(description)
+            }
+        }
+
+        function combined_nativeRank() {
+            expression {
+                (
+                    nativeRank(name) + 
+                    nativeRank(topic) + 
+                    nativeRank(description)
+                ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+            }
+        }
+
+    }
+
+    rank-profile default_native inherits initial {
+
         first-phase {
-            expression: (vector_score) + combined_bm25
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
         }
 
         global-phase {
-            expression {
-                (normalize_linear(vector_score)) +
-                combined_bm25 + 
-                freshness_score
-            }
-            rerank-count: 1000
+          expression {
+            (
+              (query(alpha) * vector_score) + 
+              ((1 - query(alpha)) *  combined_nativeRank)
+            )
+          }
+          rerank-count: 1000
         }
 
         match-features {
-            scale(bm25(name))
-            scale(bm25(topic))
-            scale(bm25(description))
-            vector_score
-            freshness_score
+          matchedFieldCount
+          vector_score
+          combined_nativeRank
+          nativeRank(name)
+          nativeRank(topic)
+          nativeRank(description)
+        }
+    }
+
+    # will be use for single schema query
+    rank-profile default_bm25 inherits initial {
+
+
+        first-phase {
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+        }
+
+        global-phase {
+          expression {
+            (
+              (query(alpha) * vector_score) + 
+              ((1 - query(alpha)) * scale(combined_bm25))
+            )
+          }
+          rerank-count: 1000
+        }
+
+        match-features {
+          vector_score
+          bm25(name)
+          bm25(topic)
+          bm25(description)
+          scale(combined_bm25)
+        }
+    }
+
+    # change here for ai queries accordingly
+    rank-profile default_ai inherits initial {
+
+        first-phase {
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+        }
+
+        global-phase {
+          expression {
+            (
+              (query(alpha) * vector_score) + 
+              ((1 - query(alpha)) *  combined_nativeRank)
+            )
+          }
+          rerank-count: 1000
+        }
+
+        match-features {
+          vector_score
+          combined_nativeRank
+          nativeRank(name)
+          nativeRank(topic)
+          nativeRank(description)
         }
     }
 

@@ -5,7 +5,7 @@ import {
   Entity,
   GooglePeopleEntity,
   isMailAttachment,
-  SlackEntity,  
+  SlackEntity,
   WhatsAppEntity,
 } from "shared/types"
 import { Filter, Groups } from "@/types"
@@ -99,6 +99,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Slack Message"
   } else if (app === Apps.WhatsApp && entity === WhatsAppEntity.Message) {
     return "WhatsApp Message"
+  } else if (app === Apps.Slack && entity === SlackEntity.Message) {
+    return "Slack Message"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
@@ -133,6 +135,7 @@ export const GroupFilter = ({
       {flattenGroups(groups).map(({ app, entity, count }, index) => {
         return (
           <GroupFilterItem
+            key={`${app}-${entity}`}
             index={index}
             title={getName(app, entity)}
             filter={filter}

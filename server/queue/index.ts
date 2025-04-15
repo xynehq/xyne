@@ -97,13 +97,13 @@ const initWorkers = async () => {
         jobData.authType === AuthType.ServiceAccount
       ) {
         Logger.info("Handling Google Service Account Ingestion from Queue")
-        await handleGoogleServiceAccountIngestion(boss, job)
+        // await handleGoogleServiceAccountIngestion(boss, job)
       } else if (
         jobData.app === Apps.GoogleDrive &&
         jobData.authType === AuthType.OAuth
       ) {
         Logger.info("Handling Google OAuth Ingestion from Queue")
-        await handleGoogleOAuthIngestion(boss, job)
+        // await handleGoogleOAuthIngestion(boss, job)
       } else if (
         jobData.app == Apps.Slack &&
         jobData.authType === AuthType.OAuth

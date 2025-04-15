@@ -63,17 +63,10 @@ schema mail_attachment {
     
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
-    indexing: guard { input chunks } | embed | attribute | index
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+    indexing: input chunks | embed | attribute | index
     attribute {
       distance-metric: angular
-    }
-  }
-
-  field filename_embeddings type tensor<bfloat16>(v[384])  {
-    indexing: input filename | embed | attribute | index
-    attribute {
-        distance-metric: angular
     }
   }
 
@@ -97,11 +90,10 @@ schema mail_attachment {
     fields: filename
   }
 
-  rank-profile default {
+  rank-profile initial {
     inputs {
       query(e) tensor<bfloat16>(v[384])
       query(alpha) double
-      query(bm25ChunkWeight) double 
     }
 
     constants {
@@ -124,53 +116,110 @@ schema mail_attachment {
         expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
 
-    function chunk_vector_score() {
+    function vector_score() {
       expression: closeness(field, chunk_embeddings)
     }
 
-    function filename_vector_score() {
-      expression: closeness(field, filename_embeddings)
-    }
-
-    function vector_score() {
-      # taking whichever has a good matching
-      expression: max(chunk_vector_score,filename_vector_score)
-    }
-
-    function scaled_bm25_chunks() {
-      expression: scale(bm25(chunks))
-    }
-
-    function scaled_bm25_filename() {
-      expression: scale(bm25(filename))
-    }
-
     function combined_bm25() {
-      expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_filename
+      expression: bm25(filename) + bm25(chunks)
     }
 
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(filename) + matches(chunks)
+      }
+    }
+
+    function combined_nativeRank() {
+      expression: (nativeRank(filename) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+    }
+
+    function chunk_scores() {
+      expression: elementwise(bm25(chunks), x, double)
+    }
+  }
+
+  rank-profile default_native inherits initial {
+ 
     first-phase {
-      expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
     }
 
     global-phase {
       expression {
-        (
-          (query(alpha) * scale(vector_score)) +
-          ((1 - query(alpha)) * max(scaled_bm25_filename,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
-        ) * doc_recency
+        0.8 * (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) * combined_nativeRank)
+        )
       }
       rerank-count: 1000
     }
 
     match-features {
-      chunk_vector_score
-      filename_vector_score
-      scaled_bm25_chunks
-      scaled_bm25_filename
-      doc_recency
-      query(alpha)
-      query(bm25ChunkWeight)
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(filename)
+      nativeRank(chunks)
+      chunk_scores
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
+
+    first-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) +
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
+      }
+    }
+
+    global-phase {
+      expression {
+        0.78 * (
+          (query(alpha) * vector_score) +
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
+      }
+      rerank-count: 1000
+    }
+
+     match-features {
+      vector_score
+      scale(combined_bm25)
+      bm25(filename)
+      bm25(chunks)
+      chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+ 
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) * combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(filename)
+      nativeRank(chunks)
+      chunk_scores
     }
   }
 

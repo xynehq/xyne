@@ -1,6 +1,6 @@
 {
-  "id": "781507f8-43e6-4ea7-8be7-47b33afebad0",
-  "prevId": "d4860396-3f29-45bd-899d-ffa8f036ab08",
+  "id": "709ea69e-f4eb-4a43-8809-542c94394899",
+  "prevId": "781507f8-43e6-4ea7-8be7-47b33afebad0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1165,6 +1165,7 @@
       "values": [
         "connected",
         "connecting",
+        "paused",
         "failed",
         "not-connected"
       ]

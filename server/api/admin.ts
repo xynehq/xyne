@@ -3,9 +3,11 @@ import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import {
+  deleteConnector,
   getConnectorByExternalId,
   getConnectors,
   insertConnector,
+  updateConnector,
   getConnector,
 } from "@/db/connector"
 import {
@@ -20,6 +22,7 @@ import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
+const { JwtPayloadKey, serviceAccountWhitelistedEmails, slackHost } = config
 import { connectors } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
@@ -32,9 +35,8 @@ import {
   ConnectorNotCreated,
   NoUserFound,
 } from "@/errors"
+import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
-
-const { JwtPayloadKey, JobExpiryHours, slackHost } = config
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -42,7 +44,7 @@ export const GetConnectors = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
   const users: SelectUser[] = await getUserByEmail(db, sub)
   if (users.length === 0) {
-    Logger.error({sub}, "No user found for sub in GetConnectors");
+    Logger.error({ sub }, "No user found for sub in GetConnectors")
     throw new NoUserFound({})
   }
   const user = users[0]
@@ -119,8 +121,8 @@ export const StartOAuth = async (c: Context) => {
   const { app }: OAuthStartQuery = c.req.valid("query")
   Logger.info(`${sub} started ${app} OAuth`)
   const userRes = await getUserByEmail(db, sub)
-  if(!userRes || !userRes.length) {
-    Logger.error('Could not find user by email when starting OAuth')
+  if (!userRes || !userRes.length) {
+    Logger.error("Could not find user by email when starting OAuth")
     throw new NoUserFound({})
   }
   const provider = await getOAuthProvider(db, userRes[0].id, app)
@@ -196,60 +198,71 @@ export const AddServiceConnection = async (c: Context) => {
   const app = form.app
 
   // Start a transaction
-  return await db.transaction(async (trx) => {
-    try {
-      // Insert the connection within the transaction
-      const connector = await insertConnector(
-        trx, // Pass the transaction object
-        user.workspaceId,
-        user.id,
-        user.workspaceExternalId,
-        `${app}-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`,
-        ConnectorType.SaaS,
-        AuthType.ServiceAccount,
-        app,
-        {},
-        data,
-        subject,
-      )
+  // return await db.transaction(async (trx) => {
+  try {
+    // Insert the connection within the transaction
+    const connector = await insertConnector(
+      db, // Pass the transaction object
+      user.workspaceId,
+      user.id,
+      user.workspaceExternalId,
+      `${app}-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`,
+      ConnectorType.SaaS,
+      AuthType.ServiceAccount,
+      app,
+      {},
+      data,
+      subject,
+    )
 
-      const SaasJobPayload: SaaSJob = {
-        connectorId: connector.id,
-        workspaceId: user.workspaceId,
-        userId: user.id,
-        app,
-        externalId: connector.externalId,
-        authType: connector.authType as AuthType,
-        email: sub,
-      }
-      // Enqueue the background job within the same transaction
-      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-        singletonKey: connector.externalId,
-        priority: 1,
-        retryLimit: 0,
-        expireInHours: JobExpiryHours,
-      })
+    const SaasJobPayload: SaaSJob = {
+      connectorId: connector.id,
+      workspaceId: user.workspaceId,
+      userId: user.id,
+      app,
+      externalId: connector.externalId,
+      authType: connector.authType as AuthType,
+      email: sub,
+      whiteListedEmails: serviceAccountWhitelistedEmails,
+    }
+    // Enqueue the background job within the same transaction
+    // const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+    //   singletonKey: connector.externalId,
+    //   priority: 1,
+    //   retryLimit: 0,
+    //   expireInHours: JobExpiryHours,
+    // })
 
-      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
-
-      // Commit the transaction if everything is successful
-      return c.json({
-        success: true,
-        message: "Connection created, job enqueued",
-        id: connector.externalId,
-      })
-    } catch (error) {
-      const errMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
-      )
-      // Rollback the transaction in case of any error
-      throw new HTTPException(500, {
-        message: "Error creating connection or enqueuing job",
+    if (IsGoogleApp(app)) {
+      // Start ingestion in the background, but catch any errors it might throw later
+      handleGoogleServiceAccountIngestion(SaasJobPayload).catch((error) => {
+        Logger.error(
+          error,
+          `Background Google Service Account ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+        )
       })
     }
-  })
+
+    // Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+
+    // Commit the transaction if everything is successful
+    return c.json({
+      success: true,
+      message: "Connection created, job enqueued",
+      id: connector.externalId,
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      error,
+      `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
+    )
+    // Rollback the transaction in case of any error
+    throw new HTTPException(500, {
+      message: "Error creating connection or enqueuing job",
+    })
+  }
+  // })
 }
 
 // adding first for slack
@@ -325,6 +338,49 @@ export const AddApiKeyConnector = async (c: Context) => {
         message: "Error creating connection or enqueuing job",
       })
     }
+  })
+}
+
+export const UpdateConnectorStatus = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  const {
+    connectorId,
+    status,
+    // @ts-ignore
+  }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
+  const connector = await getConnectorByExternalId(connectorId, user.id)
+  if (!connector) {
+    throw new HTTPException(500, {
+      message: "could not get connector",
+    })
+  }
+  await updateConnector(db, connector.id, { status: status })
+  return c.json({
+    success: true,
+    message: "connector updated",
+  })
+}
+
+export const DeleteConnector = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const { connectorId }: { connectorId: string } = c.req.valid("form")
+  await deleteConnector(db, connectorId, user.id)
+  return c.json({
+    success: true,
+    message: "Connector deleted",
   })
 }
 

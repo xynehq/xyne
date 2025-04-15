@@ -33,6 +33,7 @@ let GeminiApiKey = ""
 let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
+let slackHost = process.env.SLACK_HOST
 
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
@@ -90,6 +91,15 @@ if (
   fastModelReasoning = true
 }
 
+let serviceAccountWhitelistedEmails: string[] = []
+if (process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
+  serviceAccountWhitelistedEmails = process.env[
+    "SERVICE_ACCOUNT_WHITELISTED_EMAILS"
+  ]
+    .split(",")
+    .map((v) => v.trim())
+}
+
 if (!slackHost) {
   slackHost = host
 }
@@ -128,10 +138,13 @@ export default {
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
-  maxDefaultSummary: 8,
+  maxDefaultSummary: 6,
+  chatPageSize: 15, // default page size for ai search
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
+  serviceAccountWhitelistedEmails,
+  isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
 }

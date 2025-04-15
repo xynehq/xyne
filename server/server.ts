@@ -18,15 +18,19 @@ import {
   addServiceConnectionSchema,
   answerSchema,
   createOAuthProvider,
+  deleteConnectorSchema,
   oauthStartQuerySchema,
   searchSchema,
+  updateConnectorStatusSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
   AddServiceConnection,
   CreateOAuthProvider,
+  DeleteConnector,
   GetConnectors,
   StartOAuth,
+  UpdateConnectorStatus,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -43,8 +47,8 @@ import { createUser, getUserByEmail } from "@/db/user"
 import { getCookie } from "hono/cookie"
 import { serveStatic } from "hono/bun"
 import config from "@/config"
-import { OAuthCallback } from "./api/oauth"
-import { setCookieByEnv } from "./utils"
+import { OAuthCallback } from "@/api/oauth"
+import { setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
@@ -123,8 +127,7 @@ export const WsApp = app.get(
     return {
       onOpen(event, ws) {
         connectorId = c.req.query("id")
-        const app = c.req.query("app")
-        Logger.info(`WebSocket connection opened for connector ${connectorId} and app ${app}`)
+        Logger.info(`Websocket connection with id ${connectorId}`)
         wsConnections.set(connectorId, ws)
         Logger.info(`Current active WebSocket connections: ${wsConnections.size}`)
       },
@@ -193,6 +196,16 @@ export const AppRoutes = app
     AddApiKeyConnector,
   )
   .get("/connectors/all", GetConnectors)
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .delete(
+    "/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteConnector,
+  )
   .post("/connectors/whatsapp", CreateWhatsAppConnector)
   .delete("/connectors/whatsapp", DeleteWhatsAppConnector)
 
@@ -371,27 +384,28 @@ app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 
 export const init = async () => {
-  Logger.info("Initializing server...")
   await initQueue()
-  Logger.info("Queue initialized successfully")
-  
-  const server = Bun.serve({
-    fetch: app.fetch,
-    port: config.port,
-    websocket,
-    idleTimeout: 180,
-  })
-  Logger.info(`Server listening on port: ${config.port}`)
-  return server
 }
-
-// Initialize server
 init().catch((error) => {
-  Logger.error(error, "Failed to initialize server")
   throw new InitialisationError({ cause: error })
 })
 
-process.on("uncaughtException", (error) => {
-  Logger.error(error, "uncaughtException")
-  // shutdown server?
+const server = Bun.serve({
+  fetch: app.fetch,
+  port: config.port,
+  websocket,
+  idleTimeout: 180,
 })
+Logger.info(`listening on port: ${config.port}`)
+
+const errorEvents: string[] = [
+  `uncaughtException`,
+  `unhandledRejection`,
+  `rejectionHandled`,
+  `warning`,
+]
+errorEvents.forEach((eventType: string) =>
+  process.on(eventType, (error: Error) => {
+    Logger.error(error, `Caught via event: ${eventType}`)
+  }),
+)

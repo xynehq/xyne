@@ -12,9 +12,15 @@ import { Google, Slack } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
+import { handleGoogleOAuthIngestion } from "@/integrations/google"
+
 const { JwtPayloadKey, JobExpiryHours, slackHost } = config
 import { IsGoogleApp } from "@/utils"
 import { getUserByEmail } from "@/db/user"
+import { handleSlackIngestion } from "@/integrations/slack"
+import { globalAbortControllers } from "@/integrations/abortManager"
+import { getErrorMessage } from "@/utils"
+
 const Logger = getLogger(Subsystem.Api).child({ module: "oauth" })
 
 interface OAuthCallbackQuery {
@@ -62,13 +68,12 @@ export const OAuthCallback = async (c: Context) => {
     let tokens: SlackOAuthResp | OAuthCredentials
 
     const userRes = await getUserByEmail(db, sub)
-    if(!userRes || !userRes.length) {
-      Logger.error('Could not find user in OAuth Callback')
+    if (!userRes || !userRes.length) {
+      Logger.error("Could not find user in OAuth Callback")
       throw new NoUserFound({})
     }
     const provider = await getOAuthProvider(db, userRes[0].id, app)
     const { clientId, clientSecret } = provider
-    console.log("provider", provider)
     if (app === Apps.Slack) {
       const response = await fetch("https://slack.com/api/oauth.v2.access", {
         method: "POST",
@@ -125,12 +130,39 @@ export const OAuthCallback = async (c: Context) => {
       authType: connector.authType as AuthType,
       email: sub,
     }
-    // Enqueue the background job within the same transaction
-    const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-      expireInHours: JobExpiryHours,
-    })
 
-    Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+    if (IsGoogleApp(app)) {
+      // Start ingestion in the background, but catch any errors it might throw later
+      handleGoogleOAuthIngestion(SaasJobPayload).catch((error) => {
+        Logger.error(
+          error,
+          `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+        )
+      })
+    } else if (app === Apps.Slack) {
+      const abortController = new AbortController()
+      globalAbortControllers.set(`${connector.id}`, abortController)
+      handleSlackIngestion({
+        connectorId: connector.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      })
+    } else {
+      const SaasJobPayload: SaaSOAuthJob = {
+        connectorId: connector.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      }
+      // Enqueue the background job within the same transaction
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+        expireInHours: JobExpiryHours,
+      })
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+    }
 
     // Commit the transaction if everything is successful
     if (app === Apps.Slack) {

@@ -1,11 +1,11 @@
 import { Apps, DriveEntity } from "@/search/types"
-import { HybridDefaultProfile } from "@/search/vespa"
+import { HybridDefaultProfile, SearchModes } from "@/search/vespa"
 import { expect, test, describe } from "bun:test"
 
 describe("HybridDefaultProfile", () => {
   test("basic query without optional parameters", () => {
     const result = HybridDefaultProfile(10, null, null)
-    expect(result.profile).toBe("default")
+    expect(result.profile).toBe(SearchModes.NativeRank)
     expect(result.yql).toContain("{targetHits:10}")
     expect(result.yql).toContain("permissions contains @email")
     expect(result.yql).toContain(`and app contains "${Apps.GoogleWorkspace}"`)
@@ -33,7 +33,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
-      "default",
+      SearchModes.NativeRank,
       timestampRange,
     )
     expect(result.yql).toContain("updatedAt >= 1000 and updatedAt <= 2000")
@@ -50,7 +50,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
-      "default",
+      SearchModes.NativeRank,
       timestampRange,
     )
     expect(result.yql).not.toContain("updatedAt <= 1000")
@@ -67,7 +67,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
-      "default",
+      SearchModes.NativeRank,
       timestampRange,
     )
     expect(result.yql).not.toContain("updatedAt >= 1000")
@@ -84,7 +84,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
-      "default",
+      SearchModes.NativeRank,
       null,
       excludedIds,
     )
@@ -99,7 +99,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
-      "default",
+      SearchModes.NativeRank,
       null,
       [],
       notInMailLabels,
@@ -115,7 +115,7 @@ describe("HybridDefaultProfile", () => {
       5,
       null,
       null,
-      "default",
+      SearchModes.NativeRank,
       invalidTimestampRange,
     )
     expect(result.yql).not.toContain("updatedAt")
@@ -132,7 +132,7 @@ describe("HybridDefaultProfile", () => {
       5,
       Apps.GoogleWorkspace,
       DriveEntity.PDF,
-      "default",
+      SearchModes.NativeRank,
       timestampRange,
       excludedIds,
       notInMailLabels,
@@ -148,7 +148,13 @@ describe("HybridDefaultProfile", () => {
   test("query with null timestamp", () => {
     const timestampRange = { from: null, to: null }
     expect(() =>
-      HybridDefaultProfile(5, null, null, "default", timestampRange),
+      HybridDefaultProfile(
+        5,
+        null,
+        null,
+        SearchModes.NativeRank,
+        timestampRange,
+      ),
     ).toThrow("Invalid timestamp range")
   })
 })

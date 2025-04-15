@@ -1,9 +1,10 @@
 import config from "@/config"
 import { z } from "zod"
-import { Apps, AuthType } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
+import { connect } from "bun"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -86,6 +87,15 @@ export const createOAuthProvider = z.object({
   app: z.nativeEnum(Apps),
 })
 
+export const deleteConnectorSchema = z.object({
+  connectorId: z.string(),
+})
+
+export const updateConnectorStatusSchema = z.object({
+  connectorId: z.string(),
+  status: z.nativeEnum(ConnectorStatus),
+})
+
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 // Define an enum for connection types
@@ -110,6 +120,7 @@ export type SaaSJob = {
   externalId: string
   authType: AuthType
   email: string
+  whiteListedEmails?: string[]
 }
 
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">

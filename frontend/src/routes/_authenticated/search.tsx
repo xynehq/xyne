@@ -103,6 +103,10 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
+  const [showDebugInfo, setDebugInfo] = useState(
+    import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || (search.debug ?? false),
+  ) // State for debug info visibility, initialized from env var
+  const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -173,8 +177,13 @@ export const Search = ({ user, workspace }: IndexProps) => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
+      setDebugInfo(
+        import.meta.env.VITE_SHOW_DEBUG_INFO === "true" ||
+          search.debug ||
+          false,
+      )
     }
-  }, [])
+  }, [search])
 
   useEffect(() => {
     handleSearch()
@@ -240,6 +249,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         groupCount,
         lastUpdated: filter.lastUpdated || "anytime",
         isQueryTyped: QueryTyped,
+        debug: showDebugInfo,
       }
 
       let pageCount = page
@@ -266,9 +276,11 @@ export const Search = ({ user, workspace }: IndexProps) => {
           app: params.app,
           entity: params.entity,
           lastUpdated: params.lastUpdated,
+          ...(showDebugInfo ? { debug: showDebugInfo } : {}),
         }),
         state: { isQueryTyped: QueryTyped },
         replace: true,
+        resetScroll: false, // Prevent scroll jump on pagination
       })
 
       // Send a GET request to the backend with the search query
@@ -304,6 +316,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           }),
           state: { isQueryTyped: false },
           replace: true,
+          resetScroll: false,
         })
 
         if (groupCount) {
@@ -313,6 +326,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
             setSearchMeta({ totalCount: data.count })
           }
           setGroups(data.groupCount)
+          setTraceData(data.trace || null) // Store trace data from response
         }
       } else {
         const errorText = await response.text()
@@ -457,11 +471,29 @@ export const Search = ({ user, workspace }: IndexProps) => {
                 </div>
               </div>
             )}
+            {/* Top-level Trace Info Display */}
+            {showDebugInfo && traceData && (
+              <details className="mt-4 mb-4 text-xs">
+                <summary className="text-gray-500 cursor-pointer">
+                  Vespa Trace
+                </summary>
+                <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96">
+                  {" "}
+                  {/* Increased max-height */}
+                  {JSON.stringify(traceData, null, 2)}
+                </pre>
+              </details>
+            )}
             {!!results?.length && (
               <div className="flex flex-col w-full max-w-3xl mb-[52px]">
                 <div className="w-full max-w-3xl">
                   {results.map((result, index) => (
-                    <SearchResult key={index} result={result} index={index} />
+                    <SearchResult
+                      key={index}
+                      result={result}
+                      index={index}
+                      showDebugInfo={showDebugInfo} // Pass state down
+                    />
                   ))}
                 </div>
               </div>
@@ -505,6 +537,7 @@ const searchParams = z
     app: z.nativeEnum(Apps).optional(),
     entity: z.string().optional(),
     lastUpdated: z.string().optional(),
+    debug: z.boolean().optional(),
   })
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",

@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import { RotateCcw } from "lucide-react"
 import {
   createFileRoute,
   redirect,
@@ -402,25 +403,38 @@ const UserStatsTable = ({
           <TableHead>Contacts</TableHead>
           <TableHead>Events</TableHead>
           <TableHead>Attachments</TableHead>
-          {/* <TableHead>Status</TableHead> */}
+          <TableHead>%</TableHead>
+          <TableHead>Est (minutes)</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {Object.entries(userStats).map(([email, stats]) => (
-          <TableRow key={email}>
-            {type !== AuthType.OAuth && (
-              <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
-                {email}
-              </TableCell>
-            )}
-            <TableCell>{stats.gmailCount}</TableCell>
-            <TableCell>{stats.driveCount}</TableCell>
-            <TableCell>{stats.contactsCount}</TableCell>
-            <TableCell>{stats.eventsCount}</TableCell>
-            <TableCell>{stats.mailAttachmentCount}</TableCell>
-            {/* <TableCell className={`${stats.done ? "text-lime-600": ""}`}>{stats.done ? "Done" : "In Progress"}</TableCell> */}
-          </TableRow>
-        ))}
+        {Object.entries(userStats).map(([email, stats]) => {
+          const percentage: number = parseFloat(
+            (
+              ((stats.gmailCount + stats.driveCount) * 100) /
+              (stats.totalDrive + stats.totalMail)
+            ).toFixed(2),
+          )
+          const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
+          const eta =
+            percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
+          return (
+            <TableRow key={email}>
+              {type !== AuthType.OAuth && (
+                <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+                  {email}
+                </TableCell>
+              )}
+              <TableCell>{stats.gmailCount}</TableCell>
+              <TableCell>{stats.driveCount}</TableCell>
+              <TableCell>{stats.contactsCount}</TableCell>
+              <TableCell>{stats.eventsCount}</TableCell>
+              <TableCell>{stats.mailAttachmentCount}</TableCell>
+              <TableCell>{percentage}</TableCell>
+              <TableCell>{eta.toFixed(0)}</TableCell>
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -469,9 +483,20 @@ const ServiceAccountTab = ({
           </>
         ) : (
           <>
-            <CardDescription>Connected</CardDescription>
+            <CardDescription>
+              Status: {googleSAConnector.status}
+            </CardDescription>
           </>
         )}
+
+        <button
+          className="flex justify-end w-full"
+          onClick={() => {
+            // restart the ingestion of that connector
+          }}
+        >
+          <RotateCcw stroke={"hsl(220 8.9% 46.1%)"} size={18} />
+        </button>
       </CardHeader>
     )
   }
@@ -554,36 +579,65 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
   }, [data, isPending])
 
   useEffect(() => {
-    let socket: WebSocket | null = null
+    let serviceAccountSocket: WebSocket | null = null
+    let oauthSocket: WebSocket | null = null
+
     if (!isPending && data && data.length > 0) {
-      const googleConnector = data.find((d) => d.app === Apps.GoogleDrive)
-      socket = wsClient.ws.$ws({
-        query: {
-          id: googleConnector?.id,
-        },
-      })
-      // setWs(socket)
-      socket?.addEventListener("open", () => {
-        logger.info("open")
-      })
-      socket?.addEventListener("close", (e) => {
-        logger.info("close")
-        if (e.reason === "Job finished") {
-          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
-        }
-      })
-      socket?.addEventListener("message", (e) => {
-        // const message = JSON.parse(e.data);
-        const data = JSON.parse(e.data)
-        const statusJson = JSON.parse(JSON.parse(e.data).message)
-        setProgress(statusJson.progress ?? 0)
-        setUserStats(statusJson.userStats ?? {})
-        setUpateStatus(data.message)
-      })
+      const serviceAccountConnector = data.find(
+        (c) => c.authType === AuthType.ServiceAccount,
+      )
+      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+
+      if (serviceAccountConnector) {
+        serviceAccountSocket = wsClient.ws.$ws({
+          query: { id: serviceAccountConnector.id }, // externalId
+        })
+        serviceAccountSocket?.addEventListener("open", () => {
+          logger.info(
+            `Service Account WebSocket opened for ${serviceAccountConnector.id}`,
+          )
+        })
+        serviceAccountSocket?.addEventListener("message", (e) => {
+          const data = JSON.parse(e.data)
+          const statusJson = JSON.parse(data.message)
+          setProgress(statusJson.progress ?? 0) // Could split to serviceAccountProgress
+          setUserStats(statusJson.userStats ?? {})
+          setUpateStatus(data.message)
+        })
+        serviceAccountSocket?.addEventListener("close", (e) => {
+          logger.info("Service Account WebSocket closed")
+          if (e.reason === "Job finished") {
+            setIsIntegratingSA(true)
+          }
+        })
+      }
+
+      if (oauthConnector) {
+        oauthSocket = wsClient.ws.$ws({
+          query: { id: oauthConnector.id }, // externalId
+        })
+        oauthSocket?.addEventListener("open", () => {
+          logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
+        })
+        oauthSocket?.addEventListener("message", (e) => {
+          const data = JSON.parse(e.data)
+          const statusJson = JSON.parse(data.message)
+          setProgress(statusJson.progress ?? 0) // Could split to oauthProgress
+          setUserStats(statusJson.userStats ?? {})
+          setUpateStatus(data.message)
+        })
+        oauthSocket?.addEventListener("close", (e) => {
+          logger.info("OAuth WebSocket closed")
+          if (e.reason === "Job finished") {
+            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+          }
+        })
+      }
     }
+
     return () => {
-      socket?.close()
-      // setWs(null)
+      serviceAccountSocket?.close()
+      oauthSocket?.close()
     }
   }, [data, isPending])
 
@@ -672,7 +726,7 @@ export const Route = createFileRoute(
       userWorkspace?.user?.role !== UserRole.SuperAdmin &&
       userWorkspace?.user?.role !== UserRole.Admin
     ) {
-      throw redirect({ to: "/admin/integrations/google" })
+      throw redirect({ to: "/integrations/google" })
     }
     return params
   },
