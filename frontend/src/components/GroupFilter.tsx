@@ -95,6 +95,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Event"
   } else if (app === Apps.Slack && entity === SlackEntity.Message) {
     return "Slack Message"
+  } else if (app === Apps.Code) {
+    return "Code"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

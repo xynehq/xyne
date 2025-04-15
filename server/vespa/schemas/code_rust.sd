@@ -35,9 +35,16 @@ schema code_rust {
       attribute: fast-search
     }
 
-    field language type string {
-      indexing: summary | attribute
+    field app type string {
+      indexing: attribute | summary
       attribute: fast-search
+      match: exact
+    }
+    
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
     }
 
     # --- Core Content ---

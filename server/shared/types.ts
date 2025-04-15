@@ -197,6 +197,12 @@ export type UserQueryHAutocomplete = z.infer<
 >
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
+// Define the Language enum
+export enum Language {
+  Rust = "rust",
+  // Add other languages here as needed
+}
+
 // search result
 
 export const FileResponseSchema = VespaFileSchema.pick({
@@ -261,15 +267,15 @@ export const CodeRustResponseSchema = VespaCodeRustSchema.pick({
   docId: true,
   filename: true,
   path: true,
-  // Add other fields needed for display, e.g., a snippet
-  // summary_content: true, // Example: Add if you create a summary field
+  language: true, // Include language
+  code_chunk_contents: true, // Include chunks for context
+  code_chunk_start_lines: true,
 })
   .extend({
     type: z.literal(codeRustSchema),
     relevance: z.number(),
     matchfeatures: z.any().optional(), // Keep consistent with others
     rankfeatures: z.any().optional(),
-    // Add summary field, mirroring FileResponseSchema
     chunks_summary: z.array(scoredChunk).optional(),
   })
   .strip()

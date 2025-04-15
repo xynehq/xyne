@@ -1,171 +1,132 @@
-// import * as parser from 'tree-sitter'; // Remove namespace import
 import * as fs from "fs"
 import * as path from "path"
-import crypto from "crypto" // Import crypto for hashing
-import Parser from "tree-sitter" // Use default import
-import type { SyntaxNode } from "tree-sitter" // Use type-only import for SyntaxNode
-import { insert } from "@/search/vespa" // Import the insert function
-import { codeRustSchema } from "@/search/types" // Import the schema constant
+import crypto from "crypto"
+import Parser from "tree-sitter"
+import type { SyntaxNode } from "tree-sitter"
+import { insert } from "@/search/vespa"
+import { Apps, codeRustSchema } from "@/search/types"
+import pLimit from "p-limit"
 
-// Helper function to create a consistent hash for the docId
 const hashFilePath = (filePath: string): string => {
   return crypto.createHash("sha256").update(filePath).digest("hex")
 }
-// Tree-sitter extractor for Rust code - Basic version with direct node traversal
+
 class RustCodeExtractor {
-  private parser: Parser // Use default import 'Parser' for type
+  private parser: Parser
+  private languageLoaded: boolean = false
 
   constructor() {
-    // Initialize Tree-sitter
     this.parser = new Parser()
-
-    // We need to dynamically load the Rust grammar
-    this.loadRustLanguage()
+    this.loadRustLanguage().catch((err) => {
+      console.error("Initial language load failed:", err)
+    })
   }
 
-  // Load Rust language grammar
   private async loadRustLanguage() {
+    if (this.languageLoaded) return
     try {
-      // Load Rust grammar - use the approach that works with your setup
       const Rust = await import("tree-sitter-rust")
-      // Cast to 'any' to resolve potential type mismatch with dynamic import
       this.parser.setLanguage((Rust.default || Rust) as any)
+      this.languageLoaded = true
     } catch (error) {
       console.error("Failed to load tree-sitter-rust:", error)
+      this.languageLoaded = false
       throw new Error("Unable to load Rust language for Tree-sitter")
     }
   }
 
-  private getNodeText(sourceCode: string, node: SyntaxNode): string {
-    // Use imported SyntaxNode
-    return sourceCode.substring(node.startIndex, node.endIndex)
-  }
-
-  // Traverse the node tree and collect nodes of specific types
-  private traverseTree(
-    node: SyntaxNode,
-    callback: (node: SyntaxNode) => void,
-  ): void {
-    // Use imported SyntaxNode
-    callback(node)
-
-    // Iterate through all children
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i)
-      if (child) {
-        this.traverseTree(child, callback)
-      }
+  private async ensureLanguageLoaded() {
+    if (!this.languageLoaded) {
+      await this.loadRustLanguage()
+    }
+    if (!this.languageLoaded) {
+      throw new Error("Rust language could not be loaded.")
     }
   }
 
-  // Extract all symbol names (functions, structs, enums, traits, etc.)
-  private extractSymbolNames(
-    sourceCode: string,
-    rootNode: SyntaxNode,
-  ): string[] {
-    // Use imported SyntaxNode
-    const symbolSet = new Set<string>()
-
-    this.traverseTree(rootNode, (node) => {
-      let nameNode = null
-
-      // Check various node types and extract their names
-      if (
-        node.type === "function_item" ||
-        node.type === "struct_item" ||
-        node.type === "enum_item" ||
-        node.type === "trait_item" ||
-        node.type === "mod_item" ||
-        node.type === "type_item" ||
-        node.type === "const_item" ||
-        node.type === "static_item" ||
-        node.type === "macro_definition"
-      ) {
-        nameNode = node.childForFieldName("name")
-        if (nameNode) {
-          symbolSet.add(this.getNodeText(sourceCode, nameNode))
-        }
-      }
-    })
-
-    return Array.from(symbolSet)
+  private getNodeText(sourceCode: string, node: SyntaxNode): string {
+    return sourceCode.substring(node.startIndex, node.endIndex)
   }
 
-  // Extract code chunks (functions, structs, etc.) into flattened arrays
-  private extractCodeChunksFlattened(
+  private extractAllDataFromTree(
     sourceCode: string,
     rootNode: SyntaxNode,
   ): {
-    // Use SyntaxNode type
-    kinds: string[]
-    names: string[]
-    contents: string[]
-    startLines: number[]
-    endLines: number[]
+    symbolNames: string[]
+    codeChunkKinds: string[]
+    codeChunkNames: string[]
+    codeChunkContents: string[]
+    codeChunkStartLines: number[]
+    codeChunkEndLines: number[]
+    docCommentsTexts: string[]
+    docCommentsTargets: string[]
+    docCommentsStartLines: number[]
+    dependenciesNames: string[]
+    dependenciesFullPaths: string[]
+    dependenciesLines: number[]
+    featureFlags: string[]
   } {
+    const symbolSet = new Set<string>()
     const kinds: string[] = []
     const names: string[] = []
     const contents: string[] = []
     const startLines: number[] = []
     const endLines: number[] = []
+    const docTexts: string[] = []
+    const docTargets: string[] = []
+    const docStartLines: number[] = []
+    const depNames: string[] = []
+    const depFullPaths: string[] = []
+    const depLines: number[] = []
+    const features: string[] = []
+    const docLines: Record<number, string> = {}
+
     const itemTypes = [
-      // Keep only one declaration
       "function_item",
       "struct_item",
       "enum_item",
       "trait_item",
-      "impl_item", // Assuming impl blocks might be relevant chunks
+      "impl_item",
       "type_item",
       "const_item",
       "static_item",
       "macro_definition",
+      "mod_item",
     ]
 
-    this.traverseTree(rootNode, (node) => {
-      if (itemTypes.includes(node.type)) {
-        // Use 'identifier' for name in some cases like impl blocks if 'name' isn't present
-        const nameNode =
-          node.childForFieldName("name") || node.childForFieldName("identifier")
-        // For impl blocks, the type might be more relevant than a specific name
-        const typeNode = node.childForFieldName("type")
+    const traverse = (node: SyntaxNode) => {
+      let nameNode: SyntaxNode | null = null
 
+      if (itemTypes.includes(node.type)) {
+        nameNode =
+          node.childForFieldName("name") || node.childForFieldName("identifier")
+        const typeNode = node.childForFieldName("type")
         let chunkName = "unknown"
+
         if (nameNode) {
           chunkName = this.getNodeText(sourceCode, nameNode)
-        } else if (typeNode) {
-          // Use type as name for impl blocks if no direct name
+          if (node.type !== "impl_item") {
+            symbolSet.add(chunkName)
+          }
+        } else if (typeNode && node.type === "impl_item") {
           chunkName = `impl_${this.getNodeText(sourceCode, typeNode)}`
+        } else if (node.type === "mod_item" && !nameNode) {
+          const identifier = node.children.find((c) => c.type === "identifier")
+          if (identifier) {
+            chunkName = this.getNodeText(sourceCode, identifier)
+            symbolSet.add(chunkName)
+          }
         }
 
-        kinds.push(node.type.replace("_item", ""))
-        names.push(chunkName)
-        contents.push(this.getNodeText(sourceCode, node))
-        startLines.push(node.startPosition.row)
-        endLines.push(node.endPosition.row)
+        if (itemTypes.includes(node.type)) {
+          kinds.push(node.type.replace("_item", ""))
+          names.push(chunkName)
+          contents.push(this.getNodeText(sourceCode, node))
+          startLines.push(node.startPosition.row)
+          endLines.push(node.endPosition.row)
+        }
       }
-    })
 
-    return { kinds, names, contents, startLines, endLines }
-  }
-
-  // Extract doc comments into flattened arrays
-  private extractDocCommentsFlattened(
-    sourceCode: string,
-    rootNode: SyntaxNode,
-  ): {
-    // Use SyntaxNode type
-    texts: string[]
-    targets: string[] // Placeholder, logic to determine target needed
-    startLines: number[]
-  } {
-    const texts: string[] = []
-    const targets: string[] = [] // Need logic to associate comments with code items
-    const startLines: number[] = []
-    const docLines: Record<number, string> = {}
-    // Removed duplicate docLines declaration here
-
-    // First pass: collect all doc comment lines and simple block comments
-    this.traverseTree(rootNode, (node) => {
       if (node.type === "line_comment") {
         const text = this.getNodeText(sourceCode, node)
         if (text.trim().startsWith("///")) {
@@ -174,261 +135,384 @@ class RustCodeExtractor {
       } else if (node.type === "block_comment") {
         const text = this.getNodeText(sourceCode, node)
         if (text.trim().startsWith("/**")) {
-          // Basic block comment processing
           const cleanedText = text
             .trim()
             .replace(/^\/\*\*/, "")
             .replace(/\*\/$/, "")
             .trim()
-
-          // Process block comments simply by adding them as single entries
-          // Correctly push to the flattened arrays
-          texts.push(cleanedText)
-          targets.push("unknown") // Placeholder - associating comments needs more logic
-          startLines.push(node.startPosition.row)
+          docTexts.push(cleanedText)
+          docTargets.push("unknown")
+          docStartLines.push(node.startPosition.row)
         }
       }
-    })
 
-    // Second pass: group consecutive line comments
-    let currentComment = ""
-    let currentLine = -1
-
-    const lineNumbers = Object.keys(docLines)
-      .map(Number)
-      .sort((a, b) => a - b)
-
-    for (const lineNum of lineNumbers) {
-      if (currentLine === -1 || lineNum === currentLine + 1) {
-        // Continuous comment
-        if (currentComment) currentComment += "\n"
-        currentComment += docLines[lineNum]
-        currentLine = lineNum
-      } else {
-        // Gap found, store the current comment group
-        if (currentComment) {
-          // Correctly push to the flattened arrays
-          texts.push(currentComment)
-          targets.push("unknown") // Placeholder
-          startLines.push(currentLine - currentComment.split("\n").length + 1)
-        }
-
-        // Start a new comment
-        currentComment = docLines[lineNum]
-        currentLine = lineNum
-      }
-    }
-    // Don't forget the last comment group
-    if (currentComment) {
-      texts.push(currentComment)
-      targets.push("unknown") // Placeholder
-      startLines.push(currentLine - currentComment.split("\n").length + 1)
-    }
-
-    return { texts, targets, startLines }
-  }
-
-  // Extract dependencies into flattened arrays
-  private extractDependenciesFlattened(
-    sourceCode: string,
-    rootNode: SyntaxNode,
-  ): {
-    // Use SyntaxNode type
-    names: string[]
-    fullPaths: string[]
-    lines: number[]
-  } {
-    const names: string[] = []
-    const fullPaths: string[] = []
-    const lines: number[] = []
-
-    this.traverseTree(rootNode, (node: SyntaxNode) => {
-      // Add type annotation
       if (node.type === "use_declaration") {
         const treeNode = node.childForFieldName("tree")
         if (treeNode) {
           const path = this.getNodeText(sourceCode, treeNode)
           const pathParts = path.split("::")
           const mainDep = pathParts[0].trim()
-
           if (mainDep) {
-            names.push(mainDep)
-            fullPaths.push(path)
-            lines.push(node.startPosition.row)
+            depNames.push(mainDep)
+            depFullPaths.push(path)
+            depLines.push(node.startPosition.row)
           }
         }
       } else if (node.type === "extern_crate_declaration") {
-        const nameNode = node.childForFieldName("name")
+        nameNode = node.childForFieldName("name")
         if (nameNode) {
           const name = this.getNodeText(sourceCode, nameNode)
-          names.push(name)
-          fullPaths.push(name) // Use name as full path for extern crate
-          lines.push(node.startPosition.row)
+          depNames.push(name)
+          depFullPaths.push(name)
+          depLines.push(node.startPosition.row)
         }
       }
-    })
 
-    return { names, fullPaths, lines }
-  }
-
-  // Extract feature flags (already returns a suitable structure for array<string>)
-  private extractFeatureFlags(
-    sourceCode: string,
-    rootNode: SyntaxNode,
-  ): string[] {
-    // Use imported SyntaxNode
-    const features: string[] = []
-
-    this.traverseTree(rootNode, (node) => {
       if (node.type === "attribute_item") {
         const text = this.getNodeText(sourceCode, node)
         const featureMatch = text.match(/#\[cfg\(feature\s*=\s*"([^"]+)"\)\]/)
-
         if (featureMatch) {
-          const featureName = featureMatch[1]
-          features.push(featureName) // Just push the name string
+          features.push(featureMatch[1])
         }
       }
-    })
 
-    return features
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i)
+        if (child) {
+          traverse(child)
+        }
+      }
+    }
+
+    traverse(rootNode)
+
+    let currentComment = ""
+    let currentLine = -1
+    const lineNumbers = Object.keys(docLines)
+      .map(Number)
+      .sort((a, b) => a - b)
+
+    for (const lineNum of lineNumbers) {
+      if (currentLine === -1 || lineNum === currentLine + 1) {
+        if (currentComment) currentComment += "\n"
+        currentComment += docLines[lineNum]
+        currentLine = lineNum
+      } else {
+        if (currentComment) {
+          docTexts.push(currentComment)
+          docTargets.push("unknown")
+          docStartLines.push(
+            currentLine - currentComment.split("\n").length + 1,
+          )
+        }
+        currentComment = docLines[lineNum]
+        currentLine = lineNum
+      }
+    }
+    if (currentComment) {
+      docTexts.push(currentComment)
+      docTargets.push("unknown")
+      docStartLines.push(currentLine - currentComment.split("\n").length + 1)
+    }
+
+    return {
+      symbolNames: Array.from(symbolSet),
+      codeChunkKinds: kinds,
+      codeChunkNames: names,
+      codeChunkContents: contents,
+      codeChunkStartLines: startLines,
+      codeChunkEndLines: endLines,
+      docCommentsTexts: docTexts,
+      docCommentsTargets: docTargets,
+      docCommentsStartLines: docStartLines,
+      dependenciesNames: depNames,
+      dependenciesFullPaths: depFullPaths,
+      dependenciesLines: depLines,
+      featureFlags: features,
+    }
   }
 
-  // Main extraction method
   public async extract(filePath: string): Promise<any> {
     try {
-      const sourceCode = fs.readFileSync(filePath, "utf-8")
-
-      // Wait for language initialization
-      await this.loadRustLanguage()
-
+      await this.ensureLanguageLoaded()
+      const sourceCode = await fs.promises.readFile(filePath, "utf-8")
       const tree = this.parser.parse(sourceCode)
       const rootNode = tree.rootNode
-      // Extract all code data using flattened methods
-      const symbolNames = this.extractSymbolNames(sourceCode, rootNode)
-      const {
-        kinds: codeChunkKinds,
-        names: codeChunkNames,
-        contents: codeChunkContents,
-        startLines: codeChunkStartLines,
-        endLines: codeChunkEndLines,
-      } = this.extractCodeChunksFlattened(sourceCode, rootNode)
-      const {
-        texts: docCommentsTexts,
-        targets: docCommentsTargets,
-        startLines: docCommentsStartLines,
-      } = this.extractDocCommentsFlattened(sourceCode, rootNode)
-      const {
-        names: dependenciesNames,
-        fullPaths: dependenciesFullPaths,
-        lines: dependenciesLines,
-      } = this.extractDependenciesFlattened(sourceCode, rootNode)
-      const featureFlags = this.extractFeatureFlags(sourceCode, rootNode) // Already returns string[]
+      const extractedData = this.extractAllDataFromTree(sourceCode, rootNode)
 
-      // Create a document ready for Vespa using flattened fields
-      const docId = hashFilePath(filePath) // Calculate hash for docId
+      const docId = hashFilePath(filePath)
       const vespaDoc = {
-        docId: docId, // Add the hashed docId field
+        docId: docId,
         filename: path.basename(filePath),
         path: filePath,
-        language: "rust",
+        app: Apps.Code,
+        entity: "rust",
         raw_content: sourceCode,
-        symbol_names: symbolNames,
-        code_chunk_kinds: codeChunkKinds,
-        code_chunk_names: codeChunkNames,
-        code_chunk_contents: codeChunkContents,
-        code_chunk_start_lines: codeChunkStartLines,
-        code_chunk_end_lines: codeChunkEndLines,
-        doc_comments_texts: docCommentsTexts,
-        doc_comments_targets: docCommentsTargets, // Placeholder targets
-        doc_comments_start_lines: docCommentsStartLines,
-        dependencies_names: dependenciesNames,
-        dependencies_full_paths: dependenciesFullPaths,
-        dependencies_lines: dependenciesLines,
-        feature_flags: featureFlags, // Directly use the string array
-        // Metadata fields removed as they are not in the code_rust.sd schema
-        // line_count: sourceCode.split('\n').length,
-        // char_count: sourceCode.length,
-        // symbol_count: symbolNames.length,
+        symbol_names: extractedData.symbolNames,
+        code_chunk_kinds: extractedData.codeChunkKinds,
+        code_chunk_names: extractedData.codeChunkNames,
+        code_chunk_contents: extractedData.codeChunkContents,
+        code_chunk_start_lines: extractedData.codeChunkStartLines,
+        code_chunk_end_lines: extractedData.codeChunkEndLines,
+        doc_comments_texts: extractedData.docCommentsTexts,
+        doc_comments_targets: extractedData.docCommentsTargets,
+        doc_comments_start_lines: extractedData.docCommentsStartLines,
+        dependencies_names: extractedData.dependenciesNames,
+        dependencies_full_paths: extractedData.dependenciesFullPaths,
+        dependencies_lines: extractedData.dependenciesLines,
+        feature_flags: extractedData.featureFlags,
       }
 
       return vespaDoc
     } catch (error) {
-      console.error("Error extracting data:", error)
+      console.error(`Error extracting data from ${filePath}:`, error)
       throw error
     }
   }
 
-  // Generate Vespa document JSON format
   public toVespaDocument(extractedData: any): string {
     return JSON.stringify(extractedData, null, 2)
   }
 }
 
-// Example usage
-async function processRustFile(filePath: string) {
+async function processRustFile(filePath: string, extractor: RustCodeExtractor) {
   try {
-    const extractor = new RustCodeExtractor()
-
-    console.log(`Processing ${filePath}...`)
     const extractedData = await extractor.extract(filePath)
-
-    // Directly insert the document into Vespa
-    console.log(`Inserting document for ${filePath} into Vespa...`)
-    // Pass the extracted data (which now includes docId) directly
     await insert(extractedData, codeRustSchema)
-    console.log(
-      `Successfully inserted document with ID ${extractedData.docId} for ${filePath}.`,
-    )
-
-    // Update console logs to reflect direct insertion
-    console.log(`Processed and Inserted ${filePath}`)
-    console.log(`- Extracted ${extractedData.symbol_names.length} symbols`)
-    console.log(
-      `- Extracted ${extractedData.code_chunk_names.length} code chunks`,
-    ) // Use names length as chunk count indicator
-    console.log(
-      `- Extracted ${extractedData.doc_comments_texts.length} doc comments`,
-    )
-    console.log(
-      `- Extracted ${extractedData.dependencies_names.length} dependencies`,
-    )
-    console.log(
-      `- Extracted ${extractedData.feature_flags.length} feature flags`,
-    )
-    // No output path needed anymore
-    // console.log(`- Output: ${outputPath}`);
 
     return {
-      status: "success", // Indicate success of extraction and insertion
+      status: "success",
       stats: {
-        // Update stats object keys
         symbols: extractedData.symbol_names.length,
-        chunks: extractedData.code_chunk_names.length, // Use names length
+        chunks: extractedData.code_chunk_names.length,
         docComments: extractedData.doc_comments_texts.length,
         dependencies: extractedData.dependencies_names.length,
         featureFlags: extractedData.feature_flags.length,
       },
-      // No outputPath in return value
     }
   } catch (error: any) {
-    console.error("Error processing file:", error)
+    if (!String(error).includes("Error extracting data")) {
+      console.error(
+        `Error processing ${path.basename(filePath)} (post-extraction): ${error.message || error}`,
+      )
+    }
     return {
       status: "error",
-      error: error?.toString(), // Use optional chaining
+      error: error?.toString(),
     }
   }
 }
 
-// If this script is run directly
+async function processRustRepository(repoPath: string) {
+  const extractor = new RustCodeExtractor()
+  try {
+    await extractor.ensureLanguageLoaded()
+  } catch (err) {
+    console.error("Failed to initialize language parser. Aborting.", err)
+    return
+  }
+
+  let totalStats = {
+    filesProcessed: 0,
+    filesFailed: 0,
+    symbols: 0,
+    chunks: 0,
+    docComments: 0,
+    dependencies: 0,
+    featureFlags: 0,
+  }
+
+  async function findRustFiles(dir: string): Promise<string[]> {
+    let rustFiles: string[] = []
+    try {
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          if (
+            ["target", "node_modules", ".git"].includes(entry.name) ||
+            entry.name.startsWith(".")
+          ) {
+            continue
+          }
+          try {
+            rustFiles = rustFiles.concat(await findRustFiles(fullPath))
+          } catch (readDirError: any) {
+            console.warn(
+              `Skipping directory ${fullPath}: ${readDirError.message}`,
+            )
+          }
+        } else if (entry.isFile() && entry.name.endsWith(".rs")) {
+          rustFiles.push(fullPath)
+        }
+      }
+    } catch (err: any) {
+      console.error(`Error reading directory ${dir}: ${err.message}`)
+      return rustFiles
+    }
+    return rustFiles
+  }
+
+  try {
+    const concurrency = 10
+    console.log(`Scanning repository at ${repoPath}...`)
+    const rustFiles = await findRustFiles(repoPath)
+
+    const totalFiles = rustFiles.length
+    if (totalFiles === 0) {
+      console.log("No Rust files found to process.")
+      return totalStats
+    }
+
+    console.log(
+      `Found ${totalFiles} Rust files to process. Processing with concurrency limit of ${concurrency}...`,
+    )
+
+    const limit = pLimit(concurrency)
+    let processedCount = 0
+    let failedCount = 0
+    const startTime = Date.now()
+    let progressInterval: NodeJS.Timer | null = null
+
+    progressInterval = setInterval(() => {
+      const elapsedTimeSeconds = (Date.now() - startTime) / 1000
+      const rate =
+        elapsedTimeSeconds > 0 ? processedCount / elapsedTimeSeconds : 0
+      const percentage =
+        totalFiles > 0 ? (processedCount / totalFiles) * 100 : 0
+      process.stdout.write(
+        `Progress: ${percentage.toFixed(1)}% (${processedCount}/${totalFiles}) - Rate: ${rate.toFixed(1)} files/sec\r`,
+      )
+    }, 4000)
+
+    const promises = rustFiles.map((filePath) =>
+      limit(async () => {
+        const result = await processRustFile(filePath, extractor)
+        processedCount++
+        if (result?.status !== "success") {
+          failedCount++
+        }
+        return result
+      }),
+    )
+
+    const results = await Promise.allSettled(promises)
+
+    if (progressInterval) {
+      clearInterval(progressInterval)
+    }
+    const finalElapsedTimeSeconds = (Date.now() - startTime) / 1000
+    const finalRate =
+      finalElapsedTimeSeconds > 0 ? totalFiles / finalElapsedTimeSeconds : 0
+    process.stdout.write(
+      `Progress: 100.0% (${totalFiles}/${totalFiles}) - Final Rate: ${finalRate.toFixed(1)} files/sec\n`,
+    )
+
+    results.forEach((result, index) => {
+      if (
+        result.status === "fulfilled" &&
+        result.value?.status === "success" &&
+        result.value.stats
+      ) {
+        totalStats.filesProcessed += 1
+        totalStats.symbols += result.value.stats.symbols
+        totalStats.chunks += result.value.stats.chunks
+        totalStats.docComments += result.value.stats.docComments
+        totalStats.dependencies += result.value.stats.dependencies
+        totalStats.featureFlags += result.value.stats.featureFlags
+      } else {
+        totalStats.filesFailed += 1
+        let errorReason = "Unknown error"
+        if (result.status === "rejected") {
+          errorReason =
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason)
+        } else if (result.value?.status === "error") {
+          errorReason = result.value.error
+        } else if (result.value) {
+          errorReason = `Unexpected result value: ${JSON.stringify(result.value)}`
+        } else {
+          errorReason = "Fulfilled promise returned undefined or null value"
+        }
+      }
+    })
+
+    totalStats.filesProcessed = totalFiles - failedCount
+    totalStats.filesFailed = failedCount
+
+    console.log("\n=== Processing Summary ===")
+    console.log(`Total Files Found: ${rustFiles.length}`)
+    console.log(
+      `Total Files Successfully Processed: ${totalStats.filesProcessed}`,
+    )
+    console.log(`Total Files Failed: ${totalStats.filesFailed}`)
+    console.log(`Total Symbols Extracted: ${totalStats.symbols}`)
+    console.log(`Total Code Chunks Extracted: ${totalStats.chunks}`)
+    console.log(`Total Doc Comments Extracted: ${totalStats.docComments}`)
+    console.log(`Total Dependencies Extracted: ${totalStats.dependencies}`)
+    console.log(`Total Feature Flags Extracted: ${totalStats.featureFlags}`)
+
+    return totalStats
+  } catch (error) {
+    console.error("Error processing repository:", error)
+    throw error
+  }
+}
+
 if (require.main === module) {
-  const filePath = process.argv[2]
-  if (!filePath) {
-    console.error("Please provide a Rust file path")
+  const rawInputPath = process.argv[2]
+  if (!rawInputPath) {
+    console.error("Please provide a path (Rust file or repository directory)")
     process.exit(1)
   }
 
-  processRustFile(filePath).catch(console.error)
+  const inputPath = path.resolve(rawInputPath)
+  console.log(`Attempting to access resolved path: ${inputPath}`)
+
+  fs.stat(inputPath, async (err, stats) => {
+    if (err) {
+      console.error(`Error accessing path ${inputPath}: ${err.message}`)
+      process.exit(1)
+    }
+
+    if (stats.isDirectory()) {
+      console.log(`Processing repository directory: ${inputPath}`)
+      processRustRepository(inputPath).catch((error) => {
+        console.error("Fatal error during repository processing:", error)
+        process.exit(1)
+      })
+    } else if (stats.isFile() && inputPath.endsWith(".rs")) {
+      console.log(`Processing single Rust file: ${inputPath}`)
+      try {
+        const extractor = new RustCodeExtractor()
+        await extractor.ensureLanguageLoaded()
+        const result = await processRustFile(inputPath, extractor)
+        if (result.status === "success") {
+          console.log(
+            `Successfully processed and inserted data for ${path.basename(inputPath)}.`,
+          )
+          console.log("Stats:", result.stats)
+        } else {
+          console.error(
+            `Failed to process ${path.basename(inputPath)}: ${result.error}`,
+          )
+          process.exit(1)
+        }
+      } catch (error: any) {
+        console.error(
+          `Fatal error processing file ${inputPath}:`,
+          error.message || error,
+        )
+        process.exit(1)
+      }
+    } else {
+      console.error(
+        `Error: Provided path "${inputPath}" is not a directory or a .rs file.`,
+      )
+      process.exit(1)
+    }
+  })
 }
 
-export { RustCodeExtractor, processRustFile }
+export { RustCodeExtractor, processRustFile, processRustRepository }

@@ -50,6 +50,7 @@ export enum Apps {
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+  Code = "code",
 }
 
 export enum GooglePeopleEntity {
@@ -245,6 +246,16 @@ const ChatMessageMatchFeaturesSchema = z.object({
   "nativeRank(username)": z.number().optional(),
   "nativeRank(name)": z.number().optional(),
 })
+
+// Placeholder for specific match features if needed later
+const CodeRustMatchFeaturesSchema = z
+  .object({
+    "nativeRank(raw_content)": z.number().optional(),
+    "nativeRank(symbol_names)": z.number().optional(),
+    "nativeRank(code_chunk_contents)": z.number().optional(),
+    "closeness(field, code_chunk_embeddings)": z.number().optional(),
+  })
+  .optional()
 
 export type FileMatchFeatures = z.infer<typeof FileMatchFeaturesSchema>
 export type MailMatchFeatures = z.infer<typeof MailMatchFeaturesSchema>
@@ -560,7 +571,9 @@ export const VespaCodeRustSchema = z.object({
   docId: z.string(),
   filename: z.string(),
   path: z.string(),
-  language: z.literal("rust"), // Assuming only Rust for now
+  app: z.nativeEnum(Apps.Code),
+  entity: z.literal("rust"),
+  // language: z.literal("rust"), // Assuming only Rust for now
   raw_content: z.string(),
   symbol_names: z.array(z.string()),
   code_chunk_kinds: z.array(z.string()),
@@ -577,13 +590,6 @@ export const VespaCodeRustSchema = z.object({
   feature_flags: z.array(z.string()),
   // embedding: z.any().optional(), // Add if needed later
 })
-
-// Placeholder for specific match features if needed later
-const CodeRustMatchFeaturesSchema = z
-  .object({
-    // Example: "bm25(symbol_names)": z.number().optional(),
-  })
-  .optional()
 
 export const VespaCodeRustSearchSchema = VespaCodeRustSchema.extend({
   sddocname: z.literal(codeRustSchema),
@@ -619,6 +625,7 @@ const SearchMatchFeaturesSchema = z.union([
   EventMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
+  CodeRustMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
@@ -937,6 +944,23 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
     matchfeatures: z.any().optional(),
     rankfeatures: z.any().optional(),
   })
+
+// --- Grouping Count Types ---
+
+// Define a type for Language Counts
+export interface LanguageCounts {
+  [language: string]: number
+}
+
+// Define a type for Entity Counts (where the key is the entity name and the value is the count)
+export interface EntityCounts {
+  [entity: string]: number
+}
+
+// Define a type for App Entity Counts (where the key is the app name and the value is the entity counts)
+export interface AppEntityCounts {
+  [app: string]: EntityCounts
+}
 
 export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
   docId: true,
