@@ -131,6 +131,7 @@ const initializeProviders = (): void => {
         apiKey: OpenAIKey,
         baseURL: aiProviderBaseUrl
       })   
+      Logger.info(`Found base_url and open ai key, using base_url for LLM`)
     }else {
       openAIClient = new OpenAI({
         apiKey: OpenAIKey,
@@ -155,6 +156,7 @@ const initializeProviders = (): void => {
         baseURL: aiProviderBaseUrl,
       })
       
+      Logger.info(`Found base_url and together key, using base_url for LLM`)
     }else {
       together = new Together({
         apiKey: TogetherApiKey,
@@ -178,6 +180,9 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
+  if(!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
+    Logger.warn(`Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`)
+  }
   providersInitialized = true
   // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
