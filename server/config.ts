@@ -1,5 +1,5 @@
+import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
-
 let vespaBaseHost = "0.0.0.0"
 let postgresBaseHost = "0.0.0.0"
 let port = 3000
@@ -46,8 +46,12 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.DeepSeek_R1
 } else if (process.env["OPENAI_API_KEY"]) {
-    if(process.env["OPEN_API_BASE_URL"]) {
-      aiProviderBaseUrl = process.env["OPEN_API_BASE_URL"];
+    if(process.env["BASE_URL"]) {
+      if(!isURLValid(process.env["BASE_URL"])) {
+        console.warn(`Configuration Warning : Encountered invalid base url`)
+      }else {
+        aiProviderBaseUrl = process.env["BASE_URL"];
+      }
     }
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
@@ -65,8 +69,13 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
   defaultBestModel = TogetherAIModel as Models
-  if(process.env["TOGETHER_BASE_URL"]) {
-    aiProviderBaseUrl = process.env["TOGETHER_BASE_URL"];
+  if(process.env["BASE_URL"]) {
+    if(!isURLValid(process.env["BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    }else {
+      aiProviderBaseUrl = process.env["BASE_URL"];
+    }
+   
   }
 } else if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
   FireworksAIModel = process.env["FIREWORKS_MODEL"] as Models

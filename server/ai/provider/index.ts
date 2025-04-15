@@ -126,16 +126,12 @@ const initializeProviders = (): void => {
 
   if (OpenAIKey) {
     let openAIClient:OpenAI
+    openAIClient = new OpenAI({
+      apiKey: OpenAIKey,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
+    });
     if (aiProviderBaseUrl) {
-      openAIClient = new OpenAI({
-        apiKey: OpenAIKey,
-        baseURL: aiProviderBaseUrl
-      })   
-      Logger.info(`Found base_url and open ai key, using base_url for LLM`)
-    }else {
-      openAIClient = new OpenAI({
-        apiKey: OpenAIKey,
-      })    
+      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`);
     }
 
     openaiProvider = new OpenAIProvider(openAIClient)
@@ -147,22 +143,15 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    let together:Together
-    if(aiProviderBaseUrl) {
-      together = new Together({
-        apiKey: TogetherApiKey,
-        timeout: 4 * 60 * 1000,
-        maxRetries: 10,
-        baseURL: aiProviderBaseUrl,
-      })
-      
-      Logger.info(`Found base_url and together key, using base_url for LLM`)
-    }else {
-      together = new Together({
-        apiKey: TogetherApiKey,
-        timeout: 4 * 60 * 1000,
-        maxRetries: 10,
-      })
+    let together: Together;
+    together = new Together({
+      apiKey: TogetherApiKey,
+      timeout: 4 * 60 * 1000,
+      maxRetries: 10,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
+    });
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and together key, using base_url for LLM`);
     }
 
     togetherProvider = new TogetherProvider(together)
