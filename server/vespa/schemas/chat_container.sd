@@ -117,8 +117,21 @@ schema chat_container {
             expression: bm25(name) + bm25(topic) + bm25(description)
         }
 
+        function matchedFieldCount() {
+            expression {
+                 # The `matches` returns 1 if the field contains a match, otherwise 0
+                 matches(name) + matches(topic) + matches(description)
+            }
+        }
+
         function combined_nativeRank() {
-            expression: nativeRank(name) + nativeRank(topic) + nativeRank(description)
+            expression {
+                (
+                    nativeRank(name) + 
+                    nativeRank(topic) + 
+                    nativeRank(description)
+                ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+            }
         }
 
     }
@@ -140,6 +153,7 @@ schema chat_container {
         }
 
         match-features {
+          matchedFieldCount
           vector_score
           combined_nativeRank
           nativeRank(name)
