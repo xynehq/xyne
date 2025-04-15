@@ -57,8 +57,14 @@ class VespaClient {
           )
         }
 
-        // For 5xx errors or network issues, we retry it
-        if (response.status >= 500 && retryCount < this.maxRetries) {
+        // For 429 or 5xx errors, we retry it
+        if (
+          (response.status === 429 || response.status >= 500) &&
+          retryCount < this.maxRetries
+        ) {
+          Logger.warn(
+            `Received status ${response.status}. Retrying request... Attempt ${retryCount + 1}/${this.maxRetries}`,
+          )
           await this.delay(this.retryDelay * Math.pow(2, retryCount)) // Exponential backoff
           return this.fetchWithRetry(url, options, retryCount + 1)
         }
