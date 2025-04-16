@@ -294,6 +294,10 @@ async function insertChannelMessages(
             )
           }
           message.mentions = mentions
+          message.team = await getTeam(client, message)
+          if (message.text == "") {
+            message.text = "NA"
+          } 
           insertChatMessage(
             client,
             message,
@@ -367,6 +371,8 @@ async function insertChannelMessages(
               }
               reply.mentions = mentions
               reply.text = text
+              if(reply.text==""){reply.text="NA"}//case when text is empty
+              reply.team = await getTeam(client, reply)
               insertChatMessage(
                 client,
                 reply,
@@ -527,6 +533,28 @@ async function getConversationUsers(
   }
 }
 
+const getTeam = async(client: WebClient,
+  message: SlackMessage & { mentions?: string[] }) =>{
+    if(!message.team){
+      if(message.files){
+        for(const file of message.files) {
+          if (file.user_team) {
+            message.team = file.user_team
+            break
+          }
+        }
+      }
+    }
+    if(!message.team){
+      const res = await client.users.info({user: message.user!})
+      if(res.ok){
+        message.team = res.user?.team_id
+      }
+    }
+    return message.team;
+}
+
+
 const insertChatMessage = async (
   client: WebClient,
   message: SlackMessage & { mentions?: string[] },
@@ -537,26 +565,6 @@ const insertChatMessage = async (
 ) => {
   const editedTimestamp = message.edited ? parseFloat(message?.edited?.ts!) : 0
   
-  
-  if(!message.team){
-    if(message.files){
-      for(const file of message.files) {
-        if (file.user_team) {
-          message.team = file.user_team
-          break
-        }
-      }
-    }
-  }
-  if(!message.team){
-    const res = await client.conversations.info({channel: channelId})
-    if(res.ok){
-      message.team = res.channel?.context_team_id
-    }
-  }
-  if (!message.team) {
-    Logger.error("team id is undefined")
-  }
 
   return insertWithRetry(
     {
