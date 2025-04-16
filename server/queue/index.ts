@@ -45,11 +45,11 @@ const EveryMin = `*/1 * * * *`
 
 export const init = async () => {
   Logger.info("Starting queue initialization...")
-  
+
   Logger.info("Starting pg-boss...")
   await boss.start()
   Logger.info("pg-boss started successfully")
-  
+
   Logger.info("Creating queues...")
   await boss.createQueue(SaaSQueue)
   await boss.createQueue(SyncOAuthSaaSQueue)
@@ -57,11 +57,11 @@ export const init = async () => {
   await boss.createQueue(SyncGoogleWorkspace)
   await boss.createQueue(CheckDownloadsFolderQueue)
   Logger.info("All queues created successfully")
-  
+
   Logger.info("Initializing workers...")
   await initWorkers()
   Logger.info("Workers initialized successfully")
-  
+
   Logger.info("Queue system fully initialized")
 }
 
@@ -90,7 +90,7 @@ const initWorkers = async () => {
     Logger.info(`Processing SaaSQueue job ${job.id} started at ${start}`)
     const jobData: SaaSJob = job.data as SaaSJob
     Logger.info(`Job data: ${JSON.stringify(jobData, null, 2)}`)
-    
+
     try {
       if (
         jobData.app === Apps.GoogleDrive &&
@@ -109,23 +109,30 @@ const initWorkers = async () => {
         jobData.authType === AuthType.OAuth
       ) {
         Logger.info("Handling Slack Ingestion from Queue")
-        await handleSlackIngestion(boss, job)
-      } else if (jobData.app === Apps.WhatsApp && jobData.authType === AuthType.Custom) {
-        Logger.info(`Starting WhatsApp Ingestion for job ${job.id} with connector ${jobData.externalId}`)
+        // await handleSlackIngestion(boss, job)
+      } else if (
+        jobData.app === Apps.WhatsApp &&
+        jobData.authType === AuthType.Custom
+      ) {
+        Logger.info(
+          `Starting WhatsApp Ingestion for job ${job.id} with connector ${jobData.externalId}`,
+        )
         await handleWhatsAppIngestion(boss, job)
         Logger.info(`Completed WhatsApp Ingestion for job ${job.id}`)
       } else {
-        Logger.error(`Unsupported job type: ${jobData.app} with auth type ${jobData.authType}`)
+        Logger.error(
+          `Unsupported job type: ${jobData.app} with auth type ${jobData.authType}`,
+        )
         throw new Error("Unsupported job")
       }
-      
+
       const end = new Date()
       const duration = end.getTime() - start.getTime()
       Logger.info(`Job ${job.id} completed successfully in ${duration}ms`)
     } catch (error: any) {
       Logger.error(error, `Error processing job ${job.id}: ${error.message}`)
       await boss.fail(job.name, job.id)
-      throw error;
+      throw error
     }
   })
 
@@ -173,7 +180,7 @@ const initWorkers = async () => {
   await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
     await checkDownloadsFolder(boss, job)
   })
-  
+
   Logger.info("All workers initialized successfully")
 }
 
@@ -185,28 +192,4 @@ boss.on("error", (error) => {
 
 boss.on("monitor-states", (states) => {
   Logger.info(`Queue States: ${JSON.stringify(states, null, 2)}`)
-})
-
-boss.on("job", (job: Job) => {
-  Logger.info(`New job received: ${JSON.stringify({
-    id: job.id,
-    name: job.name,
-    data: job.data
-  }, null, 2)}`)
-})
-
-boss.on("failed", (job: Job) => {
-  Logger.error(`Job failed: ${JSON.stringify({
-    id: job.id,
-    name: job.name,
-    data: job.data
-  }, null, 2)}`)
-})
-
-boss.on("completed", (job: Job) => {
-  Logger.info(`Job completed: ${JSON.stringify({
-    id: job.id,
-    name: job.name,
-    data: job.data
-  }, null, 2)}`)
 })

@@ -20,7 +20,6 @@ import pLimit from "p-limit"
 import { GmailConcurrency } from "@/integrations/google/config"
 import { retryWithBackoff } from "@/utils"
 import { StatType, Tracker } from "@/integrations/tracker"
-import { StatType, Tracker } from "@/integrations/tracker"
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations)
 import { batchFetchImplementation } from "@jrmdayn/googleapis-batcher"

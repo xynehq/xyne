@@ -3,6 +3,15 @@ import { IsGoogleApp } from "@/utils"
 
 type Email = string
 type WorkspaceStats = Record<Email, UserStats>
+interface GoogleTotalStats {
+  totalMail: number
+  totalDrive: number
+}
+
+interface SlackTotalStats {
+  totalMessages: number
+  totalConversations: number
+}
 
 export enum StatType {
   Gmail = "gmailCount",
@@ -42,15 +51,20 @@ interface SlackStats {
   slackMessageReplyCount: number
 }
 
+// Union type for all possible stat types
+type UserStats = (
+  | (GoogleStats & Partial<GoogleTotalStats>)
+  | (SlackStats & Partial<SlackTotalStats>)
+  | WhatsAppStats
+) &
+  StatMetadata
+
 interface WhatsAppStats {
   whatsappMessageCount: number
   whatsappContactCount: number
   whatsappConversationCount: number
   whatsappGroupCount: number
 }
-
-// Union type for all possible stat types
-type UserStats = (GoogleStats | SlackStats | WhatsAppStats) & StatMetadata
 
 // Progress tracking types
 interface ServiceAccountProgress {
@@ -62,6 +76,8 @@ interface ServiceAccountProgress {
 interface OAuthProgress {
   user: string
   userStats: Record<string, UserStats>
+  current: number
+  total: number
 }
 // Global tracker object
 export const serviceAccountTracker: ServiceAccountProgress = {
@@ -74,9 +90,12 @@ export class Tracker {
   private app: Apps
   private serviceAccountProgress: ServiceAccountProgress
   private oAuthProgress: OAuthProgress
+  private authType: AuthType
+  private startTime: number
 
-  constructor(app: Apps) {
+  constructor(app: Apps, authType: AuthType) {
     this.app = app
+    this.authType = authType
     this.serviceAccountProgress = {
       totalUsers: 0,
       completedUsers: 0,
@@ -85,6 +104,49 @@ export class Tracker {
     this.oAuthProgress = {
       user: "",
       userStats: {},
+      current: 0,
+      total: 0,
+    }
+    this.startTime = new Date().getTime()
+  }
+
+  public updateTotal(
+    email: string,
+    appSpecificTotals: GoogleTotalStats | SlackTotalStats,
+  ) {
+    this.initializeUserStats(email)
+
+    const serviceStats = this.serviceAccountProgress.userStats[email]
+    const oAuthStats = this.oAuthProgress.userStats[email]
+
+    if (IsGoogleApp(this.app)) {
+      const totals = appSpecificTotals as GoogleTotalStats
+      if ("totalMail" in serviceStats) {
+        ;(serviceStats as GoogleStats & GoogleTotalStats).totalMail =
+          totals.totalMail
+        ;(serviceStats as GoogleStats & GoogleTotalStats).totalDrive =
+          totals.totalDrive
+      }
+      if ("totalMail" in oAuthStats) {
+        ;(oAuthStats as GoogleStats & GoogleTotalStats).totalMail =
+          totals.totalMail
+        ;(oAuthStats as GoogleStats & GoogleTotalStats).totalDrive =
+          totals.totalDrive
+      }
+    } else if (this.app === Apps.Slack) {
+      const totals = appSpecificTotals as SlackTotalStats
+      if ("totalMessages" in serviceStats) {
+        ;(serviceStats as SlackStats & SlackTotalStats).totalMessages =
+          totals.totalMessages
+        ;(serviceStats as SlackStats & SlackTotalStats).totalConversations =
+          totals.totalConversations
+      }
+      if ("totalMessages" in oAuthStats) {
+        ;(oAuthStats as SlackStats & SlackTotalStats).totalMessages =
+          totals.totalMessages
+        ;(oAuthStats as SlackStats & SlackTotalStats).totalConversations =
+          totals.totalConversations
+      }
     }
   }
 
@@ -111,6 +173,8 @@ export class Tracker {
           contactsCount: 0,
           eventsCount: 0,
           mailAttachmentCount: 0,
+          totalMail: 0,
+          totalDrive: 0,
           ...baseStats,
         }
       } else if (this.app === Apps.Slack) {
@@ -120,6 +184,8 @@ export class Tracker {
           slackConversationCount: 0,
           slackUserCount: 0,
           slackMessageReplyCount: 0,
+          totalMessages: 0,
+          totalConversations: 0,
           ...baseStats,
         }
       } else if (this.app === Apps.WhatsApp) {
@@ -142,6 +208,8 @@ export class Tracker {
           contactsCount: 0,
           eventsCount: 0,
           mailAttachmentCount: 0,
+          totalMail: 0,
+          totalDrive: 0,
           ...baseOAuthStats,
         }
       } else if (this.app === Apps.Slack) {
@@ -150,6 +218,8 @@ export class Tracker {
           slackMessageCount: 0,
           slackConversationCount: 0,
           slackMessageReplyCount: 0,
+          totalMessages: 0,
+          totalConversations: 0,
           ...baseOAuthStats,
         }
       } else if (this.app === Apps.WhatsApp) {
@@ -194,30 +264,35 @@ export class Tracker {
 
   getProgress(): number {
     if (IsGoogleApp(this.app)) {
-      return Math.floor(
-        (this.serviceAccountProgress.completedUsers /
-          this.serviceAccountProgress.totalUsers) *
-          100,
-      )
+      if (this.authType === AuthType.ServiceAccount) {
+        return Math.floor(
+          (this.serviceAccountProgress.completedUsers /
+            this.serviceAccountProgress.totalUsers) *
+            100,
+        )
+      } else {
+        return 0
+      }
     } else if (this.app === Apps.Slack) {
-      return 0
-      // return Math.floor(this.oAuthProgress.userStats[this.oAuthProgress.user].slackConversationCount/)
+      return Math.floor(this.oAuthProgress.current / this.oAuthProgress.total)
     } else if (this.app === Apps.WhatsApp) {
-      const stats = this.oAuthProgress.userStats[this.oAuthProgress.user] as WhatsAppStats & StatMetadata;
-      if (!stats) return 0;
-      
+      const stats = this.oAuthProgress.userStats[
+        this.oAuthProgress.user
+      ] as WhatsAppStats & StatMetadata
+      if (!stats) return 0
+
       // Calculate progress based on WhatsApp metrics
       // We consider the ingestion complete when we have both messages and contacts
-      const hasMessages = stats.whatsappMessageCount > 0;
-      const hasContacts = stats.whatsappContactCount > 0;
-      const hasConversations = stats.whatsappConversationCount > 0;
-      
+      const hasMessages = stats.whatsappMessageCount > 0
+      const hasContacts = stats.whatsappContactCount > 0
+      const hasConversations = stats.whatsappConversationCount > 0
+
       if (hasMessages && hasContacts && hasConversations) {
-        return 100;
+        return 100
       } else if (hasMessages || hasContacts || hasConversations) {
-        return 50;
+        return 50
       }
-      return 0;
+      return 0
     } else {
       throw new Error("Invalid app for progress")
     }
@@ -234,81 +309,15 @@ export class Tracker {
   getOAuthProgress(): OAuthProgress {
     return { ...this.oAuthProgress }
   }
+
+  getStartTime(): number {
+    return this.startTime
+  }
+
+  setCurrent(curr: number) {
+    this.oAuthProgress.current = curr
+  }
+  setTotal(total: number) {
+    this.oAuthProgress.total = total
+  }
 }
-
-// export const newServiceAccountTracker = (app: Apps): ServiceAccountProgress => {
-//   return {
-//     totalUsers: 0,
-//     completedUsers: 0,
-//     userStats: {},
-//   }
-// }
-
-// export const oAuthTracker: OAuthProgress = {
-//   user: "",
-//   userStats: {},
-// }
-// // Helper functions to update tracker
-// const initializeUserStats = (app: Apps, email: string) => {
-//   if (!serviceAccountTracker.userStats[email]) {
-//     serviceAccountTracker.userStats[email] = {
-//       gmailCount: 0,
-//       driveCount: 0,
-//       contactsCount: 0,
-//       eventsCount: 0,
-//       mailAttachmentCount: 0,
-//       done: false,
-//       startedAt: new Date().getTime(),
-//       doneAt: 0,
-//       type: AuthType.ServiceAccount,
-//     }
-//   }
-//   if (!oAuthTracker.userStats[email]) {
-//     oAuthTracker.userStats[email] = {
-//       gmailCount: 0,
-//       driveCount: 0,
-//       contactsCount: 0,
-//       eventsCount: 0,
-//       mailAttachmentCount: 0,
-//       done: false,
-//       startedAt: new Date().getTime(),
-//       doneAt: 0,
-//       type: AuthType.OAuth,
-//     }
-//   }
-
-// }
-
-// export const updateUserStats = (
-//   app: Apps,
-//   email: string,
-//   type: StatType,
-//   count: number,
-// ) => {
-//   initializeUserStats(email)
-//   serviceAccountTracker.userStats[email][type] += count
-//   oAuthTracker.userStats[email][type] += count
-// }
-
-// export const markUserComplete = (email: string) => {
-//   if (!serviceAccountTracker.userStats[email].done) {
-//     serviceAccountTracker.userStats[email].done = true
-//     serviceAccountTracker.userStats[email].doneAt = new Date().getTime()
-//     serviceAccountTracker.completedUsers++
-//   }
-// }
-
-// export const setTotalUsers = (total: number) => {
-//   serviceAccountTracker.totalUsers = total
-// }
-
-// export const getProgress = (): number => {
-//   return Math.floor(
-//     (serviceAccountTracker.completedUsers / serviceAccountTracker.totalUsers) *
-//       100,
-//   )
-// }
-
-// export const setOAuthUser = (mail: string) => {
-//   oAuthTracker.user = mail
-// }

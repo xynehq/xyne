@@ -33,7 +33,6 @@ let GeminiApiKey = ""
 let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
-let slackHost = process.env.SLACK_HOST
 
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model

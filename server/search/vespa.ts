@@ -11,8 +11,6 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
-  chatUserSchema,
-  chatMessageSchema,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
