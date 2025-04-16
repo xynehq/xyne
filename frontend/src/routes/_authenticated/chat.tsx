@@ -87,7 +87,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
   const [showRagTrace, setShowRagTrace] = useState(false) // Added state
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null) // Added state
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
+    null,
+  ) // Added state
 
   const currentRespRef = useRef<CurrentResp | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
@@ -763,9 +765,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }
 
   const handleShowRagTrace = (messageId: string) => {
-    setSelectedMessageId(messageId);
-    setShowRagTrace(true);
-  };
+    setSelectedMessageId(messageId)
+    setShowRagTrace(true)
+  }
 
   return (
     <div className="h-full w-full flex flex-row bg-white">
@@ -922,7 +924,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             </div>
             {showRagTrace && chatId && selectedMessageId && (
               <div className="fixed inset-0 z-50 bg-white overflow-auto">
-                <RagTraceVirtualization 
+                <RagTraceVirtualization
                   chatId={chatId}
                   messageId={selectedMessageId}
                   onClose={() => {
@@ -1221,7 +1223,7 @@ const ChatMessage = ({
           </div>
           {responseDone && !isRetrying && (
             <div className="flex flex-col">
-              <button 
+              <button
                 className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
                 onClick={() => messageId && onShowRagTrace(messageId)}
               >

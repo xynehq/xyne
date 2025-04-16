@@ -2,22 +2,10 @@ interface SpanAttributes {
   [key: string]: string | number | boolean | null
 }
 
-interface SpanEvent {
+export interface SpanEvent {
   name: string
   timestamp: number
   attributes?: SpanAttributes
-}
-
-export interface Span {
-  traceId: string
-  spanId: string
-  parentSpanId?: string
-  name: string
-  startTime: number | null
-  endTime: number | null
-  duration: number | null
-  attributes: SpanAttributes
-  events: SpanEvent[]
 }
 
 export interface Tracer {
@@ -32,6 +20,75 @@ export interface Tracer {
   serializeToJson(): string
 }
 
+// Span interface remains for type compatibility
+export interface Span {
+  traceId: string
+  spanId: string
+  parentSpanId?: string
+  name: string
+  startTime: number | null
+  endTime: number | null
+  duration: number | null
+  attributes: SpanAttributes
+  events: SpanEvent[]
+  setAttribute(key: string, value: string | number | boolean | null): Span
+  addEvent(name: string, attributes?: SpanAttributes): Span
+  startSpan(name: string): Span
+  end(): Span
+}
+
+// Span implementation as a class
+class SpanImpl implements Span {
+  traceId: string
+  spanId: string
+  parentSpanId?: string
+  name: string
+  startTime: number | null
+  endTime: number | null
+  duration: number | null
+  attributes: SpanAttributes
+  events: SpanEvent[]
+  private tracer: Tracer
+
+  constructor(
+    tracer: Tracer,
+    traceId: string,
+    spanId: string,
+    name: string,
+    parentSpanId?: string,
+  ) {
+    this.tracer = tracer
+    this.traceId = traceId
+    this.spanId = spanId
+    this.parentSpanId = parentSpanId
+    this.name = name
+    this.startTime = Date.now()
+    this.endTime = null
+    this.duration = null
+    this.attributes = {}
+    this.events = []
+  }
+
+  setAttribute(key: string, value: string | number | boolean | null): Span {
+    this.tracer.setAttribute(this, key, value)
+    return this
+  }
+
+  addEvent(name: string, attributes?: SpanAttributes): Span {
+    this.tracer.addEvent(this, name, attributes)
+    return this
+  }
+
+  startSpan(name: string): Span {
+    return this.tracer.startSpan(name, { parentSpan: this })
+  }
+
+  end(): Span {
+    this.tracer.endSpan(this)
+    return this
+  }
+}
+
 class CustomTracer implements Tracer {
   private spans: Span[] = []
   private traceId: string
@@ -42,17 +99,13 @@ class CustomTracer implements Tracer {
 
   startSpan(name: string, options: { parentSpan?: Span } = {}): Span {
     const spanId = `${name}-${Math.random().toString(16).substring(2, 10)}`
-    const span: Span = {
-      traceId: this.traceId,
+    const span = new SpanImpl(
+      this,
+      this.traceId,
       spanId,
-      parentSpanId: options.parentSpan?.spanId,
       name,
-      startTime: Date.now(),
-      endTime: null,
-      duration: null,
-      attributes: {},
-      events: [],
-    }
+      options.parentSpan?.spanId,
+    )
     this.spans.push(span)
     return span
   }
