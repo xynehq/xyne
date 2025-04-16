@@ -1,21 +1,19 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api';
 import {
-  Search,
   AlertCircle,
-  Clock,
-  CheckCircle,
-  XCircle,
   Moon,
   Sun,
-  ChevronRight,
-  ChevronDown,
   Code,
   X,
-  Layers,
   BarChart2,
-  Activity
+  Activity,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  GripVertical
 } from 'lucide-react';
 
 interface TraceSpan {
@@ -56,6 +54,12 @@ interface RagTraceVirtualizationProps {
 
 interface SafeSpan extends TraceSpan {
   children?: SafeSpan[];
+  citationNumber?: number;
+}
+
+interface CitationReference {
+  number: number;
+  spanId: string;
 }
 
 const fetchChatTrace = async (chatId: string, messageId: string): Promise<TraceJson> => {
@@ -63,6 +67,7 @@ const fetchChatTrace = async (chatId: string, messageId: string): Promise<TraceJ
     const res = await api.chat.trace.$get({
       query: { chatId, messageId },
     });
+    console.log(res)
     if (!res.ok) throw new Error("Error fetching chat trace");
     return await res.json();
   } catch (error) {
@@ -82,6 +87,14 @@ const parseTraceJson = (data: any): any => {
     }
   }
   return data;
+};
+
+const parseCitationItem = (citationItemStr: string): any => {
+  try {
+    return JSON.parse(citationItemStr);
+  } catch (e) {
+    return { raw: citationItemStr };
+  }
 };
 
 const safeCalculateDuration = (spans: SafeSpan[]): number => {
@@ -123,12 +136,34 @@ const validateSpanData = (span: SafeSpan): boolean => {
   return Boolean(span && typeof span.startTime === 'number' && !isNaN(span.startTime));
 };
 
+const extractCitationInfo = (span: SafeSpan): any => {
+  if (!span.attributes) return null;
+  
+  const citationItem = span.attributes['citation.item'];
+  
+  if (!citationItem) return null;
+  
+  try {
+    if (typeof citationItem === 'string') {
+      return parseCitationItem(citationItem);
+    }
+    return citationItem;
+  } catch (e) {
+    return { raw: citationItem };
+  }
+};
+
 export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceVirtualizationProps) {
   const [selectedSpanIds, setSelectedSpanIds] = useState<string[]>([]);
-  const [expandedSpans, setExpandedSpans] = useState<Record<string, boolean>>({});
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"hierarchy" | "timeline" | "json">("hierarchy");
+  const [selectedSpanIndex, setSelectedSpanIndex] = useState<number>(0);
+  const [activeTab, setActiveTab] = useState<"timeline" | "json">("timeline");
   const [darkMode, setDarkMode] = useState(true);
+  const [showSpanDetails, setShowSpanDetails] = useState(true);
+  const [citationReferences, setCitationReferences] = useState<CitationReference[]>([]);
+  const [showTimeline, setShowTimeline] = useState(true);
+  const [panelWidth, setPanelWidth] = useState(420); // Initial width in pixels (equivalent to w-96)
+  const contentRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
 
   const { data: rawTraceData, isLoading, error } = useQuery({
     queryKey: ["traceData", chatId, messageId],
@@ -144,18 +179,54 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
     let spans: SafeSpan[] = Array.isArray(parsedData?.spans) ? parsedData.spans :
                            typeof parsedData?.spans === 'object' ? Object.values(parsedData.spans) :
                            Array.isArray(parsedData) ? parsedData : [];
-    const normalizedSpans = spans.map((span: any) => ({
-      ...span,
-      spanId: span.spanId || span.id || span.name || `span-${Math.random().toString(36).substr(2, 9)}`,
-      parentSpanId: span.parentSpanId || span.parentId || null,
-      name: span.name || span.spanId || 'Unnamed Span',
-      startTime: span.startTime != null ? Number(span.startTime) : null,
-      endTime: span.endTime != null ? Number(span.endTime) : null,
-      duration: span.duration != null ? Number(span.duration) :
-               (span.startTime != null && span.endTime != null ? Number(span.endTime) - Number(span.startTime) : null),
-      attributes: span.attributes || {},
-      events: span.events || [],
-    }));
+                           
+    const citationRefs: CitationReference[] = [];
+    
+    const normalizedSpans = spans.map((span: any) => {
+      const isVespaSearch = span.name === 'vespaSearch';
+      let citationNumber = null;
+      let citationData = null;
+      
+      if (isVespaSearch && span.attributes?.['citation.index'] != null) {
+        citationNumber = Number(span.attributes['citation.index']);
+        citationData = extractCitationInfo(span);
+        
+        citationRefs.push({
+          number: citationNumber,
+          spanId: span.spanId || span.id || `span-${Math.random().toString(36).substr(2, 9)}`
+        });
+      }
+      
+      const attributes = { ...span.attributes || {} };
+      if (citationData && citationNumber != null) {
+        if (typeof citationData === 'object' && citationData !== null) {
+          Object.entries(citationData).forEach(([key, value]) => {
+            attributes[key] = value; // Use base key (e.g., 'id' instead of 'citation.data.id')
+          });
+        }
+        delete attributes['citation.item']; // Remove citation.item
+        delete attributes['citation.number']; // Remove citation.number
+      }
+      
+      return {
+        ...span,
+        spanId: span.spanId || span.id || span.name || `span-${Math.random().toString(36).substr(2, 9)}`,
+        parentSpanId: span.parentSpanId || span.parentId || null,
+        name: isVespaSearch && citationNumber != null ? `Citation ${citationNumber}` : (span.name || span.spanId || 'Unnamed Span'),
+        startTime: span.startTime != null ? Number(span.startTime) : null,
+        endTime: span.endTime != null ? Number(span.endTime) : null,
+        duration: span.duration != null ? Number(span.duration) :
+                 (span.startTime != null && span.endTime != null ? Number(span.endTime) - Number(span.startTime) : null),
+        attributes: attributes,
+        events: span.events || [],
+        citationNumber
+      };
+    });
+    
+    citationRefs.sort((a, b) => a.number - b.number);
+    
+    setCitationReferences(citationRefs);
+    
     return {
       ...parsedData,
       spans: normalizedSpans,
@@ -164,270 +235,345 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
   }, [rawTraceData]);
 
   useEffect(() => {
-    if (hierarchy && hierarchy.length > 0) {
-      const rootSpanIds = hierarchy.map(span => span.spanId);
-      const initialExpandedState: Record<string, boolean> = {};
-      rootSpanIds.forEach(id => {
-        initialExpandedState[id!] = true;
-      });
-      setExpandedSpans(prev => ({ ...prev, ...initialExpandedState }));
+    if (traceData?.spans && traceData.spans.length > 0 && selectedSpanIds.length === 0) {
+      const firstSpan = traceData.spans.find((span : SafeSpan)=> validateSpanData(span));
+      if (firstSpan?.spanId) {
+        setSelectedSpanIds([firstSpan.spanId]);
+        const index = traceData.spans.indexOf(firstSpan);
+        setSelectedSpanIndex(index >= 0 ? index : 0);
+        setShowSpanDetails(true);
+      }
     }
   }, [traceData]);
-
-  const hierarchy = useMemo(() => {
-    if (!traceData?.spans || !Array.isArray(traceData.spans)) return [];
-    const spanMap = new Map<string, SafeSpan>();
-    const rootSpans: SafeSpan[] = [];
-    traceData.spans.forEach((span: SafeSpan) => {
-      if (!span?.spanId) return;
-      spanMap.set(span.spanId, { ...span, children: [] });
-    });
-    traceData.spans.forEach((span: SafeSpan) => {
-      if (!span?.spanId) return;
-      const spanWithChildren = spanMap.get(span.spanId)!;
-      if (!span.parentSpanId) {
-        rootSpans.push(spanWithChildren);
-      } else {
-        const parent = spanMap.get(span.parentSpanId);
-        if (parent) {
-          parent.children = parent.children || [];
-          parent.children.push(spanWithChildren);
-        } else {
-          rootSpans.push(spanWithChildren);
-        }
-      }
-    });
-    return rootSpans.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
-  }, [traceData]);
-
-  const filteredHierarchy = useMemo(() => {
-    if (!searchQuery.trim() || !hierarchy) return hierarchy;
-    const matchesSearch = (span: SafeSpan): boolean => {
-      if (!span) return false;
-      const queryLower = searchQuery.toLowerCase();
-      const spanMatches = 
-        (span.name?.toLowerCase().includes(queryLower)) ||
-        (span.spanId?.toLowerCase().includes(queryLower)) ||
-        (span.attributes && Object.entries(span.attributes).some(([key, value]) => 
-          key.toLowerCase().includes(queryLower) || String(value).toLowerCase().includes(queryLower)
-        )) ||
-        (span.events && span.events.some(event => JSON.stringify(event).toLowerCase().includes(queryLower)));
-      return spanMatches || (span.children?.some(matchesSearch) ?? false);
-    };
-    const filterWithParents = (spans: SafeSpan[]): SafeSpan[] => {
-      return spans.reduce((acc: SafeSpan[], span: SafeSpan) => {
-        if (matchesSearch(span)) {
-          acc.push({
-            ...span,
-            children: span.children ? filterWithParents(span.children) : []
-          });
-        } else if (span.children?.some(matchesSearch)) {
-          acc.push({
-            ...span,
-            children: span.children ? filterWithParents(span.children) : []
-          });
-        }
-        return acc;
-      }, []);
-    };
-    return filterWithParents(hierarchy);
-  }, [hierarchy, searchQuery]);
-
-  const toggleExpand = (spanId: string) => {
-    setExpandedSpans(prev => ({
-      ...prev,
-      [spanId]: !prev[spanId]
-    }));
-  };
 
   const toggleSelected = (spanId: string) => {
-    setSelectedSpanIds(prev => 
-      prev.includes(spanId) ? prev.filter(id => id !== spanId) : [spanId]
-    );
-  };
-
-  const getSpanStatus = (span: SafeSpan) => {
-    if (!span) return 'unknown';
-    if (span.endTime == null) return 'pending';
-    return 'completed';
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return <CheckCircle className="text-green-500" size={16} />;
-      case 'pending': return <Clock className="text-yellow-500" size={16} />;
-      case 'error': return <XCircle className="text-red-500" size={16} />;
-      default: return <AlertCircle className="text-gray-500" size={16} />;
+    if (selectedSpanIds.includes(spanId)) {
+      setSelectedSpanIds([]);
+      setSelectedSpanIndex(0);
+      setShowSpanDetails(false);
+    } else {
+      setSelectedSpanIds([spanId]);
+      const spans = traceData?.spans || [];
+      const index = spans.findIndex((span: SafeSpan) => span.spanId === spanId);
+      setSelectedSpanIndex(index >= 0 ? index : 0);
+      setShowSpanDetails(true);
     }
   };
 
-  const renderSpanTree = (span: SafeSpan, depth: number = 0) => {
-    if (!span) return null;
-    const spanId = span.spanId || 'unknown';
-    const isExpanded = expandedSpans[spanId] || false;
-    const isSelected = selectedSpanIds.includes(spanId);
-    const status = getSpanStatus(span);
-    const hasChildren = span.children && span.children.length > 0;
+  const getValidSpans = () => {
+    if (!traceData?.spans || !Array.isArray(traceData.spans)) return [];
+    return traceData.spans.filter(validateSpanData);
+  };
+
+  const navigateToSpan = (direction: 'next' | 'prev') => {
+    const validSpans = getValidSpans();
+    if (validSpans.length === 0 || selectedSpanIds.length === 0) return;
+    
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = (selectedSpanIndex + 1) % validSpans.length;
+    } else {
+      newIndex = (selectedSpanIndex - 1 + validSpans.length) % validSpans.length;
+    }
+    
+    setSelectedSpanIndex(newIndex);
+    setSelectedSpanIds([validSpans[newIndex].spanId || '']);
+  };
+
+  const handleCitationClick = (citationNumber: number) => {
+    if (citationNumber == null || !citationReferences) return;
+    
+    const reference = citationReferences.find(ref => ref.number === citationNumber);
+    if (!reference?.spanId) return;
+
+    const spans = traceData?.spans || [];
+    const index = spans.findIndex((span: SafeSpan) => span.spanId === reference.spanId);
+    
+    if (index >= 0) {
+      setSelectedSpanIds([reference.spanId]);
+      setSelectedSpanIndex(index);
+      setShowSpanDetails(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!contentRef.current || !citationReferences?.length) return;
+
+    const processNode = (node: Node) => {
+      if (node.nodeType !== Node.TEXT_NODE) return;
+
+      const text = node.textContent || '';
+      const regex = /\[(\d+)\]/g;
+      let match;
+      let lastIndex = 0;
+      const fragments: (Node | Text)[] = [];
+      
+      while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          fragments.push(document.createTextNode(text.substring(lastIndex, match.index)));
+        }
+        
+        const citationNumber = parseInt(match[1], 10);
+        if (!isNaN(citationNumber) && citationReferences.some(ref => ref.number === citationNumber)) {
+          const span = document.createElement('span');
+          span.textContent = `[${citationNumber}]`;
+          span.className = 'text-blue-500 cursor-pointer font-bold hover:underline';
+          span.dataset.citation = citationNumber.toString();
+          span.onclick = () => handleCitationClick(citationNumber);
+          fragments.push(span);
+        } else {
+          fragments.push(document.createTextNode(match[0]));
+        }
+        
+        lastIndex = match.index + match[0].length;
+      }
+
+      if (lastIndex < text.length) {
+        fragments.push(document.createTextNode(text.substring(lastIndex)));
+      }
+
+      if (fragments.length > 1) {
+        const parent = node.parentNode;
+        if (parent) {
+          fragments.forEach(fragment => {
+            parent.insertBefore(fragment, node);
+          });
+          parent.removeChild(node);
+        }
+      }
+    };
+
+    const walker = document.createTreeWalker(
+      contentRef.current,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let node: Node | null = walker.nextNode();
+    while (node) {
+      processNode(node);
+      node = walker.nextNode();
+    }
+  }, [contentRef.current, citationReferences]);
+
+  const renderAnswerText = () => {
+    const answerText = traceData?.spans?.find((span: SafeSpan) => span.attributes?.['answer.text'])?.attributes?.['answer.text'];
+    if (!answerText) return null;
+
     return (
-      <div key={spanId} className="w-full">
-        <div 
-          className={`flex items-center p-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors ${
-            isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''
-          }`}
-          style={{ paddingLeft: `${depth * 16 + 8}px` }}
-          onClick={() => toggleSelected(spanId)}
-        >
-          {hasChildren && (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(spanId);
-              }}
-              className="mr-1 flex items-center justify-center w-5 h-5"
-            >
-              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            </button>
-          )}
-          {!hasChildren && <div className="w-5 h-5 mr-1" />}
-          <div className="flex flex-1 items-center">
-            {getStatusIcon(status)}
-            <span className="ml-2 font-medium">{span.name || spanId}</span>
-            {span.duration != null && (
-              <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                {formatDuration(span.duration)}
-              </span>
-            )}
-          </div>
+      <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+        <h4 className="text-sm font-bold mb-2">Answer</h4>
+        <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap" ref={contentRef}>
+          {answerText}
         </div>
-        {isExpanded && hasChildren && (
-          <div className="ml-2">
-            {span.children!.map((child: SafeSpan) => renderSpanTree(child, depth + 1))}
-          </div>
-        )}
-        {isSelected && (
-          <div className="border-l-2 border-blue-500 ml-6 pl-4 py-2 mb-2 bg-gray-50 dark:bg-gray-800/50">
-            <h4 className="font-bold text-sm mb-2">Span Details</h4>
-            <div className="grid grid-cols-2 gap-1 text-xs">
-              <div className="font-medium">ID:</div>
-              <div className="font-mono">{spanId}</div>
-              {span.parentSpanId && (
-                <>
-                  <div className="font-medium">Parent:</div>
-                  <div className="font-mono">{span.parentSpanId}</div>
-                </>
-              )}
-              {span.startTime != null && (
-                <>
-                  <div className="font-medium">Start:</div>
-                  <div>{new Date(span.startTime).toLocaleString()}</div>
-                </>
-              )}
-              {span.endTime != null && (
-                <>
-                  <div className="font-medium">End:</div>
-                  <div>{new Date(span.endTime).toLocaleString()}</div>
-                </>
-              )}
-              {span.duration != null && (
-                <>
-                  <div className="font-medium">Duration:</div>
-                  <div>{formatDuration(span.duration)}</div>
-                </>
-              )}
-              {span.traceId && (
-                <>
-                  <div className="font-medium">Trace ID:</div>
-                  <div className="font-mono truncate">{span.traceId}</div>
-                </>
-              )}
-            </div>
-            {span.attributes && Object.keys(span.attributes).length > 0 && (
-              <div className="mt-3">
-                <h5 className="font-bold text-xs mb-1">Attributes</h5>
-                <div className="bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 max-h-40 overflow-y-auto">
-                  <pre className="text-xs whitespace-pre-wrap">
-                    {JSON.stringify(span.attributes, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            )}
-            {span.events && span.events.length > 0 && (
-              <div className="mt-3">
-                <h5 className="font-bold text-xs mb-1">Events ({span.events.length})</h5>
-                <div className="bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 max-h-40 overflow-y-auto">
-                  <pre className="text-xs whitespace-pre-wrap">
-                    {JSON.stringify(span.events, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     );
   };
 
-  const getSelectedSpanDetails = (spans: SafeSpan[], selectedId: string): SafeSpan | undefined => {
-    return spans.find(span => span.spanId === selectedId);
+  const renderAttributesTable = (attributes: Record<string, any>) => {
+    if (!attributes || Object.keys(attributes).length === 0) {
+      return <div className="text-sm text-gray-500 italic">No attributes available</div>;
+    }
+
+    const sortedKeys = Object.keys(attributes).sort((a, b) => a.localeCompare(b));
+
+    return (
+      <div className="overflow-auto max-h-96 border border-gray-200 dark:border-gray-700 rounded">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-100 dark:bg-gray-800">
+            <tr>
+              <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">Key</th>
+              <th className="px-4 py-2 text-left font-medium text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedKeys.map((key, index) => {
+              const value = attributes[key];
+              const isUrl = typeof value === 'string' && /^https?:\/\//.test(value);
+              
+              return (
+                <tr key={key} className={index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}>
+                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 font-medium">
+                    {key}
+                  </td>
+                  <td className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 font-mono">
+                    {isUrl ? (
+                      <a
+                        href={value}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:underline"
+                      >
+                        {value}
+                      </a>
+                    ) : typeof value === 'object' ? (
+                      <div className="whitespace-pre-wrap text-xs bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
+                        {renderNestedObject(value)}
+                      </div>
+                    ) : (
+                      String(value)
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+  
+  const renderNestedObject = (obj: any, indent = 0): JSX.Element => {
+    if (typeof obj !== 'object' || obj === null) {
+      return <span>{String(obj)}</span>;
+    }
+    
+    if (Array.isArray(obj)) {
+      return (
+        <div>
+          {obj.map((item, idx) => (
+            <div key={idx} style={{ marginLeft: `${indent * 8}px` }}>
+              - {renderNestedObject(item, indent + 1)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    
+    return (
+      <div>
+        {Object.entries(obj).map(([key, value], idx) => (
+          <div key={key} style={{ marginLeft: `${indent * 8}px` }}>
+            <span className="font-medium">{key}: </span>
+            {typeof value === 'object' ? (
+              <div style={{ marginLeft: '8px' }}>
+                {renderNestedObject(value, indent + 1)}
+              </div>
+            ) : (
+              <span>{String(value)}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderSpanBasicInfo = (span: SafeSpan) => {
+    if (!span) return null;
+    
+    return (
+      <div className="mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <h5 className="font-bold text-sm">
+            {span.citationNumber ? (
+              <span className="flex items-center">
+                <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded-full text-xs mr-2">
+                  Citation #{span.citationNumber}
+                </span>
+                Attributes
+              </span>
+            ) : (
+              "Attributes"
+            )}
+          </h5>
+          <button 
+            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center"
+            onClick={() => setShowSpanDetails(!showSpanDetails)}
+            title={showSpanDetails ? "Hide details" : "Show details"}
+          >
+            {showSpanDetails ? <EyeOff size={18} /> : <Eye size={18} />}
+            <span className="ml-1 text-xs">{showSpanDetails ? "Hide details" : "Show details"}</span>
+          </button>
+        </div>
+        {span.attributes && renderAttributesTable(span.attributes)}
+      </div>
+    );
   };
 
   const renderSpanDetails = (span: SafeSpan) => {
     if (!span) return null;
     
     return (
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        <div className="font-medium">ID:</div>
-        <div className="font-mono">{span.spanId}</div>
-        {span.parentSpanId && (
+      <div className="space-y-4">
+        {renderSpanBasicInfo(span)}
+        
+        {showSpanDetails && (
           <>
-            <div className="font-medium">Parent:</div>
-            <div className="font-mono">{span.parentSpanId}</div>
-          </>
-        )}
-        {span.startTime != null && (
-          <>
-            <div className="font-medium">Start:</div>
-            <div>{new Date(span.startTime).toLocaleString()}</div>
-          </>
-        )}
-        {span.endTime != null && (
-          <>
-            <div className="font-medium">End:</div>
-            <div>{new Date(span.endTime).toLocaleString()}</div>
-          </>
-        )}
-        {span.duration != null && (
-          <>
-            <div className="font-medium">Duration:</div>
-            <div>{formatDuration(span.duration)}</div>
-          </>
-        )}
-        {span.traceId && (
-          <>
-            <div className="font-medium">Trace ID:</div>
-            <div className="font-mono truncate">{span.traceId}</div>
-          </>
-        )}
-        {span.attributes && Object.keys(span.attributes).length > 0 && (
-          <div className="col-span-2 mt-2">
-            <h5 className="font-bold text-sm mb-1">Attributes</h5>
-            <div className="bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
-              <pre className="text-sm whitespace-pre-wrap">
-                {JSON.stringify(span.attributes, null, 2)}
-              </pre>
+            <div className="mt-4 border-t pt-4 border-gray-200 dark:border-gray-700">
+              <h5 className="font-bold text-sm mb-2">Span Details</h5>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="font-medium">ID:</div>
+                <div className="font-mono">{span.spanId}</div>
+                {span.parentSpanId && (
+                  <>
+                    <div className="font-medium">Parent:</div>
+                    <div className="font-mono">{span.parentSpanId}</div>
+                  </>
+                )}
+                {span.startTime != null && (
+                  <>
+                    <div className="font-medium">Start:</div>
+                    <div>{new Date(span.startTime).toLocaleString()}</div>
+                  </>
+                )}
+                {span.endTime != null && (
+                  <>
+                    <div className="font-medium">End:</div>
+                    <div>{new Date(span.endTime).toLocaleString()}</div>
+                  </>
+                )}
+                {span.duration != null && (
+                  <>
+                    <div className="font-medium">Duration:</div>
+                    <div>{formatDuration(span.duration)}</div>
+                  </>
+                )}
+                {span.traceId && (
+                  <>
+                    <div className="font-medium">Trace ID:</div>
+                    <div className="font-mono truncate">{span.traceId}</div>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+            
+            {span.events && span.events.length > 0 && (
+              <div className="mt-4">
+                <h5 className="font-bold text-sm mb-2">Events ({span.events.length})</h5>
+                <div className="bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
+                  <pre className="text-sm whitespace-pre-wrap">
+                    {JSON.stringify(span.events, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </>
         )}
-        {span.events && span.events.length > 0 && (
-          <div className="col-span-2 mt-2">
-            <h5 className="font-bold text-sm mb-1">Events ({span.events.length})</h5>
-            <div className="bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
-              <pre className="text-sm whitespace-pre-wrap">
-                {JSON.stringify(span.events, null, 2)}
-              </pre>
-            </div>
-          </div>
-        )}
+      </div>
+    );
+  };
+
+  const renderCitationReferences = () => {
+    if (citationReferences.length === 0) return null;
+    
+    return (
+      <div className="mb-4 border-b border-gray-200 dark:border-gray-700 pb-3">
+        <h4 className="text-sm font-bold mb-2">Citations</h4>
+        <div className="flex flex-wrap gap-2">
+          {citationReferences.map(ref => (
+            <button
+              key={ref.spanId}
+              className={`px-2 py-1 text-xs rounded-full font-medium ${
+                selectedSpanIds.includes(ref.spanId) 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+              onClick={() => toggleSelected(ref.spanId)}
+            >
+              {ref.number}
+            </button>
+          ))}
+        </div>
       </div>
     );
   };
@@ -448,62 +594,94 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
     }
 
     const { minTime, totalDuration } = timelineData;
-    const sortedSpans = [...validSpans].sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
+    const selectedSpan = selectedSpanIds.length > 0 ? getSelectedSpanDetails(validSpans, selectedSpanIds[0]) : undefined;
+    
+    const sortedSpans = [...validSpans].sort((a, b) => {
+      const timeComparison = (a.startTime ?? 0) - (b.startTime ?? 0);
+      if (timeComparison !== 0) return timeComparison;
+      if (a.parentSpanId === b.spanId) return 1;
+      if (b.parentSpanId === a.spanId) return -1;
+      return (a.duration ?? 0) - (b.duration ?? 0);
+    });
 
     return (
-      <div className="w-full p-4">
+      <div className="w-full p-4" ref={contentRef}>
         <div className="mb-4 text-sm text-gray-600 dark:text-gray-300 pb-3 border-b border-gray-200 dark:border-gray-700">
           Total Duration: {formatDuration(totalDuration)}
         </div>
-        <div className="relative w-full mt-8">
-          {sortedSpans.map((span) => {
-            const spanId = span.spanId || 'unknown';
-            const startOffset = ((Number(span.startTime) - minTime) / totalDuration) * 100;
-            const duration = span.duration || (span.endTime ? Number(span.endTime) - Number(span.startTime) : 0);
-            const durationPercent = Math.max(0.5, (duration / totalDuration) * 100);
+        
+        {renderCitationReferences()}
+        
+        {renderAnswerText()}
+        
+        {showTimeline ? (
+          <div className="relative w-full mt-8">
+            {sortedSpans.map((span, index) => {
+              const spanId = span.spanId || 'unknown';
+              const startOffset = ((Number(span.startTime) - minTime) / totalDuration) * 100;
+              const duration = span.duration || (span.endTime ? Number(span.endTime) - Number(span.startTime) : 0);
+              const durationPercent = Math.max(0.5, (duration / totalDuration) * 100);
+              
+              const displayName = span.name;
 
-            return (
-              <div key={spanId} className="flex items-center mb-4 group">
-                <div 
-                  className="w-56 pr-6 text-sm font-medium text-gray-700 dark:text-gray-300 truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
-                  onClick={() => toggleSelected(spanId)}
-                >
-                  {span.name || spanId}
-                </div>
-                <div className="flex-1 relative h-8">
-                  <div className="absolute inset-0 bg-gray-100 dark:bg-gray-800 rounded" />
-                  <div
-                    className={`absolute h-5 top-1.5 ${
-                      getSpanStatus(span) === 'completed' ? 'bg-blue-500' :
-                      getSpanStatus(span) === 'pending' ? 'bg-yellow-500' : 'bg-gray-500'
-                    } hover:opacity-90 cursor-pointer rounded bg-700`}
-                    style={{
-                      left: `${Math.max(0, Math.min(100, startOffset))}%`,
-                      width: `${Math.min(100, durationPercent)}%`
-                    }}
+              return (
+                <div key={spanId} className="flex items-center mb-4 group">
+                  <div 
+                    className={`w-56 pr-6 text-sm font-medium truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 ${
+                      selectedSpanIds.includes(spanId) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
+                    }`}
                     onClick={() => toggleSelected(spanId)}
-                    title={`${span.name || spanId}\nStart: ${new Date(span.startTime).toLocaleString()}\nDuration: ${formatDuration(span.duration)}`}
-                  />
+                  >
+                    {displayName}
+                  </div>
+                  <div className="flex-1 relative h-8">
+                    <div className="absolute inset-0 bg-gray-100 dark:bg-gray-800 rounded" />
+                    <div
+                      className={`absolute h-5 top-1.5 rounded cursor-pointer ${
+                        selectedSpanIds.includes(spanId) ? 'bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'
+                      }`}
+                      style={{
+                        left: `${Math.max(0, Math.min(100, startOffset))}%`,
+                        width: `${Math.min(100, durationPercent)}%`
+                      }}
+                      onClick={() => toggleSelected(spanId)}
+                      title={`${displayName}\nStart: ${new Date(span.startTime || 0).toLocaleString()}\nDuration: ${formatDuration(duration)}`}
+                    />
+                  </div>
+                  <div className="w-32 pl-6 text-sm text-gray-500 dark:text-gray-400">
+                    {formatDuration(duration)}
+                  </div>
                 </div>
-                <div className="w-32 pl-6 text-sm text-gray-500 dark:text-gray-400">
-                  {formatDuration(duration)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {selectedSpanIds.length > 0 && (
+              );
+            })}
+          </div>
+        ) : selectedSpan && (
           <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-            {(() => {
-              const selectedSpan = getSelectedSpanDetails(validSpans, selectedSpanIds[0]);
-              return selectedSpan ? (
-                <>
-                  <h4 className="font-bold text-sm mb-2">{selectedSpan.name || 'Span Details'}</h4>
-                  {renderSpanDetails(selectedSpan)}
-                </>
-              ) : null;
-            })()}
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="font-bold text-sm">
+                {selectedSpan.name || 'Span Details'}
+              </h4>
+              <div className="flex space-x-2">
+                <button 
+                  className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                  onClick={() => navigateToSpan('prev')}
+                  title="Previous span"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
+                  {selectedSpanIndex + 1} / {validSpans.length}
+                </div>
+                <button 
+                  className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                  onClick={() => navigateToSpan('next')}
+                  title="Next span"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+            {renderSpanDetails(selectedSpan)}
           </div>
         )}
       </div>
@@ -512,8 +690,14 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
 
   const renderJsonView = () => {
     if (!rawTraceData) return <div className="p-6 text-center text-gray-500">No trace data available</div>;
+    
+    const totalDuration = traceData?.spans ? safeCalculateDuration(traceData.spans) : 0;
+    
     return (
       <div className="w-full overflow-auto bg-gray-50 dark:bg-gray-900 p-6 rounded border border-gray-200 dark:border-gray-700">
+        <div className="mb-4 text-sm text-gray-600 dark:text-gray-300 pb-3 border-b border-gray-200 dark:border-gray-700">
+          Total Duration: {formatDuration(totalDuration)}
+        </div>
         <pre className="text-sm whitespace-pre-wrap font-mono">
           {JSON.stringify(rawTraceData, null, 2)}
         </pre>
@@ -521,8 +705,71 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
     );
   };
 
+  const renderSpanDetailsPanel = () => {
+    if (!selectedSpanIds.length) return null;
+    const validSpans = getValidSpans();
+    const selectedSpan = getSelectedSpanDetails(validSpans, selectedSpanIds[0]);
+    if (!selectedSpan) return null;
+
+    if (!showTimeline) return null;
+
+    return (
+      <div className="bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto" style={{ width: `${panelWidth}px`, minWidth: '200px', maxWidth: '800px' }}>
+        <div className="flex justify-between items-center mb-4">
+          <h4 className="font-bold text-sm">
+            {selectedSpan.name || 'Span Details'}
+          </h4>
+          <div className="flex space-x-2">
+            <button 
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+              onClick={() => navigateToSpan('prev')}
+              title="Previous span"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
+              {selectedSpanIndex + 1} / {validSpans.length}
+            </div>
+            <button 
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+              onClick={() => navigateToSpan('next')}
+              title="Next span"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        </div>
+        {renderSpanDetails(selectedSpan)}
+      </div>
+    );
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging.current) return;
+    const newWidth = window.innerWidth - e.clientX;
+    if (newWidth >= 200 && newWidth <= 800) {
+      setPanelWidth(newWidth);
+    }
+  };
+
+  const handleMouseUp = () => {
+    isDragging.current = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+  };
+
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
+  };
+
+  const toggleTimelineView = () => {
+    setShowTimeline(!showTimeline);
   };
 
   const getFooterDuration = () => {
@@ -544,6 +791,10 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
     return () => document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
+  const getSelectedSpanDetails = (spans: SafeSpan[], selectedId: string): SafeSpan | undefined => {
+    return spans.find((span: SafeSpan) => span.spanId === selectedId);
+  };
+
   const renderContent = () => {
     if (isLoading) {
       return (
@@ -562,16 +813,6 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
     }
     return (
       <div className="flex-1 overflow-auto p-4">
-        {activeTab === 'hierarchy' && Array.isArray(filteredHierarchy) && (
-          filteredHierarchy.length > 0 ? (
-            filteredHierarchy.map(span => renderSpanTree(span))
-          ) : (
-            <div className="p-4 text-center text-gray-500">
-              <AlertCircle size={24} className="mx-auto mb-2 text-yellow-500" />
-              <p>No spans available or matching your search criteria</p>
-            </div>
-          )
-        )}
         {activeTab === 'timeline' && renderTimeline()}
         {activeTab === 'json' && renderJsonView()}
       </div>
@@ -588,6 +829,11 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
               <h2 className="font-bold text-lg">
                 Trace Explorer: {traceData?.traceId || rawTraceData?.chatId || 'Loading...'}
               </h2>
+              {traceData?.spans && (
+                <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+                  ({formatDuration(safeCalculateDuration(traceData.spans))})
+                </span>
+              )}
             </div>
             <div className="flex items-center space-x-2">
               <button
@@ -606,31 +852,8 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
               </button>
             </div>
           </div>
-          <div className="border-b border-gray-200 dark:border-gray-700 p-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="flex-1 relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search size={16} className="text-gray-400" />
-              </div>
-              <input
-                type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-sm placeholder-gray-400"
-                placeholder="Search spans, attributes, events..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+          <div className="border-b border-gray-200 dark:border-gray-700 p-2 flex justify-end">
             <div className="flex space-x-1">
-              <button
-                className={`px-3 py-1 rounded-md text-sm flex items-center ${
-                  activeTab === 'hierarchy' 
-                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' 
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-800'
-                }`}
-                onClick={() => setActiveTab('hierarchy')}
-              >
-                <Layers size={16} className="mr-1" />
-                Hierarchy
-              </button>
               <button
                 className={`px-3 py-1 rounded-md text-sm flex items-center ${
                   activeTab === 'timeline' 
@@ -653,10 +876,33 @@ export function RagTraceVirtualization({ chatId, messageId, onClose }: RagTraceV
                 <Code size={16} className="mr-1" />
                 JSON
               </button>
+              {activeTab === 'timeline' && (
+                <button
+                  className="px-3 py-1 rounded-md text-sm flex items-center hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={toggleTimelineView}
+                  title={showTimeline ? "Show only selected span" : "Show timeline"}
+                >
+                  {showTimeline ? <EyeOff size={16} className="mr-1" /> : <Eye size={16} className="mr-1" />}
+                  {showTimeline ? 'Span Only' : 'Timeline'}
+                </button>
+              )}
             </div>
           </div>
           <div className="flex-1 flex overflow-hidden">
             {renderContent()}
+            {activeTab === 'timeline' && (
+              <>
+                {renderSpanDetailsPanel() && (
+                  <div
+                    className="w-2 bg-gray-200 dark:bg-gray-700 cursor-col-resize flex items-center justify-center hover:bg-gray-300 dark:hover:bg-gray-600"
+                    onMouseDown={handleMouseDown}
+                  >
+                    <GripVertical size={16} className="text-gray-500 dark:text-gray-400" />
+                  </div>
+                )}
+                {renderSpanDetailsPanel()}
+              </>
+            )}
           </div>
           <div className="border-t border-gray-200 dark:border-gray-700 p-2 text-sm text-gray-500 dark:text-gray-400 flex justify-between">
             <div>
