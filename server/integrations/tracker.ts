@@ -35,7 +35,6 @@ interface StatMetadata {
   doneAt: number
   type: AuthType
 }
-
 interface GoogleStats {
   gmailCount: number
   driveCount: number
@@ -51,7 +50,6 @@ interface SlackStats {
   slackMessageReplyCount: number
 }
 
-// Union type for all possible stat types
 type UserStats = (
   | (GoogleStats & Partial<GoogleTotalStats>)
   | (SlackStats & Partial<SlackTotalStats>)
@@ -166,7 +164,6 @@ export class Tracker {
 
     if (!this.serviceAccountProgress.userStats[email]) {
       if (IsGoogleApp(this.app)) {
-        // Assuming Apps.Google exists
         this.serviceAccountProgress.userStats[email] = {
           gmailCount: 0,
           driveCount: 0,
@@ -178,7 +175,6 @@ export class Tracker {
           ...baseStats,
         }
       } else if (this.app === Apps.Slack) {
-        // Assuming Apps.Slack exists
         this.serviceAccountProgress.userStats[email] = {
           slackMessageCount: 0,
           slackConversationCount: 0,
@@ -197,7 +193,6 @@ export class Tracker {
           ...baseStats,
         }
       }
-      // Add more else-if blocks for additional apps here
     }
 
     if (!this.oAuthProgress.userStats[email]) {
@@ -231,7 +226,6 @@ export class Tracker {
           ...baseOAuthStats,
         }
       }
-      // Add more else-if blocks for additional apps here
     }
   }
 

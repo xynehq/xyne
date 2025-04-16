@@ -16,7 +16,6 @@ import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 import { handleSlackIngestion } from "@/integrations/slack"
 import { handleWhatsAppIngestion } from "@/integrations/whatsapp"
-import type { Job } from "pg-boss"
 
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
@@ -44,30 +43,19 @@ const EveryWeek = `0 0 */7 * *`
 const EveryMin = `*/1 * * * *`
 
 export const init = async () => {
-  Logger.info("Starting queue initialization...")
-
-  Logger.info("Starting pg-boss...")
+  Logger.info("Queue init")
   await boss.start()
-  Logger.info("pg-boss started successfully")
-
   Logger.info("Creating queues...")
   await boss.createQueue(SaaSQueue)
   await boss.createQueue(SyncOAuthSaaSQueue)
   await boss.createQueue(SyncServiceAccountSaaSQueue)
   await boss.createQueue(SyncGoogleWorkspace)
   await boss.createQueue(CheckDownloadsFolderQueue)
-  Logger.info("All queues created successfully")
-
-  Logger.info("Initializing workers...")
   await initWorkers()
-  Logger.info("Workers initialized successfully")
-
-  Logger.info("Queue system fully initialized")
 }
 
 // when the Service account is connected
 export const setupServiceAccountCronjobs = async () => {
-  Logger.info("Setting up service account cronjobs...")
   await boss.schedule(
     SyncServiceAccountSaaSQueue,
     Every10Minutes,
@@ -80,64 +68,53 @@ export const setupServiceAccountCronjobs = async () => {
     {},
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )
-  Logger.info("Service account cronjobs set up successfully")
 }
 
 const initWorkers = async () => {
-  Logger.info("Starting worker initialization...")
   await boss.work(SaaSQueue, async ([job]) => {
     const start = new Date()
-    Logger.info(`Processing SaaSQueue job ${job.id} started at ${start}`)
+    Logger.info(`boss.work SaaSQueue Job ${job.id} started at ${start}`)
     const jobData: SaaSJob = job.data as SaaSJob
-    Logger.info(`Job data: ${JSON.stringify(jobData, null, 2)}`)
-
-    try {
-      if (
-        jobData.app === Apps.GoogleDrive &&
-        jobData.authType === AuthType.ServiceAccount
-      ) {
-        Logger.info("Handling Google Service Account Ingestion from Queue")
-        // await handleGoogleServiceAccountIngestion(boss, job)
-      } else if (
-        jobData.app === Apps.GoogleDrive &&
-        jobData.authType === AuthType.OAuth
-      ) {
-        Logger.info("Handling Google OAuth Ingestion from Queue")
-        // await handleGoogleOAuthIngestion(boss, job)
-      } else if (
-        jobData.app == Apps.Slack &&
-        jobData.authType === AuthType.OAuth
-      ) {
-        Logger.info("Handling Slack Ingestion from Queue")
-        // await handleSlackIngestion(boss, job)
-      } else if (
-        jobData.app === Apps.WhatsApp &&
-        jobData.authType === AuthType.Custom
-      ) {
-        Logger.info(
-          `Starting WhatsApp Ingestion for job ${job.id} with connector ${jobData.externalId}`,
-        )
-        await handleWhatsAppIngestion(boss, job)
-        Logger.info(`Completed WhatsApp Ingestion for job ${job.id}`)
-      } else {
-        Logger.error(
-          `Unsupported job type: ${jobData.app} with auth type ${jobData.authType}`,
-        )
-        throw new Error("Unsupported job")
-      }
-
-      const end = new Date()
-      const duration = end.getTime() - start.getTime()
-      Logger.info(`Job ${job.id} completed successfully in ${duration}ms`)
-    } catch (error: any) {
-      Logger.error(error, `Error processing job ${job.id}: ${error.message}`)
-      await boss.fail(job.name, job.id)
-      throw error
+    if (
+      jobData.app === Apps.GoogleDrive &&
+      jobData.authType === AuthType.ServiceAccount
+    ) {
+      Logger.info("Handling Google Service Account Ingestion from Queue")
+      // await handleGoogleServiceAccountIngestion(boss, job)
+    } else if (
+      jobData.app === Apps.GoogleDrive &&
+      jobData.authType === AuthType.OAuth
+    ) {
+      Logger.info("Handling Google OAuth Ingestion from Queue")
+      // await handleGoogleOAuthIngestion(boss, job)
+    } else if (
+      jobData.app == Apps.Slack &&
+      jobData.authType === AuthType.OAuth
+    ) {
+      Logger.info("Handling Slack Ingestion from Queue")
+      // await handleSlackIngestion(boss, job)
+    } else if (
+      jobData.app === Apps.WhatsApp &&
+      jobData.authType === AuthType.Custom
+    ) {
+      Logger.info(
+        `Starting WhatsApp Ingestion for job ${job.id} with connector ${jobData.externalId}`,
+      )
+      await handleWhatsAppIngestion(boss, job)
+      Logger.info(`Completed WhatsApp Ingestion for job ${job.id}`)
+    } else {
+      Logger.error(
+        `Unsupported job type: ${jobData.app} with auth type ${jobData.authType}`,
+      )
+      throw new Error("Unsupported job")
     }
+
+    const end = new Date()
+    const duration = end.getTime() - start.getTime()
+    Logger.info(`Job ${job.id} completed successfully in ${duration}ms`)
   })
 
   // do not retry
-  Logger.info("Setting up scheduled jobs...")
   await boss.schedule(
     SyncOAuthSaaSQueue,
     Every10Minutes,
@@ -153,7 +130,6 @@ const initWorkers = async () => {
 
   await setupServiceAccountCronjobs()
 
-  Logger.info("Setting up SyncOAuthSaaSQueue worker...")
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
     try {
       await handleGoogleOAuthChanges(boss, job)
@@ -166,28 +142,25 @@ const initWorkers = async () => {
     }
   })
 
-  Logger.info("Setting up SyncServiceAccountSaaSQueue worker...")
+  // Any Service account related SaaS jobs
   await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
+    // call all the service account handlers in parallel
     await handleGoogleServiceAccountChanges(boss, job)
   })
 
-  Logger.info("Setting up SyncGoogleWorkspace worker...")
   await boss.work(SyncGoogleWorkspace, async ([job]) => {
     await syncGoogleWorkspace(boss, job)
   })
 
-  Logger.info("Setting up CheckDownloadsFolderQueue worker...")
   await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
     await checkDownloadsFolder(boss, job)
   })
-
-  Logger.info("All workers initialized successfully")
 }
 
 export const ProgressEvent = "progress-event"
 
 boss.on("error", (error) => {
-  Logger.error(error, `Queue error: ${error} ${(error as Error).stack}`)
+  console.error(`Queue error: ${error} ${(error as Error).stack}`)
 })
 
 boss.on("monitor-states", (states) => {

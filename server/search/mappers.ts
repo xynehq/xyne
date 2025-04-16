@@ -224,7 +224,6 @@ export const VespaSearchResponseToSearchResult = (
             }
             return ChatMessageResponseSchema.parse(fields)
           } else {
-            console.log(JSON.stringify(child.fields))
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
             )

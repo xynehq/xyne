@@ -92,7 +92,7 @@ schema mail_attachment {
 
   rank-profile initial {
     inputs {
-      query(e) tensor<bfloat16>(v[384])
+      query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
     }
 

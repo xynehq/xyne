@@ -39,8 +39,6 @@ interface SlackOAuthResp {
 
 export const OAuthCallback = async (c: Context) => {
   try {
-    console.log(c.req.header("cookie"))
-    console.log("OAuth Callback")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     const { state, code } = c.req.query()
@@ -52,8 +50,6 @@ export const OAuthCallback = async (c: Context) => {
       throw new HTTPException(500)
     }
     const stateInCookie = getCookie(c, `${app}-state`)
-    console.log(`${app}-state`, stateInCookie)
-    console.log(random, stateInCookie, random === stateInCookie)
     if (random !== stateInCookie) {
       throw new HTTPException(500, {
         message: "Invalid state, potential CSRF attack.",
@@ -61,7 +57,6 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     const codeVerifier = getCookie(c, `${app}-code-verifier`)
-    console.log(codeVerifier)
     if (!codeVerifier && app === Apps.GoogleDrive) {
       throw new HTTPException(500, { message: "Could not verify the code" })
     }
