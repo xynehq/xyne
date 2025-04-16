@@ -18,10 +18,12 @@ import { Route as OauthSuccessImport } from './routes/oauth/success'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedIntegrationsIndexImport } from './routes/_authenticated/integrations/index'
+import { Route as AuthenticatedIntegrationsWhatsappImport } from './routes/_authenticated/integrations/whatsapp'
 import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authenticated/integrations/slack'
 import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
+import { Route as AuthenticatedAdminIntegrationsWhatsappImport } from './routes/_authenticated/admin/integrations/whatsapp'
 import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
 import { Route as AuthenticatedAdminIntegrationsGoogleImport } from './routes/_authenticated/admin/integrations/google'
 
@@ -69,6 +71,13 @@ const AuthenticatedIntegrationsIndexRoute =
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
+const AuthenticatedIntegrationsWhatsappRoute =
+  AuthenticatedIntegrationsWhatsappImport.update({
+    id: '/integrations/whatsapp',
+    path: '/integrations/whatsapp',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
 const AuthenticatedIntegrationsSlackRoute =
   AuthenticatedIntegrationsSlackImport.update({
     id: '/integrations/slack',
@@ -93,6 +102,13 @@ const AuthenticatedAdminIntegrationsIndexRoute =
   AuthenticatedAdminIntegrationsIndexImport.update({
     id: '/admin/integrations/',
     path: '/admin/integrations/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedAdminIntegrationsWhatsappRoute =
+  AuthenticatedAdminIntegrationsWhatsappImport.update({
+    id: '/admin/integrations/whatsapp',
+    path: '/admin/integrations/whatsapp',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -177,6 +193,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIntegrationsSlackImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/integrations/whatsapp': {
+      id: '/_authenticated/integrations/whatsapp'
+      path: '/integrations/whatsapp'
+      fullPath: '/integrations/whatsapp'
+      preLoaderRoute: typeof AuthenticatedIntegrationsWhatsappImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/integrations/': {
       id: '/_authenticated/integrations/'
       path: '/integrations'
@@ -196,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/integrations/slack'
       fullPath: '/admin/integrations/slack'
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsSlackImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/whatsapp': {
+      id: '/_authenticated/admin/integrations/whatsapp'
+      path: '/admin/integrations/whatsapp'
+      fullPath: '/admin/integrations/whatsapp'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsWhatsappImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/admin/integrations/': {
@@ -227,9 +257,11 @@ interface AuthenticatedRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
   AuthenticatedIntegrationsSlackRoute: typeof AuthenticatedIntegrationsSlackRoute
+  AuthenticatedIntegrationsWhatsappRoute: typeof AuthenticatedIntegrationsWhatsappRoute
   AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
   AuthenticatedAdminIntegrationsGoogleRoute: typeof AuthenticatedAdminIntegrationsGoogleRoute
   AuthenticatedAdminIntegrationsSlackRoute: typeof AuthenticatedAdminIntegrationsSlackRoute
+  AuthenticatedAdminIntegrationsWhatsappRoute: typeof AuthenticatedAdminIntegrationsWhatsappRoute
   AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -239,11 +271,15 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
   AuthenticatedIntegrationsSlackRoute: AuthenticatedIntegrationsSlackRoute,
+  AuthenticatedIntegrationsWhatsappRoute:
+    AuthenticatedIntegrationsWhatsappRoute,
   AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
   AuthenticatedAdminIntegrationsGoogleRoute:
     AuthenticatedAdminIntegrationsGoogleRoute,
   AuthenticatedAdminIntegrationsSlackRoute:
     AuthenticatedAdminIntegrationsSlackRoute,
+  AuthenticatedAdminIntegrationsWhatsappRoute:
+    AuthenticatedAdminIntegrationsWhatsappRoute,
   AuthenticatedAdminIntegrationsIndexRoute:
     AuthenticatedAdminIntegrationsIndexRoute,
 }
@@ -262,9 +298,11 @@ export interface FileRoutesByFullPath {
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/integrations/whatsapp': typeof AuthenticatedIntegrationsWhatsappRoute
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/admin/integrations/whatsapp': typeof AuthenticatedAdminIntegrationsWhatsappRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -277,9 +315,11 @@ export interface FileRoutesByTo {
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/integrations/whatsapp': typeof AuthenticatedIntegrationsWhatsappRoute
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/admin/integrations/whatsapp': typeof AuthenticatedAdminIntegrationsWhatsappRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -294,9 +334,11 @@ export interface FileRoutesById {
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/_authenticated/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/_authenticated/integrations/whatsapp': typeof AuthenticatedIntegrationsWhatsappRoute
   '/_authenticated/integrations/': typeof AuthenticatedIntegrationsIndexRoute
   '/_authenticated/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/_authenticated/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/_authenticated/admin/integrations/whatsapp': typeof AuthenticatedAdminIntegrationsWhatsappRoute
   '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -312,9 +354,11 @@ export interface FileRouteTypes {
     | '/chat/$chatId'
     | '/integrations/google'
     | '/integrations/slack'
+    | '/integrations/whatsapp'
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/slack'
+    | '/admin/integrations/whatsapp'
     | '/admin/integrations'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -326,9 +370,11 @@ export interface FileRouteTypes {
     | '/chat/$chatId'
     | '/integrations/google'
     | '/integrations/slack'
+    | '/integrations/whatsapp'
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/slack'
+    | '/admin/integrations/whatsapp'
     | '/admin/integrations'
   id:
     | '__root__'
@@ -341,9 +387,11 @@ export interface FileRouteTypes {
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/integrations/google'
     | '/_authenticated/integrations/slack'
+    | '/_authenticated/integrations/whatsapp'
     | '/_authenticated/integrations/'
     | '/_authenticated/admin/integrations/google'
     | '/_authenticated/admin/integrations/slack'
+    | '/_authenticated/admin/integrations/whatsapp'
     | '/_authenticated/admin/integrations/'
   fileRoutesById: FileRoutesById
 }
@@ -383,9 +431,11 @@ export const routeTree = rootRoute
         "/_authenticated/",
         "/_authenticated/integrations/google",
         "/_authenticated/integrations/slack",
+        "/_authenticated/integrations/whatsapp",
         "/_authenticated/integrations/",
         "/_authenticated/admin/integrations/google",
         "/_authenticated/admin/integrations/slack",
+        "/_authenticated/admin/integrations/whatsapp",
         "/_authenticated/admin/integrations/"
       ]
     },
@@ -422,6 +472,10 @@ export const routeTree = rootRoute
       "filePath": "_authenticated/integrations/slack.tsx",
       "parent": "/_authenticated"
     },
+    "/_authenticated/integrations/whatsapp": {
+      "filePath": "_authenticated/integrations/whatsapp.tsx",
+      "parent": "/_authenticated"
+    },
     "/_authenticated/integrations/": {
       "filePath": "_authenticated/integrations/index.tsx",
       "parent": "/_authenticated"
@@ -432,6 +486,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/admin/integrations/slack": {
       "filePath": "_authenticated/admin/integrations/slack.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/whatsapp": {
+      "filePath": "_authenticated/admin/integrations/whatsapp.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/admin/integrations/": {

@@ -54,7 +54,7 @@ enum WhatsAppQRStatus {
   NotConnected = "NOT_CONNECTED",
   Connecting = "CONNECTING",
   Connected = "CONNECTED",
-  Error = "ERROR"
+  Error = "ERROR",
 }
 
 interface WhatsAppQRCodeProps {
@@ -67,7 +67,7 @@ interface WhatsAppQRCodeProps {
 const createWhatsAppConnector = async () => {
   try {
     const res = await api.admin.connectors.whatsapp.$post({
-      json: {}
+      json: {},
     })
     if (!res.ok) {
       throw new Error("Could not create WhatsApp connector")
@@ -99,7 +99,9 @@ const WhatsAppQRCode = ({ qrCode, status, onRefresh }: WhatsAppQRCodeProps) => {
       {status === WhatsAppQRStatus.Connecting && (
         <div className="flex flex-col items-center gap-2">
           <p>Scan the QR code with WhatsApp to connect</p>
-          {qrCode && <img src={qrCode} alt="WhatsApp QR Code" className="w-64 h-64" />}
+          {qrCode && (
+            <img src={qrCode} alt="WhatsApp QR Code" className="w-64 h-64" />
+          )}
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
       )}
@@ -110,9 +112,7 @@ const WhatsAppQRCode = ({ qrCode, status, onRefresh }: WhatsAppQRCodeProps) => {
             <Button variant="outline" onClick={onRefresh}>
               Refresh Status
             </Button>
-            <Button onClick={onRefresh}>
-              Get Info
-            </Button>
+            <Button onClick={onRefresh}>Get Info</Button>
           </div>
         </div>
       )}
@@ -141,7 +141,9 @@ export interface IntegrationProps {
 
 export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
   const navigate = useNavigate()
-  const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppQRStatus>(WhatsAppQRStatus.NotConnected)
+  const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppQRStatus>(
+    WhatsAppQRStatus.NotConnected,
+  )
   const [qrCode, setQrCode] = useState<string>("")
   const [whatsappProgress, setWhatsappProgress] = useState<number>(0)
   const [whatsappStats, setWhatsappStats] = useState<{
@@ -156,7 +158,8 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
   const [isFetchingGroups, setIsFetchingGroups] = useState(false)
 
   const whatsappConnector = connectors.find(
-    (connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+    (connector) =>
+      connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom,
   )
 
   const { isPending, error, data, refetch } = useQuery<any[]>({
@@ -180,9 +183,11 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
       // Find the existing WhatsApp connector
       const connectors = await getConnectors()
       const whatsappConnector = connectors.find(
-        (connector: Connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+        (connector: Connector) =>
+          connector.app === Apps.WhatsApp &&
+          connector.authType === AuthType.Custom,
       )
-      
+
       if (!whatsappConnector) {
         throw new Error("WhatsApp connector not found")
       }
@@ -195,10 +200,10 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
       const res = await api.admin.connectors.whatsapp.$post({
         json: {
           connectorId: whatsappConnector.id,
-          action: "startIngestion"
-        }
+          action: "startIngestion",
+        },
       })
-      
+
       if (!res.ok) {
         throw new Error("Could not start WhatsApp data ingestion")
       }
@@ -242,9 +247,12 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
           (v) => v.app === Apps.WhatsApp && v.authType === AuthType.Custom,
         )
         console.log("Found WhatsApp connector:", whatsappConnector)
-        
+
         if (whatsappConnector) {
-          console.log("Creating WebSocket connection for connector:", whatsappConnector.externalId)
+          console.log(
+            "Creating WebSocket connection for connector:",
+            whatsappConnector.externalId,
+          )
           socket = wsClient.ws.$ws({
             query: {
               id: whatsappConnector.externalId,
@@ -252,11 +260,11 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
             },
           })
 
-          socket.addEventListener("open", () => {
+          socket?.addEventListener("open", () => {
             console.info("WhatsApp socket opened successfully")
           })
 
-          socket.addEventListener("message", (e) => {
+          socket?.addEventListener("message", (e) => {
             console.log("Received WebSocket message:", e.data)
             if (startTimeRef.current === null) {
               startTimeRef.current = Date.now()
@@ -265,17 +273,17 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
             console.log("Parsed message:", dataMsg)
             const statusJson = JSON.parse(dataMsg.message)
             console.log("Status JSON:", statusJson)
-            
+
             setWhatsappProgress(statusJson.progress ?? 0)
             setWhatsappStats(statusJson.userStats ?? {})
-            
+
             if (statusJson.qrCode) {
               console.log("Received QR code, updating state")
               setQrCode(statusJson.qrCode)
             }
           })
 
-          socket.addEventListener("close", (e) => {
+          socket?.addEventListener("close", (e) => {
             console.info("WhatsApp WebSocket connection closed:", e.reason)
             if (e.reason === "Job finished") {
               setWhatsappStatus(WhatsAppQRStatus.Connected)
@@ -291,7 +299,7 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
             }
           })
 
-          socket.addEventListener("error", (error) => {
+          socket?.addEventListener("error", (error) => {
             console.error("WebSocket error:", error)
             setWhatsappStatus(WhatsAppQRStatus.Error)
             toast({
@@ -359,17 +367,26 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
     try {
       const connectors = await api.getConnectors()
       console.log("All connectors:", JSON.stringify(connectors, null, 2))
-      
+
       const whatsappConnector = connectors.find(
-        (connector: { type: ConnectorType }) => connector.type === ConnectorType.WhatsApp
+        (connector: { type: ConnectorType }) =>
+          connector.type === ConnectorType.WhatsApp,
       )
-      console.log("WhatsApp connector found:", JSON.stringify(whatsappConnector, null, 2))
+      console.log(
+        "WhatsApp connector found:",
+        JSON.stringify(whatsappConnector, null, 2),
+      )
 
       if (!whatsappConnector) {
         throw new Error("WhatsApp connector not found")
       }
 
-      console.log("Using connector ID:", whatsappConnector.id, "Type:", typeof whatsappConnector.id)
+      console.log(
+        "Using connector ID:",
+        whatsappConnector.id,
+        "Type:",
+        typeof whatsappConnector.id,
+      )
       await api.startIngestion(whatsappConnector.id)
       await fetchConnectors()
     } catch (error) {
@@ -386,8 +403,14 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
     try {
       const connectors = await getConnectors()
       const whatsappConnector = connectors.find(
-        (connector: { app: Apps; authType: AuthType; id: number; externalId: string }) => 
-          connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+        (connector: {
+          app: Apps
+          authType: AuthType
+          id: number
+          externalId: string
+        }) =>
+          connector.app === Apps.WhatsApp &&
+          connector.authType === AuthType.Custom,
       )
 
       if (!whatsappConnector) {
@@ -396,8 +419,8 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
 
       const res = await api.admin.connectors.whatsapp.$delete({
         json: {
-          connectorId: whatsappConnector.id
-        }
+          connectorId: whatsappConnector.id,
+        },
       })
 
       if (!res.ok) {
@@ -464,7 +487,9 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
 
     try {
       const whatsappConnector = connectors.find(
-        (connector) => connector.app === Apps.WhatsApp && connector.authType === AuthType.Custom
+        (connector) =>
+          connector.app === Apps.WhatsApp &&
+          connector.authType === AuthType.Custom,
       )
 
       if (!whatsappConnector) {
@@ -476,10 +501,10 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
         json: {
           connectorId: whatsappConnector.id,
           action: "startIngestion",
-          groupId: selectedGroup
-        }
+          groupId: selectedGroup,
+        },
       })
-      
+
       if (!res.ok) {
         throw new Error("Could not start WhatsApp data ingestion")
       }
@@ -537,7 +562,7 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-4">
-                  <Button 
+                  <Button
                     onClick={fetchWhatsAppGroups}
                     disabled={isFetchingGroups}
                     className="w-full"
@@ -562,10 +587,7 @@ export const WhatsApp = ({ user, workspace }: IntegrationProps) => {
                     </Select>
                   )}
                   {selectedGroup && (
-                    <Button 
-                      onClick={handleStartImport}
-                      className="w-full"
-                    >
+                    <Button onClick={handleStartImport} className="w-full">
                       Start Import
                     </Button>
                   )}
@@ -632,4 +654,4 @@ export const Route = createFileRoute(
     const { user, workspace } = matches[matches.length - 1].context
     return <WhatsApp user={user} workspace={workspace} />
   },
-}) 
+})

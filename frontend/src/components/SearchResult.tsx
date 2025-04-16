@@ -1,7 +1,6 @@
 import HighlightedText from "@/components/Highlight"
 import { getIcon } from "@/lib/common"
 import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
-import { useEffect } from "react"
 
 export const SearchResult = ({
   result,
