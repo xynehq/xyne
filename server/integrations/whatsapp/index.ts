@@ -87,9 +87,7 @@ interface WhatsAppStore {
         }
       >
     >
-    get: (
-      id: string,
-    ) => Promise<
+    get: (id: string) => Promise<
       | {
           messages?: Record<
             string,
@@ -266,6 +264,7 @@ const insertWhatsAppMessage = async (
   Logger.info(`Inserting WhatsApp message: ${messageText}`)
 
   return insert(
+    // @ts-ignore
     {
       docId: message.key.id!,
       teamId: conversationId,
@@ -619,7 +618,9 @@ export const handleWhatsAppIngestion = async (
         if (m.type === "append" || m.type === "notify") {
           for (const msg of m.messages) {
             if (msg.key && msg.message) {
-              Logger.info(`our msgs ${msg}`)
+              Logger.info(`msg`)
+              Logger.info(msg)
+              Logger.info(`msg`)
               const conversationId = msg.key.remoteJid || ""
               const phoneNumber = conversationId.split("@")[0]
 
@@ -664,7 +665,7 @@ export const handleWhatsAppIngestion = async (
               )
 
               if (success) {
-                Logger.info(`Message ${messageId} successfully pushed to Vespa`)
+                Logger.info(`Message successfully pushed to Vesp ${messageId}`)
                 // Update tracker
                 tracker.updateUserStats(
                   data.email,
@@ -731,7 +732,9 @@ export const handleWhatsAppIngestion = async (
             )
 
             if (success) {
-              Logger.info(`Contact ${contact.id} successfully pushed to Vespa`)
+              Logger.info(
+                `Contact successfully pushed to Vespa ${contact.name}`,
+              )
               // Update tracker
               tracker.updateUserStats(data.email, StatType.WhatsApp_Contact, 1)
 
@@ -793,7 +796,7 @@ export const handleWhatsAppIngestion = async (
 
             if (success) {
               Logger.info(
-                `Conversation ${chat.id} successfully pushed to Vespa`,
+                `Conversation successfully pushed to Vespa ${chat.name}`,
               )
               // Update tracker
               tracker.updateUserStats(
@@ -883,7 +886,7 @@ const startIngestion = async (
 
       if (success) {
         Logger.info(
-          `Conversation ${conversation.id} successfully pushed to Vespa`,
+          `Conversation successfully pushed to Vespa ${conversation.id}`,
         )
         // Update tracker
         tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 1)
@@ -914,8 +917,6 @@ const startIngestion = async (
 
       Logger.info(`Found ${groups.length} groups`)
 
-      console.log("\n my groups == ", groups, "\n")
-
       // Insert groups into Vespa
       for (const group of groups) {
         Logger.info(
@@ -928,7 +929,7 @@ const startIngestion = async (
         )
 
         if (success) {
-          Logger.info(`Group ${group.id} successfully pushed to Vespa`)
+          Logger.info(`Group successfully pushed to Vespa ${group.subject}`)
           // Update stats
           tracker.updateUserStats(email, StatType.WhatsApp_Group, 1)
 

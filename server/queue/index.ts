@@ -45,7 +45,6 @@ const EveryMin = `*/1 * * * *`
 export const init = async () => {
   Logger.info("Queue init")
   await boss.start()
-  Logger.info("Creating queues...")
   await boss.createQueue(SaaSQueue)
   await boss.createQueue(SyncOAuthSaaSQueue)
   await boss.createQueue(SyncServiceAccountSaaSQueue)
@@ -71,6 +70,7 @@ export const setupServiceAccountCronjobs = async () => {
 }
 
 const initWorkers = async () => {
+  Logger.info("initWorkers")
   await boss.work(SaaSQueue, async ([job]) => {
     const start = new Date()
     Logger.info(`boss.work SaaSQueue Job ${job.id} started at ${start}`)
@@ -79,7 +79,6 @@ const initWorkers = async () => {
       jobData.app === Apps.GoogleDrive &&
       jobData.authType === AuthType.ServiceAccount
     ) {
-      Logger.info("Handling Google Service Account Ingestion from Queue")
       // await handleGoogleServiceAccountIngestion(boss, job)
     } else if (
       jobData.app === Apps.GoogleDrive &&
@@ -108,10 +107,6 @@ const initWorkers = async () => {
       )
       throw new Error("Unsupported job")
     }
-
-    const end = new Date()
-    const duration = end.getTime() - start.getTime()
-    Logger.info(`Job ${job.id} completed successfully in ${duration}ms`)
   })
 
   // do not retry

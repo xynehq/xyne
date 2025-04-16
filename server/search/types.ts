@@ -459,7 +459,7 @@ export const VespaChatMessageSchema = z.object({
   text: z.string(),
   userId: z.string(), // Slack user ID (e.g., "U032QT45V53")
   app: z.nativeEnum(Apps), // App (e.g., "slack")
-  entity: z.union([z.nativeEnum(SlackEntity), z.nativeEnum(WhatsAppEntity)]), 
+  entity: z.union([z.nativeEnum(SlackEntity), z.nativeEnum(WhatsAppEntity)]),
   name: z.string(),
   username: z.string(),
   image: z.string(),
@@ -920,10 +920,12 @@ export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
   .strip()
   .extend({
     type: z.literal("mail_attachment"),
-    chunks_summary: z.array(z.string()).optional(),
+    chunks_summary: z.array(scoredChunk).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
   })
 
-export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
+export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
   docId: true,
   teamId: true,
   channelId: true,
@@ -939,13 +941,15 @@ export const ChatMessageResponseSchema = VespaChatMessageSchema.pick({
   username: true,
   attachmentIds: true,
   mentions: true,
-  // relevance: true,
+  relevance: true,
   updatedAt: true,
 })
   .strip()
   .extend({
     type: z.literal("chat_message"),
     chunks_summary: z.array(z.string()).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
   })
 
 export const whatsappMessageSchema = "whatsapp_message"
@@ -1000,5 +1004,7 @@ export const VespaWhatsAppGroupSchema = z
 
 export type VespaWhatsAppMessage = z.infer<typeof VespaWhatsAppMessageSchema>
 export type VespaWhatsAppContact = z.infer<typeof VespaWhatsAppContactSchema>
-export type VespaWhatsAppConversation = z.infer<typeof VespaWhatsAppConversationSchema>
+export type VespaWhatsAppConversation = z.infer<
+  typeof VespaWhatsAppConversationSchema
+>
 export type VespaWhatsAppGroup = z.infer<typeof VespaWhatsAppGroupSchema>
