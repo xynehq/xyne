@@ -295,6 +295,7 @@ async function insertChannelMessages(
           }
           message.mentions = mentions
           insertChatMessage(
+            client,
             message,
             channelId,
             memberMap.get(message.user!)?.profile?.display_name!,
@@ -330,8 +331,8 @@ async function insertChannelMessages(
             threadMessages.filter((msg) => msg.ts !== message.ts)
           for (const reply of replies) {
             if (
-              message.type === "message" &&
-              !message.subtype &&
+              reply.type === "message" &&
+              !reply.subtype &&
               reply.user
               // memberMap[reply.user]
             ) {
@@ -355,12 +356,22 @@ async function insertChannelMessages(
                   )
                 }
               }
+              if(!memberMap.get(reply.user)){
+                memberMap.set(reply.user,
+                  (
+                    await client.users.info({
+                      user: reply.user,
+                    })
+                  ).user!,)
+
+              }
               reply.mentions = mentions
               reply.text = text
               insertChatMessage(
+                client,
                 reply,
                 channelId,
-                memberMap.get(message.user!)?.profile?.display_name!,
+                memberMap.get(reply.user!)?.profile?.display_name!,
                 memberMap.get(reply.user!)?.name!,
                 memberMap.get(reply.user!)?.profile?.image_192!,
               )
@@ -517,6 +528,7 @@ async function getConversationUsers(
 }
 
 const insertChatMessage = async (
+  client: WebClient,
   message: SlackMessage & { mentions?: string[] },
   channelId: string,
   name: string,
@@ -524,6 +536,28 @@ const insertChatMessage = async (
   image: string,
 ) => {
   const editedTimestamp = message.edited ? parseFloat(message?.edited?.ts!) : 0
+  
+  
+  if(!message.team){
+    if(message.files){
+      for(const file of message.files) {
+        if (file.user_team) {
+          message.team = file.user_team
+          break
+        }
+      }
+    }
+  }
+  if(!message.team){
+    const res = await client.conversations.info({channel: channelId})
+    if(res.ok){
+      message.team = res.channel?.context_team_id
+    }
+  }
+  if (!message.team) {
+    Logger.error("team id is undefined")
+  }
+
   return insertWithRetry(
     {
       docId: message.client_msg_id!,
