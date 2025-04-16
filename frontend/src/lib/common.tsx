@@ -11,6 +11,7 @@ import Slides from "@/assets/slides.svg"
 import Image from "@/assets/images.svg"
 import GoogleCalendarSvg from "@/assets/googleCalendar.svg"
 import SlackSvg from "@/assets/slack.svg"
+import WhatsAppSvg from "@/assets/whatsapp.svg"
 import type { Entity } from "shared/types"
 import {
   Apps,
@@ -84,6 +85,8 @@ export const getIcon = (
     }
   } else if (app === Apps.Slack) {
     return <img className={classNameVal} src={SlackSvg} />
+  } else if (app === Apps.WhatsApp) {
+    return <img className={classNameVal} src={WhatsAppSvg} />
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

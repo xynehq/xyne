@@ -64,6 +64,8 @@ import {
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
+import { CreateWhatsAppConnector, DeleteWhatsAppConnector } from "@/api/admin"
+import { GetWhatsAppGroups } from "@/api/search"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -127,15 +129,17 @@ export const WsApp = app.get(
         connectorId = c.req.query("id")
         Logger.info(`Websocket connection with id ${connectorId}`)
         wsConnections.set(connectorId, ws)
+        Logger.info(`Current active WebSocket connections: ${wsConnections.size}`)
       },
       onMessage(event, ws) {
-        Logger.info(`Message from client: ${event.data}`)
+        Logger.info(`Message from client for connector ${connectorId}: ${event.data}`)
         ws.send(JSON.stringify({ message: "Hello from server!" }))
       },
       onClose: (event, ws) => {
-        Logger.info("Connection closed")
+        Logger.info(`WebSocket connection closed for connector ${connectorId}`)
         if (connectorId) {
           wsConnections.delete(connectorId)
+          Logger.info(`Remaining active WebSocket connections: ${wsConnections.size}`)
         }
       },
     }
@@ -170,6 +174,7 @@ export const AppRoutes = app
   .get("/me", GetUserWorkspaceInfo)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
+  .get("/whatsapp/groups", GetWhatsAppGroups)
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema
@@ -201,6 +206,8 @@ export const AppRoutes = app
     zValidator("form", deleteConnectorSchema),
     DeleteConnector,
   )
+  .post("/connectors/whatsapp", CreateWhatsAppConnector)
+  .delete("/connectors/whatsapp", DeleteWhatsAppConnector)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(

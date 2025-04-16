@@ -15,6 +15,7 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
+  WhatsAppEntity
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -23,6 +24,7 @@ export {
   CalendarEntity,
   MailAttachmentEntity,
   SlackEntity,
+  WhatsAppEntity,
   Apps,
   isMailAttachment,
 } from "search/types"
@@ -30,7 +32,6 @@ export type { Entity } from "search/types"
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"
-
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
 // @ts-ignore

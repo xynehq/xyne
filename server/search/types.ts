@@ -32,6 +32,10 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
+  | typeof whatsappMessageSchema
+  | typeof whatsappContactSchema
+  | typeof whatsappConversationSchema
+  | typeof whatsappGroupSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -46,6 +50,7 @@ export enum Apps {
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+  WhatsApp = "whatsapp",
 }
 
 export enum GooglePeopleEntity {
@@ -84,6 +89,13 @@ export enum SlackEntity {
   File = "file",
 }
 
+export enum WhatsAppEntity {
+  Message = "message",
+  Contact = "contact",
+  Conversation = "conversation",
+  Group = "group",
+}
+
 export enum DriveEntity {
   Docs = "docs",
   Sheets = "sheets",
@@ -119,6 +131,7 @@ export const isMailAttachment = (entity: Entity): boolean =>
 
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
+export const WhatsAppEntitySchema = z.nativeEnum(WhatsAppEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
 
@@ -152,6 +165,7 @@ export type Entity =
   | CalendarEntity
   | MailAttachmentEntity
   | SlackEntity
+  | WhatsAppEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -445,7 +459,7 @@ export const VespaChatMessageSchema = z.object({
   text: z.string(),
   userId: z.string(), // Slack user ID (e.g., "U032QT45V53")
   app: z.nativeEnum(Apps), // App (e.g., "slack")
-  entity: z.nativeEnum(SlackEntity), // Entity (e.g., "message")
+  entity: z.union([z.nativeEnum(SlackEntity), z.nativeEnum(WhatsAppEntity)]),
   name: z.string(),
   username: z.string(),
   image: z.string(),
@@ -699,6 +713,10 @@ export type Inserts =
   | VespaChatTeam
   | VespaChatUser
   | VespaChatMessage
+  | VespaWhatsAppMessage
+  | VespaWhatsAppContact
+  | VespaWhatsAppConversation
+  | VespaWhatsAppGroup
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
@@ -933,3 +951,60 @@ export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
     matchfeatures: z.any().optional(),
     rankfeatures: z.any().optional(),
   })
+
+export const whatsappMessageSchema = "whatsapp_message"
+export const whatsappContactSchema = "whatsapp_contact"
+export const whatsappConversationSchema = "whatsapp_conversation"
+export const whatsappGroupSchema = "whatsapp_group"
+
+export const VespaWhatsAppMessageSchema = z.object({
+  docId: z.string(),
+  phoneNumber: z.string(),
+  text: z.string(),
+  timestamp: z.number(),
+  conversationId: z.string(),
+  app: z.literal(Apps.WhatsApp),
+  entity: z.literal(WhatsAppEntity.Message),
+  permissions: z.array(z.string()),
+})
+
+export const VespaWhatsAppContactSchema = z.object({
+  docId: z.string(),
+  phoneNumber: z.string(),
+  name: z.string(),
+  app: z.literal(Apps.WhatsApp),
+  entity: z.literal(WhatsAppEntity.Contact),
+  permissions: z.array(z.string()),
+})
+
+export const VespaWhatsAppConversationSchema = z.object({
+  docId: z.string(),
+  phoneNumber: z.string(),
+  contactId: z.string(),
+  lastMessageTimestamp: z.number(),
+  app: z.literal(Apps.WhatsApp),
+  entity: z.literal(WhatsAppEntity.Conversation),
+  permissions: z.array(z.string()),
+})
+
+export const VespaWhatsAppGroupSchema = z
+  .object({
+    docId: z.string(),
+    subject: z.string(),
+    creation: z.number(),
+    owner: z.string(),
+    description: z.string(),
+    participants: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: z.nativeEnum(WhatsAppEntity),
+    permissions: z.array(z.string()),
+    sddocname: z.literal(whatsappGroupSchema),
+  })
+  .merge(defaultVespaFieldsSchema)
+
+export type VespaWhatsAppMessage = z.infer<typeof VespaWhatsAppMessageSchema>
+export type VespaWhatsAppContact = z.infer<typeof VespaWhatsAppContactSchema>
+export type VespaWhatsAppConversation = z.infer<
+  typeof VespaWhatsAppConversationSchema
+>
+export type VespaWhatsAppGroup = z.infer<typeof VespaWhatsAppGroupSchema>

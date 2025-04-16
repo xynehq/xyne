@@ -23,6 +23,10 @@ export enum StatType {
   Slack_Conversation = "slackConversationCount",
   Slack_User = "slackUserCount",
   Slack_Message_Reply = "slackMessageReplyCount",
+  WhatsApp_Message = "whatsappMessageCount",
+  WhatsApp_Contact = "whatsappContactCount",
+  WhatsApp_Conversation = "whatsappConversationCount",
+  WhatsApp_Group = "whatsappGroupCount",
 }
 
 interface StatMetadata {
@@ -49,8 +53,16 @@ interface SlackStats {
 type UserStats = (
   | (GoogleStats & Partial<GoogleTotalStats>)
   | (SlackStats & Partial<SlackTotalStats>)
+  | WhatsAppStats
 ) &
   StatMetadata
+
+interface WhatsAppStats {
+  whatsappMessageCount: number
+  whatsappContactCount: number
+  whatsappConversationCount: number
+  whatsappGroupCount: number
+}
 
 // Progress tracking types
 interface ServiceAccountProgress {
@@ -172,6 +184,14 @@ export class Tracker {
           totalConversations: 0,
           ...baseStats,
         }
+      } else if (this.app === Apps.WhatsApp) {
+        this.serviceAccountProgress.userStats[email] = {
+          whatsappMessageCount: 0,
+          whatsappContactCount: 0,
+          whatsappConversationCount: 0,
+          whatsappGroupCount: 0,
+          ...baseStats,
+        }
       }
     }
 
@@ -195,6 +215,14 @@ export class Tracker {
           slackMessageReplyCount: 0,
           totalMessages: 0,
           totalConversations: 0,
+          ...baseOAuthStats,
+        }
+      } else if (this.app === Apps.WhatsApp) {
+        this.oAuthProgress.userStats[email] = {
+          whatsappMessageCount: 0,
+          whatsappContactCount: 0,
+          whatsappConversationCount: 0,
+          whatsappGroupCount: 0,
           ...baseOAuthStats,
         }
       }
@@ -241,7 +269,24 @@ export class Tracker {
       }
     } else if (this.app === Apps.Slack) {
       return Math.floor(this.oAuthProgress.current / this.oAuthProgress.total)
-      // return Math.floor(this.oAuthProgress.userStats[this.oAuthProgress.user].slackConversationCount/)
+    } else if (this.app === Apps.WhatsApp) {
+      const stats = this.oAuthProgress.userStats[
+        this.oAuthProgress.user
+      ] as WhatsAppStats & StatMetadata
+      if (!stats) return 0
+
+      // Calculate progress based on WhatsApp metrics
+      // We consider the ingestion complete when we have both messages and contacts
+      const hasMessages = stats.whatsappMessageCount > 0
+      const hasContacts = stats.whatsappContactCount > 0
+      const hasConversations = stats.whatsappConversationCount > 0
+
+      if (hasMessages && hasContacts && hasConversations) {
+        return 100
+      } else if (hasMessages || hasContacts || hasConversations) {
+        return 50
+      }
+      return 0
     } else {
       throw new Error("Invalid app for progress")
     }

@@ -22,6 +22,8 @@ import {
   userSchema,
   type VespaSearchResponse,
   type VespaUser,
+  Apps,
+  chatContainerSchema,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
@@ -79,6 +81,13 @@ export const chatRenameSchema = z.object({
 
 export const chatDeleteSchema = z.object({
   chatId: z.string().min(1),
+})
+
+export const whatsappGroupsSchema = z.object({
+  groups: z.array(z.object({
+    name: z.string(),
+    jid: z.string()
+  }))
 })
 
 export const chatHistorySchema = z.object({
@@ -347,4 +356,39 @@ export const AnswerApi = async (c: Context) => {
       Logger.error("SSE stream aborted")
     })
   })
+}
+
+export const GetWhatsAppGroups = async (c: Context) => {
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+
+    // Use a simpler direct query approach
+    const VespaClient = require("@/search/vespaClient").default
+    const vespa = new VespaClient()
+    
+    // Create a query targeting chat_container with WhatsApp app
+    const searchPayload = {
+      yql: `select * from sources * where sddocname contains "chat_container" and app contains "whatsapp" and permissions contains "${email}"`,
+      hits: 100
+    }
+    
+    const results = await vespa.search(searchPayload)
+    
+    // Transform results into groups format
+    const groups = (results.root?.children || [])
+      .filter((doc: any) => doc.fields.docId && doc.fields.docId.includes("@g.us"))
+      .map((doc: any) => ({
+        name: doc.fields.name || "Unknown Group",
+        jid: doc.fields.docId
+      }));
+
+    return c.json({ groups })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(error, `Get WhatsApp Groups Error: ${errMsg} ${(error as Error).stack}`)
+    throw new HTTPException(500, {
+      message: "Could not fetch WhatsApp groups"
+    })
+  }
 }
