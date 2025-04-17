@@ -22,6 +22,7 @@ import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authent
 import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
+import { Route as AuthenticatedTraceChatIdMsgIdImport } from './routes/_authenticated/trace.$chatId.$msgId'
 import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
 import { Route as AuthenticatedAdminIntegrationsGoogleImport } from './routes/_authenticated/admin/integrations/google'
 
@@ -93,6 +94,13 @@ const AuthenticatedAdminIntegrationsIndexRoute =
   AuthenticatedAdminIntegrationsIndexImport.update({
     id: '/admin/integrations/',
     path: '/admin/integrations/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedTraceChatIdMsgIdRoute =
+  AuthenticatedTraceChatIdMsgIdImport.update({
+    id: '/trace/$chatId/$msgId',
+    path: '/trace/$chatId/$msgId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -198,6 +206,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsSlackImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/trace/$chatId/$msgId': {
+      id: '/_authenticated/trace/$chatId/$msgId'
+      path: '/trace/$chatId/$msgId'
+      fullPath: '/trace/$chatId/$msgId'
+      preLoaderRoute: typeof AuthenticatedTraceChatIdMsgIdImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/admin/integrations/': {
       id: '/_authenticated/admin/integrations/'
       path: '/admin/integrations'
@@ -230,6 +245,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
   AuthenticatedAdminIntegrationsGoogleRoute: typeof AuthenticatedAdminIntegrationsGoogleRoute
   AuthenticatedAdminIntegrationsSlackRoute: typeof AuthenticatedAdminIntegrationsSlackRoute
+  AuthenticatedTraceChatIdMsgIdRoute: typeof AuthenticatedTraceChatIdMsgIdRoute
   AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -244,6 +260,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAdminIntegrationsGoogleRoute,
   AuthenticatedAdminIntegrationsSlackRoute:
     AuthenticatedAdminIntegrationsSlackRoute,
+  AuthenticatedTraceChatIdMsgIdRoute: AuthenticatedTraceChatIdMsgIdRoute,
   AuthenticatedAdminIntegrationsIndexRoute:
     AuthenticatedAdminIntegrationsIndexRoute,
 }
@@ -265,6 +282,7 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -280,6 +298,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -297,6 +316,7 @@ export interface FileRoutesById {
   '/_authenticated/integrations/': typeof AuthenticatedIntegrationsIndexRoute
   '/_authenticated/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/_authenticated/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/_authenticated/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
@@ -315,6 +335,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/slack'
+    | '/trace/$chatId/$msgId'
     | '/admin/integrations'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -329,6 +350,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/slack'
+    | '/trace/$chatId/$msgId'
     | '/admin/integrations'
   id:
     | '__root__'
@@ -344,6 +366,7 @@ export interface FileRouteTypes {
     | '/_authenticated/integrations/'
     | '/_authenticated/admin/integrations/google'
     | '/_authenticated/admin/integrations/slack'
+    | '/_authenticated/trace/$chatId/$msgId'
     | '/_authenticated/admin/integrations/'
   fileRoutesById: FileRoutesById
 }
@@ -386,6 +409,7 @@ export const routeTree = rootRoute
         "/_authenticated/integrations/",
         "/_authenticated/admin/integrations/google",
         "/_authenticated/admin/integrations/slack",
+        "/_authenticated/trace/$chatId/$msgId",
         "/_authenticated/admin/integrations/"
       ]
     },
@@ -432,6 +456,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/admin/integrations/slack": {
       "filePath": "_authenticated/admin/integrations/slack.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/trace/$chatId/$msgId": {
+      "filePath": "_authenticated/trace.$chatId.$msgId.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/admin/integrations/": {

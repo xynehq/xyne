@@ -41,6 +41,7 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
+import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 const vespa = new VespaClient()
@@ -440,6 +441,7 @@ type VespaQueryConfig = {
   notInMailLabels: string[]
   rankProfile: SearchModes
   requestDebug: boolean
+  span: Span | null
 }
 
 export const searchVespa = async (
@@ -456,6 +458,7 @@ export const searchVespa = async (
     notInMailLabels = [],
     rankProfile = SearchModes.NativeRank,
     requestDebug = false,
+    span = null,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -489,7 +492,7 @@ export const searchVespa = async (
     ...(entity ? { entity } : {}),
     ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
   }
-
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
     return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
