@@ -297,7 +297,7 @@ async function insertChannelMessages(
           message.team = await getTeam(client, message)
           if (message.text == "") {
             message.text = "NA"
-          } 
+          }
           insertChatMessage(
             client,
             message,
@@ -360,18 +360,21 @@ async function insertChannelMessages(
                   )
                 }
               }
-              if(!memberMap.get(reply.user)){
-                memberMap.set(reply.user,
+              if (!memberMap.get(reply.user)) {
+                memberMap.set(
+                  reply.user,
                   (
                     await client.users.info({
                       user: reply.user,
                     })
-                  ).user!,)
-
+                  ).user!,
+                )
               }
               reply.mentions = mentions
               reply.text = text
-              if(reply.text==""){reply.text="NA"}//case when text is empty
+              if (reply.text == "") {
+                reply.text = "NA"
+              } //case when text is empty
               reply.team = await getTeam(client, reply)
               insertChatMessage(
                 client,
@@ -533,27 +536,28 @@ async function getConversationUsers(
   }
 }
 
-const getTeam = async(client: WebClient,
-  message: SlackMessage & { mentions?: string[] }) =>{
-    if(!message.team){
-      if(message.files){
-        for(const file of message.files) {
-          if (file.user_team) {
-            message.team = file.user_team
-            break
-          }
+const getTeam = async (
+  client: WebClient,
+  message: SlackMessage & { mentions?: string[] },
+) => {
+  if (!message.team) {
+    if (message.files) {
+      for (const file of message.files) {
+        if (file.user_team) {
+          message.team = file.user_team
+          break
         }
       }
     }
-    if(!message.team){
-      const res = await client.users.info({user: message.user!})
-      if(res.ok){
-        message.team = res.user?.team_id
-      }
+  }
+  if (!message.team) {
+    const res = await client.users.info({ user: message.user! })
+    if (res.ok) {
+      message.team = res.user?.team_id
     }
-    return message.team;
+  }
+  return message.team
 }
-
 
 const insertChatMessage = async (
   client: WebClient,
@@ -564,7 +568,6 @@ const insertChatMessage = async (
   image: string,
 ) => {
   const editedTimestamp = message.edited ? parseFloat(message?.edited?.ts!) : 0
-  
 
   return insertWithRetry(
     {
