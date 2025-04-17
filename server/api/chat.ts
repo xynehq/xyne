@@ -479,7 +479,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       let results = await searchVespa(message, email, null, null, {
         limit: pageSize,
         alpha,
-        span: rewriteSpan,
+        span: vespaSearchSpan,
       })
       vespaSearchSpan.setAttribute(
         "result_count",
