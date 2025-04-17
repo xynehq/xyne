@@ -1507,7 +1507,6 @@ export const MessageApi = async (c: Context) => {
             )
             understandSpan.end()
             const answerSpan = ragSpan.startSpan("process_final_answer")
-            answer = processMessage(answer, citationMap)
             answerSpan.setAttribute("final_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
@@ -1548,7 +1547,6 @@ export const MessageApi = async (c: Context) => {
             Logger.info(`Inserted trace for message ${msg.externalId}`)
             insertSpan.setAttribute("message_id", msg.externalId)
             insertSpan.end()
-            const metadataSpan = streamSpan.startSpan("send_final_metadata")
             await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
               data: JSON.stringify({
@@ -1556,7 +1554,6 @@ export const MessageApi = async (c: Context) => {
                 messageId: msg.externalId,
               }),
             })
-            metadataSpan.end()
             const endSpan = streamSpan.startSpan("send_end_event")
             await stream.writeSSE({
               data: "",
