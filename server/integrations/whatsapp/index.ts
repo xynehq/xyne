@@ -107,25 +107,41 @@ const store = makeInMemoryStore({})
 store.readFromFile = () => {}
 store.writeToFile = () => {}
 
-// Commenting out contacts functionality for now
-/*
-export const getContacts = async (sock: WASocket): Promise<WhatsAppContact[]> => {
+export const getContacts = async (
+  sock: WASocket,
+): Promise<WhatsAppContact[]> => {
   const contacts: WhatsAppContact[] = []
-  const contactsList = await (sock as unknown as { store: WhatsAppStore }).store.contacts.all()
-  
-  for (const [id, contact] of Object.entries(contactsList)) {
-    if (contact.name) {
-      contacts.push({
-        id,
-        name: contact.name,
-        phoneNumber: id.split('@')[0]
-      })
+  try {
+    // Wait for store to be ready
+    await new Promise((resolve) => setTimeout(resolve, 10000))
+
+    if (!sock || !(sock as any).store || !(sock as any).store.contacts) {
+      // Check if store exists and has chats
+      Logger.info(
+        "Store or contacts not initialized yet, returning empty contacts",
+      )
+      return []
     }
+
+    const contactsList = await (sock as unknown as { store: WhatsAppStore })
+      .store.contacts
+
+    for (const [id, contact] of Object.entries(contactsList)) {
+      if (contact.name) {
+        contacts.push({
+          id,
+          name: contact.name,
+          phoneNumber: id.split("@")[0],
+        })
+      }
+    }
+  } catch (e) {
+    Logger.error(e, "Error getting contacts from store")
+    return []
   }
-  
+
   return contacts
 }
-*/
 
 export const getConversations = async (
   sock: WASocket,
@@ -133,7 +149,7 @@ export const getConversations = async (
   const conversations: WhatsAppConversation[] = []
   try {
     // Wait for store to be ready
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    await new Promise((resolve) => setTimeout(resolve, 10000))
 
     // Check if store exists and has chats
     if (!sock || !(sock as any).store || !(sock as any).store.chats) {
@@ -165,44 +181,93 @@ export const getConversations = async (
   return conversations
 }
 
+// export const getMessages = async (
+//   sock: WASocket,
+//   conversationId: string,
+// ): Promise<WhatsAppMessage[]> => {
+//   const messages: WhatsAppMessage[] = []
+//   try {
+//     // Wait for store to be ready
+//     await new Promise((resolve) => setTimeout(resolve, 10000))
+
+//     // Check if store exists and has chats
+//     if (!sock || !(sock as any).store || !(sock as any).store.chats) {
+//       Logger.info(
+//         "Store or chats not initialized yet, returning empty messages",
+//       )
+//       return []
+//     }
+
+//     console.log("get Function")
+//     console.log(sock.store.chats.get)
+//     console.log("get Function")
+
+//     const chat = await (
+//       sock as unknown as { store: WhatsAppStore }
+//     ).store.chats.get(conversationId)
+//     Logger.info(
+//       `Retrieved chat from store for conversation ${conversationId}: ${JSON.stringify(chat, null, 2)}`,
+//     )
+
+//     // console.log("chat in getMessages")
+//     // console.log(chat)
+//     // console.log("chat in getMessages")
+
+//     if (chat?.messages) {
+//       for (const [id, message] of Object.entries(chat.messages)) {
+//         messages.push({
+//           key: message.key,
+//           message: message.message,
+//           timestamp: message.messageTimestamp,
+//         })
+//       }
+//     }
+//   } catch (error) {
+//     Logger.error(
+//       error,
+//       `Error getting messages from store for conversation ${conversationId}`,
+//     )
+//     return []
+//   }
+
+//   return messages
+// }
+
 export const getMessages = async (
   sock: WASocket,
-  conversationId: string,
+  // conversationId: string,
 ): Promise<WhatsAppMessage[]> => {
   const messages: WhatsAppMessage[] = []
   try {
     // Wait for store to be ready
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    await new Promise((resolve) => setTimeout(resolve, 10000))
 
-    // Check if store exists and has chats
     if (!sock || !(sock as any).store || !(sock as any).store.chats) {
+      // Check if store exists and has chats
       Logger.info(
         "Store or chats not initialized yet, returning empty messages",
       )
       return []
     }
 
-    const chat = await (
-      sock as unknown as { store: WhatsAppStore }
-    ).store.chats.get(conversationId)
-    Logger.info(
-      `Retrieved chat from store for conversation ${conversationId}: ${JSON.stringify(chat, null, 2)}`,
-    )
+    const chat = await (sock as unknown as { store: WhatsAppStore }).store
+      .messages
 
-    if (chat?.messages) {
-      for (const [id, message] of Object.entries(chat.messages)) {
-        messages.push({
-          key: message.key,
-          message: message.message,
-          timestamp: message.messageTimestamp,
-        })
-      }
-    }
+    console.log("chat in getMessages")
+    // console.log(chat["91990s.whatsapp.net"].array)
+    console.log("chat in getMessages")
+
+    // if (chat?.messages) {
+    //   for (const [id, message] of Object.entries(chat.messages)) {
+    //     messages.push({
+    //       key: message.key,
+    //       message: message.message,
+    //       timestamp: message.messageTimestamp,
+    //     })
+    //   }
+    // }
   } catch (error) {
-    Logger.error(
-      error,
-      `Error getting messages from store for conversation ${conversationId}`,
-    )
+    Logger.error(error, `Error getting messages from store`)
     return []
   }
 
@@ -519,12 +584,16 @@ export const handleWhatsAppIngestion = async (
       defaultQueryTimeoutMs: 60000,
       customUploadHosts: [],
       getMessage: async () => undefined,
+      syncFullHistory: true,
+      shouldSyncHistoryMessage: () => true,
+      fireInitQueries: true,
     })
     Logger.info("WhatsApp socket created")
 
     // Bind store to socket events before setting up other handlers
     Logger.info("Binding store to socket events")
     store.bind(sock.ev)
+    ;(sock as any).store = store
 
     // Wait for store to be ready
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -827,6 +896,19 @@ export const handleWhatsAppIngestion = async (
         Logger.error(error, "Error processing chats update")
       }
     })
+
+    sock.ev.on(
+      "messaging-history.set",
+      ({
+        chats: newChats,
+        contacts: newContacts,
+        messages: newMessages,
+        syncType,
+      }) => {
+        // handle the chats, contacts and messages
+        console.log("messaging-history.set event fired....")
+      },
+    )
   } catch (error) {
     Logger.error(error, "Error in WhatsApp ingestion")
     // Clean up on error
@@ -866,10 +948,27 @@ const startIngestion = async (
       )
     }, 4000)
 
+    // Get and insert contacts
+    Logger.info("Fetching WhatsApp contacts")
+    const contacts = await getContacts(sock)
+    Logger.info(`Found contacts ${contacts.length}`)
+    for (const contact of contacts) {
+      await insertWhatsAppContact(email, contact, [email])
+      tracker.updateUserStats(email, StatType.WhatsApp_Contact, 1)
+      // Send immediate update after each contact
+      sendWebsocketMessage(
+        JSON.stringify({
+          progress: tracker.getProgress(),
+          userStats: tracker.getOAuthProgress().userStats,
+        }),
+        connectorId,
+      )
+    }
+
     // Get and insert conversations
     Logger.info("Fetching WhatsApp conversations")
     const conversations = await getConversations(sock)
-    Logger.info(`Found ${conversations.length} conversations`)
+    Logger.info(`Found conversations ${conversations.length}`)
 
     // Insert conversations into Vespa
     for (const conversation of conversations) {
@@ -890,9 +989,56 @@ const startIngestion = async (
         )
         // Update tracker
         tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 1)
+        // // Get and insert messages for each conversation
+        // Logger.info(`Fetching messages for conversation ${conversation.id}`)
+        // const messages = await getMessages(sock, conversation.id)
+        // Logger.info(`Found messages: ${messages.length}`)
+        // for (const message of messages) {
+        //   await insertWhatsAppMessage(
+        //     email,
+        //     message,
+        //     conversation.id,
+        //     conversation.contactId,
+        //     [email],
+        //     "hello"
+        //   )
+        //   tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
+        //   // Send immediate update after each message
+        //   sendWebsocketMessage(
+        //     JSON.stringify({
+        //       progress: tracker.getProgress(),
+        //       userStats: tracker.getOAuthProgress().userStats,
+        //     }),
+        //     connectorId,
+        //   )
+        // }
       } else {
         Logger.error(`Failed to push conversation ${conversation.id} to Vespa`)
       }
+    }
+
+    // Get and insert messages for each conversation
+    Logger.info(`Fetching messages`)
+    const messages = await getMessages(sock)
+    Logger.info(`Found messages: ${messages.length}`)
+    for (const message of messages) {
+      // await insertWhatsAppMessage(
+      //   email,
+      //   message,
+      //   conversation.id,
+      //   conversation.contactId,
+      //   [email],
+      //   "hello",
+      // )
+      tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
+      // Send immediate update after each message
+      sendWebsocketMessage(
+        JSON.stringify({
+          progress: tracker.getProgress(),
+          userStats: tracker.getOAuthProgress().userStats,
+        }),
+        connectorId,
+      )
     }
 
     // Fetch and insert groups
@@ -915,7 +1061,7 @@ const startIngestion = async (
         })),
       }))
 
-      Logger.info(`Found ${groups.length} groups`)
+      Logger.info(`Found groups ${groups.length}`)
 
       // Insert groups into Vespa
       for (const group of groups) {
