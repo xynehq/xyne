@@ -1299,7 +1299,6 @@ export const MessageApi = async (c: Context) => {
           }
 
           Logger.info("Chat stream started")
-          const metadataSpan = streamSpan.startSpan("send_initial_metadata")
           // we do not set the message Id as we don't have it
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -1307,8 +1306,6 @@ export const MessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
-          metadataSpan.end()
-          const messagePrepSpan = streamSpan.startSpan("prepare_messages")
 
           const messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
@@ -1317,11 +1314,6 @@ export const MessageApi = async (c: Context) => {
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
             }))
-          messagePrepSpan.setAttribute(
-            "message_count",
-            messagesWithNoErrResponse.length,
-          )
-          messagePrepSpan.end()
 
           Logger.info(
             "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
@@ -1350,6 +1342,7 @@ export const MessageApi = async (c: Context) => {
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
+          const conversationSpan = streamSpan.startSpan("conversation_search")
           for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
               if (reasoning) {
@@ -1424,6 +1417,10 @@ export const MessageApi = async (c: Context) => {
               costArr.push(chunk.cost)
             }
           }
+          conversationSpan.setAttribute("answer_found", parsed.answer);
+          conversationSpan.setAttribute("answer", answer);
+          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite);
+
           if (parsed.answer === null || parsed.answer === "") {
             const ragSpan = streamSpan.startSpan("rag_processing")
             if (parsed.queryRewrite) {
