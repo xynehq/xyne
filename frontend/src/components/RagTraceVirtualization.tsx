@@ -167,7 +167,7 @@ export function RagTraceVirtualization({
   const [showSpanDetails, setShowSpanDetails] = useState(true);
   const [showTimeline, setShowTimeline] = useState(true);
   const [showCitationColumn, setShowCitationColumn] = useState(true);
-  const [panelWidth, setPanelWidth] = useState(420);
+  const [panelWidth, setPanelWidth] = useState(750);
   const [currentCitationIndex, setCurrentCitationIndex] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
