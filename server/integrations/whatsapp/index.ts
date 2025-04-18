@@ -321,14 +321,18 @@ const safeProfilePictureUrl = async (
 const insertWhatsAppMessage = async (
   email: string,
   message: WhatsAppMessage,
-  conversationId: string,
-  phoneNumber: string,
+  // conversationId: string,
+  // phoneNumber: string,
   permissions: string[],
-  pictureUrl: string | undefined,
+  // pictureUrl: string | undefined,
 ) => {
   if (!permissions.length || permissions.indexOf(email) === -1) {
     permissions = permissions.concat(email)
   }
+  const conversationId = message.key.remoteJid || ""
+  const phoneNumber = conversationId.split("@")[0]
+  // todo derieve pictureUrl
+  const pictureUrl = ""
 
   const messageText =
     message.message?.conversation ||
@@ -1038,28 +1042,28 @@ const startIngestion = async (
     }
 
     // Get and insert messages for each conversation
-    // Logger.info(`Fetching messages`)
-    // const messages = await getMessages(sock)
-    // Logger.info(`Found messages: ${messages.length}`)
-    // for (const message of messages) {
-    //   // await insertWhatsAppMessage(
-    //   //   email,
-    //   //   message,
-    //   //   conversation.id,
-    //   //   conversation.contactId,
-    //   //   [email],
-    //   //   "hello",
-    //   // )
-    //   tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
-    //   // Send immediate update after each message
-    //   sendWebsocketMessage(
-    //     JSON.stringify({
-    //       progress: tracker.getProgress(),
-    //       userStats: tracker.getOAuthProgress().userStats,
-    //     }),
-    //     connectorId,
-    //   )
-    // }
+    Logger.info(`Fetching messages`)
+    const messages = await getMessages(sock)
+    Logger.info(`Found messages: ${messages.length}`)
+    for (const message of messages) {
+      // await insertWhatsAppMessage(
+      //   email,
+      //   message,
+      //   conversation.id,
+      //   conversation.contactId,
+      //   [email],
+      //   "hello",
+      // )
+      tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
+      // Send immediate update after each message
+      sendWebsocketMessage(
+        JSON.stringify({
+          progress: tracker.getProgress(),
+          userStats: tracker.getOAuthProgress().userStats,
+        }),
+        connectorId,
+      )
+    }
 
     // Fetch and insert groups
     Logger.info("Fetching WhatsApp groups")
