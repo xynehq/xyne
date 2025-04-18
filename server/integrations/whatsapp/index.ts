@@ -165,11 +165,13 @@ export const getConversations = async (
     Logger.info(`Retrieved chats from store: ${JSON.stringify(chats, null, 2)}`)
 
     for (const [id, chat] of Object.entries(chats)) {
-      if (chat.conversationTimestamp) {
+      if (chat.lastMessageRecvTimestamp) {
         conversations.push({
-          id,
-          contactId: id.split("@")[0],
-          lastMessageTimestamp: chat.conversationTimestamp,
+          id: chat.id,
+          contactId: chat.id.split("@")[0],
+          lastMessageTimestamp: new Date(
+            chat.lastMessageRecvTimestamp,
+          ).getTime(),
         })
       }
     }
@@ -393,7 +395,7 @@ const insertWhatsAppConversation = async (
     permissions = permissions.concat(email)
   }
 
-  const now = Date.now()
+  const now = new Date().getTime()
   return insert(
     {
       docId: conversation.id,
@@ -403,7 +405,7 @@ const insertWhatsAppConversation = async (
       app: Apps.WhatsApp,
       isIm: true, // This is a direct message
       isMpim: false,
-      createdAt: conversation.lastMessageTimestamp,
+      createdAt: new Date(conversation.lastMessageTimestamp).getTime(),
       updatedAt: now,
       description: `Chat with ${phoneNumber}`,
       count: 2, // Direct message has 2 participants
@@ -1036,28 +1038,28 @@ const startIngestion = async (
     }
 
     // Get and insert messages for each conversation
-    Logger.info(`Fetching messages`)
-    const messages = await getMessages(sock)
-    Logger.info(`Found messages: ${messages.length}`)
-    for (const message of messages) {
-      // await insertWhatsAppMessage(
-      //   email,
-      //   message,
-      //   conversation.id,
-      //   conversation.contactId,
-      //   [email],
-      //   "hello",
-      // )
-      tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
-      // Send immediate update after each message
-      sendWebsocketMessage(
-        JSON.stringify({
-          progress: tracker.getProgress(),
-          userStats: tracker.getOAuthProgress().userStats,
-        }),
-        connectorId,
-      )
-    }
+    // Logger.info(`Fetching messages`)
+    // const messages = await getMessages(sock)
+    // Logger.info(`Found messages: ${messages.length}`)
+    // for (const message of messages) {
+    //   // await insertWhatsAppMessage(
+    //   //   email,
+    //   //   message,
+    //   //   conversation.id,
+    //   //   conversation.contactId,
+    //   //   [email],
+    //   //   "hello",
+    //   // )
+    //   tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
+    //   // Send immediate update after each message
+    //   sendWebsocketMessage(
+    //     JSON.stringify({
+    //       progress: tracker.getProgress(),
+    //       userStats: tracker.getOAuthProgress().userStats,
+    //     }),
+    //     connectorId,
+    //   )
+    // }
 
     // Fetch and insert groups
     Logger.info("Fetching WhatsApp groups")
@@ -1083,9 +1085,6 @@ const startIngestion = async (
 
       // Insert groups into Vespa
       for (const group of groups) {
-        Logger.info(
-          `Inserting group into Vespa: ${JSON.stringify(group, null, 2)}`,
-        )
         const success = await insertAndVerify(
           group.id,
           chatContainerSchema,
