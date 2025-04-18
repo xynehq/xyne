@@ -253,19 +253,27 @@ export const getMessages = async (
     const chat = await (sock as unknown as { store: WhatsAppStore }).store
       .messages
 
-    console.log("chat in getMessages")
-    // console.log(chat["91990s.whatsapp.net"].array)
-    console.log("chat in getMessages")
+    // Iterate through all conversations in the store
+    for (const [jid, messageMap] of Object.entries(chat)) {
+      const conversationMessages = messageMap.array
+      Logger.info(
+        `Retrieved ${conversationMessages.length} messages from conversation ${jid}`,
+      )
 
-    // if (chat?.messages) {
-    //   for (const [id, message] of Object.entries(chat.messages)) {
-    //     messages.push({
-    //       key: message.key,
-    //       message: message.message,
-    //       timestamp: message.messageTimestamp,
-    //     })
-    //   }
-    // }
+      // Add each message to our results array
+      for (const msg of conversationMessages) {
+        if (msg.key && msg.message) {
+          messages.push({
+            key: msg.key,
+            message: msg.message,
+            timestamp:
+              typeof msg.messageTimestamp === "number"
+                ? msg.messageTimestamp
+                : Number(msg.messageTimestamp),
+          })
+        }
+      }
+    }
   } catch (error) {
     Logger.error(error, `Error getting messages from store`)
     return []
@@ -953,8 +961,18 @@ const startIngestion = async (
     const contacts = await getContacts(sock)
     Logger.info(`Found contacts ${contacts.length}`)
     for (const contact of contacts) {
-      await insertWhatsAppContact(email, contact, [email])
-      tracker.updateUserStats(email, StatType.WhatsApp_Contact, 1)
+      const success = await insertAndVerify(
+        contact.id,
+        whatsappContactSchema,
+        () => insertWhatsAppContact(email, contact, [email]),
+      )
+      if (success) {
+        Logger.info(`Contact successfully pushed to Vespa ${contact.name}`)
+        // Update tracker
+        tracker.updateUserStats(email, StatType.WhatsApp_Contact, 1)
+      } else {
+        Logger.error(`Failed to push contact ${contact.name} to Vespa`)
+      }
       // Send immediate update after each contact
       sendWebsocketMessage(
         JSON.stringify({
