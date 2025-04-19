@@ -1,4 +1,4 @@
-import { Folder, Users, Paperclip, Code } from "lucide-react"
+import { Folder, Users, Paperclip, Code, Route } from "lucide-react"
 import DocsSvg from "@/assets/docs.svg"
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -19,6 +19,7 @@ import {
   NotionEntity,
   CalendarEntity,
   isMailAttachment,
+  CodeEntity,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
@@ -85,9 +86,19 @@ export const getIcon = (
   } else if (app === Apps.Slack) {
     return <img className={classNameVal} src={SlackSvg} />
   } else if (app === Apps.Code) {
+    // Check against CodeEntity enum values
+    if (entity === CodeEntity.ApiDocs) {
+      return <Route size={12} className="mr-[10px]" /> // Use Route icon for API docs
+    } else if (entity === CodeEntity.Rust) {
+      return <Code size={12} className="mr-[10px]" /> // Use Code icon for Rust code
+    }
+    // Fallback for any other CodeEntity (if added later)
     return <Code size={12} className="mr-[10px]" />
   } else {
-    throw new Error(`Invalid app ${app} and entity ${entity}`)
+    // Fallback or error handling for unknown app/entity combinations
+    console.error(`Invalid app ${app} and entity ${entity}`)
+    // Return a default icon or null
+    return <Code size={12} className="mr-[10px]" /> // Example fallback
   }
 }
 

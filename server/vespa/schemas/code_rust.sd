@@ -78,8 +78,8 @@ schema code_rust {
       match: text # Keep as text for broader matching within content
       bolding: on
       index: enable-bm25
-      # summary: dynamic # Remove dynamic summary from here
     }
+
     field code_chunk_start_lines type array<int> {
       indexing: summary | attribute
     }
@@ -99,6 +99,7 @@ schema code_rust {
       match: exact # Changed from word
       attribute: fast-search
     }
+    
     field doc_comments_start_lines type array<int> {
       indexing: summary | attribute
     }
@@ -137,20 +138,12 @@ schema code_rust {
     fields: raw_content, symbol_names, code_chunk_names, code_chunk_contents, doc_comments_texts, dependencies_names, dependencies_full_paths, feature_flags
   }
 
-  fieldset definitions {
-    fields: code_chunk_contents
-  }
-
-  fieldset documentation {
-    fields: doc_comments_texts
-  }
-
   # --- Rank Profiles ---
-  rank-profile default inherits default {
+  rank-profile default {
     # Inputs for hybrid search
     inputs {
       query(q_embedding) tensor<float>(x[1024]) # Query embedding
-      query(alpha) double                     # Weight for semantic vs lexical (0.0 to 1.0)
+      query(alpha) double                     # Weight for semantic vs lexical (0.0 to 1.0, default 0.5)
     }
 
     # Define function for semantic score using the mapped tensor field
@@ -158,14 +151,14 @@ schema code_rust {
       expression: closeness(field, code_chunk_embeddings)
     }
 
-    # Define count of matched fields for custom averaging
+    # Define count of matched fields for custom averaging (using fields from old 'code_focused')
     function matchedFieldCount() {
-      expression: matches(raw_content) + matches(symbol_names) + matches(code_chunk_names) + matches(doc_comments_texts) + matches(code_chunk_contents)
+      expression: matches(doc_comments_texts) + matches(code_chunk_names) + matches(symbol_names) + matches(code_chunk_contents)
     }
 
-    # Define combined nativeRank score with custom averaging
+    # Define combined nativeRank score with custom averaging (using fields from old 'code_focused')
     function combined_nativeRank() {
-      expression: (nativeRank(raw_content) + nativeRank(symbol_names) + nativeRank(code_chunk_names) + nativeRank(doc_comments_texts) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      expression: (nativeRank(doc_comments_texts) + nativeRank(code_chunk_names) + nativeRank(symbol_names) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     first-phase {
@@ -180,10 +173,10 @@ schema code_rust {
     }
 
     match-features {
-      nativeRank(raw_content)
-      nativeRank(symbol_names)
-      nativeRank(code_chunk_names)
+      # Include features relevant to the combined ranking
       nativeRank(doc_comments_texts)
+      nativeRank(code_chunk_names)
+      nativeRank(symbol_names)
       nativeRank(code_chunk_contents)
       matchedFieldCount
       combined_nativeRank
@@ -193,69 +186,7 @@ schema code_rust {
     }
   }
 
-  rank-profile code_focused inherits default {
-    # Inherits inputs and code_vector_score function from 'default'
-
-    # Define count of matched fields for custom averaging
-    function matchedFieldCount() {
-      expression: matches(doc_comments_texts) + matches(code_chunk_names) + matches(symbol_names) + matches(code_chunk_contents)
-    }
-
-    # Define combined nativeRank score with custom averaging
-    function combined_nativeRank() {
-      expression: (nativeRank(doc_comments_texts) + nativeRank(code_chunk_names) + nativeRank(symbol_names) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
-    }
-
-    first-phase {
-      # Hybrid scoring expression using custom nativeRank average
-      expression: (query(alpha) * code_vector_score) + ((1 - query(alpha)) * combined_nativeRank)
-    }
-
-    match-features {
-      nativeRank(doc_comments_texts)
-      nativeRank(code_chunk_names)
-      nativeRank(symbol_names)
-      nativeRank(code_chunk_contents)
-      matchedFieldCount
-      combined_nativeRank
-      code_vector_score # Uses closeness(field, code_chunk_embeddings) internally
-      chunk_scores # Add per-chunk BM25 scores (inherited function)
-    }
-  }
-
-  rank-profile doc_focused inherits default {
-    # Inherits inputs and code_vector_score function from 'default'
-
-    # Define count of matched fields for custom averaging
-    function matchedFieldCount() {
-      expression: matches(doc_comments_texts) + matches(code_chunk_names) + matches(symbol_names) + matches(code_chunk_contents)
-    }
-
-    # Define combined nativeRank score with custom averaging
-    function combined_nativeRank() {
-      expression: (nativeRank(doc_comments_texts) + nativeRank(code_chunk_names) + nativeRank(symbol_names) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
-    }
-
-    first-phase {
-      # Hybrid scoring expression using custom nativeRank average
-      expression: (query(alpha) * code_vector_score) + ((1 - query(alpha)) * combined_nativeRank)
-    }
-
-    match-features {
-      nativeRank(doc_comments_texts)
-      nativeRank(code_chunk_names)
-      nativeRank(symbol_names)
-      nativeRank(code_chunk_contents)
-      matchedFieldCount
-      combined_nativeRank
-      code_vector_score # Add semantic score
-      closeness(field, code_chunk_embeddings) # Add raw closeness
-      chunk_scores # Add per-chunk BM25 scores (inherited function)
-    }
-  }
-
   # --- Document Summaries ---
   # Default summary is implicitly created containing all fields with 'indexing: summary'
-  # Explicit definition removed.
 
 }
