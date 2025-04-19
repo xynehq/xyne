@@ -1,11 +1,16 @@
 import HighlightedText from "@/components/Highlight" // Keep for non-code results
 import { getIcon } from "@/lib/common"
-import { SearchResultDiscriminatedUnion, codeRustSchema } from "shared/types"
+import {
+  SearchResultDiscriminatedUnion,
+  codeApiDocsSchema,
+  codeRustSchema,
+} from "shared/types"
 import { Code } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
 import { rust } from "@codemirror/lang-rust"
 import { Decoration, ViewPlugin, EditorView } from "@codemirror/view" // Import EditorView for types
 import { rosePineDawn } from "thememirror"
+import MarkdownPreview from "@uiw/react-markdown-preview"
 
 // --- CodeMirror Plugin for Bolding <hi> ---
 const boldDecoration = Decoration.mark({
@@ -110,6 +115,11 @@ export const SearchResult = ({
 }) => {
   let content = <></>
   let commonClassVals = "pr-[60px]" // Keep existing layout class
+
+  // Helper to remove <hi> tags
+  const stripHiTags = (text: string | undefined | null): string => {
+    return text ? text.replace(/<\/?hi>/g, "") : ""
+  }
 
   if (result.type === "file") {
     content = (
@@ -430,6 +440,103 @@ export const SearchResult = ({
               </div>
             )
           })}
+        {/* Debug Info Display */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+          <details className="mt-2 ml-[44px] text-xs">
+            <summary className="text-gray-500 cursor-pointer">
+              {`Debug Info: ${index} : ${result.relevance}`}
+            </summary>
+            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+              {JSON.stringify(
+                {
+                  matchfeatures: result.matchfeatures,
+                  rankfeatures: result.rankfeatures,
+                  relevance: result.relevance,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        )}
+      </div>
+    )
+  } else if (result.type === codeApiDocsSchema) {
+    // Handler for code_api_docs results
+
+    // Prepare content for Markdown rendering (strip <hi> tags)
+    const descriptionOrSummary = stripHiTags(
+      result.openapi_description || result.openapi_summary,
+    )
+
+    content = (
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start space-x-2 mb-1">
+          <Code className="w-[24px] h-[24px] mr-[20px] flex-shrink-0" />
+          <span className="font-medium truncate">{result.path}</span>
+          {result.method && (
+            <span className="text-xs bg-blue-100 text-blue-800 px-1.5 py-px rounded">
+              {" "}
+              {/* Adjusted: text-xs, px-1.5, py-px */}
+              {result.method.toUpperCase()}
+            </span>
+          )}
+          {result.struct && (
+            <span className="text-sm bg-purple-100 text-purple-800 px-2 py-0.5 rounded">
+              {result.struct}
+            </span>
+          )}
+        </div>
+
+        {/* Render description/summary as Markdown using MarkdownPreview */}
+        {descriptionOrSummary && (
+          <div className="ml-[44px] mt-1 text-sm">
+            {" "}
+            {/* Removed prose classes */}
+            <MarkdownPreview
+              source={descriptionOrSummary}
+              wrapperElement={{
+                "data-color-mode": "light", // Match chat.tsx usage
+              }}
+              style={{
+                padding: 0, // Match chat.tsx usage
+                backgroundColor: "transparent", // Match chat.tsx usage
+                color: "#1C1D1F", // Use appropriate text color
+                fontSize: "inherit", // Inherit font size from parent
+              }}
+              // Optionally add heading overrides if needed, like in chat.tsx
+              // components={{ ... }}
+            />
+          </div>
+        )}
+
+        {/* Display chunks if available and distinct */}
+        {"chunks_summary" in result &&
+          result.chunks_summary &&
+          result.chunks_summary?.length > 0 &&
+          result.chunks_summary.map((summary, idx) => {
+            const chunkContent = stripHiTags(summary.chunk)
+            if (chunkContent && chunkContent !== descriptionOrSummary) {
+              return (
+                <div key={idx} className="ml-[44px] mt-1 text-sm">
+                  {" "}
+                  {/* Removed prose classes */}
+                  <MarkdownPreview
+                    source={chunkContent}
+                    wrapperElement={{ "data-color-mode": "light" }}
+                    style={{
+                      padding: 0,
+                      backgroundColor: "transparent",
+                      color: "#4A4F59", // Slightly different color for chunks?
+                      fontSize: "inherit",
+                    }}
+                  />
+                </div>
+              )
+            }
+            return null
+          })}
+
         {/* Debug Info Display */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">

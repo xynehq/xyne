@@ -12,6 +12,7 @@ import {
   chatUserSchema,
   chatMessageSchema,
   codeRustSchema,
+  codeApiDocsSchema,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -187,6 +188,11 @@ const AllSources = [
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+].join(", ")
+
+const CodeSources = [
+  codeApiDocsSchema,
+  codeRustSchema
 ].join(", ")
 
 export const autocomplete = async (
@@ -472,11 +478,12 @@ const HybridCodeLanguageGroupProfile = (
   // Target only the codeRustSchema for language grouping
   return {
     profile: SearchModes.NativeRank, // Or another appropriate profile
-    yql: `select * from sources ${codeRustSchema}
+    yql: `select * from sources ${CodeSources}
             where (
               (userInput(@query))
               or
-              ({targetHits:${hits}}nearestNeighbor(code_chunk_embeddings, q_embedding))
+              ({targetHits:${hits}}nearestNeighbor(code_chunk_embeddings, q_embedding)) or
+              ({targetHits:${hits}}nearestNeighbor(api_doc_embedding, q_embedding))
             )
             ${timestampCondition}
             limit 0
@@ -505,7 +512,9 @@ export const groupVespaSearch = async (
     Logger.info("Performing code-only search.")
     // Reverted YQL: Removed explicit 'matchfeatures' from select
     const yql = `select * from sources
-    ${codeRustSchema} where (userInput(@query) or ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)))
+    ${CodeSources} where (userInput(@query) or
+    ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)) or
+    ({targetHits:${limit}}nearestNeighbor(api_doc_embedding, q_embedding)))
       limit 0
       | all(
           group(app) each(
@@ -523,7 +532,7 @@ export const groupVespaSearch = async (
       query,
       email,
       "input.query(alpha)": alpha,
-      "ranking.profile": "code_focused",
+      "ranking.profile": "default",
       "input.query(q_embedding)": "embed(code-embedder, @query)",
     }
     Logger.debug({ msg: "Code search payload", payload: minimalPayload }) // Log payload
@@ -537,7 +546,7 @@ export const groupVespaSearch = async (
       }) // Enhanced error logging
       throw new ErrorPerformingSearch({
         cause: error as Error,
-        sources: codeRustSchema, // Specify the source
+        sources: CodeSources, // Specify the source
       })
     }
   }
@@ -606,7 +615,9 @@ export const searchVespa = async (
   if (codeOnlySearch) {
     Logger.info("Performing code-only search.")
     // Reverted YQL: Removed explicit 'matchfeatures' from select
-    const yql = `select * from sources ${codeRustSchema} where (userInput(@query) or ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)));`
+    const yql = `select * from sources ${CodeSources} where (userInput(@query) or
+    ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)) or
+    ({targetHits:${limit}}nearestNeighbor(api_doc_embedding, q_embedding)));`
     const minimalPayload = {
       yql,
       query,
@@ -629,7 +640,7 @@ export const searchVespa = async (
       }) // Enhanced error logging
       throw new ErrorPerformingSearch({
         cause: error as Error,
-        sources: codeRustSchema,
+        sources: CodeSources, // Specify the source
       })
     }
   }
@@ -846,7 +857,7 @@ export const groupCodeByLanguage = async (
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: codeRustSchema, // Source is specific code schema
+      sources: CodeSources, // Source is specific code schema
       message: "Error grouping code results by language",
     })
   }
