@@ -541,15 +541,21 @@ class VespaClient {
     // Construct the YQL query
     const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
     const yqlQuery = `select docId, updatedAt from sources * where docId in (${yqlIds})`
-
-    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}&maxHits=${docIds.length}`
+    const url = `${this.vespaEndpoint}/search/`
 
     try {
+      const payload = {
+        yql: yqlQuery,
+        hits: docIds.length,
+        maxHits: docIds.length + 1,
+      }
+
       const response = await this.fetchWithRetry(url, {
-        method: "GET",
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
