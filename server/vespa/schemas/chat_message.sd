@@ -79,11 +79,6 @@ schema chat_message {
       indexing: attribute | summary
     }
 
-    field permissions type array<string> {
-      indexing: attribute | summary
-      attribute: fast-search
-    }
-
     field reactions type int {
       indexing: attribute | summary
     }
@@ -106,12 +101,22 @@ schema chat_message {
       attribute: fast-search
     }
 
+    field deletedAt type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
     field metadata type string {
       indexing: attribute | summary
     }
   }
   import field teamRef.domain as domain {}
+  import field teamRef.teamName as teamName {}
   import field chatRef.isPrivate as isPrivate {}
+  import field chatRef.permissions as permissions {}
+  import field chatRef.channelName as  channelName {}
+  import field chatRef.isIm as isIm {}
+  import field chatRef.isMpim as isMpim {}
 
   field text_embeddings type tensor<bfloat16>(v[DIMS]) {
     indexing: input text | embed | attribute | index
@@ -121,7 +126,7 @@ schema chat_message {
   }
 
   fieldset default {
-    fields: text, mentions, teamId, channelId, userId, threadId, app, entity, attachmentIds, domain, isPrivate
+    fields: text, mentions, teamId, channelId, userId, threadId, app, entity, attachmentIds, domain, channelName, isPrivate
   }
 
   rank-profile initial {
