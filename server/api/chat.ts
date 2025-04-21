@@ -514,9 +514,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       queryRewriteSpan.setAttribute("queries", JSON.stringify(queries))
       queryRewriteSpan.end()
       rewriteSpan.end()
-      for (const [queryIndex, query] of queries) {
-        const querySpan = pageSpan.startSpan(`query_${queryIndex}`)
-        querySpan.setAttribute("query_index", queryIndex)
+      for (let idx = 0; idx < queries.length; idx++) {
+        const query = queries[idx]
+        const querySpan = pageSpan.startSpan(`query_${idx}`)
+        querySpan.setAttribute("query_index", idx)
         querySpan.setAttribute("query_text", query)
 
         const latestSearchSpan = querySpan.startSpan("latest_results_search")
@@ -1417,9 +1418,9 @@ export const MessageApi = async (c: Context) => {
               costArr.push(chunk.cost)
             }
           }
-          conversationSpan.setAttribute("answer_found", parsed.answer);
-          conversationSpan.setAttribute("answer", answer);
-          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite);
+          conversationSpan.setAttribute("answer_found", parsed.answer)
+          conversationSpan.setAttribute("answer", answer)
+          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
 
           if (parsed.answer === null || parsed.answer === "") {
             const ragSpan = streamSpan.startSpan("rag_processing")
@@ -1507,7 +1508,10 @@ export const MessageApi = async (c: Context) => {
             )
             understandSpan.end()
             const answerSpan = ragSpan.startSpan("process_final_answer")
-            answerSpan.setAttribute("final_answer", processMessage(answer, citationMap))
+            answerSpan.setAttribute(
+              "final_answer",
+              processMessage(answer, citationMap),
+            )
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
