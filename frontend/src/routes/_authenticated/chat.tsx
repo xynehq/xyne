@@ -57,11 +57,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
   })
-  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
-  console.log("isGlobalDebugMode", isGlobalDebugMode)
-  const [isDebugMode, setIsDebugMode] = useState<boolean>(
-    isGlobalDebugMode || chatParams.debug,
-  )
+  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true";
+  const isDebugMode = isGlobalDebugMode || chatParams.debug;
+  
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -69,15 +67,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       : "/_authenticated/chat",
   })
   const queryClient = useQueryClient()
-  useEffect(() => {
-    setIsDebugMode(isGlobalDebugMode || chatParams.debug)
-  }, [chatParams.debug])
-
   if (chatParams.q && isWithChatId) {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
-      search: { debug: chatParams.debug },
+      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
     })
   }
   const hasHandledQueryParam = useRef(false)
@@ -317,7 +311,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           router.navigate({
             to: "/chat/$chatId",
             params: { chatId },
-            search: { debug: chatParams.debug },
+            search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
           })
         }, 1000)
       }
@@ -767,17 +761,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const handleBlur = () => {
     if (editedTitle !== chatTitle) {
       setEditedTitle(chatTitle)
-      if (titleRef.current) {
-        titleRef.current.value = chatTitle!
-      }
+      if (titleRef.current) titleRef.current.value = chatTitle!
     }
     setIsEditing(false)
   }
 
   const handleShowRagTrace = (messageId: string) => {
     if (chatId && messageId) {
-      console.log('Opening trace for:', { chatId, messageId });
-      window.open(`/trace/${chatId}/${messageId}`, '_blank');
+      window.open(`/trace/${chatId}/${messageId}`, "_blank")
     }
   }
 
