@@ -4,6 +4,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm"
 import { z } from "zod"
 import { createInsertSchema } from "drizzle-zod"
 import { eq } from "drizzle-orm"
+import type { TxnOrClient } from "@/types"
 
 // Infer the schema, including workspaceId, userId, external IDs, and non-null traceJson
 export const insertChatTraceSchema = createInsertSchema(chatTrace).omit({
@@ -43,3 +44,11 @@ export async function getChatTraceByExternalId(
     )
   return trace
 }
+
+export const deleteChatTracesByChatExternalId = async (
+  tx: TxnOrClient,
+  chatExternalId: string,
+): Promise<void> => {
+  console.log(`Deleting chat traces for chatExternalId: ${chatExternalId}`)
+  await tx.delete(chatTrace).where(eq(chatTrace.chatExternalId, chatExternalId));
+};
