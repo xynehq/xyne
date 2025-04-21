@@ -110,7 +110,7 @@ const constructSlackMessageContext = (
     User: ${fields.name}
     Username: ${fields.username}
     Message: ${fields.text}
-    ${fields.threadId && "it's a message thread"}
+    ${fields.threadId ? "it's a message thread" : ""}
     Time: ${getRelativeTime(fields.createdAt)}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
