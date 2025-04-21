@@ -51,29 +51,29 @@ interface ChatPageProps {
   workspace: PublicWorkspace
 }
 
-
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
-  let chatParams: XyneChat = useSearch({
+  const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
   })
+  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true";
+  const isDebugMode = isGlobalDebugMode || chatParams.debug;
+  
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
       ? "/_authenticated/chat/$chatId"
       : "/_authenticated/chat",
   })
-
   const queryClient = useQueryClient()
-
   if (chatParams.q && isWithChatId) {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
+      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
     })
   }
-
   const hasHandledQueryParam = useRef(false)
 
   const [query, setQuery] = useState("")
@@ -311,6 +311,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           router.navigate({
             to: "/chat/$chatId",
             params: { chatId },
+            search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
           })
         }, 1000)
       }
@@ -760,17 +761,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const handleBlur = () => {
     if (editedTitle !== chatTitle) {
       setEditedTitle(chatTitle)
-      if (titleRef.current) {
-        titleRef.current.value = chatTitle!
-      }
+      if (titleRef.current) titleRef.current.value = chatTitle!
     }
     setIsEditing(false)
   }
 
   const handleShowRagTrace = (messageId: string) => {
     if (chatId && messageId) {
-      console.log('Opening trace for:', { chatId, messageId });
-      window.open(`/trace/${chatId}/${messageId}`, '_blank');
+      window.open(`/trace/${chatId}/${messageId}`, "_blank")
     }
   }
 
@@ -858,6 +856,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       }}
                       sourcesVisible={isSourcesVisible}
                       isStreaming={isStreaming}
+                      isDebugMode={isDebugMode}
                       onShowRagTrace={handleShowRagTrace}
                     />
                     {userMessageWithErr && (
@@ -887,6 +886,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         }}
                         sourcesVisible={isSourcesVisible}
                         isStreaming={isStreaming}
+                        isDebugMode={isDebugMode}
                         onShowRagTrace={handleShowRagTrace}
                       />
                     )}
@@ -922,6 +922,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     showSources && currentMessageId === currentResp.messageId
                   }
                   isStreaming={isStreaming}
+                  isDebugMode={isDebugMode}
                   onShowRagTrace={handleShowRagTrace}
                 />
               )}
@@ -1118,6 +1119,7 @@ const ChatMessage = ({
   citationMap,
   sourcesVisible,
   isStreaming = false,
+  isDebugMode,
   onShowRagTrace,
 }: {
   message: string
@@ -1133,6 +1135,7 @@ const ChatMessage = ({
   citationMap?: Record<number, number>
   sourcesVisible: boolean
   isStreaming?: boolean
+  isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
 }) => {
   const [isCopied, setIsCopied] = useState(false)
@@ -1228,22 +1231,24 @@ const ChatMessage = ({
           </div>
           {responseDone && !isRetrying && (
             <div className="flex flex-col">
-              <button
-                className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
-                onClick={() => messageId && onShowRagTrace(messageId)}
-              >
-                View RAG Trace #{messageId?.slice(-6)}
-              </button>
+              {isDebugMode && messageId && (
+                <button
+                  className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
+                  onClick={() => onShowRagTrace(messageId)}
+                >
+                  View RAG Trace #{messageId.slice(-6)}
+                </button>
+              )}
               <div className="flex ml-[52px] mt-[12px] items-center">
                 <Copy
                   size={16}
                   stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
-                  onMouseDown={(e) => setIsCopied(true)}
-                  onMouseUp={(e) => setIsCopied(false)}
-                  onClick={() => {
+                  onMouseDown={() => setIsCopied(true)}
+                  onMouseUp={() => setIsCopied(false)}
+                  onClick={() =>
                     navigator.clipboard.writeText(processMessage(message))
-                  }}
+                  }
                 />
                 <img
                   className={`ml-[18px] ${isStreaming ? "opacity-50" : "cursor-pointer"}`}
@@ -1284,7 +1289,12 @@ const ChatMessage = ({
 }
 
 const chatParams = z.object({
-  q: z.string(),
+  q: z.string().optional(),
+  debug: z
+    .string()
+    .transform((val) => val === "true")
+    .optional()
+    .default("false"),
 })
 
 type XyneChat = z.infer<typeof chatParams>

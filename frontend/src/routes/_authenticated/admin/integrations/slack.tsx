@@ -618,7 +618,7 @@ export const Slack = ({ user, workspace }: IntegrationProps) => {
             <TableHead>Replies</TableHead>
             <TableHead>Conversations</TableHead>
             <TableHead>Users</TableHead>
-            <TableHead>msgs per second</TableHead>
+            <TableHead>msgs / s</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
