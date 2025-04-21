@@ -101,6 +101,17 @@ REASONING=true
 FAST_MODEL_REASONING=false
 ```
 
+#### Additional BASE URL support
+
+We've also added support for adding ```base url``` values for OpenAI and Together AI, along with your Open AI or Together API Key, you can the ```base url``` value:
+
+```javascript
+OPENAI_API_KEY=<YOUR_OPEN_API_KEY>  # If you want to use OpenAI
+    ### OR
+TOGETHER_API_KEY=<YOUR_TOGETHER_API_KEY>  # If you want to use Together AI
+BASE_URL=<YOUR_BASE_URL>
+```
+
 ### Key Selection Order : 
 If multiple keys are set in the environment variable, our system follows this precedence:
 ```javascript 
