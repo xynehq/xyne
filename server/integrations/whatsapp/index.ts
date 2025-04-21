@@ -321,18 +321,14 @@ const safeProfilePictureUrl = async (
 const insertWhatsAppMessage = async (
   email: string,
   message: WhatsAppMessage,
-  // conversationId: string,
-  // phoneNumber: string,
+  conversationId: string,
+  phoneNumber: string,
   permissions: string[],
-  // pictureUrl: string | undefined,
+  pictureUrl: string | undefined,
 ) => {
   if (!permissions.length || permissions.indexOf(email) === -1) {
     permissions = permissions.concat(email)
   }
-  const conversationId = message.key.remoteJid || ""
-  const phoneNumber = conversationId.split("@")[0]
-  // todo derieve pictureUrl
-  const pictureUrl = ""
 
   const messageText =
     message.message?.conversation ||
@@ -1013,29 +1009,6 @@ const startIngestion = async (
         )
         // Update tracker
         tracker.updateUserStats(email, StatType.WhatsApp_Conversation, 1)
-        // // Get and insert messages for each conversation
-        // Logger.info(`Fetching messages for conversation ${conversation.id}`)
-        // const messages = await getMessages(sock, conversation.id)
-        // Logger.info(`Found messages: ${messages.length}`)
-        // for (const message of messages) {
-        //   await insertWhatsAppMessage(
-        //     email,
-        //     message,
-        //     conversation.id,
-        //     conversation.contactId,
-        //     [email],
-        //     "hello"
-        //   )
-        //   tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
-        //   // Send immediate update after each message
-        //   sendWebsocketMessage(
-        //     JSON.stringify({
-        //       progress: tracker.getProgress(),
-        //       userStats: tracker.getOAuthProgress().userStats,
-        //     }),
-        //     connectorId,
-        //   )
-        // }
       } else {
         Logger.error(`Failed to push conversation ${conversation.id} to Vespa`)
       }
@@ -1046,14 +1019,28 @@ const startIngestion = async (
     const messages = await getMessages(sock)
     Logger.info(`Found messages: ${messages.length}`)
     for (const message of messages) {
-      // await insertWhatsAppMessage(
-      //   email,
-      //   message,
-      //   conversation.id,
-      //   conversation.contactId,
-      //   [email],
-      //   "hello",
-      // )
+      const conversationId = message.key.remoteJid || ""
+      const phoneNumber = conversationId.split("@")[0]
+      let pictureUrl: string | undefined
+      try {
+        Logger.info("Started fetching profile picture")
+        pictureUrl = await safeProfilePictureUrl(
+          sock,
+          (message.key.participant as string) ||
+            (message.key.remoteJid as string),
+        )
+      } catch (error) {
+        Logger.warn(`Error fetching profile picture: ${error}`)
+        // Continue without the picture URL
+      }
+      await insertWhatsAppMessage(
+        email,
+        message,
+        conversationId,
+        phoneNumber,
+        [email],
+        pictureUrl,
+      )
       tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
       // Send immediate update after each message
       sendWebsocketMessage(

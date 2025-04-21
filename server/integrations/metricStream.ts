@@ -2,7 +2,9 @@ import type { WSContext } from "hono/ws"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
-const Logger = getLogger(Subsystem.Integrations).child({ module: "metricStream" })
+const Logger = getLogger(Subsystem.Integrations).child({
+  module: "metricStream",
+})
 
 export const wsConnections = new Map()
 
@@ -12,10 +14,10 @@ export const closeWs = (connectorId: string) => {
 }
 
 export const sendWebsocketMessage = (message: string, connectorId: string) => {
-  Logger.info(`Attempting to send WebSocket message to connector ${connectorId}`)
+  // Logger.info(`Attempting to send WebSocket message to connector ${connectorId}`)
   const ws: WSContext = wsConnections.get(connectorId)
   if (ws) {
-    Logger.info(`Found WebSocket connection for connector ${connectorId}, sending message`)
+    // Logger.info(`Found WebSocket connection for connector ${connectorId}, sending message`)
     ws.send(JSON.stringify({ message }))
   } else {
     Logger.warn(`No WebSocket connection found for connector ${connectorId}`)
