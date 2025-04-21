@@ -358,10 +358,16 @@ app.get(
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
+app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/trace/:param/:param",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
@@ -375,11 +381,10 @@ app.get(
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
-app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
-
-// Serve assets (CSS, JS, etc.)
+app.get("admin/integrations/google", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("admin/integrations/slack", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))// Serve assets (CSS, JS, etc.)
 app.get("/assets/*", serveStatic({ root: "./dist" }))
-
 export const init = async () => {
   await initQueue()
 }
