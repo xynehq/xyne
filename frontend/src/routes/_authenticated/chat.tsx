@@ -769,7 +769,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleShowRagTrace = (messageId: string) => {
     if (chatId && messageId) {
-      console.log('Opening trace for:', { chatId, messageId });
       window.open(`/trace/${chatId}/${messageId}`, '_blank');
     }
   }
