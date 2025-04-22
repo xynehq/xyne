@@ -13,6 +13,7 @@ import {
   chatMessageSchema,
   codeRustSchema,
   codeApiDocsSchema,
+  CodeEntity,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -31,7 +32,8 @@ import type {
   Inserts,
   VespaSearchResults,
   AppEntityCounts, // Import AppEntityCounts
-  LanguageCounts, // Import LanguageCounts
+  LanguageCounts,
+  VespaCodeApiDocs, // Import LanguageCounts
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -190,10 +192,7 @@ const AllSources = [
   chatMessageSchema,
 ].join(", ")
 
-const CodeSources = [
-  codeApiDocsSchema,
-  codeRustSchema
-].join(", ")
+const CodeSources = [codeApiDocsSchema, codeRustSchema].join(", ")
 
 export const autocomplete = async (
   query: string,
@@ -263,6 +262,88 @@ export const autocomplete = async (
     })
     // TODO: instead of null just send empty response
     throw error
+  }
+}
+
+/**
+ * Interface for structured API route result
+ */
+export interface ApiRouteResult {
+  path: string
+  method: string
+  operationId?: string
+  summary?: string
+  description?: string
+  handler?: string
+  parameters?: any[]
+  requestBody?: any
+  responses?: Record<string, any>
+  handlerSourceFile?: string
+  handlerSourceLine?: number
+  score: number
+}
+
+/**
+ * Search for API routes matching the query
+ * @param query User query about API routes
+ * @param limit Maximum number of results to return
+ * @returns Top matching API routes with scores
+ */
+export async function searchApiDocs(
+  query: string,
+  email: string,
+  limit: number = 4,
+): Promise<ApiRouteResult[]> {
+  try {
+    Logger.info({ query, limit }, "Searching API docs")
+
+    // Use the searchVespa function targeting only codeApiDocs schema
+    const results = await searchVespa(
+      query,
+      email,
+      Apps.Code,
+      CodeEntity.ApiDocs,
+      {
+        limit,
+        targetSchemas: [codeApiDocsSchema],
+        alpha: 0.5, // Adjust relevance scoring weights
+        codeOnlySearch: true,
+      },
+    )
+
+    if (!results?.root?.children || results.root.children.length === 0) {
+      Logger.info("No API docs found matching query")
+      return []
+    }
+
+    // Transform Vespa results into structured API route data
+    return results.root.children.map((result) => {
+      const fields = result.fields as VespaCodeApiDocs
+
+      return {
+        path: fields.path || "",
+        method: fields.method || "",
+        operationId: fields.openapi_operationId,
+        summary: fields.openapi_summary,
+        description: fields.openapi_description,
+        handler: fields.handler,
+        parameters: fields.openapi_parameters_json
+          ? JSON.parse(fields.openapi_parameters_json)
+          : [],
+        requestBody: fields.openapi_requestBody_json
+          ? JSON.parse(fields.openapi_requestBody_json)
+          : undefined,
+        responses: fields.openapi_responses_json
+          ? JSON.parse(fields.openapi_responses_json)
+          : {},
+        handlerSourceFile: fields.handler_source_file,
+        handlerSourceLine: fields.handler_source_line,
+        score: result.relevance || 0,
+      }
+    })
+  } catch (error) {
+    Logger.error({ error }, "Error searching API docs")
+    return []
   }
 }
 
@@ -584,6 +665,7 @@ type VespaQueryConfig = {
   requestDebug: boolean
   span: Span | null
   codeOnlySearch: boolean
+  targetSchemas?: VespaSchema[]
 }
 
 type VespaGroupQueryConfig = {
@@ -608,25 +690,27 @@ export const searchVespa = async (
     requestDebug = false, // Destructure requestDebug here
     codeOnlySearch, // Add codeOnlySearch to parameters
     span = null,
-}: Partial<VespaQueryConfig>,
+    targetSchemas = [],
+  }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  const isDebugMode = config.isDebugMode || requestDebug || false;
+  const isDebugMode = config.isDebugMode || requestDebug || false
 
+  console.log("code only search", codeOnlySearch)
   if (codeOnlySearch) {
+    let schemas = targetSchemas.length ? targetSchemas.join(", ") : CodeSources
+    console.log(schemas)
     Logger.info("Performing code-only search.")
-    // Reverted YQL: Removed explicit 'matchfeatures' from select
-    const yql = `select * from sources ${CodeSources} where (userInput(@query) or
+    const yql = `select * from sources ${schemas} where (userInput(@query) or
     ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)) or
     ({targetHits:${limit}}nearestNeighbor(api_doc_embedding, q_embedding)));`
     const minimalPayload = {
       yql,
       query,
-      // Add required inputs for the hybrid rank profile, specifying the code-embedder
       "input.query(q_embedding)": "embed(code-embedder, @query)",
       "input.query(alpha)": alpha, // Use the provided alpha value
       hits: limit,
       offset,
-      "ranking.profile": "code_focused",
+      "ranking.profile": "default",
       ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
     }
     Logger.debug({ msg: "Code search payload", payload: minimalPayload }) // Log payload

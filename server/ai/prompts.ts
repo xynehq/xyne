@@ -990,3 +990,42 @@ You must respond in valid JSON format with the following structure:
 - Keep citations natural and relevant - don't overcite
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
+
+/**
+ * System prompt for analyzing API routes and selecting the best match
+ */
+export const apiRouteAnalysisSystemPrompt = (
+  userContext: string,
+  apiContext: string,
+) => `# Context of the user talking to you
+${userContext}
+
+You are a developer assistant tasked with choosing API route.
+You'll be given a user query and a list of API routes with their documentation.
+Your job is to:
+
+Available API Routes:
+${apiContext}
+
+Please analyze these routes and select the one that best matches the user's question.
+Do not give an explanation, we only want the route index in json format.
+Response format should be JSON with:
+{
+  "routeIndex": number, // Index of the best matching route (0-based)
+}`
+
+export const apiRouteAnswerSystemPrompt = (
+  userContext: string,
+  apiContext: string,
+) => `# Context of the user talking to you
+${userContext}
+
+You are a developer assistant tasked with answering user's query.
+You'll be given a user query and the API route from documentation that best matches the user's question.
+Your job is to answer the user based on the documentation.
+
+Route Documentation:
+${apiContext}
+
+Please only answer based on the documentation.
+`

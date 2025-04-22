@@ -51,7 +51,6 @@ interface ChatPageProps {
   workspace: PublicWorkspace
 }
 
-
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
@@ -91,8 +90,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
   ) // Added state
-
-  
 
   const currentRespRef = useRef<CurrentResp | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
@@ -769,8 +766,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleShowRagTrace = (messageId: string) => {
     if (chatId && messageId) {
-      console.log('Opening trace for:', { chatId, messageId });
-      window.open(`/trace/${chatId}/${messageId}`, '_blank');
+      window.open(`/trace/${chatId}/${messageId}`, "_blank")
     }
   }
 

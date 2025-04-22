@@ -1417,9 +1417,9 @@ export const MessageApi = async (c: Context) => {
               costArr.push(chunk.cost)
             }
           }
-          conversationSpan.setAttribute("answer_found", parsed.answer);
-          conversationSpan.setAttribute("answer", answer);
-          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite);
+          conversationSpan.setAttribute("answer_found", parsed.answer)
+          conversationSpan.setAttribute("answer", answer)
+          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
 
           if (parsed.answer === null || parsed.answer === "") {
             const ragSpan = streamSpan.startSpan("rag_processing")
@@ -1507,7 +1507,10 @@ export const MessageApi = async (c: Context) => {
             )
             understandSpan.end()
             const answerSpan = ragSpan.startSpan("process_final_answer")
-            answerSpan.setAttribute("final_answer", processMessage(answer, citationMap))
+            answerSpan.setAttribute(
+              "final_answer",
+              processMessage(answer, citationMap),
+            )
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()

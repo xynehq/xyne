@@ -30,7 +30,7 @@ let GeminiAIModel = ""
 let TogetherApiKey = ""
 let FireworksApiKey = ""
 let GeminiApiKey = ""
-let aiProviderBaseUrl= ""
+let aiProviderBaseUrl = ""
 let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
@@ -46,13 +46,13 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.DeepSeek_R1
 } else if (process.env["OPENAI_API_KEY"]) {
-    if(process.env["BASE_URL"]) {
-      if(!isURLValid(process.env["BASE_URL"])) {
-        console.warn(`Configuration Warning : Encountered invalid base url`)
-      }else {
-        aiProviderBaseUrl = process.env["BASE_URL"];
-      }
+  if (process.env["BASE_URL"]) {
+    if (!isURLValid(process.env["BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    } else {
+      aiProviderBaseUrl = process.env["BASE_URL"]
     }
+  }
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
@@ -69,13 +69,12 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
   defaultBestModel = TogetherAIModel as Models
-  if(process.env["BASE_URL"]) {
-    if(!isURLValid(process.env["BASE_URL"])) {
+  if (process.env["BASE_URL"]) {
+    if (!isURLValid(process.env["BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)
-    }else {
-      aiProviderBaseUrl = process.env["BASE_URL"];
+    } else {
+      aiProviderBaseUrl = process.env["BASE_URL"]
     }
-   
   }
 } else if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
   FireworksAIModel = process.env["FIREWORKS_MODEL"] as Models

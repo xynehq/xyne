@@ -14,6 +14,7 @@ import {
   messageSchema,
   SearchApi,
 } from "@/api/search"
+import { CodeMessageApi, codeMessageQuerySchema } from "@/api/code-chat"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -64,7 +65,7 @@ import {
   MessageApi,
   MessageRetryApi,
   GetChatTraceApi,
-} from "./api/chat"
+} from "@/api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
 type Variables = JwtVariables
@@ -169,6 +170,11 @@ export const AppRoutes = app
     "/message/retry",
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
+  )
+  .get(
+    "/code-message/create",
+    zValidator("query", codeMessageQuerySchema),
+    CodeMessageApi,
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)

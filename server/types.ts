@@ -272,6 +272,7 @@ export enum Subsystem {
   Db = "Db",
   Api = "Api",
   Chat = "Chat",
+  CodeChat = "CodeChat",
   Utils = "Utils",
   Queue = "Queue",
   Eval = "Eval",

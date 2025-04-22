@@ -21,7 +21,7 @@ const {
   EndThinkingToken,
   GeminiAIModel,
   GeminiApiKey,
-  aiProviderBaseUrl
+  aiProviderBaseUrl,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -50,6 +50,8 @@ import {
   analyzeInitialResultsOrRewriteSystemPrompt,
   analyzeInitialResultsOrRewriteV2SystemPrompt,
   AnalyzeUserQuerySystemPrompt,
+  apiRouteAnalysisSystemPrompt,
+  apiRouteAnswerSystemPrompt,
   askQuestionUserPrompt,
   baselinePrompt,
   baselinePromptJson,
@@ -125,13 +127,13 @@ const initializeProviders = (): void => {
   }
 
   if (OpenAIKey) {
-    let openAIClient:OpenAI
+    let openAIClient: OpenAI
     openAIClient = new OpenAI({
       apiKey: OpenAIKey,
       ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
-    });
+    })
     if (aiProviderBaseUrl) {
-      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`);
+      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`)
     }
 
     openaiProvider = new OpenAIProvider(openAIClient)
@@ -143,15 +145,15 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    let together: Together;
+    let together: Together
     together = new Together({
       apiKey: TogetherApiKey,
       timeout: 4 * 60 * 1000,
       maxRetries: 10,
       ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
-    });
+    })
     if (aiProviderBaseUrl) {
-      Logger.info(`Found base_url and together key, using base_url for LLM`);
+      Logger.info(`Found base_url and together key, using base_url for LLM`)
     }
 
     togetherProvider = new TogetherProvider(together)
@@ -169,8 +171,10 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
-  if(!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
-    Logger.warn(`Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`)
+  if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
+    Logger.warn(
+      `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
+    )
   }
   providersInitialized = true
   // THIS IS WHERE :  this is where the creation of the provides goes using api key
@@ -1043,7 +1047,6 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> {
-  //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
   let defaultReasoning = isReasoning
 
@@ -1055,6 +1058,74 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export async function apiRouteAnalysis(
+  currentMessage: string,
+  userContext: string,
+  apiContext: string,
+  params: ModelParams,
+): Promise<ConverseResponse> {
+  params.json = true
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  if (defaultReasoning) {
+  } else {
+  }
+  params.systemPrompt = apiRouteAnalysisSystemPrompt(userContext, apiContext)
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converse(messages, params)
+}
+
+export function generateRouteAnswer(
+  currentMessage: string,
+  userContext: string,
+  apiContext: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  // if (defaultReasoning) {
+  //   params.systemPrompt = searchQueryReasoningPrompt(userContext)
+  // } else {
+  //   params.systemPrompt = searchQueryPrompt(userContext)
+  // }
+  params.systemPrompt = apiRouteAnswerSystemPrompt(userContext, apiContext)
 
   const baseMessage = {
     role: ConversationRole.USER,
