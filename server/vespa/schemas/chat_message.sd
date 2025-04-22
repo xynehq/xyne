@@ -114,7 +114,7 @@ schema chat_message {
   import field chatRef.isPrivate as isPrivate {}
 
   field text_embeddings type tensor<bfloat16>(v[DIMS]) {
-    indexing: input text | embed | attribute | index
+    indexing: input text | embed hf-embedder | attribute | index
     attribute {
       distance-metric: angular
     }

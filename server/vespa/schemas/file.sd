@@ -70,7 +70,7 @@ schema file {
   }
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
-    indexing: input chunks | embed | attribute | index
+    indexing: input chunks | embed hf-embedder  | attribute | index
     attribute {
         distance-metric: angular
     }

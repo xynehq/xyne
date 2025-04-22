@@ -140,7 +140,7 @@ schema user {
     }
 
     field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
-        indexing: (input name || "") . " " .(input email || "") | embed | attribute | index
+        indexing: (input name || "") . " " .(input email || "") | embed hf-embedder | attribute | index
         attribute {
             distance-metric: angular
         }

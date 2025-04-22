@@ -79,7 +79,7 @@ schema chat_attachment {
     }
   }
 
-  field content_embeddings type tensor<bfloat16>(p{}, v[384]) {
+  field content_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
     indexing: input chunks | embed hf-embedder | attribute | index
     attribute {
       distance-metric: angular
