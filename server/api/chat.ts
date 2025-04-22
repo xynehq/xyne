@@ -190,8 +190,9 @@ export const ChatDeleteApi = async (c: Context) => {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     await db.transaction(async (tx) => {
-      // First will have to delete all messages associated with that chat
+      // First delete chat traces to avoid cascade violations
       await deleteChatTracesByChatExternalId(tx, chatId)
+      // Second we have to delete all messages associated with that chat
       await deleteMessagesByChatId(tx, chatId)
       await deleteChatByExternalId(tx, chatId)
     })
