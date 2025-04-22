@@ -32,6 +32,10 @@ import {
   type VespaChatMessageSearch,
   chatMessageSchema,
   ChatMessageResponseSchema,
+  codeRustSchema,
+  type VespaCodeRustSearchSchema,
+  codeApiDocsSchema, // Correct schema name
+  type VespaCodeApiDocsSearchSchema, // Correct search schema type
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -44,6 +48,8 @@ import {
   EventResponseSchema,
   FileResponseSchema,
   UserResponseSchema,
+  CodeRustResponseSchema,
+  CodeApiDocsResponseSchema, // Correct response schema
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -100,7 +106,8 @@ export const getSortedScoredChunks = (
 }
 
 // Vespa -> Backend/App -> Client
-const maxSearchChunks = 1
+const maxSearchChunks = 1 // Default for most types
+const maxCodeSearchChunks = 3 // Show more for code
 
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
@@ -223,6 +230,50 @@ export const VespaSearchResponseToSearchResult = (
               fields.teamId = ""
             }
             return ChatMessageResponseSchema.parse(fields)
+          } else if (
+            (child.fields as z.infer<typeof VespaCodeRustSearchSchema>)
+              .sddocname === codeRustSchema
+          ) {
+            const fields = child.fields as z.infer<
+              typeof VespaCodeRustSearchSchema
+            > & {
+              type?: string
+              chunks_summary?: any[]
+              code_chunk_contents?: string[]
+            }
+            fields.type = codeRustSchema
+            fields.relevance = child.relevance
+
+            // Use getSortedScoredChunks to sort and limit code chunks based on score
+            fields.chunks_summary = getSortedScoredChunks(
+              fields.matchfeatures,
+              fields.code_chunk_contents || [], // Pass the original code chunks
+              maxCodeSearchChunks, // Use the specific limit for code
+            )
+
+            // Clean up the chunk content (remove separators) after sorting/limiting
+            fields.chunks_summary = fields.chunks_summary.map(
+              (scoredChunk) => ({
+                ...scoredChunk,
+                chunk: scoredChunk.chunk.replace(/<sep \/>/g, ""), // Remove separator tags
+              }),
+            )
+
+            return CodeRustResponseSchema.parse(fields)
+          } else if (
+            (child.fields as z.infer<typeof VespaCodeApiDocsSearchSchema>)
+              .sddocname === codeApiDocsSchema
+          ) {
+            const fields = child.fields as z.infer<
+              typeof VespaCodeApiDocsSearchSchema
+            > & {
+              type?: string
+              chunks_summary?: any[]
+            }
+            fields.type = codeApiDocsSchema
+            fields.relevance = child.relevance
+
+            return CodeApiDocsResponseSchema.parse(fields)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,

@@ -1,0 +1,151 @@
+schema code_api_docs {
+  document code_api_docs {
+    field docId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    field file type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field line type int {
+      indexing: attribute | summary
+    }
+    field struct type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field method type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field path type string {
+      indexing: attribute | summary | index
+      match: text
+      index: enable-bm25
+    }
+
+    field openapi_summary type string {
+      indexing: summary | index
+      match: text
+      index: enable-bm25
+      bolding: on
+    }
+    field openapi_description type string {
+      indexing: summary | index
+      match: text
+      index: enable-bm25
+      bolding: on
+    }
+
+    field openapi_operationId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field openapi_parameters_json type string {
+      indexing: summary
+    }
+    field openapi_requestBody_json type string {
+      indexing: summary
+    }
+    field openapi_responses_json type string {
+      indexing: summary
+    }
+
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    field handler type string {
+      indexing: attribute | summary | index
+      match: text
+      index: enable-bm25
+    }
+    field handler_source_file type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field handler_source_line type int {
+      indexing: attribute | summary
+    }
+    field handler_dependencies type array<string> {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      match: exact
+      index: enable-bm25
+    }
+    field handler_keywords type array<string> {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      match: exact
+    }
+
+    # Concatenate key fields for broad text search and potential embedding
+    field combined_text type string {
+      indexing: index | summary
+      match: text
+      index: enable-bm25
+      bolding: on
+    }
+  }
+
+  field api_doc_embedding type tensor<float>(x[1024]) {
+    indexing: input combined_text | embed code-embedder | attribute | summary
+    attribute { distance-metric: angular }
+  }
+
+  fieldset default {
+    fields: combined_text, path, handler, openapi_summary, openapi_description, handler_dependencies
+  }
+
+  rank-profile default {
+    inputs {
+      query(q_embedding) tensor<float>(x[1024])
+      query(alpha) double # Weight for semantic vs lexical (0.0 to 1.0, default 0.5)
+    }
+
+    function semantic_score() {
+      expression: closeness(field, api_doc_embedding)
+    }
+
+    function matchedFieldCount() {
+      expression: matches(combined_text) + matches(path) + matches(handler) + matches(openapi_summary) + matches(openapi_description) + matches(handler_dependencies)
+    }
+
+    function combined_nativeRank() {
+      expression: (nativeRank(combined_text) + nativeRank(path) + nativeRank(handler) + nativeRank(openapi_summary) + nativeRank(openapi_description) + nativeRank(handler_dependencies)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+    }
+
+    first-phase {
+      expression: (query(alpha) * semantic_score) + ((1.0 - query(alpha)) * combined_nativeRank)
+    }
+
+    match-features {
+      semantic_score
+      closeness(field, api_doc_embedding)
+      matchedFieldCount
+      combined_nativeRank
+      nativeRank(combined_text)
+      nativeRank(path)
+      nativeRank(handler)
+      nativeRank(openapi_summary)
+      nativeRank(openapi_description)
+      nativeRank(handler_dependencies)
+    }
+  }
+}

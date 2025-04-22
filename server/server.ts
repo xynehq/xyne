@@ -14,6 +14,7 @@ import {
   messageSchema,
   SearchApi,
 } from "@/api/search"
+import { CodeMessageApi, codeMessageQuerySchema } from "@/api/code-chat"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -64,9 +65,15 @@ import {
   MessageApi,
   MessageRetryApi,
   GetChatTraceApi,
-} from "./api/chat"
+} from "@/api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
+import {
+  insertMarkdown,
+  insertFromGithub,
+  markdownInsertSchema,
+  githubRepoInsertSchema,
+} from "./api/markdown"
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -170,10 +177,20 @@ export const AppRoutes = app
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
   )
+  .get(
+    "/code-message/create",
+    zValidator("query", codeMessageQuerySchema),
+    CodeMessageApi,
+  )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
+  .post(
+    "/markdown/github",
+    zValidator("json", githubRepoInsertSchema),
+    insertFromGithub,
+  )
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema

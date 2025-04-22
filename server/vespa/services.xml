@@ -5,6 +5,11 @@
             <transformer-model path="models/model.onnx" />
             <tokenizer-model path="models/tokenizer.json" />
         </component>
+        <component id="code-embedder" type="hugging-face-embedder">
+            <!-- Assuming these paths are correct for the Salesforce model within the Vespa container -->
+            <transformer-model path="models/code/model.onnx" />
+            <tokenizer-model path="models/code/tokenizer.json" />
+        </component>
         <search />
         <document-api />
     </container>
@@ -28,6 +33,9 @@
             <document type="chat_container" mode="index" global="true" />
             <document type="chat_user" mode="index" global="true" />
             <document type="chat_team" mode="index" global="true" />
+            <!-- <document type="code_file" mode="index" /> -->
+            <document type="code_rust" mode="index" />
+            <document type="code_api_docs" mode="index" />
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />

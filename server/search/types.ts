@@ -21,6 +21,10 @@ export const chatAttachment = "chat_attachment"
 // previous queries
 export const userQuerySchema = "user_query"
 
+// code search
+export const codeRustSchema = "code_rust"
+export const codeApiDocsSchema = "code_api_docs" // Correct schema name
+
 export type VespaSchema =
   | typeof fileSchema
   | typeof userSchema
@@ -32,6 +36,8 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
+  | typeof codeRustSchema
+  | typeof codeApiDocsSchema // Use correct schema name
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -46,6 +52,8 @@ export enum Apps {
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+  Code = "code",
+  PrivateStore = "private-store",
 }
 
 export enum GooglePeopleEntity {
@@ -66,10 +74,16 @@ const Schemas = z.union([
   z.literal(chatTeamSchema),
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
+  z.literal(codeRustSchema),
+  z.literal(codeApiDocsSchema), // Use correct schema name
 ])
 
 export enum MailEntity {
   Email = "mail",
+}
+
+export enum PrivateStoreEntity {
+  Markdown = "markdown",
 }
 
 export enum CalendarEntity {
@@ -82,6 +96,12 @@ export enum SlackEntity {
   Message = "message",
   Channel = "channel",
   File = "file",
+}
+
+// Add CodeEntity enum
+export enum CodeEntity {
+  Rust = "rust",
+  ApiDocs = "code_api_docs",
 }
 
 export enum DriveEntity {
@@ -119,6 +139,7 @@ export const isMailAttachment = (entity: Entity): boolean =>
 
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
+export const CodeEntitySchema = z.nativeEnum(CodeEntity) // Add schema for CodeEntity
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
 
@@ -131,7 +152,7 @@ export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
-
+export const PrivateStoreEntitySchema = z.nativeEnum(PrivateStoreEntity)
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
 export const entitySchema = z.union([
@@ -142,6 +163,8 @@ export const entitySchema = z.union([
   EventEntitySchema,
   MailAttachmentEntitySchema,
   ChatEntitySchema,
+  PrivateStoreEntitySchema,
+  CodeEntitySchema, // Include CodeEntitySchema
 ])
 
 export type Entity =
@@ -152,6 +175,8 @@ export type Entity =
   | CalendarEntity
   | MailAttachmentEntity
   | SlackEntity
+  | PrivateStoreEntity
+  | CodeEntity // Include CodeEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -179,7 +204,7 @@ const Metadata = z.union([z.object({}), SpreadsheetMetadata])
 export const VespaFileSchema = z.object({
   docId: z.string(),
   app: z.nativeEnum(Apps),
-  entity: FileEntitySchema,
+  entity: z.union([FileEntitySchema, PrivateStoreEntitySchema]),
   title: z.string(),
   url: z.string().nullable(),
   chunks: z.array(z.string()),
@@ -240,6 +265,30 @@ const ChatMessageMatchFeaturesSchema = z.object({
   "nativeRank(username)": z.number().optional(),
   "nativeRank(name)": z.number().optional(),
 })
+
+// Placeholder for specific match features if needed later
+const CodeRustMatchFeaturesSchema = z
+  .object({
+    "nativeRank(raw_content)": z.number().optional(),
+    "nativeRank(symbol_names)": z.number().optional(),
+    "nativeRank(code_chunk_contents)": z.number().optional(),
+    "closeness(field, code_chunk_embeddings)": z.number().optional(),
+  })
+  .optional()
+
+// Match features for code_api_docs schema
+const CodeApiDocsMatchFeaturesSchema = z
+  .object({
+    "bm25(combined_text)": z.number().optional(),
+    "bm25(openapi_summary)": z.number().optional(),
+    "bm25(openapi_description)": z.number().optional(),
+    "bm25(path)": z.number().optional(),
+    "bm25(handler)": z.number().optional(),
+    semantic_score: z.number().optional(),
+    lexical_score: z.number().optional(),
+    "closeness(field, api_doc_embedding)": z.number().optional(),
+  })
+  .optional()
 
 export type FileMatchFeatures = z.infer<typeof FileMatchFeaturesSchema>
 export type MailMatchFeatures = z.infer<typeof MailMatchFeaturesSchema>
@@ -558,6 +607,82 @@ export const VespaChatTeamGetSchema = VespaChatTeamSchema.extend({
 export type VespaChatTeam = z.infer<typeof VespaChatTeamSchema>
 export type VespaChatTeamGet = z.infer<typeof VespaChatTeamGetSchema>
 
+// --- Code Rust Schemas ---
+export const VespaCodeRustSchema = z.object({
+  docId: z.string(),
+  filename: z.string(),
+  path: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: z.literal(CodeEntity.Rust), // Use CodeEntity enum
+  // language: z.literal("rust"), // Assuming only Rust for now
+  raw_content: z.string(),
+  symbol_names: z.array(z.string()),
+  code_chunk_kinds: z.array(z.string()),
+  code_chunk_names: z.array(z.string()),
+  code_chunk_contents: z.array(z.string()),
+  code_chunk_start_lines: z.array(z.number().int()),
+  code_chunk_end_lines: z.array(z.number().int()),
+  doc_comments_texts: z.array(z.string()),
+  doc_comments_targets: z.array(z.string()),
+  doc_comments_start_lines: z.array(z.number().int()),
+  dependencies_names: z.array(z.string()),
+  dependencies_full_paths: z.array(z.string()),
+  dependencies_lines: z.array(z.number().int()),
+  feature_flags: z.array(z.string()),
+  // embedding: z.any().optional(), // Add if needed later
+})
+
+export const VespaCodeRustSearchSchema = VespaCodeRustSchema.extend({
+  sddocname: z.literal(codeRustSchema),
+  matchfeatures: CodeRustMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    // Assuming code might have summaries similar to other types
+    chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+  })
+// --- End Code Rust Schemas ---
+
+// --- Code API Docs Schemas ---
+// Base schema matching the structure in code_api_docs.sd
+export const VespaCodeApiDocsSchema = z.object({
+  docId: z.string(),
+  file: z.string(),
+  line: z.number(),
+  struct: z.string().optional(), // Optional based on schema
+  method: z.string(),
+  path: z.string(),
+  openapi_summary: z.string().optional(), // Optional based on schema
+  openapi_description: z.string().optional(), // Optional based on schema
+  openapi_operationId: z.string().optional(), // Optional based on schema
+  openapi_parameters_json: z.string().optional(), // Stored as JSON string
+  openapi_requestBody_json: z.string().optional(), // Stored as JSON string
+  openapi_responses_json: z.string().optional(), // Stored as JSON string
+  app: z.nativeEnum(Apps), // Assuming Apps.Code
+  entity: z.literal(CodeEntity.ApiDocs), // Use CodeEntity enum
+  handler: z.string(),
+  handler_source_file: z.string().optional(), // Optional based on schema
+  handler_source_line: z.number().optional(), // Optional based on schema
+  handler_dependencies: z.array(z.string()).optional(), // Optional based on schema
+  handler_keywords: z.array(z.string()).optional(), // Optional based on schema
+  combined_text: z.string().optional(), // Optional based on schema
+})
+
+export type VespaCodeApiDocs = z.infer<typeof VespaCodeApiDocsSchema>
+
+export const VespaCodeApiDocsSearchSchema = VespaCodeApiDocsSchema.extend({
+  sddocname: z.literal(codeApiDocsSchema), // Use correct schema name
+  matchfeatures: CodeApiDocsMatchFeaturesSchema, // Use correct match features schema
+  rankfeatures: z.any().optional(),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    // Add chunks_summary if applicable (likely not for this schema)
+    // chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+  })
+// --- End Code API Docs Schemas ---
+
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
@@ -568,8 +693,12 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatContainerSearchSchema,
   VespaChatUserSearchSchema,
   VespaChatMessageSearchSchema,
+  VespaCodeRustSearchSchema,
+  VespaCodeApiDocsSearchSchema, // Use correct search schema
 ])
 
+// Add CodeRustMatchFeaturesSchema to the union if it's defined and needed
+// For now, assuming it's covered by the generic optional object in VespaMatchFeatureSchema
 const SearchMatchFeaturesSchema = z.union([
   FileMatchFeaturesSchema,
   UserMatchFeaturesSchema,
@@ -577,6 +706,8 @@ const SearchMatchFeaturesSchema = z.union([
   EventMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
+  CodeRustMatchFeaturesSchema,
+  CodeApiDocsMatchFeaturesSchema, // Use correct match features schema
 ])
 
 const VespaSearchFieldsSchema = z
@@ -615,7 +746,7 @@ const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
   id: z.string(),
   relevance: z.number(),
   label: z.string(),
-  value: z.string().optional(),
+  value: z.string(),
   fields: z
     .object({
       "count()": z.number(),
@@ -707,6 +838,7 @@ export type Inserts =
   | VespaChatTeam
   | VespaChatUser
   | VespaChatMessage
+  | VespaCodeApiDocs // Use correct type
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
@@ -895,6 +1027,23 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
     matchfeatures: z.any().optional(),
     rankfeatures: z.any().optional(),
   })
+
+// --- Grouping Count Types ---
+
+// Define a type for Language Counts
+export interface LanguageCounts {
+  [language: string]: number
+}
+
+// Define a type for Entity Counts (where the key is the entity name and the value is the count)
+export interface EntityCounts {
+  [entity: string]: number
+}
+
+// Define a type for App Entity Counts (where the key is the app name and the value is the entity counts)
+export interface AppEntityCounts {
+  [app: string]: EntityCounts
+}
 
 export const MailAttachmentResponseSchema = VespaMailAttachmentGetSchema.pick({
   docId: true,

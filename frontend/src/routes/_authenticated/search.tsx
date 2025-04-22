@@ -107,6 +107,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
     import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || (search.debug ?? false),
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
+  // Read the code only mode from Vite environment variable
+  const isCodeOnlyMode = import.meta.env.VITE_CODE_SEARCH_ONLY === "true"
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -185,6 +187,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
     }
   }, [search])
 
+  // Remove isCodeOnly from dependency array as it's now constant
   useEffect(() => {
     handleSearch()
   }, [filter, offset])
@@ -250,6 +253,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         lastUpdated: filter.lastUpdated || "anytime",
         isQueryTyped: QueryTyped,
         debug: showDebugInfo,
+        codeOnlySearch: isCodeOnlyMode, // Use the env var value
       }
 
       let pageCount = page
@@ -276,6 +280,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           app: params.app,
           entity: params.entity,
           lastUpdated: params.lastUpdated,
+          codeOnlySearch: isCodeOnlyMode, // Use the env var value
           ...(showDebugInfo ? { debug: showDebugInfo } : {}),
         }),
         state: { isQueryTyped: QueryTyped },
@@ -538,6 +543,7 @@ const searchParams = z
     entity: z.string().optional(),
     lastUpdated: z.string().optional(),
     debug: z.boolean().optional(),
+    codeOnlySearch: z.boolean().optional(), // Add codeOnlySearch flag
   })
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",

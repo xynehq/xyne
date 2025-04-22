@@ -52,7 +52,6 @@
     "llama3-tokenizer-js": "^1.2.0",
     "ollama": "^0.5.11",
     "openai": "^4.77.0",
-    "ora": "^8.1.1",
     "p-limit": "^6.2.0",
     "partial-json": "^0.1.7",
     "pdf-parse": "^1.1.1",
@@ -64,7 +63,12 @@
     "playwright": "^1.45.3",
     "postgres": "^3.4.5",
     "together-ai": "^0.13.0",
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-rust": "^0.24.0",
     "uuid": "^11.0.0",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-uri": "^3.1.0",
     "zod": "^3.24.1"
   }
 }

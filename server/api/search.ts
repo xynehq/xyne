@@ -146,6 +146,7 @@ export const SearchApi = async (c: Context) => {
     lastUpdated,
     isQueryTyped,
     debug,
+    codeOnlySearch, // Add codeOnlySearch
     // @ts-ignore
   } = c.req.valid("query")
   let groupCount: any = {}
@@ -156,13 +157,18 @@ export const SearchApi = async (c: Context) => {
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
     const tasks: Array<any> = [
-      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      groupVespaSearch(decodedQuery, email, config.page, {
+        alpha: 0.5,
+        timestampRange,
+        codeOnlySearch,
+      }),
       searchVespa(decodedQuery, email, app, entity, {
         alpha: 0.5,
         limit: page,
         requestDebug: debug,
         offset,
         timestampRange,
+        codeOnlySearch, // Pass codeOnlySearch
       }),
     ]
 
@@ -178,6 +184,7 @@ export const SearchApi = async (c: Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
+      codeOnlySearch, // Pass codeOnlySearch
     })
   }
 

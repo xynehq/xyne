@@ -198,3 +198,4 @@ server/downloads
 build
 server/eval-results
 server/.venv/*
+frontend/src/routeTree.gen.ts 

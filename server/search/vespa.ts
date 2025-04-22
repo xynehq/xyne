@@ -11,6 +11,9 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  codeRustSchema,
+  codeApiDocsSchema,
+  CodeEntity,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -28,6 +31,9 @@ import type {
   VespaChatContainer,
   Inserts,
   VespaSearchResults,
+  AppEntityCounts, // Import AppEntityCounts
+  LanguageCounts,
+  VespaCodeApiDocs, // Import LanguageCounts
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -46,6 +52,7 @@ import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 import pLimit from "p-limit"
 const vespa = new VespaClient()
+const { isCodeSearchOnly } = config // Import the config flag
 
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
@@ -53,6 +60,12 @@ export const NAMESPACE = "namespace" // Replace with your actual namespace
 const CLUSTER = "my_content"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
+
+const MAX_INSERT_RETRIES = 3 // Maximum number of retries for insertion
+const INITIAL_INSERT_DELAY_MS = 200 // Initial delay in milliseconds
+
+// Helper function for delays
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Deletes all documents from the specified schema and namespace in Vespa.
@@ -124,14 +137,48 @@ export const insertWithRetry = async (
 
 // generic insert method
 export const insert = async (document: Inserts, schema: VespaSchema) => {
-  try {
-    await vespa.insert(document, { namespace: NAMESPACE, schema })
-  } catch (error) {
-    throw new ErrorInsertingDocument({
-      docId: document.docId,
-      cause: error as Error,
-      sources: schema,
-    })
+  let retries = 0
+  let currentDelay = INITIAL_INSERT_DELAY_MS
+
+  while (retries < MAX_INSERT_RETRIES) {
+    try {
+      await vespa.insert(document, { namespace: NAMESPACE, schema })
+      // If successful, exit the loop
+      if (retries > 0) {
+        Logger.info(
+          `Successfully inserted document ${document.docId} after ${retries} retries.`,
+        )
+      }
+      return
+    } catch (error) {
+      const cause = error instanceof Error ? error : new Error(String(error))
+      // Check if the error is ECONNRESET and if we have retries left
+      // @ts-ignore - Check if code property exists on the cause
+      if (cause?.code === "ECONNRESET" && retries < MAX_INSERT_RETRIES - 1) {
+        retries++
+        Logger.warn(
+          `ECONNRESET detected during insert for docId ${document.docId}. Retrying (${retries}/${MAX_INSERT_RETRIES - 1})... Waiting ${currentDelay}ms.`,
+        )
+        await delay(currentDelay)
+        // Exponential backoff
+        currentDelay *= 2
+      } else {
+        // If it's not ECONNRESET or retries are exhausted, log and throw the error
+        const finalErrorMessage = `Failed to insert document ${document.docId} after ${retries} retries. Last error: ${getErrorMessage(cause)}`
+        Logger.error({
+          msg: finalErrorMessage,
+          error: cause,
+          docId: document.docId,
+          schema: schema,
+        })
+        throw new ErrorInsertingDocument({
+          docId: document.docId,
+          cause: cause,
+          sources: schema,
+          message: finalErrorMessage, // Add more context to the error
+        })
+      }
+    }
   }
 }
 
@@ -179,6 +226,8 @@ const AllSources = [
   chatUserSchema,
   chatMessageSchema,
 ].join(", ")
+
+const CodeSources = [codeApiDocsSchema, codeRustSchema].join(", ")
 
 export const autocomplete = async (
   query: string,
@@ -234,8 +283,8 @@ export const autocomplete = async (
     yql: yqlQuery,
     query,
     email,
-    hits: limit, // Limit the number of suggestions
-    "ranking.profile": "autocomplete", // Use the autocomplete rank profile
+    hits: limit,
+    "ranking.profile": "autocomplete",
     "presentation.summary": "autocomplete",
   }
   try {
@@ -248,6 +297,88 @@ export const autocomplete = async (
     })
     // TODO: instead of null just send empty response
     throw error
+  }
+}
+
+/**
+ * Interface for structured API route result
+ */
+export interface ApiRouteResult {
+  path: string
+  method: string
+  operationId?: string
+  summary?: string
+  description?: string
+  handler?: string
+  parameters?: any[]
+  requestBody?: any
+  responses?: Record<string, any>
+  handlerSourceFile?: string
+  handlerSourceLine?: number
+  score: number
+}
+
+/**
+ * Search for API routes matching the query
+ * @param query User query about API routes
+ * @param limit Maximum number of results to return
+ * @returns Top matching API routes with scores
+ */
+export async function searchApiDocs(
+  query: string,
+  email: string,
+  limit: number = 4,
+): Promise<ApiRouteResult[]> {
+  try {
+    Logger.info({ query, limit }, "Searching API docs")
+
+    // Use the searchVespa function targeting only codeApiDocs schema
+    const results = await searchVespa(
+      query,
+      email,
+      Apps.Code,
+      CodeEntity.ApiDocs,
+      {
+        limit,
+        targetSchemas: [codeApiDocsSchema],
+        alpha: 0.5, // Adjust relevance scoring weights
+        codeOnlySearch: true,
+      },
+    )
+
+    if (!results?.root?.children || results.root.children.length === 0) {
+      Logger.info("No API docs found matching query")
+      return []
+    }
+
+    // Transform Vespa results into structured API route data
+    return results.root.children.map((result) => {
+      const fields = result.fields as VespaCodeApiDocs
+
+      return {
+        path: fields.path || "",
+        method: fields.method || "",
+        operationId: fields.openapi_operationId,
+        summary: fields.openapi_summary,
+        description: fields.openapi_description,
+        handler: fields.handler,
+        parameters: fields.openapi_parameters_json
+          ? JSON.parse(fields.openapi_parameters_json)
+          : [],
+        requestBody: fields.openapi_requestBody_json
+          ? JSON.parse(fields.openapi_requestBody_json)
+          : undefined,
+        responses: fields.openapi_responses_json
+          ? JSON.parse(fields.openapi_responses_json)
+          : {},
+        handlerSourceFile: fields.handler_source_file,
+        handlerSourceLine: fields.handler_source_line,
+        score: result.relevance || 0,
+      }
+    })
+  } catch (error) {
+    Logger.error({ error }, "Error searching API docs")
+    return []
   }
 }
 
@@ -439,13 +570,102 @@ const HybridDefaultProfileAppEntityCounts = (
   }
 }
 
+// Profile for grouping code results by language
+const HybridCodeLanguageGroupProfile = (
+  hits: number,
+  timestampRange: { to: number | null; from: number | null } | null,
+): YqlProfile => {
+  let timestampCondition = ""
+  if (timestampRange) {
+    let conditions: string[] = []
+    // Assuming code schemas might have an 'updatedAt' or similar field.
+    // Adjust if the actual field name is different.
+    if (timestampRange.from) {
+      conditions.push(`updatedAt >= ${timestampRange.from}`)
+    }
+    if (timestampRange.to) {
+      conditions.push(`updatedAt <= ${timestampRange.to}`)
+    }
+    if (conditions.length > 0) {
+      timestampCondition = `and (${conditions.join(" and ")})`
+    }
+  }
+
+  // Target only the codeRustSchema for language grouping
+  return {
+    profile: SearchModes.NativeRank, // Or another appropriate profile
+    yql: `select * from sources ${CodeSources}
+            where (
+              (userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(code_chunk_embeddings, q_embedding)) or
+              ({targetHits:${hits}}nearestNeighbor(api_doc_embedding, q_embedding))
+            )
+            ${timestampCondition}
+            limit 0
+            | all(
+                group(language) each(output(count()))
+            )`,
+  }
+}
+
 // TODO: extract out the fetch and make an api client
 export const groupVespaSearch = async (
   query: string,
   email: string,
   limit = config.page,
-  timestampRange?: { to: number; from: number } | null,
+  {
+    alpha = 0.5,
+    timestampRange = null,
+    excludedIds = [],
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false, // Destructure requestDebug here
+    codeOnlySearch, // Add codeOnlySearch to parameters
+  }: Partial<VespaQueryConfig & { codeOnlySearch?: boolean }>, // Add to type
 ): Promise<AppEntityCounts> => {
+  if (codeOnlySearch) {
+    Logger.info("Performing code-only search.")
+    // Reverted YQL: Removed explicit 'matchfeatures' from select
+    const yql = `select * from sources
+    ${CodeSources} where (userInput(@query) or
+    ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)) or
+    ({targetHits:${limit}}nearestNeighbor(api_doc_embedding, q_embedding)))
+      limit 0
+      | all(
+          group(app) each(
+            group(entity) each(output(count()))
+        )
+      );`
+    const minimalPayload = {
+      yql,
+      query,
+      // Add required inputs for the hybrid rank profile, specifying the code-embedder
+    }
+
+    const hybridDefaultPayload = {
+      yql,
+      query,
+      email,
+      "input.query(alpha)": alpha,
+      "ranking.profile": "default",
+      "input.query(q_embedding)": "embed(code-embedder, @query)",
+    }
+    Logger.debug({ msg: "Code search payload", payload: minimalPayload }) // Log payload
+    try {
+      return await vespa.groupSearch(hybridDefaultPayload)
+    } catch (error) {
+      Logger.error({
+        msg: "Error during code search execution",
+        error: getErrorMessage(error),
+        stack: (error as Error).stack,
+      }) // Enhanced error logging
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: CodeSources, // Specify the source
+      })
+    }
+  }
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
     timestampRange ?? null,
@@ -456,7 +676,8 @@ export const groupVespaSearch = async (
     query,
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@query)",
+    // Specify hf-embedder for the general search input 'e'
+    "input.query(e)": "embed(hf-embedder, @query)",
   }
   try {
     return await vespa.groupSearch(hybridDefaultPayload)
@@ -478,6 +699,14 @@ type VespaQueryConfig = {
   rankProfile: SearchModes
   requestDebug: boolean
   span: Span | null
+  codeOnlySearch: boolean
+  targetSchemas?: VespaSchema[]
+}
+
+type VespaGroupQueryConfig = {
+  alpha: number
+  timestampRange: { from: number; to: number } | null
+  rankProfile: SearchModes
 }
 
 export const searchVespa = async (
@@ -493,14 +722,47 @@ export const searchVespa = async (
     excludedIds = [],
     notInMailLabels = [],
     rankProfile = SearchModes.NativeRank,
-    requestDebug = false,
+    requestDebug = false, // Destructure requestDebug here
+    codeOnlySearch, // Add codeOnlySearch to parameters
     span = null,
+    targetSchemas = [],
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  // Determine the timestamp cutoff based on lastUpdated
-  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
+  console.log("code only search", codeOnlySearch)
+  if (codeOnlySearch) {
+    let schemas = targetSchemas.length ? targetSchemas.join(", ") : CodeSources
+    console.log(schemas)
+    Logger.info("Performing code-only search.")
+    const yql = `select * from sources ${schemas} where (userInput(@query) or
+    ({targetHits:${limit}}nearestNeighbor(code_chunk_embeddings, q_embedding)) or
+    ({targetHits:${limit}}nearestNeighbor(api_doc_embedding, q_embedding)));`
+    const minimalPayload = {
+      yql,
+      query,
+      "input.query(q_embedding)": "embed(code-embedder, @query)",
+      "input.query(alpha)": alpha, // Use the provided alpha value
+      hits: limit,
+      offset,
+      "ranking.profile": "default",
+      ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+    }
+    Logger.debug({ msg: "Code search payload", payload: minimalPayload }) // Log payload
+    try {
+      return await vespa.search<VespaSearchResponse>(minimalPayload)
+    } catch (error) {
+      Logger.error({
+        msg: "Error during code search execution",
+        error: getErrorMessage(error),
+        stack: (error as Error).stack,
+      }) // Enhanced error logging
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: CodeSources, // Specify the source
+      })
+    }
+  }
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
@@ -516,7 +778,8 @@ export const searchVespa = async (
     query,
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@query)",
+    // Specify hf-embedder for the general search input 'e'
+    "input.query(e)": "embed(hf-embedder, @query)",
     "input.query(alpha)": alpha,
     hits: limit,
     ...(offset
@@ -653,6 +916,11 @@ export const DeleteDocument = async (docId: string, schema: VespaSchema) => {
   }
 }
 
+// Define a type for Language Counts
+interface LanguageCounts {
+  [language: string]: number
+}
+
 // Define a type for Entity Counts (where the key is the entity name and the value is the count)
 interface EntityCounts {
   [entity: string]: number
@@ -661,6 +929,57 @@ interface EntityCounts {
 // Define a type for App Entity Counts (where the key is the app name and the value is the entity counts)
 export interface AppEntityCounts {
   [app: string]: EntityCounts
+}
+
+// Function to group code search results by language
+export const groupCodeByLanguage = async (
+  query: string,
+  limit = config.page,
+  timestampRange?: { to: number; from: number } | null,
+): Promise<LanguageCounts> => {
+  // Use the specific profile for language grouping
+  let { yql, profile } = HybridCodeLanguageGroupProfile(
+    limit,
+    timestampRange ?? null,
+  )
+
+  const payload = {
+    yql,
+    query,
+    "ranking.profile": profile,
+    // Specify code-embedder for the code search input 'q_embedding'
+    "input.query(q_embedding)": "embed(code-embedder, @query)",
+    // Alpha is needed if the profile uses it, even for grouping
+    "input.query(alpha)": 0.5, // Default or adjust as needed
+  }
+
+  try {
+    // Use the generic search method as groupSearch is specific to app/entity
+    const response = await vespa.search<VespaSearchResponse>(payload)
+
+    // Process the response to extract language counts
+    const languageCounts: LanguageCounts = {}
+    // Grouping results are nested within the response structure
+    const groupRoot = response.root.children?.[0] // group:root
+    if (groupRoot && "children" in groupRoot) {
+      const languageGroup = groupRoot.children?.[0] // grouplist:language
+      if (languageGroup && "children" in languageGroup) {
+        // @ts-ignore - Vespa response structure can be complex
+        for (const langGroup of languageGroup.children) {
+          const languageName = langGroup.value as string
+          const count = langGroup.fields?.["count()"] || 0
+          languageCounts[languageName] = count
+        }
+      }
+    }
+    return languageCounts
+  } catch (error) {
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: CodeSources, // Source is specific code schema
+      message: "Error grouping code results by language",
+    })
+  }
 }
 
 export const ifDocumentsExist = async (

@@ -1,0 +1,192 @@
+schema code_rust {
+
+  document code_rust {
+
+    # --- Document ID ---
+    # Use a hash of the file path as the document ID
+    field docId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    # --- Struct Definitions ---
+    # Simplified structs without indexing settings
+    struct doc_comment {
+      field text type string {}
+      field target type string {}
+      field start_line type int {}
+    }
+
+    struct dependency {
+      field name type string {}
+      field full_path type string {}
+      field line type int {}
+    }
+
+    # --- File Metadata ---
+    field filename type string {
+      indexing: summary | attribute | index
+      match: exact # Changed from word
+      attribute: fast-search
+    }
+
+    field path type string {
+      indexing: summary | attribute
+      attribute: fast-search
+    }
+
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    # --- Core Content ---
+    field raw_content type string {
+      indexing: summary | index
+      match: text # Keep as text for broader matching within content
+      index: enable-bm25
+      bolding: on
+      # summary: dynamic # Reverted: Rely on mapper logic with code_chunk_contents
+    }
+
+    field symbol_names type array<string> {
+      indexing: summary | attribute | index
+      match: exact # Changed from word
+      attribute: fast-search
+    }
+
+    # --- Flattened Code Chunks ---
+    field code_chunk_kinds type array<string> {
+      indexing: summary | attribute
+      match: exact # Changed from word
+      attribute: fast-search
+    }
+    field code_chunk_names type array<string> {
+      indexing: summary | index
+      match: exact # Changed from word
+      index: enable-bm25
+    }
+    field code_chunk_contents type array<string> {
+      indexing: summary | index # Keep for potential filtering/ranking
+      match: text # Keep as text for broader matching within content
+      bolding: on
+      index: enable-bm25
+    }
+
+    field code_chunk_start_lines type array<int> {
+      indexing: summary | attribute
+    }
+    field code_chunk_end_lines type array<int> {
+      indexing: summary | attribute
+    }
+
+    # --- Documentation Comments ---
+    field doc_comments_texts type array<string> {
+      indexing: summary | index
+      match: text # Keep as text
+      bolding: on
+      index: enable-bm25
+    }
+    field doc_comments_targets type array<string> {
+      indexing: summary | attribute
+      match: exact # Changed from word
+      attribute: fast-search
+    }
+    
+    field doc_comments_start_lines type array<int> {
+      indexing: summary | attribute
+    }
+
+    # --- Dependencies ---
+    field dependencies_names type array<string> {
+      indexing: summary | index
+      match: exact # Changed from word
+    }
+    field dependencies_full_paths type array<string> {
+      indexing: summary | index
+      match: exact # Changed from word
+    }
+    field dependencies_lines type array<int> {
+      indexing: summary | attribute
+    }
+
+    # --- Feature Flags ---
+    field feature_flags type array<string> {
+      indexing: summary | attribute | index
+      match: exact # Changed from word
+      attribute: fast-search
+    }
+
+
+  }
+    # --- Embeddings ---
+    # Embeddings for each code chunk (function), mapped from code_chunk_contents
+    field code_chunk_embeddings type tensor<float>(p{}, x[1024]) {
+      indexing: input code_chunk_contents | embed code-embedder | attribute | summary
+      attribute { distance-metric: angular }
+    }
+
+  # --- Fieldsets ---
+  fieldset default {
+    fields: raw_content, symbol_names, code_chunk_names, code_chunk_contents, doc_comments_texts, dependencies_names, dependencies_full_paths, feature_flags
+  }
+
+  # --- Rank Profiles ---
+  rank-profile default {
+    # Inputs for hybrid search
+    inputs {
+      query(q_embedding) tensor<float>(x[1024]) # Query embedding
+      query(alpha) double                     # Weight for semantic vs lexical (0.0 to 1.0, default 0.5)
+    }
+
+    # Define function for semantic score using the mapped tensor field
+    function code_vector_score() {
+      expression: closeness(field, code_chunk_embeddings)
+    }
+
+    # Define count of matched fields for custom averaging (using fields from old 'code_focused')
+    function matchedFieldCount() {
+      expression: matches(doc_comments_texts) + matches(code_chunk_names) + matches(symbol_names) + matches(code_chunk_contents)
+    }
+
+    # Define combined nativeRank score with custom averaging (using fields from old 'code_focused')
+    function combined_nativeRank() {
+      expression: (nativeRank(doc_comments_texts) + nativeRank(code_chunk_names) + nativeRank(symbol_names) + nativeRank(code_chunk_contents)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+    }
+
+    first-phase {
+      # Hybrid scoring expression using custom nativeRank average
+      expression: (query(alpha) * code_vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    # Define function for per-chunk BM25 scores
+    function chunk_scores() {
+      # Calculates BM25 score for each element in the code_chunk_contents array
+      expression: elementwise(bm25(code_chunk_contents), x, double)
+    }
+
+    match-features {
+      # Include features relevant to the combined ranking
+      nativeRank(doc_comments_texts)
+      nativeRank(code_chunk_names)
+      nativeRank(symbol_names)
+      nativeRank(code_chunk_contents)
+      matchedFieldCount
+      combined_nativeRank
+      code_vector_score # Add semantic score
+      closeness(field, code_chunk_embeddings) # Add raw closeness
+      chunk_scores # Add per-chunk BM25 scores
+    }
+  }
+
+  # --- Document Summaries ---
+  # Default summary is implicitly created containing all fields with 'indexing: summary'
+
+}

@@ -96,11 +96,11 @@ schema mail {
   }
   }
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
-    indexing: input chunks | embed | attribute | index
+    indexing: input chunks | embed hf-embedder | attribute | index
     attribute {
       distance-metric: angular
     }
-  }
+      }
 
   field subject_fuzzy type string {
     indexing: input subject | index

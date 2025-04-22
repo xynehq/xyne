@@ -92,8 +92,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     null,
   ) // Added state
 
-  
-
   const currentRespRef = useRef<CurrentResp | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
     isWithChatId ? !!data?.chat?.isBookmarked || false : false,
