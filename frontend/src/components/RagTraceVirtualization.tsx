@@ -280,23 +280,31 @@ const buildSpanHierarchy = (spans: SafeSpan[]): SafeSpan[] => {
   const spanMap = new Map<string, SafeSpan>();
   const rootSpans: SafeSpan[] = [];
 
-  spans.forEach((span, index) => {
-    const spanId = span.spanId || `span-${index}-${Math.random().toString(36).substr(2, 9)}`;
-    spanMap.set(spanId, { ...span, spanId, children: [] });
+  // First pass: Populate spanMap with all spans
+  spans.forEach((span) => {
+    if (!span.spanId) {
+      console.warn(`Span with name "${span.name}" is missing spanId, skipping`);
+      return;
+    }
+    spanMap.set(span.spanId, { ...span, children: [] });
   });
 
+  // Second pass: Build hierarchy, handling null or undefined parentSpanId
   spans.forEach((span) => {
-    const currentSpan = spanMap.get(span.spanId || "");
-    if (!currentSpan) return;
+    if (!span.spanId) return; // Skip spans without spanId
+    const currentSpan = spanMap.get(span.spanId);
+    if (!currentSpan) return; // Should not happen due to first pass
     if (span.parentSpanId && spanMap.has(span.parentSpanId)) {
       const parentSpan = spanMap.get(span.parentSpanId)!;
       parentSpan.children = parentSpan.children || [];
       parentSpan.children.push(currentSpan);
     } else {
+      // Treat spans with null, undefined, or missing parentSpanId as root spans
       rootSpans.push(currentSpan);
     }
   });
 
+  // Sort children and root spans
   const sortChildren = (span: SafeSpan) => {
     if (span.children && span.children.length > 0) {
       span.children.sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
@@ -307,6 +315,126 @@ const buildSpanHierarchy = (spans: SafeSpan[]): SafeSpan[] => {
   rootSpans.forEach(sortChildren);
 
   return rootSpans;
+};
+
+// Format YQL query for readability
+export const formatYqlQuery = (yql: string): string => {
+  try {
+    let cleaned = yql.replace(/\\n/g, " ").replace(/\s+/g, " ").trim();
+    const lines: string[] = [];
+    let indentLevel = 0;
+    const indent = "  ";
+    let currentLine = "";
+    let i = 0;
+
+    const keywords = [
+      "select",
+      "from",
+      "where",
+      "and",
+      "or",
+      "contains",
+      "userInput",
+      "nearestNeighbor",
+    ];
+    const splitRegex = /(\(|\)|,|;)/g;
+
+    const tokens: string[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = splitRegex.exec(cleaned)) !== null) {
+      const index = match.index;
+      const token = match[0];
+      if (index > lastIndex) {
+        tokens.push(cleaned.slice(lastIndex, index).trim());
+      }
+      tokens.push(token);
+      lastIndex = splitRegex.lastIndex;
+    }
+    if (lastIndex < cleaned.length) {
+      tokens.push(cleaned.slice(lastIndex).trim());
+    }
+
+    while (i < tokens.length) {
+      let token = tokens[i].trim();
+      if (!token) {
+        i++;
+        continue;
+      }
+
+      if (
+        keywords.some((kw) => token.toLowerCase().startsWith(kw)) ||
+        token === "!"
+      ) {
+        if (currentLine) {
+          lines.push(indent.repeat(indentLevel) + currentLine.trim());
+          currentLine = "";
+        }
+        currentLine = token;
+        if (
+          i + 1 < tokens.length &&
+          tokens[i + 1] === "(" &&
+          token.toLowerCase() !== "contains"
+        ) {
+          currentLine += tokens[i + 1];
+          i += 2;
+          indentLevel++;
+          lines.push(indent.repeat(indentLevel - 1) + currentLine.trim());
+          currentLine = "";
+          continue;
+        }
+      } else if (token === "(") {
+        if (currentLine) {
+          lines.push(indent.repeat(indentLevel) + currentLine.trim());
+          currentLine = "";
+        }
+        indentLevel++;
+        currentLine = token;
+        lines.push(indent.repeat(indentLevel - 1) + currentLine);
+        currentLine = "";
+      } else if (token === ")") {
+        if (currentLine) {
+          lines.push(indent.repeat(indentLevel) + currentLine.trim());
+          currentLine = "";
+        }
+        indentLevel--;
+        lines.push(indent.repeat(indentLevel) + token);
+      } else if (token === ",") {
+        if (currentLine) {
+          currentLine += token + " ";
+        }
+      } else {
+        currentLine += (currentLine ? " " : "") + token;
+      }
+      i++;
+    }
+
+    if (currentLine) {
+      lines.push(indent.repeat(indentLevel) + currentLine.trim());
+    }
+
+    const finalLines = lines
+      .filter((line) => line.trim())
+      .map((line, index, arr) => {
+        if (
+          line.trim().toLowerCase().startsWith("from") &&
+          index + 1 < arr.length &&
+          arr[index + 1].includes(",")
+        ) {
+          const nextLine = arr[index + 1];
+          arr[index + 1] = "";
+          return line.trim() + " " + nextLine.trim();
+        }
+        return line;
+      })
+      .filter((line) => line.trim());
+
+    return finalLines.join("\n");
+  } catch (error) {
+    console.error("Error formatting YQL:", error);
+    return yql;
+  }
 };
 
 // Modal component for enlarged attribute view
@@ -328,126 +456,6 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
   const [isCopied, setIsCopied] = useState(false);
 
   if (!isOpen) return null;
-
-  // Format YQL query for readability
-  const formatYqlQuery = (yql: string): string => {
-    try {
-      let cleaned = yql.replace(/\\n/g, " ").replace(/\s+/g, " ").trim();
-      const lines: string[] = [];
-      let indentLevel = 0;
-      const indent = "  ";
-      let currentLine = "";
-      let i = 0;
-
-      const keywords = [
-        "select",
-        "from",
-        "where",
-        "and",
-        "or",
-        "contains",
-        "userInput",
-        "nearestNeighbor",
-      ];
-      const splitRegex = /(\(|\)|,|;)/g;
-
-      const tokens: string[] = [];
-      let lastIndex = 0;
-      let match;
-
-      while ((match = splitRegex.exec(cleaned)) !== null) {
-        const index = match.index;
-        const token = match[0];
-        if (index > lastIndex) {
-          tokens.push(cleaned.slice(lastIndex, index).trim());
-        }
-        tokens.push(token);
-        lastIndex = splitRegex.lastIndex;
-      }
-      if (lastIndex < cleaned.length) {
-        tokens.push(cleaned.slice(lastIndex).trim());
-      }
-
-      while (i < tokens.length) {
-        let token = tokens[i].trim();
-        if (!token) {
-          i++;
-          continue;
-        }
-
-        if (
-          keywords.some((kw) => token.toLowerCase().startsWith(kw)) ||
-          token === "!"
-        ) {
-          if (currentLine) {
-            lines.push(indent.repeat(indentLevel) + currentLine.trim());
-            currentLine = "";
-          }
-          currentLine = token;
-          if (
-            i + 1 < tokens.length &&
-            tokens[i + 1] === "(" &&
-            token.toLowerCase() !== "contains"
-          ) {
-            currentLine += tokens[i + 1];
-            i += 2;
-            indentLevel++;
-            lines.push(indent.repeat(indentLevel - 1) + currentLine.trim());
-            currentLine = "";
-            continue;
-          }
-        } else if (token === "(") {
-          if (currentLine) {
-            lines.push(indent.repeat(indentLevel) + currentLine.trim());
-            currentLine = "";
-          }
-          indentLevel++;
-          currentLine = token;
-          lines.push(indent.repeat(indentLevel - 1) + currentLine);
-          currentLine = "";
-        } else if (token === ")") {
-          if (currentLine) {
-            lines.push(indent.repeat(indentLevel) + currentLine.trim());
-            currentLine = "";
-          }
-          indentLevel--;
-          lines.push(indent.repeat(indentLevel) + token);
-        } else if (token === ",") {
-          if (currentLine) {
-            currentLine += token + " ";
-          }
-        } else {
-          currentLine += (currentLine ? " " : "") + token;
-        }
-        i++;
-      }
-
-      if (currentLine) {
-        lines.push(indent.repeat(indentLevel) + currentLine.trim());
-      }
-
-      const finalLines = lines
-        .filter((line) => line.trim())
-        .map((line, index, arr) => {
-          if (
-            line.trim().toLowerCase().startsWith("from") &&
-            index + 1 < arr.length &&
-            arr[index + 1].includes(",")
-          ) {
-            const nextLine = arr[index + 1];
-            arr[index + 1] = "";
-            return line.trim() + " " + nextLine.trim();
-          }
-          return line;
-        })
-        .filter((line) => line.trim());
-
-      return finalLines.join("\n");
-    } catch (error) {
-      console.error("Error formatting YQL:", error);
-      return yql;
-    }
-  };
 
   // Format attribute value as in the attributes table
   let formattedValue = attributeValue;
@@ -600,13 +608,9 @@ export function RagTraceVirtualization({
       ? parsedData
       : [];
 
-    const normalizedSpans = spans.map((span: any, index) => ({
+    const normalizedSpans = spans.map((span: any) => ({
       ...span,
-      spanId:
-        span.spanId ||
-        span.id ||
-        span.name ||
-        `span-${index}-${Math.random().toString(36).substr(2, 9)}`,
+      spanId: span.spanId || span.id || span.name || "unknown",
       parentSpanId: span.parentSpanId || span.parentId || null,
       name: span.name || span.spanId || "Unnamed Span",
       startTime: span.startTime != null ? Number(span.startTime) : null,
@@ -803,126 +807,6 @@ export function RagTraceVirtualization({
         </div>
       );
     }
-
-    // Function to format YQL query for readability
-    const formatYqlQuery = (yql: string): string => {
-      try {
-        let cleaned = yql.replace(/\\n/g, " ").replace(/\s+/g, " ").trim();
-        const lines: string[] = [];
-        let indentLevel = 0;
-        const indent = "  ";
-        let currentLine = "";
-        let i = 0;
-
-        const keywords = [
-          "select",
-          "from",
-          "where",
-          "and",
-          "or",
-          "contains",
-          "userInput",
-          "nearestNeighbor",
-        ];
-        const splitRegex = /(\(|\)|,|;)/g;
-
-        const tokens: string[] = [];
-        let lastIndex = 0;
-        let match;
-
-        while ((match = splitRegex.exec(cleaned)) !== null) {
-          const index = match.index;
-          const token = match[0];
-          if (index > lastIndex) {
-            tokens.push(cleaned.slice(lastIndex, index).trim());
-          }
-          tokens.push(token);
-          lastIndex = splitRegex.lastIndex;
-        }
-        if (lastIndex < cleaned.length) {
-          tokens.push(cleaned.slice(lastIndex).trim());
-        }
-
-        while (i < tokens.length) {
-          let token = tokens[i].trim();
-          if (!token) {
-            i++;
-            continue;
-          }
-
-          if (
-            keywords.some((kw) => token.toLowerCase().startsWith(kw)) ||
-            token === "!"
-          ) {
-            if (currentLine) {
-              lines.push(indent.repeat(indentLevel) + currentLine.trim());
-              currentLine = "";
-            }
-            currentLine = token;
-            if (
-              i + 1 < tokens.length &&
-              tokens[i + 1] === "(" &&
-              token.toLowerCase() !== "contains"
-            ) {
-              currentLine += tokens[i + 1];
-              i += 2;
-              indentLevel++;
-              lines.push(indent.repeat(indentLevel - 1) + currentLine.trim());
-              currentLine = "";
-              continue;
-            }
-          } else if (token === "(") {
-            if (currentLine) {
-              lines.push(indent.repeat(indentLevel) + currentLine.trim());
-              currentLine = "";
-            }
-            indentLevel++;
-            currentLine = token;
-            lines.push(indent.repeat(indentLevel - 1) + currentLine);
-            currentLine = "";
-          } else if (token === ")") {
-            if (currentLine) {
-              lines.push(indent.repeat(indentLevel) + currentLine.trim());
-              currentLine = "";
-            }
-            indentLevel--;
-            lines.push(indent.repeat(indentLevel) + token);
-          } else if (token === ",") {
-            if (currentLine) {
-              currentLine += token + " ";
-            }
-          } else {
-            currentLine += (currentLine ? " " : "") + token;
-          }
-          i++;
-        }
-
-        if (currentLine) {
-          lines.push(indent.repeat(indentLevel) + currentLine.trim());
-        }
-
-        const finalLines = lines
-          .filter((line) => line.trim())
-          .map((line, index, arr) => {
-            if (
-              line.trim().toLowerCase().startsWith("from") &&
-              index + 1 < arr.length &&
-              arr[index + 1].includes(",")
-            ) {
-              const nextLine = arr[index + 1];
-              arr[index + 1] = "";
-              return line.trim() + " " + nextLine.trim();
-            }
-            return line;
-          })
-          .filter((line) => line.trim());
-
-        return finalLines.join("\n");
-      } catch (error) {
-        console.error("Error formatting YQL:", error);
-        return yql;
-      }
-    };
 
     let citationValues: CitationValues | null = null;
     if (attributes.citation_values) {
