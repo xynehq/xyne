@@ -498,16 +498,21 @@ export const VespaChatMessageSchema = z.object({
   name: z.string(),
   username: z.string(),
   image: z.string(),
-  domain: z.string().optional(), // probably should be made mandatory but for now making optional
+  channelName: z.string().optional(), // derived
+  isIm: z.boolean().optional(), // derived
+  isMpim: z.boolean().optional(), // derived
+  isPrivate: z.boolean().optional(), // derived
+  permissions: z.array(z.string()).optional(), // derived,
+  teamName: z.string().optional(), // derived
+  domain: z.string().optional(), // derived
   createdAt: z.number(), // Slack ts (e.g., 1734442791.514519)
   teamRef: z.string(), // vespa id for team
-  // messageType: z.string(), // Slack type (e.g., "message")
   threadId: z.string().default(""), // Slack thread_ts, null if not in thread
   attachmentIds: z.array(z.string()).default([]), // Slack file IDs (e.g., ["F0857N0FF4N"])
-  permissions: z.array(z.string()), // emails of all from the workspace who have access to that channel
   // reactions: z.array(z.string()), // Commented out in Vespa schema, so excluded
   mentions: z.array(z.string()), // Extracted from text (e.g., ["U032QT45V53"])
   updatedAt: z.number(), // Slack edited.ts (e.g., 1734442538.0), null if not edited
+  deletedAt: z.number(),
   metadata: z.string(), // JSON string for subtype, etc. (e.g., "{\"subtype\": null}")
 })
 
@@ -548,6 +553,7 @@ export const VespaChatUserSearchSchema = VespaChatUserSchema.extend({
 export const VespaChatContainerSchema = z.object({
   docId: z.string(),
   name: z.string(),
+  channelName: z.string(),
   creator: z.string(),
   app: z.nativeEnum(Apps),
 
@@ -556,6 +562,8 @@ export const VespaChatContainerSchema = z.object({
   isGeneral: z.boolean(),
   isIm: z.boolean(),
   isMpim: z.boolean(),
+
+  permissions: z.array(z.string()),
 
   createdAt: z.number(),
   updatedAt: z.number(),

@@ -57,15 +57,13 @@ class VespaClient {
           )
         }
 
-        // For 429 or 5xx errors, we retry it
+        // Retry for 429 (Too Many Requests) or 5xx errors
         if (
           (response.status === 429 || response.status >= 500) &&
           retryCount < this.maxRetries
         ) {
-          Logger.warn(
-            `Received status ${response.status}. Retrying request... Attempt ${retryCount + 1}/${this.maxRetries}`,
-          )
-          await this.delay(this.retryDelay * Math.pow(2, retryCount)) // Exponential backoff
+          Logger.info("retrying due to status: ", response.status)
+          await this.delay(this.retryDelay * Math.pow(2, retryCount))
           return this.fetchWithRetry(url, options, retryCount + 1)
         }
       }
@@ -195,7 +193,7 @@ class VespaClient {
         //   `Error inserting document ${document.docId} for ${options.schema} ${data.message}`,
         // )
         throw new Error(
-          `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+          `Failed to  insert document: ${response.status} ${response.statusText} - ${errorText}`,
         )
       }
 
@@ -536,12 +534,77 @@ class VespaClient {
     }
   }
 
+  // TODO: Add pagination if docId's are more than
+  // max hits and merge the finaly Record
   async ifDocumentsExist(
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
     const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
     const yqlQuery = `select docId, updatedAt from sources * where docId in (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+
+    try {
+      const payload = {
+        yql: yqlQuery,
+        hits: docIds.length,
+        maxHits: docIds.length + 1,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+
+      // Extract found documents with their docId and updatedAt
+      const foundDocs =
+        result.root?.children?.map((hit: any) => ({
+          docId: hit.fields.docId as string,
+          updatedAt: hit.fields.updatedAt as number | undefined, // undefined if not present
+        })) || []
+
+      // Build the result map
+      const existenceMap = docIds.reduce(
+        (acc, id) => {
+          const foundDoc = foundDocs.find(
+            (doc: { docId: string }) => doc.docId === id,
+          )
+          acc[id] = {
+            exists: !!foundDoc,
+            updatedAt: foundDoc?.updatedAt ?? null, // null if not found or no updatedAt
+          }
+          return acc
+        },
+        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
+      )
+
+      return existenceMap
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error checking documents existence:  ${errMessage}`)
+      throw error
+    }
+  }
+
+  async ifDocumentsExistInSchema(
+    schema: string,
+    docIds: string[],
+  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
+    // Construct the YQL query
+    const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
+    const yqlQuery = `select docId, updatedAt from sources ${schema} where docId in (${yqlIds})`
 
     const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`
 
@@ -592,7 +655,7 @@ class VespaClient {
     }
   }
 
-  async getUsersByNamesAndEmaisl<T>(payload: T) {
+  async getUsersByNamesAndEmails<T>(payload: T) {
     try {
       const response = await this.fetchWithRetry(
         `${this.vespaEndpoint}/search/`,

@@ -345,7 +345,7 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     return {
       docId: (fields as VespaChatMessage).docId,
       title: (fields as VespaChatMessage).text,
-      url: `https://google.com`,
+      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${(fields as VespaChatMessage).channelId}/p${(fields as VespaChatMessage).updatedAt}`,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
     }
@@ -514,9 +514,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       queryRewriteSpan.setAttribute("queries", JSON.stringify(queries))
       queryRewriteSpan.end()
       rewriteSpan.end()
-      for (const [queryIndex, query] of queries) {
-        const querySpan = pageSpan.startSpan(`query_${queryIndex}`)
-        querySpan.setAttribute("query_index", queryIndex)
+      for (let idx = 0; idx < queries.length; idx++) {
+        const query = queries[idx]
+        const querySpan = pageSpan.startSpan(`query_${idx}`)
+        querySpan.setAttribute("query_index", idx)
         querySpan.setAttribute("query_text", query)
 
         const latestSearchSpan = querySpan.startSpan("latest_results_search")

@@ -50,7 +50,7 @@ import {
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
-
+import pLimit from "p-limit"
 const vespa = new VespaClient()
 const { isCodeSearchOnly } = config // Import the config flag
 
@@ -100,7 +100,42 @@ export const insertDocument = async (document: VespaFile) => {
   }
 }
 
-// generic insert method with retry logic for ECONNRESET
+// Renamed to reflect its purpose: retrying a single insert
+export const insertWithRetry = async (
+  document: Inserts,
+  schema: VespaSchema,
+  maxRetries = 5,
+) => {
+  let lastError: any
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await vespa.insert(document, { namespace: NAMESPACE, schema })
+      Logger.debug(`Inserted document ${document.docId}`)
+      return
+    } catch (error) {
+      lastError = error
+      if (
+        (error as Error).message.includes("429 Too Many Requests") &&
+        attempt < maxRetries
+      ) {
+        const delayMs = Math.min(Math.pow(2, attempt) * 1000, 10000) // Cap at 10s
+        Logger.warn(
+          `Vespa 429 for ${document.docId}, retrying in ${delayMs}ms (attempt ${attempt + 1})`,
+        )
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      } else {
+        throw new Error(
+          `Error inserting document ${document.docId}: ${(error as Error).message}`,
+        )
+      }
+    }
+  }
+  throw new Error(
+    `Failed to insert ${document.docId} after ${maxRetries} retries: ${lastError.message}`,
+  )
+}
+
+// generic insert method
 export const insert = async (document: Inserts, schema: VespaSchema) => {
   let retries = 0
   let currentDelay = INITIAL_INSERT_DELAY_MS
@@ -957,6 +992,17 @@ export const ifDocumentsExist = async (
   }
 }
 
+export const ifDocumentsExistInSchema = async (
+  schema: string,
+  docIds: string[],
+): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
+  try {
+    return await vespa.ifDocumentsExistInSchema(schema, docIds)
+  } catch (error) {
+    throw error
+  }
+}
+
 const getNDocuments = async (n: number) => {
   // Encode the YQL query to ensure it's URL-safe
   const yql = encodeURIComponent(
@@ -1076,7 +1122,7 @@ export const searchUsersByNamesAndEmails = async (
   }
 
   try {
-    return await vespa.getUsersByNamesAndEmaisl(searchPayload)
+    return await vespa.getUsersByNamesAndEmails(searchPayload)
   } catch (error) {
     throw error
   }
