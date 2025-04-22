@@ -19,6 +19,7 @@ import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
 import { getSortedScoredChunks } from "@/search/mappers"
+import type { ApiRouteResult } from "@/search/vespa"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -481,4 +482,29 @@ export const replaceLinks = (text: string): string => {
       return match
     }
   })
+}
+
+/**
+ * Generate a prompt for the API route search results
+ */
+export function generateApiRouteAnalysisContext(
+  apiRoutes: ApiRouteResult[],
+): string {
+  return apiRoutes
+    .map((route, index) => {
+      return `
+ROUTE ${index}:
+- Path: ${route.path}
+- Method: ${route.method}
+${route.summary ? `- Summary: ${route.summary}` : ""}
+${route.description ? `- Description: ${route.description}` : ""}
+${route.handler ? `- Handler: ${route.handler}` : ""}
+${route.parameters ? `- Parameters: ${JSON.stringify(route.parameters, null, 2)}` : ""}
+${route.requestBody ? `- Request Body: ${JSON.stringify(route.requestBody, null, 2)}` : ""}
+${route.responses ? `- Responses: ${JSON.stringify(route.responses, null, 2)}` : ""}
+${route.handlerSourceFile ? `- Handler Source File: ${route.handlerSourceFile}` : ""}
+${route.handlerSourceLine ? `- Handler Source Line: ${route.handlerSourceLine}` : ""}
+`
+    })
+    .join("\n")
 }

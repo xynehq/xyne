@@ -15,17 +15,21 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
-  codeRustSchema, // Import the new schema name
-  VespaCodeRustSchema, // Import the base Vespa schema for code_rust
+  codeRustSchema,
+  VespaCodeRustSchema,
+  codeApiDocsSchema,
+  VespaCodeApiDocsSchema, // Import the correct Vespa schema
 } from "search/types"
 export {
   codeRustSchema, // Export codeRustSchema
+  codeApiDocsSchema, // Export the new schema name
   GooglePeopleEntity,
   DriveEntity,
   NotionEntity,
   CalendarEntity,
   MailAttachmentEntity,
   SlackEntity,
+  CodeEntity, // Export CodeEntity
   Apps,
   isMailAttachment,
 } from "search/types"
@@ -33,6 +37,7 @@ export type { Entity } from "search/types"
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"
+import api from "gpt-tokenizer"
 
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
@@ -267,8 +272,8 @@ export const CodeRustResponseSchema = VespaCodeRustSchema.pick({
   docId: true,
   filename: true,
   path: true,
-  language: true, // Include language
-  code_chunk_contents: true, // Include chunks for context
+  entity: true,
+  code_chunk_contents: true,
   code_chunk_start_lines: true,
 })
   .extend({
@@ -280,6 +285,27 @@ export const CodeRustResponseSchema = VespaCodeRustSchema.pick({
   })
   .strip()
 
+// Define the response schema for code_api_docs results
+export const CodeApiDocsResponseSchema = VespaCodeApiDocsSchema.pick({
+  docId: true,
+  path: true,
+  method: true,
+  handler: true,
+  file: true,
+  line: true,
+  struct: true,
+  openapi_summary: true,
+  openapi_description: true, // Example: Add description if needed
+  handler_source_file: true, // Example: Add handler source file if needed
+})
+  .extend({
+    type: z.literal(codeApiDocsSchema),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -288,7 +314,8 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
-  CodeRustResponseSchema, // Add the new response schema
+  CodeRustResponseSchema,
+  CodeApiDocsResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>

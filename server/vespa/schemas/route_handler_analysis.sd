@@ -1,0 +1,140 @@
+schema route_handler_analysis {
+
+  document route_handler_analysis {
+
+    # --- Identifiers ---
+    field route_id type string { # Unique ID, maybe hash(route_path + http_method)
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field route_path type string { # e.g., "/users/{id}"
+      indexing: summary | attribute | index
+      match: exact # Paths are usually searched exactly
+      attribute: fast-search
+    }
+    field http_method type string { # e.g., "GET", "POST" (Needs extraction)
+      indexing: summary | attribute
+      match: exact
+      attribute: fast-search
+    }
+
+    # --- Handler Information ---
+    field handler_function_name type string { # e.g., "get_user_by_id"
+      indexing: summary | attribute | index
+      match: exact
+      attribute: fast-search
+    }
+    field handler_file_path type string { # e.g., "src/handlers/user_handlers.rs"
+      indexing: summary | attribute
+      attribute: fast-search
+    }
+    field handler_start_line type int {
+      indexing: summary | attribute
+    }
+    field handler_code_snippet type string { # The code of the handler function itself
+      indexing: summary | index
+      match: text # Allow searching within the handler code
+      index: enable-bm25
+      bolding: on
+    }
+
+    # --- Route Definition Context ---
+    field route_definition_file_path type string { # e.g., "src/routes.rs"
+      indexing: summary | attribute
+      attribute: fast-search
+    }
+
+    # --- OpenAPI/Utoipa Documentation ---
+    field openapi_summary type string { # Short summary from annotation/docs
+      indexing: summary | index
+      match: text
+      index: enable-bm25
+      bolding: on
+    }
+    field openapi_description type string { # Longer description from annotation/docs
+      indexing: summary | index
+      match: text
+      index: enable-bm25
+      bolding: on
+    }
+    field openapi_tags type array<string> { # Tags like "users", "admin"
+      indexing: summary | attribute | index
+      match: exact
+      attribute: fast-search
+    }
+
+    # --- Call Graph Information (Flattened & Statically Resolved) ---
+    # struct called_function_info removed
+
+    field called_function_names type array<string> {
+        indexing: summary | attribute | index
+        match: exact
+        attribute: fast-search
+    }
+    field called_function_call_site_lines type array<int> {
+        indexing: summary | attribute
+    }
+    field called_function_resolution_kinds type array<string> { # "direct", "trait", "generic", "unresolved"
+        indexing: summary | attribute
+        match: exact
+        attribute: fast-search
+    }
+    field called_function_definition_file_paths type array<string> { # Path where called function is defined (if resolved)
+        indexing: summary | attribute
+        attribute: fast-search
+    }
+    field called_function_definition_start_lines type array<int> { # Optional: Where the definition starts
+        indexing: summary | attribute
+    }
+    field called_function_is_external_crates type bool { # Optional: Is this call to an external library?
+        indexing: summary | attribute
+    }
+    field called_function_trait_names type array<string> { # Optional: If resolution_kind is "trait"
+        indexing: summary | attribute | index
+        match: exact
+        attribute: fast-search
+    }
+
+    # --- References to Source Documents ---
+    field handler_source_doc_id type string { # Reference to the code_rust doc for the handler file
+        indexing: attribute | summary
+        attribute: fast-search
+    }
+    field definition_source_doc_id type string { # Reference to the code_rust doc for the route definition file
+        indexing: attribute | summary
+        attribute: fast-search
+    }
+
+    # --- Embedding (Placeholder - Define if needed) ---
+    # field embedding type tensor<float>(x[...]) {
+    #   indexing: input handler_code_snippet | embed my_embedder | attribute | summary
+    #   attribute { distance-metric: angular }
+    # }
+
+  } # End document route_handler_analysis
+
+  # --- Fieldsets (Example) ---
+  fieldset default {
+    fields: route_path, http_method, handler_function_name, handler_code_snippet, openapi_summary, openapi_description, openapi_tags, called_function_names, called_function_trait_names # Use flattened fields
+  }
+
+  # --- Rank Profiles (Example) ---
+  rank-profile default {
+    first-phase {
+      # Basic BM25 ranking on default fieldset
+      expression: nativeRank(route_path, http_method, handler_function_name, handler_code_snippet, openapi_summary, openapi_description, openapi_tags, called_function_names, called_function_trait_names)
+    }
+    match-features {
+      nativeRank(route_path)
+      nativeRank(http_method)
+      nativeRank(handler_function_name)
+      nativeRank(handler_code_snippet)
+      nativeRank(openapi_summary)
+      nativeRank(openapi_description)
+      nativeRank(openapi_tags)
+      nativeRank(called_function_names)
+      nativeRank(called_function_trait_names)
+    }
+  }
+
+} # End schema route_handler_analysis

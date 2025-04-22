@@ -4,6 +4,38 @@ description: 'Get started with Xyne Locally'
 icon: 'rocket'
 ---
 
+### Guides :
+<CardGroup>
+<Card
+  title="Step 1 : Quickstart the application." 
+  icon="rocket"
+  href="/quickstart"
+>
+Use quickstart to reach the login screen.
+</Card>
+<Card
+  title="Step 2 : Generate Google Credentials And Add Scopes." 
+  icon="lock-open"
+  href="/authentication/get-credentials"
+>
+Set-up your google credentials and add scopes.
+</Card>
+<Card
+  title="Step 3 : Add AI provider" 
+  icon="comment-code"
+  href="/apikeys/apikeys"
+>
+Add AI Provider of your choice to use Chat.
+</Card>
+<Card
+  title="Step 4 : Ingest Your Data" 
+  icon="rotate"
+  href="/ingestion/ingestion"
+>
+Ingest your Data into the Xyne App.
+</Card>
+</CardGroup>
+
 
 If you want to deploy Xyne using your local machine, this document will give you a detailed guide to do so.
 Follow the steps listed below to get started : 
@@ -40,6 +72,7 @@ And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to
 <Note> Since the size of the downloading models can be quite large, wait for the application to start running, this can take around 10 - 15 minutes, 
 depending on your internet connection. </Note>
 
+<Tip> You can also choose to follow the [Step guide](https://docs.xynehq.com/quickstart#guides) mentioned above</Tip>
 ### Post Execution Setup [Environment Variables]:
 
 To unlock the full potential of the Xyne app, you need to enable Google Authentication. This requires setting up your Google credentials first.
@@ -61,7 +94,7 @@ Setup your Google Credentials for the application.
 </Card>
 
 #### Setting the environment variables: 
-Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.default``` file, this is the .env file that our docker uses.
+Inside the ```server``` folder of the ```xyne``` folder, you will find a ```.env.default``` file, this is the environment file that our docker uses.
 For the moment you will find some default generated environment variables that we've set up for the app to work.
 
 
@@ -111,6 +144,9 @@ FIREWORKS_API_KEY=<YOUR_FIREWORKS_API_KEY>
 FIREWORKS_MODEL=<YOUR_FIREWORKS_MODEL>
 FIREWORKS_FAST_MODEL=<YOUR_FIREWORKS_FAST_MODEL>
 
+## OR [If using Google AI]
+GEMINI_API_KEY=<YOUR_GEMINI_API_KEY> 
+GEMINI_MODEL=<YOUR_GEMINI_MODEL_NAME>  
 
 HOST=http://localhost:3001
 ```
@@ -129,7 +165,7 @@ Setup your AI Provider.
 
 <Warning> Chat will be unavailable without a Service Account or OAuth Account connection. </Warning>
 
-And build again from the ``xyne`` folder using : 
+And build the container again from the ``xyne`` folder using : 
 
 ```javascript 
 docker-compose -f deployment/docker-compose.yml up 

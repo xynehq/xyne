@@ -35,6 +35,7 @@
             <document type="chat_team" mode="index" global="true" />
             <!-- <document type="code_file" mode="index" /> -->
             <document type="code_rust" mode="index" />
+            <document type="code_api_docs" mode="index" />
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />

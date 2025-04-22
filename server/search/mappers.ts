@@ -32,8 +32,10 @@ import {
   type VespaChatMessageSearch,
   chatMessageSchema,
   ChatMessageResponseSchema,
-  codeRustSchema, // Import codeRustSchema
-  type VespaCodeRustSearchSchema, // Import the search schema type
+  codeRustSchema,
+  type VespaCodeRustSearchSchema,
+  codeApiDocsSchema, // Correct schema name
+  type VespaCodeApiDocsSearchSchema, // Correct search schema type
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -46,7 +48,8 @@ import {
   EventResponseSchema,
   FileResponseSchema,
   UserResponseSchema,
-  CodeRustResponseSchema, // Import the response schema
+  CodeRustResponseSchema,
+  CodeApiDocsResponseSchema, // Correct response schema
   type AutocompleteResults,
   type SearchResponse,
 } from "@/shared/types"
@@ -229,8 +232,7 @@ export const VespaSearchResponseToSearchResult = (
             return ChatMessageResponseSchema.parse(fields)
           } else if (
             (child.fields as z.infer<typeof VespaCodeRustSearchSchema>)
-              .sddocname === // Use z.infer<typeof ...> for type
-            codeRustSchema
+              .sddocname === codeRustSchema
           ) {
             const fields = child.fields as z.infer<
               typeof VespaCodeRustSearchSchema
@@ -258,6 +260,20 @@ export const VespaSearchResponseToSearchResult = (
             )
 
             return CodeRustResponseSchema.parse(fields)
+          } else if (
+            (child.fields as z.infer<typeof VespaCodeApiDocsSearchSchema>)
+              .sddocname === codeApiDocsSchema
+          ) {
+            const fields = child.fields as z.infer<
+              typeof VespaCodeApiDocsSearchSchema
+            > & {
+              type?: string
+              chunks_summary?: any[]
+            }
+            fields.type = codeApiDocsSchema
+            fields.relevance = child.relevance
+
+            return CodeApiDocsResponseSchema.parse(fields)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,

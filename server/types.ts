@@ -35,7 +35,11 @@ const baseSearchSchema = z.object({
   entity: z.string().min(1).optional(),
   lastUpdated: z.string().default("anytime"),
   isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
-  codeOnlySearch: z.preprocess((val) => val === "true", z.boolean()).optional(), // Add codeOnlySearch flag
+  debug: z
+    .union([z.string(), z.undefined(), z.null()])
+    .transform((x) => (x ? x === "true" : false))
+    .pipe(z.boolean())
+    .optional(),
 })
 
 export const searchSchema = baseSearchSchema.refine(
@@ -267,6 +271,7 @@ export enum Subsystem {
   Db = "Db",
   Api = "Api",
   Chat = "Chat",
+  CodeChat = "CodeChat",
   Utils = "Utils",
   Queue = "Queue",
   Eval = "Eval",

@@ -21,6 +21,7 @@ const {
   EndThinkingToken,
   GeminiAIModel,
   GeminiApiKey,
+  aiProviderBaseUrl,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -49,6 +50,8 @@ import {
   analyzeInitialResultsOrRewriteSystemPrompt,
   analyzeInitialResultsOrRewriteV2SystemPrompt,
   AnalyzeUserQuerySystemPrompt,
+  apiRouteAnalysisSystemPrompt,
+  apiRouteAnswerSystemPrompt,
   askQuestionUserPrompt,
   baselinePrompt,
   baselinePromptJson,
@@ -99,7 +102,7 @@ let providersInitialized = false
 let bedrockProvider: LLMProvider | null = null
 let openaiProvider: LLMProvider | null = null
 let ollamaProvider: LLMProvider | null = null
-let togetherProvidder: LLMProvider | null = null
+let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
 
@@ -124,9 +127,15 @@ const initializeProviders = (): void => {
   }
 
   if (OpenAIKey) {
-    const openAIClient = new OpenAI({
+    let openAIClient: OpenAI
+    openAIClient = new OpenAI({
       apiKey: OpenAIKey,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`)
+    }
+
     openaiProvider = new OpenAIProvider(openAIClient)
   }
 
@@ -136,12 +145,18 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    const together = new Together({
+    let together: Together
+    together = new Together({
       apiKey: TogetherApiKey,
       timeout: 4 * 60 * 1000,
       maxRetries: 10,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
-    togetherProvidder = new TogetherProvider(together)
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and together key, using base_url for LLM`)
+    }
+
+    togetherProvider = new TogetherProvider(together)
   }
 
   if (FireworksAIModel && FireworksApiKey) {
@@ -156,6 +171,11 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
+  if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
+    Logger.warn(
+      `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
+    )
+  }
   providersInitialized = true
   // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
@@ -173,7 +193,7 @@ const getProviders = (): {
     !bedrockProvider &&
     !openaiProvider &&
     !ollamaProvider &&
-    !togetherProvidder &&
+    !togetherProvider &&
     !fireworksProvider &&
     !geminiProvider
   ) {
@@ -184,7 +204,7 @@ const getProviders = (): {
     [AIProviders.AwsBedrock]: bedrockProvider,
     [AIProviders.OpenAI]: openaiProvider,
     [AIProviders.Ollama]: ollamaProvider,
-    [AIProviders.Together]: togetherProvidder,
+    [AIProviders.Together]: togetherProvider,
     [AIProviders.Fireworks]: fireworksProvider,
     [AIProviders.GoogleAI]: geminiProvider,
   }
@@ -1027,7 +1047,6 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> {
-  //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
   let defaultReasoning = isReasoning
 
@@ -1039,6 +1058,74 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export async function apiRouteAnalysis(
+  currentMessage: string,
+  userContext: string,
+  apiContext: string,
+  params: ModelParams,
+): Promise<ConverseResponse> {
+  params.json = true
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  if (defaultReasoning) {
+  } else {
+  }
+  params.systemPrompt = apiRouteAnalysisSystemPrompt(userContext, apiContext)
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converse(messages, params)
+}
+
+export function generateRouteAnswer(
+  currentMessage: string,
+  userContext: string,
+  apiContext: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+  let defaultReasoning = isReasoning
+
+  if (params.reasoning !== undefined) {
+    defaultReasoning = params.reasoning
+  }
+  // if (defaultReasoning) {
+  //   params.systemPrompt = searchQueryReasoningPrompt(userContext)
+  // } else {
+  //   params.systemPrompt = searchQueryPrompt(userContext)
+  // }
+  params.systemPrompt = apiRouteAnswerSystemPrompt(userContext, apiContext)
 
   const baseMessage = {
     role: ConversationRole.USER,

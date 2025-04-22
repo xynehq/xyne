@@ -23,6 +23,7 @@ export const userQuerySchema = "user_query"
 
 // code search
 export const codeRustSchema = "code_rust"
+export const codeApiDocsSchema = "code_api_docs" // Correct schema name
 
 export type VespaSchema =
   | typeof fileSchema
@@ -36,6 +37,7 @@ export type VespaSchema =
   | typeof chatMessageSchema
   | typeof chatUserSchema
   | typeof codeRustSchema
+  | typeof codeApiDocsSchema // Use correct schema name
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -73,6 +75,7 @@ const Schemas = z.union([
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
   z.literal(codeRustSchema),
+  z.literal(codeApiDocsSchema), // Use correct schema name
 ])
 
 export enum MailEntity {
@@ -93,6 +96,12 @@ export enum SlackEntity {
   Message = "message",
   Channel = "channel",
   File = "file",
+}
+
+// Add CodeEntity enum
+export enum CodeEntity {
+  Rust = "rust",
+  ApiDocs = "code_api_docs",
 }
 
 export enum DriveEntity {
@@ -130,6 +139,7 @@ export const isMailAttachment = (entity: Entity): boolean =>
 
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
+export const CodeEntitySchema = z.nativeEnum(CodeEntity) // Add schema for CodeEntity
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
 
@@ -154,6 +164,7 @@ export const entitySchema = z.union([
   MailAttachmentEntitySchema,
   ChatEntitySchema,
   PrivateStoreEntitySchema,
+  CodeEntitySchema, // Include CodeEntitySchema
 ])
 
 export type Entity =
@@ -165,6 +176,7 @@ export type Entity =
   | MailAttachmentEntity
   | SlackEntity
   | PrivateStoreEntity
+  | CodeEntity // Include CodeEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -261,6 +273,20 @@ const CodeRustMatchFeaturesSchema = z
     "nativeRank(symbol_names)": z.number().optional(),
     "nativeRank(code_chunk_contents)": z.number().optional(),
     "closeness(field, code_chunk_embeddings)": z.number().optional(),
+  })
+  .optional()
+
+// Match features for code_api_docs schema
+const CodeApiDocsMatchFeaturesSchema = z
+  .object({
+    "bm25(combined_text)": z.number().optional(),
+    "bm25(openapi_summary)": z.number().optional(),
+    "bm25(openapi_description)": z.number().optional(),
+    "bm25(path)": z.number().optional(),
+    "bm25(handler)": z.number().optional(),
+    semantic_score: z.number().optional(),
+    lexical_score: z.number().optional(),
+    "closeness(field, api_doc_embedding)": z.number().optional(),
   })
   .optional()
 
@@ -579,7 +605,7 @@ export const VespaCodeRustSchema = z.object({
   filename: z.string(),
   path: z.string(),
   app: z.nativeEnum(Apps),
-  entity: z.literal("rust"),
+  entity: z.literal(CodeEntity.Rust), // Use CodeEntity enum
   // language: z.literal("rust"), // Assuming only Rust for now
   raw_content: z.string(),
   symbol_names: z.array(z.string()),
@@ -610,6 +636,45 @@ export const VespaCodeRustSearchSchema = VespaCodeRustSchema.extend({
   })
 // --- End Code Rust Schemas ---
 
+// --- Code API Docs Schemas ---
+// Base schema matching the structure in code_api_docs.sd
+export const VespaCodeApiDocsSchema = z.object({
+  docId: z.string(),
+  file: z.string(),
+  line: z.number(),
+  struct: z.string().optional(), // Optional based on schema
+  method: z.string(),
+  path: z.string(),
+  openapi_summary: z.string().optional(), // Optional based on schema
+  openapi_description: z.string().optional(), // Optional based on schema
+  openapi_operationId: z.string().optional(), // Optional based on schema
+  openapi_parameters_json: z.string().optional(), // Stored as JSON string
+  openapi_requestBody_json: z.string().optional(), // Stored as JSON string
+  openapi_responses_json: z.string().optional(), // Stored as JSON string
+  app: z.nativeEnum(Apps), // Assuming Apps.Code
+  entity: z.literal(CodeEntity.ApiDocs), // Use CodeEntity enum
+  handler: z.string(),
+  handler_source_file: z.string().optional(), // Optional based on schema
+  handler_source_line: z.number().optional(), // Optional based on schema
+  handler_dependencies: z.array(z.string()).optional(), // Optional based on schema
+  handler_keywords: z.array(z.string()).optional(), // Optional based on schema
+  combined_text: z.string().optional(), // Optional based on schema
+})
+
+export type VespaCodeApiDocs = z.infer<typeof VespaCodeApiDocsSchema>
+
+export const VespaCodeApiDocsSearchSchema = VespaCodeApiDocsSchema.extend({
+  sddocname: z.literal(codeApiDocsSchema), // Use correct schema name
+  matchfeatures: CodeApiDocsMatchFeaturesSchema, // Use correct match features schema
+  rankfeatures: z.any().optional(),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    // Add chunks_summary if applicable (likely not for this schema)
+    // chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+  })
+// --- End Code API Docs Schemas ---
+
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
@@ -621,6 +686,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatUserSearchSchema,
   VespaChatMessageSearchSchema,
   VespaCodeRustSearchSchema,
+  VespaCodeApiDocsSearchSchema, // Use correct search schema
 ])
 
 // Add CodeRustMatchFeaturesSchema to the union if it's defined and needed
@@ -633,6 +699,7 @@ const SearchMatchFeaturesSchema = z.union([
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
   CodeRustMatchFeaturesSchema,
+  CodeApiDocsMatchFeaturesSchema, // Use correct match features schema
 ])
 
 const VespaSearchFieldsSchema = z
@@ -671,7 +738,7 @@ const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
   id: z.string(),
   relevance: z.number(),
   label: z.string(),
-  value: z.string().optional(),
+  value: z.string(),
   fields: z
     .object({
       "count()": z.number(),
@@ -763,6 +830,7 @@ export type Inserts =
   | VespaChatTeam
   | VespaChatUser
   | VespaChatMessage
+  | VespaCodeApiDocs // Use correct type
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({

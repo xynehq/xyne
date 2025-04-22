@@ -48,47 +48,41 @@ Following the same steps above, enable the following APIs :
 <Warning> Please make sure to **enable all** the APIs listed above to ensure the Xyne app runs smoothly. </Warning>
 
 ## Adding the scopes for the Enabled APIs:
-Navigate to the OAuth Consent Screen you configured, and click on the ```Edit App``` button : 
-<img height="200" src="../images/edit-oapp.png" />
-Skip the form to the OAuth consent screen by clicking on ```SAVE AND CONTINUE``` at the bottom of the page. 
+- From the menu on the left-side, navigate to ```Google Auth Platform```. And under that, navigate to ```Data Access``` section.
 
-In the next page, under the Scopes section you will find the ```ADD OR REMOVE SCOPES``` button. Click on that :
+<img height="200" src="../images/gapdacc.png" />
+- Along with the scopes you had added before, add the rest of scopes for the enabled apis, using the ```ADD OR REMOVE SCOPES``` button.
 
-<img height="200" src="../images/oauth-scopes.png" />
+<img height="200" src="../images/daccaors.png" />
 
-You will see the scopes on the right side like this :
-<img height="200" src="../images/oauth-scopes-add.png" />
+- Ensure to select the checkbox for all of these scopes [you can use these values in the searchbox for the scopes table] : 
+  - ```/auth/drive.readonly```
+  - ```/auth/documents.readonly```
+  - ```/auth/spreadsheets.readonly```
+  - ```/auth/presentations.readonly```
+  - ```/auth/contacts.readonly```
+  - ```/auth/contacts.other.readonly```
+  - ```/auth/gmail.readonly```
+  - ```/auth/calendar.events.readonly```
 
-Along with the scopes you had added before, add the rest of scopes for the enabled apis : 
+  You can also choose to ```manually``` add the scopes in the ```box``` below.
 
-Ensure to select the checkbox for all of these scopes [you can use these values in the searchbox for the scopes table] : 
- - ```/auth/drive.readonly```
- - ```/auth/documents.readonly```
- - ```/auth/spreadsheets.readonly```
- - ```/auth/presentations.readonly```
- - ```/auth/contacts.readonly```
- - ```/auth/contacts.other.readonly```
- - ```/auth/gmail.readonly```
- - ```/auth/calendar.events.readonly```
-
-You can also choose to ```manually``` add the scopes in the ```box``` below.
-
-```javascript
-  https://www.googleapis.com/auth/drive.readonly,
-  https://www.googleapis.com/auth/documents.readonly,
-  https://www.googleapis.com/auth/spreadsheets.readonly,
-  https://www.googleapis.com/auth/presentations.readonly,
-  https://www.googleapis.com/auth/contacts.readonly,
-  https://www.googleapis.com/auth/contacts.other.readonly,
-  https://www.googleapis.com/auth/gmail.readonly,
-  https://www.googleapis.com/auth/calendar.events.readonly,
-```
+  ```javascript
+    https://www.googleapis.com/auth/drive.readonly,
+    https://www.googleapis.com/auth/documents.readonly,
+    https://www.googleapis.com/auth/spreadsheets.readonly,
+    https://www.googleapis.com/auth/presentations.readonly,
+    https://www.googleapis.com/auth/contacts.readonly,
+    https://www.googleapis.com/auth/contacts.other.readonly,
+    https://www.googleapis.com/auth/gmail.readonly,
+    https://www.googleapis.com/auth/calendar.events.readonly,
+  ```
 
 Click on ```ADD TO TABLE```, and then ```UPDATE```. You will now be able to see all the added scopes in the tables below: 
 
 <img height="200" src="../images/scopes-table.png" />
 
-Then click on ```SAVE AND CONTINUE```, and then in the next page scroll to the bottom and click on the ```BACK TO DASHBOARD``` .
+Then click on ```SAVE``` .
 
 This concludes the set-up process of Google OAuth.
 

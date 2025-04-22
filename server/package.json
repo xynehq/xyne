@@ -66,6 +66,9 @@
     "tree-sitter": "^0.22.4",
     "tree-sitter-rust": "^0.24.0",
     "uuid": "^11.0.0",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-uri": "^3.1.0",
     "zod": "^3.24.1"
   }
 }
