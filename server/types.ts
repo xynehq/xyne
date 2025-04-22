@@ -40,7 +40,6 @@ const baseSearchSchema = z.object({
     .transform((x) => (x ? x === "true" : false))
     .pipe(z.boolean())
     .optional(),
-  codeOnlySearch: z.preprocess((val) => val === "true", z.boolean()).optional(), // Add codeOnlySearch flag
 })
 
 export const searchSchema = baseSearchSchema.refine(
