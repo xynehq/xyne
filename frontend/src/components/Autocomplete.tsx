@@ -15,6 +15,14 @@ import { History } from "lucide-react"
 export const FileAutocompleteElement = ({
   result,
 }: { result: FileAutocomplete }) => {
+  if (!result.app || !result.entity) {
+    return (
+      <div className="flex items-center">
+        <p className="truncate">{result.title}</p>
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center">
       {getIcon(result.app, result.entity)}
@@ -103,7 +111,16 @@ export const AutocompleteElement = forwardRef(
   ) => {
     let content
     if (result.type === "file") {
-      content = <FileAutocompleteElement result={result} />
+      try {
+        content = <FileAutocompleteElement result={result} />
+      } catch (error) {
+        console.error("Error rendering FileAutocompleteElement:", error)
+        content = (
+          <div className="flex items-center">
+            <p className="truncate">{result.title || "File"}</p>
+          </div>
+        )
+      }
     } else if (result.type === "user") {
       content = <UserAutocompleteElement result={result} />
       return (

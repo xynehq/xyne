@@ -51,6 +51,7 @@ export enum Apps {
 
   Slack = "slack",
   Code = "code",
+  PrivateStore = "private-store",
 }
 
 export enum GooglePeopleEntity {
@@ -76,6 +77,10 @@ const Schemas = z.union([
 
 export enum MailEntity {
   Email = "mail",
+}
+
+export enum PrivateStoreEntity {
+  Markdown = "markdown",
 }
 
 export enum CalendarEntity {
@@ -137,7 +142,7 @@ export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
-
+export const PrivateStoreEntitySchema = z.nativeEnum(PrivateStoreEntity)
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
 export const entitySchema = z.union([
@@ -148,6 +153,7 @@ export const entitySchema = z.union([
   EventEntitySchema,
   MailAttachmentEntitySchema,
   ChatEntitySchema,
+  PrivateStoreEntitySchema,
 ])
 
 export type Entity =
@@ -158,6 +164,7 @@ export type Entity =
   | CalendarEntity
   | MailAttachmentEntity
   | SlackEntity
+  | PrivateStoreEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -185,7 +192,7 @@ const Metadata = z.union([z.object({}), SpreadsheetMetadata])
 export const VespaFileSchema = z.object({
   docId: z.string(),
   app: z.nativeEnum(Apps),
-  entity: FileEntitySchema,
+  entity: z.union([FileEntitySchema, PrivateStoreEntitySchema]),
   title: z.string(),
   url: z.string().nullable(),
   chunks: z.array(z.string()),
@@ -571,7 +578,7 @@ export const VespaCodeRustSchema = z.object({
   docId: z.string(),
   filename: z.string(),
   path: z.string(),
-  app: z.nativeEnum(Apps.Code),
+  app: z.nativeEnum(Apps),
   entity: z.literal("rust"),
   // language: z.literal("rust"), // Assuming only Rust for now
   raw_content: z.string(),

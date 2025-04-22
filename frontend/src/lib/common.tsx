@@ -1,4 +1,4 @@
-import { Folder, Users, Paperclip, Code } from "lucide-react"
+import { Folder, Users, Paperclip, Code, FileText } from "lucide-react"
 import DocsSvg from "@/assets/docs.svg"
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -86,6 +86,8 @@ export const getIcon = (
     return <img className={classNameVal} src={SlackSvg} />
   } else if (app === Apps.Code) {
     return <Code size={12} className="mr-[10px]" />
+  } else if (app === Apps.PrivateStore && entity === "markdown") {
+    return <FileText size={12} className="mr-[10px]" />
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
