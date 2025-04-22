@@ -82,7 +82,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-import { getChatTraceByExternalId, insertChatTrace ,deleteChatTracesByChatExternalId} from "@/db/chatTrace"
+import { getChatTraceByExternalId, insertChatTrace, deleteChatTracesByChatExternalId } from "@/db/chatTrace"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
