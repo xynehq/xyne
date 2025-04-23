@@ -956,7 +956,7 @@ async function* generatePointQueryTimeExpansion(
     let lastSearchedTime = direction === "prev" ? from : to
 
     let previousResultsLength = 0
-    const loopLimit = direction === "from-to" ? 1 : maxIterations;
+    const loopLimit = direction === "from-to" ? 2 : maxIterations;
 
     for (let iteration = 0; iteration < loopLimit; iteration++) {
         const windowSize = (2 + iteration) * weekInMs
@@ -964,7 +964,6 @@ async function* generatePointQueryTimeExpansion(
         if (direction === "prev") {
           to = lastSearchedTime
           from = to - windowSize
-          Logger.info(`Time given : ${to} and ${from}`)
           lastSearchedTime = from
         } else if(direction === "next") {
           from = lastSearchedTime
