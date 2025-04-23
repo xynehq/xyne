@@ -575,6 +575,29 @@ export const GetDocument = async (
   }
 }
 
+/**
+ * Fetches a single random document from a specific schema.
+ */
+export const GetRandomDocument = async (
+  namespace: string,
+  schema: string,
+  cluster: string,
+): Promise<any | null> => {
+  try {
+    // Directly use the vespa instance imported in this file
+    return await vespa.getRandomDocument(namespace, schema, cluster)
+  } catch (error) {
+    Logger.error(error, `Error fetching random document for schema ${schema}`)
+    // Rethrow or handle as appropriate for this abstraction layer
+    throw new ErrorGettingDocument({
+      docId: `random_from_${schema}`,
+      cause: error as Error,
+      sources: schema,
+      message: `Failed to get random document: ${getErrorMessage(error)}`,
+    })
+  }
+}
+
 export const GetDocumentWithField = async (
   fieldName: string,
   schema: VespaSchema,

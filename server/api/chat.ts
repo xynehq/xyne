@@ -82,7 +82,11 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-import { getChatTraceByExternalId, insertChatTrace, deleteChatTracesByChatExternalId } from "@/db/chatTrace"
+import {
+  getChatTraceByExternalId,
+  insertChatTrace,
+  deleteChatTracesByChatExternalId,
+} from "@/db/chatTrace"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -267,7 +271,7 @@ export const GetChatTraceApi = async (c: Context) => {
   try {
     // @ts-ignore - Assume validation is handled by middleware in server.ts
     const { chatId, messageId } = c.req.valid("query")
-  
+
     if (!chatId || !messageId) {
       throw new HTTPException(400, {
         message: "chatId and messageId are required query parameters",
