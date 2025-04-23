@@ -716,12 +716,31 @@ export const searchQueryPrompt = (userContext: string): string => {
        - If the user asks for events within a range of time (e.g., "from April 1st to April 10th"), set:
          "temporalDirection": { "direction": "from-to", "from": "<start date>", "to": "<end date>" }
 
-       - If the user asks for events only on a specific date (e.g., "on April 1st"), set:
-         "temporalDirection": { "direction": "from-to", "from": "<date>", "to": "<same date>" }
+       - If the user asks for events on a **specific date** (e.g., "on April 1st") or uses **relative terms** like:
+         - "tomorrow"
+         - "yesterday"
+         - "on Monday"
 
-       - When using specific dates, format "from" as the **start of the day** in ISO 8601 (e.g., "2025-04-23T00:00:00.000Z") and "to" as the **end of the day** (e.g., "2025-04-23T23:59:59.999Z").
+         Then also use:
+         "temporalDirection": { 
+           "direction": "from-to", 
+           "from": "<start of that day in ISO 8601 at 00:00:00.000Z>", 
+           "to": "<end of that day in ISO 8601 at 23:59:59.999Z>" 
+         }
 
-       - If none of the above apply, set "temporalDirection" to null.
+         - For "tomorrow", use:
+           from = date of tomorrow at "T00:00:00.000Z"
+           to = same date at "T23:59:59.999Z"
+
+         - For "yesterday", use:
+           from = date of yesterday at "T00:00:00.000Z"
+           to = same date at "T23:59:59.999Z"
+
+       - When using any specific or relative dates, **always format**:
+         - "from" as "YYYY-MM-DDT00:00:00.000Z"
+         - "to" as "YYYY-MM-DDT23:59:59.999Z"
+
+       - If none of the above apply, set "temporalDirection" to "null".
 
     5. Output JSON in the following structure:
        {

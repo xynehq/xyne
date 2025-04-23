@@ -894,6 +894,33 @@ const getSearchRangeSummary = (from: number, to: number, direction: string) => {
         : getRelativeTime(to)
     return `from today until ${endStr}`
   }
+  if (direction === "from-to") {
+    // Ensure from is earlier than to
+    if (from > to) {
+      [from, to] = [to, from]
+    }
+
+    const fromDate = new Date(from)
+    const toDate = new Date(to)
+    console.log(`Time : ${from} to ${to}`)
+
+    const format = (date: Date) =>
+      `${date.toLocaleString("default", { month: "long" })} ${date.getDate()}, ${date.getFullYear()} - ${formatTime(date)}`
+  
+    const formatTime = (date: Date) => {
+      const hours = date.getHours()
+      const minutes = date.getMinutes()
+      const ampm = hours >= 12 ? "PM" : "AM"
+      const hour12 = hours % 12 === 0 ? 12 : hours % 12
+      const paddedMinutes = minutes.toString().padStart(2, "0")
+      return `${hour12}:${paddedMinutes} ${ampm}`
+    }
+
+    fromDate.setHours(0, 0, 0, 0)
+    toDate.setHours(23, 59, 0, 0) 
+
+    return `from ${format(fromDate)} to ${format(toDate)}`
+  }
   // For "prev" direction
   else {
     const startDate = new Date(from)
@@ -929,12 +956,15 @@ async function* generatePointQueryTimeExpansion(
     let lastSearchedTime = direction === "prev" ? from : to
 
     let previousResultsLength = 0
-      for (let iteration = 0; iteration < maxIterations; iteration++) {
+    const loopLimit = direction === "from-to" ? 1 : maxIterations;
+
+    for (let iteration = 0; iteration < loopLimit; iteration++) {
         const windowSize = (2 + iteration) * weekInMs
 
         if (direction === "prev") {
           to = lastSearchedTime
           from = to - windowSize
+          Logger.info(`Time given : ${to} and ${from}`)
           lastSearchedTime = from
         } else if(direction === "next") {
           from = lastSearchedTime
@@ -964,14 +994,6 @@ async function* generatePointQueryTimeExpansion(
         ])
 
         if (!results.root.children && !eventResults.root.children) {
-          if (direction === "from-to") {
-            const searchSummary = getSearchRangeSummary(from, to, direction)
-            yield {
-              text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
-              cost: costArr.reduce((a, b) => a + b, 0),
-            }
-            return
-          }
           continue
         }
         
