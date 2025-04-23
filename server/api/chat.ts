@@ -2211,12 +2211,6 @@ export const MessageRetryApi = async (c: Context) => {
               }),
             })
           } else {
-            const traceJson = tracer.serializeToJson()
-            await updateChatTrace(
-              originalMessage.chatExternalId,
-              originalMessage.externalId,
-              traceJson,
-            )
             Logger.info(
               `Updated trace for message ${originalMessage.externalId}`,
             )
@@ -2236,6 +2230,12 @@ export const MessageRetryApi = async (c: Context) => {
           endSpan.end()
           streamSpan.end()
           rootSpan.end()
+          const traceJson = tracer.serializeToJson()
+          await updateChatTrace(
+            originalMessage.chatExternalId,
+            originalMessage.externalId,
+            traceJson,
+          )
         } catch (error) {
           const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
           streamErrorSpan.addEvent("error", {
@@ -2315,7 +2315,5 @@ export const MessageRetryApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: "Could not retry message",
     })
-    errorSpan.end()
-    rootSpan.end()
   }
 }
