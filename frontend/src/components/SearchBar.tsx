@@ -81,6 +81,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
+                      handleSearch()
                       navigateToSearch()
                       setFilter({}) // Use empty object instead of null
                       // we only want to look for answer if at least

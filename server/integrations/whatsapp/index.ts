@@ -272,6 +272,7 @@ export const getMessages = async (
               typeof msg.messageTimestamp === "number"
                 ? msg.messageTimestamp
                 : Number(msg.messageTimestamp),
+            participant: msg.participant,
           })
         }
       }
@@ -318,6 +319,35 @@ const safeProfilePictureUrl = async (
   }
 }
 
+function decodeJid(jid) {
+  // e.g. "1234-5678@g.us:abcd"  →  "1234-5678@g.us"
+  if (!jid) return jid
+  const [user, server] = jid.split("@")
+  // if there’s a “:”, split it off
+  if (user.includes(":")) {
+    return user.split(":")[0] + "@" + server
+  }
+  return jid
+}
+
+function getGroupName(store, jid) {
+  jid = decodeJid(jid)
+  const contact = store.contacts[jid] || {}
+  // `contact.name` is the WhatsApp “name”
+  // `contact.notify` is their “About” or “notify” field
+  // fall back to the raw phone number (the local-part of the JID)
+  return contact.name || contact.notify || jid.split("@")[0]
+}
+
+function getDisplayName(store, participant) {
+  const jid = decodeJid(participant)
+  const contact = store.contacts[jid] || {}
+  // `contact.name` is the WhatsApp “name”
+  // `contact.notify` is their “About” or “notify” field
+  // fall back to the raw phone number (the local-part of the JID)
+  return contact.name || contact.notify || jid.split("@")[0]
+}
+
 const insertWhatsAppMessage = async (
   email: string,
   message: WhatsAppMessage,
@@ -338,6 +368,10 @@ const insertWhatsAppMessage = async (
   const now = Date.now()
   Logger.info(`Inserting WhatsApp message: ${messageText}`)
 
+  // const remoteJid = message.key.remoteJid
+  // const grpName = getGroupName(store, remoteJid)
+  const name = getDisplayName(store, message?.participant)
+
   return insert(
     // @ts-ignore
     {
@@ -345,7 +379,7 @@ const insertWhatsAppMessage = async (
       teamId: conversationId,
       channelId: conversationId,
       text: messageText,
-      name: message.key.participant,
+      name,
       username: phoneNumber,
       image: pictureUrl || "",
       userId: message.key.participant || phoneNumber,
@@ -697,9 +731,6 @@ export const handleWhatsAppIngestion = async (
         if (m.type === "append" || m.type === "notify") {
           for (const msg of m.messages) {
             if (msg.key && msg.message) {
-              Logger.info(`msg`)
-              Logger.info(msg)
-              Logger.info(`msg`)
               const conversationId = msg.key.remoteJid || ""
               const phoneNumber = conversationId.split("@")[0]
 
