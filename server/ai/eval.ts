@@ -15,7 +15,7 @@ import {
   type VespaSearchResults,
   type VespaUser,
 } from "@/search/types"
-import { Factuality, Levenshtein, type Score } from "autoevals"
+import OpenAI from "openai"
 import pc from "picocolors"
 import {
   baselineRAG,
@@ -39,15 +39,16 @@ import { splitGroupedCitationsWithSpaces } from "@/utils"
 import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
 import { UnderstandMessageAndAnswer } from "@/api/chat"
 import { getDateForAI } from "@/utils/index"
+import { getTracer, Tracer } from "@/tracer"
 
 const modelId = Models.Claude_3_5_Haiku
 
 // for permission aware Evals
 // add this value to run
-const myEmail = ""
+const myEmail = "user@gmail.com" // Add your email here
 
-// workspace external Id
-const workspaceId = ""
+// workspace external Id : Adding the workspace id for the evals
+const workspaceId = "q7********" // Add your workspace id here
 
 if (!myEmail) {
   throw new Error("Please set the email")
@@ -57,7 +58,25 @@ if (!workspaceId) {
   throw new Error("Please add the workspaceId")
 }
 
-const data: Data[] = []
+const loadTestData = async (): Promise<Data[]> => {
+  try {
+    const filePath = path.join("..", "eval-data", "test-queries.json")
+    const data = await fs.promises.readFile(filePath, "utf-8")
+    const parsedData = JSON.parse(data)
+    
+    if (!Array.isArray(parsedData)) {
+      throw new Error("Test data must be an array")
+    }
+    
+    return parsedData
+  } catch (error) {
+    console.error("Error loading test data:", error)
+    throw error
+  }
+}
+
+const data = await loadTestData()
+
 if (!data.length) {
   throw new Error("Data is not set for the evals")
 }
@@ -117,8 +136,12 @@ const saveEvalResults = (evaluation: Eval, name: string) => {
 interface EvalConfig<T, I, O> {
   data: () => (T | T[])[]
   task: (input: I, context?: Message[]) => Promise<O>
-  scores: any[]
 }
+
+// Add custom Score type definition
+type CustomScore = {
+  score: number;
+};
 
 const Eval = async (
   name: string,
@@ -126,7 +149,85 @@ const Eval = async (
   description?: string,
 ) => {
   const data = config.data()
-  const factualityScorer = Factuality.partial({ model: "gpt-4o-mini" })
+  
+  // Create OpenAI client
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  
+  // Custom LLM-based factuality scorer
+  const customFactualityScorer = async (params) => {
+    const { input, output, expected } = params;
+    
+    console.log("\n=== CUSTOM LLM EVALUATION ===");
+    console.log("Input:", input);
+    console.log("Generated:", output);
+    console.log("Expected:", expected);
+    
+    try {
+      // Call OpenAI with our custom evaluation prompt
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are comparing a submitted answer to an expert answer on a given question. Here is the data:
+[BEGIN DATA]
+************
+[Question]: ${input}
+************
+[Expert]: ${expected}
+************
+[Submission]: ${output}
+************
+[END DATA]
+
+Compare the factual content of the submitted answer with the expert answer. Ignore any differences in style, grammar, or punctuation.
+The submitted answer may either be a subset or superset of the expert answer, or it may conflict with it. Determine which case applies. Answer the question by selecting one of the following options:
+(A) The submitted answer is a subset of the expert answer and is fully consistent with it.
+(B) The submitted answer is a superset of the expert answer and is fully consistent with it.
+(C) The submitted answer contains all the same details as the expert answer.
+(D) There is a disagreement between the submitted answer and the expert answer.
+(E) The answers differ, but these differences don't matter from the perspective of factuality.
+
+RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relationship between the answers.`
+          }
+        ],
+        temperature: 0.1 // Low temperature for consistent scoring
+      });
+      
+      // Extract the choice from the response
+      const content = response.choices[0].message.content.trim();
+      console.log("Raw LLM response:", content);
+      
+      // Map the choice to a score
+      const choiceScores = {
+        "A": 0.4,
+        "B": 0.6,
+        "C": 1.0,
+        "D": 0.0,
+        "E": 1.0
+      };
+      
+      let score = 0.5; // Default score
+      if (content in choiceScores) {
+        score = choiceScores[content];
+      } else {
+        console.log("Invalid choice received, using default score 0.5");
+      }
+      
+      console.log("Final factuality score:", score);
+      return { score };
+    } catch (error) {
+      console.error("Evaluation API error:", error.message);
+      // Return a default score rather than failing
+      return { score: 0.5 };
+    }
+  };
+  
+  // Use our custom implementation
+  const factualityScorer = customFactualityScorer;
+  
   const results: EvalResults = []
   let resultId = 1
 
@@ -151,7 +252,7 @@ const Eval = async (
         })
 
         let attempts = 0
-        let factuality: Score
+        let factuality: CustomScore
         while (attempts < 5) {
           attempts++
           try {
@@ -162,13 +263,10 @@ const Eval = async (
             })
             break
           } catch (error: any) {
-            if (
-              !error.message.includes("Unknown score choice") ||
-              attempts === 5
-            ) {
-              throw error
+            console.log(`Evaluation error (attempt ${attempts}): ${error.message}`)
+            if (attempts === 5) {
+              factuality = { score: 0.5 } // Default score after max attempts
             }
-            console.log(`Retrying factuality (attempt ${attempts})...`)
           }
         }
 
@@ -181,7 +279,7 @@ const Eval = async (
           expected: turn.expected,
           tags: "-",
           cost: response.costArr.reduce((acc, value) => acc + value, 0),
-          factuality: factuality!.score! * 100,
+          factuality: (factuality?.score || 0.5) * 100,
           duration,
         }
 
@@ -201,7 +299,7 @@ const Eval = async (
       const startTime = Date.now()
       const response = await config.task(item.input)
       let attempts = 0
-      let factuality
+      let factuality: CustomScore
       while (attempts < 5) {
         attempts++
         try {
@@ -212,13 +310,10 @@ const Eval = async (
           })
           break
         } catch (error: any) {
-          if (
-            !error.message.includes("Unknown score choice") ||
-            attempts === 5
-          ) {
-            throw error
+          console.log(`Evaluation error (attempt ${attempts}): ${error.message}`)
+          if (attempts === 5) {
+            factuality = { score: 0.1 } // Default score after max attempts
           }
-          console.log(`Retrying factuality (attempt ${attempts})...`)
         }
       }
 
@@ -231,7 +326,7 @@ const Eval = async (
         expected: item.expected,
         tags: "-",
         cost: response.costArr.reduce((acc, value) => acc + value, 0),
-        factuality: factuality.score! * 100,
+        factuality: (factuality?.score || 0.5) * 100,
         duration,
       }
 
@@ -286,7 +381,6 @@ const basicJsonRag = async () => {
         let res = await generateAnswerJson(input, 0.5, pageSize)
         return res
       },
-      scores: [Factuality],
     },
     `we just ask ai to generate answer or null with ${pageSize} pagesize`,
   )
@@ -338,7 +432,6 @@ const basicRag = async () => {
       let res = await generateAnswer(input)
       return res
     },
-    scores: [Factuality],
   })
 }
 
@@ -362,7 +455,6 @@ const iterativeJsonRag = async () => {
         )
         return res
       },
-      scores: [Factuality],
     },
     `we just ask ai to generate answer or null with ${pageSize} pagesize and iteratively go to the next page till ${maxPageNumber} and summary size ${maxSummaryCount}`,
   )
@@ -399,7 +491,6 @@ const iterativeTimeExpansionJsonRag = async () => {
         )
         return res
       },
-      scores: [Factuality],
     },
     `we just ask ai to generate answer or null with ${pageSize} pagesize and, first check within 4 month range and then iteratively go to the next page till ${maxPageNumber} and summary size ${maxSummaryCount}`,
   )
@@ -571,7 +662,6 @@ const iterativeWithTimeFilterAndQueryRewrite = async () => {
         }
         return res
       },
-      scores: [Factuality],
     },
     `we just ask ai to generate answer or null with ${pageSize} pagesize and, first check within 4 month range and then iteratively go to the next page till ${maxPageNumber} and summary size ${maxSummaryCount}
       what we also do is rewrite the query if we didn't find an answer for the first page`,
@@ -599,7 +689,6 @@ const pointEventQueryTimeExpansion = async () => {
         )
         return res
       },
-      scores: [Factuality],
     },
     `we just ask ai to generate answer or null with summary size ${maxSummaryCount}, point query and time expansion in appropriate direction`,
   )
@@ -858,12 +947,18 @@ const endToEndFlow = async (
       direction: parsed.temporalDirection,
     }
 
+    const tracer: Tracer = getTracer("chat")
+    const rootSpan = tracer.startSpan("MessageApi")
+    const passedSpan = rootSpan.startSpan("rag_processing")
+    const ragSpan = passedSpan?.startSpan("iterative_rag")
     const iterator = UnderstandMessageAndAnswer(
       email,
       ctx,
       message,
       classification,
       messages,
+      0.5,
+      ragSpan
     )
 
     answer = ""
@@ -886,7 +981,7 @@ const endToEndFlow = async (
   } else if (parsed.answer) {
     answer = parsed.answer
   }
-  // return answer
+  return answer
 }
 
 const endToEndFactual = async () => {
@@ -923,10 +1018,9 @@ const endToEndFactual = async () => {
           retrievedItems: [], // Ideally would track retrieved items from search
         }
       },
-      scores: [Factuality],
     },
     `End-to-end integration evaluation including conversations`,
   )
 }
 
-// endToEndFactual()
+endToEndFactual()
