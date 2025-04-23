@@ -698,33 +698,57 @@ export const searchQueryPrompt = (userContext: string): string => {
        If the query is conversational, respond naturally and appropriately. 
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
-      - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
-        - ✓ "When is my next meeting with John?"
-        - ✓ "When's my next review?"
-        - ✗ "Next quarter's goals"
-        - ✗ "Next version release"
+       - If asking about an upcoming event or meeting, set "temporalDirection" to { "direction": "next" }.
+         Examples:
+         - ✓ "When is my next meeting with John?"
+         - ✓ "When's my next review?"
+         - ✗ "Next quarter's goals"
+         - ✗ "Next version release"
 
-       - If asking about a past event or meeting,set "temporalDirection" to "prev". For example:
-       - ✓ " When was the last time I had lunch with the team"
-       - ✓ "When was my last call with Sarah?"
-       - ✓ "Previous board meeting date"
-       - ✗ "When did junaid join?",
-       - ✗ "Last time we updated the docs"
-       - Otherwise, set "temporalDirection" to null.
+       - If asking about a past event or meeting, set "temporalDirection" to { "direction": "prev" }.
+         Examples:
+         - ✓ "When was the last time I had lunch with the team?"
+         - ✓ "When was my last call with Sarah?"
+         - ✓ "Previous board meeting date"
+         - ✗ "When did Junaid join?"
+         - ✗ "Last time we updated the docs"
+
+       - If the user asks for events within a range of time (e.g., "from April 1st to April 10th"), set:
+         "temporalDirection": { "direction": "from-to", "from": "<start date>", "to": "<end date>" }
+
+       - If the user asks for events only on a specific date (e.g., "on April 1st"), set:
+         "temporalDirection": { "direction": "from-to", "from": "<date>", "to": "<same date>" }
+
+       - When using specific dates, format "from" as the **start of the day** in ISO 8601 (e.g., "2025-04-23T00:00:00.000Z") and "to" as the **end of the day** (e.g., "2025-04-23T23:59:59.999Z").
+
+       - If none of the above apply, set "temporalDirection" to null.
+
     5. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
-         "temporalDirection": "next" | "prev" | null
+         "temporalDirection": {
+           "direction": "next" | "prev" | "from-to" | null,
+           "from": "<string or null>",
+           "to": "<string or null>"
+         }
        }
        - "answer" should only contain a conversational response only if it’s a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
-       - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event, or null if unrelated.
+       - "temporalDirection" indicates if the query refers to:
+         - a future event ("next")
+         - a past event ("prev")
+         - a specific date or range ("from-to", with "from" and "to" specified)
+         - or is unrelated (null)
+
     6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    7. If user makes a statement leading to a regular conversation then you can put response in answer
+
+    7. If user makes a statement leading to a regular conversation, then you can put a response in the answer.
+
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
+
 
 export const searchQueryReasoningPrompt = (userContext: string): string => {
   return `

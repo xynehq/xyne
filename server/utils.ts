@@ -8,6 +8,7 @@ import { stopwords as englishStopwords } from "@orama/stopwords/english"
 import { Apps } from "@/search/types"
 import type { OAuth2Client } from "google-auth-library"
 import crypto from "node:crypto"
+import type { TemporalClassifier } from "@/ai/types"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -239,3 +240,15 @@ export const hashPdfFilename = (filename: string): string => {
   Logger.info(`Filename hashed: ${filename} -> ${newFilename}`)
   return newFilename
 }
+
+  export const interpretDateFromReturnedTemporalValue = (value: TemporalClassifier) => {
+
+    const from = value.from ? new Date(value.from) : null
+    const to = value.to ? new Date(value.to) : null
+
+    return {
+      fromDate: from,
+      toDate: to
+    }
+
+  }

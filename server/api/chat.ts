@@ -45,6 +45,7 @@ import { MessageRole, Subsystem } from "@/types"
 import {
   getErrorMessage,
   getRelativeTime,
+  interpretDateFromReturnedTemporalValue,
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import {
@@ -914,180 +915,193 @@ async function* generatePointQueryTimeExpansion(
   maxSummaryCount: number | undefined,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
-> {
-  const message = input
-  const maxIterations = 10
-  const weekInMs = 12 * 24 * 60 * 60 * 1000
-  const direction = classification.direction as string
-  let costArr: number[] = []
+  > {
+    const message = input
+    const maxIterations = 10
+    const weekInMs = 12 * 24 * 60 * 60 * 1000
+    const direction = classification.direction as string
+    let costArr: number[] = []
 
-  let from = new Date().getTime()
-  let to = new Date().getTime()
-  let lastSearchedTime = direction === "prev" ? from : to
+    const {fromDate, toDate} = interpretDateFromReturnedTemporalValue(classification)
 
-  let previousResultsLength = 0
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
-    const windowSize = (2 + iteration) * weekInMs
+    let from = fromDate ? fromDate.getTime() : new Date().getTime()
+    let to = toDate ? toDate.getTime() : new Date().getTime()
+    let lastSearchedTime = direction === "prev" ? from : to
 
-    if (direction === "prev") {
-      to = lastSearchedTime
-      from = to - windowSize
-      lastSearchedTime = from
-    } else {
-      from = lastSearchedTime
-      to = from + windowSize
-      lastSearchedTime = to
-    }
+    let previousResultsLength = 0
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        const windowSize = (2 + iteration) * weekInMs
 
-    Logger.info(
-      `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
-    )
+        if (direction === "prev") {
+          to = lastSearchedTime
+          from = to - windowSize
+          lastSearchedTime = from
+        } else if(direction === "next") {
+          from = lastSearchedTime
+          to = from + windowSize
+          lastSearchedTime = to
+        } else if(direction === "from-to") {
+            Logger.info(`Time Range provided from : ${from} to : ${to}`)
+        }
 
-    // Search in both calendar events and emails
-    const [eventResults, results] = await Promise.all([
-      searchVespa(message, email, Apps.GoogleCalendar, null, {
-        limit: pageSize,
-        alpha,
-        timestampRange: { from, to },
-      }),
-      searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha,
-        timestampRange: { to, from },
-        notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
-      }),
-    ])
-
-    if (!results.root.children && !eventResults.root.children) {
-      continue
-    }
-
-    // Combine and filter results
-    const combinedResults = {
-      root: {
-        children: [
-          ...(results.root.children || []),
-          ...(eventResults.root.children || []),
-        ].filter(
-          (v: VespaSearchResult) =>
-            (v.fields as VespaMailSearch).app === Apps.Gmail ||
-            (v.fields as VespaEventSearch).app === Apps.GoogleCalendar,
-        ),
-      },
-    }
-
-    if (!combinedResults.root.children.length) {
-      Logger.info("No gmail or calendar events found")
-      continue
-    }
-
-    // Prepare context for LLM
-    const startIndex = isReasoning ? previousResultsLength : 0
-    const initialContext = cleanContext(
-      combinedResults?.root?.children
-        ?.map(
-          (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+        Logger.info(
+          `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
         )
-        ?.join("\n"),
-    )
 
-    // Stream LLM response
-    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-    })
+        // Search in both calendar events and emails
+        const [eventResults, results] = await Promise.all([
+          searchVespa(message, email, Apps.GoogleCalendar, null, {
+            limit: pageSize,
+            alpha,
+            timestampRange: { from, to },
+          }),
+          searchVespa(message, email, null, null, {
+            limit: pageSize,
+            alpha,
+            timestampRange: { to, from },
+            notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
+          }),
+        ])
 
-    let buffer = ""
-    let currentAnswer = ""
-    let parsed = { answer: "" }
-    let thinking = ""
-    let reasoning = isReasoning
-    let yieldedCitations = new Set<number>()
+        if (!results.root.children && !eventResults.root.children) {
+          if (direction === "from-to") {
+            const searchSummary = getSearchRangeSummary(from, to, direction)
+            yield {
+              text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
+              cost: costArr.reduce((a, b) => a + b, 0),
+            }
+            return
+          }
+          continue
+        }
+        
+        // Combine and filter results
+        const combinedResults = {
+          root: {
+            children: [
+              ...(results.root.children || []),
+              ...(eventResults.root.children || []),
+            ].filter(
+              (v: VespaSearchResult) =>
+                (v.fields as VespaMailSearch).app === Apps.Gmail ||
+                (v.fields as VespaEventSearch).app === Apps.GoogleCalendar,
+            ),
+          },
+        }
 
-    for await (const chunk of iterator) {
-      if (chunk.text) {
-        if (reasoning) {
-          if (thinking && !chunk.text.includes(EndThinkingToken)) {
-            thinking += chunk.text
-            yield* checkAndYieldCitations(
-              thinking,
-              yieldedCitations,
-              combinedResults?.root?.children,
-              previousResultsLength,
+        if (!combinedResults.root.children.length) {
+          Logger.info("No gmail or calendar events found")
+          continue
+        }
+
+        // Prepare context for LLM
+        const startIndex = isReasoning ? previousResultsLength : 0
+        const initialContext = cleanContext(
+          combinedResults?.root?.children
+            ?.map(
+              (v, i) =>
+                `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
             )
-            yield { text: chunk.text, reasoning }
-          } else {
-            // first time
-            if (!chunk.text.includes(StartThinkingToken)) {
-              let token = chunk.text
-              if (chunk.text.includes(EndThinkingToken)) {
-                token = chunk.text.split(EndThinkingToken)[0]
-                thinking += token
+            ?.join("\n"),
+        )
+
+        // Stream LLM response
+        const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
+          stream: true,
+          modelId: defaultBestModel,
+        })
+
+        let buffer = ""
+        let currentAnswer = ""
+        let parsed = { answer: "" }
+        let thinking = ""
+        let reasoning = isReasoning
+        let yieldedCitations = new Set<number>()
+
+        for await (const chunk of iterator) {
+          if (chunk.text) {
+            if (reasoning) {
+              if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                thinking += chunk.text
+                yield* checkAndYieldCitations(
+                  thinking,
+                  yieldedCitations,
+                  combinedResults?.root?.children,
+                  previousResultsLength,
+                )
+                yield { text: chunk.text, reasoning }
               } else {
-                thinking += token
+                // first time
+                if (!chunk.text.includes(StartThinkingToken)) {
+                  let token = chunk.text
+                  if (chunk.text.includes(EndThinkingToken)) {
+                    token = chunk.text.split(EndThinkingToken)[0]
+                    thinking += token
+                  } else {
+                    thinking += token
+                  }
+                  yield* checkAndYieldCitations(
+                    thinking,
+                    yieldedCitations,
+                    combinedResults?.root?.children,
+                    previousResultsLength,
+                  )
+                  yield { text: token, reasoning }
+                }
               }
-              yield* checkAndYieldCitations(
-                thinking,
-                yieldedCitations,
-                combinedResults?.root?.children,
-                previousResultsLength,
-              )
-              yield { text: token, reasoning }
+            }
+            if (reasoning && chunk.text.includes(EndThinkingToken)) {
+              reasoning = false
+              chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+            }
+            if (!reasoning) {
+              buffer += chunk.text
+              try {
+                parsed = jsonParseLLMOutput(buffer)
+                // If we have a null answer, break this inner loop and continue outer loop
+                if (parsed.answer === null) {
+                  break
+                }
+
+                // If we have an answer and it's different from what we've seen
+                if (parsed.answer && currentAnswer !== parsed.answer) {
+                  if (currentAnswer === "") {
+                    // First valid answer - send the whole thing
+                    yield { text: parsed.answer }
+                  } else {
+                    // Subsequent chunks - send only the new part
+                    const newText = parsed.answer.slice(currentAnswer.length)
+                    yield { text: newText }
+                  }
+                  yield* checkAndYieldCitations(
+                    parsed.answer,
+                    yieldedCitations,
+                    combinedResults?.root?.children,
+                    previousResultsLength,
+                  )
+                  currentAnswer = parsed.answer
+                }
+              } catch (e) {
+                // If we can't parse the JSON yet, continue accumulating
+                continue
+              }
             }
           }
-        }
-        if (reasoning && chunk.text.includes(EndThinkingToken)) {
-          reasoning = false
-          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-        }
-        if (!reasoning) {
-          buffer += chunk.text
-          try {
-            parsed = jsonParseLLMOutput(buffer)
-            // If we have a null answer, break this inner loop and continue outer loop
-            if (parsed.answer === null) {
-              break
-            }
 
-            // If we have an answer and it's different from what we've seen
-            if (parsed.answer && currentAnswer !== parsed.answer) {
-              if (currentAnswer === "") {
-                // First valid answer - send the whole thing
-                yield { text: parsed.answer }
-              } else {
-                // Subsequent chunks - send only the new part
-                const newText = parsed.answer.slice(currentAnswer.length)
-                yield { text: newText }
-              }
-              yield* checkAndYieldCitations(
-                parsed.answer,
-                yieldedCitations,
-                combinedResults?.root?.children,
-                previousResultsLength,
-              )
-              currentAnswer = parsed.answer
-            }
-          } catch (e) {
-            // If we can't parse the JSON yet, continue accumulating
-            continue
+          if (chunk.cost) {
+            costArr.push(chunk.cost)
+            yield { cost: chunk.cost }
           }
         }
-      }
+        if (parsed.answer) {
+          return
+        }
+        // only increment in the case of reasoning
+        if (isReasoning) {
+          previousResultsLength += combinedResults?.root?.children?.length || 0
+        }
 
-      if (chunk.cost) {
-        costArr.push(chunk.cost)
-        yield { cost: chunk.cost }
       }
-    }
-    if (parsed.answer) {
-      return
-    }
-    // only increment in the case of reasoning
-    if (isReasoning) {
-      previousResultsLength += combinedResults?.root?.children?.length || 0
-    }
-  }
 
   const searchSummary = getSearchRangeSummary(from, to, direction)
   yield {
@@ -1338,7 +1352,7 @@ export const MessageApi = async (c: Context) => {
           let answer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let parsed = { answer: "", queryRewrite: "", temporalDirection: {direction: null, from: "", to :""} }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -1436,7 +1450,9 @@ export const MessageApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection,
+              direction: parsed.temporalDirection?.direction,
+              from: parsed.temporalDirection?.from,
+              to: parsed.temporalDirection?.to
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
@@ -1815,7 +1831,7 @@ export const MessageRetryApi = async (c: Context) => {
           let answer = ""
           let citations: number[] = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let parsed = { answer: "", queryRewrite: "", temporalDirection: {direction: null, from: "", to :""} }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -1905,7 +1921,9 @@ export const MessageRetryApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection,
+              direction: parsed.temporalDirection?.direction,
+              from: parsed.temporalDirection?.from,
+              to: parsed.temporalDirection?.to
             }
             const iterator = UnderstandMessageAndAnswer(
               email,
