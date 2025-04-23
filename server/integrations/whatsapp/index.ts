@@ -475,7 +475,7 @@ const verifyVespaPush = async (
       return false
     }
   } catch (error) {
-    Logger.error(error, `Error verifying document ${docId} in Vespa`)
+    // Logger.error(error, `Error verifying document ${docId} in Vespa`)
     return false
   }
 }
@@ -491,7 +491,7 @@ const insertAndVerify = async (
   docId: string,
   schema: string,
   insertFn: () => Promise<any>,
-  maxRetries = 3,
+  maxRetries = 1,
 ): Promise<boolean> => {
   let retries = 0
 
@@ -519,9 +519,9 @@ const insertAndVerify = async (
     }
   }
 
-  Logger.error(
-    `Failed to insert and verify document ${docId} after ${maxRetries} attempts`,
-  )
+  // Logger.error(
+  //   `Failed to insert and verify document ${docId} after ${maxRetries} attempts`,
+  // )
   return false
 }
 
@@ -773,7 +773,9 @@ export const handleWhatsAppIngestion = async (
                   connector.externalId,
                 )
               } else {
-                Logger.error(`Failed to push message ${messageId} to Vespa`)
+                Logger.error(
+                  `[MSGS.UPSERT] Failed to push message ${messageId} to Vespa`,
+                )
               }
             }
           }
@@ -1023,7 +1025,7 @@ const startIngestion = async (
       const phoneNumber = conversationId.split("@")[0]
       let pictureUrl: string | undefined
       try {
-        Logger.info("Started fetching profile picture")
+        // Logger.info("Started fetching profile picture")
         pictureUrl = await safeProfilePictureUrl(
           sock,
           (message.key.participant as string) ||
@@ -1033,23 +1035,42 @@ const startIngestion = async (
         Logger.warn(`Error fetching profile picture: ${error}`)
         // Continue without the picture URL
       }
-      await insertWhatsAppMessage(
-        email,
-        message,
-        conversationId,
-        phoneNumber,
-        [email],
-        pictureUrl,
-      )
-      tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
-      // Send immediate update after each message
-      sendWebsocketMessage(
-        JSON.stringify({
-          progress: tracker.getProgress(),
-          userStats: tracker.getOAuthProgress().userStats,
-        }),
-        connectorId,
-      )
+
+      const messageText =
+        message?.message?.conversation ||
+        message?.message?.extendedTextMessage?.text
+      if (messageText) {
+        const success = await insertAndVerify(
+          message.key.id!,
+          chatMessageSchema,
+          () =>
+            insertWhatsAppMessage(
+              email,
+              message,
+              conversationId,
+              phoneNumber,
+              [email],
+              pictureUrl,
+            ),
+        )
+
+        if (success) {
+          Logger.info(`Message successfully pushed to Vespa ${messageText}`)
+          tracker.updateUserStats(email, StatType.WhatsApp_Message, 1)
+          // Send immediate update after each message
+          sendWebsocketMessage(
+            JSON.stringify({
+              progress: tracker.getProgress(),
+              userStats: tracker.getOAuthProgress().userStats,
+            }),
+            connectorId,
+          )
+        } else {
+          Logger.error(
+            `[INGESTION] Failed to push message ${messageText} to Vespa`,
+          )
+        }
+      }
     }
 
     // Fetch and insert groups
