@@ -57,9 +57,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
   })
-  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true";
-  const isDebugMode = isGlobalDebugMode || chatParams.debug;
-  
+  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
+  const isDebugMode = isGlobalDebugMode || chatParams.debug
+
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -91,8 +91,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
   ) // Added state
-
-  
 
   const currentRespRef = useRef<CurrentResp | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(

@@ -83,7 +83,7 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
-import { getChatTraceByExternalId, insertChatTrace } from "@/db/chatTrace"
+import { getChatTraceByExternalId, insertChatTrace, deleteChatTracesByChatExternalId } from "@/db/chatTrace"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -191,7 +191,9 @@ export const ChatDeleteApi = async (c: Context) => {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     await db.transaction(async (tx) => {
-      // First will have to delete all messages associated with that chat
+      // First delete chat traces to avoid cascade violations
+      await deleteChatTracesByChatExternalId(tx, chatId)
+      // Second we have to delete all messages associated with that chat
       await deleteMessagesByChatId(tx, chatId)
       await deleteChatByExternalId(tx, chatId)
     })
@@ -263,13 +265,10 @@ interface CitationResponse {
 }
 
 export const GetChatTraceApi = async (c: Context) => {
-  console.log(c)
   try {
     // @ts-ignore - Assume validation is handled by middleware in server.ts
     const { chatId, messageId } = c.req.valid("query")
-    console.log("chatId", chatId)
-    console.log("messageId", messageId)
-
+  
     if (!chatId || !messageId) {
       throw new HTTPException(400, {
         message: "chatId and messageId are required query parameters",
