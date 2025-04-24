@@ -953,7 +953,7 @@ async function* generatePointQueryTimeExpansion(
         limit: pageSize,
         alpha,
         timestampRange: { to, from },
-        notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
+        notInMailLabels: ["CATEGORY_PROMOTIONS"],
       }),
     ])
 
