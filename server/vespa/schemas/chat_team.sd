@@ -30,6 +30,11 @@ schema chat_team {
             index: enable-bm25
         }
 
+        # non indexed name for chat_message import
+        field teamName type string {
+            indexing: attribute | summary
+        }
+
         field app type string {
             indexing: attribute | summary
             attribute: fast-search

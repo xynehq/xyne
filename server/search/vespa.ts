@@ -41,8 +41,10 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
+import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
+import pLimit from "p-limit"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -83,6 +85,41 @@ export const insertDocument = async (document: VespaFile) => {
       sources: fileSchema,
     })
   }
+}
+
+// Renamed to reflect its purpose: retrying a single insert
+export const insertWithRetry = async (
+  document: Inserts,
+  schema: VespaSchema,
+  maxRetries = 5,
+) => {
+  let lastError: any
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await vespa.insert(document, { namespace: NAMESPACE, schema })
+      Logger.debug(`Inserted document ${document.docId}`)
+      return
+    } catch (error) {
+      lastError = error
+      if (
+        (error as Error).message.includes("429 Too Many Requests") &&
+        attempt < maxRetries
+      ) {
+        const delayMs = Math.min(Math.pow(2, attempt) * 1000, 10000) // Cap at 10s
+        Logger.warn(
+          `Vespa 429 for ${document.docId}, retrying in ${delayMs}ms (attempt ${attempt + 1})`,
+        )
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      } else {
+        throw new Error(
+          `Error inserting document ${document.docId}: ${(error as Error).message}`,
+        )
+      }
+    }
+  }
+  throw new Error(
+    `Failed to insert ${document.docId} after ${maxRetries} retries: ${lastError.message}`,
+  )
 }
 
 // generic insert method
@@ -431,21 +468,39 @@ export const groupVespaSearch = async (
   }
 }
 
+type VespaQueryConfig = {
+  limit: number
+  offset: number
+  alpha: number
+  timestampRange: { from: number; to: number } | null
+  excludedIds: string[]
+  notInMailLabels: string[]
+  rankProfile: SearchModes
+  requestDebug: boolean
+  span: Span | null
+}
+
 export const searchVespa = async (
   query: string,
   email: string,
   app: Apps | null,
   entity: Entity | null,
-  limit = config.page,
-  offset: number = 0,
-  alpha: number = 0.5,
-  timestampRange?: { from: number; to: number } | null,
-  excludedIds?: string[],
-  notInMailLabels?: string[],
-  rankProfile: SearchModes = SearchModes.NativeRank,
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    timestampRange = null,
+    excludedIds = [],
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+  }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  const isDebugMode = config.isDebugMode || requestDebug || false
+
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
@@ -474,11 +529,9 @@ export const searchVespa = async (
       : {}),
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
-    ...(config.isDebugMode
-      ? { "ranking.listFeatures": true, tracelevel: 4 }
-      : {}), // Add tracelevel based on isDebugMode
+    ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
   }
-
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
     return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
@@ -623,6 +676,17 @@ export const ifDocumentsExist = async (
   }
 }
 
+export const ifDocumentsExistInSchema = async (
+  schema: string,
+  docIds: string[],
+): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
+  try {
+    return await vespa.ifDocumentsExistInSchema(schema, docIds)
+  } catch (error) {
+    throw error
+  }
+}
+
 const getNDocuments = async (n: number) => {
   // Encode the YQL query to ensure it's URL-safe
   const yql = encodeURIComponent(
@@ -742,7 +806,7 @@ export const searchUsersByNamesAndEmails = async (
   }
 
   try {
-    return await vespa.getUsersByNamesAndEmaisl(searchPayload)
+    return await vespa.getUsersByNamesAndEmails(searchPayload)
   } catch (error) {
     throw error
   }

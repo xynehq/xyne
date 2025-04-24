@@ -132,8 +132,15 @@ schema file {
       expression: bm25(title) + bm25(chunks)
     }
 
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(title) + matches(chunks)
+      }
+    }
+
     function combined_nativeRank() {
-      expression: (nativeRank(title) + nativeRank(chunks))/2
+      expression: (nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     function chunk_scores() {
@@ -159,6 +166,7 @@ schema file {
     }
 
     match-features {
+      matchedFieldCount
       vector_score
       combined_nativeRank
       nativeRank(title)

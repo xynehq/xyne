@@ -6,7 +6,7 @@ icon: 'key'
 
 This guide providers more details about creating and setting AI api keys in your .env file for using Xyne's chat feature.
 
-To use **AI chat**, you need to configure access credentials. You can use one of the following providers: ***AWS, OpenAI, Ollama, Together AI or Fireworks AI***.
+To use **AI chat**, you need to configure access credentials. You can use one of the following providers: ***AWS, OpenAI, Ollama, Gemini, Together AI or Fireworks AI***.
 
 ### AWS (Amazon Bedrock) 
 
@@ -33,6 +33,16 @@ To use **AI chat**, you need to configure access credentials. You can use one of
     OLLAMA_MODEL=<YOUR_OLLAMA_MODEL_NAME> 
     ```
 <Tip> If you're using Ollama, ensure the specified model is downloaded locally. </Tip> 
+<Tip> Also ensure that your downloaded ollama model is working in the host machine, you can use ```ollama run your_model_name your_message```. This should return an output confirming ollama is working.</Tip> 
+
+<Warning> For ```quickstart``` mode ensure Ollama is listening from all addresses, so that docker is able to reach it. </Warning>
+
+### Google AI
+- Generate your API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+- Add them as environment variables in your ```.env.default``` file:
+    ```javascript   .env.default
+    GEMINI_API_KEY=<YOUR_GEMINI_API_KEY> 
+    GEMINI_MODEL=<YOUR_GEMINI_MODEL_NAME>  
 
 ### Together AI
 - Create your API key in [Together AI](https://www.together.ai/)
@@ -91,9 +101,20 @@ REASONING=true
 FAST_MODEL_REASONING=false
 ```
 
+#### Additional BASE URL support
+
+We've also added support for adding ```base url``` values for OpenAI and Together AI, along with your Open AI or Together API Key, you can the ```base url``` value:
+
+```javascript
+OPENAI_API_KEY=<YOUR_OPEN_API_KEY>  # If you want to use OpenAI
+    ### OR
+TOGETHER_API_KEY=<YOUR_TOGETHER_API_KEY>  # If you want to use Together AI
+BASE_URL=<YOUR_BASE_URL>
+```
+
 ### Key Selection Order : 
 If multiple keys are set in the environment variable, our system follows this precedence:
 ```javascript 
-AWS → OpenAI → Ollama → Together AI → Fireworks AI
+AWS → OpenAI → Ollama → Together AI → Fireworks AI → Gemini
 ```
-<Tip>Only anyone provider is required to get started. This means either AWS or OpenAI, Ollama, Together AI or Fireworks AI can be used, all of them aren't required.</Tip>
+<Tip>Only a single provider is required to get started. This means either AWS or OpenAI, Ollama, Gemini, Together AI or Fireworks AI can be used, all of them aren't required.</Tip>

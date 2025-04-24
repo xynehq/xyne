@@ -124,8 +124,15 @@ schema mail_attachment {
       expression: bm25(filename) + bm25(chunks)
     }
 
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(filename) + matches(chunks)
+      }
+    }
+
     function combined_nativeRank() {
-      expression: (nativeRank(filename) + nativeRank(chunks))/2
+      expression: (nativeRank(filename) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     function chunk_scores() {
@@ -150,6 +157,7 @@ schema mail_attachment {
     }
 
     match-features {
+      matchedFieldCount
       vector_score
       combined_nativeRank
       nativeRank(filename)

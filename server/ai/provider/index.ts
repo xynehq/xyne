@@ -21,6 +21,7 @@ const {
   EndThinkingToken,
   GeminiAIModel,
   GeminiApiKey,
+  aiProviderBaseUrl,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -99,7 +100,7 @@ let providersInitialized = false
 let bedrockProvider: LLMProvider | null = null
 let openaiProvider: LLMProvider | null = null
 let ollamaProvider: LLMProvider | null = null
-let togetherProvidder: LLMProvider | null = null
+let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
 
@@ -124,9 +125,15 @@ const initializeProviders = (): void => {
   }
 
   if (OpenAIKey) {
-    const openAIClient = new OpenAI({
+    let openAIClient: OpenAI
+    openAIClient = new OpenAI({
       apiKey: OpenAIKey,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`)
+    }
+
     openaiProvider = new OpenAIProvider(openAIClient)
   }
 
@@ -136,12 +143,18 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    const together = new Together({
+    let together: Together
+    together = new Together({
       apiKey: TogetherApiKey,
       timeout: 4 * 60 * 1000,
       maxRetries: 10,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
-    togetherProvidder = new TogetherProvider(together)
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and together key, using base_url for LLM`)
+    }
+
+    togetherProvider = new TogetherProvider(together)
   }
 
   if (FireworksAIModel && FireworksApiKey) {
@@ -156,6 +169,11 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
+  if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
+    Logger.warn(
+      `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
+    )
+  }
   providersInitialized = true
   // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
@@ -173,7 +191,7 @@ const getProviders = (): {
     !bedrockProvider &&
     !openaiProvider &&
     !ollamaProvider &&
-    !togetherProvidder &&
+    !togetherProvider &&
     !fireworksProvider &&
     !geminiProvider
   ) {
@@ -184,7 +202,7 @@ const getProviders = (): {
     [AIProviders.AwsBedrock]: bedrockProvider,
     [AIProviders.OpenAI]: openaiProvider,
     [AIProviders.Ollama]: ollamaProvider,
-    [AIProviders.Together]: togetherProvidder,
+    [AIProviders.Together]: togetherProvider,
     [AIProviders.Fireworks]: fireworksProvider,
     [AIProviders.GoogleAI]: geminiProvider,
   }
