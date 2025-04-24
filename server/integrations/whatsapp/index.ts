@@ -39,18 +39,21 @@ interface WhatsAppMessage {
   key: proto.IMessageKey
   message: proto.IMessage
   timestamp: number
+  participant: string
 }
 
 interface WhatsAppContact {
   id: string
   name: string
   phoneNumber: string
+  image: string
 }
 
 interface WhatsAppConversation {
   id: string
   contactId: string
   lastMessageTimestamp: number
+  image: string
 }
 
 interface WhatsAppGroup {
@@ -128,10 +131,21 @@ export const getContacts = async (
 
     for (const [id, contact] of Object.entries(contactsList)) {
       if (contact.name) {
+        // Get Profile Picture of Contact
+        let pictureUrl: string | undefined
+        try {
+          // Logger.info("Started fetching profile picture")
+          pictureUrl = await safeProfilePictureUrl(sock, id, "image")
+        } catch (error) {
+          Logger.warn(`Error fetching profile picture: ${error}`)
+          // Continue without the picture URL
+        }
+
         contacts.push({
           id,
           name: contact.name,
           phoneNumber: id.split("@")[0],
+          image: pictureUrl!,
         })
       }
     }
@@ -166,12 +180,23 @@ export const getConversations = async (
 
     for (const [id, chat] of Object.entries(chats)) {
       if (chat.lastMessageRecvTimestamp) {
+        // Get Profile Picture of Contact
+        let pictureUrl: string | undefined
+        try {
+          // Logger.info("Started fetching profile picture")
+          pictureUrl = await safeProfilePictureUrl(sock, chat.id, "image")
+        } catch (error) {
+          Logger.warn(`Error fetching profile picture: ${error}`)
+          // Continue without the picture URL
+        }
+
         conversations.push({
           id: chat.id,
           contactId: chat.id.split("@")[0],
           lastMessageTimestamp: new Date(
             chat.lastMessageRecvTimestamp,
           ).getTime(),
+          image: pictureUrl!,
         })
       }
     }
@@ -414,6 +439,7 @@ const insertWhatsAppContact = async (
       app: Apps.WhatsApp,
       entity: WhatsAppEntity.Contact,
       permissions,
+      image: contact.image || "",
     } as VespaWhatsAppContact,
     whatsappContactSchema,
   )
@@ -447,6 +473,7 @@ const insertWhatsAppConversation = async (
       isArchived: false,
       isGeneral: false,
       topic: `Chat with ${phoneNumber}`,
+      image: conversation.image || "",
     } as VespaChatContainer,
     chatContainerSchema,
   )
@@ -730,7 +757,10 @@ export const handleWhatsAppIngestion = async (
       try {
         if (m.type === "append" || m.type === "notify") {
           for (const msg of m.messages) {
-            if (msg.key && msg.message) {
+            const messageText =
+              msg?.message?.conversation ||
+              msg?.message?.extendedTextMessage?.text
+            if (messageText && msg.key && msg.message) {
               const conversationId = msg.key.remoteJid || ""
               const phoneNumber = conversationId.split("@")[0]
 
@@ -741,15 +771,15 @@ export const handleWhatsAppIngestion = async (
                   typeof msg.messageTimestamp === "number"
                     ? msg.messageTimestamp
                     : Number(msg.messageTimestamp),
+                participant: msg.participant!,
               }
 
               let pictureUrl: string | undefined
               try {
-                Logger.info("Started fetching profile picture")
                 pictureUrl = await safeProfilePictureUrl(
                   sock,
-                  (msg.key.participant as string) ||
-                    (msg.key.remoteJid as string),
+                  whatsappMessage.participant,
+                  "image",
                 )
               } catch (error) {
                 Logger.warn(`Error fetching profile picture: ${error}`)
@@ -825,10 +855,24 @@ export const handleWhatsAppIngestion = async (
           if (contact.id && (contact.name || contact.notify)) {
             const phoneNumber = contact.id.split("@")[0]
 
+            // Get Profile Picture of Contact
+            let pictureUrl: string | undefined
+            try {
+              pictureUrl = await safeProfilePictureUrl(
+                sock,
+                contact.id,
+                "image",
+              )
+            } catch (error) {
+              Logger.warn(`Error fetching profile picture: ${error}`)
+              // Continue without the picture URL
+            }
+
             const whatsappContact: WhatsAppContact = {
               id: contact.id,
               name: contact.name || contact.notify || phoneNumber,
               phoneNumber,
+              image: pictureUrl!,
             }
 
             Logger.info(
@@ -882,6 +926,14 @@ export const handleWhatsAppIngestion = async (
           if (chat.id) {
             const phoneNumber = chat.id.split("@")[0]
 
+            let pictureUrl: string | undefined
+            try {
+              pictureUrl = await safeProfilePictureUrl(sock, chat.id, "image")
+            } catch (error) {
+              Logger.warn(`Error fetching profile picture: ${error}`)
+              // Continue without the picture URL
+            }
+
             const whatsappConversation: WhatsAppConversation = {
               id: chat.id,
               contactId: phoneNumber,
@@ -889,6 +941,7 @@ export const handleWhatsAppIngestion = async (
                 typeof chat.conversationTimestamp === "number"
                   ? chat.conversationTimestamp
                   : parseInt(String(chat.conversationTimestamp), 10),
+              image: pictureUrl!,
             }
 
             Logger.info(
@@ -1052,25 +1105,25 @@ const startIngestion = async (
     const messages = await getMessages(sock)
     Logger.info(`Found messages: ${messages.length}`)
     for (const message of messages) {
-      const conversationId = message.key.remoteJid || ""
-      const phoneNumber = conversationId.split("@")[0]
-      let pictureUrl: string | undefined
-      try {
-        // Logger.info("Started fetching profile picture")
-        pictureUrl = await safeProfilePictureUrl(
-          sock,
-          (message.key.participant as string) ||
-            (message.key.remoteJid as string),
-        )
-      } catch (error) {
-        Logger.warn(`Error fetching profile picture: ${error}`)
-        // Continue without the picture URL
-      }
-
       const messageText =
         message?.message?.conversation ||
         message?.message?.extendedTextMessage?.text
       if (messageText) {
+        const conversationId = message.key.remoteJid || ""
+        const phoneNumber = conversationId.split("@")[0]
+        let pictureUrl: string | undefined
+        try {
+          // Logger.info("Started fetching profile picture")
+          pictureUrl = await safeProfilePictureUrl(
+            sock,
+            message.participant,
+            "image",
+          )
+        } catch (error) {
+          Logger.warn(`Error fetching profile picture: ${error}`)
+          // Continue without the picture URL
+        }
+
         const success = await insertAndVerify(
           message.key.id!,
           chatMessageSchema,
