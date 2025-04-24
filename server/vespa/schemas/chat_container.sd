@@ -73,6 +73,10 @@ schema chat_container {
         field count type int {
             indexing: attribute | summary
         }
+
+        field image type string {
+            indexing: attribute | summary
+        }
     }
 
     field name_fuzzy type string {

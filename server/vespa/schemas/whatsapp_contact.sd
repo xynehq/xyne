@@ -33,6 +33,10 @@ schema whatsapp_contact {
       indexing: attribute | summary
       attribute: fast-search
     }
+
+    field image type string {
+      indexing: attribute | summary
+    }
   }
 
   fieldset default {

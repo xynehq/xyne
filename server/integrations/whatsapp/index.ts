@@ -67,6 +67,7 @@ interface WhatsAppGroup {
     admin?: string
     isSuperAdmin?: boolean
   }[]
+  image: string
 }
 
 interface WhatsAppStore {
@@ -506,6 +507,7 @@ const insertWhatsAppGroup = async (
       isArchived: false,
       isGeneral: false,
       topic: group.desc || "",
+      image: group.image,
     } as VespaChatContainer,
     chatContainerSchema,
   )
@@ -993,6 +995,8 @@ export const handleWhatsAppIngestion = async (
       }
     })
 
+    // TODO Add Sync for Groups
+
     sock.ev.on(
       "messaging-history.set",
       ({
@@ -1163,19 +1167,31 @@ const startIngestion = async (
       const groupsData = await sock.groupFetchAllParticipating()
 
       Logger.info(`Retrieved groups data: ${Object.keys(groupsData).length}`)
+      const groups = []
 
-      const groups = Object.values(groupsData).map((group: any) => ({
-        id: group.id,
-        subject: group.subject,
-        creation: parseInt(String(group.creation), 10),
-        owner: group.owner,
-        desc: group.desc,
-        participants: group.participants.map((p: any) => ({
-          id: p.id,
-          admin: p.admin,
-          isSuperAdmin: p.isSuperAdmin,
-        })),
-      }))
+      for (const group of Object.values(groupsData)) {
+        let pictureUrl: string | undefined
+        try {
+          pictureUrl = await safeProfilePictureUrl(sock, group.id, "image")
+        } catch (error) {
+          Logger.warn(`Error fetching profile picture: ${error}`)
+          // Continue without the picture URL
+        }
+
+        groups.push({
+          id: group.id,
+          subject: group.subject,
+          creation: parseInt(String(group.creation), 10),
+          owner: group.owner,
+          desc: group.desc,
+          participants: group.participants.map((p: any) => ({
+            id: p.id,
+            admin: p.admin,
+            isSuperAdmin: p.isSuperAdmin,
+          })),
+          image: pictureUrl!,
+        })
+      }
 
       Logger.info(`Found groups ${groups.length}`)
 
