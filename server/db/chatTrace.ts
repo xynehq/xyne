@@ -49,5 +49,5 @@ export const deleteChatTracesByChatExternalId = async (
   tx: TxnOrClient,
   chatExternalId: string,
 ): Promise<void> => {
-  await tx.delete(chatTrace).where(eq(chatTrace.chatExternalId, chatExternalId));
-};
+  await tx.delete(chatTrace).where(eq(chatTrace.chatExternalId, chatExternalId))
+}

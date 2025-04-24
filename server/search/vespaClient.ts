@@ -18,6 +18,8 @@ import type {
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
 import { handleVespaGroupResponse } from "@/search/mappers"
+import { getTracer, type Span, type Tracer } from "@/tracer"
+import crypto from "crypto"
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
 type VespaConfigValues = {
@@ -359,8 +361,9 @@ class VespaClient {
       })
       if (!response.ok) {
         const errorText = response.statusText
+        const errorBody = await response.text()
         throw new Error(
-          `Failed to fetch document: ${response.status} ${response.statusText} - ${errorText}`,
+          `Failed to fetch document: ${response.status} ${response.statusText} - ${errorBody}`,
         )
       }
 
@@ -764,6 +767,68 @@ class VespaClient {
       throw new Error(
         `Error retrieving documents with field ${fieldName}: ${errMessage}`,
       )
+    }
+  }
+
+  /**
+   * Fetches a single random document from a specific schema using the Document V1 API.
+   */
+  async getRandomDocument(
+    namespace: string,
+    schema: string,
+    cluster: string,
+  ): Promise<any | null> {
+    // Returning any for now, structure is { documents: [{ id: string, fields: ... }] }
+    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid?selection=true&wantedDocumentCount=100&cluster=${cluster}` // Fetch 100 docs
+    Logger.debug(`Fetching 100 random documents from: ${url}`)
+    try {
+      const response = await this.fetchWithRetry(url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(`Vespa error fetching random document: ${errorBody}`)
+        throw new Error(
+          `Failed to fetch random document: ${response.status} ${response.statusText} - ${errorBody}`,
+        )
+      }
+
+      const data = await response.json()
+      const docs = data?.documents // Get the array of documents
+
+      // Check if the documents array exists and is not empty
+      if (!docs || docs.length === 0) {
+        Logger.warn(
+          { responseData: data },
+          "Did not find any documents in random sampling response (requested 100)",
+        )
+        return null
+      }
+
+      // Randomly select one document from the list
+      const randomIndex = Math.floor(Math.random() * docs.length)
+      const selectedDoc = docs[randomIndex]
+
+      Logger.debug(
+        {
+          selectedIndex: randomIndex,
+          totalDocs: docs.length,
+          selectedDocId: selectedDoc?.id,
+        },
+        "Randomly selected one document from the fetched list",
+      )
+
+      return selectedDoc // Return the randomly selected document object { id, fields }
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error fetching random document: ${errMessage}`)
+      // Rethrow or wrap the error as needed
+      throw new Error(`Error fetching random document: ${errMessage}`)
     }
   }
 }
