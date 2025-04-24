@@ -199,7 +199,7 @@ function generateSearchQuery(
       if (bodyField === "chunks") {
         if (Array.isArray(bodyFieldValue) && bodyFieldValue.length > 0) {
           // Join array elements (assuming they are strings)
-          bodyText = bodyFieldValue.map((chunk) => String(chunk)).join(" \\n") // Join with newline
+          bodyText = bodyFieldValue.map(String).join("\n") // Join with real newline
         } else {
           Logger.warn(
             { docId: document.id, sddocname, bodyField },
@@ -370,26 +370,18 @@ async function findDocumentRank(
             // Correct structure
             query: query,
             docIdToFind: docIdToFind,
-            topResults: hits.slice(0, 10).map((hit: any) => {
-              // Capture top 10
-              const fields = hit.fields as VespaFields
-              const sddocname = fields.sddocname
-              const fieldMapping = sddocname
-                ? schemaFieldMap[sddocname]
-                : undefined
+            topResults: hits.slice(0, 10).map((hit: any, index: number) => { // Capture top 10 and index
+              const fields = hit.fields as VespaFields;
+              const sddocname = fields.sddocname;
+              const fieldMapping = sddocname ? schemaFieldMap[sddocname] : undefined;
+              const resultRank = offset + index + 1; // Calculate rank for this specific result in the map
               return {
-                rank: hit.relevance !== undefined ? hit.relevance : null,
-                schema: sddocname || "unknown",
-                title:
-                  fieldMapping && fields[fieldMapping.titleField] !== undefined
-                    ? String(fields[fieldMapping.titleField])
-                    : "unknown",
-                docId:
-                  fieldMapping && fields[fieldMapping.idField] !== undefined
-                    ? String(fields[fieldMapping.idField])
-                    : "unknown",
+                rank: resultRank, // Use the calculated positional rank
+                schema: sddocname || 'unknown',
+                title: fieldMapping && fields[fieldMapping.titleField] !== undefined ? String(fields[fieldMapping.titleField]) : "unknown",
+                docId: fieldMapping && fields[fieldMapping.idField] !== undefined ? String(fields[fieldMapping.idField]) : "unknown",
                 matchDetails: hit.matchfeatures || {},
-              }
+              };
             }),
             trace: response.root.trace, // Include trace
           },
