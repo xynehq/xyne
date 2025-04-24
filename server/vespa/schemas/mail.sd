@@ -95,6 +95,7 @@ schema mail {
     attribute: fast-search
   }
   }
+  
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: input chunks | embed | attribute | index
     attribute {
@@ -126,6 +127,8 @@ schema mail {
       inputs {
         query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
         query(alpha) double  # Alpha parameter for hybrid weight
+        query(social_decay) double
+        query(updates_decay) double
       }
 
       constants {
@@ -171,6 +174,14 @@ schema mail {
         expression: elementwise(bm25(chunks), x, double)
       }
       
+      function isSocial(){
+        # converting array<string> to tensors{} 
+        expression: tensorFromLabels(attribute(labels),dimension){"CATEGORY_SOCIAL"}
+      }
+
+      function isUpdates(){
+        expression: tensorFromLabels(attribute(labels),dimension){"CATEGORY_UPDATES"}
+      }
     }
 
   rank-profile default_native inherits initial {
@@ -182,6 +193,14 @@ schema mail {
       global-phase {
         expression {
           (
+            if (isSocial == 1, 
+              query(social_decay),
+              if (isUpdates == 1, 
+                query(updates_decay), 
+                1
+              )
+            )
+          ) * (
             (query(alpha) * vector_score) + 
             ((1 - query(alpha)) *  combined_nativeRank)
           )
@@ -190,6 +209,10 @@ schema mail {
       }
 
     match-features {
+      isSocial
+      isUpdates
+      query(social_decay)
+      query(updates_decay)
       matchedFieldCount
       vector_score
       combined_nativeRank
