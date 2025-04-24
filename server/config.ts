@@ -44,7 +44,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
-  defaultBestModel = Models.DeepSeek_R1
+  defaultBestModel = Models.Claude_3_7_Sonnet
 } else if (process.env["OPENAI_API_KEY"]) {
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {

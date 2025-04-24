@@ -44,8 +44,8 @@ export const SearchResult = ({
             </p>
           </a>
         </div>
-        {result.chunks_summary &&
-          result.chunks_summary?.length &&
+        {Array.isArray(result.chunks_summary) &&
+          result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
             <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
@@ -130,8 +130,8 @@ export const SearchResult = ({
             {result.subject}
           </a>
         </div>
-        {result.chunks_summary &&
-          result.chunks_summary?.length &&
+        {Array.isArray(result.chunks_summary) &&
+          result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
             <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
@@ -177,7 +177,7 @@ export const SearchResult = ({
           </a>
         </div>
         <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden">
-          {result.chunks_summary &&
+          {Array.isArray(result.chunks_summary) &&
             !!result.chunks_summary.length &&
             result.chunks_summary.map((summary, idx) => (
               <HighlightedText chunk_summary={summary} key={idx} />
@@ -218,8 +218,8 @@ export const SearchResult = ({
             {result.filename}
           </a>
         </div>
-        {result.chunks_summary &&
-          result.chunks_summary?.length &&
+        {Array.isArray(result.chunks_summary) &&
+          result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
             <HighlightedText key={idx} chunk_summary={summary.chunk} />
           ))}
