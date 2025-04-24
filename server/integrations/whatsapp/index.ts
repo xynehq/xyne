@@ -177,7 +177,6 @@ export const getConversations = async (
     const chats = await (
       sock as unknown as { store: WhatsAppStore }
     ).store.chats.all()
-    Logger.info(`Retrieved chats from store: ${JSON.stringify(chats, null, 2)}`)
 
     for (const [id, chat] of Object.entries(chats)) {
       if (chat.lastMessageRecvTimestamp) {
@@ -318,7 +317,7 @@ const safeProfilePictureUrl = async (
   sock: WASocket | undefined,
   jid: string,
   type: "image" | "preview" = "image",
-  timeoutMs: number = 10000,
+  timeoutMs: number = 1000,
 ): Promise<string | undefined> => {
   if (!sock) return undefined
 
@@ -398,6 +397,7 @@ const insertWhatsAppMessage = async (
   // const grpName = getGroupName(store, remoteJid)
   const name = getDisplayName(store, message?.participant)
 
+  // todo maybe add fields is the message from a conversation or in group
   return insert(
     // @ts-ignore
     {
@@ -489,6 +489,7 @@ const insertWhatsAppGroup = async (
     permissions = permissions.concat(email)
   }
 
+  // todo add fields like group members/count, group admin, past participant, group description
   const now = Date.now()
   return insert(
     {
@@ -558,34 +559,35 @@ const insertAndVerify = async (
 ): Promise<boolean> => {
   let retries = 0
 
-  while (retries < maxRetries) {
-    try {
-      // Attempt to insert the document
-      await insertFn()
+  // while (retries < maxRetries) {
+  try {
+    // Attempt to insert the document
+    await insertFn()
+    return true
+    // // Wait a moment for Vespa to process the document
+    // await new Promise((resolve) => setTimeout(resolve, 500))
 
-      // Wait a moment for Vespa to process the document
-      await new Promise((resolve) => setTimeout(resolve, 500))
+    // // Verify the document exists
+    // const exists = await verifyVespaPush(docId, schema)
+    // if (exists) {
+    //   return true
+    // }
 
-      // Verify the document exists
-      const exists = await verifyVespaPush(docId, schema)
-      if (exists) {
-        return true
-      }
-
-      Logger.info(
-        `Document ${docId} verification failed, retrying (${retries + 1}/${maxRetries})...`,
-      )
-      retries++
-    } catch (error) {
-      Logger.error(error, `Error inserting document ${docId}`)
-      retries++
-    }
+    // Logger.info(
+    //   `Document ${docId} verification failed, retrying (${retries + 1}/${maxRetries})...`,
+    // )
+    // retries++
+  } catch (error) {
+    Logger.error(error, `Error inserting document ${docId}`)
+    retries++
+    return false
   }
+  // }
 
   // Logger.error(
   //   `Failed to insert and verify document ${docId} after ${maxRetries} attempts`,
   // )
-  return false
+  // return false
 }
 
 export const handleWhatsAppIngestion = async (
@@ -766,6 +768,7 @@ export const handleWhatsAppIngestion = async (
               const conversationId = msg.key.remoteJid || ""
               const phoneNumber = conversationId.split("@")[0]
 
+              // todo checkout this error inserting new message, sync message, undefined evaulating jid.split
               const whatsappMessage: WhatsAppMessage = {
                 key: msg.key,
                 message: msg.message,
@@ -1115,6 +1118,7 @@ const startIngestion = async (
       if (messageText) {
         const conversationId = message.key.remoteJid || ""
         const phoneNumber = conversationId.split("@")[0]
+        // todo get this image from contacts if available, if not found then maybe do this
         let pictureUrl: string | undefined
         try {
           // Logger.info("Started fetching profile picture")
