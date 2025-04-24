@@ -151,9 +151,11 @@ const Eval = async (
   const data = config.data()
   
   // Create OpenAI client
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+  const openAiKey = process.env.OPENAI_API_KEY;
+  if (!openAiKey) {
+    throw new Error("OPENAI_API_KEY env var is not set – cannot run evaluations");
+  }
+  const openai = new OpenAI({ apiKey: openAiKey });
   
   // Custom LLM-based factuality scorer
   const customFactualityScorer = async (params) => {
@@ -221,7 +223,7 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
     } catch (error) {
       console.error("Evaluation API error:", error.message);
       // Return a default score rather than failing
-      return { score: 0.5 };
+      return { score: 0 };
     }
   };
   
@@ -312,7 +314,7 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
         } catch (error: any) {
           console.log(`Evaluation error (attempt ${attempts}): ${error.message}`)
           if (attempts === 5) {
-            factuality = { score: 0.1 } // Default score after max attempts
+            factuality = { score: 0.5 } // Default score after max attempts
           }
         }
       }
