@@ -21,7 +21,7 @@ const {
   EndThinkingToken,
   GeminiAIModel,
   GeminiApiKey,
-  aiProviderBaseUrl
+  aiProviderBaseUrl,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -125,13 +125,13 @@ const initializeProviders = (): void => {
   }
 
   if (OpenAIKey) {
-    let openAIClient:OpenAI
+    let openAIClient: OpenAI
     openAIClient = new OpenAI({
       apiKey: OpenAIKey,
       ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
-    });
+    })
     if (aiProviderBaseUrl) {
-      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`);
+      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`)
     }
 
     openaiProvider = new OpenAIProvider(openAIClient)
@@ -143,15 +143,15 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    let together: Together;
+    let together: Together
     together = new Together({
       apiKey: TogetherApiKey,
       timeout: 4 * 60 * 1000,
       maxRetries: 10,
       ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
-    });
+    })
     if (aiProviderBaseUrl) {
-      Logger.info(`Found base_url and together key, using base_url for LLM`);
+      Logger.info(`Found base_url and together key, using base_url for LLM`)
     }
 
     togetherProvider = new TogetherProvider(together)
@@ -169,8 +169,10 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
-  if(!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
-    Logger.warn(`Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`)
+  if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
+    Logger.warn(
+      `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
+    )
   }
   providersInitialized = true
   // THIS IS WHERE :  this is where the creation of the provides goes using api key
