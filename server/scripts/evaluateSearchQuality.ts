@@ -11,6 +11,8 @@ import {
   mailAttachmentSchema,
 } from "@/search/types"
 import fs from "fs"
+import path from "path" // Ensure path module is imported
+import crypto from "crypto" // Import crypto module
 
 // Configuration
 const Logger = getLogger(Subsystem.Eval)
@@ -29,23 +31,42 @@ if (!USER_EMAIL_FOR_SEARCH) {
 
 Logger.info(`Using email for search evaluation: ${USER_EMAIL_FOR_SEARCH}`)
 
-const NUM_SAMPLES = 100
-const MAX_RANK_TO_CHECK = 100
+const NUM_SAMPLES = parseInt(process.env.NUM_SAMPLES || "100", 10) // Default to 100
+const MAX_RANK_TO_CHECK = parseInt(process.env.MAX_RANK_TO_CHECK || "100", 10) // Default to 100
 const HITS_PER_PAGE = 10
 const VESPA_NAMESPACE = "namespace" // TODO: Replace with your actual Vespa namespace
 const VESPA_CLUSTER_NAME = "my_content" // TODO: Replace with your actual cluster name
-const DELAY_MS = parseInt(process.env.EVALUATION_DELAY_MS || "5", 10)
-const ENABLE_TRACE = false
+const DELAY_MS = parseInt(process.env.EVALUATION_DELAY_MS || "15", 10)
+const ENABLE_TRACE = process.env.ENABLE_TRACE === "true"
+const DEBUG_POOR_RANKINGS = process.env.DEBUG_POOR_RANKINGS === "true"
+const POOR_RANK_THRESHOLD = parseInt(process.env.POOR_RANK_THRESHOLD || "10", 10)
+
+// Define the output directory relative to the server directory
+const OUTPUT_DIR = path.join(__dirname, '..', "eval-results", "search-quality") // Now inside server/eval-results/
+
+// Helper function to ensure directory exists
+function ensureDirectoryExists(dirPath: string) {
+  if (!fs.existsSync(dirPath)) {
+    Logger.info(`Creating output directory: ${dirPath}`)
+    fs.mkdirSync(dirPath, { recursive: true })
+  }
+}
 
 // Mapping from sddocname to relevant fields
-const schemaFieldMap: Record<string, { idField: string; titleField: string }> =
-  {
-    [fileSchema]: { idField: "docId", titleField: "title" },
-    [mailSchema]: { idField: "docId", titleField: "subject" },
-    [userSchema]: { idField: "docId", titleField: "name" },
-    [eventSchema]: { idField: "docId", titleField: "name" },
-    [mailAttachmentSchema]: { idField: "docId", titleField: "filename" },
-  }
+const schemaFieldMap: Record<
+  string,
+  { idField: string; titleField: string; bodyField?: string }
+> = {
+  [fileSchema]: { idField: "docId", titleField: "title", bodyField: "chunks" },
+  [mailSchema]: { idField: "docId", titleField: "subject", bodyField: "chunks" },
+  [userSchema]: { idField: "docId", titleField: "name" },
+  [eventSchema]: { idField: "docId", titleField: "name", bodyField: "description" },
+  [mailAttachmentSchema]: {
+    idField: "docId",
+    titleField: "filename",
+    bodyField: "chunks",
+  },
+}
 
 // Types
 interface VespaFields extends Record<string, any> {
@@ -64,12 +85,49 @@ interface SampleResult {
   rank: number | null
 }
 
+// --- Types for Failure Analysis (Copied from analyzeSearchFailures.ts) ---
+interface DebugFailureInfo { // Renamed from DebugInfo to avoid conflict
+  docId: string;
+  query: string;
+  foundAtRank: number | null;
+  debugInfo: {
+    query: string;
+    docIdToFind: string;
+    topResults: Array<{
+      rank: number | null;
+      schema: string;
+      title: string;
+      docId: string;
+      matchDetails: Record<string, any>;
+    }>;
+    trace: any; // Keep trace for debugging
+  };
+}
+
+interface SchemaAnalysis {
+  schema: string;
+  totalDocuments: number;
+  notFoundCount: number;
+  poorRankingCount: number;
+  commonIssues: Record<string, number>;
+  examples: Array<{
+    query: string;
+    docId: string;
+    foundAtRank: number | null;
+    likelyIssue: string;
+    topResults: Array<any>;
+  }>;
+}
+// --- End Types for Failure Analysis ---
+
+
 // Define the available evaluation strategies
 export enum EvaluationStrategy {
   ExactTitle = "ExactTitle",
+  BodyPhrase = "BodyPhrase",
+  RandomTitleWords = "RandomTitleWords",
   // Add more strategies here later, e.g.:
   // FirstHalfTitle = 'FirstHalfTitle',
-  // RandomTitleWords = 'RandomTitleWords',
 }
 
 // Configure the strategy to use for this run (can be set via ENV or default)
@@ -100,40 +158,104 @@ function generateSearchQuery(
     return null
   }
 
-  const { titleField /*, potentially other fields like 'bodyField' */ } =
-    schemaFieldMap[sddocname]
+  const { titleField, bodyField } = schemaFieldMap[sddocname]
   const title = fields[titleField] as string | undefined
 
-  if (typeof title !== "string" || title.trim() === "") {
-    Logger.warn(
-      { docId: document.id, sddocname, titleField },
-      `Cannot generate query: Missing or invalid title field ('${titleField}')`,
-    )
-    return null
-  }
-
   switch (strategy) {
-    case EvaluationStrategy.ExactTitle:
+    case EvaluationStrategy.ExactTitle: {
+      if (typeof title !== "string" || title.trim() === "") {
+        Logger.warn(
+          { docId: document.id, sddocname, titleField },
+          `Cannot generate ExactTitle query: Missing or invalid title field ('${titleField}')`,
+        )
+        return null
+      }
       return title
+    }
 
-    // --- Add cases for other strategies here ---
-    // case EvaluationStrategy.FirstHalfTitle:
-    //     const words = title.split(' ');
-    //     return words.slice(0, Math.ceil(words.length / 2)).join(' ');
+    case EvaluationStrategy.BodyPhrase: {
+      if (!bodyField) {
+        Logger.warn(
+          { docId: document.id, sddocname },
+          `Cannot generate BodyPhrase query: No bodyField defined for schema '${sddocname}'`,
+        )
+        return null
+      }
+      const bodyFieldValue = fields[bodyField]
+      let bodyText: string | undefined;
 
-    // case EvaluationStrategy.RandomTitleWords:
-    //     const titleWords = title.split(' ').filter(w => w.length > 2); // Basic filtering
-    //     if (titleWords.length < 2) return title; // Fallback if too few words
-    //     const numWordsToSelect = Math.max(1, Math.floor(titleWords.length / 3));
-    //     // Simple random selection (might pick duplicates)
-    //     let randomWords = [];
-    //     for (let i = 0; i < numWordsToSelect; i++) {
-    //         randomWords.push(titleWords[Math.floor(Math.random() * titleWords.length)]);
-    //     }
-    //     return randomWords.join(' ');
+      // Check if the body field is 'chunks' and handle array joining
+      if (bodyField === "chunks") {
+        if (Array.isArray(bodyFieldValue) && bodyFieldValue.length > 0) {
+          // Join array elements (assuming they are strings)
+          bodyText = bodyFieldValue.map(chunk => String(chunk)).join(" \\n"); // Join with newline
+        } else {
+          Logger.warn(
+            { docId: document.id, sddocname, bodyField },
+            `Cannot generate BodyPhrase query: Field '${bodyField}' is not a non-empty array or is empty.`,
+          )
+          return null; // Return null if chunks are empty or not an array
+        }
+      } else {
+        // Handle regular string body field
+        bodyText = bodyFieldValue as string | undefined;
+      }
+
+      if (typeof bodyText !== "string" || bodyText.trim() === "") {
+        Logger.warn(
+          { docId: document.id, sddocname, bodyField },
+          `Cannot generate BodyPhrase query: Missing or invalid body content after processing field ('${bodyField}')`,
+        )
+        return null
+      }
+      // Extract first 5-6 words (simple approach)
+      const words = bodyText.trim().split(/\\s+/).filter(w => w.length > 0); // Split by whitespace and filter empty strings
+      const phrase = words.slice(0, 6).join(" ") // Take first 6 words
+      if (phrase.length < 5) { // Keep minimum length check
+        Logger.warn(
+          { docId: document.id, sddocname, bodyField, phrase },
+          `Cannot generate BodyPhrase query: Extracted phrase too short ('${phrase}')`,
+        )
+        return null
+      }
+      return phrase
+    }
+
+    case EvaluationStrategy.RandomTitleWords: {
+        if (typeof title !== "string" || title.trim() === "") {
+          Logger.warn(
+            { docId: document.id, sddocname, titleField },
+            `Cannot generate RandomTitleWords query: Missing or invalid title field ('${titleField}')`,
+          )
+          return null
+        }
+        const words = title.trim().split(/\\s+/).filter(w => w.length > 0); // Split and filter empty strings
+        const minWords = 3; // Configurable: minimum words required in title
+
+        if (words.length < minWords) {
+             Logger.warn(
+                { docId: document.id, sddocname, title, wordCount: words.length },
+                `Cannot generate RandomTitleWords query: Title has fewer than ${minWords} words.`,
+             )
+             return null;
+        }
+
+        // Simple random sample without replacement (shuffle and pick first N)
+        const numWordsToSelect = minWords; // Select exactly 3 words for consistency
+        // Fisher-Yates (Knuth) shuffle for better randomness
+        for (let i = words.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [words[i], words[j]] = [words[j], words[i]];
+        }
+        const selectedWords = words.slice(0, numWordsToSelect);
+
+        return selectedWords.join(' ');
+    }
 
     default:
-      Logger.warn({ strategy }, "Unsupported evaluation strategy")
+      // Should not happen if CURRENT_STRATEGY is validated, but good practice
+      const exhaustiveCheck: never = strategy;
+      Logger.warn({ strategy: exhaustiveCheck }, "Unsupported evaluation strategy encountered in generateSearchQuery")
       return null
   }
 }
@@ -181,14 +303,15 @@ async function getRandomDocument(): Promise<Document | null> {
 
 async function findDocumentRank(
   docIdToFind: string,
-  title: string,
-): Promise<number | null> {
-  Logger.debug({ docIdToFind, title }, "findDocumentRank called with:")
+  query: string, // Changed from 'title' to 'query' for clarity
+): Promise<{ rank: number | null; debugPayload: DebugFailureInfo | null }> { // Return debug payload
+  Logger.debug({ docIdToFind, query }, "findDocumentRank called with:")
 
   let rank: number | null = null
   let offset = 0
   let totalCount = 0
   let response: any
+  let collectedDebugInfo: DebugFailureInfo | null = null // Store full debug info here
 
   try {
     while (offset < MAX_RANK_TO_CHECK) {
@@ -196,10 +319,10 @@ async function findDocumentRank(
         limit: HITS_PER_PAGE,
         offset: offset,
         rankProfile: SearchModes.NativeRank,
-        ...(ENABLE_TRACE ? { tracelevel: 3 } : {}),
+        ...(ENABLE_TRACE || DEBUG_POOR_RANKINGS ? { tracelevel: 5 } : {}),
       }
       response = await searchVespa(
-        title,
+        query, // Use the generated query
         USER_EMAIL_FOR_SEARCH!,
         null,
         null,
@@ -214,6 +337,33 @@ async function findDocumentRank(
       if (hits.length === 0) {
         break
       }
+
+      // Construct base debug info if needed (only on first page for efficiency)
+      if (DEBUG_POOR_RANKINGS && offset === 0) {
+          collectedDebugInfo = {
+            docId: docIdToFind,
+            query: query,
+            foundAtRank: null, // Will be updated if found
+            debugInfo: { // Correct structure
+              query: query,
+              docIdToFind: docIdToFind,
+              topResults: hits.slice(0, 10).map((hit: any) => { // Capture top 10
+                  const fields = hit.fields as VespaFields;
+                  const sddocname = fields.sddocname;
+                  const fieldMapping = sddocname ? schemaFieldMap[sddocname] : undefined;
+                  return {
+                      rank: hit.relevance !== undefined ? hit.relevance : null,
+                      schema: sddocname || 'unknown',
+                      title: fieldMapping && fields[fieldMapping.titleField] !== undefined ? String(fields[fieldMapping.titleField]) : "unknown",
+                      docId: fieldMapping && fields[fieldMapping.idField] !== undefined ? String(fields[fieldMapping.idField]) : "unknown",
+                      matchDetails: hit.matchfeatures || {},
+                  };
+              }),
+              trace: response.root.trace, // Include trace
+           }
+          };
+      }
+
 
       for (let i = 0; i < hits.length; i++) {
         const hit = hits[i]
@@ -243,239 +393,817 @@ async function findDocumentRank(
             `---> Match found at rank ${currentRank}! Comparing ${hitId} === ${docIdToFind}`,
           )
           rank = currentRank
-          break
+          // Update rank in collected debug info if it exists
+          if (collectedDebugInfo) {
+            collectedDebugInfo.foundAtRank = rank;
+          }
+          break // Exit inner loop once found
         }
       }
 
       if (rank !== null) {
-        break
+        break // Exit outer loop once found
       }
 
       offset += HITS_PER_PAGE
       if (totalCount > 0 && offset >= totalCount) {
-        break
+        break // Stop if we've checked all results
       }
     }
 
-    if (ENABLE_TRACE && rank === null) {
-      Logger.debug(
-        { trace: response.root.trace },
-        "Search trace for failed ranking",
-      )
+    // Save individual debug file if debugging is enabled and rank is poor/null
+    if (DEBUG_POOR_RANKINGS && collectedDebugInfo && (rank === null || rank > POOR_RANK_THRESHOLD)) {
+        ensureDirectoryExists(OUTPUT_DIR) // Ensure directory exists before saving
+
+        // Use a hash of the docId to prevent overly long filenames
+        const docIdHash = crypto.createHash('sha256').update(docIdToFind).digest('hex');
+        const debugFilename = path.join(
+            OUTPUT_DIR,
+            `debug_${docIdHash}_${new Date().getTime()}.json` // Use hash instead of raw docId
+        )
+        try {
+            // Update rank one last time before saving
+            collectedDebugInfo.foundAtRank = rank;
+            fs.writeFileSync(
+                debugFilename,
+                JSON.stringify(collectedDebugInfo, null, 2) // Save the collected info
+            );
+            Logger.info(`Debug info for poorly ranked document saved to ${debugFilename}`);
+        } catch (error) {
+            Logger.error({ error, docId: docIdToFind }, "Failed to save debug info");
+            // Don't nullify collectedDebugInfo here, maybe analysis can still use it
+        }
+    } else if (DEBUG_POOR_RANKINGS && !collectedDebugInfo && (rank === null || rank > POOR_RANK_THRESHOLD)) {
+      // Case where rank is poor but no debug info was collected (e.g., error during first page search)
+      Logger.warn({docId: docIdToFind, rank}, "Poor rank detected but no debug info collected, possibly due to search error on first page.");
     }
+
+
   } catch (error) {
     Logger.error(
-      { error, docId: docIdToFind, title },
+      { error, docId: docIdToFind, query },
       "Failed to search for document rank",
     )
-    return null
+    // Nullify collectedDebugInfo on search error? Or keep partial? Let's keep it for now.
+    return { rank: null, debugPayload: collectedDebugInfo }; // Return null rank and potentially partial debug info
   }
 
-  return rank
+  // Return rank and the full debug payload (which is null if not debugging or rank is good)
+   return { rank, debugPayload: (DEBUG_POOR_RANKINGS && (rank === null || rank > POOR_RANK_THRESHOLD)) ? collectedDebugInfo : null };
 }
+
+
+// --- Failure Analysis Functions (Adapted from analyzeSearchFailures.ts) ---
+
+/**
+ * Perform failure analysis on collected debug information.
+ */
+function performFailureAnalysis(debugData: DebugFailureInfo[], outputDir: string) {
+  if (!DEBUG_POOR_RANKINGS || debugData.length === 0) {
+    Logger.info("Skipping failure analysis: Debugging not enabled or no poor rankings found.");
+    return;
+  }
+
+  Logger.info(`--- Starting Failure Analysis (${debugData.length} entries) ---`);
+
+  // Group by schema for analysis
+  const schemaGroups: Record<string, DebugFailureInfo[]> = {};
+
+  debugData.forEach(info => {
+    // Determine schema
+    let schema = 'unknown';
+    const topResults = info.debugInfo?.topResults || [];
+    const matchingResult = topResults.find(r => r.docId === info.docId);
+
+    if (matchingResult && matchingResult.schema) {
+      schema = matchingResult.schema;
+    } else {
+      // Infer from docId format (keep simple logic)
+      if (info.docId.includes('@') || info.docId.match(/^[0-9a-f]{16}$/)) {
+        schema = mailSchema;
+      } else if (info.docId.match(/^[0-9A-Za-z_-]{33,}$/)) {
+        schema = mailAttachmentSchema;
+      } else if (info.docId.match(/^[0-9A-Za-z_-]{20,32}$/)) {
+        schema = fileSchema;
+      } else if (info.docId.match(/^u:/)) { // Example for user schema if prefixed
+         schema = userSchema;
+      } else if (info.docId.match(/^ev:/)) { // Example for event schema if prefixed
+          schema = eventSchema;
+      }
+      // Add more robust schema detection if needed
+    }
+
+    if (!schemaGroups[schema]) {
+      schemaGroups[schema] = [];
+    }
+    schemaGroups[schema].push(info);
+  });
+
+  // Analyze issues for each schema
+  const schemaAnalyses: SchemaAnalysis[] = [];
+
+  for (const [schema, groupDebugInfos] of Object.entries(schemaGroups)) {
+    Logger.info(`Analyzing ${groupDebugInfos.length} failures for schema: ${schema}`);
+
+    const analysis: SchemaAnalysis = {
+      schema,
+      totalDocuments: groupDebugInfos.length,
+      notFoundCount: groupDebugInfos.filter(info => info.foundAtRank === null).length,
+      poorRankingCount: groupDebugInfos.filter(info => info.foundAtRank !== null).length,
+      commonIssues: {},
+      examples: []
+    };
+
+    // Analyze each debug info to identify common patterns
+    for (const info of groupDebugInfos) {
+      try { // Keep inner try-catch for individual analysis errors
+        let likelyIssue = 'Unknown';
+
+        // Check if document wasn't found at all
+        if (info.foundAtRank === null) {
+          if (info.query.length < 3) {
+            likelyIssue = 'Query too short';
+          } else if (info.query.includes('.') && schema === fileSchema) {
+            likelyIssue = 'File extension handling';
+          } else if (/[^\w\s]/.test(info.query) && info.debugInfo?.topResults?.length === 0) {
+            likelyIssue = 'Special characters in query';
+          } else if (schema === mailAttachmentSchema && info.query.includes('.pdf')) {
+            likelyIssue = 'PDF filename matching';
+          } else {
+            likelyIssue = 'Document not indexed or permissions issue';
+          }
+        } else { // Document found but ranked poorly (already filtered by POOR_RANK_THRESHOLD)
+          const topTitles = info.debugInfo?.topResults?.map(r =>
+            (r.title || '').toLowerCase() // Safely handle potentially undefined title
+          ) || [];
+          const queryTokens = info.query.toLowerCase().split(/\s+/);
+
+          if (topTitles.some(title => queryTokens.every(token => title && title.includes(token)))) { // Check title exists
+            likelyIssue = 'Term weighting issues';
+          } else if (schema === mailAttachmentSchema) {
+            likelyIssue = 'Attachment filename tokenization';
+          } else {
+            likelyIssue = 'Ranking algorithm prioritization';
+          }
+        }
+
+        // Count common issues
+        analysis.commonIssues[likelyIssue] = (analysis.commonIssues[likelyIssue] || 0) + 1;
+
+        // Add to examples (limit to keep analysis manageable)
+        if (analysis.examples.length < 5) {
+          analysis.examples.push({
+            query: info.query,
+            docId: info.docId,
+            foundAtRank: info.foundAtRank,
+            likelyIssue,
+            topResults: info.debugInfo?.topResults || []
+          });
+        }
+      } catch (error) {
+        Logger.error({
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+          docId: info?.docId,
+          query: info?.query
+        }, 'Error analyzing single debug info entry during report generation. Skipping this entry.');
+        analysis.commonIssues['Analysis Error'] = (analysis.commonIssues['Analysis Error'] || 0) + 1;
+      }
+    }
+    schemaAnalyses.push(analysis);
+  }
+
+  // Generate recommendations
+  const recommendations = generateFailureRecommendations(schemaAnalyses); // Renamed function
+
+  // Write the analysis report
+  writeFailureAnalysisReport(schemaAnalyses, recommendations, outputDir); // Renamed function
+
+  Logger.info(`--- Failure Analysis Complete ---`);
+}
+
+/**
+ * Generate specific recommendations based on the failure analysis (Adapted)
+ */
+function generateFailureRecommendations(analyses: SchemaAnalysis[]): Record<string, string[]> {
+  const recommendations: Record<string, string[]> = {};
+
+  analyses.forEach(analysis => {
+    const schema = analysis.schema;
+    recommendations[schema] = [];
+
+    // Generate schema-specific recommendations
+    if (analysis.notFoundCount > analysis.poorRankingCount) {
+      recommendations[schema].push("Review document indexing/permissions to ensure all target documents are searchable.");
+      if (schema === mailAttachmentSchema) recommendations[schema].push("Improve attachment filename tokenization for better matching.");
+      if (schema === fileSchema) recommendations[schema].push("Ensure file metadata (esp. extensions) is normalized/handled correctly.");
+    } else if (analysis.poorRankingCount > 0) {
+      recommendations[schema].push("Review ranking weights/profiles to prioritize matches in primary fields (title/subject/name/filename).");
+      if (schema === mailSchema) recommendations[schema].push("Increase boost for subject matches over body content.");
+      if (schema === eventSchema) recommendations[schema].push("Prioritize exact name matches over description matches.");
+    }
+
+    // Add recommendations based on common issues
+    const sortedIssues = Object.entries(analysis.commonIssues)
+      .filter(([issue]) => issue !== 'Analysis Error') // Exclude analysis errors
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+
+    sortedIssues.forEach(([issue, count]) => {
+      const percentage = Math.round((count / analysis.totalDocuments) * 100);
+      const issueText = `(${percentage}% of failures)`;
+      switch (issue) {
+        case 'Query too short': recommendations[schema].push(`Improve handling of short queries ${issueText}.`); break;
+        case 'Special characters in query': recommendations[schema].push(`Enhance tokenization for special characters ${issueText}.`); break;
+        case 'File extension handling': recommendations[schema].push(`Implement special handling for file extensions ${issueText}.`); break;
+        case 'PDF filename matching': recommendations[schema].push(`Add specific rules/tokenization for PDF filenames ${issueText}.`); break;
+        case 'Term weighting issues': recommendations[schema].push(`Adjust term weighting to prioritize primary field matches ${issueText}.`); break;
+        case 'Attachment filename tokenization': recommendations[schema].push(`Improve tokenization/matching for attachment filenames ${issueText}.`); break;
+        case 'Ranking algorithm prioritization': recommendations[schema].push(`Review ranking signals/profile for relevance ${issueText}.`); break;
+      }
+    });
+     if (analysis.commonIssues['Analysis Error'] > 0) {
+        recommendations[schema].push(`Investigate ${analysis.commonIssues['Analysis Error']} analysis errors (check logs).`);
+    }
+  });
+
+  return recommendations;
+}
+
+/**
+ * Write the full failure analysis report (Adapted)
+ */
+function writeFailureAnalysisReport(analyses: SchemaAnalysis[], recommendations: Record<string, string[]>, outputDir: string) {
+  const reportFilename = path.join(outputDir, 'search_failure_analysis.md');
+  let report = `# Search Quality Failure Analysis Report\nGenerated: ${new Date().toISOString()}\n\n## Overview\nThis report analyzes search failures based on runs with DEBUG_POOR_RANKINGS=true to identify patterns and recommend improvements.\n\n`;
+
+  // Summary Metrics
+  report += `## Summary Metrics\n\n| Schema | Total Failures | Not Found | Poorly Ranked | Top Issues |\n`;
+  report += `|--------|---------------|-----------|---------------|------------|\n`;
+  analyses.forEach(analysis => {
+    const topIssues = Object.entries(analysis.commonIssues)
+      .filter(([issue]) => issue !== 'Analysis Error')
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([issue, count]) => `${issue} (${count})`)
+      .join(', ');
+    report += `| ${analysis.schema} | ${analysis.totalDocuments} | ${analysis.notFoundCount} | ${analysis.poorRankingCount} | ${topIssues || 'N/A'} |\n`;
+  });
+
+  // Recommendations
+  report += `\n## Recommendations by Schema\n\n`;
+  Object.entries(recommendations).forEach(([schema, schemaRecommendations]) => {
+    if (schemaRecommendations.length > 0) {
+      report += `### ${schema}\n\n`;
+      schemaRecommendations.forEach(rec => { report += `- ${rec}\n`; });
+      report += `\n`;
+    }
+  });
+
+  // Detailed Analysis
+  report += `## Detailed Analysis\n\n`;
+  analyses.forEach(analysis => {
+    report += `### ${analysis.schema}\n\n`;
+    report += `- Total failures analyzed: ${analysis.totalDocuments}\n`;
+    report += `- Documents not found: ${analysis.notFoundCount}\n`;
+    report += `- Documents ranked poorly (Rank > ${POOR_RANK_THRESHOLD}): ${analysis.poorRankingCount}\n\n`;
+
+    // Common Issues
+    report += `#### Common Issues\n\n`;
+    Object.entries(analysis.commonIssues)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([issue, count]) => {
+        const percentage = Math.round((count / analysis.totalDocuments) * 100);
+        report += `- ${issue}: ${count} occurrences (${percentage}%)\n`;
+      });
+
+    // Example Failures
+    if (analysis.examples.length > 0) {
+        report += `\n#### Example Failures (up to 5)\n\n`;
+        analysis.examples.forEach((example, index) => {
+          report += `**Example ${index + 1}:**\n`;
+          report += `- Query: \`${example.query}\`\n`; // Use backticks for query
+          report += `- Document ID: \`${example.docId}\`\n`;
+          report += `- Found at rank: ${example.foundAtRank === null ? 'Not found' : example.foundAtRank}\n`;
+          report += `- Likely issue: ${example.likelyIssue}\n`;
+          if (example.topResults.length > 0) {
+            report += `- Top results instead:\n`;
+            example.topResults.slice(0, 3).forEach((result, i) => { // Show top 3
+              report += `  ${i + 1}. "${result.title || 'N/A'}" (${result.schema || 'unknown'}) - DocID: \`${result.docId || 'unknown'}\`\n`;
+            });
+          }
+          report += `\n`;
+        });
+    }
+    report += `\n`;
+  });
+
+  // Write the report
+  try {
+    fs.writeFileSync(reportFilename, report);
+    Logger.info(`Failure analysis report saved to ${reportFilename}`);
+  } catch (error) {
+    Logger.error({ error, reportFilename }, "Failed to write failure analysis report.");
+  }
+}
+
+// --- End Failure Analysis Functions ---
+
 
 // Main Evaluation Logic
 async function evaluateSearch() {
   Logger.info("Starting search quality evaluation across schemas...")
-  Logger.info(`Using strategy: ${CURRENT_STRATEGY}`) // Log the strategy
+  Logger.info(`Using strategy: ${CURRENT_STRATEGY}`)
+
+  if (!(CURRENT_STRATEGY in EvaluationStrategy)) {
+    Logger.error(`Invalid EVALUATION_STRATEGY: ${CURRENT_STRATEGY}. Must be one of ${Object.keys(EvaluationStrategy).join(', ')}`);
+    process.exit(1);
+  }
+
+  ensureDirectoryExists(OUTPUT_DIR); // Ensure output dir exists upfront
 
   const results: SampleResult[] = []
-  let reciprocalRanks: number[] = []
-  let currentDocument: Document | null = await getRandomDocument()
+  const reciprocalRanks: number[] = []
+  const collectedDebugData: DebugFailureInfo[] = []; // Store debug data here if enabled
+  let evaluatedSamples = 0
+  const MAX_FETCH_RETRIES_PER_SAMPLE = 5; // Max attempts to find a suitable doc per sample
 
-  if (!currentDocument) {
-    Logger.error("Could not fetch an initial document. Aborting evaluation.")
-    return
-  }
+  while (evaluatedSamples < NUM_SAMPLES) {
+    Logger.info(`--- Starting processing for Sample #${evaluatedSamples + 1} ---`);
+    let currentDocument: Document | null = null;
+    let query: string | null = null;
+    let docToEvaluate: Document | null = null; // Use this to store the valid doc found
+    let docId: string | undefined = undefined;
+    let originalTitle: string | undefined = undefined;
+    let sddocname: string | undefined = undefined;
+    let foundSuitableDocument = false;
 
-  for (let i = 0; i < NUM_SAMPLES && currentDocument; i++) {
-    const fields = currentDocument.fields as VespaFields
-    const sddocname = fields.sddocname
+    for (let attempt = 1; attempt <= MAX_FETCH_RETRIES_PER_SAMPLE; attempt++) {
+      Logger.debug(`Sample #${evaluatedSamples + 1}: Fetch attempt ${attempt}/${MAX_FETCH_RETRIES_PER_SAMPLE}...`);
+      currentDocument = await getRandomDocument();
 
-    if (!sddocname || !schemaFieldMap[sddocname] || !fields) {
-      Logger.warn(
-        { docId: currentDocument.id, sddocname },
-        `Document schema ${sddocname} not in mapping or fields missing, skipping sample ${i + 1}`,
-      )
-      currentDocument = await getRandomDocument()
       if (!currentDocument) {
-        Logger.error("Recovery failed.")
-        break
+        Logger.warn(`Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Failed to fetch document. Retrying...`);
+        await new Promise(resolve => setTimeout(resolve, DELAY_MS * 2)); // Small delay before retrying fetch
+        continue;
       }
-      continue
-    }
 
-    const { idField, titleField } = schemaFieldMap[sddocname]
-    const docId = fields[idField] as string | undefined
-    const title = fields[titleField] as string | undefined
+      const tempDoc = currentDocument; // Use temporary variable for checks
+      const fields = tempDoc.fields as VespaFields;
+      const tempSddocname = fields.sddocname;
 
-    if (!docId || !title) {
-      Logger.warn(
-        {
-          fetchedDocId: currentDocument.id,
-          sddocname,
-          idField,
-          titleField,
-          fields,
-        },
-        `Document missing mapped ID ('${idField}') or Title ('${titleField}') field, skipping sample ${i + 1}`,
+      // --- Basic Document Validation ---
+      if (!tempSddocname || !schemaFieldMap[tempSddocname] || !fields) {
+        Logger.debug(
+          { docId: tempDoc.id, sddocname: tempSddocname, attempt },
+          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Document schema '${tempSddocname}' not in mapping or fields missing. Trying next attempt.`,
+        )
+        continue;
+      }
+
+      const { idField, titleField } = schemaFieldMap[tempSddocname];
+      const tempDocId = fields[idField] as string | undefined;
+      const tempOriginalTitle = fields[titleField] as string | undefined;
+
+      if (!tempDocId || typeof tempOriginalTitle !== 'string') {
+        Logger.debug(
+          { fetchedDocId: tempDoc.id, sddocname: tempSddocname, attempt, hasDocId: !!tempDocId, titleType: typeof tempOriginalTitle },
+          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Document missing mapped ID or valid Title field. Trying next attempt.`,
+        )
+        continue;
+      }
+
+      // --- Strategy Specific Validation ---
+      if (
+        CURRENT_STRATEGY === EvaluationStrategy.BodyPhrase &&
+        !schemaFieldMap[tempSddocname].bodyField
+      ) {
+        Logger.debug(
+          { docId: tempDoc.id, sddocname: tempSddocname, strategy: CURRENT_STRATEGY, attempt },
+          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Schema '${tempSddocname}' has no bodyField for BodyPhrase strategy. Trying next attempt.`,
+        )
+        continue;
+      }
+
+      // --- Generate Query ---
+      const tempQuery = generateSearchQuery(tempDoc, CURRENT_STRATEGY);
+
+      if (!tempQuery) {
+        Logger.debug(
+          { docId: tempDoc.id, sddocname: tempSddocname, strategy: CURRENT_STRATEGY, attempt },
+          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Failed to generate query for document using strategy ${CURRENT_STRATEGY}. Trying next attempt.`,
+        )
+        continue;
+      }
+
+      // --- If we reach here, the document and query are suitable ---
+      Logger.info(`Sample #${evaluatedSamples + 1}: Found suitable document (ID: ${tempDocId}) on attempt ${attempt}.`);
+      docToEvaluate = tempDoc;
+      query = tempQuery;
+      docId = tempDocId;
+      originalTitle = tempOriginalTitle;
+      sddocname = tempSddocname;
+      foundSuitableDocument = true;
+      break; // Exit the inner retry loop
+    } // End inner retry loop
+
+    // --- Process the found document or skip sample ---
+    if (foundSuitableDocument && docToEvaluate && query && docId && sddocname) {
+      // A suitable document was found within the retries
+      Logger.info(
+        `[Sample ${evaluatedSamples + 1}/${NUM_SAMPLES}] Evaluating Schema: ${sddocname}, ID: ${docId}, Query (${CURRENT_STRATEGY}): "${query.substring(0, 100)}${query.length > 100 ? "..." : ""}"`,
       )
-      currentDocument = await getRandomDocument()
-      if (!currentDocument) {
-        Logger.error("Recovery failed.")
-        break
-      }
-      continue
-    }
+      Logger.debug({ /* ... debug details ... */ }, "Preparing to call findDocumentRank");
 
-    if (typeof title !== "string") {
-      Logger.warn(
-        { docId, sddocname, title: JSON.stringify(title) },
-        `Title field is not a string, skipping sample ${i + 1}`,
-      )
-      currentDocument = await getRandomDocument()
-      if (!currentDocument) {
-        Logger.error("Recovery failed.")
-        break
-      }
-      continue
-    }
+      // Call findDocumentRank and get both rank and potential debug payload
+      const { rank, debugPayload } = await findDocumentRank(docId, query);
 
-    // Generate the search query using the selected strategy
-    const query = generateSearchQuery(currentDocument, CURRENT_STRATEGY)
-
-    if (!query) {
-      Logger.warn(
-        { docId: currentDocument.id, sddocname },
-        `Failed to generate query for sample ${i + 1}, skipping.`,
-      )
-      currentDocument = await getRandomDocument() // Recover
-      if (!currentDocument) {
-        Logger.error("Recovery failed.")
-        break
-      }
-      continue
-    }
-
-    Logger.debug(
-      {
-        sample: i + 1,
-        docIdToTest: docId,
+      results.push({
+        docId,
         schema: sddocname,
-        // titleToTest: title.substring(0, 100) + (title.length > 100 ? '...' : ''),
-        queryToTest:
-          query.substring(0, 100) + (query.length > 100 ? "..." : ""), // Log the generated query
-        strategy: CURRENT_STRATEGY,
-        documentObjectType: "Document", // Simplified type name
-      },
-      "Preparing to call findDocumentRank",
-    )
+        title: originalTitle || "N/A",
+        rank,
+      });
 
-    Logger.info(
-      `[Sample ${i + 1}/${NUM_SAMPLES}] Schema: ${sddocname}, ID: ${docId}, Query (${CURRENT_STRATEGY}): "${query.substring(0, 100)}${query.length > 100 ? "..." : ""}"`,
-    )
+      // Add debug payload to our collection if it exists
+      if (debugPayload) {
+          collectedDebugData.push(debugPayload);
+      }
 
-    const rank = await findDocumentRank(docId, query) // Use the generated query
-    // Store the original title along with the query for reference in results
-    results.push({ docId, schema: sddocname, title: title || "N/A", rank })
+      if (rank !== null && rank <= MAX_RANK_TO_CHECK) {
+        reciprocalRanks.push(1 / rank);
+        Logger.info(` -> Found at Rank: ${rank}`);
+      } else {
+        reciprocalRanks.push(0);
+        Logger.info(` -> Not found within top ${MAX_RANK_TO_CHECK}`);
+      }
 
-    if (rank !== null && rank <= MAX_RANK_TO_CHECK) {
-      reciprocalRanks.push(1 / rank)
-      Logger.info(` -> Found at Rank: ${rank}`)
+      // --- Evaluation for this sample number is complete ---
+      evaluatedSamples++; // Increment the count of successfully evaluated samples
+
     } else {
-      reciprocalRanks.push(0)
-      Logger.info(` -> Not found within top ${MAX_RANK_TO_CHECK}`)
+      // Failed to find a suitable document after MAX_FETCH_RETRIES_PER_SAMPLE attempts
+      Logger.error(`Sample #${evaluatedSamples + 1}: Failed to find a suitable document after ${MAX_FETCH_RETRIES_PER_SAMPLE} attempts. Skipping this sample number.`);
+       evaluatedSamples++; // Increment anyway to prevent infinite loops
+       Logger.warn(`Sample #${evaluatedSamples}: Incrementing evaluated count despite failure to find suitable doc, to ensure loop termination.`);
+
     }
 
-    currentDocument = await getRandomDocument()
-    if (!currentDocument) {
-      Logger.error("Failed to get next document to test. Aborting evaluation.")
-      break
+    // Only delay if we are continuing the loop for the next sample
+    if (evaluatedSamples < NUM_SAMPLES) {
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
     }
 
-    await new Promise((resolve) => setTimeout(resolve, DELAY_MS))
+  } // End outer while loop
+
+  Logger.info(`--- Evaluation Loop Finished ---`);
+  // Add a note about total processed vs target
+  if (evaluatedSamples < NUM_SAMPLES) {
+       Logger.warn(`Target was ${NUM_SAMPLES} samples, but loop finished after processing ${evaluatedSamples}. This might happen if finding suitable documents consistently failed.`);
   }
 
-  // Calculate and Report Metrics
-  if (reciprocalRanks.length > 0) {
-    const mrr =
-      reciprocalRanks.reduce((sum, r) => sum + r, 0) / reciprocalRanks.length
-    const successAt3 =
-      results.filter((r) => r.rank !== null && r.rank <= 3).length /
-      results.length
-    const successRate =
-      results.filter((r) => r.rank !== null && r.rank <= MAX_RANK_TO_CHECK)
-        .length / results.length
+
+  // --- Calculate and Report Metrics ---
+  if (results.length > 0) { // Base reporting on actual results collected
+    const numEvaluated = results.length;
+    const mrr = reciprocalRanks.length > 0 ? reciprocalRanks.reduce((sum, r) => sum + r, 0) / numEvaluated : 0;
+    const successAt3 = results.filter((r) => r.rank !== null && r.rank <= 3).length / numEvaluated;
+    const successAt5 = results.filter((r) => r.rank !== null && r.rank <= 5).length / numEvaluated;
+    const successAt10 = results.filter((r) => r.rank !== null && r.rank <= 10).length / numEvaluated;
+    const successRate = results.filter((r) => r.rank !== null && r.rank <= MAX_RANK_TO_CHECK).length / numEvaluated;
+
+    // Calculate mean rank (for found documents only)
+    const foundDocuments = results.filter((r) => r.rank !== null);
+    const meanRank = foundDocuments.length > 0
+      ? foundDocuments.reduce((sum, r) => sum + (r.rank || 0), 0) / foundDocuments.length
+      : 0;
+
+    // Calculate median rank
+    let medianRank = 0;
+    if (foundDocuments.length > 0) {
+      const sortedRanks = foundDocuments.map(r => r.rank || 0).sort((a, b) => a - b);
+      const midIndex = Math.floor(sortedRanks.length / 2);
+      medianRank = sortedRanks.length % 2 === 0
+        ? (sortedRanks[midIndex - 1] + sortedRanks[midIndex]) / 2
+        : sortedRanks[midIndex];
+    }
+
+    // Calculate rank distribution
+    const rankDistribution = {
+      "1": 0, "2-3": 0, "4-5": 0, "6-10": 0, "11-20": 0, "21-50": 0, "51-100": 0, "not_found": 0
+    };
+    results.forEach(r => {
+      if (r.rank === null) { rankDistribution.not_found++; }
+      else if (r.rank === 1) { rankDistribution["1"]++; }
+      else if (r.rank <= 3) { rankDistribution["2-3"]++; }
+      else if (r.rank <= 5) { rankDistribution["4-5"]++; }
+      else if (r.rank <= 10) { rankDistribution["6-10"]++; }
+      else if (r.rank <= 20) { rankDistribution["11-20"]++; }
+      else if (r.rank <= 50) { rankDistribution["21-50"]++; }
+      else if (r.rank <= MAX_RANK_TO_CHECK) { rankDistribution["51-100"]++; }
+      else { rankDistribution.not_found++; } // Treat ranks > MAX_RANK_TO_CHECK as not found for distribution
+    });
 
     Logger.info(`
 --- Evaluation Complete ---
-Total Samples Attempted: ${NUM_SAMPLES}
-Total Samples Evaluated: ${results.length}
-Mean Reciprocal Rank (MRR): ${mrr.toFixed(4)}
-Success@3: ${(successAt3 * 100).toFixed(2)}%
-Success Rate (found within Top ${MAX_RANK_TO_CHECK}): ${(successRate * 100).toFixed(2)}%
-`)
+Strategy: ${CURRENT_STRATEGY}
+Total Samples Target: ${NUM_SAMPLES}
+Total Samples Processed: ${evaluatedSamples}
+Total Samples Successfully Evaluated (results collected): ${numEvaluated}
+Mean Reciprocal Rank (MRR based on evaluated): ${mrr.toFixed(4)}
+Mean Rank (found documents only): ${meanRank.toFixed(2)}
+Median Rank (found documents only): ${medianRank.toFixed(2)}
+Success@3 (based on evaluated): ${(successAt3 * 100).toFixed(2)}%
+Success@5 (based on evaluated): ${(successAt5 * 100).toFixed(2)}%
+Success@10 (based on evaluated): ${(successAt10 * 100).toFixed(2)}%
+Success@${MAX_RANK_TO_CHECK} (based on evaluated): ${(successRate * 100).toFixed(2)}%
 
-    // Schema-specific metrics
+Rank Distribution:
+  Rank 1: ${rankDistribution["1"]} docs (${((rankDistribution["1"] / numEvaluated) * 100).toFixed(2)}%)
+  Rank 2-3: ${rankDistribution["2-3"]} docs (${((rankDistribution["2-3"] / numEvaluated) * 100).toFixed(2)}%)
+  Rank 4-5: ${rankDistribution["4-5"]} docs (${((rankDistribution["4-5"] / numEvaluated) * 100).toFixed(2)}%)
+  Rank 6-10: ${rankDistribution["6-10"]} docs (${((rankDistribution["6-10"] / numEvaluated) * 100).toFixed(2)}%)
+  Rank 11-20: ${rankDistribution["11-20"]} docs (${((rankDistribution["11-20"] / numEvaluated) * 100).toFixed(2)}%)
+  Rank 21-50: ${rankDistribution["21-50"]} docs (${((rankDistribution["21-50"] / numEvaluated) * 100).toFixed(2)}%)
+  Rank 51-100: ${rankDistribution["51-100"]} docs (${((rankDistribution["51-100"] / numEvaluated) * 100).toFixed(2)}%)
+  Not Found (or >${MAX_RANK_TO_CHECK}): ${rankDistribution.not_found} docs (${((rankDistribution.not_found / numEvaluated) * 100).toFixed(2)}%)
+`)
+    // Calculate metrics by schema
     const metricsBySchema: Record<
       string,
-      { mrr: number; successAt3: number; successRate: number; count: number }
+      { mrrSum: number; ranks: number[]; successAt3Count: number; successAt5Count: number; successAt10Count: number; successRateCount: number; count: number }
     > = {}
     results.forEach((r) => {
-      const schema = r.schema
+      const schema = r.schema || 'unknown'; // Handle potential missing schema
       if (!metricsBySchema[schema]) {
-        metricsBySchema[schema] = {
-          mrr: 0,
-          successAt3: 0,
-          successRate: 0,
-          count: 0,
-        }
+        metricsBySchema[schema] = { mrrSum: 0, ranks: [], successAt3Count: 0, successAt5Count: 0, successAt10Count: 0, successRateCount: 0, count: 0 }
       }
-      metricsBySchema[schema].mrr += r.rank ? 1 / r.rank : 0
-      metricsBySchema[schema].successAt3 += r.rank && r.rank <= 3 ? 1 : 0
-      metricsBySchema[schema].successRate +=
-        r.rank && r.rank <= MAX_RANK_TO_CHECK ? 1 : 0
+      metricsBySchema[schema].mrrSum += r.rank ? 1 / r.rank : 0
+      if (r.rank !== null) {
+        metricsBySchema[schema].ranks.push(r.rank);
+        if (r.rank <= 3) metricsBySchema[schema].successAt3Count++;
+        if (r.rank <= 5) metricsBySchema[schema].successAt5Count++;
+        if (r.rank <= 10) metricsBySchema[schema].successAt10Count++;
+        if (r.rank <= MAX_RANK_TO_CHECK) metricsBySchema[schema].successRateCount++;
+      }
       metricsBySchema[schema].count += 1
     })
+
+    Logger.info(`--- Metrics by Schema ---`)
     Object.entries(metricsBySchema).forEach(([schema, metrics]) => {
-      Logger.info(`Schema: ${schema}`)
-      Logger.info(`  Samples: ${metrics.count}`)
-      Logger.info(`  MRR: ${(metrics.mrr / metrics.count).toFixed(4)}`)
-      Logger.info(
-        `  Success@3: ${((metrics.successAt3 / metrics.count) * 100).toFixed(2)}%`,
-      )
-      Logger.info(
-        `  Success Rate: ${((metrics.successRate / metrics.count) * 100).toFixed(2)}%`,
-      )
+        if (metrics.count > 0) {
+            const meanSchemaRank = metrics.ranks.length > 0 ? metrics.ranks.reduce((sum, rank) => sum + rank, 0) / metrics.ranks.length : 0;
+            let medianSchemaRank = 0;
+            if (metrics.ranks.length > 0) {
+              const sortedRanks = [...metrics.ranks].sort((a, b) => a - b);
+              const midIndex = Math.floor(sortedRanks.length / 2);
+              medianSchemaRank = sortedRanks.length % 2 === 0 ? (sortedRanks[midIndex - 1] + sortedRanks[midIndex]) / 2 : sortedRanks[midIndex];
+            }
+
+            Logger.info(`Schema: ${schema}`)
+            Logger.info(`  Samples: ${metrics.count}`)
+            Logger.info(`  MRR: ${(metrics.mrrSum / metrics.count).toFixed(4)}`)
+            Logger.info(`  Mean Rank (found docs): ${metrics.ranks.length > 0 ? meanSchemaRank.toFixed(2) : "N/A"}`)
+            Logger.info(`  Median Rank (found docs): ${metrics.ranks.length > 0 ? medianSchemaRank.toFixed(2) : "N/A"}`)
+            Logger.info(`  Found Rate (@${MAX_RANK_TO_CHECK}): ${((metrics.successRateCount / metrics.count) * 100).toFixed(2)}%`)
+            Logger.info(`  Success@3: ${((metrics.successAt3Count / metrics.count) * 100).toFixed(2)}%`)
+            Logger.info(`  Success@5: ${((metrics.successAt5Count / metrics.count) * 100).toFixed(2)}%`)
+            Logger.info(`  Success@10: ${((metrics.successAt10Count / metrics.count) * 100).toFixed(2)}%`)
+
+            // Generate and display performance summary
+            const summary = generatePerformanceSummary(schema, metrics, CURRENT_STRATEGY); // Use existing summary function
+            Logger.info("\n  Performance Summary:");
+            summary.split("\n").forEach(line => { Logger.info(`  ${line}`); });
+            Logger.info("");
+        } else {
+             Logger.info(`Schema: ${schema} - No successful evaluations.`)
+        }
     })
 
-    // Save results to file
+    // Save the overall performance analysis to a separate file
     try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-      // Include strategy in the filename
-      const timestampedFilename = `evaluation_results_${CURRENT_STRATEGY}_${timestamp}.json`
-      fs.writeFileSync(timestampedFilename, JSON.stringify(results, null, 2))
-      Logger.info(`Detailed results saved to ${timestampedFilename}`)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-      // Save poor rankings
-      const poorRankings = results.filter((r) => r.rank === null || r.rank > 10)
+      // Save detailed evaluation results
+      const resultsFilename = path.join( OUTPUT_DIR, `evaluation_results_${CURRENT_STRATEGY}_${timestamp}.json`);
+      fs.writeFileSync(resultsFilename, JSON.stringify(results, null, 2));
+      Logger.info(`Detailed evaluation results saved to ${resultsFilename}`);
+
+      // Save poor rankings (can still be useful even with analysis report)
+      const poorRankings = results.filter((r) => r.rank === null || (r.rank && r.rank > POOR_RANK_THRESHOLD)); // Use POOR_RANK_THRESHOLD
       if (poorRankings.length > 0) {
-        // Include strategy in the poor rankings filename
-        fs.writeFileSync(
-          `poor_rankings_${CURRENT_STRATEGY}_${timestamp}.json`,
-          JSON.stringify(poorRankings, null, 2),
-        )
-        Logger.info(
-          `Poor rankings saved to poor_rankings_${CURRENT_STRATEGY}_${timestamp}.json`,
-        )
+        const poorRankingsFilename = path.join( OUTPUT_DIR, `poor_rankings_${CURRENT_STRATEGY}_${timestamp}.json`);
+        fs.writeFileSync( poorRankingsFilename, JSON.stringify(poorRankings, null, 2));
+        Logger.info( `Poor rankings (rank > ${POOR_RANK_THRESHOLD} or null) saved to ${poorRankingsFilename}`);
+      } else {
+        Logger.info(`No poor rankings (rank > ${POOR_RANK_THRESHOLD} or null) found.`);
       }
+
+      // Save performance summary text file
+      const summaryFilename = path.join( OUTPUT_DIR, `performance_summary_${CURRENT_STRATEGY}_${timestamp}.txt`);
+      let summaryContent = generateSummaryReportContent(results, metricsBySchema, rankDistribution, meanRank, medianRank, mrr, successAt3, successAt5, successAt10, successRate, numEvaluated); // Use helper
+      fs.writeFileSync(summaryFilename, summaryContent);
+      Logger.info(`Performance summary text report saved to ${summaryFilename}`);
+
     } catch (error) {
-      Logger.error({ error }, "Failed to save evaluation results to file.")
+      Logger.error({ error }, "Failed to save result/summary files.");
     }
+
+    // --- Perform Failure Analysis if Debugging Enabled ---
+    performFailureAnalysis(collectedDebugData, OUTPUT_DIR);
+
+
   } else {
-    Logger.warn("No samples were successfully processed.")
+    Logger.warn("No samples were successfully processed and evaluated.")
   }
 }
+
+/**
+ * Generate the text content for the performance summary report file.
+ */
+function generateSummaryReportContent(
+    results: SampleResult[],
+    metricsBySchema: Record<string, any>,
+    rankDistribution: Record<string, number>,
+    meanRank: number, medianRank: number, mrr: number,
+    successAt3: number, successAt5: number, successAt10: number, successRate: number,
+    numEvaluated: number
+): string {
+    let content = `
+===========================================
+SEARCH PERFORMANCE SUMMARY (${CURRENT_STRATEGY})
+===========================================
+Generated: ${new Date().toISOString()}
+Strategy: ${CURRENT_STRATEGY}
+Total Samples Evaluated: ${numEvaluated}
+
+OVERALL METRICS:
+- Mean Reciprocal Rank (MRR): ${mrr.toFixed(4)}
+- Mean Rank (found docs only): ${meanRank.toFixed(2)}
+- Median Rank (found docs only): ${medianRank.toFixed(2)}
+- Success@3: ${(successAt3 * 100).toFixed(2)}%
+- Success@5: ${(successAt5 * 100).toFixed(2)}%
+- Success@10: ${(successAt10 * 100).toFixed(2)}%
+- Success@${MAX_RANK_TO_CHECK}: ${(successRate * 100).toFixed(2)}%
+
+DISTRIBUTION OF RANKS:
+- Rank 1: ${rankDistribution["1"]} docs (${((rankDistribution["1"] / numEvaluated) * 100).toFixed(2)}%)
+- Rank 2-3: ${rankDistribution["2-3"]} docs (${((rankDistribution["2-3"] / numEvaluated) * 100).toFixed(2)}%)
+- Rank 4-5: ${rankDistribution["4-5"]} docs (${((rankDistribution["4-5"] / numEvaluated) * 100).toFixed(2)}%)
+- Rank 6-10: ${rankDistribution["6-10"]} docs (${((rankDistribution["6-10"] / numEvaluated) * 100).toFixed(2)}%)
+- Rank 11-20: ${rankDistribution["11-20"]} docs (${((rankDistribution["11-20"] / numEvaluated) * 100).toFixed(2)}%)
+- Rank 21-50: ${rankDistribution["21-50"]} docs (${((rankDistribution["21-50"] / numEvaluated) * 100).toFixed(2)}%)
+- Rank 51-100: ${rankDistribution["51-100"]} docs (${((rankDistribution["51-100"] / numEvaluated) * 100).toFixed(2)}%)
+- Not Found (or >${MAX_RANK_TO_CHECK}): ${rankDistribution.not_found} docs (${((rankDistribution.not_found / numEvaluated) * 100).toFixed(2)}%)
+
+===========================================
+PERFORMANCE BY SCHEMA
+===========================================
+
+`;
+      // Add schema-specific summaries from logs
+      Object.entries(metricsBySchema).forEach(([schema, metrics]) => {
+        if (metrics.count > 0) {
+          const meanSchemaRank = metrics.ranks.length > 0 ? metrics.ranks.reduce((sum: number, rank: number) => sum + rank, 0) / metrics.ranks.length : 0;
+          const schemaMrr = metrics.mrrSum / metrics.count;
+          const schemaSuccessRate = metrics.successRateCount / metrics.count;
+          const schemaSuccessAt3 = metrics.successAt3Count / metrics.count;
+          const schemaSuccessAt5 = metrics.successAt5Count / metrics.count;
+          const schemaSuccessAt10 = metrics.successAt10Count / metrics.count;
+
+          content += `
+===== ${schema.toUpperCase()} =====
+Samples: ${metrics.count}
+MRR: ${schemaMrr.toFixed(4)}
+Mean Rank (found docs): ${metrics.ranks.length > 0 ? meanSchemaRank.toFixed(2) : "N/A"}
+Found Rate (@${MAX_RANK_TO_CHECK}): ${((schemaSuccessRate) * 100).toFixed(2)}%
+Success@3: ${((schemaSuccessAt3) * 100).toFixed(2)}%
+Success@5: ${((schemaSuccessAt5) * 100).toFixed(2)}%
+Success@10: ${((schemaSuccessAt10) * 100).toFixed(2)}%
+
+${generatePerformanceSummary(schema, metrics, CURRENT_STRATEGY)}
+
+`;
+        }
+      });
+
+      content += `
+===========================================
+END OF REPORT
+===========================================
+`;
+    return content;
+}
+
+
+/**
+ * Generate a human-readable summary of schema performance based on metrics
+ */
+function generatePerformanceSummary(
+  schema: string,
+  metrics: {
+    mrrSum: number;
+    ranks: number[];
+    successAt3Count: number;
+    successAt5Count: number;
+    successAt10Count: number;
+    successRateCount: number; // Represents success within MAX_RANK_TO_CHECK
+    count: number;
+  },
+  strategy: EvaluationStrategy
+): string {
+  if (metrics.count === 0) return `${schema}: No data available.`;
+
+  const mrr = metrics.mrrSum / metrics.count;
+  const successAt3Rate = metrics.successAt3Count / metrics.count;
+  const successAt10Rate = metrics.successAt10Count / metrics.count;
+  const foundRate = metrics.successRateCount / metrics.count; // Use successRateCount for found rate within threshold
+
+  // Calculate mean rank (if documents were found within threshold)
+  const meanRank = metrics.ranks.length > 0
+    ? metrics.ranks.reduce((sum, rank) => sum + rank, 0) / metrics.ranks.length
+    : 0;
+
+  // Performance classification thresholds (Keep as before)
+  const MRR_EXCELLENT = 0.7; const MRR_GOOD = 0.5; const MRR_FAIR = 0.3; const MRR_POOR = 0.1;
+  const SUCCESS_AT_3_EXCELLENT = 0.8; const SUCCESS_AT_3_GOOD = 0.6; const SUCCESS_AT_3_FAIR = 0.4; const SUCCESS_AT_3_POOR = 0.2;
+  const FOUND_RATE_GOOD = 0.9; const FOUND_RATE_FAIR = 0.7; const FOUND_RATE_POOR = 0.5;
+
+
+  // Summary components
+  let overallAssessment = "";
+  let insights = [];
+  let suggestions = [];
+
+  // Assess overall performance based on MRR
+    if (mrr >= MRR_EXCELLENT) overallAssessment = `${schema} performs excellently with strategy ${strategy}.`;
+    else if (mrr >= MRR_GOOD) overallAssessment = `${schema} performs well with strategy ${strategy}.`;
+    else if (mrr >= MRR_FAIR) overallAssessment = `${schema} performs adequately with strategy ${strategy}.`;
+    else if (mrr >= MRR_POOR) overallAssessment = `${schema} performs poorly with strategy ${strategy}.`;
+    else overallAssessment = `${schema} performs very poorly with strategy ${strategy}.`;
+
+  // Generate specific insights based on metrics
+  if (foundRate < FOUND_RATE_FAIR) {
+    insights.push(`Many (${((1 - foundRate) * 100).toFixed(0)}%) couldn't be found within top ${MAX_RANK_TO_CHECK}.`);
+    suggestions.push("Consider indexing improvements or query expansion.");
+  }
+
+  if (foundRate >= FOUND_RATE_GOOD && successAt3Rate < SUCCESS_AT_3_FAIR) {
+    insights.push(`Docs often found but ranked low (mean rank: ${meanRank > 0 ? meanRank.toFixed(1) : 'N/A'}).`);
+    suggestions.push("Review ranking configuration/boost factors.");
+  }
+
+  if (successAt3Rate >= SUCCESS_AT_3_GOOD) {
+    insights.push(`${((successAt3Rate) * 100).toFixed(0)}% appear in top 3, indicating good relevance.`);
+  }
+
+  if (successAt3Rate < SUCCESS_AT_3_POOR && successAt10Rate >= SUCCESS_AT_3_FAIR) {
+    insights.push(`Docs frequently appear in ranks 4-10 rather than top 3.`);
+    suggestions.push("Fine-tune ranking to prioritize relevant results higher.");
+  }
+
+  // Schema-specific insights based on strategy (Keep as before)
+   switch (schema) {
+    case fileSchema:
+      if (strategy === EvaluationStrategy.ExactTitle && mrr < MRR_FAIR) {
+        insights.push("File exact title search underperforming.");
+        suggestions.push("Check title standardization/tokenization.");
+      }
+      break;
+    case mailSchema:
+      if (strategy === EvaluationStrategy.ExactTitle && mrr < MRR_FAIR) {
+        insights.push("Email subject search underperforming.");
+        suggestions.push("Review subject indexing/tokenization.");
+      }
+      break;
+    case mailAttachmentSchema:
+       if (strategy === EvaluationStrategy.ExactTitle && mrr < MRR_FAIR) {
+         insights.push("Attachment filename search underperforming.");
+         suggestions.push("Check filename processing/indexing (special chars?).");
+       }
+      break;
+     case userSchema:
+       if (strategy === EvaluationStrategy.ExactTitle && mrr < MRR_EXCELLENT) {
+         insights.push("User name search should be highly precise.");
+         suggestions.push("Ensure names properly indexed with high boost.");
+       }
+       break;
+     case eventSchema:
+       if (strategy === EvaluationStrategy.ExactTitle && mrr < MRR_GOOD) {
+         insights.push("Event name search underperforming.");
+         suggestions.push("Review event name indexing/boost factors.");
+       }
+       break;
+   }
+
+  // Format the summary
+  let summary = overallAssessment;
+  if (insights.length > 0) summary += "\nInsights:\n" + insights.map(i => `- ${i}`).join("\n");
+  if (suggestions.length > 0) summary += "\nSuggestions:\n" + suggestions.map(s => `- ${s}`).join("\n");
+
+  return summary;
+}
+
 
 evaluateSearch().catch((error) => {
   Logger.error({ error }, "Unhandled error during search evaluation")
