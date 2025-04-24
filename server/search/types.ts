@@ -314,7 +314,7 @@ export const AttachmentSchema = z.object({
 export const MailSchema = z.object({
   docId: z.string(),
   threadId: z.string(),
-  subject: z.string().default(""),
+  subject: z.string().default(""), // Default to empty string to avoid zod errors when subject is missing
   chunks: z.array(z.string()),
   timestamp: z.number(),
   app: z.nativeEnum(Apps),
