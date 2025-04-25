@@ -255,6 +255,7 @@ export enum SearchModes {
   NativeRank = "default_native",
   BM25 = "default_bm25",
   AI = "default_ai",
+  Random = "default_random",
 }
 
 type YqlProfile = {
@@ -478,6 +479,7 @@ type VespaQueryConfig = {
   rankProfile: SearchModes
   requestDebug: boolean
   span: Span | null
+  maxHits: number
 }
 
 export const searchVespa = async (
@@ -495,6 +497,7 @@ export const searchVespa = async (
     rankProfile = SearchModes.NativeRank,
     requestDebug = false,
     span = null,
+    maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -518,6 +521,7 @@ export const searchVespa = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
+    maxHits,
     hits: limit,
     ...(offset
       ? {

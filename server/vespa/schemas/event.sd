@@ -302,6 +302,20 @@ schema event {
           nativeRank(attendeesNames)
         }
     }
+    rank-profile default_random inherits initial {
+        first-phase {
+            expression: random.match
+        }
+
+        match-features {
+          combined_nativeRank
+          vector_score
+          nativeRank(name)
+          nativeRank(description)
+          nativeRank(attachmentFilenames)
+          nativeRank(attendeesNames)
+        }
+    }
     
     document-summary default {
         summary description {

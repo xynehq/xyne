@@ -247,6 +247,22 @@ schema chat_message {
     }
   }
 
+  rank-profile default_random inherits initial {
+
+    first-phase {
+        expression: random.match
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(text)
+      nativeRank(username)
+      nativeRank(name)
+    }
+  }
+
  rank-profile unranked inherits default {
     # Simple constant expression - returns same score for all documents
     first-phase {

@@ -223,6 +223,21 @@ schema mail_attachment {
     }
   }
 
+  rank-profile default_random inherits initial {
+    first-phase {
+      expression: random.match
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(filename)
+      nativeRank(chunks)
+      chunk_scores
+    }
+  }
+
   document-summary default {
     summary filename {}
     summary chunks_summary {
