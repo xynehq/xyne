@@ -32,6 +32,12 @@ import {
   type VespaChatMessageSearch,
   chatMessageSchema,
   ChatMessageResponseSchema,
+  chatContainerSchema,
+  type VespaChatContainerSearch,
+  whatsappContactSchema,
+  type VespaWhatsappContactSearch,
+  ChatContainerResponseSchema,
+  WhatsappContactResponseSchema,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -219,10 +225,36 @@ export const VespaSearchResponseToSearchResult = (
             fields.relevance = child.relevance
             fields.attachmentIds = []
             fields.mentions = []
+            fields.name = "NoName"
+            fields.image = "NoImage"
             if (!fields.teamId) {
               fields.teamId = ""
             }
             return ChatMessageResponseSchema.parse(fields)
+          } else if (
+            (child.fields as VespaChatContainerSearch).sddocname ===
+            chatContainerSchema
+          ) {
+            const fields = child.fields as VespaChatContainerSearch & {
+              type?: string
+            }
+            fields.type = chatMessageSchema
+            fields.relevance = child.relevance
+            fields.name = "NoName"
+            fields.image = "NoImage"
+            return ChatContainerResponseSchema.parse(fields)
+          } else if (
+            (child.fields as VespaWhatsappContactSearch).sddocname ===
+            whatsappContactSchema
+          ) {
+            const fields = child.fields as VespaWhatsappContactSearch & {
+              type?: string
+            }
+            fields.type = whatsappContactSchema
+            fields.relevance = child.relevance
+            fields.name = "NoName"
+            fields.image = "NoImage"
+            return WhatsappContactResponseSchema.parse(fields)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,

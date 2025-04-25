@@ -21,6 +21,8 @@ export const chatAttachment = "chat_attachment"
 // previous queries
 export const userQuerySchema = "user_query"
 
+export const whatsappContactSchema = "whatsapp_contact"
+
 export type VespaSchema =
   | typeof fileSchema
   | typeof userSchema
@@ -71,6 +73,7 @@ const Schemas = z.union([
   z.literal(chatTeamSchema),
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
+  z.literal(whatsappContactSchema),
 ])
 
 export enum MailEntity {
@@ -529,17 +532,46 @@ export const VespaChatContainerSchema = z.object({
   description: z.string(),
 
   count: z.number().int(),
+  image: z.string(),
 })
+
+export const VespaChatContainerGetSchema = VespaChatContainerSchema.merge(
+  defaultVespaFieldsSchema,
+)
+
+export const VespaWhatsappContactSchema = z.object({
+  docId: z.string(),
+  phoneNumber: z.string(),
+  name: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: z.nativeEnum(WhatsAppEntity),
+  permissions: z.array(z.string()),
+  image: z.string(),
+})
+
+export const VespaWhatsappContactGetSchema = VespaWhatsappContactSchema.merge(
+  defaultVespaFieldsSchema,
+)
 
 // Schema for search results that includes Vespa fields
 export const VespaChatContainerSearchSchema = VespaChatContainerSchema.extend({
   sddocname: z.literal(chatContainerSchema),
 }).merge(defaultVespaFieldsSchema)
 
+export const VespaWhatsappContactSearchSchema =
+  VespaWhatsappContactSchema.extend({
+    sddocname: z.literal(whatsappContactSchema),
+  }).merge(defaultVespaFieldsSchema)
+
 export const ChatContainerMatchFeaturesSchema = z.object({
   "bm25(name)": z.number().optional(),
   "bm25(topic)": z.number().optional(),
   "bm25(description)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+})
+
+export const WhatsappContactMatchFeaturesSchema = z.object({
+  "bm25(name)": z.number().optional(),
   "closeness(field, chunk_embeddings)": z.number().optional(),
 })
 
@@ -574,6 +606,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatContainerSearchSchema,
   VespaChatUserSearchSchema,
   VespaChatMessageSearchSchema,
+  VespaWhatsappContactSearchSchema,
 ])
 
 const SearchMatchFeaturesSchema = z.union([
@@ -583,6 +616,8 @@ const SearchMatchFeaturesSchema = z.union([
   EventMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
+  ChatContainerMatchFeaturesSchema,
+  WhatsappContactMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
@@ -886,6 +921,9 @@ export type VespaChatUserSearch = z.infer<typeof VespaChatUserSearchSchema>
 export type VespaAutocompleteChatContainer = z.infer<
   typeof VespaAutocompleteChatContainerSchema
 >
+export type VespaWhatsappContactSearch = z.infer<
+  typeof VespaWhatsappContactSearchSchema
+>
 
 export const MailResponseSchema = VespaMailGetSchema.pick({
   docId: true,
@@ -935,8 +973,8 @@ export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
   entity: true,
   createdAt: true,
   threadId: true,
-  image: true,
-  name: true,
+  // image: true,
+  // name: true,
   domain: true,
   username: true,
   attachmentIds: true,
@@ -952,8 +990,50 @@ export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
+export const ChatContainerResponseSchema = VespaChatContainerGetSchema.pick({
+  docId: true,
+  name: true,
+  creator: true,
+  app: true,
+  isPrivate: true,
+  isArchived: true,
+  isGeneral: true,
+  isIm: true,
+  isMpim: true,
+  createdAt: true,
+  updatedAt: true,
+  topic: true,
+  description: true,
+  count: true,
+  image: true,
+})
+  .strip()
+  .extend({
+    type: z.literal("chat_container"),
+    chunks_summary: z.array(z.string()).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+
+export const WhatsappContactResponseSchema = VespaWhatsappContactGetSchema.pick(
+  {
+    docId: true,
+    name: true,
+    app: true,
+    image: true,
+    entity: true,
+    phoneNumber: true,
+  },
+)
+  .strip()
+  .extend({
+    type: z.literal("whatsapp_contact"),
+    chunks_summary: z.array(z.string()).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+
 export const whatsappMessageSchema = "whatsapp_message"
-export const whatsappContactSchema = "whatsapp_contact"
 export const whatsappConversationSchema = "whatsapp_conversation"
 export const whatsappGroupSchema = "whatsapp_group"
 

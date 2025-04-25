@@ -296,6 +296,46 @@ export const SearchResult = ({
         )}
       </div>
     )
+  } else if (result.type === "whatsapp_contact") {
+    content = (
+      <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
+        <div className="flex items-center justify-start">
+          <a
+            // href={`https://contacts.google.com/${result.email}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center text-[#2067F5]"
+          >
+            {/* TODO: if photoLink doesn't exist then show icon */}
+            <img
+              referrerPolicy="no-referrer"
+              className="mr-2 w-[16px] h-[16px] rounded-full"
+              src={result.image}
+            ></img>
+            {result.name || result.phoneNumber}
+          </a>
+        </div>
+        {/* Debug Info Display (Features Only) */}
+        {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
+          <details className="mt-2 ml-[44px] text-xs">
+            {/* <summary className="text-gray-500 cursor-pointer">
+              {`Debug Info: ${index} : ${result.relevance}`}
+            </summary> */}
+            <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-60">
+              {JSON.stringify(
+                {
+                  matchfeatures: result.matchfeatures,
+                  rankfeatures: result.rankfeatures,
+                  // relevance: result.relevance,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        )}
+      </div>
+    )
   }
   return content
 }

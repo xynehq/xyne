@@ -15,7 +15,9 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
-  WhatsAppEntity
+  WhatsAppEntity,
+  ChatContainerResponseSchema,
+  WhatsappContactResponseSchema
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -262,6 +264,8 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
+  ChatContainerResponseSchema,
+  WhatsappContactResponseSchema
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
