@@ -255,6 +255,21 @@ schema mail {
     }
   }
 
+  rank-profile default_random inherits initial {
+    first-phase {
+        expression: random.match
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(subject)
+      nativeRank(chunks)
+      chunk_scores
+    }
+  }
+
   document-summary default {
     summary subject {}
     summary chunks_summary {
