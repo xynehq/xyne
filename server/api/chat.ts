@@ -1421,6 +1421,7 @@ export const MessageApi = async (c: Context) => {
               costArr.push(chunk.cost)
             }
           }
+
           conversationSpan.setAttribute("answer_found", parsed.answer)
           conversationSpan.setAttribute("answer", answer)
           conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
@@ -1432,6 +1433,7 @@ export const MessageApi = async (c: Context) => {
                 `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
               )
               message = parsed.queryRewrite
+              Logger.info(`Rewritten query: ${message}`)
               ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             } else {
               Logger.info(
