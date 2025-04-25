@@ -405,9 +405,9 @@ const insertWhatsAppMessage = async (
       teamId: conversationId,
       channelId: conversationId,
       text: messageText,
-      name,
+      name: name || "NoName",
       username: phoneNumber,
-      image: pictureUrl || "",
+      image: pictureUrl || "NoImage",
       userId: message.key.participant || phoneNumber,
       app: Apps.WhatsApp,
       entity: WhatsAppEntity.Message,
@@ -436,11 +436,11 @@ const insertWhatsAppContact = async (
     {
       docId: contact.id,
       phoneNumber: contact.phoneNumber,
-      name: contact.name,
+      name: contact.name || contact.phoneNumber || "NoName",
       app: Apps.WhatsApp,
       entity: WhatsAppEntity.Contact,
       permissions,
-      image: contact.image || "",
+      image: contact.image || "NoImage",
     } as VespaWhatsAppContact,
     whatsappContactSchema,
   )
@@ -457,14 +457,16 @@ const insertWhatsAppConversation = async (
   }
 
   const now = new Date().getTime()
+  const name = getDisplayName(store, conversation.id)
+
   return insert(
     {
       docId: conversation.id,
-      name: phoneNumber, // Using phone number as name for direct messages
+      name: name || phoneNumber || "NoName",
       teamId: conversation.id, // Using conversation ID as team ID
       creator: phoneNumber, // Using phone number as creator
       app: Apps.WhatsApp,
-      isIm: true, // This is a direct message
+      isIm: true, // This is a direct message, Signifies this is a Convo, not a Grp
       isMpim: false,
       createdAt: new Date(conversation.lastMessageTimestamp).getTime(),
       updatedAt: now,
@@ -474,7 +476,7 @@ const insertWhatsAppConversation = async (
       isArchived: false,
       isGeneral: false,
       topic: `Chat with ${phoneNumber}`,
-      image: conversation.image || "",
+      image: conversation.image || "NoImage",
     } as VespaChatContainer,
     chatContainerSchema,
   )
@@ -489,18 +491,17 @@ const insertWhatsAppGroup = async (
     permissions = permissions.concat(email)
   }
 
-  // todo add fields like group members/count, group admin, past participant, group description
   const now = Date.now()
   return insert(
     {
       docId: group.id,
-      name: group.subject,
+      name: group.subject || "NoName",
       teamId: group.id,
       creator: group.owner || "",
       app: Apps.WhatsApp,
-      isIm: false,
+      isIm: false, // Signifies this is a Grp, not a Convo
       isMpim: true,
-      createdAt: parseInt(String(group.creation), 10),
+      createdAt: new Date(parseInt(String(group.creation), 10)).getTime(),
       updatedAt: now,
       description: group.desc || "",
       count: group.participants.length,
@@ -508,7 +509,7 @@ const insertWhatsAppGroup = async (
       isArchived: false,
       isGeneral: false,
       topic: group.desc || "",
-      image: group.image,
+      image: group.image || "NoImage",
     } as VespaChatContainer,
     chatContainerSchema,
   )
@@ -1170,7 +1171,6 @@ const startIngestion = async (
     try {
       const groupsData = await sock.groupFetchAllParticipating()
 
-      Logger.info(`Retrieved groups data: ${Object.keys(groupsData).length}`)
       const groups = []
 
       for (const group of Object.values(groupsData)) {
@@ -1185,13 +1185,12 @@ const startIngestion = async (
         groups.push({
           id: group.id,
           subject: group.subject,
-          creation: parseInt(String(group.creation), 10),
+          creation: group.creation,
           owner: group.owner,
           desc: group.desc,
           participants: group.participants.map((p: any) => ({
             id: p.id,
             admin: p.admin,
-            isSuperAdmin: p.isSuperAdmin,
           })),
           image: pictureUrl!,
         })
