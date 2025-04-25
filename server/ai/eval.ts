@@ -167,7 +167,8 @@ const Eval = async (
     console.log("Expected:", expected);
     
     try {
-      // Call OpenAI with our custom evaluation prompt
+      // Call OpenAI with the AutoEvals factuality prompt
+      // Source: https://github.com/braintrustdata/autoevals/blob/main/templates/factuality.yaml
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
