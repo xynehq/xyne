@@ -83,12 +83,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const navigate = useNavigate({ from: "/search" })
   // TODO: debug the react warning
   // Cannot update a component (`MatchesInner`)
-  if (!search.query) {
-    navigate({
-      to: "/",
-    })
-  }
-
   const QueryTyped = useRouterState({
     select: (s) => s.location.state.isQueryTyped,
   })
@@ -96,6 +90,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [query, setQuery] = useState(decodeURIComponent(search.query || "")) // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
+  const [activeQuery, setActiveQuery] = useState(
+    decodeURIComponent(search.query || ""),
+  ) // For confirmed searches
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter>({
     lastUpdated: (search.lastUpdated as LastUpdated) || "anytime",
@@ -236,7 +233,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }
 
   const handleSearch = async (newOffset = offset) => {
-    if (!query) return
+    if (!activeQuery) return
     setAutocompleteResults([])
     try {
       // TODO: figure out when lastUpdated changes and only
@@ -245,7 +242,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
       let params: any = {
         page: page,
         offset: newOffset,
-        query: encodeURIComponent(query),
+        query: encodeURIComponent(activeQuery),
         groupCount,
         lastUpdated: filter.lastUpdated || "anytime",
         isQueryTyped: QueryTyped,
@@ -270,7 +267,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         to: "/search",
         search: (prev) => ({
           ...prev,
-          query: encodeURIComponent(query),
+          query: encodeURIComponent(activeQuery),
           page,
           offset: newOffset,
           app: params.app,
@@ -407,6 +404,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           handleSearch={handleSearch}
           hasSearched={true}
           handleAnswer={handleAnswer}
+          setActiveQuery={setActiveQuery}
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
             setFilter(updatedFilter)
