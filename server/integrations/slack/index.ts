@@ -180,7 +180,7 @@ const safeGetTeamInfo = async (client: WebClient): Promise<Team> => {
   return retryOnFatal(() => getTeamInfo(client), 3, 1000)
 }
 
-const safeConversationHistory = async (
+export const safeConversationHistory = async (
   client: WebClient,
   channelId: string,
   cursor: string | undefined,
@@ -496,7 +496,7 @@ const insertConversations = async (
   }
 }
 
-async function getConversationUsers(
+export async function getConversationUsers(
   userId: string,
   client: WebClient,
   conversation: Channel,
@@ -559,7 +559,7 @@ const getTeam = async (
   return message.team
 }
 
-const insertChatMessage = async (
+export const insertChatMessage = async (
   client: WebClient,
   message: SlackMessage & { mentions?: string[] },
   channelId: string,
@@ -602,7 +602,7 @@ const insertChatMessage = async (
   )
 }
 
-const insertTeam = async (team: Team, own: boolean) => {
+export const insertTeam = async (team: Team, own: boolean) => {
   return insertWithRetry(
     {
       docId: team.id!,
