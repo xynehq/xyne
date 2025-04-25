@@ -49,5 +49,22 @@ export const deleteChatTracesByChatExternalId = async (
   tx: TxnOrClient,
   chatExternalId: string,
 ): Promise<void> => {
-  await tx.delete(chatTrace).where(eq(chatTrace.chatExternalId, chatExternalId));
-};
+  await tx.delete(chatTrace).where(eq(chatTrace.chatExternalId, chatExternalId))
+}
+
+export async function updateChatTrace(
+  chatExternalId: string,
+  messageExternalId: string,
+  traceJson: string,
+): Promise<InferSelectModel<typeof chatTrace> | undefined> {
+  const [updatedTrace] = await db
+    .update(chatTrace)
+    .set({ traceJson })
+    .where(
+      eq(chatTrace.chatExternalId, chatExternalId) &&
+        eq(chatTrace.messageExternalId, messageExternalId),
+    )
+    .returning()
+
+  return updatedTrace
+}

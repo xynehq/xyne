@@ -686,10 +686,11 @@ export const searchQueryPrompt = (userContext: string): string => {
   return `
       basic user context: ${userContext}
       You are a conversation manager. When a user sends a query, follow these rules:
-    1. Check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context.
-       - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
-       - If not ambiguous, leave the query as is.
-       - do not append the company name or domain to the search query unnecessarily
+    1. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
+      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
+      - If not ambiguous, leave the query as it is.
     2. Determine if the user’s query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
        - "Hello"
@@ -779,11 +780,13 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
   <answer>
       basic user context: ${userContext}
       You are a conversation manager for a retrieval-augmented generation (RAG) pipeline. When a user sends a query, follow these rules:
-    1. please while thinking do not show these steps as they are more hidden and internal. Do not mention the step number, do not explain the structure of your output as user does not need to know that.
+    1. Please while thinking do not show these steps as they are more hidden and internal. Do not mention the step number, do not explain the structure of your output as user does not need to know that.
        do not mention queryRewrite is null. Most important keep thinking short for this step as it's a decison node.
-    2. Check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context.
-       - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
-       - If not ambiguous, leave the query as is.
+    2. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
+      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
+      - If not ambiguous, leave the query as it is.
     3. Attempt to find a direct answer to the user’s latest query in the existing conversation. If the query is a basic conversation starter (e.g., "Hi", "Hello", "Hey", "How are you?", "Good morning"), respond naturally.
       - If it is a regular conversational statement, provide an appropriate response.
       - or a basic calculation like: what is the time in Japan

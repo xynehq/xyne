@@ -225,7 +225,7 @@ const getProviderMap = (): Partial<Record<AIProviders, LLMProvider>> => {
   return providerMap
 }
 
-const getProviderByModel = (modelId: Models): LLMProvider => {
+export const getProviderByModel = (modelId: Models): LLMProvider => {
   const ProviderMap = getProviderMap()
 
   const providerType = ModelToProviderMap[modelId]

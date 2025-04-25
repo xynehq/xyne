@@ -255,6 +255,7 @@ export enum SearchModes {
   NativeRank = "default_native",
   BM25 = "default_bm25",
   AI = "default_ai",
+  Random = "default_random",
 }
 
 type YqlProfile = {
@@ -478,6 +479,7 @@ type VespaQueryConfig = {
   rankProfile: SearchModes
   requestDebug: boolean
   span: Span | null
+  maxHits: number
 }
 
 export const searchVespa = async (
@@ -495,6 +497,7 @@ export const searchVespa = async (
     rankProfile = SearchModes.NativeRank,
     requestDebug = false,
     span = null,
+    maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -518,6 +521,7 @@ export const searchVespa = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
+    maxHits,
     hits: limit,
     ...(offset
       ? {
@@ -571,6 +575,29 @@ export const GetDocument = async (
       cause: error as Error,
       sources: schema,
       message: errMessage,
+    })
+  }
+}
+
+/**
+ * Fetches a single random document from a specific schema.
+ */
+export const GetRandomDocument = async (
+  namespace: string,
+  schema: string,
+  cluster: string,
+): Promise<any | null> => {
+  try {
+    // Directly use the vespa instance imported in this file
+    return await vespa.getRandomDocument(namespace, schema, cluster)
+  } catch (error) {
+    Logger.error(error, `Error fetching random document for schema ${schema}`)
+    // Rethrow or handle as appropriate for this abstraction layer
+    throw new ErrorGettingDocument({
+      docId: `random_from_${schema}`,
+      cause: error as Error,
+      sources: schema,
+      message: `Failed to get random document: ${getErrorMessage(error)}`,
     })
   }
 }
