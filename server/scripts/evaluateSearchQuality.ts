@@ -614,7 +614,7 @@ function performFailureAnalysis(
             info.debugInfo?.topResults?.map(
               (r) => (r.title || "").toLowerCase(), // Safely handle potentially undefined title
             ) || []
-          const queryTokens = info.query.toLowerCase().split(/\\s+/)
+          const queryTokens = info.query.toLowerCase().split(/\s+/)
 
           if (
             topTitles.some((title) =>
@@ -1480,7 +1480,7 @@ async function mainEvaluationRunner() {
 
     // Optional: Add a small delay between runs if needed
     if (i < NUM_RUNS) {
-      await new Promise((resolve) => setTimeout(resolve, DELAY_MS * 5)) // Slightly longer delay between runs
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS)) // Slightly longer delay between runs
     }
   }
 
