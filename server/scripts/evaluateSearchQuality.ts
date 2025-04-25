@@ -1,8 +1,6 @@
 import { searchVespa, SearchModes, GetRandomDocument } from "@/search/vespa"
-import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import type { VespaSearchResult } from "@/search/types"
 import {
   fileSchema,
   mailSchema,
@@ -31,7 +29,8 @@ if (!USER_EMAIL_FOR_SEARCH) {
 
 Logger.info(`Using email for search evaluation: ${USER_EMAIL_FOR_SEARCH}`)
 
-const NUM_SAMPLES = parseInt(process.env.NUM_SAMPLES || "100", 10) // Default to 100
+const NUM_SAMPLES = parseInt(process.env.NUM_SAMPLES || "100", 10) // Default to 100 samples per run
+const NUM_RUNS = parseInt(process.env.EVALUATION_NUM_RUNS || "3", 10) // Default to 3 evaluation runs
 const MAX_RANK_TO_CHECK = parseInt(process.env.MAX_RANK_TO_CHECK || "100", 10) // Default to 100
 const HITS_PER_PAGE = 10
 const VESPA_NAMESPACE = "namespace" // TODO: Replace with your actual Vespa namespace
@@ -94,6 +93,7 @@ interface SampleResult {
   schema: string
   title: string
   rank: number | null
+  query: string // Add query to sample result for analysis
 }
 
 // --- Types for Failure Analysis (Copied from analyzeSearchFailures.ts) ---
@@ -199,7 +199,7 @@ function generateSearchQuery(
       if (bodyField === "chunks") {
         if (Array.isArray(bodyFieldValue) && bodyFieldValue.length > 0) {
           // Join array elements (assuming they are strings)
-          bodyText = bodyFieldValue.map((chunk) => String(chunk)).join(" \\n") // Join with newline
+          bodyText = bodyFieldValue.map(String).join("\\n") // Join with real newline
         } else {
           Logger.warn(
             { docId: document.id, sddocname, bodyField },
@@ -324,7 +324,7 @@ async function getRandomDocument(): Promise<Document | null> {
 
 async function findDocumentRank(
   docIdToFind: string,
-  query: string, // Changed from 'title' to 'query' for clarity
+  query: string,
 ): Promise<{ rank: number | null; debugPayload: DebugFailureInfo | null }> {
   // Return debug payload
   Logger.debug({ docIdToFind, query }, "findDocumentRank called with:")
@@ -340,11 +340,14 @@ async function findDocumentRank(
       const searchOptions = {
         limit: HITS_PER_PAGE,
         offset: offset,
-        rankProfile: SearchModes.NativeRank,
+        rankProfile: SearchModes.NativeRank, // Or your custom hybrid rank profile name
         ...(ENABLE_TRACE || DEBUG_POOR_RANKINGS ? { tracelevel: 5 } : {}),
       }
+      // Note: The searchVespa call here needs to be able to handle the hybrid query logic
+      // if you implement it as discussed (searching multiple fields).
+      // Assuming searchVespa takes a raw query string that can be YQL or similar.
       response = await searchVespa(
-        query, // Use the generated query
+        query, // Use the generated query string (e.g., the exact title)
         USER_EMAIL_FOR_SEARCH!,
         null,
         null,
@@ -370,15 +373,16 @@ async function findDocumentRank(
             // Correct structure
             query: query,
             docIdToFind: docIdToFind,
-            topResults: hits.slice(0, 10).map((hit: any) => {
-              // Capture top 10
+            topResults: hits.slice(0, 10).map((hit: any, index: number) => {
+              // Capture top 10 and index
               const fields = hit.fields as VespaFields
               const sddocname = fields.sddocname
               const fieldMapping = sddocname
                 ? schemaFieldMap[sddocname]
                 : undefined
+              const resultRank = offset + index + 1 // Calculate rank for this specific result in the map
               return {
-                rank: hit.relevance !== undefined ? hit.relevance : null,
+                rank: resultRank, // Use the calculated positional rank
                 schema: sddocname || "unknown",
                 title:
                   fieldMapping && fields[fieldMapping.titleField] !== undefined
@@ -448,6 +452,9 @@ async function findDocumentRank(
       collectedDebugInfo &&
       (rank === null || rank > POOR_RANK_THRESHOLD)
     ) {
+      // Delay saving until the end of all runs? Or save here for immediate feedback?
+      // Saving here provides immediate feedback but scatters files.
+      // Let's keep saving here for now as per original logic.
       ensureDirectoryExists(OUTPUT_DIR) // Ensure directory exists before saving
 
       // Use a hash of the docId to prevent overly long filenames
@@ -514,7 +521,7 @@ function performFailureAnalysis(
 ) {
   if (!DEBUG_POOR_RANKINGS || debugData.length === 0) {
     Logger.info(
-      "Skipping failure analysis: Debugging not enabled or no poor rankings found.",
+      "Skipping failure analysis: Debugging not enabled or no poor rankings found across all runs.",
     )
     return
   }
@@ -776,7 +783,7 @@ function writeFailureAnalysisReport(
   report += `|--------|---------------|-----------|---------------|------------|\n`
   analyses.forEach((analysis) => {
     const topIssues = Object.entries(analysis.commonIssues)
-      .filter(([issue]) => issue !== "Analysis Error")
+      .filter(([issue]) => issue !== "Analysis Error") // Exclude analysis errors
       .sort((a, b) => b[1] - a[1])
       .slice(0, 2)
       .map(([issue, count]) => `${issue} (${count})`)
@@ -849,19 +856,47 @@ function writeFailureAnalysisReport(
 
 // --- End Failure Analysis Functions ---
 
-// Main Evaluation Logic
-async function evaluateSearch() {
-  Logger.info("Starting search quality evaluation across schemas...")
-  Logger.info(`Using strategy: ${CURRENT_STRATEGY}`)
+// --- Evaluation Types ---
+interface SingleRunMetrics {
+  results: SampleResult[]
+  reciprocalRanks: number[]
+  collectedDebugData: DebugFailureInfo[]
+  evaluatedSamples: number
+}
 
-  if (!(CURRENT_STRATEGY in EvaluationStrategy)) {
-    Logger.error(
-      `Invalid EVALUATION_STRATEGY: ${CURRENT_STRATEGY}. Must be one of ${Object.keys(EvaluationStrategy).join(", ")}`,
-    )
-    process.exit(1)
-  }
+interface AveragedMetrics {
+  mrr: number
+  meanRank: number
+  medianRank: number
+  successAt3: number
+  successAt5: number
+  successAt10: number
+  successRate: number // Success within MAX_RANK_TO_CHECK
+  rankDistribution: Record<string, number> // Store counts
+  metricsBySchema: Record<
+    string,
+    {
+      mrrSum: number
+      ranks: number[]
+      successAt3Count: number
+      successAt5Count: number
+      successAt10Count: number
+      successRateCount: number
+      count: number
+    }
+  >
+}
+// --- End Evaluation Types ---
 
-  ensureDirectoryExists(OUTPUT_DIR) // Ensure output dir exists upfront
+/**
+ * Performs a single evaluation run for NUM_SAMPLES.
+ */
+async function runSingleEvaluation(
+  runNumber: number,
+): Promise<SingleRunMetrics> {
+  Logger.info(
+    `--- Starting Evaluation Run #${runNumber}/${NUM_RUNS} (Samples: ${NUM_SAMPLES}) ---`,
+  )
 
   const results: SampleResult[] = []
   const reciprocalRanks: number[] = []
@@ -870,8 +905,8 @@ async function evaluateSearch() {
   const MAX_FETCH_RETRIES_PER_SAMPLE = 5 // Max attempts to find a suitable doc per sample
 
   while (evaluatedSamples < NUM_SAMPLES) {
-    Logger.info(
-      `--- Starting processing for Sample #${evaluatedSamples + 1} ---`,
+    Logger.debug(
+      `Run #${runNumber}, Sample #${evaluatedSamples + 1}: Starting processing...`,
     )
     let currentDocument: Document | null = null
     let query: string | null = null
@@ -883,13 +918,13 @@ async function evaluateSearch() {
 
     for (let attempt = 1; attempt <= MAX_FETCH_RETRIES_PER_SAMPLE; attempt++) {
       Logger.debug(
-        `Sample #${evaluatedSamples + 1}: Fetch attempt ${attempt}/${MAX_FETCH_RETRIES_PER_SAMPLE}...`,
+        `Run #${runNumber}, Sample #${evaluatedSamples + 1}: Fetch attempt ${attempt}/${MAX_FETCH_RETRIES_PER_SAMPLE}...`,
       )
       currentDocument = await getRandomDocument()
 
       if (!currentDocument) {
         Logger.warn(
-          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Failed to fetch document. Retrying...`,
+          `Run #${runNumber}, Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Failed to fetch document. Retrying...`,
         )
         await new Promise((resolve) => setTimeout(resolve, DELAY_MS * 2)) // Small delay before retrying fetch
         continue
@@ -903,7 +938,7 @@ async function evaluateSearch() {
       if (!tempSddocname || !schemaFieldMap[tempSddocname] || !fields) {
         Logger.debug(
           { docId: tempDoc.id, sddocname: tempSddocname, attempt },
-          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Document schema '${tempSddocname}' not in mapping or fields missing. Trying next attempt.`,
+          `Run #${runNumber}, Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Document schema '${tempSddocname}' not in mapping or fields missing. Trying next attempt.`,
         )
         continue
       }
@@ -921,7 +956,7 @@ async function evaluateSearch() {
             hasDocId: !!tempDocId,
             titleType: typeof tempOriginalTitle,
           },
-          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Document missing mapped ID or valid Title field. Trying next attempt.`,
+          `Run #${runNumber}, Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Document missing mapped ID or valid Title field. Trying next attempt.`,
         )
         continue
       }
@@ -938,7 +973,7 @@ async function evaluateSearch() {
             strategy: CURRENT_STRATEGY,
             attempt,
           },
-          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Schema '${tempSddocname}' has no bodyField for BodyPhrase strategy. Trying next attempt.`,
+          `Run #${runNumber}, Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Schema '${tempSddocname}' has no bodyField for BodyPhrase strategy. Trying next attempt.`,
         )
         continue
       }
@@ -954,14 +989,14 @@ async function evaluateSearch() {
             strategy: CURRENT_STRATEGY,
             attempt,
           },
-          `Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Failed to generate query for document using strategy ${CURRENT_STRATEGY}. Trying next attempt.`,
+          `Run #${runNumber}, Sample #${evaluatedSamples + 1}, Attempt ${attempt}: Failed to generate query for document using strategy ${CURRENT_STRATEGY}. Trying next attempt.`,
         )
         continue
       }
 
       // --- If we reach here, the document and query are suitable ---
       Logger.info(
-        `Sample #${evaluatedSamples + 1}: Found suitable document (ID: ${tempDocId}) on attempt ${attempt}.`,
+        `Run #${runNumber}, Sample #${evaluatedSamples + 1}: Found suitable document (ID: ${tempDocId}) on attempt ${attempt}.`,
       )
       docToEvaluate = tempDoc
       query = tempQuery
@@ -976,7 +1011,7 @@ async function evaluateSearch() {
     if (foundSuitableDocument && docToEvaluate && query && docId && sddocname) {
       // A suitable document was found within the retries
       Logger.info(
-        `[Sample ${evaluatedSamples + 1}/${NUM_SAMPLES}] Evaluating Schema: ${sddocname}, ID: ${docId}, Query (${CURRENT_STRATEGY}): "${query.substring(0, 100)}${query.length > 100 ? "..." : ""}"`,
+        `[Run ${runNumber}/${NUM_RUNS}, Sample ${evaluatedSamples + 1}/${NUM_SAMPLES}] Evaluating Schema: ${sddocname}, ID: ${docId}, Query (${CURRENT_STRATEGY}): "${query.substring(0, 100)}${query.length > 100 ? "..." : ""}"`,
       )
       Logger.debug(
         {
@@ -993,6 +1028,7 @@ async function evaluateSearch() {
         schema: sddocname,
         title: originalTitle || "N/A",
         rank,
+        query, // Include query in sample result
       })
 
       // Add debug payload to our collection if it exists
@@ -1013,311 +1049,210 @@ async function evaluateSearch() {
     } else {
       // Failed to find a suitable document after MAX_FETCH_RETRIES_PER_SAMPLE attempts
       Logger.error(
-        `Sample #${evaluatedSamples + 1}: Failed to find a suitable document after ${MAX_FETCH_RETRIES_PER_SAMPLE} attempts. Skipping this sample number.`,
+        `Run #${runNumber}, Sample #${evaluatedSamples + 1}: Failed to find a suitable document after ${MAX_FETCH_RETRIES_PER_SAMPLE} attempts. Skipping this sample number for this run.`,
       )
       evaluatedSamples++ // Increment anyway to prevent infinite loops
       Logger.warn(
-        `Sample #${evaluatedSamples}: Incrementing evaluated count despite failure to find suitable doc, to ensure loop termination.`,
+        `Run #${runNumber}, Sample #${evaluatedSamples}: Incrementing evaluated count despite failure to find suitable doc, to ensure loop termination.`,
       )
     }
 
-    // Only delay if we are continuing the loop for the next sample
+    // Only delay if we are continuing the loop for the next sample in this run
     if (evaluatedSamples < NUM_SAMPLES) {
       await new Promise((resolve) => setTimeout(resolve, DELAY_MS))
     }
-  } // End outer while loop
+  } // End outer while loop (for samples)
 
-  Logger.info(`--- Evaluation Loop Finished ---`)
-  // Add a note about total processed vs target
+  Logger.info(`--- Evaluation Run #${runNumber}/${NUM_RUNS} Finished ---`)
+  // Add a note about total processed vs target for this run
   if (evaluatedSamples < NUM_SAMPLES) {
     Logger.warn(
-      `Target was ${NUM_SAMPLES} samples, but loop finished after processing ${evaluatedSamples}. This might happen if finding suitable documents consistently failed.`,
+      `Target was ${NUM_SAMPLES} samples for Run #${runNumber}, but loop finished after processing ${evaluatedSamples}. This might happen if finding suitable documents consistently failed in this run.`,
     )
   }
 
-  // --- Calculate and Report Metrics ---
-  if (results.length > 0) {
-    // Base reporting on actual results collected
-    const numEvaluated = results.length
-    const mrr =
-      reciprocalRanks.length > 0
-        ? reciprocalRanks.reduce((sum, r) => sum + r, 0) / numEvaluated
-        : 0
-    const successAt3 =
-      results.filter((r) => r.rank !== null && r.rank <= 3).length /
-      numEvaluated
-    const successAt5 =
-      results.filter((r) => r.rank !== null && r.rank <= 5).length /
-      numEvaluated
-    const successAt10 =
-      results.filter((r) => r.rank !== null && r.rank <= 10).length /
-      numEvaluated
-    const successRate =
-      results.filter((r) => r.rank !== null && r.rank <= MAX_RANK_TO_CHECK)
-        .length / numEvaluated
-
-    // Calculate mean rank (for found documents only)
-    const foundDocuments = results.filter((r) => r.rank !== null)
-    const meanRank =
-      foundDocuments.length > 0
-        ? foundDocuments.reduce((sum, r) => sum + (r.rank || 0), 0) /
-          foundDocuments.length
-        : 0
-
-    // Calculate median rank
-    let medianRank = 0
-    if (foundDocuments.length > 0) {
-      const sortedRanks = foundDocuments
-        .map((r) => r.rank || 0)
-        .sort((a, b) => a - b)
-      const midIndex = Math.floor(sortedRanks.length / 2)
-      medianRank =
-        sortedRanks.length % 2 === 0
-          ? (sortedRanks[midIndex - 1] + sortedRanks[midIndex]) / 2
-          : sortedRanks[midIndex]
-    }
-
-    // Calculate rank distribution
-    const rankDistribution = {
-      "1": 0,
-      "2-3": 0,
-      "4-5": 0,
-      "6-10": 0,
-      "11-20": 0,
-      "21-50": 0,
-      "51-100": 0,
-      not_found: 0,
-    }
-    results.forEach((r) => {
-      if (r.rank === null) {
-        rankDistribution.not_found++
-      } else if (r.rank === 1) {
-        rankDistribution["1"]++
-      } else if (r.rank <= 3) {
-        rankDistribution["2-3"]++
-      } else if (r.rank <= 5) {
-        rankDistribution["4-5"]++
-      } else if (r.rank <= 10) {
-        rankDistribution["6-10"]++
-      } else if (r.rank <= 20) {
-        rankDistribution["11-20"]++
-      } else if (r.rank <= 50) {
-        rankDistribution["21-50"]++
-      } else if (r.rank <= MAX_RANK_TO_CHECK) {
-        rankDistribution["51-100"]++
-      } else {
-        rankDistribution.not_found++
-      } // Treat ranks > MAX_RANK_TO_CHECK as not found for distribution
-    })
-
-    Logger.info(`
---- Evaluation Complete ---
-Strategy: ${CURRENT_STRATEGY}
-Total Samples Target: ${NUM_SAMPLES}
-Total Samples Processed: ${evaluatedSamples}
-Total Samples Successfully Evaluated (results collected): ${numEvaluated}
-Mean Reciprocal Rank (MRR based on evaluated): ${mrr.toFixed(4)}
-Mean Rank (found documents only): ${meanRank.toFixed(2)}
-Median Rank (found documents only): ${medianRank.toFixed(2)}
-Success@3 (based on evaluated): ${(successAt3 * 100).toFixed(2)}%
-Success@5 (based on evaluated): ${(successAt5 * 100).toFixed(2)}%
-Success@10 (based on evaluated): ${(successAt10 * 100).toFixed(2)}%
-Success@${MAX_RANK_TO_CHECK} (based on evaluated): ${(successRate * 100).toFixed(2)}%
-
-Rank Distribution:
-  Rank 1: ${rankDistribution["1"]} docs (${((rankDistribution["1"] / numEvaluated) * 100).toFixed(2)}%)
-  Rank 2-3: ${rankDistribution["2-3"]} docs (${((rankDistribution["2-3"] / numEvaluated) * 100).toFixed(2)}%)
-  Rank 4-5: ${rankDistribution["4-5"]} docs (${((rankDistribution["4-5"] / numEvaluated) * 100).toFixed(2)}%)
-  Rank 6-10: ${rankDistribution["6-10"]} docs (${((rankDistribution["6-10"] / numEvaluated) * 100).toFixed(2)}%)
-  Rank 11-20: ${rankDistribution["11-20"]} docs (${((rankDistribution["11-20"] / numEvaluated) * 100).toFixed(2)}%)
-  Rank 21-50: ${rankDistribution["21-50"]} docs (${((rankDistribution["21-50"] / numEvaluated) * 100).toFixed(2)}%)
-  Rank 51-100: ${rankDistribution["51-100"]} docs (${((rankDistribution["51-100"] / numEvaluated) * 100).toFixed(2)}%)
-  Not Found (or >${MAX_RANK_TO_CHECK}): ${rankDistribution.not_found} docs (${((rankDistribution.not_found / numEvaluated) * 100).toFixed(2)}%)
-`)
-    // Calculate metrics by schema
-    const metricsBySchema: Record<
-      string,
-      {
-        mrrSum: number
-        ranks: number[]
-        successAt3Count: number
-        successAt5Count: number
-        successAt10Count: number
-        successRateCount: number
-        count: number
-      }
-    > = {}
-    results.forEach((r) => {
-      const schema = r.schema || "unknown" // Handle potential missing schema
-      if (!metricsBySchema[schema]) {
-        metricsBySchema[schema] = {
-          mrrSum: 0,
-          ranks: [],
-          successAt3Count: 0,
-          successAt5Count: 0,
-          successAt10Count: 0,
-          successRateCount: 0,
-          count: 0,
-        }
-      }
-      metricsBySchema[schema].mrrSum += r.rank ? 1 / r.rank : 0
-      if (r.rank !== null) {
-        metricsBySchema[schema].ranks.push(r.rank)
-        if (r.rank <= 3) metricsBySchema[schema].successAt3Count++
-        if (r.rank <= 5) metricsBySchema[schema].successAt5Count++
-        if (r.rank <= 10) metricsBySchema[schema].successAt10Count++
-        if (r.rank <= MAX_RANK_TO_CHECK)
-          metricsBySchema[schema].successRateCount++
-      }
-      metricsBySchema[schema].count += 1
-    })
-
-    Logger.info(`--- Metrics by Schema ---`)
-    Object.entries(metricsBySchema).forEach(([schema, metrics]) => {
-      if (metrics.count > 0) {
-        const meanSchemaRank =
-          metrics.ranks.length > 0
-            ? metrics.ranks.reduce((sum, rank) => sum + rank, 0) /
-              metrics.ranks.length
-            : 0
-        let medianSchemaRank = 0
-        if (metrics.ranks.length > 0) {
-          const sortedRanks = [...metrics.ranks].sort((a, b) => a - b)
-          const midIndex = Math.floor(sortedRanks.length / 2)
-          medianSchemaRank =
-            sortedRanks.length % 2 === 0
-              ? (sortedRanks[midIndex - 1] + sortedRanks[midIndex]) / 2
-              : sortedRanks[midIndex]
-        }
-
-        Logger.info(`Schema: ${schema}`)
-        Logger.info(`  Samples: ${metrics.count}`)
-        Logger.info(`  MRR: ${(metrics.mrrSum / metrics.count).toFixed(4)}`)
-        Logger.info(
-          `  Mean Rank (found docs): ${metrics.ranks.length > 0 ? meanSchemaRank.toFixed(2) : "N/A"}`,
-        )
-        Logger.info(
-          `  Median Rank (found docs): ${metrics.ranks.length > 0 ? medianSchemaRank.toFixed(2) : "N/A"}`,
-        )
-        Logger.info(
-          `  Found Rate (@${MAX_RANK_TO_CHECK}): ${((metrics.successRateCount / metrics.count) * 100).toFixed(2)}%`,
-        )
-        Logger.info(
-          `  Success@3: ${((metrics.successAt3Count / metrics.count) * 100).toFixed(2)}%`,
-        )
-        Logger.info(
-          `  Success@5: ${((metrics.successAt5Count / metrics.count) * 100).toFixed(2)}%`,
-        )
-        Logger.info(
-          `  Success@10: ${((metrics.successAt10Count / metrics.count) * 100).toFixed(2)}%`,
-        )
-
-        // Generate and display performance summary
-        const summary = generatePerformanceSummary(
-          schema,
-          metrics,
-          CURRENT_STRATEGY,
-        ) // Use existing summary function
-        Logger.info("\n  Performance Summary:")
-        summary.split("\n").forEach((line) => {
-          Logger.info(`  ${line}`)
-        })
-        Logger.info("")
-      } else {
-        Logger.info(`Schema: ${schema} - No successful evaluations.`)
-      }
-    })
-
-    // Save the overall performance analysis to a separate file
-    try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-
-      // Save detailed evaluation results
-      const resultsFilename = path.join(
-        OUTPUT_DIR,
-        `evaluation_results_${CURRENT_STRATEGY}_${timestamp}.json`,
-      )
-      fs.writeFileSync(resultsFilename, JSON.stringify(results, null, 2))
-      Logger.info(`Detailed evaluation results saved to ${resultsFilename}`)
-
-      // Save poor rankings (can still be useful even with analysis report)
-      const poorRankings = results.filter(
-        (r) => r.rank === null || (r.rank && r.rank > POOR_RANK_THRESHOLD),
-      ) // Use POOR_RANK_THRESHOLD
-      if (poorRankings.length > 0) {
-        const poorRankingsFilename = path.join(
-          OUTPUT_DIR,
-          `poor_rankings_${CURRENT_STRATEGY}_${timestamp}.json`,
-        )
-        fs.writeFileSync(
-          poorRankingsFilename,
-          JSON.stringify(poorRankings, null, 2),
-        )
-        Logger.info(
-          `Poor rankings (rank > ${POOR_RANK_THRESHOLD} or null) saved to ${poorRankingsFilename}`,
-        )
-      } else {
-        Logger.info(
-          `No poor rankings (rank > ${POOR_RANK_THRESHOLD} or null) found.`,
-        )
-      }
-
-      // Save performance summary text file
-      const summaryFilename = path.join(
-        OUTPUT_DIR,
-        `performance_summary_${CURRENT_STRATEGY}_${timestamp}.txt`,
-      )
-      let summaryContent = generateSummaryReportContent(
-        results,
-        metricsBySchema,
-        rankDistribution,
-        meanRank,
-        medianRank,
-        mrr,
-        successAt3,
-        successAt5,
-        successAt10,
-        successRate,
-        numEvaluated,
-      ) // Use helper
-      fs.writeFileSync(summaryFilename, summaryContent)
-      Logger.info(`Performance summary text report saved to ${summaryFilename}`)
-    } catch (error) {
-      Logger.error({ error }, "Failed to save result/summary files.")
-    }
-
-    // --- Perform Failure Analysis if Debugging Enabled ---
-    performFailureAnalysis(collectedDebugData, OUTPUT_DIR)
-  } else {
-    Logger.warn("No samples were successfully processed and evaluated.")
+  return {
+    results,
+    reciprocalRanks,
+    collectedDebugData,
+    evaluatedSamples,
   }
 }
 
 /**
- * Generate the text content for the performance summary report file.
+ * Calculates average metrics across multiple evaluation runs.
+ */
+function calculateAverages(
+  runMetrics: SingleRunMetrics[],
+  totalEvaluatedSamples: number,
+): AveragedMetrics {
+  // Consolidate all results and reciprocal ranks
+  const allResults = runMetrics.flatMap((run) => run.results)
+  const allReciprocalRanks = runMetrics.flatMap((run) => run.reciprocalRanks)
+
+  const numEvaluated = allResults.length
+
+  // Calculate overall metrics
+  const mrr =
+    numEvaluated > 0
+      ? allReciprocalRanks.reduce((sum, r) => sum + r, 0) / numEvaluated
+      : 0
+
+  const foundDocuments = allResults.filter((r) => r.rank !== null)
+  const meanRank =
+    foundDocuments.length > 0
+      ? foundDocuments.reduce((sum, r) => sum + (r.rank || 0), 0) /
+        foundDocuments.length
+      : 0
+
+  let medianRank = 0
+  if (foundDocuments.length > 0) {
+    const sortedRanks = foundDocuments
+      .map((r) => r.rank || 0)
+      .sort((a, b) => a - b)
+    const midIndex = Math.floor(sortedRanks.length / 2)
+    medianRank =
+      sortedRanks.length % 2 === 0
+        ? (sortedRanks[midIndex - 1] + sortedRanks[midIndex]) / 2
+        : sortedRanks[midIndex]
+  }
+
+  const successAt3 =
+    numEvaluated > 0
+      ? allResults.filter((r) => r.rank !== null && r.rank <= 3).length /
+        numEvaluated
+      : 0
+  const successAt5 =
+    numEvaluated > 0
+      ? allResults.filter((r) => r.rank !== null && r.rank <= 5).length /
+        numEvaluated
+      : 0
+  const successAt10 =
+    numEvaluated > 0
+      ? allResults.filter((r) => r.rank !== null && r.rank <= 10).length /
+        numEvaluated
+      : 0
+  const successRate =
+    numEvaluated > 0
+      ? allResults.filter((r) => r.rank !== null && r.rank <= MAX_RANK_TO_CHECK)
+          .length / numEvaluated
+      : 0
+
+  // Calculate rank distribution counts (based on all results)
+  const rankDistributionCounts: Record<string, number> = {
+    "1": 0,
+    "2-3": 0,
+    "4-5": 0,
+    "6-10": 0,
+    "11-20": 0,
+    "21-50": 0,
+    "51-100": 0,
+    not_found: 0,
+  }
+  allResults.forEach((r) => {
+    if (r.rank === null) {
+      rankDistributionCounts.not_found++
+    } else if (r.rank === 1) {
+      rankDistributionCounts["1"]++
+    } else if (r.rank <= 3) {
+      rankDistributionCounts["2-3"]++
+    } else if (r.rank <= 5) {
+      rankDistributionCounts["4-5"]++
+    } else if (r.rank <= 10) {
+      rankDistributionCounts["6-10"]++
+    } else if (r.rank <= 20) {
+      rankDistributionCounts["11-20"]++
+    } else if (r.rank <= 50) {
+      rankDistributionCounts["21-50"]++
+    } else if (r.rank <= MAX_RANK_TO_CHECK) {
+      rankDistributionCounts["51-100"]++
+    } else {
+      rankDistributionCounts.not_found++ // Treat ranks > MAX_RANK_TO_CHECK as not found for distribution
+    }
+  })
+
+  // Calculate metrics by schema (based on all results)
+  const metricsBySchema: Record<
+    string,
+    {
+      mrrSum: number
+      ranks: number[]
+      successAt3Count: number
+      successAt5Count: number
+      successAt10Count: number
+      successRateCount: number
+      count: number // Total samples for this schema across all runs
+    }
+  > = {}
+
+  allResults.forEach((r) => {
+    const schema = r.schema || "unknown"
+    if (!metricsBySchema[schema]) {
+      metricsBySchema[schema] = {
+        mrrSum: 0,
+        ranks: [],
+        successAt3Count: 0,
+        successAt5Count: 0,
+        successAt10Count: 0,
+        successRateCount: 0,
+        count: 0,
+      }
+    }
+    metricsBySchema[schema].mrrSum += r.rank ? 1 / r.rank : 0
+    if (r.rank !== null) {
+      metricsBySchema[schema].ranks.push(r.rank)
+      if (r.rank <= 3) metricsBySchema[schema].successAt3Count++
+      if (r.rank <= 5) metricsBySchema[schema].successAt5Count++
+      if (r.rank <= 10) metricsBySchema[schema].successAt10Count++
+      if (r.rank <= MAX_RANK_TO_CHECK)
+        metricsBySchema[schema].successRateCount++
+    }
+    metricsBySchema[schema].count += 1
+  })
+
+  return {
+    mrr,
+    meanRank,
+    medianRank,
+    successAt3,
+    successAt5,
+    successAt10,
+    successRate,
+    rankDistribution: rankDistributionCounts, // Return counts
+    metricsBySchema, // Return calculated counts and sums per schema
+  }
+}
+
+/**
+ * Generate the text content for the performance summary report file using averaged data.
  */
 function generateSummaryReportContent(
-  results: SampleResult[],
-  metricsBySchema: Record<string, any>,
-  rankDistribution: Record<string, number>,
-  meanRank: number,
-  medianRank: number,
-  mrr: number,
-  successAt3: number,
-  successAt5: number,
-  successAt10: number,
-  successRate: number,
-  numEvaluated: number,
+  averagedMetrics: AveragedMetrics,
+  totalEvaluatedSamples: number,
 ): string {
+  const {
+    mrr,
+    meanRank,
+    medianRank,
+    successAt3,
+    successAt5,
+    successAt10,
+    successRate,
+    rankDistribution,
+    metricsBySchema,
+  } = averagedMetrics
+
   let content = `
 ===========================================
 SEARCH PERFORMANCE SUMMARY (${CURRENT_STRATEGY})
 ===========================================
 Generated: ${new Date().toISOString()}
 Strategy: ${CURRENT_STRATEGY}
-Total Samples Evaluated: ${numEvaluated}
+Number of Runs: ${NUM_RUNS}
+Samples Per Run: ${NUM_SAMPLES}
+Total Samples Successfully Evaluated Across All Runs: ${totalEvaluatedSamples}
 
-OVERALL METRICS:
+OVERALL AVERAGED METRICS:
 - Mean Reciprocal Rank (MRR): ${mrr.toFixed(4)}
 - Mean Rank (found docs only): ${meanRank.toFixed(2)}
 - Median Rank (found docs only): ${medianRank.toFixed(2)}
@@ -1326,22 +1261,22 @@ OVERALL METRICS:
 - Success@10: ${(successAt10 * 100).toFixed(2)}%
 - Success@${MAX_RANK_TO_CHECK}: ${(successRate * 100).toFixed(2)}%
 
-DISTRIBUTION OF RANKS:
-- Rank 1: ${rankDistribution["1"]} docs (${((rankDistribution["1"] / numEvaluated) * 100).toFixed(2)}%)
-- Rank 2-3: ${rankDistribution["2-3"]} docs (${((rankDistribution["2-3"] / numEvaluated) * 100).toFixed(2)}%)
-- Rank 4-5: ${rankDistribution["4-5"]} docs (${((rankDistribution["4-5"] / numEvaluated) * 100).toFixed(2)}%)
-- Rank 6-10: ${rankDistribution["6-10"]} docs (${((rankDistribution["6-10"] / numEvaluated) * 100).toFixed(2)}%)
-- Rank 11-20: ${rankDistribution["11-20"]} docs (${((rankDistribution["11-20"] / numEvaluated) * 100).toFixed(2)}%)
-- Rank 21-50: ${rankDistribution["21-50"]} docs (${((rankDistribution["21-50"] / numEvaluated) * 100).toFixed(2)}%)
-- Rank 51-100: ${rankDistribution["51-100"]} docs (${((rankDistribution["51-100"] / numEvaluated) * 100).toFixed(2)}%)
-- Not Found (or >${MAX_RANK_TO_CHECK}): ${rankDistribution.not_found} docs (${((rankDistribution.not_found / numEvaluated) * 100).toFixed(2)}%)
+AVERAGED DISTRIBUTION OF RANKS (Total samples: ${totalEvaluatedSamples}):
+- Rank 1: ${rankDistribution["1"]} docs (${((rankDistribution["1"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+- Rank 2-3: ${rankDistribution["2-3"]} docs (${((rankDistribution["2-3"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+- Rank 4-5: ${rankDistribution["4-5"]} docs (${((rankDistribution["4-5"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+- Rank 6-10: ${rankDistribution["6-10"]} docs (${((rankDistribution["6-10"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+- Rank 11-20: ${rankDistribution["11-20"]} docs (${((rankDistribution["11-20"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+- Rank 21-50: ${rankDistribution["21-50"]} docs (${((rankDistribution["21-50"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+- Rank 51-100: ${rankDistribution["51-100"]} docs (${((rankDistribution["51-100"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+- Not Found (or >${MAX_RANK_TO_CHECK}): ${rankDistribution.not_found} docs (${((rankDistribution.not_found / totalEvaluatedSamples) * 100).toFixed(2)}%)
 
 ===========================================
-PERFORMANCE BY SCHEMA
+AVERAGED PERFORMANCE BY SCHEMA
 ===========================================
 
 `
-  // Add schema-specific summaries from logs
+  // Add schema-specific summaries
   Object.entries(metricsBySchema).forEach(([schema, metrics]) => {
     if (metrics.count > 0) {
       const meanSchemaRank =
@@ -1357,7 +1292,7 @@ PERFORMANCE BY SCHEMA
 
       content += `
 ===== ${schema.toUpperCase()} =====
-Samples: ${metrics.count}
+Total Samples for Schema (Across All Runs): ${metrics.count}
 MRR: ${schemaMrr.toFixed(4)}
 Mean Rank (found docs): ${metrics.ranks.length > 0 ? meanSchemaRank.toFixed(2) : "N/A"}
 Found Rate (@${MAX_RANK_TO_CHECK}): ${(schemaSuccessRate * 100).toFixed(2)}%
@@ -1365,9 +1300,11 @@ Success@3: ${(schemaSuccessAt3 * 100).toFixed(2)}%
 Success@5: ${(schemaSuccessAt5 * 100).toFixed(2)}%
 Success@10: ${(schemaSuccessAt10 * 100).toFixed(2)}%
 
-${generatePerformanceSummary(schema, metrics, CURRENT_STRATEGY)}
+${generatePerformanceSummary(schema, { ...metrics, successRateCount: metrics.successRateCount }, CURRENT_STRATEGY)}
 
 `
+    } else {
+      content += `===== ${schema.toUpperCase()} =====\nNo successful evaluations for this schema.\n\n`
     }
   })
 
@@ -1381,17 +1318,18 @@ END OF REPORT
 
 /**
  * Generate a human-readable summary of schema performance based on metrics
+ * (This function will now receive calculated metrics based on combined data)
  */
 function generatePerformanceSummary(
   schema: string,
   metrics: {
     mrrSum: number
-    ranks: number[]
+    ranks: number[] // Ranks from all runs for this schema
     successAt3Count: number
     successAt5Count: number
     successAt10Count: number
     successRateCount: number // Represents success within MAX_RANK_TO_CHECK
-    count: number
+    count: number // Total samples for this schema
   },
   strategy: EvaluationStrategy,
 ): string {
@@ -1402,7 +1340,7 @@ function generatePerformanceSummary(
   const successAt10Rate = metrics.successAt10Count / metrics.count
   const foundRate = metrics.successRateCount / metrics.count // Use successRateCount for found rate within threshold
 
-  // Calculate mean rank (if documents were found within threshold)
+  // Calculate mean rank (for found documents only)
   const meanRank =
     metrics.ranks.length > 0
       ? metrics.ranks.reduce((sum, rank) => sum + rank, 0) /
@@ -1505,14 +1443,228 @@ function generatePerformanceSummary(
   // Format the summary
   let summary = overallAssessment
   if (insights.length > 0)
-    summary += "\nInsights:\n" + insights.map((i) => `- ${i}`).join("\n")
+    summary += "\\nInsights:\\n" + insights.map((i) => `- ${i}`).join("\\n")
   if (suggestions.length > 0)
-    summary += "\nSuggestions:\n" + suggestions.map((s) => `- ${s}`).join("\n")
+    summary +=
+      "\\nSuggestions:\\n" + suggestions.map((s) => `- ${s}`).join("\\n")
 
   return summary
 }
 
-evaluateSearch().catch((error) => {
-  Logger.error({ error }, "Unhandled error during search evaluation")
+/**
+ * Main function to orchestrate multiple evaluation runs and report averaged results.
+ */
+async function mainEvaluationRunner() {
+  Logger.info(
+    `Starting search quality evaluation across schemas over ${NUM_RUNS} runs...`,
+  )
+  Logger.info(`Using strategy: ${CURRENT_STRATEGY}`)
+  Logger.info(`Samples per run: ${NUM_SAMPLES}`)
+
+  if (!(CURRENT_STRATEGY in EvaluationStrategy)) {
+    Logger.error(
+      `Invalid EVALUATION_STRATEGY: ${CURRENT_STRATEGY}. Must be one of ${Object.keys(EvaluationStrategy).join(", ")}`,
+    )
+    process.exit(1)
+  }
+
+  ensureDirectoryExists(OUTPUT_DIR) // Ensure output dir exists upfront
+
+  const allRunMetrics: SingleRunMetrics[] = []
+  let totalEvaluatedSamples = 0
+
+  for (let i = 1; i <= NUM_RUNS; i++) {
+    const runMetrics = await runSingleEvaluation(i)
+    allRunMetrics.push(runMetrics)
+    totalEvaluatedSamples += runMetrics.evaluatedSamples
+
+    // Optional: Add a small delay between runs if needed
+    if (i < NUM_RUNS) {
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS)) // Slightly longer delay between runs
+    }
+  }
+
+  Logger.info(`--- All ${NUM_RUNS} Evaluation Runs Complete ---`)
+  Logger.info(
+    `Total samples successfully evaluated across all runs: ${totalEvaluatedSamples}`,
+  )
+
+  if (totalEvaluatedSamples === 0) {
+    Logger.warn(
+      "No samples were successfully processed and evaluated across all runs.",
+    )
+    // Optionally still run failure analysis if some debug data was collected despite no successful evaluations
+    const allCollectedDebugData = allRunMetrics.flatMap(
+      (run) => run.collectedDebugData,
+    )
+    if (allCollectedDebugData.length > 0) {
+      performFailureAnalysis(allCollectedDebugData, OUTPUT_DIR)
+    }
+    return // Exit if no samples were evaluated
+  }
+
+  // Calculate averaged metrics based on consolidated data
+  const averagedMetrics = calculateAverages(
+    allRunMetrics,
+    totalEvaluatedSamples,
+  )
+
+  // --- Report Averaged Metrics ---
+  Logger.info(`
+--- Averaged Evaluation Complete Across ${NUM_RUNS} Runs ---
+Strategy: ${CURRENT_STRATEGY}
+Total Samples Target Per Run: ${NUM_SAMPLES}
+Total Samples Successfully Evaluated Across All Runs: ${totalEvaluatedSamples}
+
+**Overall Averaged Mean Reciprocal Rank (MRR): ${averagedMetrics.mrr.toFixed(4)}**
+
+Other Averaged Metrics:
+Mean Rank (found documents only): ${averagedMetrics.meanRank.toFixed(2)}
+Median Rank (found documents only): ${averagedMetrics.medianRank.toFixed(2)}
+Success@3 (based on evaluated): ${(averagedMetrics.successAt3 * 100).toFixed(2)}%
+Success@5 (based on evaluated): ${(averagedMetrics.successAt5 * 100).toFixed(2)}%
+Success@10 (based on evaluated): ${(averagedMetrics.successAt10 * 100).toFixed(2)}%
+Success@${MAX_RANK_TO_CHECK} (based on evaluated): ${(averagedMetrics.successRate * 100).toFixed(2)}%
+
+Averaged Rank Distribution (based on ${totalEvaluatedSamples} samples):
+  Rank 1: ${averagedMetrics.rankDistribution["1"]} docs (${((averagedMetrics.rankDistribution["1"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+  Rank 2-3: ${averagedMetrics.rankDistribution["2-3"]} docs (${((averagedMetrics.rankDistribution["2-3"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+  Rank 4-5: ${averagedMetrics.rankDistribution["4-5"]} docs (${((averagedMetrics.rankDistribution["4-5"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+  Rank 6-10: ${averagedMetrics.rankDistribution["6-10"]} docs (${((averagedMetrics.rankDistribution["6-10"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+  Rank 11-20: ${averagedMetrics.rankDistribution["11-20"]} docs (${((averagedMetrics.rankDistribution["11-20"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+  Rank 21-50: ${averagedMetrics.rankDistribution["21-50"]} docs (${((averagedMetrics.rankDistribution["21-50"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+  Rank 51-100: ${averagedMetrics.rankDistribution["51-100"]} docs (${((averagedMetrics.rankDistribution["51-100"] / totalEvaluatedSamples) * 100).toFixed(2)}%)
+  Not Found (or >${MAX_RANK_TO_CHECK}): ${averagedMetrics.rankDistribution.not_found} docs (${((averagedMetrics.rankDistribution.not_found / totalEvaluatedSamples) * 100).toFixed(2)}%)
+`)
+
+  // Report averaged metrics by schema
+  Logger.info(`--- Averaged Metrics by Schema (Across ${NUM_RUNS} Runs) ---`)
+  Object.entries(averagedMetrics.metricsBySchema).forEach(
+    ([schema, metrics]) => {
+      if (metrics.count > 0) {
+        const meanSchemaRank =
+          metrics.ranks.length > 0
+            ? metrics.ranks.reduce((sum, rank) => sum + rank, 0) /
+              metrics.ranks.length
+            : 0
+        const schemaMrr = metrics.mrrSum / metrics.count
+        const schemaSuccessRate = metrics.successRateCount / metrics.count
+        const schemaSuccessAt3 = metrics.successAt3Count / metrics.count
+        const schemaSuccessAt5 = metrics.successAt5Count / metrics.count
+        const schemaSuccessAt10 = metrics.successAt10Count / metrics.count
+
+        Logger.info(`Schema: ${schema} (Total Samples: ${metrics.count})`)
+        Logger.info(`  MRR: ${schemaMrr.toFixed(4)}`)
+        Logger.info(
+          `  Mean Rank (found docs): ${metrics.ranks.length > 0 ? meanSchemaRank.toFixed(2) : "N/A"}`,
+        )
+        Logger.info(
+          `  Median Rank (found docs): ${metrics.ranks.length > 0 ? averagedMetrics.medianRank.toFixed(2) : "N/A"}`, // Use overall median for consistency? Or calculate per schema? Let's stick to calculating per schema median here.
+        )
+        // Recalculate median rank per schema from the combined ranks array
+        let medianSchemaRank = 0
+        if (metrics.ranks.length > 0) {
+          const sortedRanks = [...metrics.ranks].sort((a, b) => a - b)
+          const midIndex = Math.floor(sortedRanks.length / 2)
+          medianSchemaRank =
+            sortedRanks.length % 2 === 0
+              ? (sortedRanks[midIndex - 1] + sortedRanks[midIndex]) / 2
+              : sortedRanks[midIndex]
+        }
+        Logger.info(
+          `  Median Rank (found docs): ${metrics.ranks.length > 0 ? medianSchemaRank.toFixed(2) : "N/A"}`,
+        )
+
+        Logger.info(
+          `  Found Rate (@${MAX_RANK_TO_CHECK}): ${(schemaSuccessRate * 100).toFixed(2)}%`,
+        )
+        Logger.info(`  Success@3: ${(schemaSuccessAt3 * 100).toFixed(2)}%`)
+        Logger.info(`  Success@5: ${(schemaSuccessAt5 * 100).toFixed(2)}%`)
+        Logger.info(`  Success@10: ${(schemaSuccessAt10 * 100).toFixed(2)}%`)
+
+        // Generate and display performance summary for averaged schema metrics
+        const summary = generatePerformanceSummary(
+          schema,
+          metrics, // Pass the metrics for this schema (includes ranks array etc.)
+          CURRENT_STRATEGY,
+        )
+        Logger.info("\\n  Performance Summary:")
+        summary.split("\\n").forEach((line) => {
+          Logger.info(`  ${line}`)
+        })
+        Logger.info("")
+      } else {
+        Logger.info(
+          `Schema: ${schema} - No successful evaluations across all runs.`,
+        )
+        Logger.info("")
+      }
+    },
+  )
+
+  // --- Save Reports ---
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+
+    // Save consolidated detailed evaluation results (all samples from all runs)
+    const allResults = allRunMetrics.flatMap((run) => run.results)
+    const resultsFilename = path.join(
+      OUTPUT_DIR,
+      `evaluation_results_ALL_${CURRENT_STRATEGY}_${timestamp}.json`,
+    )
+    fs.writeFileSync(resultsFilename, JSON.stringify(allResults, null, 2))
+    Logger.info(
+      `Consolidated detailed evaluation results (${allResults.length} samples) saved to ${resultsFilename}`,
+    )
+
+    // Save consolidated poor rankings
+    const allPoorRankings = allResults.filter(
+      (r) => r.rank === null || (r.rank && r.rank > POOR_RANK_THRESHOLD),
+    )
+    if (allPoorRankings.length > 0) {
+      const poorRankingsFilename = path.join(
+        OUTPUT_DIR,
+        `poor_rankings_ALL_${CURRENT_STRATEGY}_${timestamp}.json`,
+      )
+      fs.writeFileSync(
+        poorRankingsFilename,
+        JSON.stringify(allPoorRankings, null, 2),
+      )
+      Logger.info(
+        `Consolidated poor rankings (${allPoorRankings.length} samples with rank > ${POOR_RANK_THRESHOLD} or null) saved to ${poorRankingsFilename}`,
+      )
+    } else {
+      Logger.info(
+        `No poor rankings (rank > ${POOR_RANK_THRESHOLD} or null) found across all runs.`,
+      )
+    }
+
+    // Save performance summary text file
+    const summaryFilename = path.join(
+      OUTPUT_DIR,
+      `performance_summary_AVERAGED_${CURRENT_STRATEGY}_${timestamp}.txt`,
+    )
+    let summaryContent = generateSummaryReportContent(
+      averagedMetrics,
+      totalEvaluatedSamples,
+    )
+    fs.writeFileSync(summaryFilename, summaryContent)
+    Logger.info(
+      `Averaged performance summary text report saved to ${summaryFilename}`,
+    )
+  } catch (error) {
+    Logger.error({ error }, "Failed to save consolidated result/summary files.")
+  }
+
+  // --- Perform Failure Analysis if Debugging Enabled ---
+  const allCollectedDebugData = allRunMetrics.flatMap(
+    (run) => run.collectedDebugData,
+  )
+  performFailureAnalysis(allCollectedDebugData, OUTPUT_DIR)
+}
+
+// Start the main evaluation runner
+mainEvaluationRunner().catch((error) => {
+  Logger.error({ error }, "Unhandled error during main evaluation runner")
   process.exit(1)
 })
