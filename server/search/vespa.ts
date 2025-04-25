@@ -11,6 +11,8 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  whatsappContactSchema,
+  chatContainerSchema,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -141,6 +143,8 @@ const AllSources = [
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  whatsappContactSchema,
+  chatContainerSchema,
 ].join(", ")
 
 export const autocomplete = async (

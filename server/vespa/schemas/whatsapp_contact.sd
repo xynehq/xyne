@@ -7,9 +7,6 @@ schema whatsapp_contact {
     field phoneNumber type string {
       indexing: index | attribute | summary
       index: enable-bm25
-      match: text
-      stemming: best
-      normalizing: accent
     }
 
     field name type string {
@@ -39,47 +36,88 @@ schema whatsapp_contact {
     }
   }
 
+  field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
+    indexing: (input name || "") . " " . (input phoneNumber || "") | embed | attribute | index
+    attribute {
+        distance-metric: angular
+    }
+  }
+
+  field name_fuzzy type string {
+    indexing: input name | index
+    index {
+      enable-bm25
+    }
+    match {
+      gram
+      gram-size: 3
+    }
+  }
+
   fieldset default {
     fields: name, phoneNumber
   }
 
   rank-profile default {
     inputs {
-      query(alpha) double
+      query(decay_factor) float
+      query(e) tensor<bfloat16>(v[DIMS])
     }
 
-    function scale(val) {
-      expression: 2*atan(val/4)/(3.14159)
+    function bm25_score() {
+      expression {
+        (
+            bm25(name)
+        ) + 
+        (query(decay_factor))
+      } 
     }
 
-    function scaled_bm25_name() {
-      expression: scale(bm25(name))
+    function vector_score() {
+      expression: closeness(field, chunk_embeddings)
     }
 
     first-phase {
-      expression: bm25(name)
+      expression : bm25_score()
     }
 
     global-phase {
       expression {
-        (
-          nativeRank(name) * 5
-        )
+        (normalize_linear(bm25_score) * normalize_linear(vector_score))
       }
       rerank-count: 1000
     }
 
     match-features {
-      scaled_bm25_name
+      bm25(name)
+      vector_score
     }
   }
 
-  document-summary default {
+  rank-profile default_native inherits default { }
+
+  document-summary autocomplete {
     summary name {
-      bolding: on
+      source: name
     }
-    summary phoneNumber {
-      bolding: on
+    summary app {
+      source: app
+    }
+    summary entity {
+      source: entity
+    }
+    summary docId {
+      source: docId
+    }
+  }
+
+  # Autocomplete rank profile for fuzzy prefix search
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(name_fuzzy)
+    }
+    match-features {
+      bm25(name_fuzzy)
     }
   }
 } 
