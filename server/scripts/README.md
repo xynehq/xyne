@@ -56,6 +56,7 @@ bun run server/scripts/evaluateSearchQuality.ts
 *   `EVALUATION_USER_EMAIL` ( **Required**): The email address to use for permission-aware search.
 *   `EVALUATION_STRATEGY` (Optional): The strategy to use for generating queries. Defaults to `ExactTitle`. Available strategies are defined in the `EvaluationStrategy` enum within the script (e.g., `ExactTitle`, `BodyPhrase`, `RandomTitleWords`).
 *   `NUM_SAMPLES` (Optional): The number of documents to sample and evaluate. Defaults to `100`.
+*   `EVALUATION_NUM_RUNS` (Optional): The number of evaluation runs to perform. Metrics are averaged across these runs. Defaults to `3`.
 *   `MAX_RANK_TO_CHECK` (Optional): The maximum rank position to check when searching for the target document. Defaults to `100`.
 *   `DELAY_MS` (Optional): Delay in milliseconds between search requests. Defaults to `15`.
 *   `ENABLE_TRACE` (Optional): Set to `true` to include Vespa trace information in logs (can be verbose). Defaults to `false`. `DEBUG_POOR_RANKINGS=true` implicitly enables tracing for failed searches.
