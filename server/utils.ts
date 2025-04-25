@@ -241,10 +241,12 @@ export const hashPdfFilename = (filename: string): string => {
   return newFilename
 }
 
-export const interpretDateFromReturnedTemporalValue = (value: TemporalClassifier) => {
+export const interpretDateFromReturnedTemporalValue = (
+  value: TemporalClassifier,
+) => {
   // Convert UTC timestamps to local time zone
-  const from = value.from ? new Date(value.from) : null;
-  const to = value.to ? new Date(value.to) : null;
-    
-  return { fromDate: from, toDate: to };
+  const from = value.from ? new Date(value.from) : null
+  const to = value.to ? new Date(value.to) : null
+
+  return { fromDate: from, toDate: to }
 }

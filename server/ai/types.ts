@@ -55,14 +55,12 @@ export type Cost = {
   pricePerThousandOutputTokens: number
 }
 
-export type TimeDirection = "next" | "prev" | "from-to" | null;
+export type TimeDirection = "next" | "prev" | "from-to" | null
 export interface TemporalClassifier {
-  direction: TimeDirection | null,
-  from: string | null;
-  to: string | null;
+  direction: TimeDirection | null
+  from: string | null
+  to: string | null
 }
-
-
 
 export interface ModelParams {
   max_new_tokens?: number
