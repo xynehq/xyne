@@ -902,7 +902,7 @@ export function RagTraceVirtualization({
                         setSelectedAttribute({ key, value: attributes[key] })
                         setIsAttributeModalOpen(true)
                       }}
-                      className="cursor-pointer text-left"
+                      className="cursor-pointer text-left w-full px-4 py-2 block"
                       title="View enlarged"
                     >
                       {key}
@@ -941,7 +941,7 @@ export function RagTraceVirtualization({
                       })
                       setIsAttributeModalOpen(true)
                     }}
-                    className="cursor-pointer text-left"
+                    className="cursor-pointer text-left w-full px-4 py-2 block"
                     title="View enlarged"
                   >
                     context
@@ -1076,7 +1076,7 @@ export function RagTraceVirtualization({
                       })
                       setIsAttributeModalOpen(true)
                     }}
-                    className="cursor-pointer text-left"
+                    className="cursor-pointer text-left w-full px-4 py-2 block"
                     title="View enlarged"
                   >
                     citation_values
