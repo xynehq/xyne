@@ -26,6 +26,8 @@ import {
 } from "@/errors"
 import { IsGoogleApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
+import { sql } from "drizzle-orm"
+import { getErrorMessage } from "@/utils"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -278,6 +280,20 @@ export const deleteConnector = async (
         eq(connectors.userId, userId),
       ),
     )
+}
+
+export const deleteOauthConnector = async (trx: TxnOrClient): Promise<void> => {
+  try {
+    await trx.execute(
+      sql`TRUNCATE TABLE connectors, oauth_providers, sync_jobs, sync_history RESTART IDENTITY CASCADE;`,
+    )
+  } catch (error) {
+    Logger.error(
+      { error },
+      "Error truncating tables in deleteOauthConnector",
+    )
+    throw new Error(`Failed to truncate tables: ${getErrorMessage(error)}`)
+  }
 }
 
 export async function loadConnectorState<T extends IngestionStateUnion>(

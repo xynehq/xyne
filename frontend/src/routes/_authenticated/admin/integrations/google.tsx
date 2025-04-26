@@ -380,6 +380,27 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
+export const deleteOauthConnector = async (connectorId: string) => {
+  const res = await api.admin.oauth.connector.delete.$delete({
+    form: { connectorId },
+  })
+  if (!res.ok) {
+    let errorText = res.statusText
+    try {
+      errorText = await res.text()
+    } catch (e) {
+    }
+    throw new Error(`Failed to delete connector (${res.status}): ${errorText}`)
+  }
+
+  try {
+    return await res.json()
+  } catch (e) {
+    console.error("Failed to parse JSON response even though status was OK:", e)
+    throw new Error("Received an invalid response from the server after deletion.")
+  }
+}
+
 const UserStatsTable = ({
   userStats,
   type,
@@ -663,6 +684,37 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       (stats) => stats.type === currentAuthType,
     )
   }
+
+  const handleDelete = async () => {
+    const googleOAuthConnector = data?.find(
+      (c: Connectors) =>
+        c.app === Apps.GoogleDrive && c.authType === AuthType.OAuth,
+    )
+    if (!googleOAuthConnector) {
+      toast({
+        title: "Deletion Failed",
+        description: "Google OAuth connector not found.",
+        variant: "destructive",
+      })
+      return
+    }
+    try {
+      await deleteOauthConnector(googleOAuthConnector.id)
+      toast({
+        title: "Connector Deleted",
+        description: "Google OAuth connector has been removed",
+      })
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+      refetch()
+    } catch (error) {
+      toast({
+        title: "Deletion Failed",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      })
+    }
+  }
+
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
@@ -700,8 +752,9 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
-            />
-          </Tabs>
+              handleDelete={handleDelete}
+              />
+            </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
             <UserStatsTable
               userStats={userStats}

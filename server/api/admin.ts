@@ -8,6 +8,7 @@ import {
   getConnectors,
   insertConnector,
   updateConnector,
+  deleteOauthConnector,
 } from "@/db/connector"
 import {
   ConnectorType,
@@ -34,6 +35,7 @@ import {
 } from "@/errors"
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
+import { sql } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -379,4 +381,25 @@ export const DeleteConnector = async (c: Context) => {
     success: true,
     message: "Connector deleted",
   })
+}
+
+export const DeleteOauthConnector = async (c: Context) => {
+  Logger.warn(
+    "API handler DeleteOauthConnector called - attempting to truncate tables.",
+  )
+  try {
+    await db.transaction(async (trx) => {
+      await deleteOauthConnector(trx)
+    })
+    return c.json({
+      success: true,
+      message: "OAuth connector and related tables truncated successfully",
+    })
+  } catch (error) {
+    Logger.error({ error }, "Error in DeleteOauthConnector API handler")
+    throw new HTTPException(500, {
+      message: `Failed to truncate tables: ${getErrorMessage(error)}`,
+      cause: error,
+    })
+  }
 }

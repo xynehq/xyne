@@ -30,6 +30,7 @@ import {
   AddServiceConnection,
   CreateOAuthProvider,
   DeleteConnector,
+  DeleteOauthConnector,
   GetConnectors,
   StartOAuth,
   UpdateConnectorStatus,
@@ -204,6 +205,11 @@ export const AppRoutes = app
     "/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteConnector,
+  )
+  .delete(
+    "/oauth/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteOauthConnector,
   )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
