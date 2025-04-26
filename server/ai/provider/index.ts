@@ -382,7 +382,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     }
     // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
-      text = `{${text}}`
+      text = `{${text}`
     }
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
