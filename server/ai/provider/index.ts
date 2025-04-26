@@ -369,16 +369,17 @@ export const analyzeQueryMetadata = async (
   }
 }
 
-// better to parametr
+const nullCloseBraceRegex = /null\s*\n\s*\}/
 export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
     // edge case "null\n}
-    if(text.indexOf("}") !== -1 && text.trim().includes(`null\n`)) {
+    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
+      console.log("here1")
       text = text.replaceAll("\n", "")
       text = text.replaceAll('"', "")
-      text = text.replaceAll('}', "")
+      text = text.replaceAll("}", "")
     }
     // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -422,10 +423,10 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         jsonVal = parse(withNewLines.trim())
       }
       // edge case "null\n}
-      if(jsonKey) {
-        const key = jsonKey.slice(0, -1).replaceAll('"',"")
-        if(jsonVal[key].trim() === "null") {
-          jsonVal = {[key]: null}
+      if (jsonKey) {
+        const key = jsonKey.slice(0, -1).replaceAll('"', "")
+        if (jsonVal[key].trim() === "null") {
+          jsonVal = { [key]: null }
         }
       }
       return jsonVal

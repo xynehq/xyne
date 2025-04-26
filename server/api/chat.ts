@@ -373,6 +373,10 @@ export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
 ) => {
+  if (!text) {
+    return ""
+  }
+
   text = splitGroupedCitationsWithSpaces(text)
   return text.replace(textToCitationIndex, (match, num) => {
     const index = citationMap[num]
