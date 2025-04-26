@@ -6,7 +6,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import { modelDetailsMap } from "@/ai/mappers"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
-import { AIProviders } from "@/ai/types"
+import { AIProviders, Models } from "@/ai/types"
 import BaseProvider from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
@@ -68,19 +68,47 @@ export class BedrockProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+
+    // Configure reasoning parameters only if reasoning is enabled AND using Claude 3.7
+    const isClaude37 = modelParams.modelId === Models.Claude_3_7_Sonnet
+    const isThinkingEnabled = params.reasoning
+
+    const reasoningConfig =
+      isThinkingEnabled && isClaude37
+        ? {
+            thinking: {
+              type: "enabled",
+              budget_tokens: 1024,
+            },
+          }
+        : undefined
+
+    // When using thinking mode with Claude 3.7 Sonnet, temperature must be 1 and top_p must be unset
+    const temperature =
+      isThinkingEnabled && isClaude37 ? 1 : modelParams.temperature || 0.6
+
+    // Create the inferenceConfig based on whether thinking is enabled
+    const inferenceConfig = isThinkingEnabled
+      ? {
+          maxTokens: modelParams.maxTokens || 2500,
+          temperature: temperature,
+        }
+      : {
+          maxTokens: modelParams.maxTokens || 2500,
+          topP: modelParams.topP || 0.9,
+          temperature: temperature,
+        }
+
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
+      additionalModelRequestFields: reasoningConfig,
       system: [
         {
           text: modelParams.systemPrompt!,
         },
       ],
       messages: messages,
-      inferenceConfig: {
-        // maxTokens: modelParams.maxTokens || 512,
-        topP: modelParams.topP || 0.9,
-        temperature: modelParams.temperature || 0.6,
-      },
+      inferenceConfig,
     })
 
     let modelId = modelParams.modelId!
@@ -88,8 +116,9 @@ export class BedrockProvider extends BaseProvider {
     try {
       const response = await this.client.send(command)
 
+      // Process reasoning/thinking content if enabled for Claude 3.7
       let startedReasoning = false
-      if (params.reasoning) {
+      if (isThinkingEnabled && response.stream) {
         for await (const chunk of response.stream) {
           if (chunk.contentBlockStop) {
             yield {
@@ -97,25 +126,30 @@ export class BedrockProvider extends BaseProvider {
             }
             break
           }
+
           const reasoning =
-            chunk.contentBlockDelta?.delta?.reasoningContent?.text
-          if (!startedReasoning) {
-            yield {
-              text: `${StartThinkingToken}${reasoning}`,
-            }
-            startedReasoning = true
-          } else {
-            yield {
-              text: reasoning,
+            chunk.contentBlockDelta?.delta?.reasoningContent?.text || ""
+          if (reasoning) {
+            if (!startedReasoning) {
+              yield {
+                text: `${StartThinkingToken}${reasoning}`,
+              }
+              startedReasoning = true
+            } else {
+              yield {
+                text: reasoning,
+              }
             }
           }
         }
       }
+
+      // Process regular content stream
       if (response.stream) {
         for await (const chunk of response.stream) {
-          const text = chunk.contentBlockDelta?.delta?.text
+          const text = chunk.contentBlockDelta?.delta?.text || ""
           const metadata = chunk.metadata
-          let cost: number | undefined
+
           if (text) {
             yield {
               text,
