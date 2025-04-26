@@ -116,6 +116,8 @@ const initializeProviders = (): void => {
     }
     const BedrockClient = new BedrockRuntimeClient({
       region: AwsRegion,
+      retryMode: "adaptive",
+      maxAttempts: 5,
       credentials: {
         accessKeyId: AwsAccessKey,
         secretAccessKey: AwsSecretKey,
@@ -367,23 +369,40 @@ export const analyzeQueryMetadata = async (
   }
 }
 
-export const jsonParseLLMOutput = (text: string): any => {
+// better to parametr
+export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-    // first it has to exist
+    // edge case "null\n}
+    if(text.indexOf("}") !== -1 && text.trim().includes(`null\n`)) {
+      text = text.replaceAll("\n", "")
+      text = text.replaceAll('"', "")
+      text = text.replaceAll('}', "")
+    }
+    // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
+    if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
+      text = `{${text}}`
+    }
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
 
-    if (startBrace !== -1) {
-      if (startBrace !== 0) {
-        text = text.substring(startBrace)
+    if (startBrace !== -1 || endBrace !== -1) {
+      // there is no json
+      if (startBrace !== -1) {
+        if (startBrace !== 0) {
+          text = text.substring(startBrace)
+        }
+      }
+      if (endBrace !== -1) {
+        // Only add the closing brace if it's not already there
+        if (endBrace !== text.length - 1) {
+          text = text.substring(0, endBrace + 1)
+        }
       }
     }
-    if (endBrace !== -1) {
-      if (endBrace !== text.length - 1) {
-        text = text.substring(0, endBrace + 1)
-      }
+    if (startBrace === -1 && jsonKey) {
+      text = `{${jsonKey} "${text}"`
     }
 
     if (!text.trim()) {
@@ -402,6 +421,13 @@ export const jsonParseLLMOutput = (text: string): any => {
         })
         jsonVal = parse(withNewLines.trim())
       }
+      // edge case "null\n}
+      if(jsonKey) {
+        const key = jsonKey.slice(0, -1).replaceAll('"',"")
+        if(jsonVal[key].trim() === "null") {
+          jsonVal = {[key]: null}
+        }
+      }
       return jsonVal
     } catch {
       // If first parse failed, continue to code block cleanup
@@ -417,7 +443,7 @@ export const jsonParseLLMOutput = (text: string): any => {
         .replace(/\r/g, "\\r")
         .trim()
       if (!text) {
-        return ""
+        return {}
       }
       jsonVal = parse(text)
     } catch (parseError) {
@@ -911,7 +937,10 @@ export const baselineRAGJsonStream = (
       indexToCitation(retrievedCtx),
     )
   } else {
-    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+    params.systemPrompt = baselinePromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
   }
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
