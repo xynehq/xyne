@@ -376,7 +376,6 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     text = text.trim()
     // edge case "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
-      console.log("here1")
       text = text.replaceAll("\n", "")
       text = text.replaceAll('"', "")
       text = text.replaceAll("}", "")
