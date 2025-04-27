@@ -374,11 +374,9 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-    // edge case "null\n}
+    // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
-      text = text.replaceAll("\n", "")
-      text = text.replaceAll('"', "")
-      text = text.replaceAll("}", "")
+      text = text.replaceAll(/[\n"}:]/g, "");
     }
     // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -401,7 +399,9 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         }
       }
     }
-    if (startBrace === -1 && jsonKey) {
+    // we only want to do this if enough text has accumulated
+    // we don't want to do case where just `json` comes and we wrap it as answer
+    if (startBrace === -1 && jsonKey && text.length > 10) {
       text = `{${jsonKey} "${text}"`
     }
 
