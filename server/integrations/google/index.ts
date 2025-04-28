@@ -637,9 +637,21 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       clientSecret: googleProvider.clientSecret,
       redirectUri: `${config.host}/oauth/callback`,
     })
+    oauth2Client.setCredentials({
+      access_token: oauthTokens.access_token,
+      refresh_token: oauthTokens.refresh_token,
+    })
 
     const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth)
     tracker.setOAuthUser(userEmail)
+    const [totalFiles, { messagesExcludingPromotions }] = await Promise.all([
+      countDriveFiles(oauth2Client),
+      getGmailCounts(oauth2Client),
+    ]);
+    tracker.updateTotal(userEmail, {
+      totalDrive: totalFiles,
+      totalMail: messagesExcludingPromotions,
+    });
 
     const interval = setInterval(() => {
       sendWebsocketMessage(
@@ -654,10 +666,6 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
 
     // we have guarantee that when we started this job access Token at least
     // hand one hour, we should increase this time
-    oauth2Client.setCredentials({
-      access_token: oauthTokens.access_token,
-      refresh_token: oauthTokens.refresh_token,
-    })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
