@@ -67,7 +67,7 @@ Run the application with the following command from the ```xyne``` folder:
 docker-compose -f deployment/docker-compose.yml up
 ```
 
-And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to xyne](http://localhost:3001/)
+And that is all 🎉 ! The app will now be available in port ```3001```.  [Go to xyne](http://localhost:3000/)
 
 <Note> Since the size of the downloading models can be quite large, wait for the application to start running, this can take around 10 - 15 minutes, 
 depending on your internet connection. </Note>
@@ -114,7 +114,7 @@ SERVICE_ACCOUNT_ENCRYPTION_KEY=<YOUR_SERVICE_ACCOUNT_ENCRYPTION_KEY>
 GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
 GOOGLE_REDIRECT_URI=http://localhost:3000/v1/auth/callback
-GOOGLE_PROD_REDIRECT_URI=http://localhost:3001/v1/auth/callback
+GOOGLE_PROD_REDIRECT_URI=http://localhost:3000/v1/auth/callback
 
 
 JWT_SECRET=<YOUR_JWT_SECRET>
@@ -151,7 +151,7 @@ GEMINI_MODEL=<YOUR_GEMINI_MODEL_NAME>
 ## If you are using custom OpenAI or Together AI endpoints
 BASE_URL=<YOUR_BASE_URL>
 
-HOST=http://localhost:3001
+HOST=http://localhost:3000
 ```
 
 <Tip>To use the chat feature of Xyne, you need any one AI provider (AWS, Ollama, OpenAI Together AI or Fireworks AI). Missing keys will disable chat functionality.</Tip>
