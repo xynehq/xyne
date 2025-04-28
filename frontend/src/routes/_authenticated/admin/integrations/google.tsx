@@ -117,7 +117,7 @@ const updateOAuthForm = async (
     }
     const errorText = await response.text()
     throw new Error(
-      `Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`,
+      `Failed to update provider: ${response.status} ${response.statusText} - ${errorText}`,
     )
   }
   return response.json()
@@ -455,10 +455,6 @@ const UserStatsTable = ({
       </TableHeader>
       <TableBody>
         {Object.entries(userStats).map(([email, stats]) => {
-          // console.log(stats.,stats.totalMail);
-          useEffect(() => {
-            console.log("Fetched stats:", stats)
-          }, [stats])
           const totalCount: number = stats.totalDrive + stats.totalMail
           const percentage: number = parseFloat(
             (
