@@ -59,7 +59,6 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
   })
 
   const [updateStatus, setUpdateStatus] = useState("")
-  const [progress, setProgress] = useState<number>(0)
   const [userStats, setUserStats] = useState<{ [email: string]: any }>({})
   const [activeTab, setActiveTab] = useState<string>("oauth")
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
@@ -106,7 +105,6 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
         socket?.addEventListener("message", (e) => {
           const data = JSON.parse(e.data)
           const statusJson = JSON.parse(data.message)
-          setProgress(statusJson.progress ?? 0)
           setUserStats(statusJson.userStats ?? {})
           setUpdateStatus(data.message)
         })
