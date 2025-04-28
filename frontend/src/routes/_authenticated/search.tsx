@@ -9,7 +9,8 @@ import MarkdownPreview from "@uiw/react-markdown-preview"
 const page = 8
 
 import { Sidebar } from "@/components/Sidebar"
-import { useEffect, useRef, useState, useCallback } from "react"
+
+import { useEffect, useRef, useState } from "react"
 
 import {
   Tooltip,
@@ -42,6 +43,7 @@ import {
 import { LastUpdated } from "@/components/SearchFilter"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { errorComponent } from "@/components/error"
+import { LoaderContent } from "@/lib/common"
 
 const logger = console
 
@@ -79,6 +81,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
     from: "/_authenticated/search",
   })
   const navigate = useNavigate({ from: "/search" })
+  // TODO: debug the react warning
+  // Cannot update a component (`MatchesInner`)
   if (!search.query) {
     navigate({
       to: "/",
@@ -101,15 +105,31 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const [showDebugInfo, setDebugInfo] = useState(
     import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || (search.debug ?? false),
-  )
-  const [traceData, setTraceData] = useState<any | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  ) // State for debug info visibility, initialized from env var
+  const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
+  // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
-  const observerRef = useRef<IntersectionObserver | null>(null)
-  const loadMoreRef = useRef<HTMLDivElement | null>(null)
 
-  const debounceTimeout = useRef<number | null>(null)
+  const totalCount = searchMeta?.totalCount || 0
+  const filterPageSize =
+    filter.app && filter.entity
+      ? groups
+        ? groups[filter.app][filter.entity]
+        : totalCount
+      : totalCount
+  
+  // Added for infinite scroll functionality
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleNext = () => {
+    const newOffset = offset + page
+    setOffset(newOffset)
+  }
+
+  // for autocomplete
+  const debounceTimeout = useRef<number | null>(null) // Debounce timer
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
   >([])
@@ -117,24 +137,64 @@ export const Search = ({ user, workspace }: IndexProps) => {
   // Click outside handler
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // If click is outside the autocomplete box, hide the autocomplete results
       if (
         autocompleteRef.current &&
         !autocompleteRef.current.contains(event.target as Node)
       ) {
-        setAutocompleteResults([])
+        setAutocompleteResults([]) // Hide autocomplete by clearing results
       }
     }
+
+    // Attach the event listener to detect clicks outside
     document.addEventListener("mousedown", handleClickOutside)
+
+    // Cleanup listener on component unmount
     return () => {
       document.removeEventListener("mousedown", handleClickOutside)
     }
   }, [autocompleteRef])
 
+  // Intersection observer for infinite scroll
   useEffect(() => {
-    if (!autocompleteQuery || query.length < 2) {
+    if (!bottomRef.current) return
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries
+        if (
+          entry.isIntersecting && 
+          results.length > 0 && 
+          filterPageSize > page && 
+          results.length < filterPageSize && 
+          !isLoading
+        ) {
+          // Load more results when bottom is visible
+          setIsLoading(true)
+          handleNext()
+        }
+      },
+      { threshold: 0.5 } // Trigger when 10% of the element is visible
+    )
+    
+    observer.observe(bottomRef.current)
+    
+    return () => {
+      if (bottomRef.current) {
+        observer.unobserve(bottomRef.current)
+      }
+    }
+  }, [results, filterPageSize, page, isLoading, handleNext])
+
+  useEffect(() => {
+    if (!autocompleteQuery) {
+      return
+    }
+    if (query.length < 2) {
       setAutocompleteResults([])
       return
     }
+    // Debounce logic
     if (debounceTimeout.current) {
       clearTimeout(debounceTimeout.current)
     }
@@ -173,64 +233,15 @@ export const Search = ({ user, workspace }: IndexProps) => {
     }
   }, [search])
 
-  // Trigger search on filter or offset change
   useEffect(() => {
     handleSearch()
   }, [filter, offset])
-
-  // Infinite scroll setup
-  const handleNext = useCallback(() => {
-    const newOffset = offset + page
-    setOffset(newOffset)
-  }, [offset, page])
-
-  useEffect(() => {
-    if (isLoading) return
-
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !isLoading) {
-          const totalCount = searchMeta?.totalCount || 0
-          const filterPageSize =
-            filter.app && filter.entity
-              ? groups
-                ? groups[filter.app][filter.entity]
-                : totalCount
-              : totalCount
-
-          // Only trigger handleNext if there are more results to load
-          if (results.length > 0 && results.length < filterPageSize) {
-            setIsLoading(true)
-            handleNext()
-          } else if (observerRef.current) {
-            // Disconnect observer if no more results to load
-            observerRef.current.disconnect()
-          }
-        }
-      },
-      { threshold: 0.1 },
-    )
-
-    if (loadMoreRef.current) {
-      observerRef.current.observe(loadMoreRef.current)
-    }
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect()
-      }
-    }
-  }, [handleNext, isLoading, results.length, searchMeta, filter, groups])
-
-  // Reset loading state after search
-  useEffect(() => {
-    setIsLoading(false)
-  }, [results])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
 
     setAnswer(null)
+
     const url = new URL(`/api/answer`, window.location.origin)
     url.searchParams.append("query", encodeURIComponent(query))
     if (newFilter && newFilter.app && newFilter.entity) {
@@ -365,24 +376,29 @@ export const Search = ({ user, workspace }: IndexProps) => {
           setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
+        
+        // Reset loading state after results are received
+        setIsLoading(false)
       } else {
         const errorText = await response.text()
-        if (response.status === 401) {
-          navigate({ to: "/auth" })
-          throw new Error("Unauthorized")
+        if (!response.ok) {
+          // If unauthorized or status code is 401, navigate to '/auth'
+          if (response.status === 401) {
+            navigate({ to: "/auth" })
+            throw new Error("Unauthorized")
+          }
         }
         throw new Error(
           `Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`,
         )
       }
     } catch (error) {
-      logger.error(error, `Error fetching search results: ${error}`)
-      // Only clear results on initial fetch or critical error
-      if (newOffset === 0) {
-        setResults([])
-      }
+      logger.error(error, `Error fetching search results:', ${error}`)
+      setResults([]) // Clear results on error
+      setIsLoading(false) // Reset loading state on error
     }
   }
+
 
   const handleFilterChange = (appEntity: Filter) => {
     // Check if appEntity.app and appEntity.entity are defined
@@ -396,6 +412,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
     }
 
     const { app, entity } = appEntity
+
     if (filter.app === app && filter.entity === entity) {
       const updatedFilter: Filter = {
         lastUpdated: filter.lastUpdated || "anytime",
@@ -412,20 +429,12 @@ export const Search = ({ user, workspace }: IndexProps) => {
       setOffset(0)
     }
   }
-
-  const totalCount = searchMeta?.totalCount || 0
   // if filter is selected we should keep it's count to prevent showing button for pagination
-  const filterPageSize =
-    filter.app && filter.entity
-      ? groups
-        ? groups[filter.app][filter.entity]
-        : totalCount
-      : totalCount
 
   return (
     <div className="h-full w-full flex">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
-      <div className={`flex flex-col flex-grow h-full ml-[52px]`}>
+      <div className={`flex flex-col flex-grow h-full "ml-[52px]"`}>
         <SearchBar
           ref={autocompleteRef}
           autocompleteResults={autocompleteResults}
@@ -503,6 +512,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
                 </div>
               </div>
             )}
+            {/* Top-level Trace Info Display */}
             {showDebugInfo && traceData && (
               <details className="mt-4 mb-4 text-xs">
                 <summary className="text-gray-500 cursor-pointer">
@@ -523,13 +533,19 @@ export const Search = ({ user, workspace }: IndexProps) => {
                       key={index}
                       result={result}
                       index={index}
-                      showDebugInfo={showDebugInfo}
+                      showDebugInfo={showDebugInfo} // Pass state down
                     />
                   ))}
                 </div>
-                {results.length > 0 && results.length < filterPageSize && (
-                  <div ref={loadMoreRef} className="h-10"></div>
-                )}
+              </div>
+            )}
+
+            {/* Infinite scroll loading indicator and bottom reference */}
+            {results.length > 0 && (
+              <div ref={bottomRef} className="py-4 flex justify-center">
+                {isLoading && filterPageSize > page && results.length < filterPageSize ? (
+                  <LoaderContent />
+                ) : null}
               </div>
             )}
           </div>
