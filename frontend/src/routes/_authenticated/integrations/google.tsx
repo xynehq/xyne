@@ -20,8 +20,25 @@ import { wsClient } from "@/api"
 import OAuthTab from "@/components/OAuthTab"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { OAuthIntegrationStatus } from "@/types"
+import { UserStatsTable } from "@/components/ui/userStatsTable"
 
 const logger = console
+
+const showUserStats = (
+  userStats: { [email: string]: any },
+  activeTab: string,
+  oauthIntegrationStatus: OAuthIntegrationStatus,
+) => {
+  if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
+    return false
+  if (!Object.keys(userStats).length) return false
+  if (activeTab !== "oauth") return false
+
+  const currentAuthType = AuthType.OAuth
+  return Object.values(userStats).some(
+    (stats) => stats.type === currentAuthType,
+  )
+}
 
 const UserLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
@@ -41,7 +58,10 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     },
   })
 
-  const [updateStatus, setUpateStatus] = useState("")
+  const [updateStatus, setUpdateStatus] = useState("")
+  const [progress, setProgress] = useState<number>(0)
+  const [userStats, setUserStats] = useState<{ [email: string]: any }>({})
+  const [activeTab, setActiveTab] = useState<string>("oauth")
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(
       data
@@ -75,24 +95,28 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
   useEffect(() => {
     let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
-      socket = wsClient.ws.$ws({
-        query: {
-          id: data[0]?.id,
-        },
-      })
-      socket?.addEventListener("open", () => {
-        logger.info("open")
-      })
-      socket?.addEventListener("close", (e) => {
-        logger.info("close")
-        if (e.reason === "Job finished") {
-          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
-        }
-      })
-      socket?.addEventListener("message", (e) => {
-        const data = JSON.parse(e.data)
-        setUpateStatus(data.message)
-      })
+      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+      if (oauthConnector) {
+        socket = wsClient.ws.$ws({
+          query: { id: oauthConnector.id },
+        })
+        socket?.addEventListener("open", () => {
+          logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
+        })
+        socket?.addEventListener("message", (e) => {
+          const data = JSON.parse(e.data)
+          const statusJson = JSON.parse(data.message)
+          setProgress(statusJson.progress ?? 0)
+          setUserStats(statusJson.userStats ?? {})
+          setUpdateStatus(data.message)
+        })
+        socket?.addEventListener("close", (e) => {
+          logger.info("OAuth WebSocket closed")
+          if (e.reason === "Job finished") {
+            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+          }
+        })
+      }
     }
     return () => {
       socket?.close()
@@ -114,7 +138,10 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
         <div className="flex flex-col h-full items-center justify-center">
           <Tabs
             defaultValue="oauth"
-            className={`w-[400px] min-h-[${minHeight}px]`}
+            className={`w-[400px] min-h-[${minHeight}px] ${
+              Object.keys(userStats).length > 0 ? "mt-[150px]" : ""
+            }`}
+            onValueChange={setActiveTab}
           >
             <TabsList className="grid w-full grid-cols-1">
               <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
@@ -126,6 +153,9 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
               updateStatus={updateStatus}
             />
           </Tabs>
+          {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
+            <UserStatsTable userStats={userStats} type={AuthType.OAuth} />
+          )}
         </div>
       </div>
     </div>
@@ -140,7 +170,7 @@ export const Route = createFileRoute("/_authenticated/integrations/google")({
       userWorkspace?.user?.role === UserRole.SuperAdmin ||
       userWorkspace?.user?.role === UserRole.Admin
     ) {
-      throw redirect({ to: "/integrations/google" })
+      throw redirect({ to: "/admin/integrations/google" })
     }
     return params
   },

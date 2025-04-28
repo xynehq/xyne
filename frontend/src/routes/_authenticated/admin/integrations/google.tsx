@@ -30,18 +30,11 @@ import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Progress } from "@/components/ui/progress"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
 import OAuthTab from "@/components/OAuthTab"
 import { LoaderContent } from "@/lib/common"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
+import { UserStatsTable } from "@/components/ui/userStatsTable"
 
 const logger = console
 
@@ -378,66 +371,6 @@ export const getConnectors = async (): Promise<any> => {
     throw new Error("Could not get connectors")
   }
   return res.json()
-}
-
-const UserStatsTable = ({
-  userStats,
-  type,
-}: {
-  userStats: { [email: string]: any }
-  type: AuthType
-}) => {
-  return (
-    <Table
-      className={
-        "ml-[20px] max-h-[400px]" + type === AuthType.OAuth
-          ? "ml-[10px] mt-[10px]"
-          : ""
-      }
-    >
-      <TableHeader>
-        <TableRow>
-          {type !== AuthType.OAuth && <TableHead>Email</TableHead>}
-          <TableHead>Gmail</TableHead>
-          <TableHead>Drive</TableHead>
-          <TableHead>Contacts</TableHead>
-          <TableHead>Events</TableHead>
-          <TableHead>Attachments</TableHead>
-          <TableHead>%</TableHead>
-          <TableHead>Est (minutes)</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {Object.entries(userStats).map(([email, stats]) => {
-          const percentage: number = parseFloat(
-            (
-              ((stats.gmailCount + stats.driveCount) * 100) /
-              (stats.totalDrive + stats.totalMail)
-            ).toFixed(2),
-          )
-          const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
-          const eta =
-            percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
-          return (
-            <TableRow key={email}>
-              {type !== AuthType.OAuth && (
-                <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
-                  {email}
-                </TableCell>
-              )}
-              <TableCell>{stats.gmailCount}</TableCell>
-              <TableCell>{stats.driveCount}</TableCell>
-              <TableCell>{stats.contactsCount}</TableCell>
-              <TableCell>{stats.eventsCount}</TableCell>
-              <TableCell>{stats.mailAttachmentCount}</TableCell>
-              <TableCell>{percentage}</TableCell>
-              <TableCell>{eta.toFixed(0)}</TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
-  )
 }
 
 const ServiceAccountTab = ({
