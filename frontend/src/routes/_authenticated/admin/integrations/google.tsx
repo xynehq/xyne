@@ -139,7 +139,6 @@ export const OAuthForm = ({
   onSuccess,
   isEditing,
   connectorId,
-  refetch,
 }: {
   onSuccess: any
   isEditing?: boolean
@@ -163,14 +162,13 @@ export const OAuthForm = ({
             description: "Perform OAuth to add the data",
           })
         } else {
-          await submitOAuthForm(value, navigate) // Call the async function
+          await submitOAuthForm(value, navigate)
           toast({
             title: "OAuth integration added",
             description: "Perform OAuth to add the data",
           })
         }
         onSuccess()
-        refetch()
       } catch (error) {
         toast({
           title: "Could not create integration",
