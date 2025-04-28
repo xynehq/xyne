@@ -10,12 +10,7 @@ If you want to deploy Xyne on AWS instead of your local machine, this document w
 Follow the steps listed below to get started : 
 
 ## Connect to the instance remotely: 
-Once you have your instance up and running, you can use your terminal to connect to your instance remotely. 
-Use this command to connect to your instance : 
-
-```javascript
-ssh -i ~/path/to/your-private-key-file.pem ec2-user@public-ipv4-address
-```
+Once you have your instance up and running, you can use your terminal to connect to (```ssh``` into) your instance remotely. 
 
 
 ## Install the required dependencies : 
@@ -100,7 +95,12 @@ FIREWORKS_API_KEY=<YOUR_FIREWORKS_API_KEY>
 FIREWORKS_MODEL=<YOUR_FIREWORKS_MODEL>
 FIREWORKS_FAST_MODEL=<YOUR_FIREWORKS_FAST_MODEL>
 
+## OR [If using Google AI]
+GEMINI_API_KEY=<YOUR_GEMINI_API_KEY> 
+GEMINI_MODEL=<YOUR_GEMINI_MODEL_NAME>  
 
+## If you are using custom OpenAI or Together AI endpoints
+BASE_URL=<YOUR_BASE_URL>
 HOST=<YOUR_Public_IPv4_DNS_ADDRESS>
 ```
 

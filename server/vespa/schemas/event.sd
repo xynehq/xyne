@@ -134,7 +134,7 @@ schema event {
         }
     }
 
-     field chunk_embeddings type tensor<bfloat16>(v[384])  {
+     field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
         indexing: (input name || "") . " " .(input description || ""). " " .((input attachmentFilenames | for_each { _ }) . " " || ""). " " .(input url || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -156,17 +156,17 @@ schema event {
         fields: name, description, attachmentFilenames, attendeesNames, app, url, baseUrl, attendees
     }
 
-    rank-profile default {
+    rank-profile initial {
         inputs {
-            query(e) tensor<bfloat16>(v[384])
+            query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
         }
 
         constants {
-          THREE_MONTHS_IN_SECONDS: 7890000
-          ONE_YEAR_IN_SECONDS: 31536000
-          MAX_DOC_DECAY: 0.5
-          META_FIELDS_DECAY: 0.8
+            THREE_MONTHS_IN_SECONDS: 7776000
+            ONE_YEAR_IN_SECONDS: 31536000
+            MAX_DOC_DECAY: 0.5
+            META_FIELDS_DECAY: 0.2
         }
 
         function scale(val) {
@@ -180,51 +180,146 @@ schema event {
 
         # Document score decays min to 0.5
         function doc_recency() {
-            expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+            expression: max(1 / (1 + query(beta) * sqrt(document_age)), MAX_DOC_DECAY)
         }
 
         function vector_score() {
             expression: closeness(field, chunk_embeddings)
         }
 
-        function scaled_bm25_name(){
-            expression: scale(bm25(name))
-        }
-
-        function scaled_bm25_description(){
-            expression: scale(bm25(description))
-        }
-
+        # reducing weightage for metadata fields
         function combined_bm25() {
             expression {
-                scale(bm25(name) + bm25(url) + bm25(description)) +
-                (META_FIELDS_DECAY * scale(bm25(attachmentFilenames) + bm25(attendeesNames)))
+                (bm25(name) + bm25(url) + bm25(description)) +
+                (META_FIELDS_DECAY * (bm25(attachmentFilenames) + bm25(attendeesNames)))
             }
         }
 
-        # Adjusting the ranking by reducing the weight of vector_score and metadata fields in BM25,  
-        # while giving higher importance to BM25 scores for 'name' and 'url'
+        function matchedFieldCount() {
+            expression {
+                 # The `matches` returns 1 if the field contains a match, otherwise 0
+                 matches(name) + matches(description) + matches(url)
+            }
+        }
+
+        function combined_nativeRank() {
+            expression {
+                (
+                    (
+                        nativeRank(name) + 
+                        nativeRank(description) + 
+                        nativeRank(url)
+                    ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+                ) 
+                +
+                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames)))
+            }
+        }
+    }
+
+    rank-profile default_native inherits initial {
+              
         first-phase {
-            expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+            expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
         }
 
         global-phase {
             expression {
               (
-                (query(alpha) * scale(vector_score)) +
-                ((1 - query(alpha)) * max(scale(bm25(name)),scale(bm25(description)))) 
-              ) * doc_recency
+                (query(alpha) * vector_score) + 
+                ((1 - query(alpha)) *  combined_nativeRank)
+              )
             }
             rerank-count: 1000
         }
 
         match-features {
+          matchedFieldCount
+          combined_nativeRank
+          vector_score
+          nativeRank(name)
+          nativeRank(description)
+          nativeRank(attachmentFilenames)
+          nativeRank(attendeesNames)
+        }
+    }
+
+    # will be use for single schema query
+    rank-profile default_bm25 inherits initial {
+
+        first-phase {
+          expression {
+            (
+              (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+            )
+          }
+        }
+
+        global-phase {
+          expression {
+            (
+              (query(alpha) * vector_score) +
+              ((1 - query(alpha)) * scale(combined_bm25))
+            )
+          }
+          rerank-count: 1000
+        }
+
+         match-features {
+          vector_score
           scale(bm25(name))
           scale(bm25(description))
           scale(bm25(attachmentFilenames))
           scale(bm25(attendeesNames))
+          scale(combined_bm25)
+        }
+    }
+
+
+    # change here for ai queries accordingly
+    rank-profile default_ai inherits initial {
+             
+        first-phase {
+            expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+        }
+
+        global-phase {
+            expression {
+              (
+                (query(alpha) * vector_score) + 
+                ((1 - query(alpha)) *  combined_nativeRank)
+              )
+            }
+            rerank-count: 1000
+        }
+
+        match-features {
+          combined_nativeRank
           vector_score
-          doc_recency
+          nativeRank(name)
+          nativeRank(description)
+          nativeRank(attachmentFilenames)
+          nativeRank(attendeesNames)
+        }
+    }
+    rank-profile default_random inherits initial {
+        first-phase {
+            expression: random.match
+        }
+
+        match-features {
+          combined_nativeRank
+          vector_score
+          nativeRank(name)
+          nativeRank(description)
+          nativeRank(attachmentFilenames)
+          nativeRank(attendeesNames)
+        }
+    }
+    
+    document-summary default {
+        summary description {
+            bolding: on
         }
     }
 
@@ -232,6 +327,7 @@ schema event {
         summary name {
             source: name
         }
+
         summary app {
             source: app
         }

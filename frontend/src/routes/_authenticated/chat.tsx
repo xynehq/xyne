@@ -35,6 +35,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
+import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 
 type CurrentResp = {
   resp: string
@@ -53,26 +54,26 @@ interface ChatPageProps {
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
-  let chatParams: XyneChat = useSearch({
+  const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
   })
+  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
+  const isDebugMode = isGlobalDebugMode || chatParams.debug
+
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
       ? "/_authenticated/chat/$chatId"
       : "/_authenticated/chat",
   })
-
   const queryClient = useQueryClient()
-
-  // query and param both can't exist same time
   if (chatParams.q && isWithChatId) {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
+      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
     })
   }
-
   const hasHandledQueryParam = useRef(false)
 
   const [query, setQuery] = useState("")
@@ -86,6 +87,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
+  const [showRagTrace, setShowRagTrace] = useState(false) // Added state
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
+    null,
+  ) // Added state
 
   const currentRespRef = useRef<CurrentResp | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
@@ -104,15 +109,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const titleRef = useRef<HTMLInputElement | null>(null)
 
   const renameChatMutation = useMutation<
-    { chatId: string; title: string }, // The type of data returned from the mutation
-    Error, // The type of error
-    { chatId: string; newTitle: string } // The type of variables passed to the mutation
+    { chatId: string; title: string },
+    Error,
+    { chatId: string; newTitle: string }
   >({
     mutationFn: async ({ chatId, newTitle }) => {
       return await renameChat(chatId, newTitle)
     },
     onSuccess: ({ chatId, title }) => {
-      // Update the UI by renaming the chat
       queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
         ["all-chats"],
         (oldData) => {
@@ -130,12 +134,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
           const updatedChat = { ...chatToUpdate, title }
 
-          // Remove the old version from all pages
           const filteredPages = oldData.pages.map((page) =>
             page.filter((c) => c.externalId !== chatId),
           )
 
-          // Insert the updated chat at the front of the first page
           const newPages = [
             [updatedChat, ...filteredPages[0]],
             ...filteredPages.slice(1),
@@ -172,11 +174,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     queryKey: ["all-chats"],
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
-      // lastPage?.length < pageSize becomes true, when there are no more pages
       if (lastPage?.length < pageSize) {
         return undefined
       }
-      // Otherwise, next page = current number of pages fetched so far
       return allPages?.length
     },
     initialPageParam: 0,
@@ -186,8 +186,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     .find((item) => item.externalId === chatId)
 
   useEffect(() => {
-    // Only update local state if we are not currently editing the title
-    // This prevents overwriting local edits while user is typing
     if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
       setChatTitle(currentChat.title)
       setEditedTitle(currentChat.title)
@@ -213,17 +211,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [isStreaming])
 
   useEffect(() => {
-    // Reset the state when the chatId changes
     if (!hasHandledQueryParam.current || isWithChatId) {
       setMessages(isWithChatId ? data?.messages || [] : [])
     }
     setChatId((params as any).chatId || null)
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
-    // only reset explicitly
-    // hasHandledQueryParam part was added to prevent conflict between
-    // this setting current resp to null and the handleSend trying to show
-    // the assistant as thinking when the first message comes from query param
     if (!isStreaming && !hasHandledQueryParam.current) {
       setCurrentResp(null)
       currentRespRef.current = null
@@ -238,7 +231,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     params,
   ])
 
-  // New useEffect to handle query parameters
   useEffect(() => {
     if (chatParams.q && !hasHandledQueryParam.current) {
       handleSend(decodeURIComponent(chatParams.q))
@@ -252,12 +244,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [chatParams.q])
 
   const handleSend = async (messageToSend: string) => {
-    if (!messageToSend) return
-    // Prevent the user from sending a query if streaming is already in progress.
-    if (isStreaming) return
+    if (!messageToSend || isStreaming) return
 
     setQuery("")
-    // Append the user's message to the chat
     setMessages((prevMessages) => [
       ...prevMessages,
       { messageRole: "user", message: messageToSend },
@@ -306,7 +295,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         const updatedResp = prevResp
           ? { ...prevResp, resp: prevResp.resp + event.data }
           : { resp: event.data }
-        currentRespRef.current = updatedResp // Update the ref
+        currentRespRef.current = updatedResp
         return updatedResp
       })
     })
@@ -316,24 +305,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setChatId(chatId)
 
       if (chatId) {
-        // we are redirecting after 1 second
-        // becase the chat may not have actually been created
-        // if it's not created and redirect to that url we try to fetch it
-        // and on error we redirect back to /chat
-        // need to create an event source event on when to navigate
         setTimeout(() => {
           router.navigate({
             to: "/chat/$chatId",
             params: { chatId },
+            search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
           })
         }, 1000)
       }
 
-      // this will be optional
       if (messageId) {
-        // there is a race condition between end and metadata events
-        // the message id would not reach and this would prevent the
-        // retry of just now streamed message as no message id
         if (currentRespRef.current) {
           setCurrentResp((resp) => {
             const updatedResp = resp || { resp: "" }
@@ -404,7 +385,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setIsStreaming(false)
     })
 
-    // Handle error events
     eventSource.onerror = (error) => {
       console.error("Error with SSE:", error)
       const currentResp = currentRespRef.current
@@ -413,7 +393,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           ...prevMessages,
           {
             messageRole: "assistant",
-            message: `Error occured: please try again`,
+            message: `Error occurred: please try again`,
           },
         ])
       }
@@ -423,41 +403,31 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setIsStreaming(false)
     }
 
-    // Clear the input
     setQuery("")
   }
 
   const handleRetry = async (messageId: string) => {
-    if (!messageId) return
-    // Prevent retry if streaming is already happening
-    if (isStreaming) return
+    if (!messageId || isStreaming) return
 
-    setIsStreaming(true) // Start streaming for retry
-
-    // If user retries on error case
+    setIsStreaming(true)
     const userMsgWithErr = messages.find(
       (msg) =>
         msg.externalId === messageId &&
         msg.messageRole === "user" &&
         msg.errorMessage,
     )
-    // Update the assistant message being retried
     setMessages((prevMessages) => {
       if (userMsgWithErr) {
-        // Create a copy of prevMessages so we can modify it
         const updatedMessages = [...prevMessages]
-        // Find the index of the message you want to update
         const index = updatedMessages.findIndex(
           (msg) => msg.externalId === messageId && msg.messageRole === "user",
         )
 
         if (index !== -1) {
-          // Update the errorMessage of that specific message
           updatedMessages[index] = {
             ...updatedMessages[index],
             errorMessage: "",
           }
-          // Insert a new message right after
           updatedMessages.splice(index + 1, 0, {
             messageRole: "assistant",
             message: "",
@@ -493,20 +463,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
       if (userMsgWithErr) {
         setMessages((prevMessages) => {
-          // Find the index of the message where externalId matches messageId
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
           )
 
-          // If no match is found or index+1 is out of range, return the original array
           if (index === -1 || index + 1 >= prevMessages.length) {
             return prevMessages
           }
 
-          // Create a shallow copy of the array
           const newMessages = [...prevMessages]
-
-          // Create a copy of the message object at index+1 and add the `message` field
           newMessages[index + 1] = {
             ...newMessages[index + 1],
             message: newMessages[index + 1].message + event.data,
@@ -564,20 +529,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
         if (newMessageId) {
           setMessages((prevMessages) => {
-            // Find the index of the message where externalId matches messageId
             const index = prevMessages.findIndex(
               (msg) => msg.externalId === messageId,
             )
 
             if (index === -1 || index + 1 >= prevMessages.length) {
-              // If no match is found or index+1 is out of range, return the original array
               return prevMessages
             }
 
-            // Create a shallow copy of the array
             const newMessages = [...prevMessages]
-
-            // Create a copy of the message object at index+1 and add the `message` field
             newMessages[index + 1] = {
               ...newMessages[index + 1],
               externalId: newMessageId,
@@ -592,13 +552,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       const { contextChunks, citationMap } = JSON.parse(event.data)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
-          // Find the index of the message where externalId matches messageId
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
           )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            // If no match is found or index+1 is out of range, return the original array
             return prevMessages
           }
 
@@ -626,13 +584,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSource.addEventListener(ChatSSEvents.End, (event) => {
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
-          // Find the index of the message where externalId matches messageId
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
           )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            // If no match is found or index+1 is out of range, return the original array
             return prevMessages
           }
 
@@ -655,20 +611,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         }
       })
       eventSource.close()
-      setIsStreaming(false) // Stop streaming after retry
+      setIsStreaming(false)
     })
 
     eventSource.addEventListener(ChatSSEvents.Error, (event) => {
       console.error("Retry Error with SSE:", event.data)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
-          // Find the index of the message where externalId matches messageId
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
           )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            // If no match is found or index+1 is out of range, return the original array
             return prevMessages
           }
 
@@ -698,13 +652,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
-          // Find the index of the message where externalId matches messageId
           const index = prevMessages.findIndex(
             (msg) => msg.externalId === messageId,
           )
 
           if (index === -1 || index + 1 >= prevMessages.length) {
-            // If no match is found or index+1 is out of range, return the original array
             return prevMessages
           }
 
@@ -723,7 +675,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         }
       })
       eventSource.close()
-      setIsStreaming(false) // Stop streaming on error
+      setIsStreaming(false)
     }
   }
 
@@ -743,7 +695,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     const container = messagesContainerRef.current
     if (!container) return true
 
-    const threshold = 100 // pixels from bottom to consider "at bottom"
+    const threshold = 100
     return (
       container.scrollHeight - container.scrollTop - container.clientHeight <
       threshold
@@ -762,7 +714,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     container.scrollTop = container.scrollHeight
   }, [messages, currentResp?.resp])
 
-  // if invalid chatId
   if (data?.error) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
@@ -776,7 +727,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setIsEditing(true)
     setTimeout(() => {
       if (titleRef.current) {
-        titleRef.current.focus() // Focus on the span for immediate editing
+        titleRef.current.focus()
       }
     }, 0)
     setEditedTitle(chatTitle)
@@ -793,27 +744,30 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
     } else if (e.key === "Escape") {
       e.preventDefault()
-      setEditedTitle(chatTitle) // Revert to original title
+      setEditedTitle(chatTitle)
       setIsEditing(false)
       if (titleRef.current) {
-        titleRef.current.value = chatTitle! // Revert UI to original title
+        titleRef.current.value = chatTitle!
       }
     }
   }
 
   const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEditedTitle(e.target.value) // Update state with edited content
+    setEditedTitle(e.target.value)
   }
 
   const handleBlur = () => {
     if (editedTitle !== chatTitle) {
-      // Revert to original title if editing is canceled
       setEditedTitle(chatTitle)
-      if (titleRef.current) {
-        titleRef.current.value = chatTitle! // Revert UI to original title
-      }
+      if (titleRef.current) titleRef.current.value = chatTitle!
     }
     setIsEditing(false)
+  }
+
+  const handleShowRagTrace = (messageId: string) => {
+    if (chatId && messageId) {
+      window.open(`/trace/${chatId}/${messageId}`, "_blank")
+    }
   }
 
   return (
@@ -900,6 +854,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       }}
                       sourcesVisible={isSourcesVisible}
                       isStreaming={isStreaming}
+                      isDebugMode={isDebugMode}
+                      onShowRagTrace={handleShowRagTrace}
                     />
                     {userMessageWithErr && (
                       <ChatMessage
@@ -928,6 +884,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         }}
                         sourcesVisible={isSourcesVisible}
                         isStreaming={isStreaming}
+                        isDebugMode={isDebugMode}
+                        onShowRagTrace={handleShowRagTrace}
                       />
                     )}
                   </Fragment>
@@ -962,10 +920,24 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     showSources && currentMessageId === currentResp.messageId
                   }
                   isStreaming={isStreaming}
+                  isDebugMode={isDebugMode}
+                  onShowRagTrace={handleShowRagTrace}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
             </div>
+            {showRagTrace && chatId && selectedMessageId && (
+              <div className="fixed inset-0 z-50 bg-white overflow-auto">
+                <RagTraceVirtualization
+                  chatId={chatId}
+                  messageId={selectedMessageId}
+                  onClose={() => {
+                    setShowRagTrace(false)
+                    setSelectedMessageId(null)
+                  }}
+                />
+              </div>
+            )}
             <ChatBox
               query={query}
               setQuery={setQuery}
@@ -1107,22 +1079,22 @@ const Sources = ({
   closeSources: () => void
 }) => {
   return showSources ? (
-    <div className="h-full w-1/4 top-[48px] right-0 fixed border-l-[1px] border-[#E6EBF5] bg-white overflow-y-auto">
-      <div className="ml-[40px] mt-[24px]">
-        <div className="flex items-center">
-          <span
-            className="text-[#929FBA] font-normal text-[12px] tracking-[0.08em]"
-            style={{ fontFamily: "JetBrains Mono" }}
-          >
-            SOURCES
-          </span>
-          <X
-            stroke="#9EAEBE"
-            size={14}
-            className="ml-auto mr-[40px] cursor-pointer"
-            onClick={closeSources}
-          />
-        </div>
+    <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] bg-white flex flex-col">
+      <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5]">
+        <span
+          className="text-[#929FBA] font-normal text-[12px] tracking-[0.08em]"
+          style={{ fontFamily: "JetBrains Mono" }}
+        >
+          SOURCES
+        </span>
+        <X
+          stroke="#9EAEBE"
+          size={14}
+          className="ml-auto cursor-pointer"
+          onClick={closeSources}
+        />
+      </div>
+      <div className="flex-1 overflow-y-auto px-[40px] pb-[24px]">
         <CitationList citations={citations} />
       </div>
     </div>
@@ -1145,6 +1117,8 @@ const ChatMessage = ({
   citationMap,
   sourcesVisible,
   isStreaming = false,
+  isDebugMode,
+  onShowRagTrace,
 }: {
   message: string
   thinking: string
@@ -1159,12 +1133,13 @@ const ChatMessage = ({
   citationMap?: Record<number, number>
   sourcesVisible: boolean
   isStreaming?: boolean
+  isDebugMode: boolean
+  onShowRagTrace: (messageId: string) => void
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
 
   const processMessage = (text: string) => {
-    // First split any grouped citations
     text = splitGroupedCitationsWithSpaces(text)
 
     if (citationMap) {
@@ -1229,7 +1204,6 @@ const ChatMessage = ({
                     color: "#1C1D1F",
                   }}
                   components={{
-                    // reducing all values by 20% for heading
                     h1: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.6em" }} {...props} />
                     ),
@@ -1255,16 +1229,24 @@ const ChatMessage = ({
           </div>
           {responseDone && !isRetrying && (
             <div className="flex flex-col">
-              <div className="flex ml-[52px] mt-[24px] items-center">
+              {isDebugMode && messageId && (
+                <button
+                  className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
+                  onClick={() => onShowRagTrace(messageId)}
+                >
+                  View RAG Trace #{messageId.slice(-6)}
+                </button>
+              )}
+              <div className="flex ml-[52px] mt-[12px] items-center">
                 <Copy
                   size={16}
                   stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
-                  onMouseDown={(e) => setIsCopied(true)}
-                  onMouseUp={(e) => setIsCopied(false)}
-                  onClick={() => {
+                  onMouseDown={() => setIsCopied(true)}
+                  onMouseUp={() => setIsCopied(false)}
+                  onClick={() =>
                     navigator.clipboard.writeText(processMessage(message))
-                  }}
+                  }
                 />
                 <img
                   className={`ml-[18px] ${isStreaming ? "opacity-50" : "cursor-pointer"}`}
@@ -1305,7 +1287,12 @@ const ChatMessage = ({
 }
 
 const chatParams = z.object({
-  q: z.string(),
+  q: z.string().optional(),
+  debug: z
+    .string()
+    .transform((val) => val === "true")
+    .optional()
+    .default("false"),
 })
 
 type XyneChat = z.infer<typeof chatParams>

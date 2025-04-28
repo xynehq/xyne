@@ -79,11 +79,6 @@ schema chat_message {
       indexing: attribute | summary
     }
 
-    field permissions type array<string> {
-      indexing: attribute | summary
-      attribute: fast-search
-    }
-
     field reactions type int {
       indexing: attribute | summary
     }
@@ -106,14 +101,24 @@ schema chat_message {
       attribute: fast-search
     }
 
+    field deletedAt type double {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
     field metadata type string {
       indexing: attribute | summary
     }
   }
   import field teamRef.domain as domain {}
+  import field teamRef.teamName as teamName {}
   import field chatRef.isPrivate as isPrivate {}
+  import field chatRef.permissions as permissions {}
+  import field chatRef.channelName as  channelName {}
+  import field chatRef.isIm as isIm {}
+  import field chatRef.isMpim as isMpim {}
 
-  field text_embeddings type tensor<bfloat16>(v[384]) {
+  field text_embeddings type tensor<bfloat16>(v[DIMS]) {
     indexing: input text | embed | attribute | index
     attribute {
       distance-metric: angular
@@ -121,12 +126,12 @@ schema chat_message {
   }
 
   fieldset default {
-    fields: text, mentions, teamId, channelId, userId, threadId, app, entity, attachmentIds, domain, isPrivate
+    fields: text, mentions, teamId, channelId, userId, threadId, app, entity, attachmentIds, domain, channelName, isPrivate
   }
 
-  rank-profile default {
+  rank-profile initial {
     inputs {
-      query(e) tensor<bfloat16>(v[384])
+      query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
     }
 
@@ -138,22 +143,70 @@ schema chat_message {
       expression: 2*atan(val/4)/(3.14159)
     }
 
-    function scaled_bm25_text() {
-      expression: scale(bm25(text))
+    function combined_bm25(){
+      expression: bm25(text) + bm25(username) + bm25(name)
+    }
+
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(text) + matches(username) + matches(name)
+      }
+    }
+
+    function combined_nativeRank() {
+      expression { 
+        (
+          nativeRank(text) + 
+          nativeRank(username) + 
+          nativeRank(name)
+        ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      }
     }
 
     function freshness_score() {
       expression: exp(-1 * (now() - (attribute(createdAt) / 1000)) / (3600 * 24))
     }
+  }
 
+  rank-profile default_native inherits initial {
+    
     first-phase {
-      expression: (bm25(text) + bm25(username)/2 + bm25(name)/2)/3
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
     }
 
     global-phase {
       expression {
         (
-          nativeRank(text, username, name) * 5
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(text)
+      nativeRank(username)
+      nativeRank(name)
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
+    
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) * scale(combined_bm25))
         )
       }
       rerank-count: 1000
@@ -161,10 +214,55 @@ schema chat_message {
 
     match-features {
       vector_score
-      scaled_bm25_text
-      freshness_score
+      scale(combined_bm25)
+      bm25(text)
+      bm25(username)
+      bm25(name)
     }
   }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+    
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(text)
+      nativeRank(username)
+      nativeRank(name)
+    }
+  }
+
+  rank-profile default_random inherits initial {
+
+    first-phase {
+        expression: random.match
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(text)
+      nativeRank(username)
+      nativeRank(name)
+    }
+  }
+
  rank-profile unranked inherits default {
     # Simple constant expression - returns same score for all documents
     first-phase {

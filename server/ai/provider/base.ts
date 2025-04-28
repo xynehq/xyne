@@ -15,7 +15,7 @@ abstract class Provider implements LLMProvider {
 
   getModelParams(params: ModelParams) {
     return {
-      maxTokens: params.max_new_tokens || 512,
+      maxTokens: params.max_new_tokens || 1025,
       topP: params.top_p || 0.9,
       temperature: params.temperature || 0.6,
       modelId: params.modelId || defaultFastModel,

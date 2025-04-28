@@ -18,6 +18,8 @@ import type {
 import { getErrorMessage } from "@/utils"
 import type { AppEntityCounts } from "@/search/vespa"
 import { handleVespaGroupResponse } from "@/search/mappers"
+import { getTracer, type Span, type Tracer } from "@/tracer"
+import crypto from "crypto"
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
 type VespaConfigValues = {
@@ -57,9 +59,13 @@ class VespaClient {
           )
         }
 
-        // For 5xx errors or network issues, we retry it
-        if (response.status >= 500 && retryCount < this.maxRetries) {
-          await this.delay(this.retryDelay * Math.pow(2, retryCount)) // Exponential backoff
+        // Retry for 429 (Too Many Requests) or 5xx errors
+        if (
+          (response.status === 429 || response.status >= 500) &&
+          retryCount < this.maxRetries
+        ) {
+          Logger.info("retrying due to status: ", response.status)
+          await this.delay(this.retryDelay * Math.pow(2, retryCount))
           return this.fetchWithRetry(url, options, retryCount + 1)
         }
       }
@@ -189,7 +195,7 @@ class VespaClient {
         //   `Error inserting document ${document.docId} for ${options.schema} ${data.message}`,
         // )
         throw new Error(
-          `Failed to fetch documents: ${response.status} ${response.statusText} - ${errorText}`,
+          `Failed to  insert document: ${response.status} ${response.statusText} - ${errorText}`,
         )
       }
 
@@ -355,8 +361,9 @@ class VespaClient {
       })
       if (!response.ok) {
         const errorText = response.statusText
+        const errorBody = await response.text()
         throw new Error(
-          `Failed to fetch document: ${response.status} ${response.statusText} - ${errorText}`,
+          `Failed to fetch document: ${response.status} ${response.statusText} - ${errorBody}`,
         )
       }
 
@@ -529,12 +536,77 @@ class VespaClient {
     }
   }
 
+  // TODO: Add pagination if docId's are more than
+  // max hits and merge the finaly Record
   async ifDocumentsExist(
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
     const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
     const yqlQuery = `select docId, updatedAt from sources * where docId in (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+
+    try {
+      const payload = {
+        yql: yqlQuery,
+        hits: docIds.length,
+        maxHits: docIds.length + 1,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+
+      // Extract found documents with their docId and updatedAt
+      const foundDocs =
+        result.root?.children?.map((hit: any) => ({
+          docId: hit.fields.docId as string,
+          updatedAt: hit.fields.updatedAt as number | undefined, // undefined if not present
+        })) || []
+
+      // Build the result map
+      const existenceMap = docIds.reduce(
+        (acc, id) => {
+          const foundDoc = foundDocs.find(
+            (doc: { docId: string }) => doc.docId === id,
+          )
+          acc[id] = {
+            exists: !!foundDoc,
+            updatedAt: foundDoc?.updatedAt ?? null, // null if not found or no updatedAt
+          }
+          return acc
+        },
+        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
+      )
+
+      return existenceMap
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error checking documents existence:  ${errMessage}`)
+      throw error
+    }
+  }
+
+  async ifDocumentsExistInSchema(
+    schema: string,
+    docIds: string[],
+  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
+    // Construct the YQL query
+    const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
+    const yqlQuery = `select docId, updatedAt from sources ${schema} where docId in (${yqlIds})`
 
     const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`
 
@@ -585,7 +657,7 @@ class VespaClient {
     }
   }
 
-  async getUsersByNamesAndEmaisl<T>(payload: T) {
+  async getUsersByNamesAndEmails<T>(payload: T) {
     try {
       const response = await this.fetchWithRetry(
         `${this.vespaEndpoint}/search/`,
@@ -695,6 +767,68 @@ class VespaClient {
       throw new Error(
         `Error retrieving documents with field ${fieldName}: ${errMessage}`,
       )
+    }
+  }
+
+  /**
+   * Fetches a single random document from a specific schema using the Document V1 API.
+   */
+  async getRandomDocument(
+    namespace: string,
+    schema: string,
+    cluster: string,
+  ): Promise<any | null> {
+    // Returning any for now, structure is { documents: [{ id: string, fields: ... }] }
+    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid?selection=true&wantedDocumentCount=100&cluster=${cluster}` // Fetch 100 docs
+    Logger.debug(`Fetching 100 random documents from: ${url}`)
+    try {
+      const response = await this.fetchWithRetry(url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(`Vespa error fetching random document: ${errorBody}`)
+        throw new Error(
+          `Failed to fetch random document: ${response.status} ${response.statusText} - ${errorBody}`,
+        )
+      }
+
+      const data = await response.json()
+      const docs = data?.documents // Get the array of documents
+
+      // Check if the documents array exists and is not empty
+      if (!docs || docs.length === 0) {
+        Logger.warn(
+          { responseData: data },
+          "Did not find any documents in random sampling response (requested 100)",
+        )
+        return null
+      }
+
+      // Randomly select one document from the list
+      const randomIndex = Math.floor(Math.random() * docs.length)
+      const selectedDoc = docs[randomIndex]
+
+      Logger.debug(
+        {
+          selectedIndex: randomIndex,
+          totalDocs: docs.length,
+          selectedDocId: selectedDoc?.id,
+        },
+        "Randomly selected one document from the fetched list",
+      )
+
+      return selectedDoc // Return the randomly selected document object { id, fields }
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error fetching random document: ${errMessage}`)
+      // Rethrow or wrap the error as needed
+      throw new Error(`Error fetching random document: ${errMessage}`)
     }
   }
 }

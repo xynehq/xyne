@@ -47,12 +47,17 @@ import {
   getRelativeTime,
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
-import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
+import {
+  ToolResultContentBlock,
+  type ConversationRole,
+  type Message,
+} from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
+import { getTracer, type Span, type Tracer } from "@/tracer"
 import { searchVespa } from "@/search/vespa"
 import {
   Apps,
@@ -77,12 +82,19 @@ import {
   type VespaUser,
 } from "@/search/types"
 import { APIError } from "openai"
+import {
+  getChatTraceByExternalId,
+  insertChatTrace,
+  deleteChatTracesByChatExternalId,
+  updateChatTrace,
+} from "@/db/chatTrace"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
   defaultBestModel,
   defaultFastModel,
   maxDefaultSummary,
+  chatPageSize,
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
@@ -183,7 +195,9 @@ export const ChatDeleteApi = async (c: Context) => {
     // @ts-ignore
     const { chatId } = c.req.valid("json")
     await db.transaction(async (tx) => {
-      // First will have to delete all messages associated with that chat
+      // First delete chat traces to avoid cascade violations
+      await deleteChatTracesByChatExternalId(tx, chatId)
+      // Second we have to delete all messages associated with that chat
       await deleteMessagesByChatId(tx, chatId)
       await deleteChatByExternalId(tx, chatId)
     })
@@ -240,6 +254,7 @@ export const ChatBookmarkApi = async (c: Context) => {
 }
 
 const MinimalCitationSchema = z.object({
+  docId: z.string(),
   title: z.string().optional(),
   url: z.string().optional(),
   app: z.nativeEnum(Apps),
@@ -253,10 +268,46 @@ interface CitationResponse {
   citations?: number[]
 }
 
+export const GetChatTraceApi = async (c: Context) => {
+  try {
+    // @ts-ignore - Assume validation is handled by middleware in server.ts
+    const { chatId, messageId } = c.req.valid("query")
+
+    if (!chatId || !messageId) {
+      throw new HTTPException(400, {
+        message: "chatId and messageId are required query parameters",
+      })
+    }
+    const trace = await getChatTraceByExternalId(chatId, messageId)
+
+    if (!trace) {
+      // Return 404 if the trace is not found for the given IDs
+      throw new HTTPException(500, { message: "Chat trace not found" })
+    }
+
+    // The traceJson is likely already a JSON object/string in the DB, return it directly
+    return c.json(trace)
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    if (error instanceof HTTPException) {
+      // Re-throw HTTPExceptions to let Hono handle them
+      throw error
+    }
+    Logger.error(
+      error,
+      `Get Chat Trace Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Could not fetch chat trace",
+    })
+  }
+}
+
 const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
     return {
+      docId: (fields as VespaUser).docId,
       title: (fields as VespaUser).name,
       url: `https://contacts.google.com/${(fields as VespaUser).email}`,
       app: (fields as VespaUser).app,
@@ -264,6 +315,7 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     }
   } else if (result.fields.sddocname === fileSchema) {
     return {
+      docId: (fields as VespaFile).docId,
       title: (fields as VespaFile).title,
       url: (fields as VespaFile).url || "",
       app: (fields as VespaFile).app,
@@ -271,6 +323,7 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     }
   } else if (result.fields.sddocname === mailSchema) {
     return {
+      docId: (fields as VespaMail).docId,
       title: (fields as VespaMail).subject,
       url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
       app: (fields as VespaMail).app,
@@ -278,6 +331,7 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     }
   } else if (result.fields.sddocname === eventSchema) {
     return {
+      docId: (fields as VespaEvent).docId,
       title: (fields as VespaEvent).name || "No Title",
       url: (fields as VespaEvent).url,
       app: (fields as VespaEvent).app,
@@ -285,6 +339,7 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     }
   } else if (result.fields.sddocname === mailAttachmentSchema) {
     return {
+      docId: (fields as VespaMailAttachment).docId,
       title: (fields as VespaMailAttachment).filename || "No Filename",
       url: `https://mail.google.com/mail/u/0/#inbox/${(fields as VespaMailAttachment).mailId}?projector=1&messagePartId=0.${(fields as VespaMailAttachment).partId}&disp=safe&zw`,
       app: (fields as VespaMailAttachment).app,
@@ -292,8 +347,9 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     }
   } else if (result.fields.sddocname === chatMessageSchema) {
     return {
+      docId: (fields as VespaChatMessage).docId,
       title: (fields as VespaChatMessage).text,
-      url: `https://google.com`,
+      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${(fields as VespaChatMessage).channelId}/p${(fields as VespaChatMessage).updatedAt}`,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
     }
@@ -317,6 +373,10 @@ export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
 ) => {
+  if (!text) {
+    return ""
+  }
+
   text = splitGroupedCitationsWithSpaces(text)
   return text.replace(textToCitationIndex, (match, num) => {
     const index = citationMap[num]
@@ -366,22 +426,48 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
+  queryRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   // we are not going to do time expansion
   // we are going to do 4 months answer
   // if not found we go back to iterative page search
+  // @ts-ignore
+  const rootSpan = queryRagSpan?.startSpan(
+    "generateIterativeTimeFilterAndQueryRewrite",
+  )
+  rootSpan?.setAttribute("input", input)
+  rootSpan?.setAttribute("email", email)
+  rootSpan?.setAttribute("alpha", alpha)
+  rootSpan?.setAttribute("pageSize", pageSize)
+  rootSpan?.setAttribute("maxPageNumber", maxPageNumber)
+  rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   const message = input
-
+  const initialSearchSpan = rootSpan?.startSpan("latestResults_search")
+  // Ensure we have search terms even after stopword removal
   const monthInMs = 30 * 24 * 60 * 60 * 1000
+  const timestampRange = {
+    from: new Date().getTime() - 4 * monthInMs,
+    to: new Date().getTime(),
+  }
   const latestResults = (
-    await searchVespa(message, email, null, null, pageSize, 0, alpha, {
-      from: new Date().getTime() - 4 * monthInMs,
-      to: new Date().getTime(),
+    await searchVespa(message, email, null, null, {
+      limit: pageSize,
+      alpha,
+      timestampRange,
+      span: initialSearchSpan,
     })
   ).root.children
-
+  initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
+  initialSearchSpan?.setAttribute(
+    "result_ids",
+    JSON.stringify(
+      latestResults?.map((r: VespaSearchResult) => (r.fields as any).docId) ||
+        [],
+    ),
+  )
+  initialSearchSpan?.end()
   const latestIds = latestResults
     ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
     ?.filter((v) => !!v)
@@ -391,18 +477,32 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // so this helps us avoid conflict with a previous citation index
   let previousResultsLength = 0
   for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
+    const pageSpan = rootSpan?.startSpan(`page_iteration_${pageNumber}`)
+    pageSpan?.setAttribute("page_number", pageNumber)
     // should only do it once
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
       // get the first page of results
-      let results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
+      const rewriteSpan = pageSpan?.startSpan("query_rewrite")
+      const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
+      let results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
         alpha,
+        span: vespaSearchSpan,
+      })
+      vespaSearchSpan?.setAttribute(
+        "result_count",
+        results?.root?.children?.length || 0,
       )
+      vespaSearchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          results?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      vespaSearchSpan?.end()
+
       const initialContext = cleanContext(
         results?.root?.children
           ?.map(
@@ -411,35 +511,72 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           )
           ?.join("\n"),
       )
+
+      const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
         modelId: defaultFastModel, //defaultBestModel,
         stream: false,
       })
       const queries = queryResp.queries
-      for (const query of queries) {
+      queryRewriteSpan?.setAttribute("query_count", queries.length)
+      queryRewriteSpan?.setAttribute("queries", JSON.stringify(queries))
+      queryRewriteSpan?.end()
+      rewriteSpan?.end()
+      for (let idx = 0; idx < queries.length; idx++) {
+        const query = queries[idx]
+        const querySpan = pageSpan?.startSpan(`query_${idx}`)
+        querySpan?.setAttribute("query_index", idx)
+        querySpan?.setAttribute("query_text", query)
+
+        const latestSearchSpan = querySpan?.startSpan("latest_results_search")
         const latestResults: VespaSearchResult[] = (
-          await searchVespa(query, email, null, null, pageSize, 0, alpha, {
-            from: new Date().getTime() - 4 * monthInMs,
-            to: new Date().getTime(),
+          await searchVespa(query, email, null, null, {
+            limit: pageSize,
+            alpha,
+            timestampRange: {
+              from: new Date().getTime() - 4 * monthInMs,
+              to: new Date().getTime(),
+            },
+            span: latestSearchSpan,
           })
         )?.root?.children
+        latestSearchSpan?.setAttribute(
+          "result_count",
+          latestResults?.length || 0,
+        )
+        latestSearchSpan?.setAttribute(
+          "result_ids",
+          JSON.stringify(
+            latestResults?.map(
+              (r: VespaSearchResult) => (r.fields as any).docId,
+            ) || [],
+          ),
+        )
+        latestSearchSpan?.end()
 
-        let results = await searchVespa(
-          query,
-          email,
-          null,
-          null,
-          pageSize,
-          0,
+        let results = await searchVespa(query, email, null, null, {
+          limit: pageSize,
           alpha,
-          null,
-          latestResults
+          excludedIds: latestResults
             ?.map((v: VespaSearchResult) => (v.fields as any).docId)
             ?.filter((v) => !!v),
-        )
+        })
+        const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
           latestResults || [],
         )
+        totalResultsSpan?.setAttribute(
+          "total_result_count",
+          totalResults.length,
+        )
+        totalResultsSpan?.setAttribute(
+          "result_ids",
+          JSON.stringify(
+            totalResults.map((r: VespaSearchResult) => (r.fields as any).docId),
+          ),
+        )
+        totalResultsSpan?.end()
+        const contextSpan = querySpan?.startSpan("build_context")
         const initialContext = cleanContext(
           totalResults
             ?.map(
@@ -448,7 +585,15 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             )
             ?.join("\n"),
         )
+        contextSpan?.setAttribute("context_length", initialContext?.length || 0)
+        contextSpan?.setAttribute("context", initialContext || "")
+        contextSpan?.setAttribute("number_of_chunks", totalResults.length)
+        Logger.info(
+          `[Query Rewrite Path] Number of contextual chunks being passed: ${totalResults.length}`,
+        )
+        contextSpan?.end()
 
+        const ragSpan = querySpan?.startSpan("baseline_rag")
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
@@ -468,6 +613,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         let thinking = ""
         let reasoning = isReasoning
         let yieldedCitations = new Set<number>()
+        const ANSWER_TOKEN = '"answer":'
         for await (const chunk of iterator) {
           if (chunk.text) {
             if (reasoning) {
@@ -482,8 +628,15 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 yield { text: chunk.text, reasoning }
               } else {
                 // first time
-                if (!chunk.text.includes(StartThinkingToken)) {
-                  let token = chunk.text
+                const startThinkingIndex =
+                  chunk.text.indexOf(StartThinkingToken)
+                if (
+                  startThinkingIndex !== -1 &&
+                  chunk.text.trim().length > StartThinkingToken.length
+                ) {
+                  let token = chunk.text.slice(
+                    startThinkingIndex + StartThinkingToken.length,
+                  )
                   if (chunk.text.includes(EndThinkingToken)) {
                     token = chunk.text.split(EndThinkingToken)[0]
                     thinking += token
@@ -507,7 +660,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!reasoning) {
               buffer += chunk.text
               try {
-                parsed = jsonParseLLMOutput(buffer)
+                parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
                 if (parsed.answer === null) {
                   break
                 }
@@ -543,27 +696,47 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           }
         }
         if (parsed.answer) {
+          ragSpan?.setAttribute("answer_found", true)
+          ragSpan?.end()
+          querySpan?.end()
+          pageSpan?.end()
+          rootSpan?.end()
+          queryRagSpan?.end()
           return
         }
         if (isReasoning) {
           previousResultsLength += totalResults.length
         }
+        ragSpan?.end()
+        querySpan?.end()
       }
     }
-
+    const pageSearchSpan = pageSpan?.startSpan("page_search")
     let results: VespaSearchResponse
     if (pageNumber === 0) {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
-        alpha,
-        null,
-        latestIds,
+      const searchSpan = pageSearchSpan?.startSpan(
+        "vespa_search_with_excluded_ids",
       )
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
+        alpha,
+        excludedIds: latestIds,
+        span: searchSpan,
+      })
+      searchSpan?.setAttribute(
+        "result_count",
+        results?.root?.children?.length || 0,
+      )
+      searchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          results?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      searchSpan?.end()
       if (!results.root.children) {
         results.root.children = []
       }
@@ -571,17 +744,42 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         latestResults || [],
       )
     } else {
-      results = await searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        pageNumber * pageSize,
+      const searchSpan = pageSearchSpan?.startSpan("vespa_search")
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
         alpha,
+        span: searchSpan,
+      })
+      searchSpan?.setAttribute(
+        "result_count",
+        results?.root?.children?.length || 0,
       )
+      searchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          results?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      searchSpan?.end()
     }
+    pageSearchSpan?.setAttribute(
+      "total_result_count",
+      results?.root?.children?.length || 0,
+    )
+    pageSearchSpan?.setAttribute(
+      "total_result_ids",
+      JSON.stringify(
+        results?.root?.children?.map(
+          (r: VespaSearchResult) => (r.fields as any).docId,
+        ) || [],
+      ),
+    )
+    pageSearchSpan?.end()
     const startIndex = isReasoning ? previousResultsLength : 0
+    const contextSpan = pageSpan?.startSpan("build_context")
     const initialContext = cleanContext(
       results?.root?.children
         ?.map(
@@ -590,6 +788,18 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         ?.join("\n"),
     )
+    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
+    contextSpan?.setAttribute("context", initialContext || "")
+    contextSpan?.setAttribute(
+      "number_of_chunks",
+      results?.root?.children?.length || 0,
+    )
+    Logger.info(
+      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+    )
+    contextSpan?.end()
+
+    const ragSpan = pageSpan?.startSpan("baseline_rag")
 
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
@@ -603,6 +813,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     let thinking = ""
     let reasoning = isReasoning
     let yieldedCitations = new Set<number>()
+    // tied to the json format and output expected, we expect the answer key to be present
+    const ANSWER_TOKEN = '"answer":'
     for await (const chunk of iterator) {
       if (chunk.text) {
         if (reasoning) {
@@ -617,14 +829,21 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             yield { text: chunk.text, reasoning }
           } else {
             // first time
-            if (!chunk.text.includes(StartThinkingToken)) {
-              let token = chunk.text
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
               if (chunk.text.includes(EndThinkingToken)) {
                 token = chunk.text.split(EndThinkingToken)[0]
                 thinking += token
               } else {
                 thinking += token
               }
+
               yield* checkAndYieldCitations(
                 thinking,
                 yieldedCitations,
@@ -643,7 +862,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         if (!reasoning) {
           buffer += chunk.text
           try {
-            parsed = jsonParseLLMOutput(buffer)
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
             if (parsed.answer === null) {
               break
             }
@@ -657,6 +876,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 yield { text: newText }
               }
               // Extract all citations from the parsed answer
+              // const citationSpan = chunkSpan.startSpan("check_citations")
               yield* checkAndYieldCitations(
                 parsed.answer,
                 yieldedCitations,
@@ -677,19 +897,40 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       }
     }
     if (parsed.answer) {
+      ragSpan?.setAttribute("answer_found", true)
+      ragSpan?.end()
+      pageSpan?.end()
+      rootSpan?.end()
+      queryRagSpan?.end()
       return
     }
     if (isReasoning) {
       previousResultsLength += results?.root?.children?.length || 0
+      pageSpan?.setAttribute("previous_results_length", previousResultsLength)
     }
+    ragSpan?.end()
+    pageSpan?.end()
   }
+  const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
   yield {
     text: "I could not find any information to answer it, please change your query",
   }
+  noAnswerSpan?.end()
+  rootSpan?.end()
+  queryRagSpan?.end()
 }
-const getSearchRangeSummary = (from: number, to: number, direction: string) => {
-  const now = Date.now()
 
+const getSearchRangeSummary = (
+  from: number,
+  to: number,
+  direction: string,
+  parentSpan?: Span,
+) => {
+  const summarySpan = parentSpan?.startSpan("getSearchRangeSummary")
+  summarySpan?.setAttribute("from", from)
+  summarySpan?.setAttribute("to", to)
+  summarySpan?.setAttribute("direction", direction)
+  const now = Date.now()
   // For "next" direction, we usually start from now
   if (direction === "next") {
     // Start from today/now
@@ -699,7 +940,10 @@ const getSearchRangeSummary = (from: number, to: number, direction: string) => {
       Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
         ? `${endDate.toLocaleString("default", { month: "long" })} ${endDate.getFullYear()}`
         : getRelativeTime(to)
-    return `from today until ${endStr}`
+    const result = `from today until ${endStr}`
+    summarySpan?.setAttribute("result", result)
+    summarySpan?.end()
+    return result
   }
   // For "prev" direction
   else {
@@ -708,26 +952,40 @@ const getSearchRangeSummary = (from: number, to: number, direction: string) => {
       Math.abs(now - from) > 30 * 24 * 60 * 60 * 1000
         ? `${startDate.toLocaleString("default", { month: "long" })} ${startDate.getFullYear()}`
         : getRelativeTime(from)
-    return `from today back to ${startStr}`
+    const result = `from today back to ${startStr}`
+    summarySpan?.setAttribute("result", result)
+    summarySpan?.end()
+    return result
   }
 }
+
 async function* generatePointQueryTimeExpansion(
   input: string,
   messages: Message[],
-  classification: TemporalClassifier & { cost: number },
+  classification: TemporalClassifier,
   email: string,
   userCtx: string,
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
+  eventRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
+  const rootSpan = eventRagSpan?.startSpan("generatePointQueryTimeExpansion")
+  Logger.debug(`Started rootSpan at ${new Date().toISOString()}`)
+  rootSpan?.setAttribute("input", input)
+  rootSpan?.setAttribute("email", email)
+  rootSpan?.setAttribute("alpha", alpha)
+  rootSpan?.setAttribute("pageSize", pageSize)
+  rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
+  rootSpan?.setAttribute("direction", classification.direction || "unknown")
+
   const message = input
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
   const direction = classification.direction as string
-  let costArr: number[] = [classification.cost]
+  let costArr: number[] = []
 
   let from = new Date().getTime()
   let to = new Date().getTime()
@@ -735,6 +993,8 @@ async function* generatePointQueryTimeExpansion(
 
   let previousResultsLength = 0
   for (let iteration = 0; iteration < maxIterations; iteration++) {
+    const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
+    iterationSpan?.setAttribute("iteration", iteration)
     const windowSize = (2 + iteration) * weekInMs
 
     if (direction === "prev") {
@@ -750,37 +1010,67 @@ async function* generatePointQueryTimeExpansion(
     Logger.info(
       `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
     )
-
+    iterationSpan?.setAttribute("from", new Date(from).toLocaleString())
+    iterationSpan?.setAttribute("to", new Date(to).toLocaleString())
     // Search in both calendar events and emails
+    const searchSpan = iterationSpan?.startSpan("search_vespa")
+    const emailSearchSpan = searchSpan?.startSpan("email_search")
+    // TODO: How to combine promise.all with spans?
+    // emailSearchSpan?.setAttribute(`promise.all[eventResults, results]-${iteration}`, true)
+
+    const calenderSearchSpan = searchSpan?.startSpan("calender_search")
     const [eventResults, results] = await Promise.all([
-      searchVespa(
-        message,
-        email,
-        Apps.GoogleCalendar,
-        null,
-        pageSize,
-        0,
+      searchVespa(message, email, Apps.GoogleCalendar, null, {
+        limit: pageSize,
         alpha,
-        { from, to },
-      ),
-      searchVespa(
-        message,
-        email,
-        null,
-        null,
-        pageSize,
-        0,
+        timestampRange: { from, to },
+        span: calenderSearchSpan,
+      }),
+      searchVespa(message, email, null, null, {
+        limit: pageSize,
         alpha,
-        { to, from },
-        ["CATEGORY_PROMOTIONS", "UNREAD"],
-      ),
+        timestampRange: { to, from },
+        notInMailLabels: ["CATEGORY_PROMOTIONS"],
+        span: emailSearchSpan,
+      }),
     ])
+    emailSearchSpan?.setAttribute(
+      "result_count",
+      results?.root?.children?.length || 0,
+    )
+    emailSearchSpan?.setAttribute(
+      "result_ids",
+      JSON.stringify(
+        results?.root?.children?.map(
+          (r: VespaSearchResult) => (r.fields as any).docId,
+        ) || [],
+      ),
+    )
+    emailSearchSpan?.setAttribute("result", JSON.stringify(results))
+    emailSearchSpan?.end()
+    calenderSearchSpan?.setAttribute(
+      "result_count",
+      eventResults?.root?.children?.length || 0,
+    )
+    calenderSearchSpan?.setAttribute(
+      "result_ids",
+      JSON.stringify(
+        eventResults?.root?.children?.map(
+          (r: VespaSearchResult) => (r.fields as any).docId,
+        ) || [],
+      ),
+    )
+    calenderSearchSpan?.setAttribute("result", JSON.stringify(eventResults))
+    calenderSearchSpan?.end()
+    searchSpan?.end()
 
     if (!results.root.children && !eventResults.root.children) {
+      iterationSpan?.end()
       continue
     }
 
     // Combine and filter results
+    const combineSpan = iterationSpan?.startSpan("combine_results")
     const combinedResults = {
       root: {
         children: [
@@ -794,26 +1084,54 @@ async function* generatePointQueryTimeExpansion(
       },
     }
 
+    combineSpan?.setAttribute(
+      "combined_result_count",
+      combinedResults?.root?.children?.length || 0,
+    )
+    combineSpan?.setAttribute(
+      "combined_result_ids",
+      JSON.stringify(
+        combinedResults?.root?.children?.map(
+          (r: VespaSearchResult) => (r.fields as any).docId,
+        ) || [],
+      ),
+    )
+    combineSpan?.end()
+
     if (!combinedResults.root.children.length) {
       Logger.info("No gmail or calendar events found")
+      iterationSpan?.end()
       continue
     }
 
     // Prepare context for LLM
+    const contextSpan = iterationSpan?.startSpan("build_context")
     const startIndex = isReasoning ? previousResultsLength : 0
     const initialContext = cleanContext(
       combinedResults?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(
+              v as z.infer<typeof VespaSearchResultsSchema>,
+              maxSummaryCount,
+            )}`,
         )
         ?.join("\n"),
     )
+    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
+    contextSpan?.setAttribute("context", initialContext || "")
+    contextSpan?.setAttribute(
+      "number_of_chunks",
+      combinedResults?.root?.children?.length || 0,
+    )
+    contextSpan?.end()
 
     // Stream LLM response
+    const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
     const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
+      reasoning: isReasoning,
     })
 
     let buffer = ""
@@ -822,7 +1140,7 @@ async function* generatePointQueryTimeExpansion(
     let thinking = ""
     let reasoning = isReasoning
     let yieldedCitations = new Set<number>()
-
+    const ANSWER_TOKEN = '"answer":'
     for await (const chunk of iterator) {
       if (chunk.text) {
         if (reasoning) {
@@ -837,8 +1155,14 @@ async function* generatePointQueryTimeExpansion(
             yield { text: chunk.text, reasoning }
           } else {
             // first time
-            if (!chunk.text.includes(StartThinkingToken)) {
-              let token = chunk.text
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
               if (chunk.text.includes(EndThinkingToken)) {
                 token = chunk.text.split(EndThinkingToken)[0]
                 thinking += token
@@ -862,9 +1186,10 @@ async function* generatePointQueryTimeExpansion(
         if (!reasoning) {
           buffer += chunk.text
           try {
-            parsed = jsonParseLLMOutput(buffer)
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
             // If we have a null answer, break this inner loop and continue outer loop
-            if (parsed.answer === null) {
+            // seen some cases with just "}"
+            if (parsed.answer === null || parsed.answer === "}") {
               break
             }
 
@@ -898,60 +1223,94 @@ async function* generatePointQueryTimeExpansion(
         yield { cost: chunk.cost }
       }
     }
+    ragSpan?.end()
     if (parsed.answer) {
+      ragSpan?.setAttribute("answer_found", true)
+      iterationSpan?.end()
+      Logger.debug(`Ending rootSpan at ${new Date().toISOString()}`)
+      rootSpan?.end()
+      eventRagSpan?.end()
       return
     }
     // only increment in the case of reasoning
     if (isReasoning) {
       previousResultsLength += combinedResults?.root?.children?.length || 0
+      iterationSpan?.setAttribute(
+        "previous_results_length",
+        previousResultsLength,
+      )
     }
+    iterationSpan?.end()
   }
 
-  const searchSummary = getSearchRangeSummary(from, to, direction)
+  const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
+  const searchSummary = getSearchRangeSummary(from, to, direction, noAnswerSpan)
+  const totalCost = costArr.reduce((a, b) => a + b, 0)
+  noAnswerSpan?.setAttribute("search_summary", searchSummary)
+  noAnswerSpan?.setAttribute("total_cost", totalCost)
   yield {
     text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
-    cost: costArr.reduce((a, b) => a + b, 0),
+    cost: totalCost,
   }
+  noAnswerSpan?.end()
+  rootSpan?.end()
+  eventRagSpan?.end()
 }
 
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
   message: string,
-  classification: TemporalClassifier & { cost: number },
+  classification: TemporalClassifier,
   messages: Message[],
+  alpha: number,
+  passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
+  passedSpan?.setAttribute("email", email)
+  passedSpan?.setAttribute("message", message)
+  passedSpan?.setAttribute(
+    "temporal_direction",
+    classification.direction || "none",
+  )
+  passedSpan?.setAttribute("alpha", alpha)
+  passedSpan?.setAttribute("message_count", messages.length)
   // user is talking about an event
   if (classification.direction !== null) {
     Logger.info(
       `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
     )
+    const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
+    eventRagSpan?.setAttribute("comment", "event time expansion")
     return yield* generatePointQueryTimeExpansion(
       message,
       messages,
       classification,
       email,
       userCtx,
-      0.5,
-      20,
-      5,
+      alpha,
+      chatPageSize,
+      maxDefaultSummary,
+      eventRagSpan,
     )
   } else {
     Logger.info(
       "default case, trying to do iterative RAG with query rewriting and time filtering for answering users query",
     )
+    const ragSpan = passedSpan?.startSpan("iterative_rag")
+    ragSpan?.setAttribute("comment", "iterative rag")
     // default case
     return yield* generateIterativeTimeFilterAndQueryRewrite(
       message,
       messages,
       email,
       userCtx,
-      0.5,
-      20,
+      alpha,
+      chatPageSize,
       3,
       maxDefaultSummary,
+      ragSpan,
     )
   }
 }
@@ -981,11 +1340,17 @@ const addErrMessageToMessage = async (
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
+  const tracer: Tracer = getTracer("chat")
+  const rootSpan = tracer.startSpan("MessageApi")
+
   let stream: any
   let chat: SelectChat
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
+    rootSpan.setAttribute("email", email)
+    rootSpan.setAttribute("workspaceId", workspaceId)
+
     // @ts-ignore
     const body = c.req.valid("query")
     let { message, chatId, modelId }: MessageReqType = body
@@ -995,6 +1360,7 @@ export const MessageApi = async (c: Context) => {
       })
     }
     message = decodeURIComponent(message)
+    rootSpan.setAttribute("message", message)
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -1007,8 +1373,11 @@ export const MessageApi = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
 
+    const chatCreationSpan = rootSpan.startSpan("chat_creation")
+
     let title = ""
     if (!chatId) {
+      const titleSpan = chatCreationSpan.startSpan("generate_title")
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
         modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
@@ -1018,7 +1387,10 @@ export const MessageApi = async (c: Context) => {
       const cost = titleResp.cost
       if (cost) {
         costArr.push(cost)
+        titleSpan.setAttribute("cost", cost)
       }
+      titleSpan.setAttribute("title", title)
+      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -1030,6 +1402,7 @@ export const MessageApi = async (c: Context) => {
             title,
             attachments: [],
           })
+
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
             userId: user.id,
@@ -1049,12 +1422,15 @@ export const MessageApi = async (c: Context) => {
       )
       chat = insertedChat
       messages.push(insertedMsg) // Add the inserted message to messages array
+      chatCreationSpan.end()
     } else {
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
+
           let existingChat = await updateChatByExternalId(db, chatId, {})
           let allMessages = await getChatMessages(tx, chatId)
+
           let insertedMsg = await insertMessage(tx, {
             chatId: existingChat.id,
             userId: user.id,
@@ -1072,17 +1448,21 @@ export const MessageApi = async (c: Context) => {
       Logger.info("Existing conversation, fetched previous messages")
       messages = allMessages.concat(insertedMsg) // Update messages array
       chat = existingChat
+      chatCreationSpan.end()
     }
-
     return streamSSE(
       c,
       async (stream) => {
+        const streamSpan = rootSpan.startSpan("stream_response")
+        streamSpan.setAttribute("chatId", chat.externalId)
         try {
           if (!chatId) {
+            const titleUpdateSpan = streamSpan.startSpan("send_title_update")
             await stream.writeSSE({
               data: title,
               event: ChatSSEvents.ChatTitleUpdate,
             })
+            titleUpdateSpan.end()
           }
 
           Logger.info("Chat stream started")
@@ -1093,6 +1473,7 @@ export const MessageApi = async (c: Context) => {
               chatId: chat.externalId,
             }),
           })
+
           const messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
             .filter((msg) => !msg?.errorMessage)
@@ -1123,11 +1504,12 @@ export const MessageApi = async (c: Context) => {
           let answer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "" }
+          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
+          const conversationSpan = streamSpan.startSpan("conversation_search")
           for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
               if (reasoning) {
@@ -1200,43 +1582,50 @@ export const MessageApi = async (c: Context) => {
               costArr.push(chunk.cost)
             }
           }
-          // continue as is if we didn't find answer in the existing conversation
-          // empty string as DeepSeek provides this instead of null for some cases
+
+          conversationSpan.setAttribute("answer_found", parsed.answer)
+          conversationSpan.setAttribute("answer", answer)
+          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+          conversationSpan.end()
+
           if (parsed.answer === null || parsed.answer === "") {
-            // ambigious user message
+            const ragSpan = streamSpan.startSpan("rag_processing")
             if (parsed.queryRewrite) {
               Logger.info(
-                "The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
+                `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
               )
               message = parsed.queryRewrite
+              Logger.info(`Rewritten query: ${message}`)
+              ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             } else {
               Logger.info(
                 "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
               )
             }
-            const classification: TemporalClassifier & { cost: number } =
-              await temporalEventClassification(message, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
-                stream: false,
-              })
+            const classification: TemporalClassifier = {
+              direction: parsed.temporalDirection,
+            }
+            const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,
               message,
               classification,
               messagesWithNoErrResponse,
+              0.5,
+              understandSpan,
             )
-
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
             })
+
             answer = ""
             thinking = ""
             reasoning = isReasoning
             citations = []
             citationMap = {}
+            let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (chunk.text) {
                 if (chunk.reasoning) {
@@ -1245,8 +1634,8 @@ export const MessageApi = async (c: Context) => {
                     event: ChatSSEvents.Reasoning,
                     data: chunk.text,
                   })
+                  // reasoningSpan.end()
                 }
-
                 if (!chunk.reasoning) {
                   answer += chunk.text
                   stream.writeSSE({
@@ -1255,7 +1644,6 @@ export const MessageApi = async (c: Context) => {
                   })
                 }
               }
-
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
@@ -1273,8 +1661,28 @@ export const MessageApi = async (c: Context) => {
                     citationMap,
                   }),
                 })
+                citationValues[index] = item
               }
             }
+            understandSpan.setAttribute("citation_count", citations.length)
+            understandSpan.setAttribute(
+              "citation_map",
+              JSON.stringify(citationMap),
+            )
+            understandSpan.setAttribute(
+              "citation_values",
+              JSON.stringify(citationValues),
+            )
+            understandSpan.end()
+            const answerSpan = ragSpan.startSpan("process_final_answer")
+            answerSpan.setAttribute(
+              "final_answer",
+              processMessage(answer, citationMap),
+            )
+            answerSpan.setAttribute("actual_answer", answer)
+            answerSpan.setAttribute("final_answer_length", answer.length)
+            answerSpan.end()
+            ragSpan.end()
           } else if (parsed.answer) {
             answer = parsed.answer
           }
@@ -1296,6 +1704,7 @@ export const MessageApi = async (c: Context) => {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
+            Logger.info(`Inserted trace for message ${msg.externalId}`)
             await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
               data: JSON.stringify({
@@ -1303,11 +1712,27 @@ export const MessageApi = async (c: Context) => {
                 messageId: msg.externalId,
               }),
             })
+            const endSpan = streamSpan.startSpan("send_end_event")
             await stream.writeSSE({
               data: "",
               event: ChatSSEvents.End,
             })
+            endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
+            const traceJson = tracer.serializeToJson()
+            await insertChatTrace({
+              workspaceId: workspace.id,
+              userId: user.id,
+              chatId: chat.id,
+              messageId: msg.id,
+              chatExternalId: chat.externalId,
+              email: user.email,
+              messageExternalId: msg.externalId,
+              traceJson,
+            })
           } else {
+            const errorSpan = streamSpan.startSpan("handle_no_answer")
             const allMessages = await getChatMessages(db, chat?.externalId)
             const lastMessage = allMessages[allMessages.length - 1]
             await stream.writeSSE({
@@ -1331,8 +1756,27 @@ export const MessageApi = async (c: Context) => {
               data: "",
               event: ChatSSEvents.End,
             })
+            errorSpan.end()
+            streamSpan.end()
+            rootSpan.end()
+            const traceJson = tracer.serializeToJson()
+            await insertChatTrace({
+              workspaceId: workspace.id,
+              userId: user.id,
+              chatId: chat.id,
+              messageId: lastMessage.id,
+              chatExternalId: chat.externalId,
+              email: user.email,
+              messageExternalId: lastMessage.externalId,
+              traceJson,
+            })
           }
         } catch (error) {
+          const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
+          streamErrorSpan.addEvent("error", {
+            message: getErrorMessage(error),
+            stack: (error as Error).stack || "",
+          })
           const errFomMap = handleError(error)
           const allMessages = await getChatMessages(db, chat?.externalId)
           const lastMessage = allMessages[allMessages.length - 1]
@@ -1359,9 +1803,18 @@ export const MessageApi = async (c: Context) => {
             error,
             `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
+          streamErrorSpan.end()
+          streamSpan.end()
         }
       },
       async (err, stream) => {
+        const streamErrorSpan = rootSpan.startSpan(
+          "handle_stream_callback_error",
+        )
+        streamErrorSpan.addEvent("error", {
+          message: getErrorMessage(err),
+          stack: (err as Error).stack || "",
+        })
         const errFromMap = handleError(err)
         const allMessages = await getChatMessages(db, chat?.externalId)
         const lastMessage = allMessages[allMessages.length - 1]
@@ -1387,9 +1840,15 @@ export const MessageApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
+        streamErrorSpan.end()
       },
     )
   } catch (error) {
+    const errorSpan = rootSpan.startSpan("handle_top_level_error")
+    errorSpan.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
     const errMsg = getErrorMessage(error)
     // TODO: add more errors like bedrock, this is only openai
     const errFromMap = handleError(error)
@@ -1424,6 +1883,8 @@ export const MessageApi = async (c: Context) => {
         message: "Could not create message or Chat",
       })
     }
+    errorSpan.end()
+    rootSpan.end()
   }
 }
 
@@ -1436,22 +1897,35 @@ export const MessageApi = async (c: Context) => {
 // If the retry also fails, we do the same thing, storing error message in the user query's respective message object
 // If a retry fails on a completely valid assistant response, the error is shown in the UI but not stored anywhere, we retain the valid response (can be seen after reload)
 export const MessageRetryApi = async (c: Context) => {
+  const tracer: Tracer = getTracer("chat")
+  const rootSpan = tracer.startSpan("MessageRetryApi")
   try {
     // @ts-ignore
     const body = c.req.valid("query")
     const { messageId } = body
-
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
+    rootSpan.setAttribute("email", email)
+    rootSpan.setAttribute("workspaceId", workspaceId)
+    rootSpan.setAttribute("messageId", messageId)
 
     const costArr: number[] = []
     // Fetch the original message
+    const fetchMessageSpan = rootSpan.startSpan("fetch_original_message")
     const originalMessage = await getMessageByExternalId(db, messageId)
     if (!originalMessage) {
+      const errorSpan = fetchMessageSpan.startSpan("message_not_found")
+      errorSpan.addEvent("error", { message: "Message not found" })
+      errorSpan.end()
+      fetchMessageSpan.end()
       throw new HTTPException(404, { message: "Message not found" })
     }
     const isUserMessage = originalMessage.messageRole === "user"
+    fetchMessageSpan.setAttribute("isUserMessage", isUserMessage)
+    fetchMessageSpan.end()
 
+    // Fetch conversation history
+    const conversationSpan = rootSpan.startSpan("fetch_conversation")
     let conversation = await getChatMessagesBefore(
       db,
       originalMessage.chatId,
@@ -1461,10 +1935,18 @@ export const MessageRetryApi = async (c: Context) => {
     // Becoz on retry of the error, there will be no conversation availble as there wouldn't be anything before the very first query
     // And for retry on error, we use the user query itself
     if (!isUserMessage && (!conversation || !conversation.length)) {
+      const errorSpan = conversationSpan.startSpan("no_conversation")
+      errorSpan.addEvent("error", {
+        message: "Could not fetch previous messages",
+      })
+      errorSpan.end()
+      conversationSpan.end()
       throw new HTTPException(400, {
         message: "Could not fetch previous messages",
       })
     }
+    conversationSpan.setAttribute("conversationLength", conversation.length)
+    conversationSpan.end()
 
     // Use the same modelId
     const modelId = originalMessage.modelId as Models
@@ -1488,6 +1970,11 @@ export const MessageRetryApi = async (c: Context) => {
       conversation = []
     }
     if (!prevUserMessage.message) {
+      const errorSpan = rootSpan.startSpan("invalid_user_chat")
+      errorSpan.addEvent("error", {
+        message: "Cannot retry the message, invalid user chat",
+      })
+      errorSpan.end()
       throw new HTTPException(400, {
         message: "Cannot retry the message, invalid user chat",
       })
@@ -1496,6 +1983,8 @@ export const MessageRetryApi = async (c: Context) => {
     return streamSSE(
       c,
       async (stream) => {
+        const streamSpan = rootSpan.startSpan("stream_response")
+        streamSpan.setAttribute("chatId", originalMessage.chatExternalId)
         try {
           let message = prevUserMessage.message
           const convWithNoErrMsg = isUserMessage
@@ -1515,6 +2004,7 @@ export const MessageRetryApi = async (c: Context) => {
           Logger.info(
             "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
           )
+          const searchSpan = streamSpan.startSpan("conversation_search")
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(message, ctx, {
               modelId:
@@ -1529,7 +2019,7 @@ export const MessageRetryApi = async (c: Context) => {
           let answer = ""
           let citations: number[] = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "" }
+          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -1606,30 +2096,36 @@ export const MessageRetryApi = async (c: Context) => {
               costArr.push(chunk.cost)
             }
           }
+          searchSpan.setAttribute("answer_found", parsed.answer)
+          searchSpan.setAttribute("answer", answer)
+          searchSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+          searchSpan.end()
 
           if (parsed.answer === null) {
+            const ragSpan = streamSpan.startSpan("rag_processing")
             if (parsed.queryRewrite) {
               Logger.info(
                 "retry: The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages",
               )
               message = parsed.queryRewrite
+              ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             } else {
               Logger.info(
                 "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
               )
             }
-            const classification: TemporalClassifier & { cost: number } =
-              await temporalEventClassification(message, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.QueryRouter].modelId,
-                stream: false,
-              })
+            const classification: TemporalClassifier = {
+              direction: parsed.temporalDirection,
+            }
+            const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,
               message,
               classification,
               convWithNoErrMsg,
+              0.5,
+              understandSpan,
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
@@ -1641,6 +2137,7 @@ export const MessageRetryApi = async (c: Context) => {
             reasoning = isReasoning
             citations = []
             citationMap = {}
+            let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (chunk.text) {
                 if (chunk.reasoning) {
@@ -1675,14 +2172,35 @@ export const MessageRetryApi = async (c: Context) => {
                     citationMap,
                   }),
                 })
+                citationValues[index] = item
               }
             }
+            understandSpan.setAttribute("citation_count", citations.length)
+            understandSpan.setAttribute(
+              "citation_map",
+              JSON.stringify(citationMap),
+            )
+            understandSpan.setAttribute(
+              "citation_values",
+              JSON.stringify(citationValues),
+            )
+            understandSpan.end()
+            const answerSpan = ragSpan.startSpan("process_final_answer")
+            answerSpan.setAttribute(
+              "final_answer",
+              processMessage(answer, citationMap),
+            )
+            answerSpan.setAttribute("actual_answer", answer)
+            answerSpan.setAttribute("final_answer_length", answer.length)
+            answerSpan.end()
+            ragSpan.end()
           } else if (parsed.answer) {
             answer = parsed.answer
           }
           // Retry on an error case
           // Error is retried and now assistant has a response
           // Inserting a new assistant message here, replacing the error message.
+          const insertSpan = streamSpan.startSpan("insert_assistant_message")
           if (isUserMessage) {
             let msg = await db.transaction(
               async (tx): Promise<SelectMessage> => {
@@ -1714,7 +2232,6 @@ export const MessageRetryApi = async (c: Context) => {
                 return msg
               },
             )
-
             await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
               data: JSON.stringify({
@@ -1723,17 +2240,37 @@ export const MessageRetryApi = async (c: Context) => {
               }),
             })
           } else {
+            Logger.info(
+              `Updated trace for message ${originalMessage.externalId}`,
+            )
+            insertSpan.setAttribute("message_id", originalMessage.externalId)
             await updateMessage(db, messageId, {
               message: processMessage(answer, citationMap),
               updatedAt: new Date(),
               sources: citations,
             })
           }
+          insertSpan.end()
+          const endSpan = streamSpan.startSpan("send_end_event")
           await stream.writeSSE({
             data: "",
             event: ChatSSEvents.End,
           })
+          endSpan.end()
+          streamSpan.end()
+          rootSpan.end()
+          const traceJson = tracer.serializeToJson()
+          await updateChatTrace(
+            originalMessage.chatExternalId,
+            originalMessage.externalId,
+            traceJson,
+          )
         } catch (error) {
+          const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
+          streamErrorSpan.addEvent("error", {
+            message: getErrorMessage(error),
+            stack: (error as Error).stack || "",
+          })
           const errFromMap = handleError(error)
           await stream.writeSSE({
             event: ChatSSEvents.ResponseMetadata,
@@ -1753,11 +2290,21 @@ export const MessageRetryApi = async (c: Context) => {
           })
           Logger.error(
             error,
-            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+            `Streaming  Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
           )
+          streamErrorSpan.end()
+          streamSpan.end()
+          rootSpan.end()
         }
       },
       async (err, stream) => {
+        const streamErrorSpan = rootSpan.startSpan(
+          "handle_stream_callback_error",
+        )
+        streamErrorSpan.addEvent("error", {
+          message: getErrorMessage(err),
+          stack: (err as Error).stack || "",
+        })
         const errFromMap = handleError(err)
         await stream.writeSSE({
           event: ChatSSEvents.ResponseMetadata,
@@ -1779,9 +2326,16 @@ export const MessageRetryApi = async (c: Context) => {
           err,
           `Streaming Error: ${err.message} ${(err as Error).stack}`,
         )
+        streamErrorSpan.end()
+        rootSpan.end()
       },
     )
   } catch (error) {
+    const errorSpan = rootSpan.startSpan("handle_top_level_error")
+    errorSpan.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
     const errMsg = getErrorMessage(error)
     Logger.error(
       error,

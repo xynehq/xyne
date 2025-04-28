@@ -29,7 +29,7 @@ import type {
   Inserts,
   VespaSearchResults,
 } from "@/search/types"
-import { getErrorMessage, removeStopwords } from "@/utils"
+import { getErrorMessage } from "@/utils"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -41,8 +41,10 @@ import {
   ErrorPerformingSearch,
   ErrorInsertingDocument,
 } from "@/errors"
+import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
+import pLimit from "p-limit"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -83,6 +85,41 @@ export const insertDocument = async (document: VespaFile) => {
       sources: fileSchema,
     })
   }
+}
+
+// Renamed to reflect its purpose: retrying a single insert
+export const insertWithRetry = async (
+  document: Inserts,
+  schema: VespaSchema,
+  maxRetries = 5,
+) => {
+  let lastError: any
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await vespa.insert(document, { namespace: NAMESPACE, schema })
+      Logger.debug(`Inserted document ${document.docId}`)
+      return
+    } catch (error) {
+      lastError = error
+      if (
+        (error as Error).message.includes("429 Too Many Requests") &&
+        attempt < maxRetries
+      ) {
+        const delayMs = Math.min(Math.pow(2, attempt) * 1000, 10000) // Cap at 10s
+        Logger.warn(
+          `Vespa 429 for ${document.docId}, retrying in ${delayMs}ms (attempt ${attempt + 1})`,
+        )
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      } else {
+        throw new Error(
+          `Error inserting document ${document.docId}: ${(error as Error).message}`,
+        )
+      }
+    }
+  }
+  throw new Error(
+    `Failed to insert ${document.docId} after ${maxRetries} retries: ${lastError.message}`,
+  )
 }
 
 // generic insert method
@@ -148,10 +185,13 @@ export const autocomplete = async (
   email: string,
   limit: number = 5,
 ): Promise<VespaAutocompleteResponse> => {
+  const sources = AllSources.split(", ")
+    .filter((s) => s !== chatMessageSchema)
+    .join(", ")
   // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
   // the drawback here is that for user field we will get duplicates, for the same
   // email one contact and one from user directory
-  const yqlQuery = `select * from sources ${AllSources}, ${userQuerySchema}
+  const yqlQuery = `select * from sources ${sources}, ${userQuerySchema}
     where
         (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and permissions contains @email)
@@ -181,14 +221,18 @@ export const autocomplete = async (
         (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
         and owner contains @email)
         or
-        (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email
+        (
+          (
+            name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or
+            email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
+          )
+          and permissions contains @email
         )
         `
 
   const searchPayload = {
     yql: yqlQuery,
-    query: query,
+    query,
     email,
     hits: limit, // Limit the number of suggestions
     "ranking.profile": "autocomplete", // Use the autocomplete rank profile
@@ -207,9 +251,15 @@ export const autocomplete = async (
   }
 }
 
-type RankProfile = "default"
+export enum SearchModes {
+  NativeRank = "default_native",
+  BM25 = "default_bm25",
+  AI = "default_ai",
+  Random = "default_random",
+}
+
 type YqlProfile = {
-  profile: RankProfile
+  profile: SearchModes
   yql: string
 }
 
@@ -218,7 +268,7 @@ export const HybridDefaultProfile = (
   hits: number,
   app: Apps | null,
   entity: Entity | null,
-  profile: RankProfile = "default",
+  profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
@@ -366,7 +416,7 @@ const HybridDefaultProfileAppEntityCounts = (
   }
 
   return {
-    profile: "default",
+    profile: SearchModes.NativeRank,
     yql: `select * from sources ${AllSources}
             where ((({targetHits:${hits}}userInput(@query))
             or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
@@ -419,25 +469,46 @@ export const groupVespaSearch = async (
   }
 }
 
+type VespaQueryConfig = {
+  limit: number
+  offset: number
+  alpha: number
+  timestampRange: { from: number; to: number } | null
+  excludedIds: string[]
+  notInMailLabels: string[]
+  rankProfile: SearchModes
+  requestDebug: boolean
+  span: Span | null
+  maxHits: number
+}
+
 export const searchVespa = async (
   query: string,
   email: string,
   app: Apps | null,
   entity: Entity | null,
-  limit = config.page,
-  offset: number = 0,
-  alpha: number = 0.5,
-  timestampRange?: { from: number; to: number } | null,
-  excludedIds?: string[],
-  notInMailLabels?: string[],
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    timestampRange = null,
+    excludedIds = [],
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+  }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  const isDebugMode = config.isDebugMode || requestDebug || false
+
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
     entity,
-    "default",
+    rankProfile,
     timestampRange,
     excludedIds,
     notInMailLabels,
@@ -445,13 +516,12 @@ export const searchVespa = async (
 
   const hybridDefaultPayload = {
     yql,
-    q: query, // Original user input query
-    query: removeStopwords(query), // removing stopwords for only bm25, to keep semantic meaning for embeddings
+    query,
     email,
     "ranking.profile": profile,
-    "input.query(e)": "embed(@q)",
+    "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
-    "input.query(bm25ChunkWeight)": 0.7,
+    maxHits,
     hits: limit,
     ...(offset
       ? {
@@ -460,7 +530,9 @@ export const searchVespa = async (
       : {}),
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
+    ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
   }
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
     return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
@@ -503,6 +575,29 @@ export const GetDocument = async (
       cause: error as Error,
       sources: schema,
       message: errMessage,
+    })
+  }
+}
+
+/**
+ * Fetches a single random document from a specific schema.
+ */
+export const GetRandomDocument = async (
+  namespace: string,
+  schema: string,
+  cluster: string,
+): Promise<any | null> => {
+  try {
+    // Directly use the vespa instance imported in this file
+    return await vespa.getRandomDocument(namespace, schema, cluster)
+  } catch (error) {
+    Logger.error(error, `Error fetching random document for schema ${schema}`)
+    // Rethrow or handle as appropriate for this abstraction layer
+    throw new ErrorGettingDocument({
+      docId: `random_from_${schema}`,
+      cause: error as Error,
+      sources: schema,
+      message: `Failed to get random document: ${getErrorMessage(error)}`,
     })
   }
 }
@@ -600,6 +695,17 @@ export const ifDocumentsExist = async (
 ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
   try {
     return await vespa.ifDocumentsExist(docIds)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const ifDocumentsExistInSchema = async (
+  schema: string,
+  docIds: string[],
+): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
+  try {
+    return await vespa.ifDocumentsExistInSchema(schema, docIds)
   } catch (error) {
     throw error
   }
@@ -724,7 +830,7 @@ export const searchUsersByNamesAndEmails = async (
   }
 
   try {
-    return await vespa.getUsersByNamesAndEmaisl(searchPayload)
+    return await vespa.getUsersByNamesAndEmails(searchPayload)
   } catch (error) {
     throw error
   }

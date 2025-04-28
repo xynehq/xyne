@@ -271,7 +271,13 @@ export const AddServiceConnection = async (c: Context) => {
     // })
 
     if (IsGoogleApp(app)) {
-      handleGoogleServiceAccountIngestion(SaasJobPayload)
+      // Start ingestion in the background, but catch any errors it might throw later
+      handleGoogleServiceAccountIngestion(SaasJobPayload).catch((error) => {
+        Logger.error(
+          error,
+          `Background Google Service Account ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+        )
+      })
     }
 
     // Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)

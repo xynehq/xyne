@@ -21,6 +21,7 @@ const {
   EndThinkingToken,
   GeminiAIModel,
   GeminiApiKey,
+  aiProviderBaseUrl,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -99,7 +100,7 @@ let providersInitialized = false
 let bedrockProvider: LLMProvider | null = null
 let openaiProvider: LLMProvider | null = null
 let ollamaProvider: LLMProvider | null = null
-let togetherProvidder: LLMProvider | null = null
+let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
 
@@ -115,6 +116,8 @@ const initializeProviders = (): void => {
     }
     const BedrockClient = new BedrockRuntimeClient({
       region: AwsRegion,
+      retryMode: "adaptive",
+      maxAttempts: 5,
       credentials: {
         accessKeyId: AwsAccessKey,
         secretAccessKey: AwsSecretKey,
@@ -124,9 +127,15 @@ const initializeProviders = (): void => {
   }
 
   if (OpenAIKey) {
-    const openAIClient = new OpenAI({
+    let openAIClient: OpenAI
+    openAIClient = new OpenAI({
       apiKey: OpenAIKey,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`)
+    }
+
     openaiProvider = new OpenAIProvider(openAIClient)
   }
 
@@ -136,15 +145,20 @@ const initializeProviders = (): void => {
   }
 
   if (TogetherAIModel && TogetherApiKey) {
-    const together = new Together({
+    let together: Together
+    together = new Together({
       apiKey: TogetherApiKey,
       timeout: 4 * 60 * 1000,
       maxRetries: 10,
+      ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
-    togetherProvidder = new TogetherProvider(together)
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and together key, using base_url for LLM`)
+    }
+
+    togetherProvider = new TogetherProvider(together)
   }
 
-  console.log(FireworksAIModel, FireworksApiKey)
   if (FireworksAIModel && FireworksApiKey) {
     const fireworks = new Fireworks({
       apiKey: FireworksApiKey,
@@ -157,6 +171,11 @@ const initializeProviders = (): void => {
     geminiProvider = new GeminiAIProvider(gemini)
   }
 
+  if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
+    Logger.warn(
+      `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
+    )
+  }
   providersInitialized = true
   // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
@@ -174,7 +193,7 @@ const getProviders = (): {
     !bedrockProvider &&
     !openaiProvider &&
     !ollamaProvider &&
-    !togetherProvidder &&
+    !togetherProvider &&
     !fireworksProvider &&
     !geminiProvider
   ) {
@@ -185,7 +204,7 @@ const getProviders = (): {
     [AIProviders.AwsBedrock]: bedrockProvider,
     [AIProviders.OpenAI]: openaiProvider,
     [AIProviders.Ollama]: ollamaProvider,
-    [AIProviders.Together]: togetherProvidder,
+    [AIProviders.Together]: togetherProvider,
     [AIProviders.Fireworks]: fireworksProvider,
     [AIProviders.GoogleAI]: geminiProvider,
   }
@@ -208,7 +227,7 @@ const getProviderMap = (): Partial<Record<AIProviders, LLMProvider>> => {
   return providerMap
 }
 
-const getProviderByModel = (modelId: Models): LLMProvider => {
+export const getProviderByModel = (modelId: Models): LLMProvider => {
   const ProviderMap = getProviderMap()
 
   const providerType = ModelToProviderMap[modelId]
@@ -350,23 +369,40 @@ export const analyzeQueryMetadata = async (
   }
 }
 
-export const jsonParseLLMOutput = (text: string): any => {
+const nullCloseBraceRegex = /null\s*\n\s*\}/
+export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-    // first it has to exist
+    // edge case "null\n} or ": "null\n}
+    if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
+      text = text.replaceAll(/[\n"}:]/g, "");
+    }
+    // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
+    if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
+      text = `{${text}`
+    }
     const startBrace = text.indexOf("{")
     const endBrace = text.lastIndexOf("}")
 
-    if (startBrace !== -1) {
-      if (startBrace !== 0) {
-        text = text.substring(startBrace)
+    if (startBrace !== -1 || endBrace !== -1) {
+      // there is no json
+      if (startBrace !== -1) {
+        if (startBrace !== 0) {
+          text = text.substring(startBrace)
+        }
+      }
+      if (endBrace !== -1) {
+        // Only add the closing brace if it's not already there
+        if (endBrace !== text.length - 1) {
+          text = text.substring(0, endBrace + 1)
+        }
       }
     }
-    if (endBrace !== -1) {
-      if (endBrace !== text.length - 1) {
-        text = text.substring(0, endBrace + 1)
-      }
+    // we only want to do this if enough text has accumulated
+    // we don't want to do case where just `json` comes and we wrap it as answer
+    if (startBrace === -1 && jsonKey && text.length > 10) {
+      text = `{${jsonKey} "${text}"`
     }
 
     if (!text.trim()) {
@@ -385,6 +421,13 @@ export const jsonParseLLMOutput = (text: string): any => {
         })
         jsonVal = parse(withNewLines.trim())
       }
+      // edge case "null\n}
+      if (jsonKey) {
+        const key = jsonKey.slice(0, -1).replaceAll('"', "")
+        if (jsonVal[key].trim() === "null") {
+          jsonVal = { [key]: null }
+        }
+      }
       return jsonVal
     } catch {
       // If first parse failed, continue to code block cleanup
@@ -400,7 +443,7 @@ export const jsonParseLLMOutput = (text: string): any => {
         .replace(/\r/g, "\\r")
         .trim()
       if (!text) {
-        return ""
+        return {}
       }
       jsonVal = parse(text)
     } catch (parseError) {
@@ -894,7 +937,10 @@ export const baselineRAGJsonStream = (
       indexToCitation(retrievedCtx),
     )
   } else {
-    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+    params.systemPrompt = baselinePromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
   }
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {

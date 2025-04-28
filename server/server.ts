@@ -1,4 +1,5 @@
 import { type Context, Hono, type Next } from "hono"
+import { z } from "zod"
 import {
   AnswerApi,
   AutocompleteApi,
@@ -7,6 +8,7 @@ import {
   chatDeleteSchema,
   chatHistorySchema,
   chatRenameSchema,
+  chatTraceSchema,
   chatSchema,
   messageRetrySchema,
   messageSchema,
@@ -63,6 +65,7 @@ import {
   GetChatApi,
   MessageApi,
   MessageRetryApi,
+  GetChatTraceApi,
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
@@ -161,6 +164,7 @@ export const AppRoutes = app
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
+  .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
@@ -360,10 +364,16 @@ app.get(
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/chat", AuthRedirect, (c) => c.redirect("/"))
+app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/chat/:param",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/trace/:chatId/:messageId",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
@@ -377,11 +387,18 @@ app.get(
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
-app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
-
-// Serve assets (CSS, JS, etc.)
+app.get(
+  "/admin/integrations/google",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get("/oauth/success", serveStatic({ path: "./dist/index.html" })) // Serve assets (CSS, JS, etc.)
 app.get("/assets/*", serveStatic({ root: "./dist" }))
-
 export const init = async () => {
   await initQueue()
 }
@@ -397,7 +414,13 @@ const server = Bun.serve({
 })
 Logger.info(`listening on port: ${config.port}`)
 
-process.on("uncaughtException", (error) => {
-  Logger.error(error, "uncaughtException")
-  // shutdown server?
-})
+const errorEvents: string[] = [
+  `uncaughtException`,
+  `unhandledRejection`,
+  `rejectionHandled`,
+]
+errorEvents.forEach((eventType: string) =>
+  process.on(eventType, (error: Error) => {
+    Logger.error(error, `Caught via event: ${eventType}`)
+  }),
+)

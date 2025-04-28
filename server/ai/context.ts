@@ -18,6 +18,7 @@ import {
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
+import { getSortedScoredChunks } from "@/search/mappers"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -31,6 +32,12 @@ const constructFileContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
+
+  fields.chunks_summary = getSortedScoredChunks(
+    fields.matchfeatures,
+    fields.chunks_summary as string[],
+  ).map((v) => v.chunk)
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}
@@ -66,6 +73,11 @@ const constructMailContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
+  fields.chunks_summary = getSortedScoredChunks(
+    fields.matchfeatures,
+    fields.chunks_summary as string[],
+  ).map((v) => v.chunk)
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
@@ -83,13 +95,25 @@ const constructSlackMessageContext = (
   fields: VespaChatMessageSearch,
   relevance: number,
 ): string => {
-  return `App: ${fields.app}
+  let channelCtx = ``
+  if (fields.isIm && fields.permissions) {
+    channelCtx = `It's a DM between ${fields.permissions.join(", ")}`
+  } else if (!fields.isPrivate) {
+    // mpim and public channel
+    channelCtx = `It's a message in ${fields.channelName}`
+  } else {
+    channelCtx = `It's a in private channel ${fields.channelName}`
+  }
+  return `${channelCtx}
+    App: ${fields.app}
     Entity: ${fields.entity}
     User: ${fields.name}
     Username: ${fields.username}
     Message: ${fields.text}
-    vespa relevance score: ${relevance}
-    `
+    ${fields.threadId ? "it's a message thread" : ""}
+    Time: ${getRelativeTime(fields.createdAt)}
+    User is part of Workspace: ${fields.teamName}
+    vespa relevance score: ${relevance}`
 }
 
 const constructMailAttachmentContext = (
@@ -100,6 +124,12 @@ const constructMailAttachmentContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
+
+  fields.chunks_summary = getSortedScoredChunks(
+    fields.matchfeatures,
+    fields.chunks_summary as string[],
+  ).map((v) => v.chunk)
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}

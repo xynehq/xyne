@@ -69,19 +69,13 @@ schema file {
     }
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: input chunks | embed | attribute | index
     attribute {
         distance-metric: angular
     }
   }
   
-  field title_embeddings type tensor<bfloat16>(v[384])  {
-    indexing: input title | embed | attribute | index
-    attribute {
-        distance-metric: angular
-    }
-  }
 
   field title_fuzzy type string {
     indexing: input title | index
@@ -102,56 +96,20 @@ schema file {
     fields: title, app, entity
   }
 
-  # Hybrid search rank profile combining BM25 for title and chunks, and vector search for chunk embeddings
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e) tensor<bfloat16>(v[384])  # Query embedding
+      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
-      query(bm25ChunkWeight) double 
     }
 
-    # Compute vector similarity for chunks
-    function chunk_vector_score() {
-      expression: closeness(field, chunk_embeddings)
-    }
-
-    # Compute BM25 score for title
-    function title_bm25_score() {
-      expression: bm25(title)
-    }
-
-    # First phase combines BM25 (title and chunks) and vector similarity (chunks)
-    first-phase {
-      expression: (query(alpha) * chunk_vector_score) + ((1 - query(alpha)) * (bm25(chunks) + bm25(title)))
-    }
-
-    # Global phase (optional if more complex reranking is needed)
-    global-phase {
-      expression {
-        (
-          (query(alpha) * normalize_linear(chunk_vector_score)) +
-          ((1 - query(alpha)) * (normalize_linear(bm25(chunks)) + normalize_linear(bm25(title))))
-        )
-      }
-      rerank-count: 1000
-    }
-
-    match-features {
-      bm25(title)
-      bm25(chunks)
-      closeness(field, chunk_embeddings)
-    }
-  }
-
- 
-  rank-profile default inherits initial {
     constants {
       THREE_MONTHS_IN_SECONDS: 7890000
       ONE_YEAR_IN_SECONDS: 31536000
       MAX_DOC_DECAY: 0.5
     }
 
+    # custom normalize function
     function scale(val) {
       expression: 2*atan(val/4)/(3.14159)
     }
@@ -163,57 +121,129 @@ schema file {
 
     # Document score decays min to 0.5
     function doc_recency() {
-        expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
-    }
-
-    function chunk_vector_score() {
-      expression: closeness(field, chunk_embeddings)
-    }
-
-    function title_vector_score() {
-      expression: closeness(field, title_embeddings)
-    }
-
-    function scaled_bm25_chunks() {
-      expression: scale(bm25(chunks))
-    }
-
-    function scaled_bm25_title() {
-      expression: scale(bm25(title))
+      expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
     }
 
     function vector_score() {
-      # taking whichever has a good matching
-      expression: max(chunk_vector_score,title_vector_score)
+      expression: closeness(field, chunk_embeddings)
     }
 
     function combined_bm25() {
-      expression: (query(bm25ChunkWeight) * scaled_bm25_chunks) + scaled_bm25_title
+      expression: bm25(title) + bm25(chunks)
     }
 
-    # First phase combines BM25 (title and chunks) and vector similarity (chunks)
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(title) + matches(chunks)
+      }
+    }
+
+    function combined_nativeRank() {
+      expression: (nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+    }
+
+    function chunk_scores() {
+      expression: elementwise(bm25(chunks), x, double)
+    }
+  }
+
+ 
+  rank-profile default_native inherits initial {
+
     first-phase {
-      expression: (query(alpha) * scale(vector_score)) + ((1 - query(alpha)) * scale(combined_bm25))
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
     }
 
     global-phase {
       expression {
         (
-          (query(alpha) * scale(vector_score)) +
-          ((1 - query(alpha)) * max(scaled_bm25_title,(query(bm25ChunkWeight) * scaled_bm25_chunks)))
-        ) * doc_recency
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        )
       }
       rerank-count: 1000
     }
 
     match-features {
-      chunk_vector_score
-      title_vector_score
-      scaled_bm25_chunks
-      scaled_bm25_title
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
       doc_recency
-      query(alpha)
-      query(bm25ChunkWeight)
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
+
+    first-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+        )
+      }
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) +
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
+      }
+      rerank-count: 1000
+    }
+
+     match-features {
+      vector_score
+      bm25(chunks)
+      bm25(title)
+      scale(combined_bm25)
+      chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
+    }
+  }
+
+  rank-profile default_random inherits initial {
+    first-phase {
+        expression: random.match
+    }
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
     }
   }
 
