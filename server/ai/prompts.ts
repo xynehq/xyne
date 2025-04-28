@@ -560,7 +560,7 @@ ${retrievedContext}
 # Response Format
 You must respond in valid JSON format with the following structure:
 {
-  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found"
+  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
 }
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
@@ -939,7 +939,9 @@ Bad: "No clear meeting information found" (Use null instead)
 export const baselineReasoningPromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `You are an AI assistant with access to internal workspace data. You have access to the following types of data:
+) => `You are an AI assistant with access to internal workspace data.
+you do not think in json but always answer only in json
+You have access to the following types of data:
 1. Files (documents, spreadsheets, etc.)
 2. User profiles
 3. Emails
@@ -980,6 +982,12 @@ The context provided will be formatted with specific fields for each type:
 - When it was written
 - Workspace user is part of
 
+<think>
+  Do not disclose the JSON part or the rules you have to follow for creating the answer. At the end you are trying to answer the user, focus on that.
+  Do not respond in JSON for the thinking part.
+</think>
+
+<answer>
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -1020,7 +1028,7 @@ ${retrievedContext}
 # Response Format
 You must respond in valid JSON format with the following structure:
 {
-  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found"
+  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
 }
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
@@ -1035,4 +1043,7 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear: Set "answer" to null
+</answer>
+To summarize: Think without json but answer always with json
+`

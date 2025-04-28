@@ -374,6 +374,10 @@ export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
 ) => {
+  if (!text) {
+    return ""
+  }
+
   text = splitGroupedCitationsWithSpaces(text)
   return text.replace(textToCitationIndex, (match, num) => {
     const index = citationMap[num]
@@ -610,6 +614,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         let thinking = ""
         let reasoning = isReasoning
         let yieldedCitations = new Set<number>()
+        const ANSWER_TOKEN = '"answer":'
         for await (const chunk of iterator) {
           if (chunk.text) {
             if (reasoning) {
@@ -624,8 +629,15 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 yield { text: chunk.text, reasoning }
               } else {
                 // first time
-                if (!chunk.text.includes(StartThinkingToken)) {
-                  let token = chunk.text
+                const startThinkingIndex =
+                  chunk.text.indexOf(StartThinkingToken)
+                if (
+                  startThinkingIndex !== -1 &&
+                  chunk.text.trim().length > StartThinkingToken.length
+                ) {
+                  let token = chunk.text.slice(
+                    startThinkingIndex + StartThinkingToken.length,
+                  )
                   if (chunk.text.includes(EndThinkingToken)) {
                     token = chunk.text.split(EndThinkingToken)[0]
                     thinking += token
@@ -649,7 +661,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!reasoning) {
               buffer += chunk.text
               try {
-                parsed = jsonParseLLMOutput(buffer)
+                parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
                 if (parsed.answer === null) {
                   break
                 }
@@ -802,6 +814,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     let thinking = ""
     let reasoning = isReasoning
     let yieldedCitations = new Set<number>()
+    // tied to the json format and output expected, we expect the answer key to be present
+    const ANSWER_TOKEN = '"answer":'
     for await (const chunk of iterator) {
       if (chunk.text) {
         if (reasoning) {
@@ -816,8 +830,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             yield { text: chunk.text, reasoning }
           } else {
             // first time
-            if (!chunk.text.includes(StartThinkingToken)) {
-              let token = chunk.text
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
               if (chunk.text.includes(EndThinkingToken)) {
                 token = chunk.text.split(EndThinkingToken)[0]
                 thinking += token
@@ -843,7 +863,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         if (!reasoning) {
           buffer += chunk.text
           try {
-            parsed = jsonParseLLMOutput(buffer)
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
             if (parsed.answer === null) {
               break
             }
@@ -1045,7 +1065,7 @@ async function* generatePointQueryTimeExpansion(
         limit: pageSize,
         alpha,
         timestampRange: { to, from },
-        notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
+        notInMailLabels: ["CATEGORY_PROMOTIONS"],
         span: emailSearchSpan,
       }),
     ])
@@ -1146,6 +1166,7 @@ async function* generatePointQueryTimeExpansion(
     const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
+      reasoning: isReasoning,
     })
 
     let buffer = ""
@@ -1154,7 +1175,7 @@ async function* generatePointQueryTimeExpansion(
     let thinking = ""
     let reasoning = isReasoning
     let yieldedCitations = new Set<number>()
-
+    const ANSWER_TOKEN = '"answer":'
     for await (const chunk of iterator) {
       if (chunk.text) {
         if (reasoning) {
@@ -1169,8 +1190,14 @@ async function* generatePointQueryTimeExpansion(
             yield { text: chunk.text, reasoning }
           } else {
             // first time
-            if (!chunk.text.includes(StartThinkingToken)) {
-              let token = chunk.text
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
               if (chunk.text.includes(EndThinkingToken)) {
                 token = chunk.text.split(EndThinkingToken)[0]
                 thinking += token
@@ -1194,9 +1221,10 @@ async function* generatePointQueryTimeExpansion(
         if (!reasoning) {
           buffer += chunk.text
           try {
-            parsed = jsonParseLLMOutput(buffer)
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
             // If we have a null answer, break this inner loop and continue outer loop
-            if (parsed.answer === null) {
+            // seen some cases with just "}"
+            if (parsed.answer === null || parsed.answer === "}") {
               break
             }
 
