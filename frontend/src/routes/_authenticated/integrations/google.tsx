@@ -10,6 +10,7 @@ import {
   AdminPageProps,
   getConnectors,
   minHeight,
+  showUserStats,
 } from "@/routes/_authenticated/admin/integrations/google"
 import { getErrorMessage } from "@/lib/utils"
 import { Sidebar } from "@/components/Sidebar"
@@ -23,22 +24,6 @@ import { OAuthIntegrationStatus } from "@/types"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
 
 const logger = console
-
-const showUserStats = (
-  userStats: { [email: string]: any },
-  activeTab: string,
-  oauthIntegrationStatus: OAuthIntegrationStatus,
-) => {
-  if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
-    return false
-  if (!Object.keys(userStats).length) return false
-  if (activeTab !== "oauth") return false
-
-  const currentAuthType = AuthType.OAuth
-  return Object.values(userStats).some(
-    (stats) => stats.type === currentAuthType,
-  )
-}
 
 const UserLayout = ({ user, workspace }: AdminPageProps) => {
   const navigator = useNavigate()
@@ -139,7 +124,6 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
             className={`w-[400px] min-h-[${minHeight}px] ${
               Object.keys(userStats).length > 0 ? "mt-[150px]" : ""
             }`}
-            onValueChange={setActiveTab}
           >
             <TabsList className="grid w-full grid-cols-1">
               <TabsTrigger value="oauth">Google OAuth</TabsTrigger>

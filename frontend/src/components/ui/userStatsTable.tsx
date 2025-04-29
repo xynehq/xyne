@@ -10,7 +10,6 @@ import { AuthType } from "shared/types"
 
 export const UserStatsTable = ({
   userStats,
-  type,
 }: {
   userStats: { [email: string]: any }
   type: AuthType

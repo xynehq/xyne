@@ -434,6 +434,22 @@ const ServiceAccountTab = ({
     )
   }
 }
+export const showUserStats = (
+  userStats: { [email: string]: any },
+  activeTab: string,
+  oauthIntegrationStatus: OAuthIntegrationStatus,
+) => {
+  if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
+    return false
+  if (!Object.keys(userStats).length) return false
+  if (activeTab !== "service_account" && activeTab !== "oauth") return false
+
+  const currentAuthType =
+    activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
+  return Object.values(userStats).some(
+    (stats) => stats.type === currentAuthType,
+  )
+}
 
 export interface AdminPageProps {
   user: PublicUser
@@ -580,22 +596,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }, [oauthIntegrationStatus, refetch])
 
-  const showUserStats = (
-    userStats: { [email: string]: any },
-    activeTab: string,
-    oauthIntegrationStatus: OAuthIntegrationStatus,
-  ) => {
-    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
-      return false
-    if (!Object.keys(userStats).length) return false
-    if (activeTab !== "service_account" && activeTab !== "oauth") return false
-
-    const currentAuthType =
-      activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
-    return Object.values(userStats).some(
-      (stats) => stats.type === currentAuthType,
-    )
-  }
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
