@@ -26,6 +26,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
   ) => {
     const inputRef = useRef<HTMLInputElement | null>(null)
     const navigate = useNavigate({ from: "/search" })
+    const trimmedQuery = query.trim()
 
     useEffect(() => {
       if (inputRef.current) {
@@ -82,7 +83,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      if (query.trim()) {
+                      if (trimmedQuery) {
                         setOffset(0)
                         navigateToSearch()
                         setFilter({}) // Use empty object instead of null
@@ -98,7 +99,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                 {!hasSearched ? (
                   <button
                     onClick={() => {
-                      if (query.trim()) {
+                      if (trimmedQuery) {
                         handleSearch()
                         navigateToSearch()
                       }
