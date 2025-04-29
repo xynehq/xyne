@@ -188,13 +188,11 @@ export const CreateOAuthProvider = async (c: Context) => {
 
 export const UpdateOAuthProvider = async (c: Context) => {
   const payload = c.get(JwtPayloadKey)
-  Logger.info({ payload }, "Full JWT Payload")
   const { sub } = payload
   const email = sub
 
   const userRes = await getUserByEmail(db, email)
   if (!userRes || !userRes.length) {
-    Logger.error({ email }, "No user found for email")
     throw new NoUserFound({})
   }
   const [user] = userRes

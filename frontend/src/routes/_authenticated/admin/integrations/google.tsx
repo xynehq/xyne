@@ -143,7 +143,6 @@ export const OAuthForm = ({
   onSuccess: any
   isEditing?: boolean
   connectorId?: string
-  refetch: any
 }) => {
   const { toast } = useToast()
   const navigate = useNavigate()

@@ -54,7 +54,6 @@ const OAuthTab = ({
           onSuccess={handleFormSuccess}
           isEditing={isEditing}
           connectorId={connectorId}
-          refetch={refetch}
         />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
         <Card>
@@ -68,7 +67,6 @@ const OAuthTab = ({
                 onSuccess={handleFormSuccess}
                 isEditing={isEditing}
                 connectorId={connectorId}
-                refetch={refetch}
               />
             ) : (
               <div className="flex justify-between items-center">

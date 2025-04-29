@@ -659,17 +659,6 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       refresh_token: oauthTokens.refresh_token,
     })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
-
-    const [totalFiles, { messagesExcludingPromotions }] = await Promise.all([
-      countDriveFiles(oauth2Client),
-      getGmailCounts(oauth2Client),
-    ])
-
-    tracker.updateTotal(userEmail, {
-      totalMail: messagesExcludingPromotions,
-      totalDrive: totalFiles,
-    })
-
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
     await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
