@@ -81,6 +81,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
     from: "/_authenticated/search",
   })
   const navigate = useNavigate({ from: "/search" })
+  if(!search.query){
+    return;
+  }
   // TODO: debug the react warning
   // Cannot update a component (`MatchesInner`)
   const QueryTyped = useRouterState({
