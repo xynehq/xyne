@@ -26,8 +26,8 @@ import {
 } from "@/errors"
 import { IsGoogleApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
-import { sql } from "drizzle-orm"
 import { getErrorMessage } from "@/utils"
+import { syncJobs, syncHistory } from "./schema"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -282,17 +282,30 @@ export const deleteConnector = async (
     )
 }
 
-export const deleteOauthConnector = async (trx: TxnOrClient): Promise<void> => {
+export const deleteOauthConnector = async (
+  trx: TxnOrClient,
+  connectorId: number,
+): Promise<void> => {
+  Logger.info(`Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`)
   try {
-    await trx.execute(
-      sql`TRUNCATE TABLE connectors, oauth_providers, sync_jobs, sync_history RESTART IDENTITY CASCADE;`,
-    )
+    await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
+    Logger.debug(`Deleted sync jobs for connector ID: ${connectorId}`)
+
+    await trx
+      .delete(oauthProviders)
+      .where(eq(oauthProviders.connectorId, connectorId))
+     Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
+
+    await trx.delete(connectors).where(eq(connectors.id, connectorId))
+
   } catch (error) {
     Logger.error(
-      { error },
-      "Error truncating tables in deleteOauthConnector",
+      { error, connectorId },
+      `Error deleting connector and related data: ${getErrorMessage(error)}`,
     )
-    throw new Error(`Failed to truncate tables: ${getErrorMessage(error)}`)
+    throw new Error(
+      `Failed to delete connector ${connectorId}: ${getErrorMessage(error)}`,
+    )
   }
 }
 

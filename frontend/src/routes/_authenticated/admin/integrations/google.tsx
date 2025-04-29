@@ -673,15 +673,22 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     activeTab: string,
     oauthIntegrationStatus: OAuthIntegrationStatus,
   ) => {
-    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
-      return false
     if (!Object.keys(userStats).length) return false
     if (activeTab !== "service_account" && activeTab !== "oauth") return false
 
     const currentAuthType =
       activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
-    return Object.values(userStats).some(
-      (stats) => stats.type === currentAuthType,
+
+    if (currentAuthType === AuthType.OAuth) {
+      return (
+        oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting &&
+        Object.values(userStats).some((stats) => stats.type === currentAuthType)
+      )
+    }
+
+    return (
+      isIntegratingSA &&
+      Object.values(userStats).some((stats) => stats.type === currentAuthType)
     )
   }
 
@@ -705,7 +712,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
         description: "Google OAuth connector has been removed",
       })
       setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
-      refetch()
     } catch (error) {
       toast({
         title: "Deletion Failed",
@@ -753,8 +759,8 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
               handleDelete={handleDelete}
-              />
-            </Tabs>
+            />
+          </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
             <UserStatsTable
               userStats={userStats}

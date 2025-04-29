@@ -127,7 +127,6 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
         description: "Google OAuth connector has been removed",
       })
       setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
-      refetch()
     } catch (error) {
       toast({
         title: "Deletion Failed",

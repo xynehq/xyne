@@ -384,21 +384,44 @@ export const DeleteConnector = async (c: Context) => {
 }
 
 export const DeleteOauthConnector = async (c: Context) => {
-  Logger.warn(
-    "API handler DeleteOauthConnector called - attempting to truncate tables.",
-  )
+  // @ts-ignore Ignore Hono validation type issue
+  const { connectorId: connectorExternalId }: { connectorId: string } = c.req.valid("form")
+
+  if (!connectorExternalId) {
+    Logger.error("connectorId (external) not provided in request for DeleteOauthConnector")
+    throw new HTTPException(400, { message: "Missing connectorId" })
+  }
+
+  const { sub } = c.get(JwtPayloadKey)
+  const userRes = await getUserByEmail(db, sub)
+  if (!userRes || !userRes.length) {
+    Logger.error({ sub }, "No user found for sub in DeleteOauthConnector")
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+
   try {
+    const connector = await getConnectorByExternalId(connectorExternalId, user.id)
+    if (!connector) {
+      Logger.warn({ connectorExternalId, userId: user.id }, "Connector not found for deletion")
+      throw new HTTPException(404, { message: `Connector not found: ${connectorExternalId}` })
+    }
+    const connectorInternalId = connector.id
+
     await db.transaction(async (trx) => {
-      await deleteOauthConnector(trx)
+      await deleteOauthConnector(trx, connectorInternalId)
     })
     return c.json({
       success: true,
-      message: "OAuth connector and related tables truncated successfully",
+      message: `OAuth connector ${connectorExternalId} and related data deleted successfully`,
     })
   } catch (error) {
-    Logger.error({ error }, "Error in DeleteOauthConnector API handler")
+    Logger.error({ error, connectorExternalId, userId: user.id }, "Error in DeleteOauthConnector API handler")
+    if (error instanceof HTTPException) {
+      throw error
+    }
     throw new HTTPException(500, {
-      message: `Failed to truncate tables: ${getErrorMessage(error)}`,
+      message: `Failed to delete connector ${connectorExternalId}: ${getErrorMessage(error)}`,
       cause: error,
     })
   }
