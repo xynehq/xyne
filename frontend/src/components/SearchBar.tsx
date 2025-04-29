@@ -82,8 +82,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      const trimmedQuery = query.trim()
-                      if (trimmedQuery) {
+                      if (query.trim()) {
                         setOffset(0)
                         navigateToSearch()
                         setFilter({}) // Use empty object instead of null
@@ -99,8 +98,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                 {!hasSearched ? (
                   <button
                     onClick={() => {
-                      const trimmedQuery = query.trim()
-                      if (trimmedQuery) {
+                      if (query.trim()) {
                         handleSearch()
                         navigateToSearch()
                       }
