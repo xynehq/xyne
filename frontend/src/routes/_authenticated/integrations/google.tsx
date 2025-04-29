@@ -45,7 +45,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
 
   const [updateStatus, setUpdateStatus] = useState("")
   const [userStats, setUserStats] = useState<{ [email: string]: any }>({})
-  const [activeTab, setActiveTab] = useState<string>("oauth")
+  const activeTab = "oauth";
   const [oauthIntegrationStatus, setOAuthIntegrationStatus] =
     useState<OAuthIntegrationStatus>(
       data
