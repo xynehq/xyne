@@ -92,6 +92,14 @@ export const createOAuthProvider = z.object({
   app: z.nativeEnum(Apps),
 })
 
+export const updateOAuthProvider = z.object({
+  clientId: z.string(),
+  clientSecret: z.string(),
+  scopes: z.array(z.string()),
+  connectorId: z.string(),
+  app: z.nativeEnum(Apps),
+})
+
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
 })
@@ -102,6 +110,7 @@ export const updateConnectorStatusSchema = z.object({
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
+export type UpdateOAuthProviderForm = z.infer<typeof updateOAuthProvider>
 
 // Define an enum for connection types
 export enum ConnectorType {

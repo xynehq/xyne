@@ -96,6 +96,33 @@ const submitOAuthForm = async (
   return response.json()
 }
 
+const updateOAuthForm = async (
+  value: OAuthFormData,
+  navigate: ReturnType<typeof useNavigate>,
+  connectorId?: string,
+) => {
+  const response = await api.admin.oauth.update.$put({
+    form: {
+      clientId: value.clientId,
+      clientSecret: value.clientSecret,
+      scopes: value.scopes,
+      app: Apps.GoogleDrive,
+      connectorId: connectorId,
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to update provider: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
 type ServiceAccountFormData = {
   email: string
   file: any
@@ -105,9 +132,18 @@ type OAuthFormData = {
   clientId: string
   clientSecret: string
   scopes: string[]
+  connectorId?: string
 }
 
-export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
+export const OAuthForm = ({
+  onSuccess,
+  isEditing,
+  connectorId,
+}: {
+  onSuccess: any
+  isEditing?: boolean
+  connectorId?: string
+}) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
@@ -118,11 +154,19 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value, navigate) // Call the async function
-        toast({
-          title: "OAuth integration added",
-          description: "Perform OAuth to add the data",
-        })
+        if (isEditing) {
+          await updateOAuthForm(value, navigate, connectorId)
+          toast({
+            title: "OAuth integration is Updated",
+            description: "Perform OAuth to add the data",
+          })
+        } else {
+          await submitOAuthForm(value, navigate)
+          toast({
+            title: "OAuth integration added",
+            description: "Perform OAuth to add the data",
+          })
+        }
         onSuccess()
       } catch (error) {
         toast({
@@ -212,8 +256,9 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
           </>
         )}
       />
-
-      <Button type="submit">Create Integration</Button>
+      <Button type="submit">
+        {isEditing ? "Update Integration" : "Create Integration"}
+      </Button>
     </form>
   )
 }
@@ -409,10 +454,11 @@ const UserStatsTable = ({
       </TableHeader>
       <TableBody>
         {Object.entries(userStats).map(([email, stats]) => {
+          const totalCount: number = stats.totalDrive + stats.totalMail
           const percentage: number = parseFloat(
             (
               ((stats.gmailCount + stats.driveCount) * 100) /
-              (stats.totalDrive + stats.totalMail)
+              totalCount
             ).toFixed(2),
           )
           const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
@@ -656,7 +702,6 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       return false
     if (!Object.keys(userStats).length) return false
     if (activeTab !== "service_account" && activeTab !== "oauth") return false
-
     const currentAuthType =
       activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
     return Object.values(userStats).some(
@@ -700,6 +745,13 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
+              connectorId={
+                data?.find(
+                  (v) =>
+                    v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
+                )?.id
+              }
+              refetch={refetch}
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (

@@ -1,4 +1,8 @@
-import { Subsystem, type TxnOrClient } from "@/types"
+import {
+  Subsystem,
+  type TxnOrClient,
+  type UpdateOAuthProviderForm,
+} from "@/types"
 import {
   oauthProviders,
   type InsertOAuthProvider,
@@ -64,4 +68,33 @@ export const getOAuthProviderByConnectorId = async (
   } else {
     throw new Error("Could not get the provider")
   }
+}
+
+export const updateOauthProvider = async (
+  trx: TxnOrClient,
+  userId: number,
+  connectorId: number,
+  data: UpdateOAuthProviderForm,
+): Promise<SelectOAuthProvider> => {
+  const { clientId, clientSecret, scopes } = data
+  const result = await trx
+    .update(oauthProviders)
+    .set({
+      clientId,
+      clientSecret,
+      oauthScopes: scopes,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(oauthProviders.userId, userId),
+        eq(oauthProviders.connectorId, connectorId),
+      ),
+    )
+    .returning()
+
+  if (result.length === 0) {
+    throw new Error("Could not update the provider")
+  }
+  return result[0]
 }
