@@ -2,25 +2,24 @@ import { calendar_v3, drive_v3, gmail_v1, google, people_v1 } from "googleapis"
 import type PgBoss from "pg-boss"
 import { getOAuthConnectorWithCredentials } from "@/db/connector"
 import { db } from "@/db/client"
+import { Apps, AuthType, SyncJobStatus } from "@/shared/types"
 import {
-  Apps,
-  AuthType,
-  SyncJobStatus,
-} from "@/shared/types"
-import {
-    connectors,
-    type SelectConnector,
-    type SlackOAuthIngestionState,
+  connectors,
+  type SelectConnector,
+  type SlackOAuthIngestionState,
 } from "@/db/schema"
-import {
-    Subsystem,
-    type SlackConfig,
-} from "@/types"
+import { Subsystem, type SlackConfig, SyncCron } from "@/types"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
-import {WebClient} from "@slack/web-api"
-import {SlackConversationFiltering} from "@/integrations/slack/index"
+import { WebClient } from "@slack/web-api"
+import {
+  getAllConversations,
+  insertConversation,
+  safeGetTeamInfo,
+  extractUserIdsFromBlocks,
+  fetchThreadMessages,
+  insertMember,
+} from "@/integrations/slack/index"
 import { getLogger } from "@/logger"
-import {trackChannelChanges,fetchRecentMessages} from "@/integrations/slack/sync1"
 import { GaxiosError } from "gaxios"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -37,334 +36,773 @@ import { IngestionState } from "../ingestionState"
 import { insertSyncJob } from "@/db/syncJob"
 import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
 import {
-    retryPolicies,
-    type ConversationsHistoryResponse,
-    type ConversationsListResponse,
-    type ConversationsRepliesResponse,
-    type FilesListResponse,
-    type TeamInfoResponse,
-    type UsersListResponse,
+  retryPolicies,
+  type ConversationsHistoryResponse,
+  type ConversationsListResponse,
+  type ConversationsRepliesResponse,
+  type FilesListResponse,
+  type TeamInfoResponse,
+  type UsersListResponse,
 } from "@slack/web-api"
-
+import { insertSyncHistory } from "@/db/syncHistory"
 import {
-    chatContainerSchema,
-    chatMessageSchema,
-    chatTeamSchema,
-    chatUserSchema,
-    SlackEntity,
-    type VespaChatContainer,
-    type VespaChatMessage,
-  } from "@/search/types"
-import { insert, NAMESPACE, UpdateDocument,insertDocument,insertUser,ifDocumentsExist } from "@/search/vespa"
-import { getAllUsers ,getConversationUsers,insertTeam,makeMemberTeamAndPermissionMap,safeConversationHistory,insertChatMessage} from "@/integrations/slack/index"
+  chatContainerSchema,
+  chatMessageSchema,
+  chatTeamSchema,
+  chatUserSchema,
+  SlackEntity,
+  type VespaChatContainer,
+  type VespaChatMessage,
+  VespaChatUserSchema,
+  type ChatUserCore,
+} from "@/search/types"
+import {
+  insert,
+  NAMESPACE,
+  UpdateDocument,
+  insertDocument,
+  insertUser,
+  ifDocumentsExist,
+  ifDocumentsExistInSchema,
+  fetchAllDocumentsFromSchema,
+  ifDocumentsExistInChatContainer,
+  GetDocument,
+} from "@/search/vespa"
+import {
+  getAllUsers,
+  getConversationUsers,
+  insertTeam,
+  safeConversationHistory,
+  insertChatMessage,
+  getTeam,
+} from "@/integrations/slack/index"
+import { chat } from "googleapis/build/src/apis/chat"
+import { jobs } from "googleapis/build/src/apis/jobs"
+import { getErrorMessage } from "@/utils"
 type SlackMessage = NonNullable<
   ConversationsHistoryResponse["messages"]
 >[number]
 
 const concurrency = 5
 
-// ---------------------------
-
-const insertConversations = async (
-  conversations: ConversationsListResponse["channels"],
-  abortController: AbortController,
-): Promise<void> => {
-  for (const conversation of conversations || []) {
-    if ((conversation as Channel).is_channel) {
-      const vespaChatContainer: VespaChatContainer = {
-        docId: (conversation as Channel).id!,
-        name: (conversation as Channel).name!,
-        app: Apps.Slack,
-        creator: (conversation as Channel).creator!,
-        isPrivate: (conversation as Channel).is_private!,
-        isGeneral: (conversation as Channel).is_general!,
-        isArchived: (conversation as Channel).is_archived!,
-        // @ts-ignore
-        isIm: (conversation as Channel).is_im!,
-        isMpim: (conversation as Channel).is_mpim!,
-        createdAt: (conversation as Channel).created!,
-        updatedAt: (conversation as Channel).created!,
-        topic: (conversation as Channel).topic?.value!,
-        description: (conversation as Channel).purpose?.value!,
-        count: (conversation as Channel).num_members!,
-      }
-      await insert(vespaChatContainer, chatContainerSchema)
-    }
-  }
+type ChangeStats = {
+  added: number
+  removed: number
+  updated: number
+  summary: string
 }
-
-
-
-
-
-const insertMember = async (member: Member) => {
-    return insert(
-      {
-        docId: member.id!,
-        name: member.name!,
-        app: Apps.Slack,
-        entity: SlackEntity.User,
-        email: member.profile?.email!,
-        image: member.profile?.image_192!,
-        teamId: member.team_id!,
-        statusText: member.profile?.status_text!,
-        title: member.profile?.title!,
-        tz: member.tz!,
-        isAdmin: member.is_admin!,
-        deleted: member.deleted!,
-        updatedAt: member.updated!,
-      },
-      chatUserSchema,
-    )
-  }
-
+// ---------------------------
 
 // -----------------------------
 
-export const handleSlackChanges = async (
-    boss: PgBoss,
-    job: PgBoss.Job<any>,
-  ) => {
-    Logger.info("handleSlackChanges")
-    
-        const syncJobs = await getAppSyncJobs(db, Apps.Slack, AuthType.OAuth)
-        if (!syncJobs || syncJobs.length === 0) {
-            Logger.info("No Slack sync jobs found")
-            return
+// This function will handle the insertion of new messages
+// and also handle the update of existing messages
+// for thread also the same
+export async function insertChannelMessages(
+  email: string,
+  client: WebClient,
+  channelId: string,
+  abortController: AbortController,
+  memberMap: Map<string, User>,
+  tracker: Tracker,
+  timestamp: string = "0",
+): Promise<boolean> {
+  const syncTimestamp = parseFloat(timestamp)
+  const ThreehrsBack =
+    syncTimestamp === 0 ? "0" : (syncTimestamp - 10800).toString()
+
+  let cursor: string | undefined = undefined
+  let replyCount = 0
+  let changesMade = false
+  const subtypes = new Set()
+
+  do {
+    const response: ConversationsHistoryResponse =
+      await safeConversationHistory(client, channelId, cursor, ThreehrsBack)
+
+    if (!response.ok) {
+      throw new Error(
+        `Error fetching messages for channel ${channelId}: ${response.error}`,
+      )
+    }
+
+    if (response.messages) {
+      for (const message of response.messages as (SlackMessage & {
+        mentions: string[]
+      })[]) {
+        const mentions = extractUserIdsFromBlocks(message)
+        let text = message.text
+
+        if (mentions.length) {
+          for (const m of mentions) {
+            if (!memberMap.get(m)) {
+              memberMap.set(m, (await client.users.info({ user: m })).user!)
+            }
+            text = text?.replace(
+              `<@${m}>`,
+              `@${memberMap.get(m)?.profile?.display_name ?? memberMap.get(m)?.name}`,
+            )
+          }
         }
-        const syncJob= syncJobs[0];
-      
-        const { connectorId, email } = syncJob;
+
+        message.text = text
+        const messageId = message.client_msg_id
+        const messageUpdatedTs = parseFloat(message.edited?.ts! ?? message.ts)
+
+        if (
+          message.type === "message" &&
+          !message.subtype &&
+          message.user &&
+          message.client_msg_id
+        ) {
+          if (!memberMap.get(message.user)) {
+            memberMap.set(
+              message.user,
+              (await client.users.info({ user: message.user })).user!,
+            )
+          }
+
+          message.mentions = mentions
+          message.team = await getTeam(client, message)
+          if (message.text == "") {
+            message.text = "NA"
+          }
+
+          const vespaDoc = await ifDocumentsExist([messageId!])
+          if (!vespaDoc[messageId!]?.exists) {
+            try {
+              await insertChatMessage(
+                client,
+                message,
+                channelId,
+                memberMap.get(message.user!)?.profile?.display_name!,
+                memberMap.get(message.user!)?.name!,
+                memberMap.get(message.user!)?.profile?.image_192!,
+              )
+            } catch (error) {
+              Logger.error("Error inserting message", error, message)
+            }
+            changesMade = true
+            
+            tracker.updateUserStats(email, StatType.Slack_Message, 1)
+          } else {
+            const vespaUpdatedTs = parseFloat(
+              String(vespaDoc[messageId!].updatedAt ?? "0"),
+            )
+            if (vespaUpdatedTs < messageUpdatedTs) {
+              
+              await UpdateDocument(chatMessageSchema, messageId!, {
+                text: message.text,
+                updatedAt: messageUpdatedTs,
+                reactions: message.reactions?.reduce((acc, curr) => {
+                  return acc + (curr as Reaction).count! || 0
+                }, 0),
+              })
+              changesMade = true
+              tracker.updateUserStats(email, StatType.Slack_Message, 1)
+            }
+          }
+        } else {
+          subtypes.add(message.subtype)
+        }
+
+        if (
+          message.thread_ts &&
+          message.thread_ts === message.ts &&
+          message.reply_count &&
+          message.reply_count > 0
+        ) {
+          replyCount += 1
+
+          const threadMessages: SlackMessage[] = await fetchThreadMessages(
+            client,
+            channelId,
+            message.thread_ts,
+          )
+
+          const replies: (SlackMessage & { mentions?: string[] })[] =
+            threadMessages.filter((msg) => msg.ts !== message.ts)
+
+          for (const reply of replies) {
+            if (
+              reply.type === "message" &&
+              !reply.subtype &&
+              reply.user &&
+              reply.client_msg_id
+            ) {
+              const mentions = extractUserIdsFromBlocks(reply)
+              let text = reply.text
+
+              if (mentions.length) {
+                for (const m of mentions) {
+                  if (!memberMap.get(m)) {
+                    memberMap.set(
+                      m,
+                      (await client.users.info({ user: m })).user!,
+                    )
+                  }
+                  text = text?.replace(
+                    `<@${m}>`,
+                    `@${memberMap.get(m)?.profile?.display_name ?? memberMap.get(m)?.name}`,
+                  )
+                }
+              }
+
+              if (!memberMap.get(reply.user)) {
+                memberMap.set(
+                  reply.user,
+                  (await client.users.info({ user: reply.user })).user!,
+                )
+              }
+
+              reply.mentions = mentions
+              reply.text = text || "NA"
+              reply.team = await getTeam(client, reply)
+
+              const replyId = reply.client_msg_id
+              const replyUpdatedTs = parseFloat(
+                reply.edited?.ts! ?? reply.thread_ts,
+              )
+              const vespaDoc = await ifDocumentsExist([replyId!])
+
+              if (!vespaDoc[replyId!]?.exists) {
+
+                await insertChatMessage(
+                  client,
+                  reply,
+                  channelId,
+                  memberMap.get(reply.user!)?.profile?.display_name!,
+                  memberMap.get(reply.user!)?.name!,
+                  memberMap.get(reply.user!)?.profile?.image_192!,
+                )
+                changesMade = true
+                tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
+              } else {
+                const vespaUpdatedTs = parseFloat(
+                  String(vespaDoc[replyId!].updatedAt ?? "0"),
+                )
+
+                if (vespaUpdatedTs < replyUpdatedTs) {
+
+                  await UpdateDocument(
+                    chatMessageSchema,
+                    reply.client_msg_id!,
+                    {
+                      text: reply.text,
+                      updatedAt: replyUpdatedTs,
+                      reactions:
+                        reply.reactions?.reduce((acc, curr) => {
+                          return acc + ((curr as Reaction).count || 0)
+                        }, 0) || 0,
+                    },
+                  )
+                  changesMade = true
+                  tracker.updateUserStats(
+                    email,
+                    StatType.Slack_Message_Reply,
+                    1,
+                  )
+                }
+              }
+            } else {
+              subtypes.add(reply.subtype)
+            }
+          }
+        }
+      }
+    }
+
+    cursor = response.response_metadata?.next_cursor
+  } while (cursor)
+
+  return changesMade
+}
+
+
+export const handleSlackChanges = async (
+  boss: PgBoss,
+  job: PgBoss.Job<any>,
+) => {
+  Logger.info("handleSlackChanges started")
+
+  try {
+    const syncJobs = await getAppSyncJobs(db, Apps.Slack, AuthType.OAuth)
+    if (!syncJobs || syncJobs.length === 0) {
+      Logger.info("No Slack sync jobs found")
+      return
+    }
+
+    const syncedChannels = new Set<string>()
+
+    const memberMap = new Map<string, User>()
+    const teamMap = new Map<string, Team>()
+
+    // Ensure team info is in the map
+
+    // Process all sync jobs, not just the first one
+
+    for (const syncJob of syncJobs) {
+      const jobStats = newStats()
+      let config: SlackConfig = syncJob.config as SlackConfig
+      const jobStartTime = new Date()
+      try {
+        Logger.info(`Processing sync job ID: ${syncJob.id}`)
+        const { connectorId, email } = syncJob
         const connector = await getOAuthConnectorWithCredentials(
           db,
-          connectorId
+          connectorId,
         )
-        const { accessToken } = connector.oauthCredentials
-        const client = new WebClient(accessToken);
-        const data= {
-            email: email,
-            connectorId: connectorId,
-            accessToken: accessToken,
-            client: client,
-        }
-      try {
-        let changeExist: boolean= false;
-        let config: SlackConfig = syncJob.config as SlackConfig
-        
-        const conversationFiltering = await SlackConversationFiltering(client.token||"");
-        // this is going to return the list of all the channel which are there
-        // some channels exist and some channels do not exist
-        // if that channel don't exist then insertDocuments in vespa
-        // if that channel exist then we will check lastupdated time > curr sync timestamp we will update the documents  
-        if(conversationFiltering==undefined){
-            Logger.info("No channels found")
-            return
-        }
-        const channelIds = conversationFiltering
-        .filter(channel => channel.id !== undefined)
-        .map(channel => channel.id!);
 
-        const existenceResults = await ifDocumentsExist(channelIds);
-        for (const channel of conversationFiltering) {
+        const { accessToken } = connector.oauthCredentials
+        const client = new WebClient(accessToken, {
+          retryConfig: retryPolicies.rapidRetryPolicy,
+        })
+
+        const team = await safeGetTeamInfo(client)
+        teamMap.set(team.id!, team)
+        let changeExist = false
+
+        const lastSyncTimestamp = Math.floor(config.updatedAt.getTime() / 1000)
+
+        Logger.info(
+          `Last sync timestamp for job ${syncJob.id}: ${lastSyncTimestamp}`,
+        )
+
+        // Get all conversations
+        const conversations = (
+          (await getAllConversations(client, true, new AbortController())) || []
+        ).filter((conversation) => {
+          return (
+            conversation.is_mpim ||
+            conversation.is_im ||
+            (conversation.is_channel && conversation.is_private) ||
+            (conversation.is_channel &&
+              !conversation.is_private &&
+              conversation.is_member)
+          )
+        })
+
+        if (!conversations || conversations.length === 0) {
+          Logger.info(`No channels found for sync job ${syncJob.id}`)
+          await db.transaction(async (trx) => {
+            await updateSyncJob(trx, syncJob.id, {
+              config: config,
+              lastRanOn: new Date(),
+              status: SyncJobStatus.Successful,
+            })
+          })
+          continue
+        }
+
+        // Get team info
+
+        // Get channel IDs
+        const channelIds = conversations
+          .filter((channel) => channel.id !== undefined)
+          .map((channel) => channel.id!)
+
+        // Check which channels exist in Vespa
+        const existenceMap = await ifDocumentsExistInChatContainer(channelIds)
+
+        // Create an abort controller for message fetching operations
+        const abortController = new AbortController()
+
+        // Create a tracker instance for tracking stats
+        const tracker = new Tracker(Apps.Slack, AuthType.OAuth)
+
+        // Process each channel
+        const limit = pLimit(concurrency)
+        const channelProcessingPromises = conversations.map((channel) =>
+          limit(async () => {
             try {
               if (!channel.id) {
-                Logger.warn("Skipping channel without ID");
-                continue;
+                Logger.warn("Skipping channel without ID")
+                return
               }
-              
-              const existenceInfo = existenceResults[channel.id];
-              const channelExists = existenceInfo && existenceInfo.exists;
+
+              // Skip if this channel has already been synced by another job in this run
+              if (syncedChannels.has(channel.id)) {
+                Logger.info(
+                  `Skipping channel ${channel.name || channel.id} as it was already synced by another job`,
+                )
+                return
+              }
+
+              const channelExists =
+                existenceMap[channel.id] && existenceMap[channel.id].exists
+
+              // Always get current channel members to ensure up-to-date permissions
+              const user = await getAuthenticatedUserId(client)
+              const currentMemberIds = await getConversationUsers(
+                user,
+                client,
+                channel,
+              )
+              Logger.info(
+                `Current members for channel ${channel.name || channel.id}: ${currentMemberIds.length}`,
+              )
+
+              // Get permissions (email addresses) for current members
+              // First ensure all members are in the memberMap
+              const resp = await ifDocumentsExist(currentMemberIds)
+              if (resp) {
+                for (const [docId, data] of Object.entries(resp)) {
+                  if (data.exists) {
+                    const document = await GetDocument(chatUserSchema, docId)
+                    const newuser = document as unknown as ChatUserCore
+
+                    const newUser : User = {
+                      id: newuser.fields.docId,
+                      team_id: newuser.fields.teamId,
+                      name: newuser.fields.name,
+                      deleted: newuser.fields.deleted,
+                      is_admin: newuser.fields.isAdmin,
+                      profile: {
+                        display_name: newuser.fields.name,
+                        image_192: newuser.fields.image,
+                        email: newuser.fields.email,
+                      },
+                    }
+                    memberMap.set(docId, {
+                      profile: {
+                        display_name: newUser.profile?.display_name,
+                        image_192: newUser.profile!.image_192,
+                      },
+                      name: newUser.name,
+                    })
+                  }
+                }
+              }
+             
+              for (const memberId of currentMemberIds) {
+                if (!memberMap.has(memberId)) {
+                  try {
+                    const userResp = await client.users.info({ user: memberId })
+
+                    if (userResp.ok && userResp.user) {
+                      memberMap.set(userResp.user.id!, userResp.user)
+
+                      // Check if team exists in map
+                      if (
+                        userResp.user.team_id &&
+                        !teamMap.has(userResp.user.team_id)
+                      ) {
+                        const teamResp = await client.team.info({
+                          team: userResp.user.team_id,
+                        })
+                        if (teamResp.ok && teamResp.team) {
+                          teamMap.set(teamResp.team.id!, teamResp.team)
+                          await insertTeam(teamResp.team!, false)
+                          jobStats.added++
+                        }
+                      }
+
+                      // Insert member in Vespa
+                      jobStats.added++
+                      await insertMember(userResp.user)
+                    }
+                  } catch (error) {
+
+                    Logger.error(`Error fetching user ${memberId}: ${error}`)
+
+                  }
+                }
+              }
+
+              // Now get the email addresses
+              const currentPermissions: string[] = currentMemberIds
+                .map((m) => {
+                  const user = memberMap.get(m)
+                  return user?.profile?.email
+                })
+                .filter((email): email is string => !!email)
+
+              // Ensure current user's email is in permissions
+              if (!currentPermissions.includes(email)) {
+                currentPermissions.push(email)
+              }
 
               if (!channelExists) {
-                insertConversations([channel],new AbortController())
-                changeExist = true;
+                // New channel - insert with current permissions
+                Logger.info(`New channel found: ${channel.name || channel.id}`)
+
+                // Insert the new channel
+                const conversationWithPermission: Channel & {
+                  permissions: string[]
+                } = {
+                  ...channel,
+                  permissions: currentPermissions,
+                }
+
+                await insertConversation(conversationWithPermission)
+                changeExist = true
+                jobStats.added++
+                // For new channels, fetch all messages using insertChannelMessages
+                Logger.info(
+                  `Fetching all messages for new channel ${channel.name || channel.id}`,
+                )
+                await insertChannelMessages(
+                  email,
+                  client,
+                  channel.id!,
+                  abortController,
+                  memberMap,
+                  tracker,
+                )
+
+                // Mark this channel as synced
+                syncedChannels.add(channel.id)
               } else {
-               
-                const channelLastUpdated = channel.updated || channel.created || 0;
-                const lastSyncTimestamp = Math.floor(config.updatedAt.getTime() / 1000);
-                const vespaLastUpdated = existenceInfo?.updatedAt || 0;
-                
-                if (channelLastUpdated > lastSyncTimestamp || channelLastUpdated > vespaLastUpdated) {
-                  Logger.info(`Updating existing channel: ${channel.name || channel.id}`);
-                  
+                // Existing channel - check if permissions have changed
+                const existingPermissions =
+                  existenceMap[channel.id].permissions || []
+
+                // Check if permissions have changed by comparing arrays
+                const permissionsAdded = currentPermissions.filter(
+                  (p) => !existingPermissions.includes(p),
+                )
+                const permissionsRemoved = existingPermissions.filter(
+                  (p) => !currentPermissions.includes(p) && p !== email,
+                )
+
+                const permissionsChanged =
+                  permissionsAdded.length > 0 || permissionsRemoved.length > 0
+
+                if (permissionsChanged) {
+                  Logger.info(
+                    `Permissions changed for channel ${channel.name || channel.id}`,
+                  )
+                  if (permissionsAdded.length > 0) {
+                    Logger.info(`Users added: ${permissionsAdded.join(", ")}`)
+                  }
+                  if (permissionsRemoved.length > 0) {
+                    Logger.info(
+                      `Users removed: ${permissionsRemoved.join(", ")}`,
+                    )
+                  }
+
+                  // Update channel metadata and permissions
+                  const channelLastUpdated =
+                    channel.updated || channel.created || 0
+
                   const vespaChatContainer: VespaChatContainer = {
-                    docId: channel.id,
-                    name: channel.name || '',
+                    docId: channel.id!,
+                    name: channel.name || "",
                     app: Apps.Slack,
-                    creator: channel.creator || '',
+                    creator: channel.creator || "",
                     isPrivate: channel.is_private || false,
                     isGeneral: channel.is_general || false,
                     isArchived: channel.is_archived || false,
                     isIm: channel.is_im || false,
                     isMpim: channel.is_mpim || false,
-                    createdAt: channel.created || Math.floor(Date.now() / 1000),
-                    updatedAt: channel.updated || Math.floor(Date.now() / 1000),
-                    topic: channel.topic?.value || '',
-                    description: channel.purpose?.value || '',
+                    createdAt: channel.created || 0,
+                    updatedAt: channel.updated || channel.created || 0,
+                    topic: channel.topic?.value || "",
+                    description: channel.purpose?.value || "",
                     count: channel.num_members || 0,
-                  };
-                  
+                    channelName: channel.name || "",
+                    permissions: currentPermissions,
+                  }
+
                   await UpdateDocument(
                     chatContainerSchema,
                     channel.id,
                     vespaChatContainer,
-                    );
-                }
-                   else {
-                  Logger.debug(`Channel unchanged since last sync: ${channel.name || channel.id}`);
-                }
-              }
-            }
-            catch (error) {
-                Logger.error(`Error processing channel ${channel.id}: ${error}`);
-            }
-        }
+                  )
 
-
-// case Not Handled currently
-// 1. If the channel is Deleted or archived then we will delete the document from vespa
-
-         
-
-// -------------------------------  -------------   ----------- -   --------    -   -   -   -   -   -   --  -   -
-
-
-// first make the member and team and permission map
-const { memberMap, teamMap, permissionMap } =
-      await makeMemberTeamAndPermissionMap(
-        data.email,
-        client,
-        conversationFiltering.map((c) => c.id!),
-      )
-
-
-    for(const channelId of channelIds) {
-        let cursor: string | undefined = undefined
-        const response: ConversationsHistoryResponse =
-        await safeConversationHistory(client, channelId, cursor, Math.floor(config.updatedAt.getTime() / 1000).toString())
-        const messageIds = response.messages
-            ? response.messages
-                .filter(msg => msg.type === 'message')
-                .map(msg => msg.client_msg_id)
-                .filter((id): id is string => id !== undefined)
-            : [];
-        
-        const res = await ifDocumentsExist(messageIds);
-
-        for (const message of response.messages || []) {
-            if (message.type === 'message' && message.client_msg_id) {
-               
-                const messageExists = res[message.client_msg_id]?.exists || false;
-
-                if (!messageExists) {
-                    // Insert the new message into Vespa
-                    await insertChatMessage(
-                        data.email,
-                        message,
-                        channelId,
-                        memberMap[message.user!].profile?.display_name!,
-                        memberMap[message.user!].name!,
-                        memberMap[message.user!].profile?.image_192!,
-                        permissionMap[channelId] || [],
-                    );
-                    
+                  changeExist = true
+                  // Mark this channel as synced
+                  syncedChannels.add(channel.id)
                 } else {
-                    // Update the existing message in Vespa
-                    const edited = message.edited?.ts || message.ts;
+                  // Check if channel metadata has changed
+                  const channelLastUpdated =
+                    channel.updated || channel.created || 0
+                  const vespaLastUpdated =
+                    existenceMap[channel.id].updatedAt || 0
+
+                  if (channelLastUpdated > vespaLastUpdated) {
+                    Logger.info(
+                      `Channel metadata updated: ${channel.name || channel.id}`,
+                    )
+                    jobStats.updated++
+                    // Update channel metadata only
+                    const vespaChatContainer: VespaChatContainer = {
+                      docId: channel.id!,
+                      name: channel.name || "",
+                      app: Apps.Slack,
+                      creator: channel.creator || "",
+                      isPrivate: channel.is_private || false,
+                      isGeneral: channel.is_general || false,
+                      isArchived: channel.is_archived || false,
+                      isIm: channel.is_im || false,
+                      isMpim: channel.is_mpim || false,
+                      createdAt: channel.created || new Date().getTime(),
+                      updatedAt: channel.updated || channel.created!,
+                      topic: channel.topic?.value || "",
+                      description: channel.purpose?.value || "",
+                      count: channel.num_members || 0,
+                      channelName: channel.name || "",
+                      permissions: currentPermissions, // Still use current permissions to ensure they're up to date
+                    }
+
                     await UpdateDocument(
-                        chatMessageSchema,
-                        message.client_msg_id,
-                        {
-                            text: message.text,
-                            updatedAt: edited,
-                            reactions: message.reactions?.reduce((acc, curr) => {
-                                return acc + (curr as Reaction).count! || 0
-                            }, 0),
-                        },
-                    );
+                      chatContainerSchema,
+                      channel.id,
+                      vespaChatContainer,
+                    )
+
+                    changeExist = true
+                    // Mark this channel as synced
+                    syncedChannels.add(channel.id)
+                  }
                 }
+
+                // For existing channels, fetch messages since last sync using insertChannelMessages
+                Logger.info(
+                  `Fetching messages since last sync for channel ${channel.name || channel.id}`,
+                )
+                changeExist =
+                  changeExist ||
+                  (await insertChannelMessages(
+                    email,
+                    client,
+                    channel.id!,
+                    abortController,
+                    memberMap,
+                    tracker,
+                    lastSyncTimestamp.toString(),
+                  ))
+
+                // Mark this channel as synced
+                syncedChannels.add(channel.id)
+              }
+            } catch (error) {
+              Logger.error(`Error processing channel ${channel.id}: ${error}`)
             }
-        }
+          }),
+        )
 
-    }
-// now for each channel
-// I have some TimeStamp T
+        await Promise.all(channelProcessingPromises)
 
-// For each channel fetch the messages which occured after TimeStamp T
-// Message Not present in vespa
-// Insert that in chat_message vespa
-
-// Message present in vespa
-// there could be some messages which are edited 
-// based on edited timestamp we will update the document
-
-
-
-
-
-
-
-
-
-        const Changes:any=[];
-        const Messages:any=[];
-        console.log("newAddedConversations ");
-        for (const conversation of conversationFiltering) {
-            // console.log("conversation ",conversation);
-          if (conversation.id) {
-            const a= Date.parse(config.updatedAt.toString())/1000;
-            console.log(conversation.id , " ", Math.floor(config.updatedAt.getTime() / 1000));
-            const messages = await fetchRecentMessages(client, conversation.id, Math.floor(config.updatedAt.getTime() / 1000))
-            console.log("Message ",messages);
-            console.log("Changes", changes);
-            if(changes && changes.length > 0 || messages && ( messages.editedMessages.length > 0 || messages.newMessages.length > 0)) {
-              changeExist = true;
-            }
-            
-          }
-        } 
-        console.log("Changes ",Changes);
-        console.log("Messages ",Messages);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// --------`------------`--------`-`-`-`---`-`-`-`------------------`-`-`-`-`-`-`-`-`-`-`-`-`-`-`--`--`--`--`--`--`--`--`
-        if (changeExist) { 
+        // Update sync job with new timestamp if changes were found
+        if (changeExist) {
           config = {
             updatedAt: new Date(),
             type: "updatedAt",
           }
-  
-         
+
           await db.transaction(async (trx) => {
             await updateSyncJob(trx, syncJob.id, {
-              config,
+              config: config,
               lastRanOn: new Date(),
               status: SyncJobStatus.Successful,
             })
-           
-           
+            await insertSyncHistory(trx, {
+              workspaceId: syncJob.workspaceId,
+              workspaceExternalId: syncJob.workspaceExternalId,
+              dataAdded: jobStats.added,
+              dataDeleted: jobStats.removed, // Assuming stats object tracks removals if applicable
+              dataUpdated: jobStats.updated,
+              authType: AuthType.OAuth,
+              summary: { description: "Changes Exist in the slack" },
+              errorMessage: "", // Add details on failure
+              app: Apps.Slack,
+              status: SyncJobStatus.Successful,
+              config: {
+                updatedAt: config.updatedAt.toISOString(),
+                type: config.type,
+              },
+              type: SyncCron.Partial,
+              lastRanOn: jobStartTime,
+            })
           })
-          Logger.info(
-            `Changes successfully synced for Slack}`,
-          )
+          Logger.info(`Changes successfully synced for Slack job ${syncJob.id}`)
         } else {
-          Logger.info(`No changes to sync`)
+          // Logger.info(`No changes to sync for Slack job ${syncJob.id}`);
+
+          await db.transaction(async (trx) => {
+            await updateSyncJob(trx, syncJob.id, {
+              config: config,
+              lastRanOn: new Date(),
+              status: SyncJobStatus.Successful,
+            })
+            await insertSyncHistory(trx, {
+              workspaceId: syncJob.workspaceId,
+              workspaceExternalId: syncJob.workspaceExternalId,
+              dataAdded: jobStats.added,
+              dataDeleted: jobStats.removed, // Assuming stats object tracks removals if applicable
+              dataUpdated: jobStats.updated,
+              authType: AuthType.OAuth,
+              summary: { description: "No changes Found in slack" },
+              errorMessage: "", // Add details on failure
+              app: Apps.Slack,
+              status: SyncJobStatus.Successful,
+              config: {
+                updatedAt: config.updatedAt.toISOString(),
+                type: config.type,
+              },
+              type: SyncCron.Partial,
+              lastRanOn: jobStartTime,
+            })
+          })
         }
       } catch (error) {
-       
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Failed,
+          })
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: jobStats.added,
+            dataDeleted: jobStats.removed, // Assuming stats object tracks removals if applicable
+            dataUpdated: jobStats.updated,
+            authType: AuthType.OAuth,
+            summary: { description: `sync Job failed for ${syncJob.id}` },
+            errorMessage: getErrorMessage(error), // Add details on failure
+            app: Apps.Slack,
+            status: SyncJobStatus.Failed,
+            config: {
+              updatedAt: config.updatedAt.toISOString(),
+              type: config.type,
+            },
+            type: SyncCron.Partial,
+            lastRanOn: jobStartTime,
+          })
+        })
       }
-    
+    }
+  } catch (error) {
+    Logger.error(`Error in Slack sync: ${error}`)
+  }
 }
+
+async function getAuthenticatedUserId(client: WebClient): Promise<string> {
+  const authResponse = await client.auth.test()
+  if (!authResponse.ok || !authResponse.user_id) {
+    throw new Error(
+      `Failed to fetch authenticated user ID: ${authResponse.error}`,
+    )
+  }
+  return authResponse.user_id
+}
+
+const newStats = (): ChangeStats => {
+  return {
+    added: 0,
+    removed: 0,
+    updated: 0,
+    summary: "",
+  }
+}
+
+const mergeStats = (prev: ChangeStats, current: ChangeStats): ChangeStats => {
+  prev.added += current.added
+  prev.updated += current.updated
+  prev.removed += current.removed
+  prev.summary += `\n${current.summary}`
+  return prev
+}
+
+
