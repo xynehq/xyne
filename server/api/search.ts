@@ -83,6 +83,10 @@ export const chatRenameSchema = z.object({
   title: z.string().min(1),
 })
 
+export const chatStopSchema = z.object({
+  chatId: z.string().min(1),
+})
+
 export const chatTraceSchema = z.object({
   chatId: z.string().min(1),
   messageId: z.string().min(1),
