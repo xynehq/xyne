@@ -233,6 +233,20 @@ schema file {
     }
   }
 
+  rank-profile default_random inherits initial {
+    first-phase {
+        expression: random.match
+    }
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
+    }
+  }
+
   document-summary default {
     summary chunks_summary {
       bolding: on

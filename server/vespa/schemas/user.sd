@@ -265,6 +265,19 @@ schema user {
         }
     }
 
+    rank-profile default_random inherits initial {
+        first-phase {
+            expression: random.match
+        }
+
+        match-features {
+            matchedFieldCount
+            nativeRank(name)
+            nativeRank(email)
+            vector_score
+        }
+    }
+
      rank-profile autocomplete {
         first-phase {
             expression: bm25(name_fuzzy) + bm25(email_fuzzy)

@@ -78,4 +78,55 @@ describe("jsonParseLLMOutput", () => {
     const result = jsonParseLLMOutput(input)
     expect(result).toEqual({ content: "Line 1\r\nLine 2\r\nLine 3" })
   })
+
+  test("should handle missing initial brace and leading whitespace", () => {
+    const input = '   "answer": "some value"}'
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "some value" })
+  })
+
+  test("should handle missing initial brace and trailing content after brace", () => {
+    const input = '   "answer": "some value"} some trailing text'
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "some value" })
+  })
+
+  test("should handle plain text input and wrap it in an answer object", () => {
+    const input = "This is a plain text answer."
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    console.debug(result)
+    expect(result).toEqual({ answer: "This is a plain text answer." })
+  })
+
+  test("all correct execept end curly brace", () => {
+    const input = '{"answer": "This is a plain text answer."'
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "This is a plain text answer." })
+  })
+  test("string not closed and multiline inside answer key", () => {
+    const input = `{
+    "answer": "This is a plain text answer.
+    `
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "This is a plain text answer." })
+  })
+  //   test("null and closing brace", () => {
+  //     const input = ` null
+  //     }`
+  //     const ANSWER_TOKEN = '"answer":'
+  //     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+  //     expect(result).toEqual({ answer: null })
+  //   })
+  //   test("null, colon and closing brace", () => {
+  //     const input = `": null
+  // }`
+  //     const ANSWER_TOKEN = '"answer":'
+  //     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+  //     expect(result).toEqual({ answer: null })
+  //   })
 })

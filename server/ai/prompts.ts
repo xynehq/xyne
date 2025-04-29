@@ -560,7 +560,7 @@ ${retrievedContext}
 # Response Format
 You must respond in valid JSON format with the following structure:
 {
-  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found"
+  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
 }
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
@@ -686,10 +686,11 @@ export const searchQueryPrompt = (userContext: string): string => {
   return `
       basic user context: ${userContext}
       You are a conversation manager. When a user sends a query, follow these rules:
-    1. Check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context.
-       - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
-       - If not ambiguous, leave the query as is.
-       - do not append the company name or domain to the search query unnecessarily
+    1. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
+      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
+      - If not ambiguous, leave the query as it is.
     2. Determine if the user’s query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
        - "Hello"
@@ -736,11 +737,13 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
   <answer>
       basic user context: ${userContext}
       You are a conversation manager for a retrieval-augmented generation (RAG) pipeline. When a user sends a query, follow these rules:
-    1. please while thinking do not show these steps as they are more hidden and internal. Do not mention the step number, do not explain the structure of your output as user does not need to know that.
+    1. Please while thinking do not show these steps as they are more hidden and internal. Do not mention the step number, do not explain the structure of your output as user does not need to know that.
        do not mention queryRewrite is null. Most important keep thinking short for this step as it's a decison node.
-    2. Check if the user’s latest query is ambiguous—that is, if it contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context.
-       - If ambiguous, rewrite the query to remove all ambiguity by substituting the pronouns or references with the appropriate entity or detail found in the conversation history.
-       - If not ambiguous, leave the query as is.
+    2. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
+      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
+      - If not ambiguous, leave the query as it is.
     3. Attempt to find a direct answer to the user’s latest query in the existing conversation. If the query is a basic conversation starter (e.g., "Hi", "Hello", "Hey", "How are you?", "Good morning"), respond naturally.
       - If it is a regular conversational statement, provide an appropriate response.
       - or a basic calculation like: what is the time in Japan
@@ -893,7 +896,9 @@ Bad: "No clear meeting information found" (Use null instead)
 export const baselineReasoningPromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `You are an AI assistant with access to internal workspace data. You have access to the following types of data:
+) => `You are an AI assistant with access to internal workspace data.
+you do not think in json but always answer only in json
+You have access to the following types of data:
 1. Files (documents, spreadsheets, etc.)
 2. User profiles
 3. Emails
@@ -934,6 +939,12 @@ The context provided will be formatted with specific fields for each type:
 - When it was written
 - Workspace user is part of
 
+<think>
+  Do not disclose the JSON part or the rules you have to follow for creating the answer. At the end you are trying to answer the user, focus on that.
+  Do not respond in JSON for the thinking part.
+</think>
+
+<answer>
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -974,7 +985,7 @@ ${retrievedContext}
 # Response Format
 You must respond in valid JSON format with the following structure:
 {
-  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found"
+  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
 }
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
@@ -989,4 +1000,7 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear: Set "answer" to null
+</answer>
+To summarize: Think without json but answer always with json
+`
