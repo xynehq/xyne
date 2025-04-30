@@ -15,7 +15,7 @@ import { Apps } from "shared/types";
 import { LoaderContent } from "@/lib/common";
 import { OAuthIntegrationStatus } from "@/types";
 import { X } from "lucide-react";
-import Modal from "./ui/Modal";
+import { ConfirmModal } from "@/components/ui/confirmModal";
 
 interface OAuthTabProps {
   isPending: boolean;
@@ -41,6 +41,20 @@ const OAuthTab = ({
   const handleConfirmDelete = () => {
     handleDelete();
     setModalState({ open: false, title: "", description: "" });
+  };
+
+  // Adapter function to match ConfirmModal's setShowModal interface
+  const handleSetShowModal = (
+    value: Partial<{
+      open: boolean;
+      title: string;
+      description: string;
+    }>,
+  ) => {
+    setModalState((prev) => ({
+      ...prev,
+      ...value,
+    }));
   };
 
   return (
@@ -78,7 +92,7 @@ const OAuthTab = ({
                 <span>Connected</span>
                 <button
                   onClick={() =>
-                    setModalState({
+                    handleSetShowModal({
                       open: true,
                       title: "Confirm Disconnect",
                       description: "Are you sure you want to disconnect Google OAuth?",
@@ -96,12 +110,12 @@ const OAuthTab = ({
         </Card>
       )}
 
-      <Modal
-        isOpen={modalState.open}
-        setIsOpen={setModalState}
+      <ConfirmModal
+        showModal={modalState.open}
+        setShowModal={handleSetShowModal}
+        modalTitle={modalState.title}
+        modalMessage={modalState.description}
         onConfirm={handleConfirmDelete}
-        modelTitle={modalState.title}
-        modelDescription={modalState.description}
       />
     </TabsContent>
   );
