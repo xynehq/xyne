@@ -47,7 +47,7 @@ const MAX_RANK_TO_CHECK = parseInt(process.env.MAX_RANK_TO_CHECK || "100", 10);
 const HITS_PER_PAGE = 10;
 const VESPA_NAMESPACE = "namespace"; // TODO: Replace with your actual Vespa namespace
 const VESPA_CLUSTER_NAME = "my_content"; // TODO: Replace with your actual cluster name
-const DELAY_MS = parseInt(process.env.EVALUATION_DELAY_MS || "50", 10); // Increased default delay for LLM calls
+const DELAY_MS = parseInt(process.env.EVALUATION_DELAY_MS || "10", 10); // Increased default delay for LLM calls
 const DEBUG_POOR_RANKINGS = process.env.DEBUG_POOR_RANKINGS === "true";
 const POOR_RANK_THRESHOLD = parseInt(
   process.env.POOR_RANK_THRESHOLD || "10",
@@ -259,7 +259,6 @@ async function getRandomDocument(): Promise<Document | null> {
       typeof titleFromFields !== "string" ||
       titleFromFields.trim() === ""
     ) {
-        console.log(doc.fields)
       Logger.warn(
         {
           vespaId,
@@ -343,26 +342,25 @@ async function generateSearchQueries(doc: Document): Promise<{ queries: string[]
   if (fields.matchfeatures && Array.isArray(fields.chunks_summary)) {
      chunks_summary = getSortedScoredChunks(fields.matchfeatures, fields.chunks_summary).map(c => c.chunk);
   } else if (Array.isArray(fields.chunks)) {
-    chunks_summary = fields.chunks // Use as is if no matchfeatures
-  } else if (sddocname == "event") {
-    chunks_summary = [fields.description]
+      chunks_summary = fields.chunks; // Use as is if no matchfeatures
+  } else if(sddocname == "event") {
+      chunks_summary = [fields.description];
   } else if (sddocname == "user") {
-    chunks_summary = [fields.name + " " + fields.email]
-  }
-
-  if (!chunks_summary.length && !title) {
-    return { queries: [] }
+      chunks_summary = [fields.name + " " + fields.email]
   }
   // Use chunks if available for the prompt, limit to a reasonable number if too many
-  const chunksForPrompt = chunks_summary.slice(0, 5); // Limit to 5 chunks for prompt clarity
+  const chunksForPrompt = chunks_summary.slice(0, 10); // Limit to 10 chunks for prompt clarity
 
   if (chunksForPrompt.length > 0) {
       topChunksText = chunksForPrompt
           .map((chunk, index) => `--- Chunk ${index + 1} ---
 ${chunk}`)
-          .join('\\n');
+          .join('\n');
   }
 
+  if(!chunks_summary.length){
+      return {queries: [], sourceDocContext: null}
+  }
 
   // --- NEW SYSTEM AND USER PROMPT ---
   const systemPrompt = `You are an expert search user trying to find a specific document. Based ONLY on the provided document context below, generate ${QUERIES_PER_DOC} diverse, realistic search queries that a user might type to find this exact document.`;
@@ -384,7 +382,8 @@ Generate ${QUERIES_PER_DOC} realistic search queries a user might type to find t
 2.  **Realism:** Queries should resemble common search engine inputs. Avoid overly specific phrases unlikely to be searched.
 3.  **Conciseness:** Aim for queries that are typically 3 to 7 words long.
 4.  **Context:** Use ONLY information present in the \`Document Context\` below. Do NOT invent details.
-5.  **Format:** Output ONLY a valid JSON array string containing exactly ${QUERIES_PER_DOC} query strings.
+5.  **Body:** Use the \`Body\` field in the \`Document Context\` below to generate queries as well
+6.  **Format:** Output ONLY a valid JSON array string containing exactly ${QUERIES_PER_DOC} query strings.
     * Example of desired JSON array output:
       ["weekly securities statement", "invoice pdf", "flight to bangkok", "ethical hacking course", "report from september 20", "digital ocean invoice"]
     * DO NOT include any other text, explanations, reasoning, or formatting outside the single JSON array string.
@@ -962,10 +961,10 @@ async function verifyGeneratedQueries(
 
     Logger.debug({ docId: sourceDocContext.docId, queries: generatedQueries }, "Verifying generated queries...");
 
-    const sourceContextString = `Source Document:\n- Title: \"${title}\"\n- Schema: ${schema}\n- Metadata: ${JSON.stringify(metadataSnippet)}\n${topNChunks ? `- Relevant Chunks:\n${topNChunks.map((c, i) => `  - Chunk ${i + 1}: ${c.substring(0, 150)}...`).join('\n')}` : '- No chunks available'}\n`;
+    const sourceContextString = `Source Document:\n- Title: \"${title}\"\n- Schema: ${schema}\n- ${topNChunks ? `- Relevant Chunks:\n${topNChunks.map((c, i) => `  - Chunk ${i + 1}: ${c.substring(0, 150)}...`).join('\n')}` : '- No chunks available'}\n`;
 
     const systemPrompt = `You are an expert search quality analyst. Your task is to evaluate if a set of generated search queries are relevant, specific, and resemble queries a real user might use to find the given source document.`;
-    const userPrompt = `Please evaluate the following search queries intended to find the source document described below:\n\n${sourceContextString}\n\nGenerated Queries:\n[${queriesString}]\n\nVerification Task:\n1. Assess Relevance: Are the queries clearly related to the document's title, metadata, or content chunks?\n2. Assess Specificity: Are the queries specific enough to likely find this document, or are they too generic (could match many things) or too obscure (unlikely to be searched)?\n3. Categorize the Quality: Based on your assessment, choose the *best* fitting category from the list below.\n\nCategories:\n- GOOD_QUERIES: The queries are relevant, reasonably specific, and seem like plausible user searches for this document.\n- BAD_QUERIES_IRRELEVANT: Most queries are not relevant to the source document's content.\n- BAD_QUERIES_GENERIC: The queries are relevant but too broad/generic, likely matching many other documents.\n- BAD_QUERIES_OBSCURE: The queries might be relevant but are too specific or use terms/phrases unlikely to be searched by a real user.\n\nOutput Format:\nReturn *only* a valid JSON object with the keys "assessment" (containing the chosen category string) and "reasoning" (a brief explanation for your assessment, 1-2 sentences). Example:\n{\n  "assessment": "GOOD_QUERIES",\n  "reasoning": "Queries use relevant keywords from title and metadata and include plausible natural language questions."\n}\n\nDO NOT include any other text, explanations, or formatting outside the JSON object.`;
+    const userPrompt = `Please evaluate the following search queries intended to find the source document described below:\n\n${sourceContextString}\n\nGenerated Queries:\n[${queriesString}]\n\nVerification Task:\n1. Assess Relevance: Are the queries clearly related to the document's title, or content chunks?\n2. Assess Specificity: Are the queries specific enough to likely find this document, or are they too generic (could match many things) or too obscure (unlikely to be searched)?\n3. Categorize the Quality: Based on your assessment, choose the *best* fitting category from the list below.\n\nCategories:\n- GOOD_QUERIES: The queries are relevant, reasonably specific, and seem like plausible user searches for this document.\n- BAD_QUERIES_IRRELEVANT: Most queries are not relevant to the source document's content.\n- BAD_QUERIES_GENERIC: The queries are relevant but too broad/generic, likely matching many other documents.\n- BAD_QUERIES_OBSCURE: The queries might be relevant but are too specific or use terms/phrases unlikely to be searched by a real user.\n\nOutput Format:\nReturn *only* a valid JSON object with the keys "assessment" (containing the chosen category string) and "reasoning" (a brief explanation for your assessment, 1-2 sentences). Example:\n{\n  "assessment": "GOOD_QUERIES",\n  "reasoning": "Queries use relevant keywords from title and include plausible natural language questions."\n}\n\nDO NOT include any other text, explanations, or formatting outside the JSON object.`;
 
     let lastError: Error | null = null;
     for (let attempt = 1; attempt <= MAX_VERIFICATION_RETRIES; attempt++) {
