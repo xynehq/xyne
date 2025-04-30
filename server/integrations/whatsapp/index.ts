@@ -464,7 +464,7 @@ const insertWhatsAppConversation = async (
       docId: conversation.id,
       name: name || phoneNumber || "NoName",
       teamId: conversation.id, // Using conversation ID as team ID
-      creator: phoneNumber, // Using phone number as creator
+      creator: phoneNumber || "NoCreator", // Using phone number as creator
       app: Apps.WhatsApp,
       isIm: true, // This is a direct message, Signifies this is a Convo, not a Grp
       isMpim: false,
@@ -497,18 +497,18 @@ const insertWhatsAppGroup = async (
       docId: group.id,
       name: group.subject || "NoName",
       teamId: group.id,
-      creator: group.owner || "",
+      creator: group.owner || "NoCreator",
       app: Apps.WhatsApp,
       isIm: false, // Signifies this is a Grp, not a Convo
       isMpim: true,
       createdAt: new Date(parseInt(String(group.creation), 10)).getTime(),
       updatedAt: now,
-      description: group.desc || "",
+      description: group.desc || "NoDesc",
       count: group.participants.length,
       isPrivate: false,
       isArchived: false,
       isGeneral: false,
-      topic: group.desc || "",
+      topic: group.desc || "NoTopic",
       image: group.image || "NoImage",
     } as VespaChatContainer,
     chatContainerSchema,

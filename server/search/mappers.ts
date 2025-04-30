@@ -225,8 +225,12 @@ export const VespaSearchResponseToSearchResult = (
             fields.relevance = child.relevance
             fields.attachmentIds = []
             fields.mentions = []
-            fields.name = "NoName"
-            fields.image = "NoImage"
+            if (!fields.name) {
+              fields.name = "NoName"
+            }
+            if (!fields.image) {
+              fields.image = "NoImage"
+            }
             if (!fields.teamId) {
               fields.teamId = ""
             }
@@ -238,10 +242,23 @@ export const VespaSearchResponseToSearchResult = (
             const fields = child.fields as VespaChatContainerSearch & {
               type?: string
             }
-            fields.type = chatMessageSchema
+            fields.type = chatContainerSchema
             fields.relevance = child.relevance
-            fields.name = "NoName"
-            fields.image = "NoImage"
+            if (!fields.name) {
+              fields.name = "NoName"
+            }
+            if (!fields.image) {
+              fields.image = "NoImage"
+            }
+            if (!fields.creator) {
+              fields.creator = "NoCreator"
+            }
+            if (!fields.description) {
+              fields.description = "NoDesc"
+            }
+            if (!fields.topic) {
+              fields.topic = "NoTopic"
+            }
             return ChatContainerResponseSchema.parse(fields)
           } else if (
             (child.fields as VespaWhatsappContactSearch).sddocname ===
@@ -252,8 +269,12 @@ export const VespaSearchResponseToSearchResult = (
             }
             fields.type = whatsappContactSchema
             fields.relevance = child.relevance
-            fields.name = "NoName"
-            fields.image = "NoImage"
+            if (!fields.name) {
+              fields.name = "NoName"
+            }
+            if (!fields.image) {
+              fields.image = "NoImage"
+            }
             return WhatsappContactResponseSchema.parse(fields)
           } else {
             throw new Error(

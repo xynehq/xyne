@@ -98,6 +98,10 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Slack Message"
   } else if (app === Apps.WhatsApp && entity === WhatsAppEntity.Message) {
     return "WhatsApp Message"
+  } else if (app === Apps.WhatsApp && entity === WhatsAppEntity.Contact) {
+    return "WhatsApp Contact"
+  } else if (app === Apps.WhatsApp) {
+    return "WhatsApp Group/Convo"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

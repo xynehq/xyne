@@ -333,6 +333,11 @@ export const HybridDefaultProfile = (
             ${timestampRange ? `and ${userTimestamp}` : ""}
             ${appOrEntityFilter}
           )
+            or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            ${appOrEntityFilter}
+          )
         )
         ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
   }
