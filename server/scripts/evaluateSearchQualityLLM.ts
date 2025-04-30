@@ -302,7 +302,7 @@ async function getRandomDocument(): Promise<Document | null> {
 }
 
 // Generate search queries using Ollama Provider - MODIFIED
-async function generateSearchQueries(doc: Document): Promise<{ queries: string[], sourceDocContext: EvaluationDatasetItem['sourceDocContext'] | null }> { // Return queries AND context
+async function generateSearchQueries(doc: Document): Promise<{ queries: string[], sourceDocContext?: EvaluationDatasetItem['sourceDocContext'] | null }> { // Return queries AND context
   const fields = doc.fields as VespaFields;
   const sddocname = fields.sddocname;
 
@@ -342,8 +342,16 @@ async function generateSearchQueries(doc: Document): Promise<{ queries: string[]
   let chunks_summary : string[] = [];
   if (fields.matchfeatures && Array.isArray(fields.chunks_summary)) {
      chunks_summary = getSortedScoredChunks(fields.matchfeatures, fields.chunks_summary).map(c => c.chunk);
-  } else if (Array.isArray(fields.chunks_summary)) {
-      chunks_summary = fields.chunks_summary; // Use as is if no matchfeatures
+  } else if (Array.isArray(fields.chunks)) {
+    chunks_summary = fields.chunks // Use as is if no matchfeatures
+  } else if (sddocname == "event") {
+    chunks_summary = [fields.description]
+  } else if (sddocname == "user") {
+    chunks_summary = [fields.name + " " + fields.email]
+  }
+
+  if (!chunks_summary.length && !title) {
+    return { queries: [] }
   }
   // Use chunks if available for the prompt, limit to a reasonable number if too many
   const chunksForPrompt = chunks_summary.slice(0, 5); // Limit to 5 chunks for prompt clarity
@@ -366,7 +374,7 @@ ${chunk}`)
       title: title,
     //   metadataSnippet,
       // Include chunks in the prompt context if available
-      relevantChunks: chunksForPrompt.length > 0 ? chunksForPrompt : undefined,
+      body: chunksForPrompt.length > 0 ? chunksForPrompt : undefined,
   };
 
   const userPrompt = `**Instructions:**
@@ -1026,7 +1034,7 @@ async function processSingleSample(sampleIndex: number, totalSamples: number, qu
     }
 
     // 2. Attempt to generate queries for the found document
-    let generatedResult: { queries: string[], sourceDocContext: EvaluationDatasetItem['sourceDocContext'] | null } = { queries: [], sourceDocContext: null };
+    let generatedResult: { queries: string[], sourceDocContext?: EvaluationDatasetItem['sourceDocContext'] | null } = { queries: [], sourceDocContext: null };
     let generatedQueriesForDoc = false;
     for (let genAttempt = 1; genAttempt <= MAX_LLM_RETRIES_PER_DOC; genAttempt++) {
         generatedResult = await generateSearchQueries(doc);
