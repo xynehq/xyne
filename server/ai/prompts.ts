@@ -688,7 +688,7 @@ export const searchQueryPrompt = (userContext: string): string => {
       You are a conversation manager. When a user sends a query, follow these rules:
     1. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
-      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
+      b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
     2. Determine if the user’s query is conversational or a basic calculation. Examples include greetings like:
@@ -699,14 +699,14 @@ export const searchQueryPrompt = (userContext: string): string => {
        If the query is conversational, respond naturally and appropriately. 
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
-       - If asking about an upcoming event or meeting, set "temporalDirection" to { "direction": "next" }.
+       - If asking about an upcoming event or meeting, set "temporalDirection" to  "next".
          Examples:
          - ✓ "When is my next meeting with John?"
          - ✓ "When's my next review?"
          - ✗ "Next quarter's goals"
          - ✗ "Next version release"
 
-       - If asking about a past event or meeting, set "temporalDirection" to { "direction": "prev" }.
+       - If asking about a past event or meeting, set "temporalDirection" to "prev" .
          Examples:
          - ✓ "When was the last time I had lunch with the team?"
          - ✓ "When was my last call with Sarah?"
@@ -714,8 +714,10 @@ export const searchQueryPrompt = (userContext: string): string => {
          - ✗ "When did Junaid join?"
          - ✗ "Last time we updated the docs"
 
-       - If the user asks for events within a range of time (e.g., "from April 1st to April 10th"), set:
-         "temporalDirection": { "direction": "from-to", "from": "<start date>", "to": "<end date>" }
+       - If the user asks for events within a range of time (e.g., "from April 1st to April 10th"), calculate the direction as well as set:
+         "temporalDirection":  "<calculated direction>", 
+         "from": "<start date>",
+         "to": "<end date>" 
 
        - If the user asks for events on a **specific date** (e.g., "on April 1st") or uses **relative terms** like:
          - "tomorrow"
@@ -723,17 +725,18 @@ export const searchQueryPrompt = (userContext: string): string => {
          - "on Monday"
 
          Then also use:
-         "temporalDirection": { 
-           "direction": "from-to", 
+          "temporalDirection":"<calculated direction>", 
            "from": "<start of that day in ISO 8601 at 00:00:00.000Z>", 
            "to": "<end of that day in ISO 8601 at 23:59:59.999Z>" 
-         }
+         
 
          - For "tomorrow", use:
+           temporalDirection = next
            from = date of tomorrow at "T00:00:00.000Z"
            to = same date at "T23:59:59.999Z"
 
          - For "yesterday", use:
+           temporalDirection = prev
            from = date of yesterday at "T00:00:00.000Z"
            to = same date at "T23:59:59.999Z"
 
@@ -747,19 +750,18 @@ export const searchQueryPrompt = (userContext: string): string => {
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
-         "temporalDirection": {
-           "direction": "next" | "prev" | "from-to" | null,
-           "from": "<string or null>",
-           "to": "<string or null>"
-         }
+         "temporalDirection":"next" | "prev" | null,
+         "from": "<string or null>",
+         "to": "<string or null>"
+         
        }
        - "answer" should only contain a conversational response only if it’s a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to:
          - a future event ("next")
          - a past event ("prev")
-         - a specific date or range ("from-to", with "from" and "to" specified)
          - or is unrelated (null)
+      - Do not send any from and to values if the temporal direction is null
 
     6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
 

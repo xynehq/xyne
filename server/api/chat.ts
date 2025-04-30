@@ -946,7 +946,7 @@ const getSearchRangeSummary = (
     summarySpan?.end()
     return result
   }
-  if (direction === "from-to") {
+  if (direction === "next" || direction === "prev" && (from && to)) {
     // Ensure from is earlier than to
     if (from > to) {
       [from, to] = [to, from]
@@ -1023,7 +1023,7 @@ async function* generatePointQueryTimeExpansion(
   let lastSearchedTime = direction === "prev" ? from : to
 
   let previousResultsLength = 0
-  const loopLimit = direction === "from-to" ? 2 : maxIterations
+  const loopLimit = (fromDate && toDate) ? 2 : maxIterations
 
   for (let iteration = 0; iteration < loopLimit; iteration++) {
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
@@ -1031,16 +1031,28 @@ async function* generatePointQueryTimeExpansion(
     const windowSize = (2 + iteration) * weekInMs
 
     if (direction === "prev") {
-      to = lastSearchedTime
-      from = to - windowSize
-      lastSearchedTime = from
-    } else if (direction === "next") {
-      from = lastSearchedTime
+      // If we have both the from and to time range we search only for that range
+      if(fromDate && toDate) {
+        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      }
+      // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date 
+      else {
+        to = toDate ? to : lastSearchedTime
+        from = to - windowSize
+        lastSearchedTime = from
+      }
+     
+    } else {
+      if(fromDate && toDate) {
+        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      }
+      // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date 
+      else {
+      from = fromDate ? from : lastSearchedTime
       to = from + windowSize
       lastSearchedTime = to
-    } else if (direction === "from-to") {
-      Logger.info(`Time Range provided from : ${from} to : ${to}`)
-    }
+      }
+    } 
 
     Logger.info(
       `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
@@ -1543,7 +1555,9 @@ export const MessageApi = async (c: Context) => {
           let parsed = {
             answer: "",
             queryRewrite: "",
-            temporalDirection: { direction: null, from: "", to: "" },
+            temporalDirection:  null,
+            from: null,
+            to: null
           }
           let thinking = ""
           let reasoning =
@@ -1643,9 +1657,9 @@ export const MessageApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection?.direction,
-              from: parsed.temporalDirection?.from,
-              to: parsed.temporalDirection?.to,
+              direction: parsed?.temporalDirection,
+              from: parsed?.from,
+              to: parsed?.to,
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
@@ -2064,7 +2078,9 @@ export const MessageRetryApi = async (c: Context) => {
           let parsed = {
             answer: "",
             queryRewrite: "",
-            temporalDirection: { direction: null, from: "", to: "" },
+            temporalDirection:  null, 
+            from: null, 
+            to: null
           }
           let thinking = ""
           let reasoning =
@@ -2161,9 +2177,9 @@ export const MessageRetryApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection?.direction,
-              from: parsed.temporalDirection?.from,
-              to: parsed.temporalDirection?.to,
+              direction: parsed?.temporalDirection,
+              from: parsed?.from,
+              to: parsed?.to,
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
