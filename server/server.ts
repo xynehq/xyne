@@ -13,6 +13,7 @@ import {
   messageRetrySchema,
   messageSchema,
   SearchApi,
+  logBulkTraceDataSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -67,6 +68,8 @@ import {
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
+import { LogBulkTraceDataApi } from "./api/logTrace"
+
 type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -174,6 +177,12 @@ export const AppRoutes = app
   .get("/me", GetUserWorkspaceInfo)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
+
+  .post(
+    "/logBulkTraceData",
+    zValidator("json", logBulkTraceDataSchema),
+    LogBulkTraceDataApi,
+  )
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema

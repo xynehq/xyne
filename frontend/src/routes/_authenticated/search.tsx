@@ -39,6 +39,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   MessageSquareShare,
+  Loader2,
 } from "lucide-react"
 import { LastUpdated } from "@/components/SearchFilter"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -107,6 +108,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
     import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || (search.debug ?? false),
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
+  // Add state for bulk logging button
+  const [isBulkLogging, setIsBulkLogging] = useState(false);
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
@@ -431,6 +434,53 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }
   // if filter is selected we should keep it's count to prevent showing button for pagination
 
+  // Handler for the bulk log button
+  const handleLogAllTraces = async () => {
+    if (!results || results.length === 0 || isBulkLogging) return;
+
+    setIsBulkLogging(true);
+    const tracesToLog = [];
+
+    for (const result of results) {
+      // Only include results that have matchfeatures
+      if (result.matchfeatures) {
+        const title = result.type === 'file' ? result.title :
+                      result.type === 'user' ? result.name || result.email :
+                      result.type === 'mail' ? result.subject :
+                      result.type === 'event' ? result.name :
+                      result.type === 'mail_attachment' ? result.filename :
+                      result.type === 'chat_message' ? result.text :
+                      'Unknown Title';
+
+        tracesToLog.push({
+          title: title ?? "Unknown Title",
+          relevance: result.relevance ?? 0,
+          nativeRankSubject: result.matchfeatures['nativeRank(subject)'] ?? 0,
+          nativeRankChunks: result.matchfeatures['nativeRank(chunks)'] ?? 0,
+          vectorScore: result.matchfeatures.vector_score ?? 0,
+        });
+      }
+    }
+
+    if (tracesToLog.length === 0) {
+      console.log("No results with trace data found to log.");
+      setIsBulkLogging(false);
+      return;
+    }
+
+    try {
+      // Use the NEW bulk API endpoint
+      await api.logBulkTraceData.$post({ json: { traces: tracesToLog } });
+      console.log(`Successfully requested logging for ${tracesToLog.length} traces.`);
+      // Optionally add a success toast/message here
+    } catch (error) {
+      console.error("Failed to log bulk trace data:", error);
+      // Optionally add an error toast/message here
+    } finally {
+      setIsBulkLogging(false);
+    }
+  };
+
   return (
     <div className="h-full w-full flex">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
@@ -512,19 +562,32 @@ export const Search = ({ user, workspace }: IndexProps) => {
                 </div>
               </div>
             )}
-            {/* Top-level Trace Info Display */}
-            {showDebugInfo && traceData && (
-              <details className="mt-4 mb-4 text-xs">
-                <summary className="text-gray-500 cursor-pointer">
-                  Vespa Trace
-                </summary>
-                <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96">
-                  {" "}
-                  {/* Increased max-height */}
-                  {JSON.stringify(traceData, null, 2)}
-                </pre>
-              </details>
-            )}
+            {/* Top-level Trace Info Display & Bulk Log Button */}
+            {showDebugInfo && (
+                <div className="flex justify-between items-center mt-4 mb-2 mr-4"> {/* Adjust styling as needed */}                  
+                  {traceData && (
+                    <details className="text-xs">
+                      <summary className="text-gray-500 cursor-pointer">
+                        Vespa Trace (Request Level)
+                      </summary>
+                      <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96">
+                        {JSON.stringify(traceData, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                  {/* Add the bulk log button */}                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLogAllTraces}
+                    disabled={isBulkLogging || results.length === 0}
+                    className="ml-auto text-xs" // Push button to the right
+                  >
+                    {isBulkLogging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Log All Visible Traces
+                  </Button>
+                </div>
+              )}
             {!!results?.length && (
               <div className="flex flex-col w-full max-w-3xl mb-[52px]">
                 <div className="w-full max-w-3xl">

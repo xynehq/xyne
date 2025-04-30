@@ -77,6 +77,16 @@ export const chatRenameSchema = z.object({
   title: z.string().min(1),
 })
 
+export const logTraceDataSchema = z.object({
+  title: z.string(),
+  relevance: z.number(),
+  nativeRankSubject: z.number(),
+  nativeRankChunks: z.number(),
+  vectorScore: z.number(),
+});
+
+export type LogTraceDataInput = z.infer<typeof logTraceDataSchema>;
+
 export const chatTraceSchema = z.object({
   chatId: z.string().min(1),
   messageId: z.string().min(1),
@@ -353,3 +363,10 @@ export const AnswerApi = async (c: Context) => {
     })
   })
 }
+
+// Add schema for bulk logging
+export const logBulkTraceDataSchema = z.object({
+  traces: z.array(logTraceDataSchema),
+});
+
+export type LogBulkTraceDataInput = z.infer<typeof logBulkTraceDataSchema>;
