@@ -38,6 +38,14 @@ export const LogBulkTraceDataApi = async (c: Context) => {
       trace.nativeRankSubject,
       trace.nativeRankChunks,
       trace.vectorScore,
+      trace.nativeRankEmail,
+      trace.nativeRankName,
+      trace.nativeRankFilename,
+      trace.nativeRankTitle,
+      trace.nativeRankUrl,
+      trace.nativeRankAttachmentFilenames,
+      trace.nativeRankDescription,
+      trace.nativeRankAttendeesNames,
       new Date().toISOString(), // Add a timestamp for the bulk operation
     ]);
 

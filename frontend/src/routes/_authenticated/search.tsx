@@ -458,6 +458,14 @@ export const Search = ({ user, workspace }: IndexProps) => {
           nativeRankSubject: result.matchfeatures['nativeRank(subject)'] ?? 0,
           nativeRankChunks: result.matchfeatures['nativeRank(chunks)'] ?? 0,
           vectorScore: result.matchfeatures.vector_score ?? 0,
+          nativeRankEmail: result.matchfeatures['nativeRank(email)'] ?? 0,
+          nativeRankName: result.matchfeatures['nativeRank(name)'] ?? 0,
+          nativeRankFilename: result.matchfeatures['nativeRank(filename)'] ?? 0,
+          nativeRankTitle: result.matchfeatures['nativeRank(title)'] ?? 0,
+          nativeRankUrl: result.matchfeatures['nativeRank(url)'] ?? 0,
+          nativeRankAttachmentFilenames: result.matchfeatures['nativeRank(attachmentFilenames)'] ?? 0,
+          nativeRankDescription: result.matchfeatures['nativeRank(description)'] ?? 0,
+          nativeRankAttendeesNames: result.matchfeatures['nativeRank(attendeesNames)'] ?? 0,
         });
       }
     }

@@ -83,6 +83,14 @@ export const logTraceDataSchema = z.object({
   nativeRankSubject: z.number(),
   nativeRankChunks: z.number(),
   vectorScore: z.number(),
+  nativeRankEmail: z.number(),
+  nativeRankName: z.number(),
+  nativeRankFilename: z.number(),
+  nativeRankTitle: z.number(),
+  nativeRankUrl: z.number(),
+  nativeRankAttachmentFilenames: z.number(),
+  nativeRankDescription: z.number(),
+  nativeRankAttendeesNames: z.number(),
 });
 
 export type LogTraceDataInput = z.infer<typeof logTraceDataSchema>;
