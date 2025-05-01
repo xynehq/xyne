@@ -58,7 +58,7 @@ import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa } from "@/search/vespa"
+import { searchVespa, searchVespaSpecificFiles } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
@@ -426,6 +426,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
+  fileIds: string[],
   queryRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -451,14 +452,25 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
   }
+  const specificFiles = fileIds && fileIds.length > 0
   const latestResults = (
-    await searchVespa(message, email, null, null, {
-      limit: pageSize,
-      alpha,
-      timestampRange,
-      span: initialSearchSpan,
-    })
+    specificFiles
+      ? await searchVespaSpecificFiles(message, email, null, null, fileIds, {
+          limit: pageSize,
+          alpha,
+          timestampRange,
+          span: initialSearchSpan,
+        })
+      : await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          alpha,
+          timestampRange,
+          span: initialSearchSpan,
+        })
   ).root.children
+  console.log("latestResults")
+  console.log(latestResults)
+  console.log("latestResults")
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
   initialSearchSpan?.setAttribute(
     "result_ids",
@@ -481,14 +493,24 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     pageSpan?.setAttribute("page_number", pageNumber)
     // should only do it once
     if (pageNumber === Math.floor(maxPageNumber / 2)) {
+      console.log(
+        "Inside the condition: pageNumber === Math.floor(maxPageNumber / 2) ",
+      )
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
-      let results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha,
-        span: vespaSearchSpan,
-      })
+      // todo there are multiple searchVespa here
+      let results = specificFiles
+        ? await searchVespaSpecificFiles(message, email, null, null, fileIds, {
+            limit: pageSize,
+            alpha,
+            span: vespaSearchSpan,
+          })
+        : await searchVespa(message, email, null, null, {
+            limit: pageSize,
+            alpha,
+            span: vespaSearchSpan,
+          })
       vespaSearchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -530,15 +552,32 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
         const latestSearchSpan = querySpan?.startSpan("latest_results_search")
         const latestResults: VespaSearchResult[] = (
-          await searchVespa(query, email, null, null, {
-            limit: pageSize,
-            alpha,
-            timestampRange: {
-              from: new Date().getTime() - 4 * monthInMs,
-              to: new Date().getTime(),
-            },
-            span: latestSearchSpan,
-          })
+          specificFiles
+            ? await searchVespaSpecificFiles(
+                query,
+                email,
+                null,
+                null,
+                fileIds,
+                {
+                  limit: pageSize,
+                  alpha,
+                  timestampRange: {
+                    from: new Date().getTime() - 4 * monthInMs,
+                    to: new Date().getTime(),
+                  },
+                  span: latestSearchSpan,
+                },
+              )
+            : await searchVespa(query, email, null, null, {
+                limit: pageSize,
+                alpha,
+                timestampRange: {
+                  from: new Date().getTime() - 4 * monthInMs,
+                  to: new Date().getTime(),
+                },
+                span: latestSearchSpan,
+              })
         )?.root?.children
         latestSearchSpan?.setAttribute(
           "result_count",
@@ -554,13 +593,21 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         latestSearchSpan?.end()
 
-        let results = await searchVespa(query, email, null, null, {
-          limit: pageSize,
-          alpha,
-          excludedIds: latestResults
-            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-            ?.filter((v) => !!v),
-        })
+        let results = specificFiles
+          ? await searchVespaSpecificFiles(query, email, null, null, fileIds, {
+              limit: pageSize,
+              alpha,
+              excludedIds: latestResults
+                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+                ?.filter((v) => !!v),
+            })
+          : await searchVespa(query, email, null, null, {
+              limit: pageSize,
+              alpha,
+              excludedIds: latestResults
+                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+                ?.filter((v) => !!v),
+            })
         const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
           latestResults || [],
@@ -714,16 +761,25 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     const pageSearchSpan = pageSpan?.startSpan("page_search")
     let results: VespaSearchResponse
     if (pageNumber === 0) {
+      console.log("Inside the condition: pageNumber === 0")
       const searchSpan = pageSearchSpan?.startSpan(
         "vespa_search_with_excluded_ids",
       )
-      results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
-        alpha,
-        excludedIds: latestIds,
-        span: searchSpan,
-      })
+      results = specificFiles
+        ? await searchVespaSpecificFiles(message, email, null, null, fileIds, {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha,
+            excludedIds: latestIds,
+            span: searchSpan,
+          })
+        : await searchVespa(message, email, null, null, {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha,
+            excludedIds: latestIds,
+            span: searchSpan,
+          })
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -745,12 +801,19 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     } else {
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
-      results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
-        alpha,
-        span: searchSpan,
-      })
+      results = specificFiles
+        ? await searchVespaSpecificFiles(message, email, null, null, fileIds, {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha,
+            span: searchSpan,
+          })
+        : await searchVespa(message, email, null, null, {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha,
+            span: searchSpan,
+          })
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -1264,6 +1327,7 @@ export async function* UnderstandMessageAndAnswer(
   classification: TemporalClassifier,
   messages: Message[],
   alpha: number,
+  fileIds: string[],
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1310,6 +1374,7 @@ export async function* UnderstandMessageAndAnswer(
       chatPageSize,
       3,
       maxDefaultSummary,
+      fileIds,
       ragSpan,
     )
   }
@@ -1353,7 +1418,16 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId }: MessageReqType = body
+    let { message, chatId, modelId, stringifiedfileIds }: MessageReqType = body
+    console.log("stringifiedfileIds")
+    console.log(stringifiedfileIds)
+    console.log("stringifiedfileIds")
+    console.log(JSON.parse(stringifiedfileIds))
+    console.log(typeof JSON.parse(stringifiedfileIds))
+    const fileIds = JSON.parse(stringifiedfileIds) as string[]
+    console.log("fileIds")
+    console.log(fileIds)
+    console.log("fileIds")
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1510,83 +1584,88 @@ export const MessageApi = async (c: Context) => {
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
           const conversationSpan = streamSpan.startSpan("conversation_search")
-          for await (const chunk of searchOrAnswerIterator) {
-            if (chunk.text) {
-              if (reasoning) {
-                if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                  thinking += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: chunk.text,
-                  })
-                } else {
-                  // first time
-                  if (!chunk.text.includes(StartThinkingToken)) {
-                    let token = chunk.text
-                    if (chunk.text.includes(EndThinkingToken)) {
-                      token = chunk.text.split(EndThinkingToken)[0]
-                      thinking += token
-                    } else {
-                      thinking += token
-                    }
+          // Becoz if there are fileIds, then definitely RAG should be done
+          if (!fileIds || fileIds?.length === 0) {
+            for await (const chunk of searchOrAnswerIterator) {
+              if (chunk.text) {
+                if (reasoning) {
+                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                    thinking += chunk.text
                     stream.writeSSE({
                       event: ChatSSEvents.Reasoning,
-                      data: token,
+                      data: chunk.text,
                     })
-                  }
-                }
-              }
-              if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                reasoning = false
-                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-              }
-              if (!reasoning) {
-                buffer += chunk.text
-                try {
-                  parsed = jsonParseLLMOutput(buffer)
-                  if (parsed.answer && currentAnswer !== parsed.answer) {
-                    if (currentAnswer === "") {
-                      Logger.info(
-                        "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                      )
+                  } else {
+                    // first time
+                    if (!chunk.text.includes(StartThinkingToken)) {
+                      let token = chunk.text
+                      if (chunk.text.includes(EndThinkingToken)) {
+                        token = chunk.text.split(EndThinkingToken)[0]
+                        thinking += token
+                      } else {
+                        thinking += token
+                      }
                       stream.writeSSE({
-                        event: ChatSSEvents.Start,
-                        data: "",
-                      })
-                      // First valid answer - send the whole thing
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: parsed.answer,
-                      })
-                    } else {
-                      // Subsequent chunks - send only the new part
-                      const newText = parsed.answer.slice(currentAnswer.length)
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: newText,
+                        event: ChatSSEvents.Reasoning,
+                        data: token,
                       })
                     }
-                    currentAnswer = parsed.answer
                   }
-                } catch (err) {
-                  const errMessage = (err as Error).message
-                  Logger.error(
-                    err,
-                    `Error while parsing LLM output ${errMessage}`,
-                  )
-                  continue
+                }
+                if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                  reasoning = false
+                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                }
+                if (!reasoning) {
+                  buffer += chunk.text
+                  try {
+                    parsed = jsonParseLLMOutput(buffer)
+                    if (parsed.answer && currentAnswer !== parsed.answer) {
+                      if (currentAnswer === "") {
+                        Logger.info(
+                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.Start,
+                          data: "",
+                        })
+                        // First valid answer - send the whole thing
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: parsed.answer,
+                        })
+                      } else {
+                        // Subsequent chunks - send only the new part
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: newText,
+                        })
+                      }
+                      currentAnswer = parsed.answer
+                    }
+                  } catch (err) {
+                    const errMessage = (err as Error).message
+                    Logger.error(
+                      err,
+                      `Error while parsing LLM output ${errMessage}`,
+                    )
+                    continue
+                  }
                 }
               }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
             }
-            if (chunk.cost) {
-              costArr.push(chunk.cost)
-            }
-          }
 
-          conversationSpan.setAttribute("answer_found", parsed.answer)
-          conversationSpan.setAttribute("answer", answer)
-          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
-          conversationSpan.end()
+            conversationSpan.setAttribute("answer_found", parsed.answer)
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+            conversationSpan.end()
+          }
 
           if (parsed.answer === null || parsed.answer === "") {
             const ragSpan = streamSpan.startSpan("rag_processing")
@@ -1613,6 +1692,7 @@ export const MessageApi = async (c: Context) => {
               classification,
               messagesWithNoErrResponse,
               0.5,
+              fileIds,
               understandSpan,
             )
             stream.writeSSE({
@@ -2125,6 +2205,7 @@ export const MessageRetryApi = async (c: Context) => {
               classification,
               convWithNoErrMsg,
               0.5,
+              // fileIds,
               understandSpan,
             )
             // throw new Error("Hello, how are u doing?")

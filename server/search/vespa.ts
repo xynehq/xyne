@@ -372,6 +372,121 @@ export const HybridDefaultProfile = (
   }
 }
 
+export const HybridDefaultProfileSpecificFiles = (
+  hits: number,
+  app: Apps | null,
+  entity: Entity | null,
+  profile: SearchModes = SearchModes.NativeRank,
+  fileIds: string[],
+  timestampRange?: { to: number | null; from: number | null } | null,
+  excludedIds?: string[],
+  notInMailLabels?: string[],
+): YqlProfile => {
+  let hasAppOrEntity = !!(app || entity)
+  let fileTimestamp = ""
+  let mailTimestamp = ""
+  let userTimestamp = ""
+  let eventTimestamp = ""
+
+  if (timestampRange && !timestampRange.from && !timestampRange.to) {
+    throw new Error("Invalid timestamp range")
+  }
+
+  let fileTimestampConditions: string[] = []
+  let mailTimestampConditions: string[] = []
+  let userTimestampConditions: string[] = []
+  let eventTimestampConditions: string[] = []
+
+  if (timestampRange && timestampRange.from) {
+    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
+    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
+    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
+    eventTimestampConditions.push(`startTime >= ${timestampRange.from}`) // Using startTime for events
+  }
+  if (timestampRange && timestampRange.to) {
+    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
+    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
+    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
+    eventTimestampConditions.push(`startTime <= ${timestampRange.to}`)
+  }
+
+  if (timestampRange && timestampRange.from && timestampRange.to) {
+    fileTimestamp = fileTimestampConditions.join(" and ")
+    mailTimestamp = mailTimestampConditions.join(" and ")
+    userTimestamp = userTimestampConditions.join(" and ")
+    eventTimestamp = eventTimestampConditions.join(" and ")
+  } else {
+    fileTimestamp = fileTimestampConditions.join("")
+    mailTimestamp = mailTimestampConditions.join("")
+    userTimestamp = userTimestampConditions.join("")
+    eventTimestamp = eventTimestampConditions.join("")
+  }
+
+  let appOrEntityFilter =
+    `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+
+  let exclusionCondition = ""
+  if (excludedIds && excludedIds.length > 0) {
+    exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+  }
+
+  let mailLabelQuery = ""
+  if (notInMailLabels && notInMailLabels.length > 0) {
+    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
+  let specificFileIdsQuery = ""
+  if (fileIds && fileIds.length > 0) {
+    specificFileIdsQuery = `and (${fileIds.map((fileId) => `docId contains '${fileId}'`).join(" or ")})`
+  }
+
+  // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
+  return {
+    profile: profile,
+    yql: `
+        select * from sources ${AllSources}
+        where ((
+          (
+            (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+            )
+            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
+            and permissions contains @email ${mailLabelQuery}
+            ${appOrEntityFilter} ${specificFileIdsQuery}
+          )
+            or
+            (
+              (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+            )
+              ${appOrEntityFilter}
+              and permissions contains @email ${specificFileIdsQuery}
+            )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            ${timestampRange ? `and ${userTimestamp}` : ""}
+            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and permissions contains @email`} ${specificFileIdsQuery}
+          )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            and owner contains @email
+            ${timestampRange ? `and ${userTimestamp}` : ""}
+            ${appOrEntityFilter}
+            ${specificFileIdsQuery}
+          )
+        )
+        ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
+  }
+}
+
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
@@ -509,6 +624,70 @@ export const searchVespa = async (
     app,
     entity,
     rankProfile,
+    timestampRange,
+    excludedIds,
+    notInMailLabels,
+  )
+
+  const hybridDefaultPayload = {
+    yql,
+    query,
+    email,
+    "ranking.profile": profile,
+    "input.query(e)": "embed(@query)",
+    "input.query(alpha)": alpha,
+    maxHits,
+    hits: limit,
+    ...(offset
+      ? {
+          offset,
+        }
+      : {}),
+    ...(app ? { app } : {}),
+    ...(entity ? { entity } : {}),
+    ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+  }
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
+  try {
+    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+  } catch (error) {
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: AllSources,
+    })
+  }
+}
+
+export const searchVespaSpecificFiles = async (
+  query: string,
+  email: string,
+  app: Apps | null,
+  entity: Entity | null,
+  fileIds: string[],
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    timestampRange = null,
+    excludedIds = [],
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+  }: Partial<VespaQueryConfig>,
+): Promise<VespaSearchResponse> => {
+  console.log("Running searchVespaSpecificFiles........")
+  // Determine the timestamp cutoff based on lastUpdated
+  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  const isDebugMode = config.isDebugMode || requestDebug || false
+
+  let { yql, profile } = HybridDefaultProfileSpecificFiles(
+    limit,
+    app,
+    entity,
+    rankProfile,
+    fileIds,
     timestampRange,
     excludedIds,
     notInMailLabels,
