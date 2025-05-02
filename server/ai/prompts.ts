@@ -44,7 +44,7 @@ export const metadataAnalysisSystemPrompt = `You are an assistant tasked with an
 
 Your task:
 - Review the metadata provided for each chunk.
-- Decide if the user’s query can be answered with the available information.
+- Decide if the user's query can be answered with the available information.
 - If there is recent information on the topic, include it just in case it could add useful context.
 
 Return a JSON structure with:
@@ -61,7 +61,7 @@ Metadata includes details like:
 
 When reviewing, use these guidelines:
 - Include chunks that appear helpful or relevant, even if they only partially address the query.
-- If there’s recent information on the topic, include it as it may provide additional useful context.
+- If there's recent information on the topic, include it as it may provide additional useful context.
 - If the **Entity** is **Email**, consider the **Labels** field to gauge its relevance.
 
 Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
@@ -444,6 +444,13 @@ ${retrievedContext}
    - Group related information from different sources
    - Cite specific sources using their identifiers
    - Maintain chronological order when relevant
+   - For queries requesting a list of emails (e.g., 'previous 10 emails'), ONLY list the emails (subject, sender, etc.) as found.
+   - **Never mention meetings, meeting invitations, or meeting-related content in your answer unless the user query specifically asks for meetings.**
+   - Example (for query: "previous 10 emails? or anything with the"):
+     1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
+     2. Subject: Contract Update, From: alicia@deel.support [1]
+     3. Subject: Earth Day, From: info@earthday.org [2]
+     ... (No mention of meetings or content summary.)
 
 3. Privacy and Security:
    - Do not share sensitive information marked in permissions
@@ -470,6 +477,13 @@ Suggestions: [Related queries or clarifications if needed]
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
+- For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
+- **Never mention meetings, meeting invitations, or meeting-related content in your answer unless the user query specifically asks for meetings.**
+- Example (for query: "previous 10 emails"):
+  1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
+  2. Subject: Contract Update, From: alicia@deel.support [1]
+  3. Subject: Earth Day, From: info@earthday.org [2]
+  ... (No mention of meetings or content summary.)
 
 # Error Handling
 If information is missing or unclear:
@@ -543,6 +557,15 @@ ${retrievedContext}
    - Use at most 1-2 citations per sentence, do not add more than 2 for a single statement
    - Cite using the Index numbers provided in the context
    - Place citations immediately after the relevant information
+   - For queries requesting a list of emails (e.g., 'previous 10 emails'), ONLY list the emails (subject, sender, etc.) as found.
+   - **Never mention meetings, meeting invitations, or meeting-related content in your answer unless the user query specifically asks for meetings.**
+   - Example (for query: "previous 10 emails"):
+     1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
+     2. Subject: Contract Update, From: alicia@deel.support [1]
+     3. Subject: Earth Day, From: info@earthday.org [2]
+     ... (No mention of meetings or content summary.)
+   - Bad Example (do NOT do this):
+     "I don't see any information about meetings in the retrieved emails. While there are several emails in your inbox from sources like X, none of them contain meeting invitations, updates, or discussions about meetings you're participating in."
 3. Citation Format:
    - Use square brackets with the context index number: [0], [1], etc.
    - Place citations right after the relevant statement
@@ -569,11 +592,15 @@ You must respond in valid JSON format with the following structure:
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, set "answer" to null
-- Do not explain why you couldn't find the answer in the context, just set it to null
-- We want only 2 cases, either answer is found or we set it to null
-- No explanation why answer was not found in the context, just set it to null
-- Citations must use the exact index numbers from the provided context
-- Keep citations natural and relevant - don't overcite
+- For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
+- **Never mention meetings, meeting invitations, or meeting-related content in your answer unless the user query specifically asks for meetings.**
+- Example (for query: "previous 10 emails"):
+  1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
+  2. Subject: Contract Update, From: alicia@deel.support [1]
+  3. Subject: Earth Day, From: info@earthday.org [2]
+  ... (No mention of meetings or content summary.)
+- Bad Example (do NOT do this):
+  "I don't see any information about meetings in the retrieved emails. While there are several emails in your inbox from sources like X, none of them contain meeting invitations, updates, or discussions about meetings you're participating in."
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
 
@@ -634,7 +661,9 @@ export const queryRewritePromptJson = (
 
 export const temporalEventClassifier = (
   query: string,
-) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
+) => `Determine if this query is asking about tracking down either:
+1. A calendar event/meeting that either last occurred or will next occur
+2. An email interaction that either last occurred or will next occur
 
 The query: "${query}"
 
@@ -643,25 +672,41 @@ Return in this JSON format:
   "direction": "next" | "prev" | null
 }
 
+For Calendar/Meeting Events:
 Only return "next" if:
-- Query is specifically asking about an upcoming calendar event or scheduled interaction
-- Must be something that would be found in a calendar or email thread
-Examples:
-✓ "When is my next meeting with John?"
-✓ "Next time I present to the board"
-✓ "When's my next review?"
-✗ "Next quarter's goals"
-✗ "Next version release"
+- Query is specifically asking about an upcoming calendar event or scheduled meeting
+- Must be something that would be found in a calendar
+- Examples of valid "next" queries:
+  ✓ "When is my next meeting with John?"
+  ✓ "Next time I present to the board"
+  ✓ "When's my next review?"
+  ✓ "Next team sync"
+  ✓ "Next 1:1 with manager"
 
 Only return "prev" if:
-- Query is specifically asking about finding the last calendar event or email interaction that occurred
-- Must be something that would be found in a calendar or email thread
-Examples:
-✓ "When was my last call with Sarah?"
-✓ "Last time I had lunch with the team"
-✓ "Previous board meeting date"
-✗ "When did junaid join?"
-✗ "Last time we updated the docs"
+- Query is specifically asking about finding the last calendar event or meeting that occurred
+- Must be something that would be found in a calendar
+- Examples of valid "prev" queries:
+  ✓ "When was my last call with Sarah?"
+  ✓ "Last time I had lunch with the team"
+  ✓ "Previous board meeting date"
+  ✓ "Last team sync"
+  ✓ "Previous 1:1 with manager"
+
+For Email Queries:
+Only return "next" if:
+- Query is specifically asking about upcoming or next email interactions
+- Examples of valid "next" queries:
+  ✓ "Next 10 emails"
+  ✓ "Next email from John"
+  ✓ "Next time I receive an email from marketing"
+
+Only return "prev" if:
+- Query is specifically asking about previous email interactions
+- Examples of valid "prev" queries:
+  ✓ "Previous 10 emails"
+  ✓ "Last email from John"
+  ✓ "Previous email thread about the project"
 
 Return null for everything else, including:
 - General temporal questions about the past ("When did the project start?")
@@ -669,6 +714,9 @@ Return null for everything else, including:
 - Questions about deadlines ("When is this due?")
 - Non-calendar events ("When was the last deployment?")
 - Historical queries ("When did we switch to React?")
+- Document-related queries ("Last time we updated the docs")
+- Project-related queries ("Previous sprint planning")
+- Any queries that don't specifically reference a calendar event, meeting, or email interaction
 
 Test cases:
 "When's my next client meeting?" -> {"direction": "next"}
@@ -677,8 +725,11 @@ Test cases:
 "When was the website launched?" -> {"direction": null}
 "Next team lunch" -> {"direction": "next"}
 "When did the office move?" -> {"direction": null}
-"Previous sprint planning" -> {"direction": "prev"}
+"Previous sprint planning" -> {"direction": null}
 "When was the policy updated?" -> {"direction": null}
+"Previous 10 emails" -> {"direction": "prev"}
+"Last email from John" -> {"direction": "prev"}
+"Next email from marketing" -> {"direction": "next"}
 
 Now classify this query:`
 
@@ -686,18 +737,18 @@ export const searchQueryPrompt = (userContext: string): string => {
   return `
       basic user context: ${userContext}
       You are a conversation manager. When a user sends a query, follow these rules:
-    1. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+    1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
       b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
-    2. Determine if the user’s query is conversational or a basic calculation. Examples include greetings like:
+    2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
        - "Hello"
        - "Hey"
        - what is the time in Japan
        If the query is conversational, respond naturally and appropriately. 
-    3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
+    3. If the user's query is about the conversation itself (e.g., "What did I just now ask?" or "What was my previous question?"), use the conversation history to answer if possible.
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
       - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
         - ✓ "When is my next meeting with John?"
@@ -718,7 +769,7 @@ export const searchQueryPrompt = (userContext: string): string => {
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null
        }
-       - "answer" should only contain a conversational response only if it’s a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
+       - "answer" should only contain a conversational response only if it's a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event, or null if unrelated.
     6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
@@ -739,15 +790,15 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
       You are a conversation manager for a retrieval-augmented generation (RAG) pipeline. When a user sends a query, follow these rules:
     1. Please while thinking do not show these steps as they are more hidden and internal. Do not mention the step number, do not explain the structure of your output as user does not need to know that.
        do not mention queryRewrite is null. Most important keep thinking short for this step as it's a decison node.
-    2. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+    2. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
       b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
-    3. Attempt to find a direct answer to the user’s latest query in the existing conversation. If the query is a basic conversation starter (e.g., "Hi", "Hello", "Hey", "How are you?", "Good morning"), respond naturally.
+    3. Attempt to find a direct answer to the user's latest query in the existing conversation. If the query is a basic conversation starter (e.g., "Hi", "Hello", "Hey", "How are you?", "Good morning"), respond naturally.
       - If it is a regular conversational statement, provide an appropriate response.
       - or a basic calculation like: what is the time in Japan
-    4. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
+    4. If the user's query is about the conversation itself (e.g., "What did I just now ask?" or "What was my previous question?"), use the conversation history to answer if possible.
     5. Output JSON in the following structure:
        {
          "answer": "<string or null>",
