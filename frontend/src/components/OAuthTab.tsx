@@ -1,24 +1,28 @@
-import { TabsContent } from "@/components/ui/tabs"
+import { TabsContent } from "@/components/ui/tabs";
+import { useState } from "react";
 import {
   OAuthButton,
   OAuthForm,
-} from "@/routes/_authenticated/admin/integrations/google"
+} from "@/routes/_authenticated/admin/integrations/google";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Apps } from "shared/types"
-import { LoaderContent } from "@/lib/common"
-import { OAuthIntegrationStatus } from "@/types"
+} from "@/components/ui/card";
+import { Apps } from "shared/types";
+import { LoaderContent } from "@/lib/common";
+import { OAuthIntegrationStatus } from "@/types";
+import { X } from "lucide-react";
+import { ConfirmModal } from "@/components/ui/confirmModal";
 
 interface OAuthTabProps {
-  isPending: boolean
-  oauthIntegrationStatus: OAuthIntegrationStatus
-  setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
-  updateStatus: string
+  isPending: boolean;
+  oauthIntegrationStatus: OAuthIntegrationStatus;
+  setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void;
+  updateStatus: string;
+  handleDelete: () => void;
 }
 
 const OAuthTab = ({
@@ -26,7 +30,33 @@ const OAuthTab = ({
   oauthIntegrationStatus,
   setOAuthIntegrationStatus,
   updateStatus,
+  handleDelete,
 }: OAuthTabProps) => {
+  const [modalState, setModalState] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+  }>({ open: false, title: "", description: "" });
+
+  const handleConfirmDelete = () => {
+    handleDelete();
+    setModalState({ open: false, title: "", description: "" });
+  };
+
+  // Adapter function to match ConfirmModal's setShowModal interface
+  const handleSetShowModal = (
+    value: Partial<{
+      open: boolean;
+      title: string;
+      description: string;
+    }>,
+  ) => {
+    setModalState((prev) => ({
+      ...prev,
+      ...value,
+    }));
+  };
+
   return (
     <TabsContent value="oauth">
       {isPending ? (
@@ -57,14 +87,38 @@ const OAuthTab = ({
             <CardTitle>Google OAuth</CardTitle>
           </CardHeader>
           <CardContent>
-            {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected
-              ? "Connected"
-              : "Connecting"}
+            {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ? (
+              <div className="flex items-center justify-between">
+                <span>Connected</span>
+                <button
+                  onClick={() =>
+                    handleSetShowModal({
+                      open: true,
+                      title: "Confirm Disconnect",
+                      description: "Are you sure you want to disconnect Google OAuth?",
+                    })
+                  }
+                  className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              "Connecting"
+            )}
           </CardContent>
         </Card>
       )}
-    </TabsContent>
-  )
-}
 
-export default OAuthTab
+      <ConfirmModal
+        showModal={modalState.open}
+        setShowModal={handleSetShowModal}
+        modalTitle={modalState.title}
+        modalMessage={modalState.description}
+        onConfirm={handleConfirmDelete}
+      />
+    </TabsContent>
+  );
+};
+
+export default OAuthTab;

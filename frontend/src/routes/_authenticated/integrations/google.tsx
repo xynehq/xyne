@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router"
 import {
   AdminPageProps,
+  deleteOauthConnector,
   getConnectors,
   minHeight,
   showUserStats,
@@ -20,8 +21,9 @@ import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
 import { wsClient } from "@/api"
 import OAuthTab from "@/components/OAuthTab"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
-import { OAuthIntegrationStatus } from "@/types"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
+import { Connectors, OAuthIntegrationStatus } from "@/types"
+import { toast } from "@/hooks/use-toast"
 
 const logger = console
 
@@ -112,6 +114,35 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }, [oauthIntegrationStatus, refetch])
 
+  const handleDelete = async () => {
+    const googleOAuthConnector = data?.find(
+      (c: Connectors) =>
+        c.app === Apps.GoogleDrive && c.authType === AuthType.OAuth,
+    )
+    if (!googleOAuthConnector) {
+      toast({
+        title: "Deletion Failed",
+        description: "Google OAuth connector not found.",
+        variant: "destructive",
+      })
+      return
+    }
+    try {
+      await deleteOauthConnector(googleOAuthConnector.id)
+      toast({
+        title: "Connector Deleted",
+        description: "Google OAuth connector has been removed",
+      })
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+    } catch (error) {
+      toast({
+        title: "Deletion Failed",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      })
+    }
+  }
+
   if (error) return "An error has occurred: " + error.message
   return (
     <div className="flex w-full h-full">
@@ -133,6 +164,7 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
+              handleDelete={handleDelete}
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
