@@ -637,10 +637,10 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       clientSecret: googleProvider.clientSecret,
       redirectUri: `${config.host}/oauth/callback`,
     })
-
+    
     const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth)
     tracker.setOAuthUser(userEmail)
-
+    
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
@@ -659,6 +659,14 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       refresh_token: oauthTokens.refresh_token,
     })
     const driveClient = google.drive({ version: "v3", auth: oauth2Client })
+    const [totalFiles, { messagesExcludingPromotions }] = await Promise.all([
+      countDriveFiles(oauth2Client),
+      getGmailCounts(oauth2Client),
+    ])
+    tracker.updateTotal(userEmail, {
+      totalDrive: totalFiles,
+      totalMail: messagesExcludingPromotions,
+    })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
     await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
