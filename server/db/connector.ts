@@ -286,7 +286,9 @@ export const deleteOauthConnector = async (
   trx: TxnOrClient,
   connectorId: number,
 ): Promise<void> => {
-  Logger.info(`Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`)
+  Logger.info(
+    `Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`,
+  )
   try {
     await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
     Logger.debug(`Deleted sync jobs for connector ID: ${connectorId}`)
@@ -294,10 +296,9 @@ export const deleteOauthConnector = async (
     await trx
       .delete(oauthProviders)
       .where(eq(oauthProviders.connectorId, connectorId))
-     Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
+    Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
 
     await trx.delete(connectors).where(eq(connectors.id, connectorId))
-
   } catch (error) {
     Logger.error(
       { error, connectorId },
