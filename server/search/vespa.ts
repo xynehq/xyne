@@ -374,15 +374,13 @@ export const HybridDefaultProfile = (
 
 export const HybridDefaultProfileSpecificFiles = (
   hits: number,
-  app: Apps | null,
-  entity: Entity | null,
+  appEntity: [],
   profile: SearchModes = SearchModes.NativeRank,
   fileIds: string[],
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
 ): YqlProfile => {
-  let hasAppOrEntity = !!(app || entity)
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
@@ -422,8 +420,12 @@ export const HybridDefaultProfileSpecificFiles = (
     eventTimestamp = eventTimestampConditions.join("")
   }
 
-  let appOrEntityFilter =
-    `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+  // todo there should be a OR between docId condition & appEntity condition, either of them can work
+  let appOrEntityFilter = ""
+  if (appEntity && appEntity.length > 0) {
+    appOrEntityFilter =
+      `or (${appEntity.map((i) => `${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""}`).join(" or ")})`.trim()
+  }
 
   let exclusionCondition = ""
   if (excludedIds && excludedIds.length > 0) {
@@ -472,7 +474,7 @@ export const HybridDefaultProfileSpecificFiles = (
           (
             ({targetHits:${hits}}userInput(@query))
             ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and permissions contains @email`} ${specificFileIdsQuery}
+            ${appOrEntityFilter} and permissions contains @email ${specificFileIdsQuery}
           )
           or
           (
@@ -661,8 +663,7 @@ export const searchVespa = async (
 export const searchVespaSpecificFiles = async (
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  appEntity: [],
   fileIds: string[],
   {
     alpha = 0.5,
@@ -684,14 +685,17 @@ export const searchVespaSpecificFiles = async (
 
   let { yql, profile } = HybridDefaultProfileSpecificFiles(
     limit,
-    app,
-    entity,
+    appEntity,
     rankProfile,
     fileIds,
     timestampRange,
     excludedIds,
     notInMailLabels,
   )
+
+  console.log("YQL")
+  console.log(yql)
+  console.log("YQL")
 
   const hybridDefaultPayload = {
     yql,
@@ -707,8 +711,6 @@ export const searchVespaSpecificFiles = async (
           offset,
         }
       : {}),
-    ...(app ? { app } : {}),
-    ...(entity ? { entity } : {}),
     ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
