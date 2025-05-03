@@ -12,7 +12,7 @@ import {
   unique,
   index,
 } from "drizzle-orm/pg-core"
-import { encryptedText } from "./customType"
+import { bytea, encryptedText } from "./customType"
 import { Encryption } from "@/utils/encryption"
 import { ConnectorType, MessageRole, SyncConfigSchema, SyncCron } from "@/types"
 import {
@@ -366,7 +366,7 @@ export const chatTrace = pgTable(
     chatExternalId: text("chat_external_id").notNull(),
     messageExternalId: text("message_external_id").notNull(),
     email: text("email").notNull(),
-    traceJson: jsonb("trace_json").notNull(),
+    traceJson: bytea("trace_json").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
