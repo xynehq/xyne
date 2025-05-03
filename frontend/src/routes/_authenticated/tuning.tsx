@@ -129,7 +129,14 @@ export default function TuningPage() {
           } else if (data.event === "tuning:progress") {
             // Fallback for old/simple string progress
             console.log("Received simple progress string:", data.message)
-            setJobMessage(data.message || "Processing...")
+            try {
+              const inner = JSON.parse(data.message)
+              setProgressStatus(inner.status)
+              setJobMessage(inner.message ?? "Processing...")
+              setJobProgress(inner.progress ?? 0)
+            } catch {
+              setJobMessage(data.message ?? "Processing...")
+            }
             // Cannot set percentage from simple message
           } else if (data.event === "tuning:complete") {
             console.log("Received WebSocket message:", data)
