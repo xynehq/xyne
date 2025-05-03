@@ -129,7 +129,6 @@ describe("jsonParseLLMOutput", () => {
 \`\`\``
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
-    console.log('result', result)
     expect(result.answer).toEqual(null)
   })
   //   test("null and closing brace", () => {

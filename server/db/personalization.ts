@@ -189,7 +189,8 @@ export const getUserPersonalizationAlpha = async (
   email: string,
   defaultAlpha: number = 0.5,
 ): Promise<number> => {
-  const callerFunctionName = new Error().stack?.split("\n")[2].trim() || "unknown"
+  const callerFunctionName =
+    new Error().stack?.split("\n")[2].trim() || "unknown"
   Logger.debug({ email, defaultAlpha }, "Getting personalized alpha for user")
   let userAlpha = defaultAlpha
   try {

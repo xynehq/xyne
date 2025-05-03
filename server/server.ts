@@ -415,11 +415,7 @@ app.get(
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
-app.get(
-  "/tuning",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
+app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" })) // Serve assets (CSS, JS, etc.)
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 export const init = async () => {

@@ -88,7 +88,10 @@ import {
   deleteChatTracesByChatExternalId,
   updateChatTrace,
 } from "@/db/chatTrace"
-import { getUserPersonalizationByEmail, getUserPersonalizationAlpha } from "@/db/personalization"
+import {
+  getUserPersonalizationByEmail,
+  getUserPersonalizationAlpha,
+} from "@/db/personalization"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,

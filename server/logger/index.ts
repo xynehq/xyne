@@ -23,11 +23,11 @@ const time = (start: number) => {
 
 const getCaller = () => {
   try {
-    const stack = new Error().stack?.split("\n");
-    const caller = stack?.[3]?.trim();
-    return caller && !caller.includes("unknown") ? caller : null;
+    const stack = new Error().stack?.split("\n")
+    const caller = stack?.[3]?.trim()
+    return caller && !caller.includes("unknown") ? caller : null
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -55,11 +55,13 @@ export const getLogger = (loggerType: Subsystem) => {
             },
           },
         }),
-        mixin(_mergeObject, _level) {
-          const stack = new Error().stack?.split("\n");
-          const caller = stack?.[4]?.trim(); // This skips internal logger frames
-          return isProduction && caller && !caller.includes("unknown") ? { caller } : {};
-        },
+    mixin(_mergeObject, _level) {
+      const stack = new Error().stack?.split("\n")
+      const caller = stack?.[4]?.trim() // This skips internal logger frames
+      return isProduction && caller && !caller.includes("unknown")
+        ? { caller }
+        : {}
+    },
   })
 }
 

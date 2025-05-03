@@ -402,7 +402,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     // we only want to do this if enough text has accumulated
     // we don't want to do case where just `json` comes and we wrap it as answer
     if (startBrace === -1 && jsonKey && text.length > 10) {
-      if(text.trim() === "answer null" && jsonKey) {
+      if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
         text = `{${jsonKey} "${text}"`
@@ -449,7 +449,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       if (!text) {
         return {}
       }
-      if(text === "}") {
+      if (text === "}") {
         return {}
       }
       jsonVal = parse(text)
