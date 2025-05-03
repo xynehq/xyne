@@ -521,6 +521,7 @@ export const searchVespa = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
+    "input.query(recency_decay_rate)": 0.02,
     maxHits,
     hits: limit,
     ...(offset
