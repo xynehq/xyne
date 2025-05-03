@@ -11,6 +11,7 @@ import { eq, sql } from "drizzle-orm"
 import { type TxnOrClient } from "@/types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { SearchModes } from "@/search/vespa"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "personalization" })
 
@@ -173,4 +174,53 @@ export const getUserPersonalizationByEmail = async (
     )
     throw error // Re-throw the error after logging
   }
+}
+
+/**
+ * Retrieves the personalized alpha value for NativeRank search mode for a given user email.
+ * Defaults to 0.5 if personalization is not found or alpha is not set.
+ * @param trx - Drizzle transaction or client
+ * @param email - The email of the user
+ * @param defaultAlpha - The default alpha value to return if personalization is not found (defaults to 0.5)
+ * @returns The personalized alpha value or the default value.
+ */
+export const getUserPersonalizationAlpha = async (
+  trx: TxnOrClient,
+  email: string,
+  defaultAlpha: number = 0.5,
+): Promise<number> => {
+  const callerFunctionName = new Error().stack?.split("\n")[2].trim() || "unknown"
+  Logger.debug({ email, defaultAlpha }, "Getting personalized alpha for user")
+  let userAlpha = defaultAlpha
+  try {
+    const personalization = await getUserPersonalizationByEmail(trx, email)
+    if (personalization) {
+      const nativeRankParams =
+        personalization.parameters?.[SearchModes.NativeRank]
+      if (nativeRankParams?.alpha !== undefined) {
+        userAlpha = nativeRankParams.alpha
+        Logger.info(
+          { email, alpha: userAlpha, calledFrom: callerFunctionName },
+          `Using personalized alpha (${userAlpha})`, // Simplified message
+        )
+      } else {
+        Logger.info(
+          { email, calledFrom: callerFunctionName },
+          `No personalized alpha found in settings, using default (${defaultAlpha})`,
+        )
+      }
+    } else {
+      Logger.warn(
+        { email, calledFrom: callerFunctionName },
+        `User personalization settings not found, using default alpha (${defaultAlpha})`,
+      )
+    }
+  } catch (err) {
+    Logger.error(
+      err,
+      `Failed to fetch personalization, using default alpha (${defaultAlpha})`,
+      { email, calledFrom: callerFunctionName },
+    )
+  }
+  return userAlpha
 }

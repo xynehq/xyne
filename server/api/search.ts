@@ -52,6 +52,7 @@ import { QueryCategory } from "@/ai/types"
 import {
   getUserPersonalization,
   getUserPersonalizationByEmail,
+  getUserPersonalizationAlpha,
 } from "@/db/personalization"
 const Logger = getLogger(Subsystem.Api)
 
@@ -141,37 +142,7 @@ export const AutocompleteApi = async (c: Context) => {
 export const SearchApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   const email = sub
-  let userAlpha = 0.5
-  try {
-    const personalization = await getUserPersonalizationByEmail(db, email)
-    if (personalization) {
-      const nativeRankParams =
-        personalization.parameters?.[SearchModes.NativeRank]
-      if (nativeRankParams?.alpha !== undefined) {
-        userAlpha = nativeRankParams.alpha
-        Logger.info(
-          { email, alpha: userAlpha },
-          "Using personalized alpha for search",
-        )
-      } else {
-        Logger.info(
-          { email },
-          "No personalized alpha found in settings, using default for search",
-        )
-      }
-    } else {
-      Logger.warn(
-        { email },
-        "User personalization settings not found, using default alpha for search",
-      )
-    }
-  } catch (err) {
-    Logger.error(
-      err,
-      "Failed to fetch personalization for search, using default alpha",
-      { email },
-    )
-  }
+  let userAlpha = await getUserPersonalizationAlpha(db, email)
 
   let {
     query,
@@ -227,37 +198,7 @@ export const SearchApi = async (c: Context) => {
 export const AnswerApi = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
-  let userAlpha = 0.5
-  try {
-    const personalization = await getUserPersonalizationByEmail(db, email)
-    if (personalization) {
-      const nativeRankParams =
-        personalization.parameters?.[SearchModes.NativeRank]
-      if (nativeRankParams?.alpha !== undefined) {
-        userAlpha = nativeRankParams.alpha
-        Logger.info(
-          { email, alpha: userAlpha },
-          "Using personalized alpha for answer",
-        )
-      } else {
-        Logger.info(
-          { email },
-          "No personalized alpha found in settings, using default for answer",
-        )
-      }
-    } else {
-      Logger.warn(
-        { email },
-        "User personalization settings not found, using default alpha for answer",
-      )
-    }
-  } catch (err) {
-    Logger.error(
-      err,
-      "Failed to fetch personalization for answer, using default alpha",
-      { email },
-    )
-  }
+  let userAlpha = await getUserPersonalizationAlpha(db, email)
 
   // @ts-ignore
   const { query, app, entity } = c.req.valid("query")

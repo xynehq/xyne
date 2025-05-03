@@ -44,24 +44,13 @@ export const tuningWsConnections = new Map<
   WSContext<ServerWebSocket<any>>
 >()
 
-// Logger instance
-const Logger = getLogger(Subsystem.Server)
-
-// --- DEBUG LOG ---
-Logger.info(
-  `[TUNING_ENV_CHECK] process.env.TUNING_LLM_MODEL: ${process.env.TUNING_LLM_MODEL}`,
-)
-Logger.info(`[TUNING_ENV_CHECK] config.OllamaModel: ${config.OllamaModel}`)
-// --- END DEBUG LOG ---
-
-// --- Create Bun WebSocket Handler --- (Defined ONCE)
+const Logger = getLogger(Subsystem.Tuning)
 const { upgradeWebSocket } = createBunWebSocket<ServerWebSocket<undefined>>()
 
 const EVAL_DATASETS_BASE_DIR = path.join(
   __dirname,
   "..",
-  "..",
-  "xyne-data",
+  "tuning-data",
   "eval-datasets",
 )
 
