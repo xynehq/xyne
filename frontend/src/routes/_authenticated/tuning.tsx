@@ -53,7 +53,6 @@ export default function TuningPage() {
   const { toast } = useToast()
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]) // Updated state type
   const [numSamples, setNumSamples] = useState<number>(100) // State for sample count input, default 100
-  const [isLoading, setIsLoading] = useState<boolean>(false) // Added isLoading state
 
   // Assuming user and workspace are available from the route context
   // You might need to adjust how user is obtained if it's not via context
@@ -84,8 +83,6 @@ export default function TuningPage() {
           description: error instanceof Error ? error.message : "Unknown error",
           variant: "destructive",
         })
-      } finally {
-        setIsLoading(false)
       }
     }
 

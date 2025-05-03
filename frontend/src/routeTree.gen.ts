@@ -15,6 +15,7 @@ import { Route as AuthImport } from './routes/auth'
 import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as OauthSuccessImport } from './routes/oauth/success'
+import { Route as AuthenticatedTuningImport } from './routes/_authenticated/tuning'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedIntegrationsIndexImport } from './routes/_authenticated/integrations/index'
@@ -49,6 +50,12 @@ const OauthSuccessRoute = OauthSuccessImport.update({
   id: '/oauth/success',
   path: '/oauth/success',
   getParentRoute: () => rootRoute,
+} as any)
+
+const AuthenticatedTuningRoute = AuthenticatedTuningImport.update({
+  id: '/tuning',
+  path: '/tuning',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
@@ -150,6 +157,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSearchImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/tuning': {
+      id: '/_authenticated/tuning'
+      path: '/tuning'
+      fullPath: '/tuning'
+      preLoaderRoute: typeof AuthenticatedTuningImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/oauth/success': {
       id: '/oauth/success'
       path: '/oauth/success'
@@ -239,6 +253,7 @@ const AuthenticatedChatRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
+  AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
   AuthenticatedIntegrationsSlackRoute: typeof AuthenticatedIntegrationsSlackRoute
@@ -252,6 +267,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
+  AuthenticatedTuningRoute: AuthenticatedTuningRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
   AuthenticatedIntegrationsSlackRoute: AuthenticatedIntegrationsSlackRoute,
@@ -274,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/search': typeof AuthenticatedSearchRoute
+  '/tuning': typeof AuthenticatedTuningRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -290,6 +307,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/search': typeof AuthenticatedSearchRoute
+  '/tuning': typeof AuthenticatedTuningRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -308,6 +326,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/search': typeof AuthenticatedSearchRoute
+  '/_authenticated/tuning': typeof AuthenticatedTuningRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -327,6 +346,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/chat'
     | '/search'
+    | '/tuning'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -342,6 +362,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/chat'
     | '/search'
+    | '/tuning'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -358,6 +379,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/chat'
     | '/_authenticated/search'
+    | '/_authenticated/tuning'
     | '/oauth/success'
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
@@ -403,6 +425,7 @@ export const routeTree = rootRoute
       "children": [
         "/_authenticated/chat",
         "/_authenticated/search",
+        "/_authenticated/tuning",
         "/_authenticated/",
         "/_authenticated/integrations/google",
         "/_authenticated/integrations/slack",
@@ -425,6 +448,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/search": {
       "filePath": "_authenticated/search.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/tuning": {
+      "filePath": "_authenticated/tuning.tsx",
       "parent": "/_authenticated"
     },
     "/oauth/success": {
