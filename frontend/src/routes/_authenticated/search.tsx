@@ -83,8 +83,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const navigate = useNavigate({ from: "/search" })
   if (!search.query) {
     navigate({
-        to: "/",
-      })
+      to: "/",
+    })
   }
   // TODO: debug the react warning
   // Cannot update a component (`MatchesInner`)
@@ -120,7 +120,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         ? groups[filter.app][filter.entity]
         : totalCount
       : totalCount
-  
+
   // Added for infinite scroll functionality
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -160,15 +160,15 @@ export const Search = ({ user, workspace }: IndexProps) => {
   // Intersection observer for infinite scroll
   useEffect(() => {
     if (!bottomRef.current) return
-    
+
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries
         if (
-          entry.isIntersecting && 
-          results.length > 0 && 
-          filterPageSize > page && 
-          results.length < filterPageSize && 
+          entry.isIntersecting &&
+          results.length > 0 &&
+          filterPageSize > page &&
+          results.length < filterPageSize &&
           !isLoading
         ) {
           // Load more results when bottom is visible
@@ -176,11 +176,11 @@ export const Search = ({ user, workspace }: IndexProps) => {
           handleNext()
         }
       },
-      { threshold: 0.5 } // Trigger when 10% of the element is visible
+      { threshold: 0.5 }, // Trigger when 10% of the element is visible
     )
-    
+
     observer.observe(bottomRef.current)
-    
+
     return () => {
       if (bottomRef.current) {
         observer.unobserve(bottomRef.current)
@@ -378,7 +378,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
-        
+
         // Reset loading state after results are received
         setIsLoading(false)
       } else {
@@ -400,7 +400,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
       setIsLoading(false) // Reset loading state on error
     }
   }
-
 
   const handleFilterChange = (appEntity: Filter) => {
     // Check if appEntity.app and appEntity.entity are defined
@@ -546,7 +545,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
             {/* Infinite scroll loading indicator and bottom reference */}
             {results.length > 0 && (
               <div ref={bottomRef} className="py-4 flex justify-center">
-                {isLoading && filterPageSize > page && results.length < filterPageSize ? (
+                {isLoading &&
+                filterPageSize > page &&
+                results.length < filterPageSize ? (
                   <LoaderContent />
                 ) : null}
               </div>

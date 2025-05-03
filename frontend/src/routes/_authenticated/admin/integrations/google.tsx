@@ -381,8 +381,7 @@ export const deleteOauthConnector = async (connectorId: string) => {
     let errorText = res.statusText
     try {
       errorText = await res.text()
-    } catch (e) {
-    }
+    } catch (e) {}
     throw new Error(`Failed to delete connector (${res.status}): ${errorText}`)
   }
 
@@ -390,7 +389,9 @@ export const deleteOauthConnector = async (connectorId: string) => {
     return await res.json()
   } catch (e) {
     console.error("Failed to parse JSON response even though status was OK:", e)
-    throw new Error("Received an invalid response from the server after deletion.")
+    throw new Error(
+      "Received an invalid response from the server after deletion.",
+    )
   }
 }
 const ServiceAccountTab = ({

@@ -58,7 +58,7 @@ import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa } from "@/search/vespa"
+import { searchVespa, SearchModes } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
@@ -88,6 +88,10 @@ import {
   deleteChatTracesByChatExternalId,
   updateChatTrace,
 } from "@/db/chatTrace"
+import {
+  getUserPersonalizationByEmail,
+  getUserPersonalizationAlpha,
+} from "@/db/personalization"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -445,6 +449,39 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   const message = input
   const initialSearchSpan = rootSpan?.startSpan("latestResults_search")
+
+  let userAlpha = alpha
+  try {
+    const personalization = await getUserPersonalizationByEmail(db, email)
+    if (personalization) {
+      const nativeRankParams =
+        personalization.parameters?.[SearchModes.NativeRank]
+      if (nativeRankParams?.alpha !== undefined) {
+        userAlpha = nativeRankParams.alpha
+        Logger.info(
+          { email, alpha: userAlpha },
+          "Using personalized alpha for iterative RAG",
+        )
+      } else {
+        Logger.info(
+          { email },
+          "No personalized alpha found in settings, using default for iterative RAG",
+        )
+      }
+    } else {
+      Logger.warn(
+        { email },
+        "User personalization settings not found, using default alpha for iterative RAG",
+      )
+    }
+  } catch (err) {
+    Logger.error(
+      err,
+      "Failed to fetch personalization for iterative RAG, using default alpha",
+      { email },
+    )
+  }
+
   // Ensure we have search terms even after stopword removal
   const monthInMs = 30 * 24 * 60 * 60 * 1000
   const timestampRange = {
@@ -454,7 +491,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   const latestResults = (
     await searchVespa(message, email, null, null, {
       limit: pageSize,
-      alpha,
+      alpha: userAlpha,
       timestampRange,
       span: initialSearchSpan,
     })
@@ -486,7 +523,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
       let results = await searchVespa(message, email, null, null, {
         limit: pageSize,
-        alpha,
+        alpha: userAlpha,
         span: vespaSearchSpan,
       })
       vespaSearchSpan?.setAttribute(
@@ -532,7 +569,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const latestResults: VespaSearchResult[] = (
           await searchVespa(query, email, null, null, {
             limit: pageSize,
-            alpha,
+            alpha: userAlpha,
             timestampRange: {
               from: new Date().getTime() - 4 * monthInMs,
               to: new Date().getTime(),
@@ -556,7 +593,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
         let results = await searchVespa(query, email, null, null, {
           limit: pageSize,
-          alpha,
+          alpha: userAlpha,
           excludedIds: latestResults
             ?.map((v: VespaSearchResult) => (v.fields as any).docId)
             ?.filter((v) => !!v),
@@ -660,7 +697,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             if (!reasoning) {
               buffer += chunk.text
               try {
-                parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+                parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
                 if (parsed.answer === null) {
                   break
                 }
@@ -720,7 +757,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results = await searchVespa(message, email, null, null, {
         limit: pageSize,
         offset: pageNumber * pageSize,
-        alpha,
+        alpha: userAlpha,
         excludedIds: latestIds,
         span: searchSpan,
       })
@@ -748,7 +785,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results = await searchVespa(message, email, null, null, {
         limit: pageSize,
         offset: pageNumber * pageSize,
-        alpha,
+        alpha: userAlpha,
         span: searchSpan,
       })
       searchSpan?.setAttribute(
@@ -981,6 +1018,8 @@ async function* generatePointQueryTimeExpansion(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   rootSpan?.setAttribute("direction", classification.direction || "unknown")
 
+  let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
+
   const message = input
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
@@ -1022,13 +1061,13 @@ async function* generatePointQueryTimeExpansion(
     const [eventResults, results] = await Promise.all([
       searchVespa(message, email, Apps.GoogleCalendar, null, {
         limit: pageSize,
-        alpha,
+        alpha: userAlpha,
         timestampRange: { from, to },
         span: calenderSearchSpan,
       }),
       searchVespa(message, email, null, null, {
         limit: pageSize,
-        alpha,
+        alpha: userAlpha,
         timestampRange: { to, from },
         notInMailLabels: ["CATEGORY_PROMOTIONS"],
         span: emailSearchSpan,
@@ -1186,7 +1225,7 @@ async function* generatePointQueryTimeExpansion(
         if (!reasoning) {
           buffer += chunk.text
           try {
-            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
             // If we have a null answer, break this inner loop and continue outer loop
             // seen some cases with just "}"
             if (parsed.answer === null || parsed.answer === "}") {
@@ -1543,7 +1582,7 @@ export const MessageApi = async (c: Context) => {
               if (!reasoning) {
                 buffer += chunk.text
                 try {
-                  parsed = jsonParseLLMOutput(buffer)
+                  parsed = jsonParseLLMOutput(buffer) || {}
                   if (parsed.answer && currentAnswer !== parsed.answer) {
                     if (currentAnswer === "") {
                       Logger.info(
@@ -2057,7 +2096,7 @@ export const MessageRetryApi = async (c: Context) => {
               buffer += chunk.text
               if (!reasoning) {
                 try {
-                  parsed = jsonParseLLMOutput(buffer)
+                  parsed = jsonParseLLMOutput(buffer) || {}
                   if (parsed.answer && currentAnswer !== parsed.answer) {
                     if (currentAnswer === "") {
                       Logger.info(
