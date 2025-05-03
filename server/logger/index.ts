@@ -21,16 +21,6 @@ const time = (start: number) => {
   ])
 }
 
-const getCaller = () => {
-  try {
-    const stack = new Error().stack?.split("\n")
-    const caller = stack?.[3]?.trim()
-    return caller && !caller.includes("unknown") ? caller : null
-  } catch {
-    return null
-  }
-}
-
 export const getLogger = (loggerType: Subsystem) => {
   const isProduction = process.env.NODE_ENV === "production"
 
@@ -75,13 +65,11 @@ const logRequest = (
   const elapsed = time(start)
   const isError = status >= 400
   const isRedirect = status === 302
-  const caller = getCaller()
 
   const logData = {
     requestId,
     status,
     elapsed,
-    caller,
     ...(isError ? { error: c.res.body } : {}),
   }
 
