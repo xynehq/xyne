@@ -35,7 +35,7 @@ export async function insertChatTrace(
 export async function getChatTraceByExternalId(
   chatExternalId: string,
   messageExternalId: string,
-): Promise<SelectChatTrace | undefined> {
+): Promise<SelectChatTrace | null> {
   const [trace] = await db
     .select()
     .from(chatTrace)
@@ -46,7 +46,7 @@ export async function getChatTraceByExternalId(
       ),
     )
 
-  if (!trace || !trace.traceJson) return undefined
+  if (!trace || !trace.traceJson) return null
 
   try {
     return {
@@ -54,7 +54,7 @@ export async function getChatTraceByExternalId(
       traceJson: JSON.parse(decompressTraceJson(trace.traceJson as Buffer)),
     }
   } catch (err) {
-    return undefined
+    return null
   }
 }
 
@@ -62,7 +62,7 @@ export async function updateChatTrace(
   chatExternalId: string,
   messageExternalId: string,
   traceJsonString: string,
-): Promise<SelectChatTrace | undefined> {
+): Promise<SelectChatTrace | null> {
   const compressed = compressTraceJson(traceJsonString)
   const [updated] = await db
     .update(chatTrace)
@@ -75,7 +75,7 @@ export async function updateChatTrace(
     )
     .returning()
 
-  if (!updated || !updated.traceJson) return undefined
+  if (!updated || !updated.traceJson) return null;
 
   return {
     ...updated,
