@@ -424,7 +424,7 @@ export const HybridDefaultProfileSpecificFiles = (
   let appOrEntityFilter = ""
   if (appEntity && appEntity.length > 0) {
     appOrEntityFilter =
-      `and (${appEntity.map((i) => `${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""}`).join(" or ")})`.trim()
+      `and (${appEntity.map((i) => `(${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""})`).join(" or ")})`.trim()
   }
 
   let exclusionCondition = ""
@@ -441,7 +441,7 @@ export const HybridDefaultProfileSpecificFiles = (
 
   let specificFileIdsQuery = ""
   if (fileIds && fileIds.length > 0) {
-    specificFileIdsQuery = `and (${fileIds.map((fileId) => `docId contains '${fileId}'`).join(" or ")})`
+    specificFileIdsQuery = `or (${fileIds.map((fileId) => `docId contains '${fileId}'`).join(" or ")})`
   }
 
   // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
@@ -467,14 +467,13 @@ export const HybridDefaultProfileSpecificFiles = (
               or
               ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
             )
-              ${appOrEntityFilter}
-              and permissions contains @email ${specificFileIdsQuery}
+              and permissions contains @email ${appOrEntityFilter} ${specificFileIdsQuery}
             )
           or
           (
             ({targetHits:${hits}}userInput(@query))
             ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${appOrEntityFilter} and permissions contains @email ${specificFileIdsQuery}
+            and permissions contains @email ${appOrEntityFilter} ${specificFileIdsQuery}
           )
           or
           (

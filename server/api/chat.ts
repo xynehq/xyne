@@ -470,9 +470,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           span: initialSearchSpan,
         })
   ).root.children
-  console.log("latestResults")
-  console.log(latestResults)
-  console.log("latestResults")
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
   initialSearchSpan?.setAttribute(
     "result_ids",
@@ -893,6 +890,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               break
             }
             if (parsed.answer && currentAnswer !== parsed.answer) {
+              console.log("results")
+              console.log(results.root.children)
+              console.log("results")
               if (currentAnswer === "") {
                 // First valid answer - send the whole thing
                 yield { text: parsed.answer }
