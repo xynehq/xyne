@@ -437,25 +437,27 @@ ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
    - Consider the relevance scores when weighing information
-   - Pay attention to timestamps for temporal context
+   - Pay attention to timestamps for temporal context only if the query explicitly requests it
    - Respect permission levels indicated in file contexts
    - Note relationships between different content types
-   - For queries classified as RetrieveMetadata involving emails, that is anything related to the emails, focus solely on email metadata (e.g., subject, sender) and exclude any content, metadata, or references related to calendar events, meetings, or invitations.
+   - For queries classified as RetrieveMetadata involving emails, focus solely on email metadata (e.g., subject, sender) and exclude any content, metadata, or references related to calendar events, meetings, or invitations
+   - If the query references an entity whose data is not ingested or available in the context, do not attempt to generate an answer. Instead respond with "I don't have that information"
 
 2. Response Structure:
    - For RetrieveMetadata queries involving emails:
-     - ONLY list the emails in the specified format below, without any additional analysis, commentary, or context that might relate to meetings or events.
+     - ONLY list the emails in the specified format below, without any additional analysis, commentary, or context that might relate to meetings or events
      - The response MUST ONLY contain the email list in this format, with no additional text:
        1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
        2. Subject: Contract Update, From: alicia@deel.support [1]
        3. Subject: Earth Day, From: info@earthday.org [2]
-       ... (No additional text, no mention of meetings or events.)
-   - For other query types (e.g., RetrieveInformation, ListItems, or non-email RetrieveMetadata):
+       ... (No additional text, no mention of meetings or events)
+   - For other query types (e.g., RetrieveInformation or non-email RetrieveMetadata):
      - Begin with the most relevant information
      - Group related information from different sources
      - Cite specific sources using their identifiers
      - Maintain chronological order when relevant
-     - Never mention meetings, meeting invitations, or meeting-related content (e.g., "meeting", "event", "calendar", "invitation", "schedule") unless the user query explicitly asks for events or meetings.
+     - Never mention meetings, meeting invitations, or meeting-related content (e.g., "meeting", "event", "calendar", "invitation", "schedule") unless the user query explicitly asks for events or meetings
+   - If the query lacks context, respond with "I don't have that information"
 
 3. Privacy and Security:
    - Do not share sensitive information marked in permissions
@@ -470,24 +472,25 @@ ${retrievedContext}
    - Acknowledge any gaps in the available information, without referencing meetings or events unless explicitly requested
 
 # Response Format
-Analyze: [For RetrieveMetadata email queries, this section MUST be empty. For other queries, provide a brief analysis of the available context, excluding any meeting or event-related information unless explicitly requested.]
-Answer: [For RetrieveMetadata email queries, list emails in the specified format only, with no additional text. For other queries, provide a direct response following the guidelines above, excluding meeting-related content unless requested.]
-Sources: [List relevant sources with relevance scores]
-Confidence: [High/Medium/Low based on context quality]
+Analyze: [For RetrieveMetadata email queries, this section MUST be empty. For other queries, provide a brief analysis of the available context, excluding any meeting or event-related information unless explicitly requested. If the query lacks context (e.g., data for another employee like Vipul is not available), this section should note the lack of data and set the answer to null.]
+Answer: [For RetrieveMetadata email queries, list emails in the specified format only, with no additional text. For other queries, provide a direct response following the guidelines above, excluding meeting-related content unless requested. If the query lacks context, set to null.]
+Sources: [List relevant sources with relevance scores, or empty if no data is available]
+Confidence: [High/Medium/Low based on context quality, or Low if no data is available]
 Suggestions: [Related queries or clarifications if needed, avoiding any meeting or event-related suggestions unless requested]
 
 # Important Notes:
 - Always consider the user's role and permissions
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Format dates relative to current user time only if the query explicitly requests temporal information
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content, but exclude event-related relationships unless explicitly requested
 - For RetrieveMetadata email queries, strictly adhere to the email listing format with no deviations, ensuring no meeting or event-related language is included
+- If the query references an entity whose data is not ingested or available in the context, do not attempt to generate an answer. Instead respond with "I don't have that information"
 
 # Error Handling
-If information is missing or unclear:
-1. Acknowledge the limitation, without referencing meetings or events
-2. Provide best available alternative, ensuring no meeting or event-related content is included unless requested
+If information is missing, unclear, or the query lacks context:
+1. Acknowledge the limitation in the Analyze section, without referencing meetings or events
+2. Respond with "I don't have that information" in the Answer section
 3. Suggest ways to refine the search, avoiding event-related suggestions
 4. Note what additional context would be helpful, excluding event-related context`
 
@@ -795,10 +798,10 @@ export const searchQueryPrompt = (userContext: string): string => {
     - "RetrieveMetadata"
 
     #### app (Valid Apps):
-    - "google-workspace"
     - "google-drive"
     - "gmail"
     - "google-calendar"
+    - "google-workspace"
 
     #### entity (Valid Entities):
     For Gmail:
@@ -818,52 +821,52 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     1. **RetrieveInformation**:
        - Use this type only for open-ended queries that seek contextual information, summaries, or discussions.
-       - Include only 'startTime' and 'endTime' in 'filters'.
+       - Include 'startTime' and 'endTime' in 'filters' only if the query explicitly requests temporal information; otherwise, set them to null.
        - Do not use this type for queries that request specific items or lists of items.
+       - If the query references multiple entities or apps (e.g : "i want the emails and the google docs" or "i want the emails and the calendar events") or anything which contains multiple apps or entities,  then set all filters to null and set type to "RetrieveInformation" as this is a generic query
 
     2. **RetrieveMetadata**:
        - Use this type when the query targets detailed metadata for a specific item or a well-defined set of items, such as emails, events, or documents, including queries that request a list or fetch of items.
-       - Include 'app', 'entity', to specify the metadata fields to retrieve.
-       - Optionally include 'itemId' for fetching a single specific item by its unique identifier.
-       - Include 'startTime' and 'endTime' for temporal filtering when the query specifies a time range.
-       - Use this type for queries that can be directly translated into a Vespa fetch operation, avoiding the need for a full-text search.
+       - Include 'app' and 'entity' to specify the metadata fields to retrieve.
+       - Include 'startTime' and 'endTime' for temporal filtering only when the query specifies a time range; otherwise, set them to null.
+       - If the query references an entity whose data is not ingested, respond with "I don't have that information", don't try to generate a vague answer and set all other filters (including app, entity, startTime, and endTime) to null.
 
     3. **Validation**:
        - Ensure 'type' is one of the enum values: '"RetrieveInformation"' or '"RetrieveMetadata"'.
 
     Now, handle the query as follows:
 
-    1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
-      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
-      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
-      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
-      - If not ambiguous, leave the query as it is.
-      c) If the query is about some time frame range but not specific to a time, then set the time range accordingly. WE CAN'T PROCESS QUERIES LIKE "previous emails" or "next emails" or "previous meetings" or "next meetings" etc, AS THEY DOESN'T HAVE ANY CONCREATE TIME RANGE.
-      - For these cases, rewrite the query to be more specific and add one week to the time range. FOR BOTH PREVIOUS AND NEXT.
+    1. Check if the user's latest query is ambiguous or lacks context. THIS IS VERY IMPORTANT. A query is ambiguous or lacks context if:
+       a) It contains pronouns or references (e.g., "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+       b) It's an instruction or command that doesn't have any CONCRETE REFERENCE, OR
+       c) It references an entity whose data is not ingested or available in the context.
+       - If ambiguous or lacking context according to (a), (b), or (c), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. For case (c), note the lack of data and set all filters to null. Store the rewritten query in "queryRewrite".
+       - If not ambiguous, leave the query as it is.
 
     2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
        - "Hello"
        - "Hey"
        - what is the time in Japan
-       If the query is conversational, respond naturally and appropriately. 
+       If the query is conversational, respond naturally and appropriately.
 
     3. If the user's query is about the conversation itself (e.g., "What did I just now ask?" or "What was my previous question?"), use the conversation history to answer if possible.
 
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
-      - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
-        - ✓ "When is my next meeting with John?"
-        - ✓ "When's my next review?"
-        - ✗ "Next quarter's goals"
-        - ✗ "Next version release"
-
+       - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
+         - ✓ "When is my next meeting with John?"
+         - ✓ "When's my next review?"
+         - ✗ "Next quarter's goals"
+         - ✗ "Next version release"
        - If asking about a past event or meeting, set "temporalDirection" to "prev". For example:
-       - ✓ "When was the last time I had lunch with the team"
-       - ✓ "When was my last call with Sarah?"
-       - ✓ "Previous board meeting date"
-       - ✗ "When did junaid join?",
-       - ✗ "Last time we updated the docs"
+         - ✓ "When was the last time I had lunch with the team"
+         - ✓ "When was my last call with Sarah?"
+         - ✓ "Previous board meeting date"
+         - ✗ "When did junaid join?"
+         - ✗ "Last time we updated the docs"
        - Otherwise, set "temporalDirection" to null.
+       - WE CAN'T PROCESS QUERIES LIKE "previous emails" or "next emails" or "previous meetings" or "next meetings" etc, AS THEY DON'T HAVE ANY CONCRETE TIME RANGE.
+         - For these cases, rewrite the query to be more specific and add a one-week time range for both "previous" and "next". For "previous", set the range from one week ago to today. For "next", set the range from today to one week from now.
 
     5. Output JSON in the following structure:
        {
@@ -872,20 +875,21 @@ export const searchQueryPrompt = (userContext: string): string => {
          "temporalDirection": "next" | "prev" | null,
          "type": "<RetrieveInformation | RetrieveMetadata>",
          "filters": {
-           "app": "<app>",
-           "entity": "<entity>",
-           "count": "<number of items to retrieve>",
-           "startTime": "<start time in YYYY-MM-DD, if applicable>",
-           "endTime": "<end time in YYYY-MM-DD, if applicable>"
+           "app": "<app or null>",
+           "entity": "<entity or null>",
+           "count": "<number of items to retrieve or null>",
+           "startTime": "<start time in YYYY-MM-DD, if applicable, or null>",
+           "endTime": "<end time in YYYY-MM-DD, if applicable, or null>"
          }
        }
-       - "answer" should only contain a conversational response only if it's a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
-       - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
+       - "answer" should only contain a conversational response if it's a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
+       - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event, or null if unrelated.
        - "type" and "filters" are used for routing and fetching data.
-       - Note: The "count" field is no longer used since ListItems type has been removed.
+       - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
+       - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE.
 
-    6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+    6. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     7. If user makes a statement leading to a regular conversation then you can put response in answer
     Make sure you always comply with these steps and only produce the JSON output described.
   `
