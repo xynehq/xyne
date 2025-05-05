@@ -932,21 +932,7 @@ const getSearchRangeSummary = (
   summarySpan?.setAttribute("to", to)
   summarySpan?.setAttribute("direction", direction)
   const now = Date.now()
-  // For "next" direction, we usually start from now
-  if (direction === "next") {
-    // Start from today/now
-    const endDate = new Date(to)
-    // Format end date to month/year if it's far in future
-    const endStr =
-      Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
-        ? `${endDate.toLocaleString("default", { month: "long" })} ${endDate.getFullYear()}`
-        : getRelativeTime(to)
-    const result = `from today until ${endStr}`
-    summarySpan?.setAttribute("result", result)
-    summarySpan?.end()
-    return result
-  }
-  if (direction === "next" || direction === "prev" && (from && to)) {
+  if (direction === "next" || direction === "prev" && (from && to) ) {
     // Ensure from is earlier than to
     if (from > to) {
       [from, to] = [to, from]
@@ -972,7 +958,21 @@ const getSearchRangeSummary = (
     toDate.setHours(23, 59, 0, 0)
 
     return `from ${format(fromDate)} to ${format(toDate)}`
-  }
+  } 
+  // For "next" direction, we usually start from now
+  else if (direction === "next") {
+    // Start from today/now
+    const endDate = new Date(to)
+    // Format end date to month/year if it's far in future
+    const endStr =
+      Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
+        ? `${endDate.toLocaleString("default", { month: "long" })} ${endDate.getFullYear()}`
+        : getRelativeTime(to)
+    const result = `from today until ${endStr}`
+    summarySpan?.setAttribute("result", result)
+    summarySpan?.end()
+    return result
+  }  
   // For "prev" direction
   else {
     const startDate = new Date(from)
