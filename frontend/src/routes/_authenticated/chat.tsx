@@ -317,7 +317,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           setStopMsg(true)
         }
       }
-
+      console.log("messageId", messageId)
       if (messageId) {
         if (currentRespRef.current) {
           setCurrentResp((resp) => {
@@ -481,6 +481,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentResp(null);
     currentRespRef.current = null;
     setStopMsg(false);
+    // 7. Invalidate router state after a short delay to refetch loader data
+    setTimeout(() => {
+      router.invalidate();
+    }, 1000); // Delay for 500ms
   };
 
   const handleRetry = async (messageId: string) => {
