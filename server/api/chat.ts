@@ -453,9 +453,10 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
   }
-  const specificFiles = fileIds && fileIds.length > 0
+  const specificFilesOrAppEntity =
+    (fileIds && fileIds.length > 0) || (appEntity && appEntity.length > 0)
   const latestResults = (
-    specificFiles
+    specificFilesOrAppEntity
       ? await searchVespaSpecificFiles(message, email, appEntity, fileIds, {
           limit: pageSize,
           alpha,
@@ -500,7 +501,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
-      // todo there are multiple searchVespa here
       let results = await searchVespa(message, email, null, null, {
         limit: pageSize,
         alpha,
@@ -735,7 +735,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const searchSpan = pageSearchSpan?.startSpan(
         "vespa_search_with_excluded_ids",
       )
-      results = specificFiles
+      results = specificFilesOrAppEntity
         ? await searchVespaSpecificFiles(message, email, appEntity, fileIds, {
             limit: pageSize,
             offset: pageNumber * pageSize,
@@ -771,19 +771,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     } else {
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
-      results = specificFiles
-        ? await searchVespaSpecificFiles(message, email, appEntity, fileIds, {
-            limit: pageSize,
-            offset: pageNumber * pageSize,
-            alpha,
-            span: searchSpan,
-          })
-        : await searchVespa(message, email, null, null, {
-            limit: pageSize,
-            offset: pageNumber * pageSize,
-            alpha,
-            span: searchSpan,
-          })
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
+        alpha,
+        span: searchSpan,
+      })
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -940,8 +933,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // Condition if fileIds are present or appEntity has some values meaning context has been selected
       // So no need to do iterative RAG here, if no answer is found on doing RAG the first time.
       // If no answer found, exit and yield nothing related to selected context found
-      (fileIds && fileIds.length > 0) ||
-      (appEntity && appEntity.length > 0)
+      !parsed?.answer &&
+      specificFilesOrAppEntity
     ) {
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
@@ -1012,6 +1005,8 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
+  fileIds: string[],
+  appEntity: [],
   eventRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1339,6 +1334,8 @@ export async function* UnderstandMessageAndAnswer(
       alpha,
       chatPageSize,
       maxDefaultSummary,
+      fileIds,
+      appEntity,
       eventRagSpan,
     )
   } else {

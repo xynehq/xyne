@@ -424,7 +424,7 @@ export const HybridDefaultProfileSpecificFiles = (
   let appOrEntityFilter = ""
   if (appEntity && appEntity.length > 0) {
     appOrEntityFilter =
-      `or (${appEntity.map((i) => `${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""}`).join(" or ")})`.trim()
+      `and (${appEntity.map((i) => `${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""}`).join(" or ")})`.trim()
   }
 
   let exclusionCondition = ""
