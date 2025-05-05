@@ -1082,9 +1082,9 @@ export function generateSearchQueryOrAnswerFromConversation(
     defaultReasoning = params.reasoning
   }
   if (defaultReasoning) {
-    params.systemPrompt = searchQueryReasoningPrompt(userContext)
+    params.systemPrompt = searchQueryReasoningPrompt(userContext) // When reasoning is true
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext)
+    params.systemPrompt = searchQueryPrompt(userContext) // When reasoning is false
   }
 
   const baseMessage = {

@@ -1504,14 +1504,16 @@ export const MessageApi = async (c: Context) => {
           let answer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let parsed = { answer: "", queryRewrite: "", temporalDirection: null}
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
+          let chunks_from_the_llm = ""
           const conversationSpan = streamSpan.startSpan("conversation_search")
           for await (const chunk of searchOrAnswerIterator) {
             if (chunk.text) {
+              chunks_from_the_llm += chunk.text
               if (reasoning) {
                 if (thinking && !chunk.text.includes(EndThinkingToken)) {
                   thinking += chunk.text
@@ -1583,6 +1585,8 @@ export const MessageApi = async (c: Context) => {
             }
           }
 
+          // Add the logger for seeing the output json
+          console.log("Output Json", chunks_from_the_llm)
           conversationSpan.setAttribute("answer_found", parsed.answer)
           conversationSpan.setAttribute("answer", answer)
           conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
