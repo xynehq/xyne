@@ -432,20 +432,28 @@ export const HybridDefaultProfileSpecificFiles = (
     mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
 
-  let appOrEntityFilter = ""
-  const isAppEntityAvailable = appEntity && appEntity.length > 0
-  const fileIdsAvaialble = fileIds && fileIds.length > 0
-  if (isAppEntityAvailable) {
-    appOrEntityFilter =
-      `(${appEntity.map((i) => `(${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""})`).join(" or ")})`.trim()
+  const contextClauses: string[] = []
+
+  if (appEntity?.length) {
+    const aeFilters = appEntity
+      .map((item) => {
+        const parts = []
+        if (item.app) parts.push(`app contains '${item.app}'`)
+        if (item.entity) parts.push(`entity contains '${item.entity}'`)
+        return parts.join(" and ")
+      })
+      .filter(Boolean)
+    contextClauses.push(...aeFilters)
   }
 
-  let specificFileIdsQuery = ""
-  if (fileIds && fileIds.length > 0) {
-    specificFileIdsQuery = `(${fileIds.map((fileId) => `docId contains '${fileId}'`).join(" or ")})`
+  if (fileIds?.length) {
+    const idFilters = fileIds.map((id) => `docId contains '${id}'`)
+    contextClauses.push(...idFilters)
   }
 
-  const specificContextQuery = `${isAppEntityAvailable ? `and (${appOrEntityFilter} or ${specificFileIdsQuery})` : `${fileIdsAvaialble ? `and ${specificFileIdsQuery})` : ""}`}`
+  const specificContextQuery = contextClauses.length
+    ? `and (${contextClauses.join(" or ")})`
+    : ""
 
   // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {

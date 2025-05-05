@@ -1011,6 +1011,7 @@ async function* generatePointQueryTimeExpansion(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
+  Logger.info("Entered generatePointQueryTimeExpansion....")
   const rootSpan = eventRagSpan?.startSpan("generatePointQueryTimeExpansion")
   Logger.debug(`Started rootSpan at ${new Date().toISOString()}`)
   rootSpan?.setAttribute("input", input)
@@ -1025,6 +1026,9 @@ async function* generatePointQueryTimeExpansion(
   const weekInMs = 12 * 24 * 60 * 60 * 1000
   const direction = classification.direction as string
   let costArr: number[] = []
+
+  const specificFilesOrAppEntity =
+    (fileIds && fileIds.length > 0) || (appEntity && appEntity.length > 0)
 
   let from = new Date().getTime()
   let to = new Date().getTime()
@@ -1059,19 +1063,40 @@ async function* generatePointQueryTimeExpansion(
 
     const calenderSearchSpan = searchSpan?.startSpan("calender_search")
     const [eventResults, results] = await Promise.all([
-      searchVespa(message, email, Apps.GoogleCalendar, null, {
-        limit: pageSize,
-        alpha,
-        timestampRange: { from, to },
-        span: calenderSearchSpan,
-      }),
-      searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha,
-        timestampRange: { to, from },
-        notInMailLabels: ["CATEGORY_PROMOTIONS"],
-        span: emailSearchSpan,
-      }),
+      specificFilesOrAppEntity
+        ? searchVespaSpecificFiles(
+            message,
+            email,
+            [{ app: Apps.GoogleCalendar }],
+            fileIds,
+            {
+              limit: pageSize,
+              alpha,
+              timestampRange: { from, to },
+              span: calenderSearchSpan,
+            },
+          )
+        : searchVespa(message, email, Apps.GoogleCalendar, null, {
+            limit: pageSize,
+            alpha,
+            timestampRange: { from, to },
+            span: calenderSearchSpan,
+          }),
+      specificFilesOrAppEntity
+        ? searchVespaSpecificFiles(message, email, appEntity, fileIds, {
+            limit: pageSize,
+            alpha,
+            timestampRange: { to, from },
+            notInMailLabels: ["CATEGORY_PROMOTIONS"],
+            span: emailSearchSpan,
+          })
+        : searchVespa(message, email, null, null, {
+            limit: pageSize,
+            alpha,
+            timestampRange: { to, from },
+            notInMailLabels: ["CATEGORY_PROMOTIONS"],
+            span: emailSearchSpan,
+          }),
     ])
     emailSearchSpan?.setAttribute(
       "result_count",
@@ -1324,7 +1349,6 @@ export async function* UnderstandMessageAndAnswer(
     )
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
-    // todo think abt this, will fileIds, appEntity go here ?
     return yield* generatePointQueryTimeExpansion(
       message,
       messages,
