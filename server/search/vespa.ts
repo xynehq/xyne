@@ -420,13 +420,6 @@ export const HybridDefaultProfileSpecificFiles = (
     eventTimestamp = eventTimestampConditions.join("")
   }
 
-  // todo there should be a OR between docId condition & appEntity condition, either of them can work
-  let appOrEntityFilter = ""
-  if (appEntity && appEntity.length > 0) {
-    appOrEntityFilter =
-      `and (${appEntity.map((i) => `(${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""})`).join(" or ")})`.trim()
-  }
-
   let exclusionCondition = ""
   if (excludedIds && excludedIds.length > 0) {
     exclusionCondition = excludedIds
@@ -439,10 +432,20 @@ export const HybridDefaultProfileSpecificFiles = (
     mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
 
+  let appOrEntityFilter = ""
+  const isAppEntityAvailable = appEntity && appEntity.length > 0
+  const fileIdsAvaialble = fileIds && fileIds.length > 0
+  if (isAppEntityAvailable) {
+    appOrEntityFilter =
+      `(${appEntity.map((i) => `(${i?.app ? `app contains '${i?.app}'` : ""} ${i?.entity ? `and entity contains '${i.entity}'` : ""})`).join(" or ")})`.trim()
+  }
+
   let specificFileIdsQuery = ""
   if (fileIds && fileIds.length > 0) {
-    specificFileIdsQuery = `or (${fileIds.map((fileId) => `docId contains '${fileId}'`).join(" or ")})`
+    specificFileIdsQuery = `(${fileIds.map((fileId) => `docId contains '${fileId}'`).join(" or ")})`
   }
+
+  const specificContextQuery = `${isAppEntityAvailable ? `and (${appOrEntityFilter} or ${specificFileIdsQuery})` : `${fileIdsAvaialble ? `and ${specificFileIdsQuery})` : ""}`}`
 
   // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
   return {
@@ -458,7 +461,7 @@ export const HybridDefaultProfileSpecificFiles = (
             )
             ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
             and permissions contains @email ${mailLabelQuery}
-            ${appOrEntityFilter} ${specificFileIdsQuery}
+            ${specificContextQuery} 
           )
             or
             (
@@ -467,21 +470,20 @@ export const HybridDefaultProfileSpecificFiles = (
               or
               ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
             )
-              and permissions contains @email ${appOrEntityFilter} ${specificFileIdsQuery}
+              and permissions contains @email ${specificContextQuery}
             )
           or
           (
             ({targetHits:${hits}}userInput(@query))
             ${timestampRange ? `and ${userTimestamp}` : ""}
-            and permissions contains @email ${appOrEntityFilter} ${specificFileIdsQuery}
+            and permissions contains @email ${specificContextQuery}
           )
           or
           (
             ({targetHits:${hits}}userInput(@query))
             and owner contains @email
             ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${appOrEntityFilter}
-            ${specificFileIdsQuery}
+            ${specificContextQuery}
           )
         )
         ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
