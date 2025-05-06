@@ -5,14 +5,8 @@ icon: 'rocket'
 ---
 
 ### Guides :
+<Note>This is the first step.</Note>
 <CardGroup>
-<Card
-  title="Step 1 : Quickstart the application." 
-  icon="rocket"
-  href="/quickstart"
->
-Use quickstart to reach the login screen.
-</Card>
 <Card
   title="Step 2 : Generate Google Credentials And Add Scopes." 
   icon="lock-open"
@@ -84,7 +78,7 @@ First, bring down the Docker Compose setup using:
 docker-compose -f deployment/docker-compose.yml down
 ```
 #### Getting Google Credentials
-Then proceed to obtain your ```GOOGLE_CLIENT_ID``` and ```GOOGLE_SECRET``` by following this guide:
+Then proceed to obtain your ```GOOGLE_CLIENT_ID``` and ```GOOGLE_CLIENT_SECRET``` by following this guide:
 <Card
   title="Setup Google Credentials"
   icon="google"
@@ -149,7 +143,7 @@ GEMINI_API_KEY=<YOUR_GEMINI_API_KEY>
 GEMINI_MODEL=<YOUR_GEMINI_MODEL_NAME>  
 
 ## If you are using custom OpenAI or Together AI endpoints
-BASE_URL=<YOUR_BASE_URL>
+PROVIDER_BASE_URL=<PROVIDER_BASE_URL>
 
 HOST=http://localhost:3000
 ```
