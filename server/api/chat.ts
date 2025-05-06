@@ -481,9 +481,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     ),
   )
   initialSearchSpan?.end()
-  const latestIds = latestResults
-    ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
-    ?.filter((v) => !!v)
 
   let previousResultsLength = 0
   if (specificFiles) {
@@ -496,7 +493,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         limit: pageSize,
         offset: pageNumber * pageSize,
         alpha,
-        excludedIds: latestIds,
       })
       if (!results.root.children) {
         results.root.children = []
@@ -655,6 +651,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       }
     }
   } else {
+    const latestIds = latestResults
+      ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
+      ?.filter((v) => !!v)
     // for the case of reasoning as we are streaming the tokens and the citations
     // our iterative rag has be aware of the results length(max potential citation index) that is already sent before hand
     // so this helps us avoid conflict with a previous citation index
