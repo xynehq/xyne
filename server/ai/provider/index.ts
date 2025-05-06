@@ -425,6 +425,19 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         })
         jsonVal = parse(withNewLines.trim())
       }
+
+      /* Edge case: If the last two characters are \\", Json.parse replaces \\ with ". We need to remove the last " from the value.
+          Example:
+          Input text: '{"answer": "Prasad \\""}'
+          After JSON.parse: { answer: 'Prasad "' }  // Note the extra quote at the end
+          After this fix: { answer: 'Prasad' }     // Extra quote removed
+          
+          This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
+      */
+      if (jsonKey && text.slice(-2) === `\\"` && jsonVal[jsonKey.slice(1, -2)][jsonVal[jsonKey.slice(1, -2)].length - 1] === `"`) {
+        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(0, -1)
+      }
+
       // edge case "null\n}
       if (jsonKey) {
         const key = jsonKey.slice(0, -1).replaceAll('"', "")
