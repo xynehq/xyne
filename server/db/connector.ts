@@ -26,6 +26,8 @@ import {
 } from "@/errors"
 import { IsGoogleApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
+import { getErrorMessage } from "@/utils"
+import { syncJobs, syncHistory } from "./schema"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -278,6 +280,34 @@ export const deleteConnector = async (
         eq(connectors.userId, userId),
       ),
     )
+}
+
+export const deleteOauthConnector = async (
+  trx: TxnOrClient,
+  connectorId: number,
+): Promise<void> => {
+  Logger.info(
+    `Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`,
+  )
+  try {
+    await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
+    Logger.debug(`Deleted sync jobs for connector ID: ${connectorId}`)
+
+    await trx
+      .delete(oauthProviders)
+      .where(eq(oauthProviders.connectorId, connectorId))
+    Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
+
+    await trx.delete(connectors).where(eq(connectors.id, connectorId))
+  } catch (error) {
+    Logger.error(
+      { error, connectorId },
+      `Error deleting connector and related data: ${getErrorMessage(error)}`,
+    )
+    throw new Error(
+      `Failed to delete connector ${connectorId}: ${getErrorMessage(error)}`,
+    )
+  }
 }
 
 export async function loadConnectorState<T extends IngestionStateUnion>(

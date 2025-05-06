@@ -45,6 +45,13 @@ export const getLogger = (loggerType: Subsystem) => {
             },
           },
         }),
+    mixin(_mergeObject, _level) {
+      const stack = new Error().stack?.split("\n")
+      const caller = stack?.[4]?.trim() // This skips internal logger frames
+      return isProduction && caller && !caller.includes("unknown")
+        ? { caller }
+        : {}
+    },
   })
 }
 
