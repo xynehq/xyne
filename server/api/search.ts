@@ -101,7 +101,7 @@ export const messageSchema = z.object({
   chatId: z.string().optional(),
   modelId: z.string().min(1),
   stringifiedfileIds: z.string(),
-  stringifiedAppEntity: z.string(),
+  // stringifiedAppEntity: z.string(),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 

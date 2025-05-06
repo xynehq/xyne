@@ -374,7 +374,6 @@ export const HybridDefaultProfile = (
 
 export const HybridDefaultProfileSpecificFiles = (
   hits: number,
-  appEntity: [],
   profile: SearchModes = SearchModes.NativeRank,
   fileIds: string[],
   timestampRange?: { to: number | null; from: number | null } | null,
@@ -433,18 +432,6 @@ export const HybridDefaultProfileSpecificFiles = (
   }
 
   const contextClauses: string[] = []
-
-  if (appEntity?.length) {
-    const aeFilters = appEntity
-      .map((item) => {
-        const parts = []
-        if (item.app) parts.push(`app contains '${item.app}'`)
-        if (item.entity) parts.push(`entity contains '${item.entity}'`)
-        return parts.join(" and ")
-      })
-      .filter(Boolean)
-    contextClauses.push(...aeFilters)
-  }
 
   if (fileIds?.length) {
     const idFilters = fileIds.map((id) => `docId contains '${id}'`)
@@ -672,7 +659,6 @@ export const searchVespa = async (
 export const searchVespaSpecificFiles = async (
   query: string,
   email: string,
-  appEntity: [],
   fileIds: string[],
   {
     alpha = 0.5,
@@ -694,7 +680,6 @@ export const searchVespaSpecificFiles = async (
 
   let { yql, profile } = HybridDefaultProfileSpecificFiles(
     limit,
-    appEntity,
     rankProfile,
     fileIds,
     timestampRange,

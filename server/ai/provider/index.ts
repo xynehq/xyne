@@ -54,6 +54,7 @@ import {
   baselinePrompt,
   baselinePromptJson,
   baselineReasoningPromptJson,
+  baselineSpeicificFilesPromptJson,
   chatWithCitationsSystemPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
@@ -376,7 +377,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     text = text.trim()
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
-      text = text.replaceAll(/[\n"}:]/g, "");
+      text = text.replaceAll(/[\n"}:]/g, "")
     }
     // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -917,6 +918,7 @@ export const baselineRAGJsonStream = (
   userCtx: string,
   retrievedCtx: string,
   params: ModelParams,
+  specificFiles?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -933,6 +935,11 @@ export const baselineRAGJsonStream = (
     // this is extra work because we just now set Index <number>
     // in future once the reasoning mode better supported we won't have to do this
     params.systemPrompt = baselineReasoningPromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
+  } else if (specificFiles) {
+    params.systemPrompt = baselineSpeicificFilesPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
