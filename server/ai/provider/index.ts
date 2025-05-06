@@ -66,7 +66,7 @@ import {
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
-  temporalEventClassifier,
+  //temporalEventClassifier,
   userChatSystem,
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1030,44 +1030,46 @@ export const queryRewriter = async (
   }
 }
 
-export const temporalEventClassification = async (
-  userQuery: string,
-  params: ModelParams,
-): Promise<TemporalClassifier & { cost: number }> => {
-  if (!params.modelId) {
-    params.modelId = defaultFastModel
-  }
-  params.systemPrompt = temporalEventClassifier(userQuery)
-  params.json = true
+//Temporal Event Classification : NOT USED.
+ 
+// export const temporalEventClassification = async (
+//   userQuery: string,
+//   params: ModelParams,
+// ): Promise<TemporalClassifier & { cost: number }> => {
+//   if (!params.modelId) {
+//     params.modelId = defaultFastModel
+//   }
+//   params.systemPrompt = temporalEventClassifier(userQuery)
+//   params.json = true
 
-  const baseMessage = {
-    role: ConversationRole.USER,
-    content: [
-      {
-        text: `query: "${userQuery}"`,
-      },
-    ],
-  }
+//   const baseMessage = {
+//     role: ConversationRole.USER,
+//     content: [
+//       {
+//         text: `query: "${userQuery}"`,
+//       },
+//     ],
+//   }
 
-  const messages: Message[] = params.messages
-    ? [...params.messages, baseMessage]
-    : [baseMessage]
+//   const messages: Message[] = params.messages
+//     ? [...params.messages, baseMessage]
+//     : [baseMessage]
 
-  const { text, cost } = await getProviderByModel(params.modelId).converse(
-    messages,
-    params,
-  )
+//   const { text, cost } = await getProviderByModel(params.modelId).converse(
+//     messages,
+//     params,
+//   )
 
-  if (text) {
-    const parsedResponse = jsonParseLLMOutput(text)
-    return {
-      direction: parsedResponse.direction || null,
-      cost: cost!,
-    }
-  } else {
-    throw new Error("No response from LLM")
-  }
-}
+//   if (text) {
+//     const parsedResponse = jsonParseLLMOutput(text)
+//     return {
+//       direction: parsedResponse.direction || null,
+//       cost: cost!,
+//     }
+//   } else {
+//     throw new Error("No response from LLM")
+//   }
+// }
 
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
