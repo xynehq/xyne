@@ -940,7 +940,6 @@ const getSearchRangeSummary = (
 
     const fromDate = new Date(from)
     const toDate = new Date(to)
-    console.log(`Time : ${from} to ${to}`)
 
     const format = (date: Date) =>
       `${date.toLocaleString("default", { month: "long" })} ${date.getDate()}, ${date.getFullYear()} - ${formatTime(date)}`
