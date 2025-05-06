@@ -66,7 +66,7 @@ import {
   MessageApi,
   MessageRetryApi,
   GetChatTraceApi,
-  StopStreamingApi
+  StopStreamingApi,
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
@@ -446,4 +446,3 @@ errorEvents.forEach((eventType: string) =>
     Logger.error(error, `Caught via event: ${eventType}`)
   }),
 )
-

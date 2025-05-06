@@ -106,7 +106,7 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 
-// Map to store active streams: Key = "chatId:messageId", Value = SSEStreamingApi instance
+// Map to store active streams: Key = "chatId", Value = SSEStreamingApi instance
 const activeStreams = new Map<string, SSEStreamingApi>()
 
 // this is not always the case but unless our router detects that we need
@@ -606,7 +606,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           latestResults || [],
         )
         totalResultsSpan?.setAttribute(
-          "total_result_count", 
+          "total_result_count",
           totalResults.length,
         )
         totalResultsSpan?.setAttribute(
@@ -1139,7 +1139,7 @@ async function* generatePointQueryTimeExpansion(
       ),
     )
     combineSpan?.end()
-    
+
     if (!combinedResults.root.children.length) {
       Logger.info("No gmail or calendar events found")
       iterationSpan?.end()
@@ -1387,8 +1387,8 @@ export const MessageApi = async (c: Context) => {
 
   let stream: any
   let chat: SelectChat
-  let assistantMessageId: string | null = null 
-  let streamKey: string | null = null 
+  let assistantMessageId: string | null = null
+  let streamKey: string | null = null
 
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -1559,8 +1559,10 @@ export const MessageApi = async (c: Context) => {
           let buffer = ""
           const conversationSpan = streamSpan.startSpan("conversation_search")
           for await (const chunk of searchOrAnswerIterator) {
-            if(stream.closed) {
-              Logger.info("[MessageApi] Stream closed during conversation search loop. Breaking.");
+            if (stream.closed) {
+              Logger.info(
+                "[MessageApi] Stream closed during conversation search loop. Breaking.",
+              )
               break
             }
             if (chunk.text) {
@@ -1679,8 +1681,10 @@ export const MessageApi = async (c: Context) => {
             citationMap = {}
             let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
-              if(stream.closed) {
-                Logger.info("[MessageApi] Stream closed during conversation search loop. Breaking.");
+              if (stream.closed) {
+                Logger.info(
+                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                )
                 break
               }
               if (chunk.text) {
@@ -1760,7 +1764,7 @@ export const MessageApi = async (c: Context) => {
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
-            assistantMessageId = msg.externalId 
+            assistantMessageId = msg.externalId
             const traceJson = tracer.serializeToJson()
             await insertChatTrace({
               workspaceId: workspace.id,
@@ -1786,12 +1790,14 @@ export const MessageApi = async (c: Context) => {
               event: ChatSSEvents.End,
             })
             endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
           } else {
             const errorSpan = streamSpan.startSpan("handle_no_answer")
             const allMessages = await getChatMessages(db, chat?.externalId)
             const lastMessage = allMessages[allMessages.length - 1]
             // Store potential assistant message ID even on error for metadata
-             await stream.writeSSE({
+            await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
               data: JSON.stringify({
                 chatId: chat.externalId,
@@ -1863,18 +1869,18 @@ export const MessageApi = async (c: Context) => {
           streamSpan.end()
           rootSpan.end()
         } finally {
-            // Ensure stream is removed from the map on completion or error
-             if (streamKey && activeStreams.has(streamKey)) {
-                activeStreams.delete(streamKey)
-                Logger.info(`Removed stream ${streamKey} from active streams map.`)
-            }
+          // Ensure stream is removed from the map on completion or error
+          if (streamKey && activeStreams.has(streamKey)) {
+            activeStreams.delete(streamKey)
+            Logger.info(`Removed stream ${streamKey} from active streams map.`)
+          }
         }
       },
       async (err, stream) => {
         const streamErrorSpan = rootSpan.startSpan(
           "handle_stream_callback_error",
         )
-         streamErrorSpan.addEvent("error", {
+        streamErrorSpan.addEvent("error", {
           message: getErrorMessage(err),
           stack: (err as Error).stack || "",
         })
@@ -1882,8 +1888,8 @@ export const MessageApi = async (c: Context) => {
         // Use the stored assistant message ID if available when handling callback error
         const allMessages = await getChatMessages(db, chat?.externalId)
         const lastMessage = allMessages[allMessages.length - 1]
-        const errorMsgId = assistantMessageId || (await getChatMessages(db, chat?.externalId)).pop()?.externalId || "unknown";
-        const errorChatId = chat?.externalId || "unknown";
+        const errorMsgId = assistantMessageId || lastMessage.externalId
+        const errorChatId = chat?.externalId || "unknown"
 
         if (errorChatId !== "unknown" && errorMsgId !== "unknown") {
           await stream.writeSSE({
@@ -1896,11 +1902,11 @@ export const MessageApi = async (c: Context) => {
           // Try to get the last message again for error reporting
           const allMessages = await getChatMessages(db, errorChatId)
           if (allMessages.length > 0) {
-              const lastMessage = allMessages[allMessages.length - 1]
-              await addErrMessageToMessage(lastMessage, errFromMap)
+            const lastMessage = allMessages[allMessages.length - 1]
+            await addErrMessageToMessage(lastMessage, errFromMap)
           }
         }
-         await stream.writeSSE({
+        await stream.writeSSE({
           event: ChatSSEvents.Error,
           data: errFromMap,
         })
@@ -1917,7 +1923,9 @@ export const MessageApi = async (c: Context) => {
         // Ensure stream is removed from the map in the error callback too
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
-          Logger.info(`Removed stream ${streamKey} from active streams map in error callback.`)
+          Logger.info(
+            `Removed stream ${streamKey} from active streams map in error callback.`,
+          )
         }
         streamErrorSpan.end()
         rootSpan.end()
@@ -1934,13 +1942,13 @@ export const MessageApi = async (c: Context) => {
     const errFromMap = handleError(error)
     // @ts-ignore
     if (chat?.externalId) {
-       const allMessages = await getChatMessages(db, chat?.externalId)
+      const allMessages = await getChatMessages(db, chat?.externalId)
       // Add the error message to last user message
-      if (allMessages.length > 0){
+      if (allMessages.length > 0) {
         const lastMessage = allMessages[allMessages.length - 1]
-         // Use the stored assistant message ID if available for metadata
-        const errorMsgId = assistantMessageId || lastMessage.externalId;
-         await stream.writeSSE({
+        // Use the stored assistant message ID if available for metadata
+        const errorMsgId = assistantMessageId || lastMessage.externalId
+        await stream.writeSSE({
           event: ChatSSEvents.ResponseMetadata,
           data: JSON.stringify({
             chatId: chat.externalId,
@@ -1967,10 +1975,12 @@ export const MessageApi = async (c: Context) => {
         message: "Could not create message or Chat",
       })
     }
-     // Ensure stream is removed from the map in the top-level catch block
+    // Ensure stream is removed from the map in the top-level catch block
     if (streamKey && activeStreams.has(streamKey)) {
-        activeStreams.delete(streamKey)
-        Logger.info(`Removed stream ${streamKey} from active streams map in top-level catch.`)
+      activeStreams.delete(streamKey)
+      Logger.info(
+        `Removed stream ${streamKey} from active streams map in top-level catch.`,
+      )
     }
     errorSpan.end()
     rootSpan.end()
@@ -1988,8 +1998,8 @@ export const MessageApi = async (c: Context) => {
 export const MessageRetryApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageRetryApi")
-  let streamKey: string | null = null; // Add stream key for stop functionality
-  let relevantMessageId: string | null = null; // Track message ID being generated/updated
+  let streamKey: string | null = null // Add stream key for stop functionality
+  let relevantMessageId: string | null = null // Track message ID being generated/updated
   try {
     // @ts-ignore
     const body = c.req.valid("query")
@@ -2072,16 +2082,16 @@ export const MessageRetryApi = async (c: Context) => {
     }
 
     // Set stream key before streaming
-    streamKey = originalMessage.chatExternalId;
-    Logger.info(`[MessageRetryApi] Constructed streamKey: ${streamKey}`);
+    streamKey = originalMessage.chatExternalId
+    Logger.info(`[MessageRetryApi] Constructed streamKey: ${streamKey}`)
 
     return streamSSE(
       c,
       async (stream) => {
-        activeStreams.set(streamKey!, stream);
+        activeStreams.set(streamKey!, stream)
         const streamSpan = rootSpan.startSpan("stream_response")
         streamSpan.setAttribute("chatId", originalMessage.chatExternalId)
-        let wasStreamClosedPrematurely = false; 
+        let wasStreamClosedPrematurely = false
 
         try {
           let message = prevUserMessage.message
@@ -2124,9 +2134,11 @@ export const MessageRetryApi = async (c: Context) => {
           let buffer = ""
           for await (const chunk of searchOrAnswerIterator) {
             if (stream.closed) {
-              Logger.info("[MessageRetryApi] Stream closed during conversation search loop. Breaking.");
-              wasStreamClosedPrematurely = true;
-              break;
+              Logger.info(
+                "[MessageRetryApi] Stream closed during conversation search loop. Breaking.",
+              )
+              wasStreamClosedPrematurely = true
+              break
             }
             if (chunk.text) {
               if (reasoning) {
@@ -2242,9 +2254,11 @@ export const MessageRetryApi = async (c: Context) => {
             let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (stream.closed) {
-                Logger.info("[MessageRetryApi] Stream closed during RAG loop. Breaking.");
-                wasStreamClosedPrematurely = true;
-                break;
+                Logger.info(
+                  "[MessageRetryApi] Stream closed during RAG loop. Breaking.",
+                )
+                wasStreamClosedPrematurely = true
+                break
               }
               if (chunk.text) {
                 if (chunk.reasoning) {
@@ -2303,14 +2317,14 @@ export const MessageRetryApi = async (c: Context) => {
             ragSpan.end()
           } else if (parsed.answer) {
             answer = parsed.answer
-            citations = [] // Ensure empty citations for direct answer
-            citationMap = {}
           }
 
           // Database Update Logic
           const insertSpan = streamSpan.startSpan("insert_assistant_message")
           if (wasStreamClosedPrematurely) {
-            Logger.info(`[MessageRetryApi] Stream closed prematurely. Saving partial state.`);
+            Logger.info(
+              `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
+            )
             if (isUserMessage) {
               await db.transaction(async (tx) => {
                 await updateMessage(tx, messageId, { errorMessage: "" })
@@ -2325,7 +2339,8 @@ export const MessageRetryApi = async (c: Context) => {
                   message: processMessage(answer, citationMap),
                   thinking,
                   modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                      .modelId,
                   createdAt: new Date(
                     new Date(originalMessage.createdAt).getTime() + 1,
                   ),
@@ -2368,14 +2383,16 @@ export const MessageRetryApi = async (c: Context) => {
                     ),
                   })
                   return msg
-                },
-              )
-              relevantMessageId = msg.externalId
+                })
+                relevantMessageId = msg.externalId
               } else {
                 Logger.info(
                   `Updated trace for message ${originalMessage.externalId}`,
                 )
-                insertSpan.setAttribute("message_id", originalMessage.externalId)
+                insertSpan.setAttribute(
+                  "message_id",
+                  originalMessage.externalId,
+                )
                 relevantMessageId = originalMessage.externalId
                 await updateMessage(db, messageId, {
                   message: processMessage(answer, citationMap),
@@ -2386,9 +2403,12 @@ export const MessageRetryApi = async (c: Context) => {
                 })
               }
             } else {
-              Logger.error(`[MessageRetryApi] Stream finished but no answer generated.`);
-              const failureErrorMsg = "Assistant failed to generate a response on retry.";
-              await addErrMessageToMessage(originalMessage, failureErrorMsg);
+              Logger.error(
+                `[MessageRetryApi] Stream finished but no answer generated.`,
+              )
+              const failureErrorMsg =
+                "Assistant failed to generate a response on retry."
+              await addErrMessageToMessage(originalMessage, failureErrorMsg)
               relevantMessageId = originalMessage.externalId
               await stream.writeSSE({
                 event: ChatSSEvents.Error,
@@ -2453,12 +2473,16 @@ export const MessageRetryApi = async (c: Context) => {
         } finally {
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
-            Logger.info(`[MessageRetryApi] Removed stream ${streamKey} from active streams map.`)
+            Logger.info(
+              `[MessageRetryApi] Removed stream ${streamKey} from active streams map.`,
+            )
           }
         }
       },
       async (err, stream) => {
-        const streamErrorSpan = rootSpan.startSpan("handle_stream_callback_error")
+        const streamErrorSpan = rootSpan.startSpan(
+          "handle_stream_callback_error",
+        )
         streamErrorSpan.addEvent("error", {
           message: getErrorMessage(err),
           stack: (err as Error).stack || "",
@@ -2489,7 +2513,9 @@ export const MessageRetryApi = async (c: Context) => {
         rootSpan.end()
         if (streamKey && activeStreams.has(streamKey)) {
           activeStreams.delete(streamKey)
-          Logger.info(`[MessageRetryApi] Removed stream ${streamKey} from active streams map in error callback.`)
+          Logger.info(
+            `[MessageRetryApi] Removed stream ${streamKey} from active streams map in error callback.`,
+          )
         }
       },
     )
@@ -2506,7 +2532,9 @@ export const MessageRetryApi = async (c: Context) => {
     )
     if (streamKey && activeStreams.has(streamKey)) {
       activeStreams.delete(streamKey)
-      Logger.info(`[MessageRetryApi] Removed stream ${streamKey} from active streams map in top-level catch.`)
+      Logger.info(
+        `[MessageRetryApi] Removed stream ${streamKey} from active streams map in top-level catch.`,
+      )
     }
     throw new HTTPException(500, {
       message: "Could not retry message",
@@ -2514,44 +2542,56 @@ export const MessageRetryApi = async (c: Context) => {
   }
 }
 
-
 // New API Endpoint to stop streaming
 export const StopStreamingApi = async (c: Context) => {
-    try {
-        // @ts-ignore - Assuming validation middleware handles this
-        const { chatId } = c.req.valid("json");
-        Logger.info(`[StopStreamingApi] Received stop request. ChatId from client: ${chatId}`);
+  try {
+    // @ts-ignore - Assuming validation middleware handles this
+    const { chatId } = c.req.valid("json")
+    Logger.info(
+      `[StopStreamingApi] Received stop request. ChatId from client: ${chatId}`,
+    )
 
-        if (!chatId) {
-             Logger.warn("[StopStreamingApi] Received stop request with missing chatId.");
-            throw new HTTPException(400, { message: "chatId is required." });
-        }
-
-        const streamKey = chatId;
-        const stream = activeStreams.get(streamKey);
-
-        if (stream) {
-            Logger.info(`[StopStreamingApi] Closing active stream: ${streamKey}.`);
-            try {
-                await stream.close(); 
-            } catch (closeError) {
-                Logger.error(closeError, `[StopStreamingApi] Error closing stream ${streamKey}: ${getErrorMessage(closeError)}`);
-            } finally {
-                activeStreams.delete(streamKey!);
-            }
-        } else {
-            Logger.warn(`[StopStreamingApi] Stop request for non-existent or already finished stream with key: ${streamKey}. No action taken.`);
-        }
-
-        return c.json({ success: true });
-
-    } catch (error) {
-        const errMsg = getErrorMessage(error);
-         if (error instanceof HTTPException) {
-            Logger.error(`[StopStreamingApi] HTTP Exception: ${error.status} - ${error.message}`);
-             throw error;
-         }
-        Logger.error(error, `[StopStreamingApi] Unexpected Error: ${errMsg} ${(error as Error).stack}`);
-        throw new HTTPException(500, { message: "Could not stop streaming." });
+    if (!chatId) {
+      Logger.warn(
+        "[StopStreamingApi] Received stop request with missing chatId.",
+      )
+      throw new HTTPException(400, { message: "chatId is required." })
     }
-};
+
+    const streamKey = chatId
+    const stream = activeStreams.get(streamKey)
+
+    if (stream) {
+      Logger.info(`[StopStreamingApi] Closing active stream: ${streamKey}.`)
+      try {
+        await stream.close()
+      } catch (closeError) {
+        Logger.error(
+          closeError,
+          `[StopStreamingApi] Error closing stream ${streamKey}: ${getErrorMessage(closeError)}`,
+        )
+      } finally {
+        activeStreams.delete(streamKey!)
+      }
+    } else {
+      Logger.warn(
+        `[StopStreamingApi] Stop request for non-existent or already finished stream with key: ${streamKey}. No action taken.`,
+      )
+    }
+
+    return c.json({ success: true })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    if (error instanceof HTTPException) {
+      Logger.error(
+        `[StopStreamingApi] HTTP Exception: ${error.status} - ${error.message}`,
+      )
+      throw error
+    }
+    Logger.error(
+      error,
+      `[StopStreamingApi] Unexpected Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, { message: "Could not stop streaming." })
+  }
+}

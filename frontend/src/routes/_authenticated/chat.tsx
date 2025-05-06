@@ -109,7 +109,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
   const titleRef = useRef<HTMLInputElement | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
-  const [userStopped, setUserStopped] = useState<boolean>(false); // Add state for user stop
+  const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -266,88 +266,105 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
 
-    eventSourceRef.current = new EventSource(url.toString(), { // Store EventSource
+    eventSourceRef.current = new EventSource(url.toString(), {
+      // Store EventSource
       withCredentials: true,
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.CitationsUpdate, (event) => { // Use ref
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      if (currentRespRef.current) {
-        currentRespRef.current.sources = contextChunks
-        currentRespRef.current.citationMap = citationMap
-        setCurrentResp((prevResp) => ({
-          ...prevResp,
-          resp: prevResp?.resp || "",
-          sources: contextChunks,
-          citationMap,
-        }))
-      }
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.CitationsUpdate,
+      (event) => {
+        // Use ref
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        if (currentRespRef.current) {
+          currentRespRef.current.sources = contextChunks
+          currentRespRef.current.citationMap = citationMap
+          setCurrentResp((prevResp) => ({
+            ...prevResp,
+            resp: prevResp?.resp || "",
+            sources: contextChunks,
+            citationMap,
+          }))
+        }
+      },
+    )
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => { // Use ref
+    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      // Use ref
       setCurrentResp((prevResp) => ({
         ...(prevResp || { resp: "", thinking: event.data || "" }),
         thinking: (prevResp?.thinking || "") + event.data,
       }))
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.ResponseUpdate, (event) => { // Use ref
-      setCurrentResp((prevResp) => {
-        const updatedResp = prevResp
-          ? { ...prevResp, resp: prevResp.resp + event.data }
-          : { resp: event.data }
-        currentRespRef.current = updatedResp
-        return updatedResp
-      })
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseUpdate,
+      (event) => {
+        // Use ref
+        setCurrentResp((prevResp) => {
+          const updatedResp = prevResp
+            ? { ...prevResp, resp: prevResp.resp + event.data }
+            : { resp: event.data }
+          currentRespRef.current = updatedResp
+          return updatedResp
+        })
+      },
+    )
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.ResponseMetadata, (event) => { // Use ref
-      const { chatId, messageId } = JSON.parse(event.data)
-      setChatId(chatId)
-      if (chatId) {
-        setTimeout(() => {
-          router.navigate({
-            to: "/chat/$chatId",
-            params: { chatId },
-            search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
-          })
-        }, 1000)
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseMetadata,
+      (event) => {
+        // Use ref
+        const { chatId, messageId } = JSON.parse(event.data)
+        setChatId(chatId)
+        if (chatId) {
+          setTimeout(() => {
+            router.navigate({
+              to: "/chat/$chatId",
+              params: { chatId },
+              search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+            })
+          }, 1000)
 
-        if(!stopMsg) {
-          setStopMsg(true)
+          if (!stopMsg) {
+            setStopMsg(true)
+          }
         }
-      }
-      console.log("messageId", messageId)
-      if (messageId) {
-        if (currentRespRef.current) {
-          setCurrentResp((resp) => {
-            const updatedResp = resp || { resp: "" }
-            updatedResp.chatId = chatId
-            updatedResp.messageId = messageId
-            currentRespRef.current = updatedResp
-            return updatedResp
-          })
-
-        } else {
-          setMessages((prevMessages) => {
-            const lastMessage = prevMessages[prevMessages.length - 1]
-            if (lastMessage.messageRole === "assistant") {
-              return [
-                ...prevMessages.slice(0, -1),
-                { ...lastMessage, externalId: messageId },
-              ]
-            }
-            return prevMessages
-          })
+        if (messageId) {
+          if (currentRespRef.current) {
+            setCurrentResp((resp) => {
+              const updatedResp = resp || { resp: "" }
+              updatedResp.chatId = chatId
+              updatedResp.messageId = messageId
+              currentRespRef.current = updatedResp
+              return updatedResp
+            })
+          } else {
+            setMessages((prevMessages) => {
+              const lastMessage = prevMessages[prevMessages.length - 1]
+              if (lastMessage.messageRole === "assistant") {
+                return [
+                  ...prevMessages.slice(0, -1),
+                  { ...lastMessage, externalId: messageId },
+                ]
+              }
+              return prevMessages
+            })
+          }
         }
-      }
-    })
+      },
+    )
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => { // Use ref
-      setChatTitle(event.data)
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ChatTitleUpdate,
+      (event) => {
+        // Use ref
+        setChatTitle(event.data)
+      },
+    )
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => { // Use ref
+    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
+      // Use ref
       const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
@@ -370,7 +387,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setIsStreaming(false)
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => { // Use ref
+    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
+      // Use ref
       console.error("Error with SSE:", event.data)
       const currentResp = currentRespRef.current
       if (currentResp) {
@@ -394,21 +412,21 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setIsStreaming(false)
     })
 
-    eventSourceRef.current.onerror = (error) => { // Use ref
+    eventSourceRef.current.onerror = (error) => {
+      // Use ref
       // Check if the stop was intentional
       if (userStopped) {
-          console.log("SSE connection closed by user stop.");
-          setUserStopped(false); // Reset the flag
-          // Clean up state, similar to handleStop or End event
-          setCurrentResp(null);
-          currentRespRef.current = null;
-          setStopMsg(false);
-          setIsStreaming(false);
-          // Close again just in case, and clear ref
-          eventSourceRef.current?.close();
-          eventSourceRef.current = null;
-          // Do NOT add an error message in this case
-          return;
+        setUserStopped(false) // Reset the flag
+        // Clean up state, similar to handleStop or End event
+        setCurrentResp(null)
+        currentRespRef.current = null
+        setStopMsg(false)
+        setIsStreaming(false)
+        // Close again just in case, and clear ref
+        eventSourceRef.current?.close()
+        eventSourceRef.current = null
+        // Do NOT add an error message in this case
+        return
       }
 
       // If it wasn't a user stop, proceed with error handling as before
@@ -419,7 +437,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           ...prevMessages,
           {
             messageRole: "assistant",
-            message: `Error occurred: please tgry again`,
+            message: `Error occurred: please try again`,
           },
         ])
       }
@@ -435,35 +453,33 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }
 
   const handleStop = async () => {
-    setUserStopped(true); // Indicate intentional stop before closing
+    setUserStopped(true) // Indicate intentional stop before closing
 
     if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null; // Clear the ref
+      eventSourceRef.current.close()
+      eventSourceRef.current = null // Clear the ref
     }
-  
-    console.log("currentRespRef.current.messageId", currentRespRef.current?.messageId)
 
-    setIsStreaming(false);
-  
+    setIsStreaming(false)
+
     // 4. Attempt to send stop request to backend if IDs are available
-    if (chatId && isStreaming) { // This `isStreaming` check might be redundant now, but let's keep it for safety
+    if (chatId && isStreaming) {
+      // This `isStreaming` check might be redundant now, but let's keep it for safety
       try {
         await api.chat.stop.$post({
           json: {
             chatId: chatId,
           },
-        });
-
+        })
       } catch (error) {
-        console.error("Failed to send stop request to backend:", error);
+        console.error("Failed to send stop request to backend:", error)
         // Backend stop failed, but client-side is already stopped
       }
-    } else {
     }
-  
+
     // 5. Add partial response to messages if available
-    if (currentRespRef.current && currentRespRef.current.resp) { // Use currentRespRef.current directly
+    if (currentRespRef.current && currentRespRef.current.resp) {
+      // Use currentRespRef.current directly
       setMessages((prevMessages) => [
         ...prevMessages,
         {
@@ -474,21 +490,20 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           citationMap: currentRespRef.current?.citationMap, // Use currentRespRef.current
           thinking: currentRespRef.current?.thinking, // Use currentRespRef.current
         },
-      ]);
+      ])
     }
-  
+
     // 6. Clear streaming-related state *after* backend request and message handling
-    setCurrentResp(null);
-    currentRespRef.current = null;
-    setStopMsg(false);
+    setCurrentResp(null)
+    currentRespRef.current = null
+    setStopMsg(false)
     // 7. Invalidate router state after a short delay to refetch loader data
     setTimeout(() => {
-      router.invalidate();
-    }, 1000); // Delay for 500ms
-  };
+      router.invalidate()
+    }, 1000) // Delay for 500ms
+  }
 
   const handleRetry = async (messageId: string) => {
-    console.log("handleRetry", messageId)
     if (!messageId || isStreaming) return
 
     setIsStreaming(true)
@@ -538,42 +553,48 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
-    setStopMsg(true); // Ensure stop message can be sent for retries
-    eventSourceRef.current = new EventSource(url.toString(), { // Store EventSource
+    setStopMsg(true) // Ensure stop message can be sent for retries
+    eventSourceRef.current = new EventSource(url.toString(), {
+      // Store EventSource
       withCredentials: true,
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.ResponseUpdate, (event) => { // Use ref
-      if (userMsgWithErr) {
-        setMessages((prevMessages) => {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseUpdate,
+      (event) => {
+        // Use ref
+        if (userMsgWithErr) {
+          setMessages((prevMessages) => {
+            const index = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (index === -1 || index + 1 >= prevMessages.length) {
+              return prevMessages
+            }
+
+            const newMessages = [...prevMessages]
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              message: newMessages[index + 1].message + event.data,
+            }
+
+            return newMessages
+          })
+        } else {
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg.externalId === messageId && msg.isRetrying
+                ? { ...msg, message: msg.message + event.data }
+                : msg,
+            ),
           )
+        }
+      },
+    )
 
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
-          }
-
-          const newMessages = [...prevMessages]
-          newMessages[index + 1] = {
-            ...newMessages[index + 1],
-            message: newMessages[index + 1].message + event.data,
-          }
-
-          return newMessages
-        })
-      } else {
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, message: msg.message + event.data }
-              : msg,
-          ),
-        )
-      }
-    })
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => { // Use ref
+    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      // Use ref
       if (userMsgWithErr) {
         setMessages((prevMessages) => {
           const index = prevMessages.findIndex(
@@ -603,15 +624,45 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.ResponseMetadata, (event) => { // Use ref
-      const userMessage = messages.find(
-        (msg) => msg.externalId === messageId && msg.messageRole === "user",
-      )
-      if (userMessage) {
-        const { messageId: newMessageId } = JSON.parse(event.data)
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseMetadata,
+      (event) => {
+        // Use ref
+        const userMessage = messages.find(
+          (msg) => msg.externalId === messageId && msg.messageRole === "user",
+        )
+        if (userMessage) {
+          const { messageId: newMessageId } = JSON.parse(event.data)
 
-        if (newMessageId) {
-          setMessages((prevMessages) => {
+          if (newMessageId) {
+            setMessages((prevMessages) => {
+              const index = prevMessages.findIndex(
+                (msg) => msg.externalId === messageId,
+              )
+
+              if (index === -1 || index + 1 >= prevMessages.length) {
+                return prevMessages
+              }
+
+              const newMessages = [...prevMessages]
+              newMessages[index + 1] = {
+                ...newMessages[index + 1],
+                externalId: newMessageId,
+              }
+              return newMessages
+            })
+          }
+        }
+      },
+    )
+
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.CitationsUpdate,
+      (event) => {
+        // Use ref
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        setMessages((prevMessages) => {
+          if (userMsgWithErr) {
             const index = prevMessages.findIndex(
               (msg) => msg.externalId === messageId,
             )
@@ -621,50 +672,29 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             }
 
             const newMessages = [...prevMessages]
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              externalId: newMessageId,
+
+            if (newMessages[index + 1].isRetrying) {
+              newMessages[index + 1] = {
+                ...newMessages[index + 1],
+                sources: contextChunks,
+                citationMap,
+              }
             }
+
             return newMessages
-          })
-        }
-      }
-    })
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.CitationsUpdate, (event) => { // Use ref
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      setMessages((prevMessages) => {
-        if (userMsgWithErr) {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
-          )
-
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
+          } else {
+            return prevMessages.map((msg) =>
+              msg.externalId === messageId && msg.isRetrying
+                ? { ...msg, sources: contextChunks, citationMap }
+                : msg,
+            )
           }
+        })
+      },
+    )
 
-          const newMessages = [...prevMessages]
-
-          if (newMessages[index + 1].isRetrying) {
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              sources: contextChunks,
-              citationMap,
-            }
-          }
-
-          return newMessages
-        } else {
-          return prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, sources: contextChunks, citationMap }
-              : msg,
-          )
-        }
-      })
-    })
-
-    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => { // Use ref
+    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
+      // Use ref
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
           const index = prevMessages.findIndex(
@@ -698,7 +728,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setIsStreaming(false)
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => { // Use ref
+    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
+      // Use ref
       console.error("Retry Error with SSE:", event.data)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -733,7 +764,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setIsStreaming(false)
     })
 
-    eventSourceRef.current.onerror = (error) => { // Use ref
+    eventSourceRef.current.onerror = (error) => {
+      // Use ref
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -1328,7 +1360,7 @@ const ChatMessage = ({
               <div className="flex ml-[52px] mt-[12px] items-center">
                 <Copy
                   size={16}
-                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`} 
+                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
                   onMouseDown={() => setIsCopied(true)}
                   onMouseUp={() => setIsCopied(false)}
