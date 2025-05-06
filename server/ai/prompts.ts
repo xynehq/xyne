@@ -735,7 +735,7 @@ Test cases:
 
 Now classify this query:`
 
-// router or kernel 
+// router or kernel
 export const searchQueryPrompt = (userContext: string): string => {
   return `
     **Today's date is: ${getDateForAI()}**
@@ -866,7 +866,7 @@ export const searchQueryPrompt = (userContext: string): string => {
          - ✗ "Last time we updated the docs"
        - Otherwise, set "temporalDirection" to null.
        - WE CAN'T PROCESS QUERIES LIKE "previous emails" or "next emails" or "previous meetings" or "next meetings" etc, AS THEY DON'T HAVE ANY CONCRETE TIME RANGE.
-         - For these cases, rewrite the query to be more specific and add a one-week time range for both "previous" and "next". For "previous", set the range from one week ago to today. For "next", set the range from today to one week from now.
+         - For these cases, rewrite the query to be more specific and add a one-month time range for both "previous" and "next". For "previous", set the range from one month ago to today. For "next", set the range from today to one month from now.
 
     5. Output JSON in the following structure:
        {

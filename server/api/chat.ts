@@ -11,7 +11,9 @@ import {
 } from "@/ai/provider"
 import {
   Models,
+  QueryType,
   type ConverseResponse,
+  type QueryRouterResponse,
   type TemporalClassifier,
 } from "@/ai/types"
 import config from "@/config"
@@ -58,14 +60,18 @@ import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa } from "@/search/vespa"
+import { getItems, searchVespa } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
+  DriveEntity,
   entitySchema,
   eventSchema,
   fileSchema,
+  GooglePeopleEntity,
+  MailAttachmentEntity,
   mailAttachmentSchema,
+  MailEntity,
   mailSchema,
   userSchema,
   type VespaChatMessage,
@@ -75,6 +81,7 @@ import {
   type VespaMail,
   type VespaMailAttachment,
   type VespaMailSearch,
+  type VespaSchema,
   type VespaSearchResponse,
   type VespaSearchResult,
   type VespaSearchResults,
@@ -415,6 +422,37 @@ const checkAndYieldCitations = function* (
       }
     }
   }
+}
+
+const entityToSchemaMapper = (
+  entityName?: string,
+  app?: string,
+): string | null => {
+  const entitySchemaMap: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.values(DriveEntity).map((e) => [e, fileSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(MailEntity).map((e) => [e, mailSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(MailAttachmentEntity).map((e) => [e, mailAttachmentSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(GooglePeopleEntity).map((e) => [e, userSchema]),
+    ),
+  }
+
+  // Handle cases where the same entity name exists in multiple schemas
+  if (entityName === "pdf") {
+    if (app === Apps.GoogleDrive) {
+      return fileSchema
+    } else if (app === Apps.Gmail) {
+      return mailAttachmentSchema
+    }
+  }
+
+  return entitySchemaMap[entityName || ""] || null
 }
 
 async function* generateIterativeTimeFilterAndQueryRewrite(
@@ -959,10 +997,19 @@ const getSearchRangeSummary = (
   }
 }
 
+async function* processSearchResults(
+  results: any[],
+  input: string,
+  userCtx: string,
+  messages: Message[],
+  costArr: number[],
+  rootSpan?: Span,
+) {}
+// called when temporal queries comes
 async function* generatePointQueryTimeExpansion(
   input: string,
   messages: Message[],
-  classification: TemporalClassifier,
+  classification: TemporalClassifier & QueryRouterResponse,
   email: string,
   userCtx: string,
   alpha: number,
@@ -989,151 +1036,69 @@ async function* generatePointQueryTimeExpansion(
 
   let from = new Date().getTime()
   let to = new Date().getTime()
-  let lastSearchedTime = direction === "prev" ? from : to
+  const { endTime, startTime } = classification.filters
+  if (
+    classification.type == QueryType.RetrieveMetadata &&
+    startTime &&
+    endTime
+  ) {
+    const { app, count, entity } = classification.filters
 
-  let previousResultsLength = 0
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
-    const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
-    iterationSpan?.setAttribute("iteration", iteration)
-    const windowSize = (2 + iteration) * weekInMs
+    from = new Date(startTime).getTime()
+    to = new Date(endTime).getTime()
+    const diffMs = to - from
+    const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-    if (direction === "prev") {
-      to = lastSearchedTime
-      from = to - windowSize
-      lastSearchedTime = from
-    } else {
-      from = lastSearchedTime
-      to = from + windowSize
-      lastSearchedTime = to
-    }
+    let readable = ""
+    if (days) readable += `${days} days `
+    if (hours) readable += `${hours} hours `
 
     Logger.info(
-      `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
+      `User requested metadata search. Searching for documents from the past ${days} days`,
     )
-    iterationSpan?.setAttribute("from", new Date(from).toLocaleString())
-    iterationSpan?.setAttribute("to", new Date(to).toLocaleString())
-    // Search in both calendar events and emails
-    const searchSpan = iterationSpan?.startSpan("search_vespa")
-    const emailSearchSpan = searchSpan?.startSpan("email_search")
-    // TODO: How to combine promise.all with spans?
-    // emailSearchSpan?.setAttribute(`promise.all[eventResults, results]-${iteration}`, true)
+    const schema = (entityToSchemaMapper(entity, app) ?? "*") as VespaSchema
+    const items: VespaSearchResult[] =
+      (
+        await getItems({
+          email,
+          schema,
+          app,
+          entity,
+          timestampRange: { from, to },
+          limit: count ? count : 10,
+        })
+      ).root.children || []
 
-    const calenderSearchSpan = searchSpan?.startSpan("calender_search")
-    const [eventResults, results] = await Promise.all([
-      searchVespa(message, email, Apps.GoogleCalendar, null, {
-        limit: pageSize,
-        alpha,
-        timestampRange: { from, to },
-        span: calenderSearchSpan,
-      }),
-      searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha,
-        timestampRange: { to, from },
-        notInMailLabels: ["CATEGORY_PROMOTIONS"],
-        span: emailSearchSpan,
-      }),
-    ])
-    emailSearchSpan?.setAttribute(
-      "result_count",
-      results?.root?.children?.length || 0,
-    )
-    emailSearchSpan?.setAttribute(
-      "result_ids",
-      JSON.stringify(
-        results?.root?.children?.map(
-          (r: VespaSearchResult) => (r.fields as any).docId,
-        ) || [],
-      ),
-    )
-    emailSearchSpan?.setAttribute("result", JSON.stringify(results))
-    emailSearchSpan?.end()
-    calenderSearchSpan?.setAttribute(
-      "result_count",
-      eventResults?.root?.children?.length || 0,
-    )
-    calenderSearchSpan?.setAttribute(
-      "result_ids",
-      JSON.stringify(
-        eventResults?.root?.children?.map(
-          (r: VespaSearchResult) => (r.fields as any).docId,
-        ) || [],
-      ),
-    )
-    calenderSearchSpan?.setAttribute("result", JSON.stringify(eventResults))
-    calenderSearchSpan?.end()
-    searchSpan?.end()
-
-    if (!results.root.children && !eventResults.root.children) {
-      iterationSpan?.end()
-      continue
+    console.log(items,"items")
+    // if no documents found just return
+    if (!items.length) {
+      yield {
+        text: `No documents were found within the specified time range: ${readable.trim()}.`,
+        cost: 0,
+      }
+      return
     }
+    const results = items.slice(0, pageSize)
 
-    // Combine and filter results
-    const combineSpan = iterationSpan?.startSpan("combine_results")
-    const combinedResults = {
-      root: {
-        children: [
-          ...(results.root.children || []),
-          ...(eventResults.root.children || []),
-        ].filter(
-          (v: VespaSearchResult) =>
-            (v.fields as VespaMailSearch).app === Apps.Gmail ||
-            (v.fields as VespaEventSearch).app === Apps.GoogleCalendar,
-        ),
-      },
-    }
-
-    combineSpan?.setAttribute(
-      "combined_result_count",
-      combinedResults?.root?.children?.length || 0,
-    )
-    combineSpan?.setAttribute(
-      "combined_result_ids",
-      JSON.stringify(
-        combinedResults?.root?.children?.map(
-          (r: VespaSearchResult) => (r.fields as any).docId,
-        ) || [],
-      ),
-    )
-    combineSpan?.end()
-
-    if (!combinedResults.root.children.length) {
-      Logger.info("No gmail or calendar events found")
-      iterationSpan?.end()
-      continue
-    }
-
-    // Prepare context for LLM
-    const contextSpan = iterationSpan?.startSpan("build_context")
-    const startIndex = isReasoning ? previousResultsLength : 0
     const initialContext = cleanContext(
-      combinedResults?.root?.children
+      results
         ?.map(
           (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(
+            `Index ${i} \n ${answerContextMap(
               v as z.infer<typeof VespaSearchResultsSchema>,
               maxSummaryCount,
             )}`,
         )
         ?.join("\n"),
     )
-    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-    contextSpan?.setAttribute("context", initialContext || "")
-    contextSpan?.setAttribute(
-      "number_of_chunks",
-      combinedResults?.root?.children?.length || 0,
-    )
-    contextSpan?.end()
 
-    // Stream LLM response
-    const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
+    
     const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: isReasoning,
     })
-
     let buffer = ""
     let currentAnswer = ""
     let parsed = { answer: "" }
@@ -1146,12 +1111,7 @@ async function* generatePointQueryTimeExpansion(
         if (reasoning) {
           if (thinking && !chunk.text.includes(EndThinkingToken)) {
             thinking += chunk.text
-            yield* checkAndYieldCitations(
-              thinking,
-              yieldedCitations,
-              combinedResults?.root?.children,
-              previousResultsLength,
-            )
+            yield* checkAndYieldCitations(thinking, yieldedCitations, items, 0)
             yield { text: chunk.text, reasoning }
           } else {
             // first time
@@ -1172,8 +1132,8 @@ async function* generatePointQueryTimeExpansion(
               yield* checkAndYieldCitations(
                 thinking,
                 yieldedCitations,
-                combinedResults?.root?.children,
-                previousResultsLength,
+                results,
+                0,
               )
               yield { text: token, reasoning }
             }
@@ -1206,8 +1166,8 @@ async function* generatePointQueryTimeExpansion(
               yield* checkAndYieldCitations(
                 parsed.answer,
                 yieldedCitations,
-                combinedResults?.root?.children,
-                previousResultsLength,
+                results,
+                0,
               )
               currentAnswer = parsed.answer
             }
@@ -1223,45 +1183,287 @@ async function* generatePointQueryTimeExpansion(
         yield { cost: chunk.cost }
       }
     }
-    ragSpan?.end()
-    if (parsed.answer) {
-      ragSpan?.setAttribute("answer_found", true)
-      iterationSpan?.end()
-      Logger.debug(`Ending rootSpan at ${new Date().toISOString()}`)
-      rootSpan?.end()
-      eventRagSpan?.end()
-      return
-    }
-    // only increment in the case of reasoning
-    if (isReasoning) {
-      previousResultsLength += combinedResults?.root?.children?.length || 0
-      iterationSpan?.setAttribute(
-        "previous_results_length",
-        previousResultsLength,
-      )
-    }
-    iterationSpan?.end()
-  }
+  } else {
+    Logger.info("No metadata retrieval. Proceeding with default search.")
+    let lastSearchedTime = direction === "prev" ? from : to
 
-  const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
-  const searchSummary = getSearchRangeSummary(from, to, direction, noAnswerSpan)
-  const totalCost = costArr.reduce((a, b) => a + b, 0)
-  noAnswerSpan?.setAttribute("search_summary", searchSummary)
-  noAnswerSpan?.setAttribute("total_cost", totalCost)
-  yield {
-    text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
-    cost: totalCost,
+    let previousResultsLength = 0
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
+      iterationSpan?.setAttribute("iteration", iteration)
+      const windowSize = (2 + iteration) * weekInMs
+
+      if (direction === "prev") {
+        to = lastSearchedTime
+        from = to - windowSize
+        lastSearchedTime = from
+      } else {
+        from = lastSearchedTime
+        to = from + windowSize
+        lastSearchedTime = to
+      }
+
+      Logger.info(
+        `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
+      )
+      iterationSpan?.setAttribute("from", new Date(from).toLocaleString())
+      iterationSpan?.setAttribute("to", new Date(to).toLocaleString())
+      // Search in both calendar events and emails
+      const searchSpan = iterationSpan?.startSpan("search_vespa")
+      const emailSearchSpan = searchSpan?.startSpan("email_search")
+      // TODO: How to combine promise.all with spans?
+      // emailSearchSpan?.setAttribute(`promise.all[eventResults, results]-${iteration}`, true)
+
+      const calenderSearchSpan = searchSpan?.startSpan("calender_search")
+      const [eventResults, results] = await Promise.all([
+        searchVespa(message, email, Apps.GoogleCalendar, null, {
+          limit: pageSize,
+          alpha,
+          timestampRange: { from, to },
+          span: calenderSearchSpan,
+        }),
+        searchVespa(message, email, null, null, {
+          limit: pageSize,
+          alpha,
+          timestampRange: { to, from },
+          notInMailLabels: ["CATEGORY_PROMOTIONS"],
+          span: emailSearchSpan,
+        }),
+      ])
+      emailSearchSpan?.setAttribute(
+        "result_count",
+        results?.root?.children?.length || 0,
+      )
+      emailSearchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          results?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      emailSearchSpan?.setAttribute("result", JSON.stringify(results))
+      emailSearchSpan?.end()
+      calenderSearchSpan?.setAttribute(
+        "result_count",
+        eventResults?.root?.children?.length || 0,
+      )
+      calenderSearchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          eventResults?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      calenderSearchSpan?.setAttribute("result", JSON.stringify(eventResults))
+      calenderSearchSpan?.end()
+      searchSpan?.end()
+
+      if (!results.root.children && !eventResults.root.children) {
+        iterationSpan?.end()
+        continue
+      }
+
+      // Combine and filter results
+      const combineSpan = iterationSpan?.startSpan("combine_results")
+      const combinedResults = {
+        root: {
+          children: [
+            ...(results.root.children || []),
+            ...(eventResults.root.children || []),
+          ].filter(
+            (v: VespaSearchResult) =>
+              (v.fields as VespaMailSearch).app === Apps.Gmail ||
+              (v.fields as VespaEventSearch).app === Apps.GoogleCalendar,
+          ),
+        },
+      }
+
+      combineSpan?.setAttribute(
+        "combined_result_count",
+        combinedResults?.root?.children?.length || 0,
+      )
+      combineSpan?.setAttribute(
+        "combined_result_ids",
+        JSON.stringify(
+          combinedResults?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      combineSpan?.end()
+
+      if (!combinedResults.root.children.length) {
+        Logger.info("No gmail or calendar events found")
+        iterationSpan?.end()
+        continue
+      }
+
+      // Prepare context for LLM
+      const contextSpan = iterationSpan?.startSpan("build_context")
+      const startIndex = isReasoning ? previousResultsLength : 0
+      const initialContext = cleanContext(
+        combinedResults?.root?.children
+          ?.map(
+            (v, i) =>
+              `Index ${i + startIndex} \n ${answerContextMap(
+                v as z.infer<typeof VespaSearchResultsSchema>,
+                maxSummaryCount,
+              )}`,
+          )
+          ?.join("\n"),
+      )
+      contextSpan?.setAttribute("context_length", initialContext?.length || 0)
+      contextSpan?.setAttribute("context", initialContext || "")
+      contextSpan?.setAttribute(
+        "number_of_chunks",
+        combinedResults?.root?.children?.length || 0,
+      )
+      contextSpan?.end()
+
+      // Stream LLM response
+      const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
+      const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: isReasoning,
+      })
+
+      let buffer = ""
+      let currentAnswer = ""
+      let parsed = { answer: "" }
+      let thinking = ""
+      let reasoning = isReasoning
+      let yieldedCitations = new Set<number>()
+      const ANSWER_TOKEN = '"answer":'
+      for await (const chunk of iterator) {
+        if (chunk.text) {
+          if (reasoning) {
+            if (thinking && !chunk.text.includes(EndThinkingToken)) {
+              thinking += chunk.text
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                combinedResults?.root?.children,
+                previousResultsLength,
+              )
+              yield { text: chunk.text, reasoning }
+            } else {
+              // first time
+              const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+              if (
+                startThinkingIndex !== -1 &&
+                chunk.text.trim().length > StartThinkingToken.length
+              ) {
+                let token = chunk.text.slice(
+                  startThinkingIndex + StartThinkingToken.length,
+                )
+                if (chunk.text.includes(EndThinkingToken)) {
+                  token = chunk.text.split(EndThinkingToken)[0]
+                  thinking += token
+                } else {
+                  thinking += token
+                }
+                yield* checkAndYieldCitations(
+                  thinking,
+                  yieldedCitations,
+                  combinedResults?.root?.children,
+                  previousResultsLength,
+                )
+                yield { text: token, reasoning }
+              }
+            }
+          }
+          if (reasoning && chunk.text.includes(EndThinkingToken)) {
+            reasoning = false
+            chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+          }
+          if (!reasoning) {
+            buffer += chunk.text
+            try {
+              parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+              // If we have a null answer, break this inner loop and continue outer loop
+              // seen some cases with just "}"
+              if (parsed.answer === null || parsed.answer === "}") {
+                break
+              }
+
+              // If we have an answer and it's different from what we've seen
+              if (parsed.answer && currentAnswer !== parsed.answer) {
+                if (currentAnswer === "") {
+                  // First valid answer - send the whole thing
+                  yield { text: parsed.answer }
+                } else {
+                  // Subsequent chunks - send only the new part
+                  const newText = parsed.answer.slice(currentAnswer.length)
+                  yield { text: newText }
+                }
+                yield* checkAndYieldCitations(
+                  parsed.answer,
+                  yieldedCitations,
+                  combinedResults?.root?.children,
+                  previousResultsLength,
+                )
+                currentAnswer = parsed.answer
+              }
+            } catch (e) {
+              // If we can't parse the JSON yet, continue accumulating
+              continue
+            }
+          }
+        }
+
+        if (chunk.cost) {
+          costArr.push(chunk.cost)
+          yield { cost: chunk.cost }
+        }
+      }
+      ragSpan?.end()
+      if (parsed.answer) {
+        ragSpan?.setAttribute("answer_found", true)
+        iterationSpan?.end()
+        Logger.debug(`Ending rootSpan at ${new Date().toISOString()}`)
+        rootSpan?.end()
+        eventRagSpan?.end()
+        return
+      }
+      // only increment in the case of reasoning
+      if (isReasoning) {
+        previousResultsLength += combinedResults?.root?.children?.length || 0
+        iterationSpan?.setAttribute(
+          "previous_results_length",
+          previousResultsLength,
+        )
+      }
+      iterationSpan?.end()
+    }
+
+    const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
+    const searchSummary = getSearchRangeSummary(
+      from,
+      to,
+      direction,
+      noAnswerSpan,
+    )
+    const totalCost = costArr.reduce((a, b) => a + b, 0)
+    noAnswerSpan?.setAttribute("search_summary", searchSummary)
+    noAnswerSpan?.setAttribute("total_cost", totalCost)
+    yield {
+      text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
+      cost: totalCost,
+    }
+    noAnswerSpan?.end()
+    rootSpan?.end()
+    eventRagSpan?.end()
   }
-  noAnswerSpan?.end()
-  rootSpan?.end()
-  eventRagSpan?.end()
 }
 
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
   message: string,
-  classification: TemporalClassifier,
+  classification: TemporalClassifier & QueryRouterResponse,
   messages: Message[],
   alpha: number,
   passedSpan?: Span,
@@ -1278,9 +1480,7 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?.setAttribute("message_count", messages.length)
   // user is talking about an event
   if (classification.direction !== null) {
-    Logger.info(
-      `Direction :  ${classification.direction}`,
-    )
+    Logger.info(`Direction :  ${classification.direction}`)
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
     return yield* generatePointQueryTimeExpansion(
@@ -1504,7 +1704,20 @@ export const MessageApi = async (c: Context) => {
           let answer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null}
+          let queryFilters = {
+            app: "",
+            entity: "",
+            startTime: "",
+            endTime: "",
+            count: 0,
+          }
+          let parsed = {
+            answer: "",
+            queryRewrite: "",
+            temporalDirection: null,
+            filters: queryFilters,
+            type: "",
+          }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -1606,9 +1819,17 @@ export const MessageApi = async (c: Context) => {
                 "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
               )
             }
-            const classification: TemporalClassifier = {
+            const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
+              type: parsed.type as any,
+              filters: {
+                ...parsed.filters,
+                app: parsed.filters.app as Apps,
+                entity: parsed.filters.entity as any,
+              },
             }
+
+            console.log(classification, " classification")
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
               email,
@@ -2023,7 +2244,19 @@ export const MessageRetryApi = async (c: Context) => {
           let answer = ""
           let citations: number[] = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let queryFilters = {
+            app: "",
+            entity: "",
+            timestampRange: { from: 0, to: 0 },
+            count: 0,
+          }
+          let parsed = {
+            answer: "",
+            queryRewrite: "",
+            temporalDirection: null,
+            filter: queryFilters,
+            type: "",
+          }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -2118,8 +2351,15 @@ export const MessageRetryApi = async (c: Context) => {
                 "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
               )
             }
-            const classification: TemporalClassifier = {
+            const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
+              type: parsed.type as any,
+              filters: {
+                ...parsed.filter,
+                count: parsed.filter.count,
+                app: parsed.filter.app as Apps,
+                entity: parsed.filter.entity as any,
+              },
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
