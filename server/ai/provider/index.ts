@@ -55,6 +55,7 @@ import {
   baselinePromptJson,
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
+  emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
   meetingPromptJson,
@@ -376,7 +377,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     text = text.trim()
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
-      text = text.replaceAll(/[\n"}:]/g, "");
+      text = text.replaceAll(/[\n"}:]/g, "")
     }
     // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -985,6 +986,32 @@ export const meetingPromptJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
+export const mailPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
 interface RewrittenQueries {
   queries: string[]
 }
@@ -1031,7 +1058,7 @@ export const queryRewriter = async (
 }
 
 //Temporal Event Classification : NOT USED.
- 
+
 // export const temporalEventClassification = async (
 //   userQuery: string,
 //   params: ModelParams,

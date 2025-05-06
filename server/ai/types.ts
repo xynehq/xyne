@@ -145,10 +145,7 @@ export const RetrieveMetadataSchema = z.object({
 export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(QueryType.RetrieveInformation),
-    filters: z.object({
-      startTime: z.string().nullable().optional(),
-      endTime: z.string().nullable().optional(),
-    }),
+    filters: FiltersSchema
   }),
   RetrieveMetadataSchema,
 ])
