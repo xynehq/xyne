@@ -10,12 +10,17 @@ import {
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
-import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
+import {
+  ChatSSEvents,
+  SelectPublicMessage,
+  Citation,
+  Apps,
+  DriveEntity,
+} from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
-import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
@@ -36,7 +41,22 @@ import {
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
+import { ChatBox } from "@/components/ChatBox"
+// Removed duplicate Citation import here
 
+// Define Reference type (matching ChatBox)
+interface Reference {
+  id: string
+  title: string
+  url?: string
+  docId?: string
+  app?: string
+  entity?: string
+  type: "citation" | "global"
+  photoLink?: string
+}
+
+// Restored CurrentResp type definition
 type CurrentResp = {
   resp: string
   chatId?: string
@@ -45,6 +65,18 @@ type CurrentResp = {
   citationMap?: Record<number, number>
   thinking?: string
 }
+
+// Mapping from source ID to app/entity object
+const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
+  {
+    googledrive: { app: Apps.GoogleDrive, entity: "file" },
+    googledocs: { app: Apps.GoogleDrive, entity: DriveEntity.Docs },
+    slack: { app: Apps.Slack, entity: "message" },
+    gmail: { app: Apps.Gmail, entity: "mail" }, // Assuming MailEntity.Email maps to "mail"
+    googlecalendar: { app: Apps.GoogleCalendar, entity: "event" },
+    pdf: { app: "pdf", entity: "pdf_default" }, // Assuming DriveEntity.PDF maps to "pdf_default"
+    event: { app: "event", entity: "event_default" },
+  }
 
 interface ChatPageProps {
   user: PublicUser
@@ -57,6 +89,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
   })
+  // console.log("chatParams:", chatParams) // For debugging
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
 
@@ -107,6 +140,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [isEditing, setIsEditing] = useState<boolean>(false)
   const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
   const titleRef = useRef<HTMLInputElement | null>(null)
+  const [allCitations, setAllCitations] = useState<Map<string, Citation>>(
+    new Map(),
+  ) // State for all citations
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -157,6 +193,32 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       console.error("Failed to rename chat:", error)
     },
   })
+
+  // Effect to aggregate citations from messages
+  useEffect(() => {
+    const newCitations = new Map(allCitations)
+    let changed = false
+    messages.forEach((msg) => {
+      if (msg.messageRole === "assistant" && msg.sources) {
+        // Add explicit type for citation
+        msg.sources.forEach((citation: Citation) => {
+          // Use URL as unique key, ensure title exists for display
+          if (
+            citation.url &&
+            citation.title &&
+            !newCitations.has(citation.url)
+          ) {
+            newCitations.set(citation.url, citation)
+            changed = true
+          }
+        })
+      }
+    })
+    // Only update state if the map actually changed
+    if (changed) {
+      setAllCitations(newCitations)
+    }
+  }, [messages, allCitations]) // Dependency array includes allCitations
 
   useEffect(() => {
     if (inputRef.current) {
@@ -233,17 +295,68 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   useEffect(() => {
     if (chatParams.q && !hasHandledQueryParam.current) {
-      handleSend(decodeURIComponent(chatParams.q))
+      const messageToSend = decodeURIComponent(chatParams.q)
+
+      let refIdArray: string[] = []
+      // Process chatParams.refs safely
+      const _refs = chatParams.refs as string | string[] | undefined
+
+      if (Array.isArray(_refs)) {
+        refIdArray = _refs.filter((ref) => typeof ref === "string")
+      } else if (typeof _refs === "string") {
+        try {
+          const parsedRefs = JSON.parse(_refs)
+          if (
+            Array.isArray(parsedRefs) &&
+            parsedRefs.every((item) => typeof item === "string")
+          ) {
+            refIdArray = parsedRefs
+          }
+        } catch (e) {
+          console.error("Failed to parse chatParams.refs:", _refs, e)
+        }
+      }
+
+      const referencesForHandleSend: Reference[] = refIdArray.map((refId) => ({
+        id: refId,
+        title: `Document: ${refId}`,
+        docId: refId,
+        type: "global",
+      }))
+
+      let sourcesArray: string[] = []
+      // Process chatParams.sources safely
+      const _sources = chatParams.sources as string | string[] | undefined
+
+      if (Array.isArray(_sources)) {
+        sourcesArray = _sources.filter((s) => typeof s === "string")
+      } else if (typeof _sources === "string") {
+        sourcesArray = _sources
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+      }
+
+      handleSend(messageToSend, referencesForHandleSend, sourcesArray)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
-        search: (prev) => ({ ...prev, q: undefined }),
+        search: (prev) => ({
+          ...prev,
+          q: undefined,
+          refs: undefined,
+          sources: undefined,
+        }),
         replace: true,
       })
     }
-  }, [chatParams.q])
+  }, [chatParams.q, chatParams.refs, chatParams.sources, router])
 
-  const handleSend = async (messageToSend: string) => {
+  const handleSend = async (
+    messageToSend: string,
+    addedReferences: Reference[] = [], 
+    selectedSources: string[] = [],
+  ) => {
     if (!messageToSend || isStreaming) return
 
     setQuery("")
@@ -252,9 +365,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       { messageRole: "user", message: messageToSend },
     ])
 
+
     setIsStreaming(true)
     setCurrentResp({ resp: "", thinking: "" })
     currentRespRef.current = { resp: "", sources: [], thinking: "" }
+
+    const fileIds = addedReferences
+      .filter((ref) => ref.type === "global" && ref.docId)
+      .map((ref) => ref.docId!)
+
+    const appEntities = selectedSources
+      .map((sourceId) => sourceIdToAppEntityMap[sourceId])
+      .filter((item) => item !== undefined) 
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
@@ -263,17 +385,30 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
 
+    if (fileIds.length > 0) {
+      url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
+    }
+
+    if (appEntities.length > 0) {
+      url.searchParams.append(
+        "stringifiedAppEntity",
+        JSON.stringify(appEntities),
+      )
+    }
+
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
     })
 
+    // ... (rest of the eventSource listeners remain the same) ...
     eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
       const { contextChunks, citationMap } = JSON.parse(event.data)
       if (currentRespRef.current) {
         currentRespRef.current.sources = contextChunks
         currentRespRef.current.citationMap = citationMap
-        setCurrentResp((prevResp) => ({
-          ...prevResp,
+        // Add explicit type for prevResp
+        setCurrentResp((prevResp: CurrentResp | null) => ({
+          ...(prevResp || { resp: "", thinking: "" }), // Ensure proper default structure
           resp: prevResp?.resp || "",
           sources: contextChunks,
           citationMap,
@@ -282,8 +417,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     })
 
     eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      setCurrentResp((prevResp) => ({
-        ...(prevResp || { resp: "", thinking: event.data || "" }),
+      // Add explicit type for prevResp
+      setCurrentResp((prevResp: CurrentResp | null) => ({
+        ...(prevResp || { resp: "", thinking: "" }), // Ensure proper default structure
         thinking: (prevResp?.thinking || "") + event.data,
       }))
     })
@@ -291,10 +427,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSource.addEventListener(ChatSSEvents.Start, (event) => {})
 
     eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      setCurrentResp((prevResp) => {
+      // Add explicit type for prevResp
+      setCurrentResp((prevResp: CurrentResp | null) => {
         const updatedResp = prevResp
           ? { ...prevResp, resp: prevResp.resp + event.data }
-          : { resp: event.data }
+          : // Ensure the default object structure matches CurrentResp when creating a new one
+            { resp: event.data, thinking: "", sources: [], citationMap: {} }
         currentRespRef.current = updatedResp
         return updatedResp
       })
@@ -316,8 +454,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
       if (messageId) {
         if (currentRespRef.current) {
-          setCurrentResp((resp) => {
-            const updatedResp = resp || { resp: "" }
+          // Add explicit type for resp
+          setCurrentResp((resp: CurrentResp | null) => {
+            const updatedResp = resp || { resp: "", thinking: "" } // Ensure proper default structure
             updatedResp.chatId = chatId
             updatedResp.messageId = messageId
             currentRespRef.current = updatedResp
@@ -941,8 +1080,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             <ChatBox
               query={query}
               setQuery={setQuery}
-              handleSend={handleSend}
+              handleSend={handleSend} // handleSend function is passed here
               isStreaming={isStreaming}
+              allCitations={allCitations}
             />
           </div>
           <Sources
@@ -1293,6 +1433,25 @@ const chatParams = z.object({
     .transform((val) => val === "true")
     .optional()
     .default("false"),
+  refs: z // Changed from docId to refs, expects a JSON string array
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return undefined
+      try {
+        const parsed = JSON.parse(val)
+        return Array.isArray(parsed) &&
+          parsed.every((item) => typeof item === "string")
+          ? parsed
+          : undefined
+      } catch (e) {
+        return undefined // Invalid JSON
+      }
+    }),
+  sources: z // Changed from sourceIds to sources, expects comma-separated string
+    .string()
+    .optional()
+    .transform((val) => (val ? val.split(",") : undefined)),
 })
 
 type XyneChat = z.infer<typeof chatParams>
