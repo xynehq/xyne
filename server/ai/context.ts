@@ -33,10 +33,12 @@ const constructFileContext = (
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  fields.chunks_summary = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  ).map((v) => v.chunk)
+  if (fields.matchfeatures) {
+    fields.chunks_summary = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    ).map((v) => v.chunk)
+  }
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
@@ -73,10 +75,13 @@ const constructMailContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
-  fields.chunks_summary = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  ).map((v) => v.chunk)
+
+  if (fields.matchfeatures) {
+    fields.chunks_summary = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    ).map((v) => v.chunk)
+  }
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
@@ -125,10 +130,12 @@ const constructMailAttachmentContext = (
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  fields.chunks_summary = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  ).map((v) => v.chunk)
+  if (fields.matchfeatures) {
+    fields.chunks_summary = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    ).map((v) => v.chunk)
+  }
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
