@@ -533,8 +533,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         ).root.children || []
     }
 
-    console.log(items.length, "items")
-    // if no documents found just return
+    console.log(items.length,  "items")
     if (!items.length) {
       Logger.info(
         "No context found for metadata retrieval, moving to iterative RAG",
@@ -559,95 +558,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         })
       }
 
-      let buffer = ""
-      let currentAnswer = ""
-      let parsed = { answer: "" }
-      let thinking = ""
-      let reasoning = isReasoning
-      let yieldedCitations = new Set<number>()
-      const ANSWER_TOKEN = '"answer":'
-      for await (const chunk of iterator) {
-        if (chunk.text) {
-          if (reasoning) {
-            if (thinking && !chunk.text.includes(EndThinkingToken)) {
-              thinking += chunk.text
-              yield* checkAndYieldCitations(
-                thinking,
-                yieldedCitations,
-                items,
-                0,
-              )
-              yield { text: chunk.text, reasoning }
-            } else {
-              // first time
-              const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
-              if (
-                startThinkingIndex !== -1 &&
-                chunk.text.trim().length > StartThinkingToken.length
-              ) {
-                let token = chunk.text.slice(
-                  startThinkingIndex + StartThinkingToken.length,
-                )
-                if (chunk.text.includes(EndThinkingToken)) {
-                  token = chunk.text.split(EndThinkingToken)[0]
-                  thinking += token
-                } else {
-                  thinking += token
-                }
-                yield* checkAndYieldCitations(
-                  thinking,
-                  yieldedCitations,
-                  results,
-                  0,
-                )
-                yield { text: token, reasoning }
-              }
-            }
-          }
-          if (reasoning && chunk.text.includes(EndThinkingToken)) {
-            reasoning = false
-            chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-          }
-          if (!reasoning) {
-            buffer += chunk.text
-            // console.log(buffer, "buffer")
-            try {
-              parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
-              // If we have a null answer, break this inner loop and continue outer loop
-              // seen some cases with just "}"
-              if (parsed.answer === null || parsed.answer === "}") {
-                break
-              }
-
-              // If we have an answer and it's different from what we've seen
-              if (parsed.answer && currentAnswer !== parsed.answer) {
-                if (currentAnswer === "") {
-                  // First valid answer - send the whole thing
-                  yield { text: parsed.answer }
-                } else {
-                  // Subsequent chunks - send only the new part
-                  const newText = parsed.answer.slice(currentAnswer.length)
-                  yield { text: newText }
-                }
-                yield* checkAndYieldCitations(
-                  parsed.answer,
-                  yieldedCitations,
-                  results,
-                  0,
-                )
-                currentAnswer = parsed.answer
-              }
-            } catch (e) {
-              // If we can't parse the JSON yet, continue accumulating
-              continue
-            }
-          }
-        }
-
-        if (chunk.cost) {
-          yield { cost: chunk.cost }
-        }
-      }
+      yield* processIterator(iterator, results)
       return
     }
   }
@@ -827,95 +738,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             reasoning: isReasoning,
           },
         )
-        let buffer = ""
-        let currentAnswer = ""
-        let parsed = { answer: "" }
-        let thinking = ""
-        let reasoning = isReasoning
-        let yieldedCitations = new Set<number>()
-        const ANSWER_TOKEN = '"answer":'
-        for await (const chunk of iterator) {
-          if (chunk.text) {
-            if (reasoning) {
-              if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                thinking += chunk.text
-                yield* checkAndYieldCitations(
-                  thinking,
-                  yieldedCitations,
-                  totalResults,
-                  previousResultsLength,
-                )
-                yield { text: chunk.text, reasoning }
-              } else {
-                // first time
-                const startThinkingIndex =
-                  chunk.text.indexOf(StartThinkingToken)
-                if (
-                  startThinkingIndex !== -1 &&
-                  chunk.text.trim().length > StartThinkingToken.length
-                ) {
-                  let token = chunk.text.slice(
-                    startThinkingIndex + StartThinkingToken.length,
-                  )
-                  if (chunk.text.includes(EndThinkingToken)) {
-                    token = chunk.text.split(EndThinkingToken)[0]
-                    thinking += token
-                  } else {
-                    thinking += token
-                  }
-                  yield* checkAndYieldCitations(
-                    thinking,
-                    yieldedCitations,
-                    totalResults,
-                    previousResultsLength,
-                  )
-                  yield { text: token, reasoning }
-                }
-              }
-            }
-            if (reasoning && chunk.text.includes(EndThinkingToken)) {
-              reasoning = false
-              chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-            }
-            if (!reasoning) {
-              buffer += chunk.text
-              try {
-                parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
-                if (parsed.answer === null) {
-                  break
-                }
-                if (parsed.answer && currentAnswer !== parsed.answer) {
-                  if (currentAnswer === "") {
-                    // First valid answer - send the whole thing
-                    yield { text: parsed.answer }
-                  } else {
-                    // Subsequent chunks - send only the new part
-                    const newText = parsed.answer.slice(currentAnswer.length)
-                    yield { text: newText }
-                  }
-                  yield* checkAndYieldCitations(
-                    parsed.answer,
-                    yieldedCitations,
-                    totalResults,
-                    previousResultsLength,
-                  )
-                  currentAnswer = parsed.answer
-                }
-              } catch (err) {
-                const errMessage = (err as Error).message
-                Logger.error(
-                  err,
-                  `Error while parsing LLM output ${errMessage}`,
-                )
-                continue
-              }
-            }
-          }
-          if (chunk.cost) {
-            yield { cost: chunk.cost }
-          }
-        }
-        if (parsed.answer) {
+
+        const answer = yield* processIterator(iterator, totalResults,previousResultsLength)
+        if (answer) {
           ragSpan?.setAttribute("answer_found", true)
           ragSpan?.end()
           querySpan?.end()
@@ -1027,96 +852,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       reasoning: isReasoning,
     })
 
-    let buffer = ""
-    let currentAnswer = ""
-    let parsed = { answer: "" }
-    let thinking = ""
-    let reasoning = isReasoning
-    let yieldedCitations = new Set<number>()
-    // tied to the json format and output expected, we expect the answer key to be present
-    const ANSWER_TOKEN = '"answer":'
-    for await (const chunk of iterator) {
-      if (chunk.text) {
-        if (reasoning) {
-          if (thinking && !chunk.text.includes(EndThinkingToken)) {
-            thinking += chunk.text
-            yield* checkAndYieldCitations(
-              thinking,
-              yieldedCitations,
-              results?.root?.children,
-              previousResultsLength,
-            )
-            yield { text: chunk.text, reasoning }
-          } else {
-            // first time
-            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
-            if (
-              startThinkingIndex !== -1 &&
-              chunk.text.trim().length > StartThinkingToken.length
-            ) {
-              let token = chunk.text.slice(
-                startThinkingIndex + StartThinkingToken.length,
-              )
-              if (chunk.text.includes(EndThinkingToken)) {
-                token = chunk.text.split(EndThinkingToken)[0]
-                thinking += token
-              } else {
-                thinking += token
-              }
-
-              yield* checkAndYieldCitations(
-                thinking,
-                yieldedCitations,
-                results?.root?.children,
-                previousResultsLength,
-              )
-              yield { text: token, reasoning }
-            }
-          }
-        }
-        if (reasoning && chunk.text.includes(EndThinkingToken)) {
-          reasoning = false
-          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-        }
-
-        if (!reasoning) {
-          buffer += chunk.text
-          try {
-            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
-            if (parsed.answer === null) {
-              break
-            }
-            if (parsed.answer && currentAnswer !== parsed.answer) {
-              if (currentAnswer === "") {
-                // First valid answer - send the whole thing
-                yield { text: parsed.answer }
-              } else {
-                // Subsequent chunks - send only the new part
-                const newText = parsed.answer.slice(currentAnswer.length)
-                yield { text: newText }
-              }
-              // Extract all citations from the parsed answer
-              // const citationSpan = chunkSpan.startSpan("check_citations")
-              yield* checkAndYieldCitations(
-                parsed.answer,
-                yieldedCitations,
-                results?.root?.children,
-                previousResultsLength,
-              )
-              currentAnswer = parsed.answer
-            }
-          } catch (err) {
-            const errMessage = (err as Error).message
-            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
-            continue
-          }
-        }
-      }
-      if (chunk.cost) {
-        yield { cost: chunk.cost }
-      }
-    }
-    if (parsed.answer) {
+    const answer = yield* processIterator(
+      iterator,
+      results?.root?.children,
+      previousResultsLength,
+    )
+    if (answer) {
       ragSpan?.setAttribute("answer_found", true)
       ragSpan?.end()
       pageSpan?.end()
@@ -1192,6 +933,7 @@ async function* processIterator(
   let thinking = ""
   let reasoning = isReasoning
   let yieldedCitations = new Set<number>()
+  // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'
 
   for await (const chunk of iterator) {
@@ -1542,7 +1284,7 @@ async function* generatePointQueryTimeExpansion(
     const answer = yield* processIterator(
       iterator,
       combinedResults?.root?.children,
-      0,
+      previousResultsLength,
     )
     ragSpan?.end()
     if (answer) {
