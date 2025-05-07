@@ -478,9 +478,35 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
     try {
       // Use the NEW bulk API endpoint
-      await api.logBulkTraceData.$post({ json: { traces: tracesToLog } });
-      console.log(`Successfully requested logging for ${tracesToLog.length} traces.`);
-      // Optionally add a success toast/message here
+      const response = await api.logBulkTraceData.$post({ json: { traces: tracesToLog } });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const contentDisposition = response.headers.get("Content-Disposition");
+        let filename = `trace_data_${new Date().toISOString().split('T')[0]}.csv`; // Default filename
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+          if (filenameMatch && filenameMatch.length > 1) {
+            filename = filenameMatch[1];
+          }
+        }
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a); // Append the element to the DOM
+        a.click();
+        a.remove(); // Remove the element after clicking
+        window.URL.revokeObjectURL(url); // Clean up
+
+        console.log(`Successfully downloaded ${filename} with ${tracesToLog.length} traces.`);
+      } else {
+        // Handle error response (e.g., if server sends JSON error)
+        const errorData = await response.json().catch(() => ({ message: "Unknown error during download" }));
+        console.error("Failed to log bulk trace data:", response.status, errorData);
+        // Optionally add an error toast/message here based on errorData
+      }
     } catch (error) {
       console.error("Failed to log bulk trace data:", error);
       // Optionally add an error toast/message here
