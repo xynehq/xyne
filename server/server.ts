@@ -13,6 +13,7 @@ import {
   messageRetrySchema,
   messageSchema,
   SearchApi,
+  chatStopSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -65,7 +66,8 @@ import {
   MessageApi,
   MessageRetryApi,
   GetChatTraceApi,
-} from "@/api/chat"
+  StopStreamingApi,
+} from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
 import {
@@ -171,6 +173,7 @@ export const AppRoutes = app
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
+  .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // this is event streaming end point

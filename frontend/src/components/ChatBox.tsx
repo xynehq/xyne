@@ -1,4 +1,4 @@
-import { ArrowRight, Globe } from "lucide-react"
+import { ArrowRight, Globe, Square } from "lucide-react"
 import { useEffect, useRef } from "react"
 import Attach from "@/assets/attach.svg?react"
 
@@ -7,6 +7,8 @@ interface ChatBoxProps {
   setQuery: (query: string) => void
   handleSend: (messageToSend: string) => void
   isStreaming?: boolean
+  handleStop?: () => void
+  chatId?: string | null
 }
 
 export const ChatBox = ({
@@ -14,6 +16,8 @@ export const ChatBox = ({
   setQuery,
   handleSend,
   isStreaming = false,
+  handleStop,
+  chatId,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   useEffect(() => {
@@ -56,14 +60,24 @@ export const ChatBox = ({
       >
         <Attach className="text-[#464D53] cursor-pointer" />
         <Globe size={16} className="text-[#464D53] cursor-pointer" />
-        <button
-          disabled={isStreaming}
-          onClick={() => handleSend(query)}
-          style={{ marginLeft: "auto" }}
-          className={`flex mr-6 bg-[#464B53] text-white ${!isStreaming ? "hover:bg-[#5a5f66]" : ""}  rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50`}
-        >
-          <ArrowRight className="text-white" size={16} />
-        </button>
+        {isStreaming && chatId ? (
+          <button
+            onClick={handleStop}
+            style={{ marginLeft: "auto" }}
+            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+          >
+            <Square className="text-white" size={16} />
+          </button>
+        ) : (
+          <button
+            disabled={isStreaming}
+            onClick={() => handleSend(query)}
+            style={{ marginLeft: "auto" }}
+            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
+          >
+            <ArrowRight className="text-white" size={16} />
+          </button>
+        )}
       </div>
     </div>
   )
