@@ -3,6 +3,45 @@ import { getIcon } from "@/lib/common"
 import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
 import { Mail } from "lucide-react"
 
+const formatDisplayDate = (
+  dateInput: string | number | Date | undefined,
+): string => {
+  if (!dateInput) return ""
+  const now = new Date()
+  const dateToFormat = new Date(dateInput)
+
+  const oneYearAgo = new Date(now)
+  oneYearAgo.setFullYear(now.getFullYear() - 1)
+
+  const isToday =
+    now.getDate() === dateToFormat.getDate() &&
+    now.getMonth() === dateToFormat.getMonth() &&
+    now.getFullYear() === dateToFormat.getFullYear()
+  const isYesterday =
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).valueOf() ===
+    new Date(
+      dateToFormat.getFullYear(),
+      dateToFormat.getMonth(),
+      dateToFormat.getDate(),
+    ).valueOf()
+
+  if (isToday) return "Today"
+  if (isYesterday) return "Yesterday"
+
+  if (dateToFormat < oneYearAgo) {
+    return dateToFormat.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
+  } else {
+    return dateToFormat.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+    })
+  }
+}
+
 export const SearchResult = ({
   result,
   index,
@@ -12,7 +51,6 @@ export const SearchResult = ({
   index: number
   showDebugInfo?: boolean
 }) => {
-  console.log("result", result)
   let content = <></>
   let commonClassVals = "pr-[60px]"
   if (result.type === "file") {
@@ -48,38 +86,7 @@ export const SearchResult = ({
             </a>
             <span className="text-[#999] mx-1.5">•</span>
             <span className="text-sm text-gray-600 leading-5">
-              {(() => {
-                const now = new Date();
-                const dateValue = result.updatedAt || (result as any).timestamp; // Cast to any to bypass TypeScript errors
-                const updatedAt = dateValue ? new Date(dateValue) : new Date(0);
-                
-                const oneYearAgo = new Date(now);
-                oneYearAgo.setFullYear(now.getFullYear() - 1);
-
-                const isToday = 
-                  now.getDate() === updatedAt.getDate() &&
-                  now.getMonth() === updatedAt.getMonth() &&
-                  now.getFullYear() === updatedAt.getFullYear();
-                const isYesterday =
-                  new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).valueOf() ===
-                  new Date(updatedAt.getFullYear(), updatedAt.getMonth(), updatedAt.getDate()).valueOf();
-
-                if (isToday) return "Today";
-                if (isYesterday) return "Yesterday";
-                
-                if (updatedAt < oneYearAgo) {
-                  return updatedAt.toLocaleDateString(undefined, {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  });
-                } else {
-                  return updatedAt.toLocaleDateString(undefined, {
-                    day: 'numeric',
-                    month: 'short',
-                  });
-                }
-              })()}
+              {formatDisplayDate(result.updatedAt || (result as any).timestamp)}
             </span>
           </div>
         </div>
@@ -167,22 +174,28 @@ export const SearchResult = ({
           <Mail className="mr-2 w-[16px] h-[16px] text-gray-500" />
           <div className="flex items-center">
             {(() => {
-              const fromString = result.from;
-              let emailPart = "";
-              let fallbackDisplay = fromString; // Default to the full 'from' string
+              const fromString = result.from
+              let emailPart = ""
+              let fallbackDisplay = fromString // Default to the full 'from' string
 
-              const emailMatch = fromString.match(/<([^>]+)>/);
-              if (emailMatch && emailMatch[1]) { // Format "Name <email@example.com>"
-                emailPart = emailMatch[1];
+              const emailMatch = fromString.match(/<([^>]+)>/)
+              if (emailMatch && emailMatch[1]) {
+                // Format "Name <email@example.com>"
+                emailPart = emailMatch[1]
                 // fallbackDisplay could be set to the name part: fromString.substring(0, emailMatch.index).trim()
                 // but the request is to show email, so emailPart will be prioritized.
-              } else if (fromString.includes('@') && !fromString.includes(' ') && !fromString.includes('<')) { // Format "email@example.com"
-                emailPart = fromString;
+              } else if (
+                fromString.includes("@") &&
+                !fromString.includes(" ") &&
+                !fromString.includes("<")
+              ) {
+                // Format "email@example.com"
+                emailPart = fromString
               }
               // If fromString is just "Name", emailPart remains "", fallbackDisplay is "Name".
 
-              const textToDisplay = emailPart || fallbackDisplay; 
-              const linkHref = emailPart ? `mailto:${emailPart}` : undefined;
+              const textToDisplay = emailPart || fallbackDisplay
+              const linkHref = emailPart ? `mailto:${emailPart}` : undefined
 
               if (linkHref) {
                 return (
@@ -196,49 +209,18 @@ export const SearchResult = ({
                       {textToDisplay}
                     </p>
                   </a>
-                );
+                )
               } else {
                 return (
                   <p className="text-left text-sm text-[#464B53] leading-5">
                     {textToDisplay}
                   </p>
-                );
+                )
               }
             })()}
             <span className="text-[#999] mx-1.5">•</span>
             <span className="text-sm text-gray-600 leading-5">
-              {(() => {
-                const now = new Date();
-                const dateValue = (result as any).timestamp;
-                const mailDate = dateValue ? new Date(dateValue) : new Date(0);
-
-                const oneYearAgo = new Date(now);
-                oneYearAgo.setFullYear(now.getFullYear() - 1);
-
-                const isToday =
-                  now.getDate() === mailDate.getDate() &&
-                  now.getMonth() === mailDate.getMonth() &&
-                  now.getFullYear() === mailDate.getFullYear();
-                const isYesterday =
-                  new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).valueOf() ===
-                  new Date(mailDate.getFullYear(), mailDate.getMonth(), mailDate.getDate()).valueOf();
-
-                if (isToday) return "Today";
-                if (isYesterday) return "Yesterday";
-
-                if (mailDate < oneYearAgo) {
-                  return mailDate.toLocaleDateString(undefined, {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  });
-                } else {
-                  return mailDate.toLocaleDateString(undefined, {
-                    day: "numeric",
-                    month: "short",
-                  });
-                }
-              })()}
+              {formatDisplayDate((result as any).timestamp)}
             </span>
           </div>
         </div>
@@ -290,38 +272,7 @@ export const SearchResult = ({
           {/*   <span className="text-[#999] mx-1.5">•</span> */}
           {/* </div> */}
           <span className="text-sm text-gray-600 leading-5">
-            {(() => {
-              const now = new Date();
-              const dateValue = result.updatedAt; 
-              const eventDate = dateValue ? new Date(dateValue) : new Date(0);
-              
-              const oneYearAgo = new Date(now);
-              oneYearAgo.setFullYear(now.getFullYear() - 1);
-
-              const isToday = 
-                now.getDate() === eventDate.getDate() &&
-                now.getMonth() === eventDate.getMonth() &&
-                now.getFullYear() === eventDate.getFullYear();
-              const isYesterday =
-                new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).valueOf() ===
-                new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate()).valueOf();
-
-              if (isToday) return "Today";
-              if (isYesterday) return "Yesterday";
-              
-              if (eventDate < oneYearAgo) {
-                return eventDate.toLocaleDateString(undefined, {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                });
-              } else {
-                return eventDate.toLocaleDateString(undefined, {
-                  day: 'numeric',
-                  month: 'short',
-                });
-              }
-            })()}
+            {formatDisplayDate(result.updatedAt)}
           </span>
         </div>
         <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden ml-[44px]">
