@@ -42,6 +42,49 @@ const formatDisplayDate = (
   }
 }
 
+const renderFromString = (fromString: string) => {
+  let emailPart = ""
+  let fallbackDisplay = fromString // Default to the full 'from' string
+
+  const emailMatch = fromString.match(/<([^>]+)>/)
+  if (emailMatch && emailMatch[1]) {
+    // Format "Name <email@example.com>"
+    emailPart = emailMatch[1]
+  } else if (
+    fromString.includes("@") &&
+    !fromString.includes(" ") &&
+    !fromString.includes("<")
+  ) {
+    // Format "email@example.com"
+    emailPart = fromString
+  }
+  // If fromString is just "Name", emailPart remains "", fallbackDisplay is "Name".
+
+  const textToDisplay = emailPart || fallbackDisplay
+  const linkHref = emailPart ? `mailto:${emailPart}` : undefined
+
+  if (linkHref) {
+    return (
+      <a
+        target="_blank"
+        className="text-[#2067F5]"
+        rel="noopener noreferrer"
+        href={linkHref}
+      >
+        <p className="text-left text-sm text-[#464B53] leading-5">
+          {textToDisplay}
+        </p>
+      </a>
+    )
+  } else {
+    return (
+      <p className="text-left text-sm text-[#464B53] leading-5">
+        {textToDisplay}
+      </p>
+    )
+  }
+}
+
 export const SearchResult = ({
   result,
   index,
@@ -86,7 +129,7 @@ export const SearchResult = ({
             </a>
             <span className="text-[#999] mx-1.5">•</span>
             <span className="text-sm text-gray-600 leading-5">
-              {formatDisplayDate(result.updatedAt || (result as any).timestamp)}
+              {formatDisplayDate(result.updatedAt)}
             </span>
           </div>
         </div>
@@ -173,54 +216,10 @@ export const SearchResult = ({
         <div className="flex flex-row items-center mt-1 ml-[44px]">
           <Mail className="mr-2 w-[16px] h-[16px] text-gray-500" />
           <div className="flex items-center">
-            {(() => {
-              const fromString = result.from
-              let emailPart = ""
-              let fallbackDisplay = fromString // Default to the full 'from' string
-
-              const emailMatch = fromString.match(/<([^>]+)>/)
-              if (emailMatch && emailMatch[1]) {
-                // Format "Name <email@example.com>"
-                emailPart = emailMatch[1]
-                // fallbackDisplay could be set to the name part: fromString.substring(0, emailMatch.index).trim()
-                // but the request is to show email, so emailPart will be prioritized.
-              } else if (
-                fromString.includes("@") &&
-                !fromString.includes(" ") &&
-                !fromString.includes("<")
-              ) {
-                // Format "email@example.com"
-                emailPart = fromString
-              }
-              // If fromString is just "Name", emailPart remains "", fallbackDisplay is "Name".
-
-              const textToDisplay = emailPart || fallbackDisplay
-              const linkHref = emailPart ? `mailto:${emailPart}` : undefined
-
-              if (linkHref) {
-                return (
-                  <a
-                    target="_blank"
-                    className="text-[#2067F5]"
-                    rel="noopener noreferrer"
-                    href={linkHref}
-                  >
-                    <p className="text-left text-sm text-[#464B53] leading-5">
-                      {textToDisplay}
-                    </p>
-                  </a>
-                )
-              } else {
-                return (
-                  <p className="text-left text-sm text-[#464B53] leading-5">
-                    {textToDisplay}
-                  </p>
-                )
-              }
-            })()}
+            {renderFromString(result.from)}
             <span className="text-[#999] mx-1.5">•</span>
             <span className="text-sm text-gray-600 leading-5">
-              {formatDisplayDate((result as any).timestamp)}
+              {formatDisplayDate(result.timestamp)}
             </span>
           </div>
         </div>
