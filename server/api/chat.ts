@@ -2031,6 +2031,7 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
+          console.log("Answer", answer)
           if (answer) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?

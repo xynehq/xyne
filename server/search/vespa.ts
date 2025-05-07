@@ -996,7 +996,7 @@ export const getItems = async (
   const whereClause =
     conditions.length > 0 ? `where ${conditions.join(" and ")}` : "where true"
 
-  const orderByClause = timestampField ? `order by ${timestampField} asc` : ""
+  const orderByClause = timestampField ? `order by ${timestampField} desc` : ""
 
   // Construct YQL query with limit and offset
   const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
