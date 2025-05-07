@@ -10,6 +10,7 @@ import { AuthType } from "shared/types"
 
 export const UserStatsTable = ({
   userStats,
+  type,
 }: {
   userStats: { [email: string]: any }
   type: AuthType
@@ -18,6 +19,7 @@ export const UserStatsTable = ({
     <Table className="ml-[10px] mt-[10px] max-h-[400px]">
       <TableHeader>
         <TableRow>
+          {type === AuthType.ServiceAccount && <TableHead> User Email </TableHead>}
           <TableHead>Gmail</TableHead>
           <TableHead>Drive</TableHead>
           <TableHead>Contacts</TableHead>
@@ -40,6 +42,7 @@ export const UserStatsTable = ({
             percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
           return (
             <TableRow key={email}>
+              {type === AuthType.ServiceAccount && <TableCell>{email}</TableCell>}
               <TableCell>{stats.gmailCount}</TableCell>
               <TableCell>{stats.driveCount}</TableCell>
               <TableCell>{stats.contactsCount}</TableCell>
