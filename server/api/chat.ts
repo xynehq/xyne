@@ -872,25 +872,16 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const pageSearchSpan = pageSpan?.startSpan("page_search")
       let results: VespaSearchResponse
       if (pageNumber === 0) {
-        console.log("Inside the condition: pageNumber === 0")
         const searchSpan = pageSearchSpan?.startSpan(
           "vespa_search_with_excluded_ids",
         )
-        results = specificFiles
-          ? await searchVespaSpecificFiles(message, email, fileIds, {
-              limit: pageSize,
-              offset: pageNumber * pageSize,
-              alpha,
-              excludedIds: latestIds,
-              span: searchSpan,
-            })
-          : await searchVespa(message, email, null, null, {
-              limit: pageSize,
-              offset: pageNumber * pageSize,
-              alpha,
-              excludedIds: latestIds,
-              span: searchSpan,
-            })
+        results = await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          offset: pageNumber * pageSize,
+          alpha,
+          excludedIds: latestIds,
+          span: searchSpan,
+        })
         searchSpan?.setAttribute(
           "result_count",
           results?.root?.children?.length || 0,
@@ -1034,9 +1025,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
                 break
               }
               if (parsed.answer && currentAnswer !== parsed.answer) {
-                console.log("results")
-                console.log(results.root.children)
-                console.log("results")
                 if (currentAnswer === "") {
                   // First valid answer - send the whole thing
                   yield { text: parsed.answer }
