@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
+import { toast } from "@/hooks/use-toast"
 
 type CurrentResp = {
   resp: string
@@ -473,6 +474,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         })
       } catch (error) {
         console.error("Failed to send stop request to backend:", error)
+        toast({
+          title: "Error",
+          description: "Could not stop streaming.",
+          variant: "destructive",
+          duration: 1000,
+        })
         // Backend stop failed, but client-side is already stopped
       }
     }
