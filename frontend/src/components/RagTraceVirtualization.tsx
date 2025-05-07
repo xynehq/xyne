@@ -1581,9 +1581,8 @@ export function RagTraceVirtualization({
           <button
             onClick={handleCopyJson}
             className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 relative group text-sm flex items-center"
-            title={isJsonCopied ? "Copied!" : "Copy JSON to clipboard"}
           >
-            <ClipboardCopy size={16} className="mr-1" />
+            <ClipboardCopy size={18} className="mr-1" />
             {isJsonCopied && (
                 <span className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2">
                   Copied!
