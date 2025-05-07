@@ -170,7 +170,7 @@ export const deduplicateAutocomplete = (
   return resp
 }
 
-const AllSources = [
+export const AllSources = [
   fileSchema,
   userSchema,
   mailSchema,
@@ -923,7 +923,6 @@ interface GetItemsParams {
 }
 
 // TODO: this won't work for user schema
-// Function : It helps in getting the metadata from the query. 
 export const getItems = async (
   params: GetItemsParams,
 ): Promise<VespaSearchResponse> => {
