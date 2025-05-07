@@ -473,7 +473,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20)}`,
         )
         ?.join("\n"),
     )
