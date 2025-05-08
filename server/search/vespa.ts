@@ -372,7 +372,7 @@ export const HybridDefaultProfile = (
   }
 }
 
-export const HybridDefaultProfileSpecificFiles = (
+export const HybridDefaultProfileInFiles = (
   hits: number,
   profile: SearchModes = SearchModes.NativeRank,
   fileIds: string[],
@@ -656,7 +656,7 @@ export const searchVespa = async (
   }
 }
 
-export const searchVespaSpecificFiles = async (
+export const searchVespaInFiles = async (
   query: string,
   email: string,
   fileIds: string[],
@@ -673,12 +673,12 @@ export const searchVespaSpecificFiles = async (
     maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  console.log("Running searchVespaSpecificFiles........")
+  console.log("Running searchVespaInFiles........")
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
-  let { yql, profile } = HybridDefaultProfileSpecificFiles(
+  let { yql, profile } = HybridDefaultProfileInFiles(
     limit,
     rankProfile,
     fileIds,

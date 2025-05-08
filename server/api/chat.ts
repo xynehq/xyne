@@ -58,7 +58,7 @@ import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa, searchVespaSpecificFiles } from "@/search/vespa"
+import { searchVespa, searchVespaInFiles } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
@@ -452,12 +452,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
   }
-  const specificFiles = fileIds && fileIds.length > 0
+  const selectedFiles = fileIds && fileIds.length > 0
 
   let previousResultsLength = 0
-  if (specificFiles) {
+  if (selectedFiles) {
     console.log("Enterd specific files...................")
-    let results = await searchVespaSpecificFiles(message, email, fileIds, {
+    let results = await searchVespaInFiles(message, email, fileIds, {
       limit: pageSize,
       alpha,
     })
@@ -473,7 +473,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
         )
         ?.join("\n"),
     )
@@ -594,7 +594,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // So no need to do iterative RAG here, if no answer is found on doing RAG the first time.
       // If no answer found, exit and yield nothing related to selected context found
       !parsed?.answer &&
-      specificFiles
+      selectedFiles
     ) {
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
@@ -1069,14 +1069,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       ragSpan?.end()
       pageSpan?.end()
     }
+    const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
+    yield {
+      text: "I could not find any information to answer it, please change your query",
+    }
+    noAnswerSpan?.end()
+    rootSpan?.end()
+    queryRagSpan?.end()
   }
-  const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
-  yield {
-    text: "I could not find any information to answer it, please change your query",
-  }
-  noAnswerSpan?.end()
-  rootSpan?.end()
-  queryRagSpan?.end()
 }
 
 const getSearchRangeSummary = (
@@ -1184,7 +1184,7 @@ async function* generatePointQueryTimeExpansion(
     const calenderSearchSpan = searchSpan?.startSpan("calender_search")
     const [eventResults, results] = await Promise.all([
       specificFiles
-        ? searchVespaSpecificFiles(message, email, fileIds, {
+        ? searchVespaInFiles(message, email, fileIds, {
             limit: pageSize,
             alpha,
             timestampRange: { from, to },
@@ -1197,7 +1197,7 @@ async function* generatePointQueryTimeExpansion(
             span: calenderSearchSpan,
           }),
       specificFiles
-        ? searchVespaSpecificFiles(message, email, fileIds, {
+        ? searchVespaInFiles(message, email, fileIds, {
             limit: pageSize,
             alpha,
             timestampRange: { to, from },
