@@ -51,10 +51,10 @@ import {
   analyzeInitialResultsOrRewriteV2SystemPrompt,
   AnalyzeUserQuerySystemPrompt,
   askQuestionUserPrompt,
+  baselineFilesContextPromptJson,
   baselinePrompt,
   baselinePromptJson,
   baselineReasoningPromptJson,
-  baselineSpeicificFilesPromptJson,
   chatWithCitationsSystemPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
@@ -936,17 +936,18 @@ export const baselineRAGJsonStream = (
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
-  if (defaultReasoning) {
+
+  if (specificFiles) {
+    params.systemPrompt = baselineFilesContextPromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
+  } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
     // this is extra work because we just now set Index <number>
     // in future once the reasoning mode better supported we won't have to do this
     params.systemPrompt = baselineReasoningPromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
-  } else if (specificFiles) {
-    params.systemPrompt = baselineSpeicificFilesPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )

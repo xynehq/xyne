@@ -630,8 +630,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       queryRagSpan?.end()
       return
     } else if (
-      // Condition if fileIds are present or appEntity has some values meaning context has been selected
-      // So no need to do iterative RAG here, if no answer is found on doing RAG the first time.
+      // Condition if fileIds are present has some values meaning context has been selected.
       // If no answer found, exit and yield nothing related to selected context found
       !parsed?.answer &&
       selectedFiles
