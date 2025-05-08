@@ -1127,7 +1127,6 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-  fileIds: string[],
   eventRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1147,8 +1146,6 @@ async function* generatePointQueryTimeExpansion(
   const weekInMs = 12 * 24 * 60 * 60 * 1000
   const direction = classification.direction as string
   let costArr: number[] = []
-
-  const specificFiles = fileIds && fileIds.length > 0
 
   let from = new Date().getTime()
   let to = new Date().getTime()
@@ -1183,34 +1180,19 @@ async function* generatePointQueryTimeExpansion(
 
     const calenderSearchSpan = searchSpan?.startSpan("calender_search")
     const [eventResults, results] = await Promise.all([
-      specificFiles
-        ? searchVespaInFiles(message, email, fileIds, {
-            limit: pageSize,
-            alpha,
-            timestampRange: { from, to },
-            span: calenderSearchSpan,
-          })
-        : searchVespa(message, email, Apps.GoogleCalendar, null, {
-            limit: pageSize,
-            alpha,
-            timestampRange: { from, to },
-            span: calenderSearchSpan,
-          }),
-      specificFiles
-        ? searchVespaInFiles(message, email, fileIds, {
-            limit: pageSize,
-            alpha,
-            timestampRange: { to, from },
-            notInMailLabels: ["CATEGORY_PROMOTIONS"],
-            span: emailSearchSpan,
-          })
-        : searchVespa(message, email, null, null, {
-            limit: pageSize,
-            alpha,
-            timestampRange: { to, from },
-            notInMailLabels: ["CATEGORY_PROMOTIONS"],
-            span: emailSearchSpan,
-          }),
+      searchVespa(message, email, Apps.GoogleCalendar, null, {
+        limit: pageSize,
+        alpha,
+        timestampRange: { from, to },
+        span: calenderSearchSpan,
+      }),
+      searchVespa(message, email, null, null, {
+        limit: pageSize,
+        alpha,
+        timestampRange: { to, from },
+        notInMailLabels: ["CATEGORY_PROMOTIONS"],
+        span: emailSearchSpan,
+      }),
     ])
     emailSearchSpan?.setAttribute(
       "result_count",
@@ -1471,7 +1453,6 @@ export async function* UnderstandMessageAndAnswer(
       alpha,
       chatPageSize,
       maxDefaultSummary,
-      fileIds,
       eventRagSpan,
     )
   } else {
@@ -2093,7 +2074,8 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId } = body
+    const { messageId, stringifiedfileIds } = body
+    const fileIds = JSON.parse(stringifiedfileIds) as string[]
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     rootSpan.setAttribute("email", email)
@@ -2316,7 +2298,7 @@ export const MessageRetryApi = async (c: Context) => {
               classification,
               convWithNoErrMsg,
               0.5,
-              // fileIds,
+              fileIds,
               understandSpan,
             )
             // throw new Error("Hello, how are u doing?")
