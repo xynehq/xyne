@@ -499,7 +499,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     console.log("Enterd specific files...................")
     let results = await searchVespaInFiles(message, email, fileIds, {
       limit: pageSize,
-      alpha,
+      alpha: userAlpha,
     })
     console.log("results")
     console.log(results.root.children)
@@ -648,7 +648,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     const latestResults = (
       await searchVespa(message, email, null, null, {
         limit: pageSize,
-        alpha,
+        alpha: userAlpha,
         timestampRange,
         span: initialSearchSpan,
       })
@@ -679,7 +679,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
         let results = await searchVespa(message, email, null, null, {
           limit: pageSize,
-          alpha,
+          alpha: userAlpha,
           span: vespaSearchSpan,
         })
         vespaSearchSpan?.setAttribute(
@@ -725,7 +725,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           const latestResults: VespaSearchResult[] = (
             await searchVespa(query, email, null, null, {
               limit: pageSize,
-              alpha,
+              alpha: userAlpha,
               timestampRange: {
                 from: new Date().getTime() - 4 * monthInMs,
                 to: new Date().getTime(),
@@ -749,7 +749,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
           let results = await searchVespa(query, email, null, null, {
             limit: pageSize,
-            alpha,
+            alpha: userAlpha,
             excludedIds: latestResults
               ?.map((v: VespaSearchResult) => (v.fields as any).docId)
               ?.filter((v) => !!v),
@@ -858,7 +858,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               if (!reasoning) {
                 buffer += chunk.text
                 try {
-                  parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+                  parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
                   if (parsed.answer === null) {
                     break
                   }
@@ -918,7 +918,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         results = await searchVespa(message, email, null, null, {
           limit: pageSize,
           offset: pageNumber * pageSize,
-          alpha,
+          alpha: userAlpha,
           excludedIds: latestIds,
           span: searchSpan,
         })
@@ -946,7 +946,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         results = await searchVespa(message, email, null, null, {
           limit: pageSize,
           offset: pageNumber * pageSize,
-          alpha,
+          alpha: userAlpha,
           span: searchSpan,
         })
         searchSpan?.setAttribute(
