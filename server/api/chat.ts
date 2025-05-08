@@ -1832,12 +1832,12 @@ export const MessageApi = async (c: Context) => {
             })
             await stream.writeSSE({
               event: ChatSSEvents.Error,
-              data: "Error while trying to answer",
+              data: "Can you please make your query more specific?",
             })
             // Add the error message to last user message
             await addErrMessageToMessage(
               lastMessage,
-              "Error while trying to answer",
+              "Can you please make your query more specific?",
             )
 
             await stream.writeSSE({

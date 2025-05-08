@@ -58,12 +58,12 @@ import {
   emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
-  meetingPromptJson,
+  //meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
   queryRewritePromptJson,
-  queryRouterPrompt,
+  //queryRouterPrompt,
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
@@ -764,45 +764,45 @@ export enum QueryType {
   // RetrieveMetadata = "RetrieveMetadata",
 }
 
-export const routeQuery = async (
-  userQuery: string,
-  params: ModelParams,
-): Promise<{ result: QueryRouterResponse; cost: number }> => {
-  if (!params.modelId) {
-    params.modelId = defaultFastModel
-  }
-  params.systemPrompt = queryRouterPrompt
-  params.json = true
+// export const routeQuery = async (
+//   userQuery: string,
+//   params: ModelParams,
+// ): Promise<{ result: QueryRouterResponse; cost: number }> => {
+//   if (!params.modelId) {
+//     params.modelId = defaultFastModel
+//   }
+//   params.systemPrompt = queryRouterPrompt
+//   params.json = true
 
-  const baseMessage = {
-    role: ConversationRole.USER,
-    content: [
-      {
-        text: `User Query: "${userQuery}"`,
-      },
-    ],
-  }
+//   const baseMessage = {
+//     role: ConversationRole.USER,
+//     content: [
+//       {
+//         text: `User Query: "${userQuery}"`,
+//       },
+//     ],
+//   }
 
-  params.messages = []
-  const messages: Message[] = params.messages
-    ? [...params.messages, baseMessage]
-    : [baseMessage]
+//   params.messages = []
+//   const messages: Message[] = params.messages
+//     ? [...params.messages, baseMessage]
+//     : [baseMessage]
 
-  const { text, cost } = await getProviderByModel(params.modelId).converse(
-    messages,
-    params,
-  )
+//   const { text, cost } = await getProviderByModel(params.modelId).converse(
+//     messages,
+//     params,
+//   )
 
-  if (text) {
-    const parsedResponse = jsonParseLLMOutput(text)
-    return {
-      result: QueryRouterResponseSchema.parse(parsedResponse),
-      cost: cost!,
-    }
-  } else {
-    throw new Error("No response from LLM")
-  }
-}
+//   if (text) {
+//     const parsedResponse = jsonParseLLMOutput(text)
+//     return {
+//       result: QueryRouterResponseSchema.parse(parsedResponse),
+//       cost: cost!,
+//     }
+//   } else {
+//     throw new Error("No response from LLM")
+//   }
+// }
 
 export const listItems = (
   query: string,
