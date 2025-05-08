@@ -63,11 +63,11 @@ const loadTestData = async (): Promise<Data[]> => {
     const filePath = path.join("..", "eval-data", "test-queries.json")
     const data = await fs.promises.readFile(filePath, "utf-8")
     const parsedData = JSON.parse(data)
-    
+
     if (!Array.isArray(parsedData)) {
       throw new Error("Test data must be an array")
     }
-    
+
     return parsedData
   } catch (error) {
     console.error("Error loading test data:", error)
@@ -140,8 +140,8 @@ interface EvalConfig<T, I, O> {
 
 // Add custom Score type definition
 type CustomScore = {
-  score: number;
-};
+  score: number
+}
 
 const Eval = async (
   name: string,
@@ -149,23 +149,25 @@ const Eval = async (
   description?: string,
 ) => {
   const data = config.data()
-  
+
   // Create OpenAI client
-  const openAiKey = process.env.OPENAI_API_KEY;
+  const openAiKey = process.env.OPENAI_API_KEY
   if (!openAiKey) {
-    throw new Error("OPENAI_API_KEY env var is not set – cannot run evaluations");
+    throw new Error(
+      "OPENAI_API_KEY env var is not set – cannot run evaluations",
+    )
   }
-  const openai = new OpenAI({ apiKey: openAiKey });
-  
+  const openai = new OpenAI({ apiKey: openAiKey })
+
   // Custom LLM-based factuality scorer
   const customFactualityScorer = async (params) => {
-    const { input, output, expected } = params;
-    
-    console.log("\n=== CUSTOM LLM EVALUATION ===");
-    console.log("Input:", input);
-    console.log("Generated:", output);
-    console.log("Expected:", expected);
-    
+    const { input, output, expected } = params
+
+    console.log("\n=== CUSTOM LLM EVALUATION ===")
+    console.log("Input:", input)
+    console.log("Generated:", output)
+    console.log("Expected:", expected)
+
     try {
       // Call OpenAI with the AutoEvals factuality prompt
       // Source: https://github.com/braintrustdata/autoevals/blob/main/templates/factuality.yaml
@@ -193,44 +195,44 @@ The submitted answer may either be a subset or superset of the expert answer, or
 (D) There is a disagreement between the submitted answer and the expert answer.
 (E) The answers differ, but these differences don't matter from the perspective of factuality.
 
-RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relationship between the answers.`
-          }
+RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relationship between the answers.`,
+          },
         ],
-        temperature: 0.1 // Low temperature for consistent scoring
-      });
-      
+        temperature: 0.1, // Low temperature for consistent scoring
+      })
+
       // Extract the choice from the response
-      const content = response.choices[0].message.content.trim();
-      console.log("Raw LLM response:", content);
-      
+      const content = response.choices[0].message.content.trim()
+      console.log("Raw LLM response:", content)
+
       // Map the choice to a score
       const choiceScores = {
-        "A": 0.4,
-        "B": 0.6,
-        "C": 1.0,
-        "D": 0.0,
-        "E": 1.0
-      };
-      
-      let score = 0.5; // Default score
-      if (content in choiceScores) {
-        score = choiceScores[content];
-      } else {
-        console.log("Invalid choice received, using default score 0.5");
+        A: 0.4,
+        B: 0.6,
+        C: 1.0,
+        D: 0.0,
+        E: 1.0,
       }
-      
-      console.log("Final factuality score:", score);
-      return { score };
+
+      let score = 0.5 // Default score
+      if (content in choiceScores) {
+        score = choiceScores[content]
+      } else {
+        console.log("Invalid choice received, using default score 0.5")
+      }
+
+      console.log("Final factuality score:", score)
+      return { score }
     } catch (error) {
-      console.error("Evaluation API error:", error.message);
+      console.error("Evaluation API error:", error.message)
       // Return a default score rather than failing
-      return { score: 0 };
+      return { score: 0 }
     }
-  };
-  
+  }
+
   // Use our custom implementation
-  const factualityScorer = customFactualityScorer;
-  
+  const factualityScorer = customFactualityScorer
+
   const results: EvalResults = []
   let resultId = 1
 
@@ -266,7 +268,9 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
             })
             break
           } catch (error: any) {
-            console.log(`Evaluation error (attempt ${attempts}): ${error.message}`)
+            console.log(
+              `Evaluation error (attempt ${attempts}): ${error.message}`,
+            )
             if (attempts === 5) {
               factuality = { score: 0.5 } // Default score after max attempts
             }
@@ -313,7 +317,9 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
           })
           break
         } catch (error: any) {
-          console.log(`Evaluation error (attempt ${attempts}): ${error.message}`)
+          console.log(
+            `Evaluation error (attempt ${attempts}): ${error.message}`,
+          )
           if (attempts === 5) {
             factuality = { score: 0.5 } // Default score after max attempts
           }
@@ -758,7 +764,7 @@ const generatePointQueryTimeExpansion = async (
       limit: pageSize,
       alpha,
       timestampRange: { from, to },
-      notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
+      notInMailLabels: ["CATEGORY_PROMOTIONS"],
     })
     if (!results.root.children) {
       results.root.children = []
@@ -961,7 +967,7 @@ const endToEndFlow = async (
       classification,
       messages,
       0.5,
-      ragSpan
+      ragSpan,
     )
 
     answer = ""

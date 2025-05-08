@@ -13,6 +13,7 @@ import {
   messageRetrySchema,
   messageSchema,
   SearchApi,
+  chatStopSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -65,10 +66,20 @@ import {
   MessageApi,
   MessageRetryApi,
   GetChatTraceApi,
+  StopStreamingApi,
 } from "./api/chat"
 import { UserRole } from "./shared/types"
 import { wsConnections } from "@/integrations/metricStream"
-type Variables = JwtVariables
+import {
+  EvaluateHandler,
+  ListDatasetsHandler,
+  TuneDatasetHandler,
+  TuningWsRoute,
+  tuneDatasetSchema,
+  DeleteDatasetHandler,
+} from "@/api/tuning"
+
+export type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
@@ -162,6 +173,7 @@ export const AppRoutes = app
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
+  .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // this is event streaming end point
@@ -175,6 +187,15 @@ export const AppRoutes = app
   .get("/me", GetUserWorkspaceInfo)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
+  .post("/tuning/evaluate", EvaluateHandler)
+  .get("/tuning/datasets", ListDatasetsHandler)
+  .post(
+    "/tuning/tuneDataset",
+    zValidator("json", tuneDatasetSchema),
+    TuneDatasetHandler,
+  )
+  .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
+  .get("/tuning/ws/:jobId", TuningWsRoute)
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema
@@ -397,6 +418,7 @@ app.get(
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
+app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" })) // Serve assets (CSS, JS, etc.)
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 export const init = async () => {

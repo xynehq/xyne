@@ -13,6 +13,7 @@ import {
   GetDocument,
   UpdateDocument,
   updateUserQueryHistory,
+  SearchModes,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -43,11 +44,16 @@ import { AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { getPublicUserAndWorkspaceByEmail } from "@/db/user"
+import { getPublicUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import type { PublicUserWorkspace } from "@/db/schema"
 import { getErrorMessage } from "@/utils"
 import { QueryCategory } from "@/ai/types"
+import {
+  getUserPersonalization,
+  getUserPersonalizationByEmail,
+  getUserPersonalizationAlpha,
+} from "@/db/personalization"
 const Logger = getLogger(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -75,6 +81,10 @@ export const chatBookmarkSchema = z.object({
 export const chatRenameSchema = z.object({
   chatId: z.string().min(1),
   title: z.string().min(1),
+})
+
+export const chatStopSchema = z.object({
+  chatId: z.string().min(1),
 })
 
 export const chatTraceSchema = z.object({
@@ -138,6 +148,8 @@ export const AutocompleteApi = async (c: Context) => {
 export const SearchApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   const email = sub
+  let userAlpha = await getUserPersonalizationAlpha(db, email)
+
   let {
     query,
     groupCount: gc,
@@ -160,7 +172,7 @@ export const SearchApi = async (c: Context) => {
     const tasks: Array<any> = [
       groupVespaSearch(decodedQuery, email, config.page, timestampRange),
       searchVespa(decodedQuery, email, app, entity, {
-        alpha: 0.5,
+        alpha: userAlpha,
         limit: page,
         requestDebug: debug,
         offset,
@@ -175,7 +187,7 @@ export const SearchApi = async (c: Context) => {
     ;[groupCount, results] = await Promise.all(tasks)
   } else {
     results = await searchVespa(decodedQuery, email, app, entity, {
-      alpha: 0.5,
+      alpha: userAlpha,
       limit: page,
       requestDebug: debug,
       offset,
@@ -192,6 +204,8 @@ export const SearchApi = async (c: Context) => {
 export const AnswerApi = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)
   const email = sub
+  let userAlpha = await getUserPersonalizationAlpha(db, email)
+
   // @ts-ignore
   const { query, app, entity } = c.req.valid("query")
   const decodedQuery = decodeURIComponent(query)
@@ -203,7 +217,7 @@ export const AnswerApi = async (c: Context) => {
     searchVespa(decodedQuery, email, app, entity, {
       requestDebug: config.isDebugMode,
       limit: config.answerPage,
-      alpha: 0.5,
+      alpha: userAlpha,
     }),
   ])
 

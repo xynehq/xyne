@@ -388,7 +388,9 @@ export const DeleteOauthConnector = async (c: Context) => {
   const { connectorId: connectorExternalId }: { connectorId: string } = c.req.valid("form")
 
   if (!connectorExternalId) {
-    Logger.error("connectorId (external) not provided in request for DeleteOauthConnector")
+    Logger.error(
+      "connectorId (external) not provided in request for DeleteOauthConnector",
+    )
     throw new HTTPException(400, { message: "Missing connectorId" })
   }
 
@@ -401,10 +403,18 @@ export const DeleteOauthConnector = async (c: Context) => {
   const [user] = userRes
 
   try {
-    const connector = await getConnectorByExternalId(connectorExternalId, user.id)
+    const connector = await getConnectorByExternalId(
+      connectorExternalId,
+      user.id,
+    )
     if (!connector) {
-      Logger.warn({ connectorExternalId, userId: user.id }, "Connector not found for deletion")
-      throw new HTTPException(404, { message: `Connector not found: ${connectorExternalId}` })
+      Logger.warn(
+        { connectorExternalId, userId: user.id },
+        "Connector not found for deletion",
+      )
+      throw new HTTPException(404, {
+        message: `Connector not found: ${connectorExternalId}`,
+      })
     }
     const connectorInternalId = connector.id
 
@@ -416,7 +426,10 @@ export const DeleteOauthConnector = async (c: Context) => {
       message: `OAuth connector ${connectorExternalId} and related data deleted successfully`,
     })
   } catch (error) {
-    Logger.error({ error, connectorExternalId, userId: user.id }, "Error in DeleteOauthConnector API handler")
+    Logger.error(
+      { error, connectorExternalId, userId: user.id },
+      "Error in DeleteOauthConnector API handler",
+    )
     if (error instanceof HTTPException) {
       throw error
     }

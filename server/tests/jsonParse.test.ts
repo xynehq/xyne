@@ -115,6 +115,22 @@ describe("jsonParseLLMOutput", () => {
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
+  test("no start brace, tripple backticks at end", () => {
+    const input = `"answer": "This is a plain text answer."
+  }
+    \`\`\``
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "This is a plain text answer." })
+  })
+  test("no start brace, tripple backticks at end and answer null", () => {
+    const input = `"answer": null
+  }
+\`\`\``
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result.answer).toEqual(null)
+  })
   //   test("null and closing brace", () => {
   //     const input = ` null
   //     }`
