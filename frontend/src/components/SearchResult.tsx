@@ -42,7 +42,7 @@ const formatDisplayDate = (
   }
 }
 
-const renderFromString = (fromString: string) => {
+const formatEmailDisplay = (fromString: string) => {
   let emailPart = ""
   let fallbackDisplay = fromString // Default to the full 'from' string
 
@@ -216,7 +216,7 @@ export const SearchResult = ({
         <div className="flex flex-row items-center mt-1 ml-[44px]">
           <Mail className="mr-2 w-[16px] h-[16px] text-gray-500" />
           <div className="flex items-center">
-            {renderFromString(result.from)}
+            {formatEmailDisplay(result.from)}
             <span className="text-[#999] mx-1.5">•</span>
             <span className="text-sm text-gray-600 leading-5">
               {formatDisplayDate(result.timestamp)}
