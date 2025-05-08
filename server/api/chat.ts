@@ -1628,6 +1628,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            fileIds: fileIds,
           })
           return [chat, insertedMsg]
         },
@@ -1656,6 +1657,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
         },
@@ -2174,8 +2176,7 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId, stringifiedfileIds } = body
-    const fileIds = JSON.parse(stringifiedfileIds) as string[]
+    const { messageId } = body
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     rootSpan.setAttribute("email", email)
@@ -2238,6 +2239,17 @@ export const MessageRetryApi = async (c: Context) => {
     const prevUserMessage = isUserMessage
       ? originalMessage
       : conversation[conversation.length - 1]
+    let fileIds: string[] = []
+    const fileIdsFromDB = JSON.parse(
+      JSON.stringify(prevUserMessage?.fileIds || []),
+    )
+    if (
+      prevUserMessage.messageRole === "user" &&
+      fileIdsFromDB &&
+      fileIdsFromDB.length > 0
+    ) {
+      fileIds = fileIdsFromDB
+    }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
       conversation = []
