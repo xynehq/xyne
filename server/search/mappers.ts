@@ -69,9 +69,23 @@ export const getSortedScoredChunks = (
     return []
   }
 
+  // Handle cases where matchfeatures or chunk_scores are missing
+  // This is necessary because Vespa might not return matchfeatures
+  // when results are ordered by fields instead of relevance.
+  if (!matchfeatures || !matchfeatures.chunk_scores) {
+    // Return chunks unsorted or with default score if scoring info is unavailable
+    const mappedChunks = existingChunksSummary.map((v, index) => ({
+      chunk: v,
+      score: 0,
+      index,
+    }))
+    return maxChunks ? mappedChunks.slice(0, maxChunks) : mappedChunks
+  }
+
+  // Handle case where chunk_scores.cells object exists but is empty
   if (
-    matchfeatures?.chunk_scores?.cells &&
-    !Object.keys(matchfeatures?.chunk_scores?.cells).length
+    matchfeatures.chunk_scores.cells &&
+    !Object.keys(matchfeatures.chunk_scores.cells).length
   ) {
     const mappedChunks = existingChunksSummary.map((v, index) => ({
       chunk: v,

@@ -384,8 +384,9 @@ export const DeleteConnector = async (c: Context) => {
 }
 
 export const DeleteOauthConnector = async (c: Context) => {
+  const { connectorId: connectorExternalId }: { connectorId: string } =
   // @ts-ignore Ignore Hono validation type issue
-  const { connectorId: connectorExternalId }: { connectorId: string } = c.req.valid("form")
+    c.req.valid("form")
 
   if (!connectorExternalId) {
     Logger.error(

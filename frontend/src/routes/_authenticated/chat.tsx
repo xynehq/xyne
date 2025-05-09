@@ -59,7 +59,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   })
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
-
+  const [isAgenticMode, setIsAgenticMode] = useState(
+    chatParams.agentic === "true",
+  )
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
     from: isWithChatId
@@ -71,7 +73,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
-      search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+      search: {
+        ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
+        ...(isAgenticMode ? { agentic: true } : {}),
+      },
     })
   }
   const hasHandledQueryParam = useRef(false)
@@ -87,10 +92,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
-  const [showRagTrace, setShowRagTrace] = useState(false) // Added state
+  const [showRagTrace, setShowRagTrace] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
-  ) // Added state
+  )
 
   const currentRespRef = useRef<CurrentResp | null>(null)
   const [bookmark, setBookmark] = useState<boolean>(
@@ -202,7 +207,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             return prev + "."
           }
         })
-      }, 500)
+      }, 300)
 
       return () => clearInterval(interval)
     } else {
@@ -263,6 +268,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
 
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
+    }
+
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
     })
@@ -309,7 +318,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           router.navigate({
             to: "/chat/$chatId",
             params: { chatId },
-            search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+            search: {
+              ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
+              ...(isAgenticMode ? { agentic: true } : {}),
+            },
           })
         }, 1000)
       }
@@ -456,6 +468,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
+
+    if (isAgenticMode) {
+      url.searchParams.append("agentic", "true")
+    }
+
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,
     })
@@ -943,6 +960,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               setQuery={setQuery}
               handleSend={handleSend}
               isStreaming={isStreaming}
+              isAgenticMode={isAgenticMode}
+              setIsAgenticMode={setIsAgenticMode}
             />
           </div>
           <Sources
@@ -1289,6 +1308,11 @@ const ChatMessage = ({
 const chatParams = z.object({
   q: z.string().optional(),
   debug: z
+    .string()
+    .transform((val) => val === "true")
+    .optional()
+    .default("false"),
+  agentic: z
     .string()
     .transform((val) => val === "true")
     .optional()

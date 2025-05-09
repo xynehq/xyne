@@ -33,10 +33,17 @@ const constructFileContext = (
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  fields.chunks_summary = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  ).map((v) => v.chunk)
+  // Only sort chunks by score if matchfeatures are available
+  let processedChunks: string[] | undefined
+  if (fields.matchfeatures && fields.chunks_summary) {
+    processedChunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    ).map((v) => v.chunk)
+  } else {
+    // Otherwise, just use the existing chunks (or undefined if none)
+    processedChunks = fields.chunks_summary as string[] | undefined
+  }
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
@@ -47,7 +54,7 @@ ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+${processedChunks && processedChunks.length ? `Content: ${processedChunks.slice(0, maxSummaryChunks).join("\n")}` : ""}
 \nvespa relevance score: ${relevance}\n`
 }
 
@@ -73,10 +80,18 @@ const constructMailContext = (
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
-  fields.chunks_summary = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  ).map((v) => v.chunk)
+
+  // Only sort chunks by score if matchfeatures are available
+  let processedChunks: string[] | undefined
+  if (fields.matchfeatures && fields.chunks_summary) {
+    processedChunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    ).map((v) => v.chunk)
+  } else {
+    // Otherwise, just use the existing chunks (or undefined if none)
+    processedChunks = fields.chunks_summary as string[] | undefined
+  }
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
@@ -87,7 +102,7 @@ ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+${processedChunks && processedChunks.length ? `Content: ${processedChunks.slice(0, maxSummaryChunks).join("\n")}` : ""}
 vespa relevance score: ${relevance}`
 }
 
@@ -125,17 +140,24 @@ const constructMailAttachmentContext = (
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  fields.chunks_summary = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  ).map((v) => v.chunk)
+  // Only sort chunks by score if matchfeatures are available
+  let processedChunks: string[] | undefined
+  if (fields.matchfeatures && fields.chunks_summary) {
+    processedChunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    ).map((v) => v.chunk)
+  } else {
+    // Otherwise, just use the existing chunks (or undefined if none)
+    processedChunks = fields.chunks_summary as string[] | undefined
+  }
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+${processedChunks && processedChunks.length ? `Content: ${processedChunks.slice(0, maxSummaryChunks).join("\n")}` : ""}
 vespa relevance score: ${relevance}`
 }
 

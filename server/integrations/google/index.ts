@@ -637,10 +637,10 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       clientSecret: googleProvider.clientSecret,
       redirectUri: `${config.host}/oauth/callback`,
     })
-    
+
     const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth)
     tracker.setOAuthUser(userEmail)
-    
+
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({

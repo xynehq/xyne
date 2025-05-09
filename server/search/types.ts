@@ -624,7 +624,7 @@ const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
   children: z.array(z.lazy(() => VespaGroupSchema)).optional(),
 })
 
-type VespaGroupType = {
+export type VespaGroupType = {
   id: string
   relevance: number
   label: string
