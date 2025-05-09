@@ -1717,7 +1717,7 @@ export const MessageApi = async (c: Context) => {
             }
             const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
-              type: parsed.type as any,
+              type: parsed.type as QueryType,
               filters: {
                 ...parsed.filters,
                 app: parsed.filters.app as Apps,
@@ -2312,7 +2312,7 @@ export const MessageRetryApi = async (c: Context) => {
             }
             const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
-              type: parsed.type as any,
+              type: parsed.type as QueryType,
               filters: {
                 ...parsed.filters,
                 app: parsed.filters.app as Apps,
