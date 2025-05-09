@@ -1342,6 +1342,20 @@ const ChatMessage = ({
                     color: "#1C1D1F",
                   }}
                   components={{
+                    table: ({ node, ...props }) => (
+                      <div className="overflow-x-auto w-[720px] my-2">
+                        <table style={{ borderCollapse: 'collapse', borderStyle: 'hidden', tableLayout: 'fixed', width: '100%' }} className="min-w-full" {...props} />
+                      </div>
+                    ),
+                    th: ({ node, ...props }) => (
+                      <th style={{ border: 'none', padding: '4px 8px', textAlign: 'left', overflowWrap: 'break-word' }} {...props} />
+                    ),
+                    td: ({ node, ...props }) => (
+                      <td style={{ border: 'none', borderTop: '1px solid #e5e7eb', padding: '4px 8px', overflowWrap: 'break-word' }} {...props} />
+                    ),
+                    tr: ({ node, ...props }) => (
+                      <tr style={{ backgroundColor: '#ffffff', border: 'none' }} {...props} />
+                    ),
                     h1: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.6em" }} {...props} />
                     ),
