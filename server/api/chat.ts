@@ -533,13 +533,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         ).root.children || []
     }
 
-    console.log(items.length,  "items")
+    console.log(items.length, "items")
     if (!items.length) {
       Logger.info(
         "No context found for metadata retrieval, moving to iterative RAG",
       )
     } else {
-      const results = items.slice(0, pageSize)
+      const results = items
 
       const initialContext = buildContext(results, maxSummaryCount)
 
@@ -551,7 +551,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           reasoning: isReasoning,
         })
       } else {
-        iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
+        iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
           stream: true,
           modelId: defaultBestModel,
           reasoning: isReasoning,
@@ -634,13 +634,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
       vespaSearchSpan?.end()
 
-      const initialContext = cleanContext(
-        results?.root?.children
-          ?.map(
-            (v, i) =>
-              `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-          )
-          ?.join("\n"),
+      const initialContext = buildContext(
+        results?.root?.children,
+        maxSummaryCount,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -708,14 +704,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = cleanContext(
-          totalResults
-            ?.map(
-              (v, i) =>
-                `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-            )
-            ?.join("\n"),
-        )
+        const initialContext = buildContext(totalResults, maxSummaryCount)
+
         contextSpan?.setAttribute("context_length", initialContext?.length || 0)
         contextSpan?.setAttribute("context", initialContext || "")
         contextSpan?.setAttribute("number_of_chunks", totalResults.length)
@@ -739,7 +729,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           },
         )
 
-        const answer = yield* processIterator(iterator, totalResults,previousResultsLength)
+        const answer = yield* processIterator(
+          iterator,
+          totalResults,
+          previousResultsLength,
+        )
         if (answer) {
           ragSpan?.setAttribute("answer_found", true)
           ragSpan?.end()
@@ -825,14 +819,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     pageSearchSpan?.end()
     const startIndex = isReasoning ? previousResultsLength : 0
     const contextSpan = pageSpan?.startSpan("build_context")
-    const initialContext = cleanContext(
-      results?.root?.children
-        ?.map(
-          (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-        )
-        ?.join("\n"),
+    const initialContext = buildContext(
+      results?.root?.children,
+      maxSummaryCount,
+      startIndex,
     )
+
     contextSpan?.setAttribute("context_length", initialContext?.length || 0)
     contextSpan?.setAttribute("context", initialContext || "")
     contextSpan?.setAttribute(
@@ -1100,10 +1092,9 @@ async function* generatePointQueryTimeExpansion(
           app,
           entity,
           timestampRange: { from, to },
-          limit: count ? count : 10,
+          limit: count ? count : pageSize,
         })
       ).root.children || []
-
     console.log(items.length, "items")
     // if no documents found will iterative RAG
     if (!items.length) {
@@ -1111,7 +1102,7 @@ async function* generatePointQueryTimeExpansion(
         "No context found for metadata retrieval, moving to iterative RAG",
       )
     } else {
-      const results = items.slice(0, pageSize)
+      const results = items
       const searchRangeSummary = getSearchRangeSummary(
         from,
         to,
@@ -1128,7 +1119,7 @@ async function* generatePointQueryTimeExpansion(
           reasoning: isReasoning,
         })
       } else {
-        iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
+        iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
           stream: true,
           modelId: defaultBestModel,
           reasoning: isReasoning,

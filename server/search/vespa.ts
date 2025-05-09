@@ -962,7 +962,7 @@ export const getItems = async (
   let timestampField = ""
 
   // Choose appropriate timestamp field based on schema
-  if (schema === mailSchema) {
+  if (schema === mailSchema || schema === mailAttachmentSchema) {
     timestampField = "timestamp"
   } else if (schema === fileSchema) {
     timestampField = "updatedAt"

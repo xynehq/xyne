@@ -407,7 +407,7 @@ The context provided will be formatted with specific fields for each type:
 - Creation and update timestamps
 - Owner information
 - Mime type
-- Permissions, this field just shows who has access to what, nothing more
+- Permissions (this field just shows who has access to what, nothing more)
 - Content chunks
 - Relevance score
 ## User Context Format
@@ -606,6 +606,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     - "mail"
 
     For Drive:
+    - "driveFile" (e.g., google drive file)
     - "docs"
     - "sheets"
     - "slides"
@@ -614,6 +615,9 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     For Calendar:
     - "event"
+
+    For Gmail attachment:
+    - "pdf"
 
     Now, handle the query as follows:
 
@@ -863,7 +867,6 @@ Bad: "No clear meeting information found" (Use null for the 'answer' field inste
 - Do not give explanations outside the JSON format, do not explain why you didn't find something if the answer is null.
 `
 
-
 export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
@@ -1045,5 +1048,3 @@ If information is missing or unclear: Set "answer" to null
 </answer>
 To summarize: Think without json but answer always with json
 `
-
-

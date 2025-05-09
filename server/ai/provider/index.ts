@@ -58,6 +58,7 @@ import {
   emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
+  meetingPromptJson,
   //meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
@@ -969,8 +970,7 @@ export const meetingPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  // params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
-  params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
