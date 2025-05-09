@@ -55,9 +55,11 @@ export type Cost = {
   pricePerThousandOutputTokens: number
 }
 
-export type TimeDirection = "next" | "prev"
-export interface TemporalClassifier {
+export type TimeDirection = "next" | "prev" | null
+export interface  TemporalClassifier {
   direction: TimeDirection | null
+  from: string | null
+  to: string | null
 }
 
 export interface ModelParams {

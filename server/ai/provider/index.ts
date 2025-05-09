@@ -1069,6 +1069,8 @@ export const temporalEventClassification = async (
     const parsedResponse = jsonParseLLMOutput(text)
     return {
       direction: parsedResponse.direction || null,
+      from: null,
+      to: null,
       cost: cost!,
     }
   } else {
