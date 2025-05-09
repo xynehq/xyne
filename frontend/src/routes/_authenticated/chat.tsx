@@ -1433,7 +1433,7 @@ const ChatMessage = ({
       className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
-        message
+        <div dangerouslySetInnerHTML={{ __html: message }} />
       ) : (
         <div
           className={`flex flex-col mt-[40px] ${citationUrls.length ? "mb-[35px]" : ""}`}
