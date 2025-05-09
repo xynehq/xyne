@@ -14,8 +14,8 @@ import {
   ChatSSEvents,
   SelectPublicMessage,
   Citation,
-  Apps,
-  DriveEntity,
+  // Apps,
+  // DriveEntity,
 } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"
@@ -67,16 +67,16 @@ type CurrentResp = {
 }
 
 // Mapping from source ID to app/entity object
-const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
-  {
-    googledrive: { app: Apps.GoogleDrive, entity: "file" },
-    googledocs: { app: Apps.GoogleDrive, entity: DriveEntity.Docs },
-    slack: { app: Apps.Slack, entity: "message" },
-    gmail: { app: Apps.Gmail, entity: "mail" }, // Assuming MailEntity.Email maps to "mail"
-    googlecalendar: { app: Apps.GoogleCalendar, entity: "event" },
-    pdf: { app: "pdf", entity: "pdf_default" }, // Assuming DriveEntity.PDF maps to "pdf_default"
-    event: { app: "event", entity: "event_default" },
-  }
+// const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
+//   {
+//     googledrive: { app: Apps.GoogleDrive, entity: "file" },
+//     googledocs: { app: Apps.GoogleDrive, entity: DriveEntity.Docs },
+//     slack: { app: Apps.Slack, entity: "message" },
+//     gmail: { app: Apps.Gmail, entity: "mail" }, // Assuming MailEntity.Email maps to "mail"
+//     googlecalendar: { app: Apps.GoogleCalendar, entity: "event" },
+//     pdf: { app: "pdf", entity: "pdf_default" }, // Assuming DriveEntity.PDF maps to "pdf_default"
+//     event: { app: "event", entity: "event_default" },
+//   }
 
 interface ChatPageProps {
   user: PublicUser
@@ -376,9 +376,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       .filter((ref) => ref.type === "global" && ref.docId)
       .map((ref) => ref.docId!)
 
-    const appEntities = selectedSources
-      .map((sourceId) => sourceIdToAppEntityMap[sourceId])
-      .filter((item) => item !== undefined)
+    // const appEntities = selectedSources
+    //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
+    //   .filter((item) => item !== undefined)
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
