@@ -250,6 +250,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const handleSend = async (messageToSend: string) => {
     if (!messageToSend || isStreaming) return
 
+    // Reset userHasScrolled to false when a new message is sent.
+    // This ensures that the view will scroll down automatically as the new message streams in,
+    // unless the user manually scrolls up during the streaming.
+    setUserHasScrolled(false);
     setQuery("")
     setMessages((prevMessages) => [
       ...prevMessages,
@@ -829,11 +833,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleScroll = () => {
     const isAtBottom = isScrolledToBottom()
+    // Set userHasScrolled to true if the user scrolls up from the bottom.
+    // This will prevent the automatic scrolling behavior while the user is manually scrolling.
     setUserHasScrolled(!isAtBottom)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
+    // Only scroll to the bottom if the container exists and the user has not manually scrolled up.
+    // This prevents the view from jumping to the bottom if the user is trying to read previous messages
+    // while a new message is streaming in.
     if (!container || userHasScrolled) return
 
     container.scrollTop = container.scrollHeight
@@ -935,13 +944,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           </div>
         </div>
 
+        {/* The onScroll event handler is attached to this div because it's the scrollable container for messages. */}
+        {/* This ensures that scroll events are captured correctly to manage the auto-scroll behavior. */}
         <div
           className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
           ref={messagesContainerRef}
+          onScroll={handleScroll}
         >
           <div className={`w-full h-full flex flex-col items-center`}>
             <div
-              onScroll={handleScroll}
               className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]"
             >
               {messages.map((message, index) => {
