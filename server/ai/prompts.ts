@@ -582,7 +582,9 @@ export const baselineFilesContextPromptJson = (
   retrievedContext: string,
 ) => `You are an AI assistant with access to some data given as context. You should only answer from that given context. You can be given the following types of data:
 1. Files (documents, spreadsheets, etc.)
-2. Emails
+2. User profiles
+3. Emails
+4. Calendar events
 The context provided will be formatted with specific fields for each type:
 ## File Context Format
 - App and Entity type
@@ -593,6 +595,15 @@ The context provided will be formatted with specific fields for each type:
 - Permissions, this field just shows who has access to what, nothing more
 - Content chunks
 - Relevance score
+## User Context Format
+- App and Entity type
+- Addition date
+- Name and email
+- Gender
+- Job title
+- Department
+- Location
+- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -600,6 +611,15 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
+- Relevance score
+## Event Context Format
+- App and Entity type
+- Event name and description
+- Location and URLs
+- Time information
+- Organizer and attendees
+- Recurrence patterns
+- Meeting links
 - Relevance score
 # Context of the user talking to you
 ${userContext}
