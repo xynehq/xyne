@@ -433,7 +433,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
-  fileIds: string[],
   queryRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -492,6 +491,518 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
   }
+  const latestResults = (
+    await searchVespa(message, email, null, null, {
+      limit: pageSize,
+      alpha: userAlpha,
+      timestampRange,
+      span: initialSearchSpan,
+    })
+  ).root.children
+  initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
+  initialSearchSpan?.setAttribute(
+    "result_ids",
+    JSON.stringify(
+      latestResults?.map((r: VespaSearchResult) => (r.fields as any).docId) ||
+        [],
+    ),
+  )
+  initialSearchSpan?.end()
+  const latestIds = latestResults
+    ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
+    ?.filter((v) => !!v)
+
+  // for the case of reasoning as we are streaming the tokens and the citations
+  // our iterative rag has be aware of the results length(max potential citation index) that is already sent before hand
+  // so this helps us avoid conflict with a previous citation index
+  let previousResultsLength = 0
+  for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
+    const pageSpan = rootSpan?.startSpan(`page_iteration_${pageNumber}`)
+    pageSpan?.setAttribute("page_number", pageNumber)
+    // should only do it once
+    if (pageNumber === Math.floor(maxPageNumber / 2)) {
+      // get the first page of results
+      const rewriteSpan = pageSpan?.startSpan("query_rewrite")
+      const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
+      let results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        alpha: userAlpha,
+        span: vespaSearchSpan,
+      })
+      vespaSearchSpan?.setAttribute(
+        "result_count",
+        results?.root?.children?.length || 0,
+      )
+      vespaSearchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          results?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      vespaSearchSpan?.end()
+
+      const initialContext = cleanContext(
+        results?.root?.children
+          ?.map(
+            (v, i) =>
+              `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+          )
+          ?.join("\n"),
+      )
+
+      const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
+      const queryResp = await queryRewriter(input, userCtx, initialContext, {
+        modelId: defaultFastModel, //defaultBestModel,
+        stream: false,
+      })
+      const queries = queryResp.queries
+      queryRewriteSpan?.setAttribute("query_count", queries.length)
+      queryRewriteSpan?.setAttribute("queries", JSON.stringify(queries))
+      queryRewriteSpan?.end()
+      rewriteSpan?.end()
+      for (let idx = 0; idx < queries.length; idx++) {
+        const query = queries[idx]
+        const querySpan = pageSpan?.startSpan(`query_${idx}`)
+        querySpan?.setAttribute("query_index", idx)
+        querySpan?.setAttribute("query_text", query)
+
+        const latestSearchSpan = querySpan?.startSpan("latest_results_search")
+        const latestResults: VespaSearchResult[] = (
+          await searchVespa(query, email, null, null, {
+            limit: pageSize,
+            alpha: userAlpha,
+            timestampRange: {
+              from: new Date().getTime() - 4 * monthInMs,
+              to: new Date().getTime(),
+            },
+            span: latestSearchSpan,
+          })
+        )?.root?.children
+        latestSearchSpan?.setAttribute(
+          "result_count",
+          latestResults?.length || 0,
+        )
+        latestSearchSpan?.setAttribute(
+          "result_ids",
+          JSON.stringify(
+            latestResults?.map(
+              (r: VespaSearchResult) => (r.fields as any).docId,
+            ) || [],
+          ),
+        )
+        latestSearchSpan?.end()
+
+        let results = await searchVespa(query, email, null, null, {
+          limit: pageSize,
+          alpha: userAlpha,
+          excludedIds: latestResults
+            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+            ?.filter((v) => !!v),
+        })
+        const totalResultsSpan = querySpan?.startSpan("total_results")
+        const totalResults = (results?.root?.children || []).concat(
+          latestResults || [],
+        )
+        totalResultsSpan?.setAttribute(
+          "total_result_count",
+          totalResults.length,
+        )
+        totalResultsSpan?.setAttribute(
+          "result_ids",
+          JSON.stringify(
+            totalResults.map((r: VespaSearchResult) => (r.fields as any).docId),
+          ),
+        )
+        totalResultsSpan?.end()
+        const contextSpan = querySpan?.startSpan("build_context")
+        const initialContext = cleanContext(
+          totalResults
+            ?.map(
+              (v, i) =>
+                `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+            )
+            ?.join("\n"),
+        )
+        contextSpan?.setAttribute("context_length", initialContext?.length || 0)
+        contextSpan?.setAttribute("context", initialContext || "")
+        contextSpan?.setAttribute("number_of_chunks", totalResults.length)
+        Logger.info(
+          `[Query Rewrite Path] Number of contextual chunks being passed: ${totalResults.length}`,
+        )
+        contextSpan?.end()
+
+        const ragSpan = querySpan?.startSpan("baseline_rag")
+        const iterator = baselineRAGJsonStream(
+          query,
+          userCtx,
+          initialContext,
+          // pageNumber,
+          // maxPageNumber,
+          {
+            stream: true,
+            modelId: defaultBestModel,
+            messages,
+            reasoning: isReasoning,
+          },
+        )
+        let buffer = ""
+        let currentAnswer = ""
+        let parsed = { answer: "" }
+        let thinking = ""
+        let reasoning = isReasoning
+        let yieldedCitations = new Set<number>()
+        const ANSWER_TOKEN = '"answer":'
+        for await (const chunk of iterator) {
+          if (chunk.text) {
+            if (reasoning) {
+              if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                thinking += chunk.text
+                yield* checkAndYieldCitations(
+                  thinking,
+                  yieldedCitations,
+                  totalResults,
+                  previousResultsLength,
+                )
+                yield { text: chunk.text, reasoning }
+              } else {
+                // first time
+                const startThinkingIndex =
+                  chunk.text.indexOf(StartThinkingToken)
+                if (
+                  startThinkingIndex !== -1 &&
+                  chunk.text.trim().length > StartThinkingToken.length
+                ) {
+                  let token = chunk.text.slice(
+                    startThinkingIndex + StartThinkingToken.length,
+                  )
+                  if (chunk.text.includes(EndThinkingToken)) {
+                    token = chunk.text.split(EndThinkingToken)[0]
+                    thinking += token
+                  } else {
+                    thinking += token
+                  }
+                  yield* checkAndYieldCitations(
+                    thinking,
+                    yieldedCitations,
+                    totalResults,
+                    previousResultsLength,
+                  )
+                  yield { text: token, reasoning }
+                }
+              }
+            }
+            if (reasoning && chunk.text.includes(EndThinkingToken)) {
+              reasoning = false
+              chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+            }
+            if (!reasoning) {
+              buffer += chunk.text
+              try {
+                parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
+                if (parsed.answer === null) {
+                  break
+                }
+                if (parsed.answer && currentAnswer !== parsed.answer) {
+                  if (currentAnswer === "") {
+                    // First valid answer - send the whole thing
+                    yield { text: parsed.answer }
+                  } else {
+                    // Subsequent chunks - send only the new part
+                    const newText = parsed.answer.slice(currentAnswer.length)
+                    yield { text: newText }
+                  }
+                  yield* checkAndYieldCitations(
+                    parsed.answer,
+                    yieldedCitations,
+                    totalResults,
+                    previousResultsLength,
+                  )
+                  currentAnswer = parsed.answer
+                }
+              } catch (err) {
+                const errMessage = (err as Error).message
+                Logger.error(
+                  err,
+                  `Error while parsing LLM output ${errMessage}`,
+                )
+                continue
+              }
+            }
+          }
+          if (chunk.cost) {
+            yield { cost: chunk.cost }
+          }
+        }
+        if (parsed.answer) {
+          ragSpan?.setAttribute("answer_found", true)
+          ragSpan?.end()
+          querySpan?.end()
+          pageSpan?.end()
+          rootSpan?.end()
+          queryRagSpan?.end()
+          return
+        }
+        if (isReasoning) {
+          previousResultsLength += totalResults.length
+        }
+        ragSpan?.end()
+        querySpan?.end()
+      }
+    }
+    const pageSearchSpan = pageSpan?.startSpan("page_search")
+    let results: VespaSearchResponse
+    if (pageNumber === 0) {
+      const searchSpan = pageSearchSpan?.startSpan(
+        "vespa_search_with_excluded_ids",
+      )
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
+        alpha: userAlpha,
+        excludedIds: latestIds,
+        span: searchSpan,
+      })
+      searchSpan?.setAttribute(
+        "result_count",
+        results?.root?.children?.length || 0,
+      )
+      searchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          results?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      searchSpan?.end()
+      if (!results.root.children) {
+        results.root.children = []
+      }
+      results.root.children = results?.root?.children?.concat(
+        latestResults || [],
+      )
+    } else {
+      const searchSpan = pageSearchSpan?.startSpan("vespa_search")
+      results = await searchVespa(message, email, null, null, {
+        limit: pageSize,
+        offset: pageNumber * pageSize,
+        alpha: userAlpha,
+        span: searchSpan,
+      })
+      searchSpan?.setAttribute(
+        "result_count",
+        results?.root?.children?.length || 0,
+      )
+      searchSpan?.setAttribute(
+        "result_ids",
+        JSON.stringify(
+          results?.root?.children?.map(
+            (r: VespaSearchResult) => (r.fields as any).docId,
+          ) || [],
+        ),
+      )
+      searchSpan?.end()
+    }
+    pageSearchSpan?.setAttribute(
+      "total_result_count",
+      results?.root?.children?.length || 0,
+    )
+    pageSearchSpan?.setAttribute(
+      "total_result_ids",
+      JSON.stringify(
+        results?.root?.children?.map(
+          (r: VespaSearchResult) => (r.fields as any).docId,
+        ) || [],
+      ),
+    )
+    pageSearchSpan?.end()
+    const startIndex = isReasoning ? previousResultsLength : 0
+    const contextSpan = pageSpan?.startSpan("build_context")
+    const initialContext = cleanContext(
+      results?.root?.children
+        ?.map(
+          (v, i) =>
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
+        )
+        ?.join("\n"),
+    )
+    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
+    contextSpan?.setAttribute("context", initialContext || "")
+    contextSpan?.setAttribute(
+      "number_of_chunks",
+      results?.root?.children?.length || 0,
+    )
+    Logger.info(
+      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+    )
+    contextSpan?.end()
+
+    const ragSpan = pageSpan?.startSpan("baseline_rag")
+
+    const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+      stream: true,
+      modelId: defaultBestModel,
+      reasoning: isReasoning,
+    })
+
+    let buffer = ""
+    let currentAnswer = ""
+    let parsed = { answer: "" }
+    let thinking = ""
+    let reasoning = isReasoning
+    let yieldedCitations = new Set<number>()
+    // tied to the json format and output expected, we expect the answer key to be present
+    const ANSWER_TOKEN = '"answer":'
+    for await (const chunk of iterator) {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            // first time
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+
+        if (!reasoning) {
+          buffer += chunk.text
+          try {
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
+            if (parsed.answer === null) {
+              break
+            }
+            if (parsed.answer && currentAnswer !== parsed.answer) {
+              if (currentAnswer === "") {
+                // First valid answer - send the whole thing
+                yield { text: parsed.answer }
+              } else {
+                // Subsequent chunks - send only the new part
+                const newText = parsed.answer.slice(currentAnswer.length)
+                yield { text: newText }
+              }
+              // Extract all citations from the parsed answer
+              // const citationSpan = chunkSpan.startSpan("check_citations")
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              currentAnswer = parsed.answer
+            }
+          } catch (err) {
+            const errMessage = (err as Error).message
+            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+            continue
+          }
+        }
+      }
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+    }
+    if (parsed.answer) {
+      ragSpan?.setAttribute("answer_found", true)
+      ragSpan?.end()
+      pageSpan?.end()
+      rootSpan?.end()
+      queryRagSpan?.end()
+      return
+    }
+    if (isReasoning) {
+      previousResultsLength += results?.root?.children?.length || 0
+      pageSpan?.setAttribute("previous_results_length", previousResultsLength)
+    }
+    ragSpan?.end()
+    pageSpan?.end()
+  }
+  const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
+  yield {
+    text: "I could not find any information to answer it, please change your query",
+  }
+  noAnswerSpan?.end()
+  rootSpan?.end()
+  queryRagSpan?.end()
+}
+
+async function* generateAnswerFromGivenContext(
+  input: string,
+  email: string,
+  userCtx: string,
+  alpha: number = 0.5,
+  pageSize: number = 10,
+  fileIds: string[],
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
+  const message = input
+  let userAlpha = alpha
+  try {
+    const personalization = await getUserPersonalizationByEmail(db, email)
+    if (personalization) {
+      const nativeRankParams =
+        personalization.parameters?.[SearchModes.NativeRank]
+      if (nativeRankParams?.alpha !== undefined) {
+        userAlpha = nativeRankParams.alpha
+        Logger.info(
+          { email, alpha: userAlpha },
+          "Using personalized alpha for iterative RAG",
+        )
+      } else {
+        Logger.info(
+          { email },
+          "No personalized alpha found in settings, using default for iterative RAG",
+        )
+      }
+    } else {
+      Logger.warn(
+        { email },
+        "User personalization settings not found, using default alpha for iterative RAG",
+      )
+    }
+  } catch (err) {
+    Logger.error(
+      err,
+      "Failed to fetch personalization for iterative RAG, using default alpha",
+      { email },
+    )
+  }
+
   const selectedFiles = fileIds && fileIds.length > 0
 
   let previousResultsLength = 0
@@ -508,7 +1019,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results.root.children = []
     }
     const startIndex = isReasoning ? previousResultsLength : 0
-    // const contextSpan = pageSpan?.startSpan("build_context")
     const initialContext = cleanContext(
       results?.root?.children
         ?.map(
@@ -626,14 +1136,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       }
     }
     if (parsed.answer) {
-      rootSpan?.end()
-      queryRagSpan?.end()
       return
     } else if (
       // Condition if fileIds are present has some values meaning context has been selected.
       // If no answer found, exit and yield nothing related to selected context found
-      !parsed?.answer &&
-      selectedFiles
+      !parsed?.answer
     ) {
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
@@ -643,478 +1150,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     if (isReasoning) {
       previousResultsLength += results?.root?.children?.length || 0
     }
-  } else {
-    const latestResults = (
-      await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        timestampRange,
-        span: initialSearchSpan,
-      })
-    ).root.children
-    initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
-    initialSearchSpan?.setAttribute(
-      "result_ids",
-      JSON.stringify(
-        latestResults?.map((r: VespaSearchResult) => (r.fields as any).docId) ||
-          [],
-      ),
-    )
-    initialSearchSpan?.end()
-    const latestIds = latestResults
-      ?.map((v: VespaSearchResult) => (v?.fields as any).docId)
-      ?.filter((v) => !!v)
-    // for the case of reasoning as we are streaming the tokens and the citations
-    // our iterative rag has be aware of the results length(max potential citation index) that is already sent before hand
-    // so this helps us avoid conflict with a previous citation index
-    // let previousResultsLength = 0
-    for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
-      const pageSpan = rootSpan?.startSpan(`page_iteration_${pageNumber}`)
-      pageSpan?.setAttribute("page_number", pageNumber)
-      // should only do it once
-      if (pageNumber === Math.floor(maxPageNumber / 2)) {
-        // get the first page of results
-        const rewriteSpan = pageSpan?.startSpan("query_rewrite")
-        const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
-        let results = await searchVespa(message, email, null, null, {
-          limit: pageSize,
-          alpha: userAlpha,
-          span: vespaSearchSpan,
-        })
-        vespaSearchSpan?.setAttribute(
-          "result_count",
-          results?.root?.children?.length || 0,
-        )
-        vespaSearchSpan?.setAttribute(
-          "result_ids",
-          JSON.stringify(
-            results?.root?.children?.map(
-              (r: VespaSearchResult) => (r.fields as any).docId,
-            ) || [],
-          ),
-        )
-        vespaSearchSpan?.end()
-
-        const initialContext = cleanContext(
-          results?.root?.children
-            ?.map(
-              (v, i) =>
-                `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-            )
-            ?.join("\n"),
-        )
-
-        const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
-        const queryResp = await queryRewriter(input, userCtx, initialContext, {
-          modelId: defaultFastModel, //defaultBestModel,
-          stream: false,
-        })
-        const queries = queryResp.queries
-        queryRewriteSpan?.setAttribute("query_count", queries.length)
-        queryRewriteSpan?.setAttribute("queries", JSON.stringify(queries))
-        queryRewriteSpan?.end()
-        rewriteSpan?.end()
-        for (let idx = 0; idx < queries.length; idx++) {
-          const query = queries[idx]
-          const querySpan = pageSpan?.startSpan(`query_${idx}`)
-          querySpan?.setAttribute("query_index", idx)
-          querySpan?.setAttribute("query_text", query)
-
-          const latestSearchSpan = querySpan?.startSpan("latest_results_search")
-          const latestResults: VespaSearchResult[] = (
-            await searchVespa(query, email, null, null, {
-              limit: pageSize,
-              alpha: userAlpha,
-              timestampRange: {
-                from: new Date().getTime() - 4 * monthInMs,
-                to: new Date().getTime(),
-              },
-              span: latestSearchSpan,
-            })
-          )?.root?.children
-          latestSearchSpan?.setAttribute(
-            "result_count",
-            latestResults?.length || 0,
-          )
-          latestSearchSpan?.setAttribute(
-            "result_ids",
-            JSON.stringify(
-              latestResults?.map(
-                (r: VespaSearchResult) => (r.fields as any).docId,
-              ) || [],
-            ),
-          )
-          latestSearchSpan?.end()
-
-          let results = await searchVespa(query, email, null, null, {
-            limit: pageSize,
-            alpha: userAlpha,
-            excludedIds: latestResults
-              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-              ?.filter((v) => !!v),
-          })
-          const totalResultsSpan = querySpan?.startSpan("total_results")
-          const totalResults = (results?.root?.children || []).concat(
-            latestResults || [],
-          )
-          totalResultsSpan?.setAttribute(
-            "total_result_count",
-            totalResults.length,
-          )
-          totalResultsSpan?.setAttribute(
-            "result_ids",
-            JSON.stringify(
-              totalResults.map(
-                (r: VespaSearchResult) => (r.fields as any).docId,
-              ),
-            ),
-          )
-          totalResultsSpan?.end()
-          const contextSpan = querySpan?.startSpan("build_context")
-          const initialContext = cleanContext(
-            totalResults
-              ?.map(
-                (v, i) =>
-                  `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-              )
-              ?.join("\n"),
-          )
-          contextSpan?.setAttribute(
-            "context_length",
-            initialContext?.length || 0,
-          )
-          contextSpan?.setAttribute("context", initialContext || "")
-          contextSpan?.setAttribute("number_of_chunks", totalResults.length)
-          Logger.info(
-            `[Query Rewrite Path] Number of contextual chunks being passed: ${totalResults.length}`,
-          )
-          contextSpan?.end()
-
-          const ragSpan = querySpan?.startSpan("baseline_rag")
-          const iterator = baselineRAGJsonStream(
-            query,
-            userCtx,
-            initialContext,
-            // pageNumber,
-            // maxPageNumber,
-            {
-              stream: true,
-              modelId: defaultBestModel,
-              messages,
-              reasoning: isReasoning,
-            },
-          )
-          let buffer = ""
-          let currentAnswer = ""
-          let parsed = { answer: "" }
-          let thinking = ""
-          let reasoning = isReasoning
-          let yieldedCitations = new Set<number>()
-          const ANSWER_TOKEN = '"answer":'
-          for await (const chunk of iterator) {
-            if (chunk.text) {
-              if (reasoning) {
-                if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                  thinking += chunk.text
-                  yield* checkAndYieldCitations(
-                    thinking,
-                    yieldedCitations,
-                    totalResults,
-                    previousResultsLength,
-                  )
-                  yield { text: chunk.text, reasoning }
-                } else {
-                  // first time
-                  const startThinkingIndex =
-                    chunk.text.indexOf(StartThinkingToken)
-                  if (
-                    startThinkingIndex !== -1 &&
-                    chunk.text.trim().length > StartThinkingToken.length
-                  ) {
-                    let token = chunk.text.slice(
-                      startThinkingIndex + StartThinkingToken.length,
-                    )
-                    if (chunk.text.includes(EndThinkingToken)) {
-                      token = chunk.text.split(EndThinkingToken)[0]
-                      thinking += token
-                    } else {
-                      thinking += token
-                    }
-                    yield* checkAndYieldCitations(
-                      thinking,
-                      yieldedCitations,
-                      totalResults,
-                      previousResultsLength,
-                    )
-                    yield { text: token, reasoning }
-                  }
-                }
-              }
-              if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                reasoning = false
-                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-              }
-              if (!reasoning) {
-                buffer += chunk.text
-                try {
-                  parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
-                  if (parsed.answer === null) {
-                    break
-                  }
-                  if (parsed.answer && currentAnswer !== parsed.answer) {
-                    if (currentAnswer === "") {
-                      // First valid answer - send the whole thing
-                      yield { text: parsed.answer }
-                    } else {
-                      // Subsequent chunks - send only the new part
-                      const newText = parsed.answer.slice(currentAnswer.length)
-                      yield { text: newText }
-                    }
-                    yield* checkAndYieldCitations(
-                      parsed.answer,
-                      yieldedCitations,
-                      totalResults,
-                      previousResultsLength,
-                    )
-                    currentAnswer = parsed.answer
-                  }
-                } catch (err) {
-                  const errMessage = (err as Error).message
-                  Logger.error(
-                    err,
-                    `Error while parsing LLM output ${errMessage}`,
-                  )
-                  continue
-                }
-              }
-            }
-            if (chunk.cost) {
-              yield { cost: chunk.cost }
-            }
-          }
-          if (parsed.answer) {
-            ragSpan?.setAttribute("answer_found", true)
-            ragSpan?.end()
-            querySpan?.end()
-            pageSpan?.end()
-            rootSpan?.end()
-            queryRagSpan?.end()
-            return
-          }
-          if (isReasoning) {
-            previousResultsLength += totalResults.length
-          }
-          ragSpan?.end()
-          querySpan?.end()
-        }
-      }
-      const pageSearchSpan = pageSpan?.startSpan("page_search")
-      let results: VespaSearchResponse
-      if (pageNumber === 0) {
-        const searchSpan = pageSearchSpan?.startSpan(
-          "vespa_search_with_excluded_ids",
-        )
-        results = await searchVespa(message, email, null, null, {
-          limit: pageSize,
-          offset: pageNumber * pageSize,
-          alpha: userAlpha,
-          excludedIds: latestIds,
-          span: searchSpan,
-        })
-        searchSpan?.setAttribute(
-          "result_count",
-          results?.root?.children?.length || 0,
-        )
-        searchSpan?.setAttribute(
-          "result_ids",
-          JSON.stringify(
-            results?.root?.children?.map(
-              (r: VespaSearchResult) => (r.fields as any).docId,
-            ) || [],
-          ),
-        )
-        searchSpan?.end()
-        if (!results.root.children) {
-          results.root.children = []
-        }
-        results.root.children = results?.root?.children?.concat(
-          latestResults || [],
-        )
-      } else {
-        const searchSpan = pageSearchSpan?.startSpan("vespa_search")
-        results = await searchVespa(message, email, null, null, {
-          limit: pageSize,
-          offset: pageNumber * pageSize,
-          alpha: userAlpha,
-          span: searchSpan,
-        })
-        searchSpan?.setAttribute(
-          "result_count",
-          results?.root?.children?.length || 0,
-        )
-        searchSpan?.setAttribute(
-          "result_ids",
-          JSON.stringify(
-            results?.root?.children?.map(
-              (r: VespaSearchResult) => (r.fields as any).docId,
-            ) || [],
-          ),
-        )
-        searchSpan?.end()
-      }
-      pageSearchSpan?.setAttribute(
-        "total_result_count",
-        results?.root?.children?.length || 0,
-      )
-      pageSearchSpan?.setAttribute(
-        "total_result_ids",
-        JSON.stringify(
-          results?.root?.children?.map(
-            (r: VespaSearchResult) => (r.fields as any).docId,
-          ) || [],
-        ),
-      )
-      pageSearchSpan?.end()
-      const startIndex = isReasoning ? previousResultsLength : 0
-      const contextSpan = pageSpan?.startSpan("build_context")
-      const initialContext = cleanContext(
-        results?.root?.children
-          ?.map(
-            (v, i) =>
-              `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-          )
-          ?.join("\n"),
-      )
-      contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-      contextSpan?.setAttribute("context", initialContext || "")
-      contextSpan?.setAttribute(
-        "number_of_chunks",
-        results?.root?.children?.length || 0,
-      )
-      Logger.info(
-        `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
-      )
-      contextSpan?.end()
-
-      const ragSpan = pageSpan?.startSpan("baseline_rag")
-
-      const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
-        stream: true,
-        modelId: defaultBestModel,
-        reasoning: isReasoning,
-      })
-
-      let buffer = ""
-      let currentAnswer = ""
-      let parsed = { answer: "" }
-      let thinking = ""
-      let reasoning = isReasoning
-      let yieldedCitations = new Set<number>()
-      // tied to the json format and output expected, we expect the answer key to be present
-      const ANSWER_TOKEN = '"answer":'
-      for await (const chunk of iterator) {
-        if (chunk.text) {
-          if (reasoning) {
-            if (thinking && !chunk.text.includes(EndThinkingToken)) {
-              thinking += chunk.text
-              yield* checkAndYieldCitations(
-                thinking,
-                yieldedCitations,
-                results?.root?.children,
-                previousResultsLength,
-              )
-              yield { text: chunk.text, reasoning }
-            } else {
-              // first time
-              const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
-              if (
-                startThinkingIndex !== -1 &&
-                chunk.text.trim().length > StartThinkingToken.length
-              ) {
-                let token = chunk.text.slice(
-                  startThinkingIndex + StartThinkingToken.length,
-                )
-                if (chunk.text.includes(EndThinkingToken)) {
-                  token = chunk.text.split(EndThinkingToken)[0]
-                  thinking += token
-                } else {
-                  thinking += token
-                }
-
-                yield* checkAndYieldCitations(
-                  thinking,
-                  yieldedCitations,
-                  results?.root?.children,
-                  previousResultsLength,
-                )
-                yield { text: token, reasoning }
-              }
-            }
-          }
-          if (reasoning && chunk.text.includes(EndThinkingToken)) {
-            reasoning = false
-            chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-          }
-
-          if (!reasoning) {
-            buffer += chunk.text
-            try {
-              parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
-              if (parsed.answer === null) {
-                break
-              }
-              if (parsed.answer && currentAnswer !== parsed.answer) {
-                if (currentAnswer === "") {
-                  // First valid answer - send the whole thing
-                  yield { text: parsed.answer }
-                } else {
-                  // Subsequent chunks - send only the new part
-                  const newText = parsed.answer.slice(currentAnswer.length)
-                  yield { text: newText }
-                }
-                // Extract all citations from the parsed answer
-                // const citationSpan = chunkSpan.startSpan("check_citations")
-                yield* checkAndYieldCitations(
-                  parsed.answer,
-                  yieldedCitations,
-                  results?.root?.children,
-                  previousResultsLength,
-                )
-                currentAnswer = parsed.answer
-              }
-            } catch (err) {
-              const errMessage = (err as Error).message
-              Logger.error(err, `Error while parsing LLM output ${errMessage}`)
-              continue
-            }
-          }
-        }
-        if (chunk.cost) {
-          yield { cost: chunk.cost }
-        }
-      }
-      if (parsed.answer) {
-        ragSpan?.setAttribute("answer_found", true)
-        ragSpan?.end()
-        pageSpan?.end()
-        rootSpan?.end()
-        queryRagSpan?.end()
-        return
-      }
-      if (isReasoning) {
-        previousResultsLength += results?.root?.children?.length || 0
-        pageSpan?.setAttribute("previous_results_length", previousResultsLength)
-      }
-      ragSpan?.end()
-      pageSpan?.end()
-    }
-    const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
-    yield {
-      text: "I could not find any information to answer it, please change your query",
-    }
-    noAnswerSpan?.end()
-    rootSpan?.end()
-    queryRagSpan?.end()
   }
 }
 
@@ -1478,8 +1513,20 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
-  // user is talking about an event
-  if (classification.direction !== null) {
+  if (fileIds && fileIds?.length > 0) {
+    Logger.info(
+      "User has selected some context with query, answering only based on that given context",
+    )
+    return yield* generateAnswerFromGivenContext(
+      message,
+      email,
+      userCtx,
+      alpha,
+      chatPageSize,
+      fileIds,
+    )
+  } else if (classification.direction !== null) {
+    // user is talking about an event
     Logger.info(
       `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
     )
@@ -1512,7 +1559,6 @@ export async function* UnderstandMessageAndAnswer(
       chatPageSize,
       3,
       maxDefaultSummary,
-      fileIds,
       ragSpan,
     )
   }
