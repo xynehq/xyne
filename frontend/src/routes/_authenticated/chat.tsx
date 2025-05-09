@@ -226,7 +226,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       currentRespRef.current = null
     }
     inputRef.current?.focus()
-    // setQuery("") // it was causing the input to be cleared
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
