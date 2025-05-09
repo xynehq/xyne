@@ -1007,14 +1007,10 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   if (selectedFiles) {
-    console.log("Enterd specific files...................")
     let results = await searchVespaInFiles(message, email, fileIds, {
       limit: pageSize,
       alpha: userAlpha,
     })
-    console.log("results")
-    console.log(results.root.children)
-    console.log("results")
     if (!results.root.children) {
       results.root.children = []
     }
@@ -1027,9 +1023,6 @@ async function* generateAnswerFromGivenContext(
         )
         ?.join("\n"),
     )
-    console.log("initialContext")
-    console.log(initialContext)
-    console.log("initialContext")
     Logger.info(
       `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
@@ -1205,7 +1198,6 @@ async function* generatePointQueryTimeExpansion(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  Logger.info("Entered generatePointQueryTimeExpansion....")
   const rootSpan = eventRagSpan?.startSpan("generatePointQueryTimeExpansion")
   Logger.debug(`Started rootSpan at ${new Date().toISOString()}`)
   rootSpan?.setAttribute("input", input)
@@ -1606,15 +1598,7 @@ export const MessageApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("query")
     let { message, chatId, modelId, stringifiedfileIds }: MessageReqType = body
-    console.log("stringifiedfileIds")
-    console.log(stringifiedfileIds)
-    console.log("stringifiedfileIds")
-    console.log(JSON.parse(stringifiedfileIds))
-    console.log(typeof JSON.parse(stringifiedfileIds))
     const fileIds = JSON.parse(stringifiedfileIds) as string[]
-    console.log("fileIds")
-    console.log(fileIds)
-    console.log("fileIds")
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",

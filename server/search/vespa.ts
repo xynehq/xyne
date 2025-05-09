@@ -612,7 +612,7 @@ export const searchVespa = async (
     requestDebug = false,
     span = null,
     maxHits = 400,
-    recencyDecayRate = 0.02
+    recencyDecayRate = 0.02,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -676,7 +676,6 @@ export const searchVespaInFiles = async (
     maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  console.log("Running searchVespaInFiles........")
   // Determine the timestamp cutoff based on lastUpdated
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
@@ -689,10 +688,6 @@ export const searchVespaInFiles = async (
     excludedIds,
     notInMailLabels,
   )
-
-  console.log("YQL")
-  console.log(yql)
-  console.log("YQL")
 
   const hybridDefaultPayload = {
     yql,

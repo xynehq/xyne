@@ -357,7 +357,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleSend = async (
     messageToSend: string,
-    addedReferences: Reference[] = [], 
+    addedReferences: Reference[] = [],
     selectedSources: string[] = [],
   ) => {
     if (!messageToSend || isStreaming) return
@@ -367,7 +367,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       ...prevMessages,
       { messageRole: "user", message: messageToSend },
     ])
-
 
     setIsStreaming(true)
     setCurrentResp({ resp: "", thinking: "" })
@@ -379,7 +378,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     const appEntities = selectedSources
       .map((sourceId) => sourceIdToAppEntityMap[sourceId])
-      .filter((item) => item !== undefined) 
+      .filter((item) => item !== undefined)
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
@@ -388,29 +387,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(messageToSend))
 
-    if (fileIds.length > 0) {
-      url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
-    }
+    url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
 
-    if (appEntities.length > 0) {
-      url.searchParams.append(
-        "stringifiedAppEntity",
-        JSON.stringify(appEntities),
-      )
-    }
+    // if (appEntities.length > 0) {
+    //   url.searchParams.append(
+    //     "stringifiedAppEntity",
+    //     JSON.stringify(appEntities),
+    //   )
+    // }
 
-    if (fileIds.length > 0) {
-      url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
-    }
-
-    if (appEntities.length > 0) {
-      url.searchParams.append(
-        "stringifiedAppEntity",
-        JSON.stringify(appEntities),
-      )
-    }
-
-  eventSourceRef.current = new EventSource(url.toString(), {
+    eventSourceRef.current = new EventSource(url.toString(), {
       // Store EventSource
       withCredentials: true,
     })
@@ -424,7 +410,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         if (currentRespRef.current) {
           currentRespRef.current.sources = contextChunks
           currentRespRef.current.citationMap = citationMap
-        // Add explicit type for prevResp
+          // Add explicit type for prevResp
           setCurrentResp((prevResp: CurrentResp | null) => ({
             ...(prevResp || { resp: "", thinking: "" }), // Ensure proper default structure
             resp: prevResp?.resp || "",
@@ -436,7 +422,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      setCurrentResp((prevResp : CurrentResp | null) => ({
+      setCurrentResp((prevResp: CurrentResp | null) => ({
         ...(prevResp || { resp: "", thinking: event.data || "" }),
         thinking: (prevResp?.thinking || "") + event.data,
       }))
@@ -444,15 +430,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Start, (event) => {})
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      setCurrentResp((prevResp : CurrentResp | null) => {
-        const updatedResp = prevResp
-          ? { ...prevResp, resp: prevResp.resp + event.data }
-          : { resp: event.data, thinking: "", sources: [], citationMap: {} }
-        currentRespRef.current = updatedResp
-        return updatedResp
-      })
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseUpdate,
+      (event) => {
+        setCurrentResp((prevResp: CurrentResp | null) => {
+          const updatedResp = prevResp
+            ? { ...prevResp, resp: prevResp.resp + event.data }
+            : { resp: event.data, thinking: "", sources: [], citationMap: {} }
+          currentRespRef.current = updatedResp
+          return updatedResp
+        })
+      },
+    )
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseMetadata,
@@ -469,35 +458,34 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             })
           }, 1000)
 
-      
-          if(!stopMsg){
+          if (!stopMsg) {
             setStopMsg(true)
           }
         }
         if (messageId) {
-        if (currentRespRef.current) {
-          setCurrentResp((resp : CurrentResp | null) => {
-            const updatedResp = resp || { resp: "", thinking: "" }
-            updatedResp.chatId = chatId
-            updatedResp.messageId = messageId
-            currentRespRef.current = updatedResp
-            return updatedResp
-          })
-        } else {
-          setMessages((prevMessages) => {
-            const lastMessage = prevMessages[prevMessages.length - 1]
-            if (lastMessage.messageRole === "assistant") {
-              return [
-                ...prevMessages.slice(0, -1),
-                { ...lastMessage, externalId: messageId },
-              ]
-            }
-            return prevMessages
-          })
+          if (currentRespRef.current) {
+            setCurrentResp((resp: CurrentResp | null) => {
+              const updatedResp = resp || { resp: "", thinking: "" }
+              updatedResp.chatId = chatId
+              updatedResp.messageId = messageId
+              currentRespRef.current = updatedResp
+              return updatedResp
+            })
+          } else {
+            setMessages((prevMessages) => {
+              const lastMessage = prevMessages[prevMessages.length - 1]
+              if (lastMessage.messageRole === "assistant") {
+                return [
+                  ...prevMessages.slice(0, -1),
+                  { ...lastMessage, externalId: messageId },
+                ]
+              }
+              return prevMessages
+            })
+          }
         }
-      }
-    },
-  )
+      },
+    )
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ChatTitleUpdate,
@@ -1601,4 +1589,3 @@ export const Route = createFileRoute("/_authenticated/chat")({
   },
   errorComponent: errorComponent,
 })
-
