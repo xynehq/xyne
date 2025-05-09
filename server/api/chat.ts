@@ -501,16 +501,15 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     if (days) readable += `${days} days `
     if (hours) readable += `${hours} hours `
 
-    Logger.info(
-      `User requested metadata search. Searching for documents from the past ${days} days`,
-    )
-
     let schema = (entityToSchemaMapper(entity, app) ??
       AllSources) as VespaSchema
 
+    Logger.info("User requested metadata search")
     let items: VespaSearchResult[] = []
     if (!isNaN(from) && !isNaN(to)) {
-      Logger.info("Time range is valid")
+      Logger.info(
+        `Searching for documents from the past ${days} days`,
+      )
       items =
         (
           await getItems({
@@ -533,7 +532,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         ).root.children || []
     }
 
-    console.log(items.length, "items")
+    Logger.debug(`Found ${items.length} items for metadata retrieval`)
     if (!items.length) {
       Logger.info(
         "No context found for metadata retrieval, moving to iterative RAG",
@@ -1095,8 +1094,8 @@ async function* generatePointQueryTimeExpansion(
           limit: count ? count : pageSize,
         })
       ).root.children || []
-    console.log(items.length, "items")
-    // if no documents found will iterative RAG
+    Logger.info(`Found ${items.length} items for metadata retrieval`)
+    // if no documents found will go with iterative RAG
     if (!items.length) {
       Logger.info(
         "No context found for metadata retrieval, moving to iterative RAG",
