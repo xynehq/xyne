@@ -107,12 +107,12 @@ describe("jsonParseLLMOutput", () => {
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "This is a plain text answer." })
   })
-  
+
   test("backslash would get replaced by Quotes due to partial library", () => {
-    const input = '{"answer": "This is a plain text answer \\ '
+    const input = '{"answer": "This is a plain text answer \\\\"}' //Extra Backslash added as an escape character, thus 4 backslashes
     const ANSWER_TOKEN = '"answer":'
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
-    expect(result).toEqual({ answer: "This is a plain text answer \\ " })
+    expect(result).toEqual({ answer: "This is a plain text answer \\" })
   })
 
   test("string not closed and multiline inside answer key", () => {
