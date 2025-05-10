@@ -180,11 +180,11 @@ const FactualityScorer = async (
   let provider: LLMProvider | null = null
 
   if (!openAiKey) {
+    if (!params.modelId) params.modelId = modelId
     provider = getProviderByModel(params.modelId)
     Logger.info(
       "OpenAI key not found for evaluation, going with bedrock models",
     )
-    if (!params.modelId) params.modelId = modelId
   } else {
     provider = new OpenAIProvider(new OpenAI({ apiKey: openAiKey }))
     Logger.info("Evaluating with openai")
