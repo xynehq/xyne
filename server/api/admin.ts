@@ -357,7 +357,7 @@ export const UpdateConnectorStatus = async (c: Context) => {
     status,
     // @ts-ignore
   }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
-  const connector = await getConnectorByExternalId(connectorId, user.id)
+  const connector = await getConnectorByExternalId(db, connectorId, user.id)
   if (!connector) {
     throw new HTTPException(500, {
       message: "could not get connector",
@@ -409,6 +409,7 @@ export const DeleteOauthConnector = async (c: Context) => {
 
   try {
     const connector = await getConnectorByExternalId(
+      db,
       connectorExternalId,
       user.id,
     )

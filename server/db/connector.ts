@@ -224,10 +224,11 @@ export const getOAuthConnectorWithCredentials = async (
 }
 
 export const getConnectorByExternalId = async (
+  trx: TxnOrClient,
   connectorId: string,
   userId: number,
 ): Promise<SelectConnector> => {
-  const res = await db
+  const res = await trx
     .select()
     .from(connectors)
     .where(

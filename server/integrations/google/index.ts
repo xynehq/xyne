@@ -969,8 +969,6 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     const results = await Promise.all(promises)
     ingestionMetadata.push(...results)
 
-    // Rest of the function remains the same...
-    // insert all the workspace users
     await insertUsersForWorkspace(users)
 
     setTimeout(() => {
@@ -2367,7 +2365,7 @@ export const ServiceAccountIngestMoreUsers = async (
 
   let connector: SelectConnector | null = null
   try {
-    connector = await getConnectorByExternalId(connectorId, userId)
+    connector = await getConnectorByExternalId(db, connectorId, userId)
 
     if (!connector) {
       throw new Error(
@@ -2475,6 +2473,8 @@ export const ServiceAccountIngestMoreUsers = async (
 
     const results = await Promise.all(promises)
     ingestionMetadata.push(...results)
+
+    await insertUsersForWorkspace(users)
 
     setTimeout(() => {
       clearInterval(interval)
