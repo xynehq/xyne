@@ -46,8 +46,8 @@ export enum QueryCategory {
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
-  ListItems = "ListItems",
-  // RetrieveMetadata = "RetrieveMetadata",
+  // ListItems = "ListItems",
+  RetrieveMetadata = "RetrieveMetadata",
 }
 
 export type Cost = {
@@ -128,11 +128,16 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
 })
 
-export const listItemsSchema = z.object({
-  type: z.literal(QueryType.ListItems),
+// export const listItemsSchema = z.object({
+//   type: z.literal(QueryType.ListItems),
+//   filters: FiltersSchema.extend({
+//     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+//   }),
+// })
+
+export const RetrieveMetadataSchema = z.object({
+  type: z.literal(QueryType.RetrieveMetadata),
   filters: FiltersSchema.extend({
-    app: z.nativeEnum(Apps),
-    entity: entitySchema,
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   }),
 })
@@ -140,19 +145,9 @@ export const listItemsSchema = z.object({
 export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(QueryType.RetrieveInformation),
-    filters: z.object({
-      startTime: z.string().nullable().optional(),
-      endTime: z.string().nullable().optional(),
-    }),
+    filters: FiltersSchema,
   }),
-  listItemsSchema,
-  // z.object({
-  //   type: z.literal(QueryType.RetrieveMetadata),
-  //   filters: FiltersSchema.extend({
-  //     app: z.nativeEnum(Apps),
-  //     entity: entitySchema,
-  //   }),
-  // }),
+  RetrieveMetadataSchema,
 ])
 
 export const QueryContextRank = z.object({
@@ -162,6 +157,6 @@ export const QueryContextRank = z.object({
 
 export type QueryContextRank = z.infer<typeof QueryContextRank>
 
-export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
+// export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
 
 export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>

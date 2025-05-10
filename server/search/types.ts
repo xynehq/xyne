@@ -48,6 +48,24 @@ export enum Apps {
   Slack = "slack",
 }
 
+export const isValidApp = (app: string): boolean => {
+  return Object.values(Apps).includes(app as Apps)
+}
+
+export const isValidEntity = (entity: string): boolean => {
+  return (
+    Object.values(DriveEntity).includes(entity as DriveEntity) ||
+    Object.values(MailEntity).includes(entity as MailEntity) ||
+    Object.values(CalendarEntity).includes(entity as CalendarEntity) ||
+    Object.values(MailAttachmentEntity).includes(
+      entity as MailAttachmentEntity,
+    ) ||
+    Object.values(GooglePeopleEntity).includes(entity as GooglePeopleEntity)
+  )
+  // Object.values(SlackEntity).includes(entity as SlackEntity) ||
+  // Object.values(NotionEntity).includes(entity as NotionEntity)
+}
+
 export enum GooglePeopleEntity {
   Contacts = "Contacts",
   OtherContacts = "OtherContacts",
