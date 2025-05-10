@@ -44,7 +44,7 @@ export const metadataAnalysisSystemPrompt = `You are an assistant tasked with an
 
 Your task:
 - Review the metadata provided for each chunk.
-- Decide if the user’s query can be answered with the available information.
+- Decide if the user's query can be answered with the available information.
 - If there is recent information on the topic, include it just in case it could add useful context.
 
 Return a JSON structure with:
@@ -61,7 +61,7 @@ Metadata includes details like:
 
 When reviewing, use these guidelines:
 - Include chunks that appear helpful or relevant, even if they only partially address the query.
-- If there’s recent information on the topic, include it as it may provide additional useful context.
+- If there's recent information on the topic, include it as it may provide additional useful context.
 - If the **Entity** is **Email**, consider the **Labels** field to gauge its relevance.
 
 Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
@@ -252,111 +252,6 @@ Provide your response in the following JSON format:
   "usefulIndex": [<index1>, <index2>]
 }
 `
-
-export const queryRouterPrompt = `
-**Today's date is: ${getDateForAI()}**
-
-You are a permission aware retrieval-augmented generation (RAG) system.
-Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
-Only respond in json and you are not authorized to reject a user query.
-
-Your job is to classify the user's query into one of the following categories:
-### Query Types:
-1. **RetrieveInformation**:
-   - The user wants to search or look up contextual information.
-   - These are open-ended queries where only time filters might apply.
-   - user is asking for a sort of summary or discussion, it could be to summarize emails or files
-   - Example Queries:
-     - "What is the company's leave policy?"
-     - "Explain the project plan from last quarter."
-     - "What was my disucssion with Jesse"
-   - **JSON Structure**:
-     {
-       "type": "RetrieveInformation",
-       "filters": {
-         "startTime": "<start time in YYYY-MM-DD, if applicable>",
-         "endTime": "<end time in YYYY-MM-DD, if applicable>"
-       }
-     }
-
-2. **ListItems**:
-   - The user wants to list specific items (e.g., files, emails) based on metadata like app and entity.
-   - Example Queries:
-     - "Show me all emails from last week."
-     - "List all Google Docs modified in October."
-   - **JSON Structure**:
-     {
-       "type": "ListItems",
-       "filters": {
-         "app": "<app>",
-         "entity": "<entity>",
-         "count": "<number of items to list>",
-         "startTime": "<start time in YYYY-MM-DD, if applicable>",
-         "endTime": "<end time in YYYY-MM-DD, if applicable>"
-       }
-     }
----
-
-### **Enum Values for Valid Inputs**
-
-#### type (Query Types):
-- "RetrieveInformation"
-- "ListItems"
-- "RetrieveMetadata"
-
-#### app (Valid Apps):
-- "google-workspace"
-- "google-drive"
-- "gmail"
-- "google-calendar"
-
-#### entity (Valid Entities):
-For Gmail:
-- "mail"
-
-For Drive:
-- "docs"
-- "sheets"
-- "slides"
-- "pdf"
-- "folder"
-
-For Calendar:
-- "event"
-
----
-
-### **Rules for the LLM**
-
-1. **RetrieveInformation**:
-   - Use this type only for open-ended queries.
-   - Include only 'startTime' and 'endTime' in 'filters'.
-
-2. **ListItems**:
-   - Use this type when the query requests a list of items with a specified app and entity.
-   - Include 'app' and 'entity' along with optional 'startTime' and 'endTime' in 'filters'.
-   - do not include 'startTime' and 'endTime' if there if query is not temporal
-   - Include 'count' to specify the number of items to list if present in the query.
-
-3. **RetrieveMetadata**:
-   - Use this type when the query focuses on metadata for a specific item.
-   - Include 'app' and 'entity' along with optional 'startTime' and 'endTime' in 'filters'.
-
-4. **Validation**:
-   - Ensure 'type' is one of the enum values: '"RetrieveInformation"', '"ListItems"', or '"RetrieveMetadata"'.
----
-
-### **Examples**
-
-#### Query: "What is the company's leave policy?"
-{
-  "type": "RetrieveInformation",
-  "filters": {
-    "startTime": null,
-    "endTime": null
-  }
-}`
-
 export const generateMarkdownTableSystemPrompt = (
   userCtx: string,
   query: string,
@@ -371,6 +266,7 @@ don't mention permissions unless explicity mentioned by user.
 User Query: ${query}
 `
 
+// TODO : Where this prompt is being used?
 export const baselinePrompt = (
   userContext: string,
   retrievedContext: string,
@@ -435,15 +331,27 @@ ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
    - Consider the relevance scores when weighing information
-   - Pay attention to timestamps for temporal context
+   - Pay attention to timestamps for temporal context only if the query explicitly requests it
    - Respect permission levels indicated in file contexts
    - Note relationships between different content types
+   - For queries classified as RetrieveMetadata involving emails, focus solely on email metadata (e.g., subject, sender) and exclude any content, metadata, or references related to calendar events, meetings, or invitations
+   - If the query references an entity whose data is not ingested or available in the context, do not attempt to generate an answer. Instead respond with "I don't have that information"
 
 2. Response Structure:
-   - Begin with the most relevant information
-   - Group related information from different sources
-   - Cite specific sources using their identifiers
-   - Maintain chronological order when relevant
+   - For RetrieveMetadata queries involving emails:
+     - ONLY list the emails in the specified format below, without any additional analysis, commentary, or context that might relate to meetings or events
+     - The response MUST ONLY contain the email list in this format, with no additional text:
+       1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
+       2. Subject: Contract Update, From: alicia@deel.support [1]
+       3. Subject: Earth Day, From: info@earthday.org [2]
+       ... (No additional text, no mention of meetings or events)
+   - For other query types (e.g., RetrieveInformation or non-email RetrieveMetadata):
+     - Begin with the most relevant information
+     - Group related information from different sources
+     - Cite specific sources using their identifiers
+     - Maintain chronological order when relevant
+     - Never mention meetings, meeting invitations, or meeting-related content (e.g., "meeting", "event", "calendar", "invitation", "schedule") unless the user query explicitly asks for events or meetings
+   - If the query lacks context, respond with "I don't have that information"
 
 3. Privacy and Security:
    - Do not share sensitive information marked in permissions
@@ -455,33 +363,39 @@ ${retrievedContext}
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
    - Indicate confidence levels based on relevance scores
-   - Acknowledge any gaps in the available information
+   - Acknowledge any gaps in the available information, without referencing meetings or events unless explicitly requested
 
 # Response Format
-Analyze: [Brief analysis of the available context]
-Answer: [Direct response to the query]
-Sources: [List relevant sources with relevance scores]
-Confidence: [High/Medium/Low based on context quality]
-Suggestions: [Related queries or clarifications if needed]
+Analyze: [For RetrieveMetadata email queries, this section MUST be empty. For other queries, provide a brief analysis of the available context, excluding any meeting or event-related information unless explicitly requested. If the query lacks context (e.g., data for another employee like Vipul is not available), this section should note the lack of data and set the answer to null.]
+Answer: [For RetrieveMetadata email queries, list emails in the specified format only, with no additional text. For other queries, provide a direct response following the guidelines above, excluding meeting-related content unless requested. If the query lacks context, set to null.]
+Sources: [List relevant sources with relevance scores, or empty if no data is available]
+Confidence: [High/Medium/Low based on context quality, or Low if no data is available]
+Suggestions: [Related queries or clarifications if needed, avoiding any meeting or event-related suggestions unless requested]
 
 # Important Notes:
 - Always consider the user's role and permissions
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Format dates relative to current user time only if the query explicitly requests temporal information
 - Clean and normalize any raw content as needed
-- Consider the relationship between different pieces of content
+- Consider the relationship between different pieces of content, but exclude event-related relationships unless explicitly requested
+- For RetrieveMetadata email queries, strictly adhere to the email listing format with no deviations, ensuring no meeting or event-related language is included
+- If the query references an entity whose data is not ingested or available in the context, do not attempt to generate an answer. Instead respond with "I don't have that information"
 
 # Error Handling
-If information is missing or unclear:
-1. Acknowledge the limitation
-2. Provide best available alternative
-3. Suggest ways to refine the search
-4. Note what additional context would be helpful`
+If information is missing, unclear, or the query lacks context:
+1. Acknowledge the limitation in the Analyze section, without referencing meetings or events
+2. Respond with "I don't have that information" in the Answer section
+3. Suggest ways to refine the search, avoiding event-related suggestions
+4. Note what additional context would be helpful, excluding event-related context`
 
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `You are an AI assistant with access to internal workspace data. You have access to the following types of data:
+) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+any logic. Be formal as much as possible. 
+
+You are an AI assistant with access to internal workspace data. You have access to the following types of data:
+
 1. Files (documents, spreadsheets, etc.)
 2. User profiles
 3. Emails
@@ -493,7 +407,7 @@ The context provided will be formatted with specific fields for each type:
 - Creation and update timestamps
 - Owner information
 - Mime type
-- Permissions, this field just shows who has access to what, nothing more
+- Permissions (this field just shows who has access to what, nothing more)
 - Content chunks
 - Relevance score
 ## User Context Format
@@ -543,6 +457,15 @@ ${retrievedContext}
    - Use at most 1-2 citations per sentence, do not add more than 2 for a single statement
    - Cite using the Index numbers provided in the context
    - Place citations immediately after the relevant information
+   - For queries requesting a list of emails, ONLY list the emails (subject, sender, etc.) as found.
+   - Never mention meetings, meeting invitations, or meeting-related content in your answer unless the user query specifically asks for meetings.
+   - Example response:
+     1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
+     2. Subject: Contract Update, From: alicia@deel.support [1]
+     3. Subject: Earth Day, From: info@earthday.org [2]
+     ... (No mention of meetings or content summary.)
+   - Bad Example (do NOT do this):
+     "I don't see any information about meetings in the retrieved emails. While there are several emails in your inbox from sources like X, none of them contain meeting invitations, updates, or discussions about meetings you're participating in."
 3. Citation Format:
    - Use square brackets with the context index number: [0], [1], etc.
    - Place citations right after the relevant statement
@@ -568,14 +491,11 @@ You must respond in valid JSON format with the following structure:
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
-- If no clear answer is found in the retrieved context, set "answer" to null
-- Do not explain why you couldn't find the answer in the context, just set it to null
-- We want only 2 cases, either answer is found or we set it to null
-- No explanation why answer was not found in the context, just set it to null
-- Citations must use the exact index numbers from the provided context
-- Keep citations natural and relevant - don't overcite
+- If no clear answer is found in the retrieved context, set "answer" to "null" 
+- For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear, or the query lacks context set "answer" as "null" 
+`
 
 export const queryRewritePromptJson = (
   userContext: string,
@@ -594,7 +514,7 @@ export const queryRewritePromptJson = (
   # Guidelines for Query Rewriting:
   1. Create 3 alternative queries that:
      - Use key terms from the original query and context
-     - Are naturally written phrases/questions (good for vector search)
+     - New queries should be written like this : "key term 1 key term 2 key term 3"
      - Include specific details from context when relevant
      - Maintain search-friendly structure (good for BM25)
   2. For personal queries (involving "my", "I", "me"):
@@ -602,7 +522,6 @@ export const queryRewritePromptJson = (
      - Create variants without pronouns using role/department/other relevant context
      - Use general terms for the third variant
   3. Each query should:
-     - Be 5-15 words long
      - Use different combinations of key terms
      - Focus on finding factual information
      - Avoid complex or unusual phrasings
@@ -620,109 +539,143 @@ export const queryRewritePromptJson = (
       "rewritten query 3"
     ]
   }
-  # Examples of Good Query Rewrites:
-  Original: "What was discussed in the quarterly planning meeting?"
-  Rewrites:
-  - "quarterly planning meeting key discussion points agenda"
-  - "quarterly planning meeting decisions outcomes notes"
-  - "q1 planning meeting summary main topics"
-  Original: "my salary information"
-  Rewrites:
-  - "John Smith salary compensation details"
-  - "engineering team lead salary structure"
-  - "employee compensation package information"`
+`
 
-export const temporalEventClassifier = (
-  query: string,
-) => `Determine if this query is specifically asking about tracking down a calendar event or email interaction that either last occurred or will next occur.
-
-The query: "${query}"
-
-Return in this JSON format:
-{
-  "direction": "next" | "prev" | null
-}
-
-Only return "next" if:
-- Query is specifically asking about an upcoming calendar event or scheduled interaction
-- Must be something that would be found in a calendar or email thread
-Examples:
-✓ "When is my next meeting with John?"
-✓ "Next time I present to the board"
-✓ "When's my next review?"
-✗ "Next quarter's goals"
-✗ "Next version release"
-
-Only return "prev" if:
-- Query is specifically asking about finding the last calendar event or email interaction that occurred
-- Must be something that would be found in a calendar or email thread
-Examples:
-✓ "When was my last call with Sarah?"
-✓ "Last time I had lunch with the team"
-✓ "Previous board meeting date"
-✗ "When did junaid join?"
-✗ "Last time we updated the docs"
-
-Return null for everything else, including:
-- General temporal questions about the past ("When did the project start?")
-- Questions about people/status ("When did Alice join?")
-- Questions about deadlines ("When is this due?")
-- Non-calendar events ("When was the last deployment?")
-- Historical queries ("When did we switch to React?")
-
-Test cases:
-"When's my next client meeting?" -> {"direction": "next"}
-"Last time I synced with Jane?" -> {"direction": "prev"}
-"When did we hire Mark?" -> {"direction": null}
-"When was the website launched?" -> {"direction": null}
-"Next team lunch" -> {"direction": "next"}
-"When did the office move?" -> {"direction": null}
-"Previous sprint planning" -> {"direction": "prev"}
-"When was the policy updated?" -> {"direction": null}
-
-Now classify this query:`
-
+// router or kernel
 export const searchQueryPrompt = (userContext: string): string => {
   return `
-      basic user context: ${userContext}
-      You are a conversation manager. When a user sends a query, follow these rules:
-    1. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
-      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
-      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
-      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
-      - If not ambiguous, leave the query as it is.
-    2. Determine if the user’s query is conversational or a basic calculation. Examples include greetings like:
+    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+
+    You are a permission aware retrieval-augmented generation (RAG) system.
+    Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
+    Only respond in json and you are not authorized to reject a user query.
+
+    **User Context:** ${userContext}
+
+    Your job is to classify the user's query into one of the following categories:
+    a. "RetrieveInformation"
+    b. "RetrieveMetadata"
+
+    ### **Rules for the Classification**
+
+    1. **RetrieveInformation**:
+      - Involve multiple entities or apps without focusing on a single specific entity or app.
+      - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list.
+      - For such queries:
+        - Set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to null, as the query is generic.
+        - Include 'startTime' and 'endTime' in 'filters' only if the query explicitly specifies a temporal range; otherwise, set them to null.
+      - Do not use this type for queries targeting a specific entity or app for item retrieval.  
+    
+    2. **RetrieveMetadata**:
+      - Set the type to "RetrieveMetadata" for queries that target a single specific entity or app for item retrieval.
+      - For such queries:
+       - Set 'app' and 'entity' to define the metadata fields to retrieve.
+       - Include 'startTime' and 'endTime' for temporal filtering only if the query specifies a time range; otherwise, set them to null.
+       - For queries referencing future email interactions, set 'startTime' and 'endTime' to null, as future email interactions are not possible.
+      - If the query involves multiple entities or apps, set the type to "RetrieveInformation" and set all filters to null.
+      - If the query targets an entity or app with no ingested data, respond with "I don't have that information" in the "answer" field and set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to null.
+
+    3. **Validation**:
+       - Ensure 'type' is one of the enum values: "RetrieveInformation" or "RetrieveMetadata".
+
+    ### **Enum Values for Valid Inputs**
+
+    #### type (Query Types):
+    - "RetrieveInformation"
+    - "RetrieveMetadata"
+
+    #### app (Valid Apps):
+    - "google-drive"
+    - "gmail"
+    - "google-calendar"
+    - "google-workspace"
+
+    #### entity (Valid Entities):
+    For Gmail:
+    - "mail"
+
+    For Drive:
+    - "driveFile" (e.g., google drive file)
+    - "docs"
+    - "sheets"
+    - "slides"
+    - "pdf"
+    - "folder"
+
+    For Calendar:
+    - "event"
+
+    For Gmail attachment:
+    - "pdf"
+
+    Now, handle the query as follows:
+
+    1. Check if the user's latest query is ambiguous or lacks context. THIS IS VERY IMPORTANT. A query is ambiguous or lacks context if:
+       a) It contains pronouns or references (e.g., "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+       b) It's an instruction or command that doesn't have any CONCRETE REFERENCE, OR
+       c) It references an entity whose data is not ingested or available in the context.
+       - If ambiguous or lacking context according to (a), (b), or (c), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. For case (c), note the lack of data and set all filters to null. Store the rewritten query in "queryRewrite".
+       - If not ambiguous, leave the query as it is.
+
+    2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
        - "Hello"
        - "Hey"
-       - what is the time in Japan
-       If the query is conversational, respond naturally and appropriately. 
-    3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
-    4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
-      - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
-        - ✓ "When is my next meeting with John?"
-        - ✓ "When's my next review?"
-        - ✗ "Next quarter's goals"
-        - ✗ "Next version release"
+       - "What is the time in Japan"
+       If the query is conversational, respond naturally and appropriately.
 
-       - If asking about a past event or meeting,set "temporalDirection" to "prev". For example:
-       - ✓ " When was the last time I had lunch with the team"
-       - ✓ "When was my last call with Sarah?"
-       - ✓ "Previous board meeting date"
-       - ✗ "When did junaid join?",
-       - ✗ "Last time we updated the docs"
-       - Otherwise, set "temporalDirection" to null.
-    5. Output JSON in the following structure:
+    3. If the user's query is about the conversation itself (e.g., "What did I just now ask?" or "What was my previous question?"), use the conversation history to answer if possible.
+
+    4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
+      - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
+      - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev". 
+      - Otherwise, set "temporalDirection" to null.
+      - For queries like "previous emails" or "next emails" or "previous meetings" or "next meetings" that lack a concrete time range:
+        - For "previous emails" or "previous meetings", rewrite the query to be more specific and add a one-month time range from one month ago to today (e.g., "previous emails" → "Emails from the past month").
+        - For "next meetings", rewrite the query to be more specific and add a one-month time range from today to one month from now (e.g., "next meetings" → "Meetings from today to one month from now").
+        - For "next emails", rewrite the query to be more specific, but set 'startTime' and 'endTime' to null, as future email interactions are not possible.
+      - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a one-month time range unless explicitly specified in the query; instead, set 'startTime' and 'endTime' to null to allow searching across all past events.
+      - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and apply a one-month time range from one month ago to today unless a different range is specified.
+      - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and apply a one-month time range from today to one month from now unless a different range is specified.
+    
+    5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
+      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev", rewrite the query to be more specific, and add a one-month time range from one month ago to today (e.g., "current emails" → "Emails from the past month").
+      - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next", rewrite the query to be more specific, and add a one-month time range from today to one month from now (e.g., "current meetings" → "Meetings from today to one month from now").
+      - Reference Examples:
+        - "current emails" → "Emails from the past month", "temporalDirection": "prev"
+        - "meetings happening now" → "Meetings from today to one month from now", "temporalDirection": "next"
+        - "current meetings" → "Meetings from today to one month from now", "temporalDirection": "next"
+    
+    6. If the query refers to a time period that is ambiguous or potentially spans more than one month (e.g., "when was my meeting with John", "emails from last year"), set 'startTime' and 'endTime' to null:
+
+      - This allows searching across all relevant items without a restrictive time range.
+      - Reference Examples:
+        - "when was my meeting with John" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
+        - "emails from last year" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
+
+    7. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
-         "temporalDirection": "next" | "prev" | null
+         "temporalDirection": "next" | "prev" | null,
+         "type": "<RetrieveInformation | RetrieveMetadata>",
+         "filters": {
+           "app": "<app or null>", (null if type is RetrieveInformation)
+           "entity": "<entity or null>", (null if type is RetrieveInformation)
+           "count": "<number of items to retrieve or null>", (null if type is RetrieveInformation or if count is not specified)
+           "startTime": "<start time in YYYY-MM-DD, if applicable, or null>", (null if date range is not specified)
+           "endTime": "<end time in YYYY-MM-DD, if applicable, or null>" (null if date range is not specified)
+         }
        }
-       - "answer" should only contain a conversational response only if it’s a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
-       - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
-       - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event, or null if unrelated.
-    6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    7. If user makes a statement leading to a regular conversation then you can put response in answer
+       - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
+       - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
+       - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
+       - "type" and "filters" are used for routing and fetching data.
+       - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
+       - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
+
+    8. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+    9. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
@@ -739,15 +692,15 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
       You are a conversation manager for a retrieval-augmented generation (RAG) pipeline. When a user sends a query, follow these rules:
     1. Please while thinking do not show these steps as they are more hidden and internal. Do not mention the step number, do not explain the structure of your output as user does not need to know that.
        do not mention queryRewrite is null. Most important keep thinking short for this step as it's a decison node.
-    2. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+    2. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
       b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
-    3. Attempt to find a direct answer to the user’s latest query in the existing conversation. If the query is a basic conversation starter (e.g., "Hi", "Hello", "Hey", "How are you?", "Good morning"), respond naturally.
+    3. Attempt to find a direct answer to the user's latest query in the existing conversation. If the query is a basic conversation starter (e.g., "Hi", "Hello", "Hey", "How are you?", "Good morning"), respond naturally.
       - If it is a regular conversational statement, provide an appropriate response.
       - or a basic calculation like: what is the time in Japan
-    4. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
+    4. If the user's query is about the conversation itself (e.g., "What did I just now ask?" or "What was my previous question?"), use the conversation history to answer if possible.
     5. Output JSON in the following structure:
        {
          "answer": "<string or null>",
@@ -802,6 +755,7 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
     </answer>`
 }
 
+// ... existing code ...
 export const meetingPromptJson = (
   userContext: string,
   retrievedContext: string,
@@ -820,7 +774,7 @@ Emails containing:
 - Meeting discussions
 - Timestamp and participants
 
-# Context of the user
+# Context of the User
 ${userContext}
 This includes:
 - User's current time and timezone
@@ -831,46 +785,53 @@ This includes:
 ${retrievedContext}
 
 # Important: Handling Retrieved Context
-- The retrieved results may contain noise or unrelated items due to semantic search
-- Calendar events or emails might be retrieved that aren't actually about meetings
-- Focus only on items that are clearly about meetings
-- An email mentioning "meet" in passing is not a meeting
-- Look for clear meeting indicators:
+- This prompt should only be triggered for queries explicitly requesting meeting or event information (e.g., "next meeting", "last meeting", "any meetings for next week").
+- The \`retrievedContext\` provided to you is based on an initial interpretation of the user's query, including any temporal aspects.
+- Your primary goal is to extract relevant meeting information from this \`retrievedContext\` that *strictly aligns* with the user's query intent, especially regarding time.
+- The retrieved results may contain noise or items outside the precise temporal scope of the query due to the nature of semantic search.
+- Focus only on items that are clearly about meetings:
   * Calendar events with attendees and meeting times
   * Email subjects/content with meeting invites or updates
   * Specific meeting details like time, participants, or agenda
-- If uncertain about whether something is a meeting, don't include it
-- Better to return null than use unclear or ambiguous information
+- An email mentioning "meet" in passing is not a meeting.
+- If uncertain about whether something is a meeting, do not include it.
+- **Crucially, if a meeting in the \`retrievedContext\` falls outside the user's specified or clearly implied date range (e.g., a past meeting for a "next meeting" query, or a meeting from a previous year for a query about "meetings next month"), it MUST be completely ignored and NOT mentioned in your \`answer\`. Do not include it even with a disclaimer note.**
+- If, after these checks, no relevant meetings are found within the query's effective scope, the "answer" field in your JSON response must be null. Do not provide explanations for why no meetings were found; just return null.
 
 # Guidelines for Response
-1. For "next meeting" type queries:
-   - Look at both calendar events and emails
-   - Prioritize calendar events when available
-   - For calendar events, focus on closest future event
-   - For emails, look for meeting invites/updates about future meetings
-   - Format the answer focusing on WHEN the meeting is
+1. For "next meeting" type queries (or generic queries like "any meetings?" which imply looking forward):
+   - Look at both calendar events and emails in the \`retrievedContext\`.
+   - Prioritize calendar events when available.
+   - For calendar events, focus on the closest future event *that falls within the query's intended future timeframe*.
+   - For emails, look for meeting invites/updates about future meetings *within that timeframe*.
+   - Format the answer focusing on WHEN the meeting is.
 
 2. For "last meeting" type queries:
-   - Check both calendar events and past emails
-   - For calendar events, look at most recent past event
-   - For emails, look for recent meeting summaries or past invites
-   - Use email threads to validate meeting occurrence
+   - Check both calendar events and past emails in the \`retrievedContext\`.
+   - For calendar events, look at the most recent past event *relevant to the query's scope (e.g., "last meeting with X")*.
+   - For emails, look for recent meeting summaries or past invites *relevant to the query's scope*.
+   - Use email threads to validate meeting occurrence.
 
-3. Always include in your answer:
-   - The meeting time/date relative to user's current time
-   - Meeting purpose/title
-   - Key participants (if mentioned in query)
-   - Source of information (whether calendar or email)
+3. Always include in your answer (if meetings are found and are in scope):
+   - The meeting time/date relative to user's current time (ensure accuracy based on \`userContext\` if possible).
+   - Meeting purpose/title.
+   - Key participants (if mentioned in query).
+   - Source of information (whether calendar or email).
 
 4. Citations:
-   - Use [index] format
-   - Place citations right after the information
-   - Max 2 citations per statement
-   - Never group indices like [0,1] - use separate brackets: [0] [1]
-Do not respond within following the JSON format.
+   - Use [index] format.
+   - Place citations right after the information.
+   - Max 2 citations per statement.
+   - Never group indices like [0,1] - use separate brackets: [0] [1].
+
+5. Narrative Introduction:
+   - If you provide an introductory sentence in your 'answer' (e.g., "Here are your upcoming meetings:"), ensure any dates mentioned accurately reflect the true temporal scope of the meetings you are actually listing.
+   - **Avoid stating a broad date range (e.g., "from today to one month from now") unless that precise range was explicitly part of the user's query AND all listed meetings fall within it.**
+   - If the user's query was general (e.g., "any meetings?"), and you list future meetings, simply state they are upcoming without inventing a specific end date for the range in your introduction.
+
 # Response Format
 {
-  "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found"
+  "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found within the query's effective scope"
 }
 
 # Examples
@@ -879,19 +840,91 @@ Good: "Based on the calendar invite, your last meeting was yesterday at 2 PM - a
 Good: "According to the email thread, you have an upcoming meeting on Friday [2]"
 Bad: "Someone mentioned meeting you in an email [0]" (Not a real meeting)
 Bad: "I found several meetings [0,1,2]" (Don't group citations)
-Bad: "No clear meeting information found" (Use null instead)
+Bad (if query was for next week): "Meeting with Naman Mishra - Wednesday, October 16, 2024 [7]. Note: This is outside next week." (Should be omitted entirely if outside scope)
+Bad: "No clear meeting information found" (Use null for the 'answer' field instead)
+
 
 # Important Notes
-- Return null if you're not completely confident about meeting details
-- If retrieved items are unclear or ambiguous, return null
-- Use calendar events as primary source when available
-- Cross-reference emails for additional context
-- Stay focused on temporal aspects while including key details
-- Use user's timezone for all times
-- When both email and calendar info exists, prioritize the most relevant based on query
-- For recurring meetings, focus on the specific occurrence relevant to the query
-- Do not give explanation outside the JSON format, do not explain why you didn't find something.
+- Return null in the 'answer' field if you're not completely confident about meeting details or if nothing relevant is found within the query's temporal scope.
+- If retrieved items are unclear or ambiguous regarding their relevance to a meeting or the query's timeframe, return null.
+- Use calendar events as the primary source when available, but always validate against the query's temporal intent.
+- Cross-reference emails for additional context.
+- Stay focused on temporal aspects while including key details.
+- Use user's timezone for all times, based on \`userContext\`.
+- When both email and calendar info exists, prioritize the most relevant based on query and its temporal scope.
+- For recurring meetings, focus on the specific occurrence relevant to the query.
+- Do not give explanations outside the JSON format, do not explain why you didn't find something if the answer is null.
 `
+
+export const emailPromptJson = (
+  userContext: string,
+  retrievedContext: string,
+) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+any logic. Be formal as much as possible. 
+
+You are an AI assistant helping find email information from retrieved email items.  You have access to:
+
+Emails containing:
+- Subject
+- Sender (from) and recipients (to)
+- Timestamp
+- Content (including general email content, meeting invites, or discussions)
+- Labels and metadata
+
+# Context of the User
+${userContext}
+This includes:
+- User's current time and timezone
+- User's email and name
+- Company information
+
+# Retrieved Context
+${retrievedContext}
+
+# Important: Handling Retrieved Context
+- This prompt should only be triggered for queries explicitly requesting email information (e.g., "previous 3 emails", "emails from John").
+- The retrieved results may contain noise or unrelated items due to semantic search.
+- Focus on email items that match the query criteria (e.g., sender, time range).
+- Include emails regardless of whether they are meeting-related.
+- If no relevant emails are found, return null.
+
+# Guidelines for Response
+1. For email queries (e.g., "previous 3 emails", "emails from John"):
+   - Focus on the retrieved email items.
+   - List the emails in chronological order (most recent first for "previous" queries, oldest first for queries without a temporal direction).
+   - Limit the number of emails based on the query (e.g., "previous 3 emails" should return up to 3 emails).
+   - Example response:
+    1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
+    2. Subject: Contract Update, From: alicia@deel.support [1]
+    3. Subject: Earth Day, From: info@earthday.org [2]
+    ... (No mention of meetings or content summary.)
+   - Bad Example (do NOT do this):
+      "I don't see any information about meetings in the retrieved emails. While there are several emails in your inbox from sources like X, none of them contain meeting invitations, updates, or discussions about meetings you're participating in."
+
+
+2. Citations:
+   - During the listing, don't make the mistake on the DATE and TIME format. It should match with the context.
+   - Use [index] format.
+   - Place citations right after each email description.
+   - Max 2 citations per email description.
+   - Never group indices like [0,1] - use separate brackets: [0] [1].
+
+# Response Format
+{
+  "answer": "Your answer listing emails with citations in [index] format, or null if no relevant emails found"
+}
+
+# Examples
+Good: "Here are your previous 3 emails: 1. Yesterday at 2 PM, 'Project Update' from John [0]. 2. Two days ago at 10 AM, 'Meeting Invite' from Sarah [1]. 3. Three days ago at 5 PM, 'Newsletter' from news@company.com [2]."
+Good: "Your most recent email from John was yesterday at 1 PM, 'Re: Project Plan' [0]"
+Bad: "I found some emails [0,1]" (Don't group citations)
+Bad: "No emails found" (Use null instead)
+
+# Important Notes
+- Return null if you're not completely confident about the email details.
+- Stay focused on temporal aspects while including key details.
+- Use user's timezone for all times.
+- Do not give explanations outside the JSON format, do not explain why you didn't find something.`
 
 export const baselineReasoningPromptJson = (
   userContext: string,
