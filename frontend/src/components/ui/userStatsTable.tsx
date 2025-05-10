@@ -43,6 +43,11 @@ export const UserStatsTable = ({
           return (
             <TableRow key={email}>
               {type === AuthType.ServiceAccount && <TableCell>{email}</TableCell>}
+              {type !== AuthType.OAuth && (
+                <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+                  {email}
+                </TableCell>
+              )}
               <TableCell>{stats.gmailCount}</TableCell>
               <TableCell>{stats.driveCount}</TableCell>
               <TableCell>{stats.contactsCount}</TableCell>
