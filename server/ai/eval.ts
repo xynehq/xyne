@@ -954,6 +954,12 @@ const endToEndFlow = async (
 
     const classification: TemporalClassifier = {
       direction: parsed.temporalDirection,
+      type: parsed.type as any,
+      filters: {
+        ...parsed.filters,
+        app: parsed.filters.app as any,
+        entity: parsed.filters.entity as any,
+      },
     }
 
     const tracer: Tracer = getTracer("chat")
