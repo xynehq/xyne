@@ -224,10 +224,11 @@ export const getOAuthConnectorWithCredentials = async (
 }
 
 export const getConnectorByExternalId = async (
+  trx: TxnOrClient,
   connectorId: string,
   userId: number,
-) => {
-  const res = await db
+): Promise<SelectConnector> => {
+  const res = await trx
     .select()
     .from(connectors)
     .where(
@@ -238,11 +239,22 @@ export const getConnectorByExternalId = async (
     )
     .limit(1)
   if (res.length) {
-    return res[0]
+    const parsedRes = selectConnectorSchema.safeParse(res[0])
+    if (!parsedRes.success) {
+      Logger.error(
+        `Failed to parse connector data for externalId ${connectorId}: ${parsedRes.error.toString()}`,
+      )
+      throw new NoConnectorsFound({
+        message: `Could not parse connector data for externalId: ${connectorId}`,
+      })
+    }
+    return parsedRes.data
   } else {
-    Logger.error(`Connector not found for external ID ${connectorId}`)
+    Logger.error(
+      `Connector not found for external ID ${connectorId} and user ID ${userId}`,
+    )
     throw new NoConnectorsFound({
-      message: `Could not get the connector with id: ${connectorId}`,
+      message: `Connector not found for external ID ${connectorId} and user ID ${userId}`,
     })
   }
 }

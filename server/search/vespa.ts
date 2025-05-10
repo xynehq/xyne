@@ -499,7 +499,7 @@ export const searchVespa = async (
     requestDebug = false,
     span = null,
     maxHits = 400,
-    recencyDecayRate = 0.02
+    recencyDecayRate = 0.02,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated

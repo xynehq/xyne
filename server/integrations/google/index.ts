@@ -111,8 +111,8 @@ import {
 } from "@/integrations/tracker"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
+import { getConnectorByExternalId } from "@/db/connector"
 
-// const { serviceAccountWhitelistedEmails } = config
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -141,7 +141,7 @@ export const listUsersByEmails = async (
         users.push(res.data)
       } catch (error) {
         Logger.warn(`User ${email} not found: ${error}`)
-        // Skip if user doesn’t exist
+        // Skip if user doesn't exist
       }
     }
     return users
@@ -637,10 +637,10 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       clientSecret: googleProvider.clientSecret,
       redirectUri: `${config.host}/oauth/callback`,
     })
-    
+
     const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth)
     tracker.setOAuthUser(userEmail)
-    
+
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
@@ -969,8 +969,6 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     const results = await Promise.all(promises)
     ingestionMetadata.push(...results)
 
-    // Rest of the function remains the same...
-    // insert all the workspace users
     await insertUsersForWorkspace(users)
 
     setTimeout(() => {
@@ -2347,4 +2345,235 @@ export async function countDriveFiles(client: GoogleClient): Promise<number> {
 
   Logger.info(`Counted ${fileCount} Drive files`)
   return fileCount
+}
+
+export type IngestMoreGoogleServiceAccountUsersPayload = {
+  connectorId: string
+  emailsToIngest: string[]
+}
+
+// Add the new function as provided by the user
+export const ServiceAccountIngestMoreUsers = async (
+  payload: IngestMoreGoogleServiceAccountUsersPayload,
+  userId: number,
+) => {
+  const { connectorId, emailsToIngest } = payload
+  const Logger = getLogger(Subsystem.Integrations)
+  Logger.info(
+    `ServiceAccountIngestMoreUsers called for connector externalId: ${connectorId} with emails: ${emailsToIngest.join(", ")} for userId: ${userId}`,
+  )
+
+  let connector: SelectConnector | null = null
+  try {
+    connector = await getConnectorByExternalId(db, connectorId, userId)
+
+    if (!connector) {
+      throw new Error(
+        `Connector with externalID ${connectorId} for user ${userId} not found.`,
+      )
+    }
+
+    const serviceAccountKey: GoogleServiceAccount = JSON.parse(
+      connector.credentials as string,
+    )
+    const subject: string = connector.subject as string
+    const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
+    setupGmailWorkerHandler(tracker)
+
+    const adminJwtClient = createJwtClient(serviceAccountKey, subject)
+    const admin = google.admin({
+      version: "directory_v1",
+      auth: adminJwtClient,
+    })
+
+    const users = await listUsersByEmails(admin, emailsToIngest)
+
+    if (users.length === 0) {
+      Logger.warn(
+        `No valid users found for the provided emails: ${emailsToIngest.join(", ")}. Aborting ingest more operation.`,
+      )
+      if (connector.externalId) {
+        sendWebsocketMessage(
+          JSON.stringify({
+            message: "No valid users found for ingestion.",
+            error: true,
+          }),
+          connector.externalId,
+        )
+        closeWs(connector.externalId)
+      }
+      return
+    }
+
+    Logger.info(`Ingesting for ${users.length} additional users.`)
+    tracker.setTotalUsers(users.length)
+    const ingestionMetadata: IngestionMetadata[] = []
+
+    const limit = pLimit(ServiceAccountUserConcurrency)
+    const interval = setInterval(() => {
+      if (connector?.externalId) {
+        sendWebsocketMessage(
+          JSON.stringify({
+            progress: tracker.getProgress(),
+            userStats: tracker.getServiceAccountProgress().userStats,
+            startTime: tracker.getStartTime(),
+            context: "ingestMore",
+          }),
+          connector.externalId,
+        )
+      }
+    }, 4000)
+
+    const promises = users.map((user) =>
+      limit(async () => {
+        const userEmail = user.primaryEmail || user.emails![0].address!
+        Logger.info(`Started ingestion for additional user: ${userEmail}`)
+        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
+        const driveClient = google.drive({ version: "v3", auth: jwtClient })
+
+        const [totalFiles, { messagesExcludingPromotions }] = await Promise.all(
+          [countDriveFiles(jwtClient), getGmailCounts(jwtClient)],
+        )
+        tracker.updateTotal(userEmail, {
+          totalMail: messagesExcludingPromotions,
+          totalDrive: totalFiles,
+        })
+
+        const { contacts, otherContacts, contactsToken, otherContactsToken } =
+          await listAllContacts(jwtClient)
+        await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
+
+        const { startPageToken }: drive_v3.Schema$StartPageToken = (
+          await driveClient.changes.getStartPageToken()
+        ).data
+        if (!startPageToken) {
+          throw new Error(
+            `Could not get start page token for user ${userEmail}`,
+          )
+        }
+
+        // Ensure historyIdValue is correctly typed if it's expected to be string for IngestionMetadata
+        const [_, historyIdValue, { calendarEventsToken }] = await Promise.all([
+          insertFilesForUser(jwtClient, userEmail, connector!, tracker),
+          handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
+          insertCalendarEvents(jwtClient, userEmail, tracker),
+        ])
+
+        tracker.markUserComplete(userEmail)
+        return {
+          email: userEmail,
+          driveToken: startPageToken,
+          contactsToken,
+          otherContactsToken,
+          historyId: historyIdValue as string,
+          calendarEventsToken,
+        } as IngestionMetadata
+      }),
+    )
+
+    const results = await Promise.all(promises)
+    ingestionMetadata.push(...results)
+
+    await insertUsersForWorkspace(users)
+
+    setTimeout(() => {
+      clearInterval(interval)
+    }, 8000)
+
+    await db.transaction(async (trx) => {
+      for (const {
+        email,
+        driveToken,
+        contactsToken,
+        otherContactsToken,
+        historyId: metaHistoryId,
+        calendarEventsToken,
+      } of ingestionMetadata) {
+        await insertSyncJob(trx, {
+          workspaceId: connector!.workspaceId,
+          workspaceExternalId: connector!.workspaceExternalId,
+          app: Apps.GoogleDrive,
+          connectorId: connector!.id,
+          authType: AuthType.ServiceAccount,
+          config: {
+            driveToken,
+            contactsToken,
+            type: "googleDriveChangeToken",
+            otherContactsToken,
+            lastSyncedAt: new Date().toISOString(),
+          },
+          email,
+          type: SyncCron.ChangeToken,
+          status: SyncJobStatus.NotStarted,
+        })
+        await insertSyncJob(trx, {
+          workspaceId: connector!.workspaceId,
+          workspaceExternalId: connector!.workspaceExternalId,
+          app: Apps.Gmail,
+          connectorId: connector!.id,
+          authType: AuthType.ServiceAccount,
+          config: {
+            historyId: metaHistoryId,
+            type: "gmailChangeToken",
+            lastSyncedAt: new Date().toISOString(),
+          },
+          email,
+          type: SyncCron.ChangeToken,
+          status: SyncJobStatus.NotStarted,
+        })
+        await insertSyncJob(trx, {
+          workspaceId: connector!.workspaceId,
+          workspaceExternalId: connector!.workspaceExternalId,
+          app: Apps.GoogleCalendar,
+          connectorId: connector!.id,
+          authType: AuthType.ServiceAccount,
+          config: {
+            calendarEventsToken,
+            type: "calendarEventsChangeToken",
+            lastSyncedAt: new Date().toISOString(),
+          },
+          email,
+          type: SyncCron.ChangeToken,
+          status: SyncJobStatus.NotStarted,
+        })
+      }
+    })
+    Logger.info(
+      `Successfully ingested additional users and created sync jobs for connectorId: ${connectorId}`,
+    )
+    if (connector.externalId) {
+      sendWebsocketMessage(
+        JSON.stringify({
+          message: "Successfully ingested additional users.",
+          progress: 100,
+          userStats: tracker.getServiceAccountProgress().userStats,
+          context: "ingestMore",
+        }),
+        connector.externalId,
+      )
+      closeWs(connector.externalId)
+    }
+  } catch (error) {
+    Logger.error(
+      error,
+      `Could not finish ingesting more users for connectorId ${connectorId}: ${(error as Error).message} ${(error as Error).stack}`,
+    )
+    if (connector?.externalId) {
+      sendWebsocketMessage(
+        JSON.stringify({
+          message: `Error ingesting additional users: ${getErrorMessage(error)}`,
+          error: true,
+          context: "ingestMore",
+        }),
+        connector.externalId,
+      )
+      closeWs(connector.externalId)
+    }
+    throw new CouldNotFinishJobSuccessfully({
+      message: `Could not finish Service Account ingestion for additional users for connector ${connectorId}`,
+      integration: Apps.GoogleWorkspace,
+      entity: "users",
+      cause: error as Error,
+    })
+  }
 }

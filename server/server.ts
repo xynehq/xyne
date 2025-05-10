@@ -1,5 +1,4 @@
 import { type Context, Hono, type Next } from "hono"
-import { z } from "zod"
 import {
   AnswerApi,
   AutocompleteApi,
@@ -13,6 +12,7 @@ import {
   messageRetrySchema,
   messageSchema,
   SearchApi,
+  chatStopSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -24,6 +24,7 @@ import {
   oauthStartQuerySchema,
   searchSchema,
   updateConnectorStatusSchema,
+  serviceAccountIngestMoreSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -34,6 +35,7 @@ import {
   GetConnectors,
   StartOAuth,
   UpdateConnectorStatus,
+  ServiceAccountIngestMoreUsersApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -65,8 +67,9 @@ import {
   MessageApi,
   MessageRetryApi,
   GetChatTraceApi,
+  StopStreamingApi,
 } from "@/api/chat"
-import { UserRole } from "./shared/types"
+import { UserRole } from "@/shared/types"
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -171,6 +174,7 @@ export const AppRoutes = app
   )
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
+  .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
   // this is event streaming end point
@@ -201,6 +205,11 @@ export const AppRoutes = app
     "/service_account",
     zValidator("form", addServiceConnectionSchema),
     AddServiceConnection,
+  )
+  .post(
+    "/google/service_account/ingest_more",
+    zValidator("json", serviceAccountIngestMoreSchema),
+    ServiceAccountIngestMoreUsersApi,
   )
   // create the provider + connector
   .post(

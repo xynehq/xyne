@@ -22,7 +22,7 @@ import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
-const { JwtPayloadKey, serviceAccountWhitelistedEmails, slackHost } = config
+const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
 import { getErrorMessage, IsGoogleApp, setCookieByEnv } from "@/utils"
@@ -35,7 +35,7 @@ import {
 } from "@/errors"
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
-import { sql } from "drizzle-orm"
+import { ServiceAccountIngestMoreUsers } from "@/integrations/google"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -192,16 +192,26 @@ export const AddServiceConnection = async (c: Context) => {
   const [user] = userRes
   // @ts-ignore
   const form: ServiceAccountConnection = c.req.valid("form")
-  const data = await form["service-key"].text()
-  const subject = form.email
+  const serviceKeyData = await form["service-key"].text()
+  const serviceAccountSubjectEmail = form.email // This is the service account's email (subject)
   const app = form.app
+  const whitelistedEmailsString = form.whitelistedEmails // Read from validated form
+
+  let whitelistedEmails: string[] | undefined = undefined
+
+  if (whitelistedEmailsString && whitelistedEmailsString.trim() !== "") {
+    whitelistedEmails = whitelistedEmailsString
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e)
+  }
 
   // Start a transaction
   // return await db.transaction(async (trx) => {
   try {
     // Insert the connection within the transaction
     const connector = await insertConnector(
-      db, // Pass the transaction object
+      db,
       user.workspaceId,
       user.id,
       user.workspaceExternalId,
@@ -210,8 +220,8 @@ export const AddServiceConnection = async (c: Context) => {
       AuthType.ServiceAccount,
       app,
       {},
-      data,
-      subject,
+      serviceKeyData,
+      serviceAccountSubjectEmail,
     )
 
     const SaasJobPayload: SaaSJob = {
@@ -222,24 +232,21 @@ export const AddServiceConnection = async (c: Context) => {
       externalId: connector.externalId,
       authType: connector.authType as AuthType,
       email: sub,
-      whiteListedEmails: serviceAccountWhitelistedEmails,
+      // Conditionally add whiteListedEmails to the payload
+      ...(whitelistedEmails &&
+        whitelistedEmails.length > 0 && { whitelistedEmails }),
     }
-    // Enqueue the background job within the same transaction
-    // const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-    //   singletonKey: connector.externalId,
-    //   priority: 1,
-    //   retryLimit: 0,
-    //   expireInHours: JobExpiryHours,
-    // })
 
     if (IsGoogleApp(app)) {
       // Start ingestion in the background, but catch any errors it might throw later
-      handleGoogleServiceAccountIngestion(SaasJobPayload).catch((error) => {
-        Logger.error(
-          error,
-          `Background Google Service Account ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
-        )
-      })
+      handleGoogleServiceAccountIngestion(SaasJobPayload).catch(
+        (error: any) => {
+          Logger.error(
+            error,
+            `Background Google Service Account ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+          )
+        },
+      )
     }
 
     // Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
@@ -278,7 +285,6 @@ export const AddApiKeyConnector = async (c: Context) => {
   const [user] = userRes
   // @ts-ignore
   const form: ApiKeyConnector = c.req.valid("form")
-  // const data = await form["service-key"].text()
   const apiKey = form.apiKey
   const app = form.app
 
@@ -287,7 +293,7 @@ export const AddApiKeyConnector = async (c: Context) => {
     try {
       // Insert the connection within the transaction
       const connector = await insertConnector(
-        trx, // Pass the transaction object
+        trx,
         user.workspaceId,
         user.id,
         user.workspaceExternalId,
@@ -320,7 +326,6 @@ export const AddApiKeyConnector = async (c: Context) => {
 
       Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
 
-      // Commit the transaction if everything is successful
       return c.json({
         success: true,
         message: "Connection created, job enqueued",
@@ -332,7 +337,6 @@ export const AddApiKeyConnector = async (c: Context) => {
         error,
         `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
       )
-      // Rollback the transaction in case of any error
       throw new HTTPException(500, {
         message: "Error creating connection or enqueuing job",
       })
@@ -353,7 +357,7 @@ export const UpdateConnectorStatus = async (c: Context) => {
     status,
     // @ts-ignore
   }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
-  const connector = await getConnectorByExternalId(connectorId, user.id)
+  const connector = await getConnectorByExternalId(db, connectorId, user.id)
   if (!connector) {
     throw new HTTPException(500, {
       message: "could not get connector",
@@ -384,8 +388,9 @@ export const DeleteConnector = async (c: Context) => {
 }
 
 export const DeleteOauthConnector = async (c: Context) => {
-  // @ts-ignore Ignore Hono validation type issue
-  const { connectorId: connectorExternalId }: { connectorId: string } = c.req.valid("form")
+  const { connectorId: connectorExternalId }: { connectorId: string } =
+    // @ts-ignore Ignore Hono validation type issue
+    c.req.valid("form")
 
   if (!connectorExternalId) {
     Logger.error(
@@ -404,6 +409,7 @@ export const DeleteOauthConnector = async (c: Context) => {
 
   try {
     const connector = await getConnectorByExternalId(
+      db,
       connectorExternalId,
       user.id,
     )
@@ -436,6 +442,50 @@ export const DeleteOauthConnector = async (c: Context) => {
     throw new HTTPException(500, {
       message: `Failed to delete connector ${connectorExternalId}: ${getErrorMessage(error)}`,
       cause: error,
+    })
+  }
+}
+
+export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
+  // @ts-ignore - Assuming payload is validated by zValidator and has the correct shape
+  const payload = c.req.valid("json") as {
+    connectorId: string
+    emailsToIngest: string[]
+  }
+
+  // Correct way to get userId, following existing patterns in this file
+  const { sub } = c.get(JwtPayloadKey) // Get email (sub) from JWT
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    Logger.error(
+      { email },
+      "User not found for service account ingest more users.",
+    )
+    throw new NoUserFound({ message: `User with email ${email} not found.` })
+  }
+  const [userInstance] = userRes
+  const userId = userInstance.id
+
+  Logger.info(
+    `Attempting to ingest more users for SA connector: ${payload.connectorId} by user: ${userId}`,
+  )
+  try {
+    // ServiceAccountIngestMoreUsers expects payload and a numeric userId
+    const result = await ServiceAccountIngestMoreUsers(payload, userId)
+    return c.json({
+      success: true,
+      message: "Ingestion process for additional users started.",
+      data: result,
+    })
+  } catch (error) {
+    Logger.error(
+      error,
+      `Failed to ingest more users for service account: ${getErrorMessage(error)}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: `Failed to ingest more users: ${getErrorMessage(error)}`,
     })
   }
 }
