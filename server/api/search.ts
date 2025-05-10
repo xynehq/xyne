@@ -172,6 +172,7 @@ export const SearchApi = async (c: Context) => {
       searchVespa(decodedQuery, email, app, entity, {
         alpha: userAlpha,
         limit: page,
+        rankProfile: SearchModes.GlobalSorted,
         requestDebug: debug,
         offset,
         timestampRange,
@@ -187,6 +188,7 @@ export const SearchApi = async (c: Context) => {
     results = await searchVespa(decodedQuery, email, app, entity, {
       alpha: userAlpha,
       limit: page,
+      rankProfile: SearchModes.GlobalSorted,
       requestDebug: debug,
       offset,
       timestampRange,

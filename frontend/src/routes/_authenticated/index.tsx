@@ -28,6 +28,8 @@ enum Tabs {
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [isAgenticMode, setIsAgenticMode] = useState(false)
 
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
@@ -111,7 +113,10 @@ const Index = () => {
     if (query.trim()) {
       navigate({
         to: "/chat",
-        search: { q: encodeURIComponent(messageToSend.trim()) },
+        search: {
+          q: encodeURIComponent(messageToSend.trim()),
+          agentic: isAgenticMode ? "true" : "false",
+        },
       })
     }
   }
@@ -203,6 +208,9 @@ const Index = () => {
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}
+                  isStreaming={isStreaming}
+                  isAgenticMode={isAgenticMode}
+                  setIsAgenticMode={setIsAgenticMode}
                 />
               </div>
             )}

@@ -1,25 +1,35 @@
-import { ArrowRight, Globe, Square } from "lucide-react"
-import { useEffect, useRef } from "react"
+import {
+  ArrowRight,
+  Globe,
+  Sparkles,
+  Square
+} from "lucide-react"
+import { useEffect, useRef, Dispatch, SetStateAction } from "react"
 import Attach from "@/assets/attach.svg?react"
 
 interface ChatBoxProps {
   query: string
-  setQuery: (query: string) => void
-  handleSend: (messageToSend: string) => void
+  setQuery: Dispatch<SetStateAction<string>>
+  handleSend: (message: string) => void
   isStreaming?: boolean
+  isAgenticMode?: boolean
+  setIsAgenticMode?: Dispatch<SetStateAction<boolean>>
   handleStop?: () => void
   chatId?: string | null
 }
 
-export const ChatBox = ({
+export const ChatBox: React.FC<ChatBoxProps> = ({
   query,
   setQuery,
   handleSend,
   isStreaming = false,
+  isAgenticMode = false,
+  setIsAgenticMode = () => {}, // Default no-op function
   handleStop,
   chatId,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus()
@@ -29,8 +39,9 @@ export const ChatBox = ({
       }
     }
   }, [])
+
   return (
-    <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white  max-w-3xl">
+    <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white max-w-3xl">
       <div className="relative flex items-center">
         <textarea
           ref={inputRef}
@@ -60,6 +71,18 @@ export const ChatBox = ({
       >
         <Attach className="text-[#464D53] cursor-pointer" />
         <Globe size={16} className="text-[#464D53] cursor-pointer" />
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsAgenticMode(!isAgenticMode)
+          }}
+          className={`flex items-center justify-center p-1.5 rounded-full cursor-pointer`}
+        >
+          <Sparkles
+            size={16}
+            className={isAgenticMode ? "text-blue-500" : "text-[#464D53]"}
+          />
+        </div>
         {isStreaming && chatId ? (
           <button
             onClick={handleStop}
@@ -79,6 +102,7 @@ export const ChatBox = ({
           </button>
         )}
       </div>
+      <div className="absolute right-[14px] bottom-[10px] flex items-center"></div>
     </div>
   )
 }
