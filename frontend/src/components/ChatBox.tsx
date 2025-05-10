@@ -1285,4 +1285,3 @@ export const ChatBox = ({
     </div>
   )
 }
-
