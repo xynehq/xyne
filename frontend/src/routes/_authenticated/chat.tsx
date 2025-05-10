@@ -253,7 +253,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     // Reset userHasScrolled to false when a new message is sent.
     // This ensures that the view will scroll down automatically as the new message streams in,
     // unless the user manually scrolls up during the streaming.
-    setUserHasScrolled(false);
+    setUserHasScrolled(false)
     setQuery("")
     setMessages((prevMessages) => [
       ...prevMessages,
@@ -952,9 +952,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           onScroll={handleScroll}
         >
           <div className={`w-full h-full flex flex-col items-center`}>
-            <div
-              className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]"
-            >
+            <div className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]">
               {messages.map((message, index) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
@@ -1344,17 +1342,45 @@ const ChatMessage = ({
                   components={{
                     table: ({ node, ...props }) => (
                       <div className="overflow-x-auto w-[720px] my-2">
-                        <table style={{ borderCollapse: 'collapse', borderStyle: 'hidden', tableLayout: 'fixed', width: '100%' }} className="min-w-full" {...props} />
+                        <table
+                          style={{
+                            borderCollapse: "collapse",
+                            borderStyle: "hidden",
+                            tableLayout: "fixed",
+                            width: "100%",
+                          }}
+                          className="min-w-full"
+                          {...props}
+                        />
                       </div>
                     ),
                     th: ({ node, ...props }) => (
-                      <th style={{ border: 'none', padding: '4px 8px', textAlign: 'left', overflowWrap: 'break-word' }} {...props} />
+                      <th
+                        style={{
+                          border: "none",
+                          padding: "4px 8px",
+                          textAlign: "left",
+                          overflowWrap: "break-word",
+                        }}
+                        {...props}
+                      />
                     ),
                     td: ({ node, ...props }) => (
-                      <td style={{ border: 'none', borderTop: '1px solid #e5e7eb', padding: '4px 8px', overflowWrap: 'break-word' }} {...props} />
+                      <td
+                        style={{
+                          border: "none",
+                          borderTop: "1px solid #e5e7eb",
+                          padding: "4px 8px",
+                          overflowWrap: "break-word",
+                        }}
+                        {...props}
+                      />
                     ),
                     tr: ({ node, ...props }) => (
-                      <tr style={{ backgroundColor: '#ffffff', border: 'none' }} {...props} />
+                      <tr
+                        style={{ backgroundColor: "#ffffff", border: "none" }}
+                        {...props}
+                      />
                     ),
                     h1: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.6em" }} {...props} />

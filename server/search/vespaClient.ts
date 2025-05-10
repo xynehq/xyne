@@ -156,6 +156,15 @@ class VespaClient {
         body: JSON.stringify({ fields: document }),
       })
 
+      if (!response.ok) {
+        // Using status text since response.text() return Body Already used Error
+        const errorText = response.statusText
+        const errorBody = await response.text()
+        Logger.error(`Vespa error: ${errorBody}`)
+        throw new Error(
+          `Failed to  insert document: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
       const data = await response.json()
 
       if (response.ok) {
@@ -191,9 +200,6 @@ class VespaClient {
         const errorText = response.statusText
         const errorBody = await response.text()
         Logger.error(`Vespa error: ${errorBody}`)
-        // Logger.error(
-        //   `Error inserting document ${document.docId} for ${options.schema} ${data.message}`,
-        // )
         throw new Error(
           `Failed to  insert document: ${response.status} ${response.statusText} - ${errorText}`,
         )
