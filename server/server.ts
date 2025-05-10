@@ -1,5 +1,4 @@
 import { type Context, Hono, type Next } from "hono"
-import { z } from "zod"
 import {
   AnswerApi,
   AutocompleteApi,
@@ -25,6 +24,7 @@ import {
   oauthStartQuerySchema,
   searchSchema,
   updateConnectorStatusSchema,
+  serviceAccountIngestMoreSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -35,6 +35,7 @@ import {
   GetConnectors,
   StartOAuth,
   UpdateConnectorStatus,
+  ServiceAccountIngestMoreUsersApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -67,8 +68,8 @@ import {
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
-} from "./api/chat"
-import { UserRole } from "./shared/types"
+} from "@/api/chat"
+import { UserRole } from "@/shared/types"
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -204,6 +205,11 @@ export const AppRoutes = app
     "/service_account",
     zValidator("form", addServiceConnectionSchema),
     AddServiceConnection,
+  )
+  .post(
+    "/google/service_account/ingest_more",
+    zValidator("json", serviceAccountIngestMoreSchema),
+    ServiceAccountIngestMoreUsersApi,
   )
   // create the provider + connector
   .post(

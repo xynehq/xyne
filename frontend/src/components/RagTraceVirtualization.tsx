@@ -1584,10 +1584,10 @@ export function RagTraceVirtualization({
           >
             <ClipboardCopy size={18} className="mr-1" />
             {isJsonCopied && (
-                <span className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2">
-                  Copied!
-                </span>
-              )}
+              <span className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2">
+                Copied!
+              </span>
+            )}
           </button>
         </div>
         <pre className="text-sm whitespace-pre-wrap font-mono text-gray-700 dark:text-gray-200">
