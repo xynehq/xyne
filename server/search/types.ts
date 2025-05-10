@@ -497,6 +497,12 @@ export const VespaChatUserSchema = z.object({
   updatedAt: z.number(),
 })
 
+export const VespaChatUserGetSchema = z.object({
+  id: z.string(),
+  pathId: z.string(),
+  fields: VespaChatUserSchema,
+})
+export type ChatUserCore = z.infer<typeof VespaChatUserGetSchema>
 export const VespaChatUserSearchSchema = VespaChatUserSchema.extend({
   sddocname: z.literal(chatUserSchema),
 }).merge(defaultVespaFieldsSchema)
@@ -557,7 +563,7 @@ export const VespaChatTeamGetSchema = VespaChatTeamSchema.extend({
 
 export type VespaChatTeam = z.infer<typeof VespaChatTeamSchema>
 export type VespaChatTeamGet = z.infer<typeof VespaChatTeamGetSchema>
-
+export type VespaChatUserType = z.infer<typeof VespaChatUserSchema>
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
