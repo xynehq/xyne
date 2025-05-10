@@ -126,6 +126,7 @@ schema mail {
       inputs {
         query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
         query(alpha) double  # Alpha parameter for hybrid weight
+        query(recency_decay_rate) double
       }
 
       constants {
@@ -145,7 +146,7 @@ schema mail {
 
       # Document score decays min to 0.5
       function doc_recency() {
-        expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+        expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
       }
 
       function vector_score() {
@@ -182,14 +183,15 @@ schema mail {
       global-phase {
         expression {
           (
-            (query(alpha) * vector_score) +
-            ((1 - query(alpha)) * combined_nativeRank)
-          )
+            (query(alpha) * vector_score) + 
+            ((1 - query(alpha)) *  combined_nativeRank)
+          ) * doc_recency
         }
         rerank-count: 1000
       }
 
     match-features {
+      doc_recency
       matchedFieldCount
       vector_score
       combined_nativeRank

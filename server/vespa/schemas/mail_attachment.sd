@@ -94,6 +94,7 @@ schema mail_attachment {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
+      query(recency_decay_rate) double
     }
 
     constants {
@@ -113,7 +114,7 @@ schema mail_attachment {
 
     # Document score decays min to 0.5
     function doc_recency() {
-        expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+      expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
     }
 
     function vector_score() {
@@ -151,12 +152,13 @@ schema mail_attachment {
         0.8 * (
           (query(alpha) * vector_score) + 
           ((1 - query(alpha)) * combined_nativeRank)
-        )
+        ) * doc_recency
       }
       rerank-count: 1000
     }
 
     match-features {
+      doc_recency
       matchedFieldCount
       vector_score
       combined_nativeRank

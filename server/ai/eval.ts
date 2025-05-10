@@ -764,7 +764,7 @@ const generatePointQueryTimeExpansion = async (
       limit: pageSize,
       alpha,
       timestampRange: { from, to },
-      notInMailLabels: ["CATEGORY_PROMOTIONS", "UNREAD"],
+      notInMailLabels: ["CATEGORY_PROMOTIONS"],
     })
     if (!results.root.children) {
       results.root.children = []

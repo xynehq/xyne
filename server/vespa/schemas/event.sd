@@ -160,6 +160,7 @@ schema event {
         inputs {
             query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
+            query(recency_decay_rate) double
         }
 
         constants {
@@ -174,13 +175,13 @@ schema event {
         }
 
         function document_age() {
-            # Default document age assuming to 3 months when no createdAt timestamp is present
-            expression: max(if(isNan(attribute(createdAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(createdAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
+            # Default document age assuming to 3 months when no updatedAt timestamp is present
+            expression: max(if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(updatedAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
         }
 
         # Document score decays min to 0.5
         function doc_recency() {
-            expression: max(1 / (1 + query(beta) * sqrt(document_age)), MAX_DOC_DECAY)
+            expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
         }
 
         function vector_score() {
@@ -228,12 +229,13 @@ schema event {
               (
                 (query(alpha) * vector_score) + 
                 ((1 - query(alpha)) *  combined_nativeRank)
-              )
+              ) * doc_recency
             }
             rerank-count: 1000
         }
 
         match-features {
+          doc_recency
           matchedFieldCount
           combined_nativeRank
           vector_score

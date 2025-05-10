@@ -593,6 +593,7 @@ export function RagTraceVirtualization({
   } | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
+  const [isJsonCopied, setIsJsonCopied] = useState(false)
 
   const {
     data: rawTraceData,
@@ -902,7 +903,7 @@ export function RagTraceVirtualization({
                         setSelectedAttribute({ key, value: attributes[key] })
                         setIsAttributeModalOpen(true)
                       }}
-                      className="cursor-pointer text-left"
+                      className="cursor-pointer text-left w-full px-4 py-2 block"
                       title="View enlarged"
                     >
                       {key}
@@ -941,7 +942,7 @@ export function RagTraceVirtualization({
                       })
                       setIsAttributeModalOpen(true)
                     }}
-                    className="cursor-pointer text-left"
+                    className="cursor-pointer text-left w-full px-4 py-2 block"
                     title="View enlarged"
                   >
                     context
@@ -1076,7 +1077,7 @@ export function RagTraceVirtualization({
                       })
                       setIsAttributeModalOpen(true)
                     }}
-                    className="cursor-pointer text-left"
+                    className="cursor-pointer text-left w-full px-4 py-2 block"
                     title="View enlarged"
                   >
                     citation_values
@@ -1558,10 +1559,36 @@ export function RagTraceVirtualization({
     const totalDuration = traceData?.spans
       ? safeCalculateDuration(traceData.spans)
       : 0
+
+    const handleCopyJson = async () => {
+      try {
+        await navigator.clipboard.writeText(
+          JSON.stringify(rawTraceData, null, 2),
+        )
+        setIsJsonCopied(true)
+        setTimeout(() => setIsJsonCopied(false), 2000) // Reset after 2 seconds
+      } catch (err) {
+        console.error("Failed to copy JSON to clipboard:", err)
+      }
+    }
+
     return (
       <div className="w-full overflow-auto bg-gray-50 dark:bg-gray-800 p-6 rounded border border-gray-200 dark:border-gray-700">
-        <div className="mb-4 text-sm text-gray-600 dark:text-gray-200 pb-3 border-b border-gray-200 dark:border-gray-600">
-          Total Duration: {formatDuration(totalDuration)}
+        <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200 dark:border-gray-600">
+          <div className="text-sm text-gray-600 dark:text-gray-200">
+            Total Duration: {formatDuration(totalDuration)}
+          </div>
+          <button
+            onClick={handleCopyJson}
+            className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 relative group text-sm flex items-center"
+          >
+            <ClipboardCopy size={18} className="mr-1" />
+            {isJsonCopied && (
+              <span className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2">
+                Copied!
+              </span>
+            )}
+          </button>
         </div>
         <pre className="text-sm whitespace-pre-wrap font-mono text-gray-700 dark:text-gray-200">
           {JSON.stringify(rawTraceData, null, 2)}

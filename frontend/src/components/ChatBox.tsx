@@ -1,11 +1,10 @@
 import {
   ArrowRight,
   Globe,
-  SendHorizontal,
-  Loader2,
   Sparkles,
+  Square
 } from "lucide-react"
-import { useEffect, useRef, useState, Dispatch, SetStateAction } from "react"
+import { useEffect, useRef, Dispatch, SetStateAction } from "react"
 import Attach from "@/assets/attach.svg?react"
 
 interface ChatBoxProps {
@@ -15,6 +14,8 @@ interface ChatBoxProps {
   isStreaming?: boolean
   isAgenticMode?: boolean
   setIsAgenticMode?: Dispatch<SetStateAction<boolean>>
+  handleStop?: () => void
+  chatId?: string | null
 }
 
 export const ChatBox: React.FC<ChatBoxProps> = ({
@@ -24,6 +25,8 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
   isStreaming = false,
   isAgenticMode = false,
   setIsAgenticMode = () => {}, // Default no-op function
+  handleStop,
+  chatId,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -66,9 +69,8 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
           inputRef?.current?.focus()
         }}
       >
-        {/* <Attach className="text-[#464D53] cursor-pointer" />
-        <Globe size={16} className="text-[#464D53] cursor-pointer" /> */}
-
+        <Attach className="text-[#464D53] cursor-pointer" />
+        <Globe size={16} className="text-[#464D53] cursor-pointer" />
         <div
           onClick={(e) => {
             e.stopPropagation()
@@ -81,15 +83,24 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
             className={isAgenticMode ? "text-blue-500" : "text-[#464D53]"}
           />
         </div>
-
-        <button
-          disabled={isStreaming}
-          onClick={() => handleSend(query)}
-          style={{ marginLeft: "auto" }}
-          className={`flex mr-6 bg-[#464B53] text-white ${!isStreaming ? "hover:bg-[#5a5f66]" : ""}  rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50`}
-        >
-          <ArrowRight className="text-white" size={16} />
-        </button>
+        {isStreaming && chatId ? (
+          <button
+            onClick={handleStop}
+            style={{ marginLeft: "auto" }}
+            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+          >
+            <Square className="text-white" size={16} />
+          </button>
+        ) : (
+          <button
+            disabled={isStreaming}
+            onClick={() => handleSend(query)}
+            style={{ marginLeft: "auto" }}
+            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
+          >
+            <ArrowRight className="text-white" size={16} />
+          </button>
+        )}
       </div>
       <div className="absolute right-[14px] bottom-[10px] flex items-center"></div>
     </div>

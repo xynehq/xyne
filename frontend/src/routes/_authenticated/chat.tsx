@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
+import { toast } from "@/hooks/use-toast"
 
 type CurrentResp = {
   resp: string
@@ -92,7 +93,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
-  const [showRagTrace, setShowRagTrace] = useState(false)
+  const [showRagTrace, setShowRagTrace] = useState(false) // Added state
+  const [stopMsg, setStopMsg] = useState<boolean>(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
   )
@@ -112,6 +114,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [isEditing, setIsEditing] = useState<boolean>(false)
   const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
   const titleRef = useRef<HTMLInputElement | null>(null)
+  const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
+  const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -251,6 +255,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const handleSend = async (messageToSend: string) => {
     if (!messageToSend || isStreaming) return
 
+    // Reset userHasScrolled to false when a new message is sent.
+    // This ensures that the view will scroll down automatically as the new message streams in,
+    // unless the user manually scrolls up during the streaming.
+    setUserHasScrolled(false)
     setQuery("")
     setMessages((prevMessages) => [
       ...prevMessages,
@@ -272,89 +280,105 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       url.searchParams.append("agentic", "true")
     }
 
-    const eventSource = new EventSource(url.toString(), {
+    eventSourceRef.current = new EventSource(url.toString(), {
+      // Store EventSource
       withCredentials: true,
     })
 
-    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      if (currentRespRef.current) {
-        currentRespRef.current.sources = contextChunks
-        currentRespRef.current.citationMap = citationMap
-        setCurrentResp((prevResp) => ({
-          ...prevResp,
-          resp: prevResp?.resp || "",
-          sources: contextChunks,
-          citationMap,
-        }))
-      }
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.CitationsUpdate,
+      (event) => {
+        // Use ref
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        if (currentRespRef.current) {
+          currentRespRef.current.sources = contextChunks
+          currentRespRef.current.citationMap = citationMap
+          setCurrentResp((prevResp) => ({
+            ...prevResp,
+            resp: prevResp?.resp || "",
+            sources: contextChunks,
+            citationMap,
+          }))
+        }
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      // Use ref
       setCurrentResp((prevResp) => ({
         ...(prevResp || { resp: "", thinking: event.data || "" }),
         thinking: (prevResp?.thinking || "") + event.data,
       }))
     })
 
-    eventSource.addEventListener(ChatSSEvents.Start, (event) => {})
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseUpdate,
+      (event) => {
+        // Use ref
+        setCurrentResp((prevResp) => {
+          const updatedResp = prevResp
+            ? { ...prevResp, resp: prevResp.resp + event.data }
+            : { resp: event.data }
+          currentRespRef.current = updatedResp
+          return updatedResp
+        })
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      setCurrentResp((prevResp) => {
-        const updatedResp = prevResp
-          ? { ...prevResp, resp: prevResp.resp + event.data }
-          : { resp: event.data }
-        currentRespRef.current = updatedResp
-        return updatedResp
-      })
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseMetadata,
+      (event) => {
+        // Use ref
+        const { chatId, messageId } = JSON.parse(event.data)
+        setChatId(chatId)
+        if (chatId) {
+          setTimeout(() => {
+            router.navigate({
+              to: "/chat/$chatId",
+              params: { chatId },
+              search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+            })
+          }, 1000)
 
-    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-      const { chatId, messageId } = JSON.parse(event.data)
-      setChatId(chatId)
-
-      if (chatId) {
-        setTimeout(() => {
-          router.navigate({
-            to: "/chat/$chatId",
-            params: { chatId },
-            search: {
-              ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
-              ...(isAgenticMode ? { agentic: true } : {}),
-            },
-          })
-        }, 1000)
-      }
-
-      if (messageId) {
-        if (currentRespRef.current) {
-          setCurrentResp((resp) => {
-            const updatedResp = resp || { resp: "" }
-            updatedResp.chatId = chatId
-            updatedResp.messageId = messageId
-            currentRespRef.current = updatedResp
-            return updatedResp
-          })
-        } else {
-          setMessages((prevMessages) => {
-            const lastMessage = prevMessages[prevMessages.length - 1]
-            if (lastMessage.messageRole === "assistant") {
-              return [
-                ...prevMessages.slice(0, -1),
-                { ...lastMessage, externalId: messageId },
-              ]
-            }
-            return prevMessages
-          })
+          if (!stopMsg) {
+            setStopMsg(true)
+          }
         }
-      }
-    })
+        if (messageId) {
+          if (currentRespRef.current) {
+            setCurrentResp((resp) => {
+              const updatedResp = resp || { resp: "" }
+              updatedResp.chatId = chatId
+              updatedResp.messageId = messageId
+              currentRespRef.current = updatedResp
+              return updatedResp
+            })
+          } else {
+            setMessages((prevMessages) => {
+              const lastMessage = prevMessages[prevMessages.length - 1]
+              if (lastMessage.messageRole === "assistant") {
+                return [
+                  ...prevMessages.slice(0, -1),
+                  { ...lastMessage, externalId: messageId },
+                ]
+              }
+              return prevMessages
+            })
+          }
+        }
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
-      setChatTitle(event.data)
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ChatTitleUpdate,
+      (event) => {
+        // Use ref
+        setChatTitle(event.data)
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.End, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
+      // Use ref
       const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
@@ -371,11 +395,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
       setIsStreaming(false)
     })
 
-    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
+      // Use ref
       console.error("Error with SSE:", event.data)
       const currentResp = currentRespRef.current
       if (currentResp) {
@@ -393,11 +420,30 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
       setIsStreaming(false)
     })
 
-    eventSource.onerror = (error) => {
+    eventSourceRef.current.onerror = (error) => {
+      // Use ref
+      // Check if the stop was intentional
+      if (userStopped) {
+        setUserStopped(false) // Reset the flag
+        // Clean up state, similar to handleStop or End event
+        setCurrentResp(null)
+        currentRespRef.current = null
+        setStopMsg(false)
+        setIsStreaming(false)
+        // Close again just in case, and clear ref
+        eventSourceRef.current?.close()
+        eventSourceRef.current = null
+        // Do NOT add an error message in this case
+        return
+      }
+
+      // If it wasn't a user stop, proceed with error handling as before
       console.error("Error with SSE:", error)
       const currentResp = currentRespRef.current
       if (currentResp) {
@@ -411,11 +457,70 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
       setIsStreaming(false)
     }
 
     setQuery("")
+  }
+
+  const handleStop = async () => {
+    setUserStopped(true) // Indicate intentional stop before closing
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null // Clear the ref
+    }
+
+    setIsStreaming(false)
+
+    // 4. Attempt to send stop request to backend if IDs are available
+    if (chatId && isStreaming) {
+      // This `isStreaming` check might be redundant now, but let's keep it for safety
+      try {
+        await api.chat.stop.$post({
+          json: {
+            chatId: chatId,
+          },
+        })
+      } catch (error) {
+        console.error("Failed to send stop request to backend:", error)
+        toast({
+          title: "Error",
+          description: "Could not stop streaming.",
+          variant: "destructive",
+          duration: 1000,
+        })
+        // Backend stop failed, but client-side is already stopped
+      }
+    }
+
+    // 5. Add partial response to messages if available
+    if (currentRespRef.current && currentRespRef.current.resp) {
+      // Use currentRespRef.current directly
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+          messageRole: "assistant",
+          message: currentRespRef.current?.resp || " ", // Use currentRespRef.current
+          externalId: currentRespRef.current?.messageId, // Use currentRespRef.current
+          sources: currentRespRef.current?.sources, // Use currentRespRef.current
+          citationMap: currentRespRef.current?.citationMap, // Use currentRespRef.current
+          thinking: currentRespRef.current?.thinking, // Use currentRespRef.current
+        },
+      ])
+    }
+
+    // 6. Clear streaming-related state *after* backend request and message handling
+    setCurrentResp(null)
+    currentRespRef.current = null
+    setStopMsg(false)
+    // 7. Invalidate router state after a short delay to refetch loader data
+    setTimeout(() => {
+      router.invalidate()
+    }, 1000) // Delay for 500ms
   }
 
   const handleRetry = async (messageId: string) => {
@@ -473,41 +578,48 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       url.searchParams.append("agentic", "true")
     }
 
-    const eventSource = new EventSource(url.toString(), {
+    setStopMsg(true) // Ensure stop message can be sent for retries
+    eventSourceRef.current = new EventSource(url.toString(), {
+      // Store EventSource
       withCredentials: true,
     })
 
-    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      if (userMsgWithErr) {
-        setMessages((prevMessages) => {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseUpdate,
+      (event) => {
+        // Use ref
+        if (userMsgWithErr) {
+          setMessages((prevMessages) => {
+            const index = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (index === -1 || index + 1 >= prevMessages.length) {
+              return prevMessages
+            }
+
+            const newMessages = [...prevMessages]
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              message: newMessages[index + 1].message + event.data,
+            }
+
+            return newMessages
+          })
+        } else {
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg.externalId === messageId && msg.isRetrying
+                ? { ...msg, message: msg.message + event.data }
+                : msg,
+            ),
           )
+        }
+      },
+    )
 
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
-          }
-
-          const newMessages = [...prevMessages]
-          newMessages[index + 1] = {
-            ...newMessages[index + 1],
-            message: newMessages[index + 1].message + event.data,
-          }
-
-          return newMessages
-        })
-      } else {
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, message: msg.message + event.data }
-              : msg,
-          ),
-        )
-      }
-    })
-
-    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      // Use ref
       if (userMsgWithErr) {
         setMessages((prevMessages) => {
           const index = prevMessages.findIndex(
@@ -537,15 +649,45 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
     })
 
-    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-      const userMessage = messages.find(
-        (msg) => msg.externalId === messageId && msg.messageRole === "user",
-      )
-      if (userMessage) {
-        const { messageId: newMessageId } = JSON.parse(event.data)
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseMetadata,
+      (event) => {
+        // Use ref
+        const userMessage = messages.find(
+          (msg) => msg.externalId === messageId && msg.messageRole === "user",
+        )
+        if (userMessage) {
+          const { messageId: newMessageId } = JSON.parse(event.data)
 
-        if (newMessageId) {
-          setMessages((prevMessages) => {
+          if (newMessageId) {
+            setMessages((prevMessages) => {
+              const index = prevMessages.findIndex(
+                (msg) => msg.externalId === messageId,
+              )
+
+              if (index === -1 || index + 1 >= prevMessages.length) {
+                return prevMessages
+              }
+
+              const newMessages = [...prevMessages]
+              newMessages[index + 1] = {
+                ...newMessages[index + 1],
+                externalId: newMessageId,
+              }
+              return newMessages
+            })
+          }
+        }
+      },
+    )
+
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.CitationsUpdate,
+      (event) => {
+        // Use ref
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        setMessages((prevMessages) => {
+          if (userMsgWithErr) {
             const index = prevMessages.findIndex(
               (msg) => msg.externalId === messageId,
             )
@@ -555,50 +697,29 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             }
 
             const newMessages = [...prevMessages]
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              externalId: newMessageId,
+
+            if (newMessages[index + 1].isRetrying) {
+              newMessages[index + 1] = {
+                ...newMessages[index + 1],
+                sources: contextChunks,
+                citationMap,
+              }
             }
+
             return newMessages
-          })
-        }
-      }
-    })
-
-    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      setMessages((prevMessages) => {
-        if (userMsgWithErr) {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
-          )
-
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
+          } else {
+            return prevMessages.map((msg) =>
+              msg.externalId === messageId && msg.isRetrying
+                ? { ...msg, sources: contextChunks, citationMap }
+                : msg,
+            )
           }
+        })
+      },
+    )
 
-          const newMessages = [...prevMessages]
-
-          if (newMessages[index + 1].isRetrying) {
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              sources: contextChunks,
-              citationMap,
-            }
-          }
-
-          return newMessages
-        } else {
-          return prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, sources: contextChunks, citationMap }
-              : msg,
-          )
-        }
-      })
-    })
-
-    eventSource.addEventListener(ChatSSEvents.End, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
+      // Use ref
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
           const index = prevMessages.findIndex(
@@ -627,11 +748,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
       setIsStreaming(false)
     })
 
-    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
+      // Use ref
       console.error("Retry Error with SSE:", event.data)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -661,11 +784,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
       setIsStreaming(false)
     })
 
-    eventSource.onerror = (error) => {
+    eventSourceRef.current.onerror = (error) => {
+      // Use ref
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -691,7 +816,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
       setIsStreaming(false)
     }
   }
@@ -721,11 +847,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleScroll = () => {
     const isAtBottom = isScrolledToBottom()
+    // Set userHasScrolled to true if the user scrolls up from the bottom.
+    // This will prevent the automatic scrolling behavior while the user is manually scrolling.
     setUserHasScrolled(!isAtBottom)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
+    // Only scroll to the bottom if the container exists and the user has not manually scrolled up.
+    // This prevents the view from jumping to the bottom if the user is trying to read previous messages
+    // while a new message is streaming in.
     if (!container || userHasScrolled) return
 
     container.scrollTop = container.scrollHeight
@@ -827,15 +958,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           </div>
         </div>
 
+        {/* The onScroll event handler is attached to this div because it's the scrollable container for messages. */}
+        {/* This ensures that scroll events are captured correctly to manage the auto-scroll behavior. */}
         <div
           className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
           ref={messagesContainerRef}
+          onScroll={handleScroll}
         >
           <div className={`w-full h-full flex flex-col items-center`}>
-            <div
-              onScroll={handleScroll}
-              className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]"
-            >
+            <div className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]">
               {messages.map((message, index) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
@@ -959,9 +1090,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               query={query}
               setQuery={setQuery}
               handleSend={handleSend}
+              handleStop={handleStop}
               isStreaming={isStreaming}
               isAgenticMode={isAgenticMode}
               setIsAgenticMode={setIsAgenticMode}
+              chatId={chatId}
             />
           </div>
           <Sources
@@ -1223,6 +1356,48 @@ const ChatMessage = ({
                     color: "#1C1D1F",
                   }}
                   components={{
+                    table: ({ node, ...props }) => (
+                      <div className="overflow-x-auto w-[720px] my-2">
+                        <table
+                          style={{
+                            borderCollapse: "collapse",
+                            borderStyle: "hidden",
+                            tableLayout: "fixed",
+                            width: "100%",
+                          }}
+                          className="min-w-full"
+                          {...props}
+                        />
+                      </div>
+                    ),
+                    th: ({ node, ...props }) => (
+                      <th
+                        style={{
+                          border: "none",
+                          padding: "4px 8px",
+                          textAlign: "left",
+                          overflowWrap: "break-word",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    td: ({ node, ...props }) => (
+                      <td
+                        style={{
+                          border: "none",
+                          borderTop: "1px solid #e5e7eb",
+                          padding: "4px 8px",
+                          overflowWrap: "break-word",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    tr: ({ node, ...props }) => (
+                      <tr
+                        style={{ backgroundColor: "#ffffff", border: "none" }}
+                        {...props}
+                      />
+                    ),
                     h1: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.6em" }} {...props} />
                     ),

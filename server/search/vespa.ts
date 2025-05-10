@@ -481,6 +481,7 @@ type VespaQueryConfig = {
   requestDebug: boolean
   span: Span | null
   maxHits: number
+  recencyDecayRate: number
 }
 
 export const searchVespa = async (
@@ -499,6 +500,7 @@ export const searchVespa = async (
     requestDebug = false,
     span = null,
     maxHits = 400,
+    recencyDecayRate = 0.02,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -522,6 +524,7 @@ export const searchVespa = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
+    "input.query(recency_decay_rate)": recencyDecayRate,
     maxHits,
     hits: limit,
     ...(offset
