@@ -1,4 +1,3 @@
-//@ts-nocheck
 import {
   Apps,
   CalendarEntity,
@@ -18,37 +17,40 @@ import {
 import OpenAI from "openai"
 import pc from "picocolors"
 import {
-  baselineRAG,
-  baselineRAGJson,
   generateSearchQueryOrAnswerFromConversation,
+  getProviderByModel,
   jsonParseLLMOutput,
-  queryRewriter,
-  queryRouterJsonStream,
-  QueryType,
-  temporalEventClassification,
 } from "./provider"
-import { Models, type TemporalClassifier, type TimeDirection } from "./types"
+import {
+  Models,
+  type LLMProvider,
+  type ModelParams,
+  type TemporalClassifier,
+  type TimeDirection,
+} from "./types"
 import fs from "fs"
 import path from "path"
 import { searchVespa } from "@/search/vespa"
 import { answerContextMap, cleanContext, userContext } from "./context"
-import type { z } from "zod"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { db } from "@/db/client"
-import { splitGroupedCitationsWithSpaces } from "@/utils"
-import type { ConversationRole, Message } from "@aws-sdk/client-bedrock-runtime"
+import { ConversationRole, type Message } from "@aws-sdk/client-bedrock-runtime"
 import { UnderstandMessageAndAnswer } from "@/api/chat"
-import { getDateForAI } from "@/utils/index"
-import { getTracer, Tracer } from "@/tracer"
-
-const modelId = Models.Claude_3_5_Haiku
+import { getTracer } from "@/tracer"
+import { OpenAIProvider } from "./provider/openai"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+import config from "@/config"
+const Logger = getLogger(Subsystem.Eval)
+const { defaultFastModel } = config
+const modelId = defaultFastModel || Models.Claude_3_5_Haiku
 
 // for permission aware Evals
 // add this value to run
-const myEmail = "user@gmail.com" // Add your email here
+const myEmail = "junaid.s@xynehq.com" // Add your email here
 
 // workspace external Id : Adding the workspace id for the evals
-const workspaceId = "q7********" // Add your workspace id here
+const workspaceId = "orq3jslp9udetix9912ueb6s" // Add your workspace id here
 
 if (!myEmail) {
   throw new Error("Please set the email")
@@ -143,40 +145,13 @@ type CustomScore = {
   score: number
 }
 
-const Eval = async (
-  name: string,
-  config: EvalConfig<Data, string, LLMResponse>,
-  description?: string,
-) => {
-  const data = config.data()
-
-  // Create OpenAI client
-  const openAiKey = process.env.OPENAI_API_KEY
-  if (!openAiKey) {
-    throw new Error(
-      "OPENAI_API_KEY env var is not set – cannot run evaluations",
-    )
-  }
-  const openai = new OpenAI({ apiKey: openAiKey })
-
-  // Custom LLM-based factuality scorer
-  const customFactualityScorer = async (params) => {
-    const { input, output, expected } = params
-
-    console.log("\n=== CUSTOM LLM EVALUATION ===")
-    console.log("Input:", input)
-    console.log("Generated:", output)
-    console.log("Expected:", expected)
-
-    try {
-      // Call OpenAI with the AutoEvals factuality prompt
-      // Source: https://github.com/braintrustdata/autoevals/blob/main/templates/factuality.yaml
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are comparing a submitted answer to an expert answer on a given question. Here is the data:
+// Source: https://github.com/braintrustdata/autoevals/blob/main/templates/factuality.yaml
+const evaluateSystemPrompt = (
+  input: string,
+  expected: string,
+  output: string,
+) =>
+  `You are comparing a submitted answer to an expert answer on a given question. Here is the data:
 [BEGIN DATA]
 ************
 [Question]: ${input}
@@ -195,18 +170,80 @@ The submitted answer may either be a subset or superset of the expert answer, or
 (D) There is a disagreement between the submitted answer and the expert answer.
 (E) The answers differ, but these differences don't matter from the perspective of factuality.
 
-RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relationship between the answers.`,
-          },
-        ],
-        temperature: 0.1, // Low temperature for consistent scoring
-      })
+RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relationship between the answers.`
 
+const FactualityScorer = async (
+  params: ModelParams,
+  args: { input: string; expected: string; output: string },
+) => {
+  const openAiKey = process.env.OPENAI_API_KEY
+  let provider: LLMProvider | null = null
+
+  if (!openAiKey) {
+    provider = getProviderByModel(params.modelId)
+    Logger.info(
+      "OpenAI key not found for evaluation, going with bedrock models",
+    )
+    if (!params.modelId) params.modelId = modelId
+  } else {
+    provider = new OpenAIProvider(new OpenAI({ apiKey: openAiKey }))
+    Logger.info("Evaluating with openai")
+    if (!params.modelId) params.modelId = Models.Gpt_4o_mini
+  }
+
+  params.systemPrompt = evaluateSystemPrompt(
+    args.input,
+    args.expected,
+    args.output,
+  )
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: "now evaluate the system prompt, just respond with the letters",
+      },
+    ],
+  }
+
+  const { text, cost } = await provider.converse([baseMessage], params)
+
+  return { text, cost }
+}
+
+const Eval = async (
+  name: string,
+  config: EvalConfig<Data, string, LLMResponse>,
+  description?: string,
+) => {
+  const data = config.data()
+
+  // Custom LLM-based factuality scorer
+  const customFactualityScorer = async (params: {
+    input: string
+    output: string
+    expected: string
+  }) => {
+    const { input, output, expected } = params
+
+    console.log("\n=== CUSTOM LLM EVALUATION ===")
+    console.log("Input:", input)
+    console.log("Generated:", output)
+    console.log("Expected:", expected)
+
+    try {
+      // Call OpenAI with the AutoEvals factuality prompt
+      const response = await FactualityScorer(
+        { modelId: modelId, stream: false },
+        params,
+      )
+
+      console.log(response, "response")
       // Extract the choice from the response
-      const content = response.choices[0].message.content.trim()
-      console.log("Raw LLM response:", content)
+      const content = (response.text && response.text.trim()) || ""
+      console.log("Raw LLM response:", response)
 
       // Map the choice to a score
-      const choiceScores = {
+      const choiceScores: Record<string, number> = {
         A: 0.4,
         B: 0.6,
         C: 1.0,
@@ -223,7 +260,7 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
 
       console.log("Final factuality score:", score)
       return { score }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Evaluation API error:", error.message)
       // Return a default score rather than failing
       return { score: 0 }
@@ -257,7 +294,7 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
         })
 
         let attempts = 0
-        let factuality: CustomScore
+        let factuality: CustomScore = { score: 0 } // Initialize with a default score
         while (attempts < 5) {
           attempts++
           try {
@@ -286,13 +323,15 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
           expected: turn.expected,
           tags: "-",
           cost: response.costArr.reduce((acc, value) => acc + value, 0),
-          factuality: (factuality?.score || 0.5) * 100,
+          factuality: factuality?.score * 100,
           duration,
         }
 
         if (response.retrievedItems) {
           evalResult.retrievedContext = simplifySearchResults(
-            response.retrievedItems,
+            Array.isArray(response.retrievedItems)
+              ? response.retrievedItems
+              : [response.retrievedItems],
             response.maxChunksRetrieved,
           )
         }
@@ -306,7 +345,7 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
       const startTime = Date.now()
       const response = await config.task(item.input)
       let attempts = 0
-      let factuality: CustomScore
+      let factuality: CustomScore = { score: 0 }
       while (attempts < 5) {
         attempts++
         try {
@@ -341,7 +380,9 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
 
       if (response.retrievedItems) {
         evalResult.retrievedContext = simplifySearchResults(
-          response.retrievedItems,
+          Array.isArray(response.retrievedItems)
+            ? response.retrievedItems
+            : [response.retrievedItems],
           response.maxChunksRetrieved,
         )
       }
@@ -368,455 +409,7 @@ RESPOND WITH ONLY THE LETTER (A, B, C, D, or E) that best describes the relation
   console.log(`Basic score: ${pc.greenBright(basicScore.toFixed(2))}`)
 }
 
-const basicJsonRagName = "basic-rag-json"
-const basicRagName = "basic-rag"
-const iterativeJsonRagName = "basic-iterative-rag-json"
-const iterativeTimeexpansionJsonRagName = "iterative-time-expansion-rag-json"
-const iterativeTimeFilterAndQueryRewriteRagName =
-  "iterative-time-filter-query-rewrite"
-const pointEventQueryTimeExpansionRagName = "event-query-time-expansion"
 const endToEndIntegration = "end-to-end-integration"
-
-const basicJsonRag = async () => {
-  const pageSize = 15
-  await Eval(
-    basicJsonRagName,
-    {
-      data: (): Data[] => {
-        return data
-      },
-      task: async (input: string): Promise<LLMResponse> => {
-        console.log(input)
-        let res = await generateAnswerJson(input, 0.5, pageSize)
-        return res
-      },
-    },
-    `we just ask ai to generate answer or null with ${pageSize} pagesize`,
-  )
-}
-
-async function generateAnswerJson(
-  input: string,
-  alpha: number = 0.5,
-  pageSize: number = 10,
-): Promise<LLMResponse> {
-  const email = myEmail
-  const message = input
-  const results = await searchVespa(message, email, null, null, {
-    limit: pageSize,
-    alpha,
-  })
-  const initialContext = cleanContext(
-    results.root.children
-      .map(
-        (v, i) =>
-          `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 4)}`,
-      )
-      .join("\n"),
-  )
-
-  const userAndWorkspace = await getUserAndWorkspaceByEmail(
-    db,
-    workspaceId,
-    email,
-  )
-  const ctx = userContext(userAndWorkspace)
-  const { output, cost } = await baselineRAGJson(input, ctx, initialContext, {
-    stream: false,
-    modelId,
-  })
-  return {
-    answer: output.answer || "I don't know",
-    costArr: [cost],
-    retrievedItems: results.root.children,
-  }
-}
-const basicRag = async () => {
-  await Eval(basicRagName, {
-    data: (): Data[] => {
-      return data
-    },
-    task: async (input: string): Promise<LLMResponse> => {
-      console.log(input)
-      let res = await generateAnswer(input)
-      return res
-    },
-  })
-}
-
-const iterativeJsonRag = async () => {
-  const pageSize = 20
-  const maxPageNumber = 5
-  const maxSummaryCount = 3
-  await Eval(
-    iterativeJsonRagName,
-    {
-      data: (): Data[] => {
-        return data
-      },
-      task: async (input: string): Promise<LLMResponse> => {
-        let res = await generateIterative(
-          input,
-          0.5,
-          pageSize,
-          maxPageNumber,
-          maxSummaryCount,
-        )
-        return res
-      },
-    },
-    `we just ask ai to generate answer or null with ${pageSize} pagesize and iteratively go to the next page till ${maxPageNumber} and summary size ${maxSummaryCount}`,
-  )
-}
-
-// this change was not there before
-// what I'm about to do is first
-// get latest results and then get the global results
-// then combine them both for the first page results of iterative
-// and let the answer come from it
-// so basically we don't do answer for just latest
-// we risk increasing noise but atleast both cases are catered to
-const iterativeTimeExpansionJsonRag = async () => {
-  const pageSize = 20
-  const maxPageNumber = 5
-  const maxSummaryCount = 3
-  const monthInMs = 30 * 24 * 60 * 60 * 1000
-  const initialRange = 3 * monthInMs // Start with 3 months
-  const rangeIncrement = 3 * monthInMs // Increment by 3 months
-  const maxRange = 18 * monthInMs // Maximum range of 18 months
-  await Eval(
-    iterativeTimeexpansionJsonRagName,
-    {
-      data: (): Data[] => {
-        return data
-      },
-      task: async (input: string): Promise<LLMResponse> => {
-        let res = await generateIterativeAndTimeExpansion(
-          input,
-          0.5,
-          pageSize,
-          maxPageNumber,
-          maxSummaryCount,
-        )
-        return res
-      },
-    },
-    `we just ask ai to generate answer or null with ${pageSize} pagesize and, first check within 4 month range and then iteratively go to the next page till ${maxPageNumber} and summary size ${maxSummaryCount}`,
-  )
-}
-async function generateIterativeTimeFilterAndQueryRewrite(
-  input: string,
-  alpha: number = 0.5,
-  pageSize: number = 10,
-  maxPageNumber: number = 3,
-  maxSummaryCount: number | undefined,
-  // timeRangeConfig: TimeRangeConfig,
-): Promise<LLMResponse> {
-  // we are not going to do time expansion
-  // we are going to do 4 months answer
-  // if not found we go back to iterative page search
-  const message = input
-  const email = myEmail
-  let output = { answer: "", costArr: [], retrievedItems: [] }
-  const userAndWorkspace = await getUserAndWorkspaceByEmail(
-    db,
-    workspaceId,
-    email,
-  )
-  const ctx = userContext(userAndWorkspace)
-
-  const monthInMs = 30 * 24 * 60 * 60 * 1000
-  const latestResults = (
-    await searchVespa(message, email, null, null, {
-      limit: pageSize,
-      alpha,
-      timestampRange: {
-        from: new Date().getTime() - 4 * monthInMs,
-        to: new Date().getTime(),
-      },
-    })
-  ).root.children
-
-  const latestIds = latestResults
-    .map((v: VespaSearchResult) => v?.fields.docId)
-    .filter((v) => !!v)
-
-  for (var pageNumber = 0; pageNumber < maxPageNumber; pageNumber++) {
-    // should only do it once
-    if (pageNumber === Math.floor(maxPageNumber / 2)) {
-      // get the first page of results
-      let results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha,
-      })
-      const initialContext = cleanContext(
-        results.root.children
-          .map(
-            (v, i) =>
-              `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-          )
-          .join("\n"),
-      )
-      const queryResp = await queryRewriter(input, ctx, initialContext, {
-        modelId,
-        stream: false,
-      })
-      const queries = queryResp.queries
-      for (const query of queries) {
-        const latestResults = (
-          await searchVespa(query, email, null, null, { limit: page })
-        ).root.children
-
-        let results = await searchVespa(query, email, null, null, {
-          limit: pageSize,
-          alpha,
-          excludedIds: latestResults
-            .map((v: VespaSearchResult) => v?.fields.docId)
-            .filter((v) => !!v),
-        })
-        const initialContext = cleanContext(
-          results.root.children
-            .concat(latestResults)
-            .map(
-              (v, i) =>
-                `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-            )
-            .join("\n"),
-        )
-
-        const out = await baselineRAGJson(query, ctx, initialContext, {
-          stream: false,
-          modelId,
-        })
-        if (out.output.answer) {
-          output.answer = out.output.answer
-          output.costArr = [out.cost]
-          output.retrievedItems = results.root.children
-          return output
-        }
-      }
-    }
-
-    let results
-    if (pageNumber === 0) {
-      results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
-        alpha,
-        excludedIds: latestIds,
-      })
-      results.root.children = results.root.children.concat(latestResults)
-    } else {
-      results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
-        alpha,
-      })
-    }
-    const initialContext = cleanContext(
-      results.root.children
-        .map(
-          (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-        )
-        .join("\n"),
-    )
-
-    const out = await baselineRAGJson(input, ctx, initialContext, {
-      stream: false,
-      modelId,
-    })
-    if (out.output.answer) {
-      output.answer = out.output.answer
-      output.costArr = [out.cost]
-      output.retrievedItems = results.root.children
-      break
-    } else {
-      continue
-    }
-  }
-  return {
-    answer: output.answer || "I don't know",
-    costArr: output.costArr || [],
-    retrievedItems: output.retrievedItems,
-    maxChunksRetrieved: maxSummaryCount,
-  }
-}
-// if we are not able to find the info until certain page number
-// we short circuit and try that many pages for a new query
-const iterativeWithTimeFilterAndQueryRewrite = async () => {
-  const pageSize = 20
-  const maxPageNumber = 3
-  const maxSummaryCount = 5
-  const monthInMs = 30 * 24 * 60 * 60 * 1000
-  const initialRange = 3 * monthInMs // Start with 3 months
-  const rangeIncrement = 3 * monthInMs // Increment by 3 months
-  const maxRange = 18 * monthInMs // Maximum range of 18 months
-  await Eval(
-    iterativeTimeFilterAndQueryRewriteRagName,
-    {
-      data: (): Data[] => {
-        return data
-      },
-      task: async (input: string): Promise<LLMResponse> => {
-        let res = await generateIterativeTimeFilterAndQueryRewrite(
-          input,
-          0.5,
-          pageSize,
-          maxPageNumber,
-          maxSummaryCount,
-        )
-        if (res.answer) {
-          res.answer = splitGroupedCitationsWithSpaces(res.answer)
-        }
-        return res
-      },
-    },
-    `we just ask ai to generate answer or null with ${pageSize} pagesize and, first check within 4 month range and then iteratively go to the next page till ${maxPageNumber} and summary size ${maxSummaryCount}
-      what we also do is rewrite the query if we didn't find an answer for the first page`,
-  )
-}
-
-const pointEventQueryTimeExpansion = async () => {
-  const pageSize = 20
-  const maxPageNumber = 3
-  const maxSummaryCount = 3
-  const weekInMs = 7 * 24 * 60 * 60 * 1000
-  await Eval(
-    pointEventQueryTimeExpansionRagName,
-    {
-      data: (): Data[] => {
-        return data
-      },
-      task: async (input: string): Promise<LLMResponse> => {
-        let res = await generatePointQueryTimeExpansion(
-          input,
-          0.5,
-          pageSize,
-          maxPageNumber,
-          maxSummaryCount,
-        )
-        return res
-      },
-    },
-    `we just ask ai to generate answer or null with summary size ${maxSummaryCount}, point query and time expansion in appropriate direction`,
-  )
-}
-
-const generatePointQueryTimeExpansion = async (
-  input: string,
-  alpha: number,
-  pageSize: number = 10,
-  maxPageNumber: number = 3,
-  maxSummaryCount: number | undefined,
-) => {
-  const email = myEmail
-  const message = input
-  const directionOutput = await temporalEventClassification(input, {
-    modelId,
-    stream: false,
-  })
-  if (directionOutput.direction === null) {
-    return {
-      answer: "I don't know",
-      costArr: [directionOutput.cost],
-      retrievedItems: [],
-    }
-  }
-
-  const userAndWorkspace = await getUserAndWorkspaceByEmail(
-    db,
-    workspaceId,
-    email,
-  )
-  const ctx = userContext(userAndWorkspace)
-  const maxIterations = 10
-  const weekInMs = 12 * 24 * 60 * 60 * 1000
-  const direction = directionOutput.direction
-
-  let from = new Date().getTime()
-  let to = new Date().getTime()
-  let lastSearchedTime = direction === "prev" ? from : to
-  console.log("direction ", direction)
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
-    const windowSize = (2 + iteration) * weekInMs
-    console.log("window size", windowSize)
-    if (direction === "prev") {
-      to = lastSearchedTime
-      from = to - windowSize
-      lastSearchedTime = from
-    } else {
-      from = lastSearchedTime
-      to = from + windowSize
-      lastSearchedTime = to
-    }
-
-    console.log("to ", new Date(to))
-    console.log("from ", new Date(from))
-    const eventResults = await searchVespa(
-      message,
-      email,
-      Apps.GoogleCalendar,
-      null,
-      { limit: pageSize, alpha, timestampRange: { from, to } },
-    )
-    const results = await searchVespa(message, email, null, null, {
-      limit: pageSize,
-      alpha,
-      timestampRange: { from, to },
-      notInMailLabels: ["CATEGORY_PROMOTIONS"],
-    })
-    if (!results.root.children) {
-      results.root.children = []
-    }
-    results.root.children = results.root.children.concat(
-      eventResults.root.children || [],
-    )
-    // TODO: do this in the vespa queries
-    // filter out only gmail and events
-    results.root.children = results.root.children.filter((v) => {
-      // @ts-ignore
-      if (v.fields.app === Apps.Gmail || v.fields.app === Apps.GoogleCalendar) {
-        return true
-      }
-      return false
-    })
-    console.log("search result count ", results.root.children.length)
-    // we couldn't find any gmail or event
-    // we continue the expansion
-    if (!results.root.children.length) {
-      console.log("no gmail or calendar event found")
-      continue
-    }
-    const initialContext = cleanContext(
-      results.root.children
-        .map(
-          (v, i) =>
-            `Index ${i} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, maxSummaryCount)}`,
-        )
-        .join("\n"),
-    )
-    // console.log(initialContext)
-
-    const { output, cost } = await baselineRAGJson(input, ctx, initialContext, {
-      stream: false,
-      modelId,
-    })
-    if (output.answer) {
-      return {
-        answer: output.answer,
-        costArr: [cost, directionOutput.cost],
-        retrievedItems: results.root.children,
-      }
-    }
-  }
-  return {
-    answer:
-      "I could not find any information to answer it, please change your query",
-    costArr: [directionOutput.cost],
-    retrievedItems: [],
-  }
-}
 
 interface SimplifiedSearchResult {
   type: string
@@ -843,8 +436,12 @@ function simplifySearchResults(
         type: fileSchema,
         title: fileFields.title,
         chunks_summary: maxChunksRetrieved
-          ? fileFields.chunks_summary?.slice(0, maxChunksRetrieved)
-          : fileFields.chunks_summary,
+          ? fileFields.chunks_summary
+              ?.slice(0, maxChunksRetrieved)
+              .map((chunk) => (typeof chunk === "string" ? chunk : chunk.chunk))
+          : fileFields.chunks_summary?.map((chunk) =>
+              typeof chunk === "string" ? chunk : chunk.chunk,
+            ),
         app: fileFields.app,
         entity: fileFields.entity,
         schema: fileFields.sddocname,
@@ -866,8 +463,12 @@ function simplifySearchResults(
         type: mailSchema,
         title: mailFields.subject,
         chunks_summary: maxChunksRetrieved
-          ? mailFields.chunks_summary?.slice(0, maxChunksRetrieved)
-          : mailFields.chunks_summary,
+          ? mailFields.chunks_summary
+              ?.slice(0, maxChunksRetrieved)
+              .map((chunk) => (typeof chunk === "string" ? chunk : chunk.chunk))
+          : mailFields.chunks_summary?.map((chunk) =>
+              typeof chunk === "string" ? chunk : chunk.chunk,
+            ),
         app: mailFields.app,
         entity: mailFields.entity,
         schema: mailFields.sddocname,
@@ -888,8 +489,8 @@ function simplifySearchResults(
       // Default case if schema is not recognized
       simplified = {
         type: fields.sddocname,
-        app: fields.app,
-        entity: fields.entity,
+        app: (fields as { app: Apps }).app,
+        entity: (fields as any).entity,
         schema: fields.sddocname,
         relevance: item.relevance,
       }
@@ -946,7 +547,6 @@ const endToEndFlow = async (
       costArr.push(chunk.cost)
     }
   }
-  console.log("Parsed output:", parsed)
   if (parsed.answer === null || parsed.answer === "") {
     if (parsed.queryRewrite) {
       message = parsed.queryRewrite
@@ -956,7 +556,7 @@ const endToEndFlow = async (
       direction: parsed.temporalDirection,
     }
 
-    const tracer: Tracer = getTracer("chat")
+    const tracer = getTracer("chat")
     const rootSpan = tracer.startSpan("MessageApi")
     const passedSpan = rootSpan.startSpan("rag_processing")
     const ragSpan = passedSpan?.startSpan("iterative_rag")
@@ -1011,11 +611,6 @@ const endToEndFactual = async () => {
           workspaceId,
           email,
         )
-        // const formattedMessages = messages ?
-        // messages.map((msg, index) => ({
-        //   role: "user",
-        //   content: [{ text: (msg as Data).input }]
-        // })) : [];
         const ctx = userContext(userAndWorkspace)
 
         const answer = await endToEndFlow(input, ctx, messages || [])
@@ -1024,7 +619,7 @@ const endToEndFactual = async () => {
         return {
           answer: answer || "I don't know",
           costArr: [0.001],
-          retrievedItems: [], // Ideally would track retrieved items from search
+          retrievedItems: [] as unknown as VespaSearchResults, // Ideally would track retrieved items from search
         }
       },
     },
