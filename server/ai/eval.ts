@@ -47,10 +47,10 @@ const modelId = defaultFastModel || Models.Claude_3_5_Haiku
 
 // for permission aware Evals
 // add this value to run
-const myEmail = "junaid.s@xynehq.com" // Add your email here
+const myEmail = "user@gmail.com" // Add your email here
 
 // workspace external Id : Adding the workspace id for the evals
-const workspaceId = "orq3jslp9udetix9912ueb6s" // Add your workspace id here
+const workspaceId = "q7********" // Add your workspace id here
 
 if (!myEmail) {
   throw new Error("Please set the email")
