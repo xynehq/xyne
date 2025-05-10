@@ -1598,7 +1598,9 @@ export const MessageApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("query")
     let { message, chatId, modelId, stringifiedfileIds }: MessageReqType = body
-    const fileIds = JSON.parse(stringifiedfileIds) as string[]
+    const fileIds: string[] = stringifiedfileIds
+      ? JSON.parse(stringifiedfileIds)
+      : []
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
