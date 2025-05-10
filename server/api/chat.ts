@@ -8,7 +8,6 @@ import {
   mailPromptJsonStream,
   meetingPromptJsonStream,
   queryRewriter,
-  temporalEventClassification,
 } from "@/ai/provider"
 import {
   Models,
@@ -1365,9 +1364,7 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?.setAttribute("message_count", messages.length)
   // user is talking about an event
   if (classification.direction !== null) {
-    Logger.info(
-      `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
-    )
+    Logger.info(`Direction: ${classification.direction}`)
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
     return yield* generatePointQueryTimeExpansion(
