@@ -71,7 +71,8 @@ export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 export const addServiceConnectionSchema = z.object({
   "service-key": z.any(),
   app: z.nativeEnum(Apps),
-  email: z.string(),
+  email: z.string().email(),
+  whitelistedEmails: z.string().optional(),
 })
 
 export type ServiceAccountConnection = z.infer<
@@ -99,6 +100,11 @@ export const deleteConnectorSchema = z.object({
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
   status: z.nativeEnum(ConnectorStatus),
+})
+
+export const serviceAccountIngestMoreSchema = z.object({
+  connectorId: z.string(),
+  emailsToIngest: z.array(z.string().email()),
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
@@ -275,6 +281,7 @@ export enum Subsystem {
   Queue = "Queue",
   Eval = "Eval",
   AI = "AI",
+  Tuning = "Tuning",
 }
 
 export enum OperationStatus {
