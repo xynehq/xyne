@@ -1085,12 +1085,11 @@ async function* generatePointQueryTimeExpansion(
 
   // we will check if startTime and endTime are present,
   // if not we go with the iterative RAG
-  const isMetadataRetrieval =
-    classification.type == QueryType.RetrieveMetadata && startTime && endTime
+  const isUnspecificMetadataRetrieval =
+    classification.type == QueryType.RetrievedUnspecificMetadata
+  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
 
-  if (isMetadataRetrieval) {
-    Logger.info(`User requested metadata search : Temporal Metadata Retrieval`)
-
+  if (isUnspecificMetadataRetrieval || isMetadataRetrieval) {
     let { app, count, entity } = classification.filters
     const isValidAppAndEntity =
       isValidApp(app as Apps) && isValidEntity(entity as any)
@@ -1098,34 +1097,64 @@ async function* generatePointQueryTimeExpansion(
     from = new Date(startTime ?? "").getTime()
     to = new Date(endTime ?? "").getTime()
 
-    if (!isNaN(from) && !isNaN(to) && isValidAppAndEntity) {
-      const diffMs = to - from
-      const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
-      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-      let readable = ""
-      if (days) readable += `${days} days `
-      if (hours) readable += `${hours} hours `
-      Logger.info(
-        `Searching for documents from app: ${app} and entity: ${entity} ${readable ? `from ${readable}` : ""}`,
-      )
+    if (
+      isValidAppAndEntity &&
+      (isMetadataRetrieval || isUnspecificMetadataRetrieval)
+    ) {
+      let items: VespaSearchResult[] = []
       let schema = entityToSchemaMapper(entity, app) as VespaSchema
-      const items: VespaSearchResult[] =
-        (
-          await getItems({
-            email,
-            schema,
-            app,
-            entity,
-            timestampRange: { from, to },
-            limit: count ? count : pageSize,
-          })
-        ).root.children || []
-      Logger.info(`Found ${items.length} items for metadata retrieval`)
+      // Ensure `from` and `to` are valid timestamps before performing a search for unspecific metadata retrieval
+      if (!isNaN(from) && !isNaN(to) && isUnspecificMetadataRetrieval) {
+        Logger.info(
+          `User requested metadata search : ${QueryType.RetrievedUnspecificMetadata}`,
+        )
+        const diffMs = to - from
+        const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+        let readable = ""
+        if (days) readable += `${days} days `
+        if (hours) readable += `${hours} hours `
+        Logger.info(
+          `Searching for documents from app: ${app} and entity: ${entity} ${readable ? `from ${readable}` : ""}`,
+        )
+
+        items =
+          (
+            await getItems({
+              email,
+              schema,
+              app,
+              entity,
+              timestampRange: { from, to },
+              limit: count ? count : pageSize,
+            })
+          ).root.children || []
+        Logger.info(`Found ${items.length} items for metadata retrieval`)
+        // if no documents found will go with iterative RAG
+        if (!items.length) {
+          Logger.info(
+            `No context found for metadata retrieval: ${QueryType.RetrievedUnspecificMetadata}, moving to iterative RAG`,
+          )
+        }
+      } else if (isMetadataRetrieval) {
+        Logger.info(
+          `User requested metadata search : ${QueryType.RetrieveMetadata}`,
+        )
+        items =
+          (
+            await searchVespa(input, email, app as Apps, entity as any, {
+              limit: count ? count : pageSize,
+              alpha: userAlpha,
+              timestampRange: isNaN(from) || isNaN(to) ? null : { from, to },
+            })
+          ).root.children || []
+        Logger.info(`Found ${items.length} items for metadata retrieval`)
+      }
       // if no documents found will go with iterative RAG
       if (!items.length) {
         Logger.info(
-          "No context found for metadata retrieval, moving to iterative RAG",
+          `No context found for metadata retrieval:  ${QueryType.RetrieveMetadata}, moving to iterative RAG`,
         )
       } else {
         const results = items
