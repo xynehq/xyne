@@ -744,6 +744,16 @@ export const searchQueryPrompt = (userContext: string): string => {
          - "from" as "YYYY-MM-DDT00:00:00.000Z"
          - "to" as "YYYY-MM-DDT23:59:59.999Z"
 
+       - If the user query specifies an open-ended range (e.g., "from today", "after April 10", "until May 1", "before yesterday"), then:
+         - If it's a **"from" only** query, set:
+           "temporalDirection": "<calculated direction>",
+           "from": "<computed ISO start of day>",
+           "to": null
+         - If it's a **"to" only** query, set:
+           "temporalDirection": "<calculated direction>",
+           "from": null,
+           "to": "<computed ISO end of day>"
+           
        - If none of the above apply, set "temporalDirection" to "null".
 
     5. Output JSON in the following structure:
