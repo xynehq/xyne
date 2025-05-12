@@ -972,7 +972,7 @@ const getSearchRangeSummary = (
   summarySpan?.setAttribute("to", to)
   summarySpan?.setAttribute("direction", direction)
   const now = Date.now()
-  if (direction === "next" || direction === "prev" && (from && to) ) {
+  if ((direction === "next" || direction === "prev") && (from && to) ) {
     // Ensure from is earlier than to
     if (from > to) {
       [from, to] = [to, from]
