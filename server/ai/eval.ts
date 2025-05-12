@@ -567,6 +567,7 @@ const endToEndFlow = async (
       classification,
       messages,
       0.5,
+      [],
       ragSpan,
     )
 
