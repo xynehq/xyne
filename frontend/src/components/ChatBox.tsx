@@ -228,6 +228,7 @@ export const ChatBox = ({
   const [activeAtMentionIndex, setActiveAtMentionIndex] = useState(-1)
   const [referenceSearchTerm, setReferenceSearchTerm] = useState("")
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
+  const [showSourcesButton, setShowSourcesButton] = useState(false) // Added this line
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
@@ -1189,107 +1190,109 @@ export const ChatBox = ({
               input.focus(); // Re-focus the input
             }}
           />
-          <DropdownMenu
-            open={isSourceMenuOpen}
-            onOpenChange={setIsSourceMenuOpen}
-          >
-            <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#EDF2F7] hover:bg-gray-200 text-sm text-gray-700 cursor-pointer">
-                {selectedSourcesCount === 0 ? (
-                  <>
-                    <Layers size={14} className="text-[#464D53]" />
-                    <span>Sources</span>
-                  </>
-                ) : (
-                  <>
-                    {selectedSourceItems.map((item) => (
-                      <span key={item.id} className="flex items-center">
-                        {getIcon(item.app, item.entity, {
-                          w: 14,
-                          h: 14,
+          {showSourcesButton && ( // Added this condition
+            <DropdownMenu
+              open={isSourceMenuOpen}
+              onOpenChange={setIsSourceMenuOpen}
+            >
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#EDF2F7] hover:bg-gray-200 text-sm text-gray-700 cursor-pointer">
+                  {selectedSourcesCount === 0 ? (
+                    <>
+                      <Layers size={14} className="text-[#464D53]" />
+                      <span>Sources</span>
+                    </>
+                  ) : (
+                    <>
+                      {selectedSourceItems.map((item) => (
+                        <span key={item.id} className="flex items-center">
+                          {getIcon(item.app, item.entity, {
+                            w: 14,
+                            h: 14,
+                            mr: 0,
+                          })}
+                        </span>
+                      ))}
+                      <span>
+                        {selectedSourcesCount} source
+                        {selectedSourcesCount > 1 ? "s" : ""}
+                      </span>
+                    </>
+                  )}
+                  <ChevronDown size={16} className="ml-1 text-gray-500" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-56 relative rounded-xl"
+                align="start"
+                side="top"
+              >
+                <div className="flex items-center justify-between px-2 py-1.5">
+                  <DropdownMenuLabel className="p-0">
+                    Filter Sources
+                  </DropdownMenuLabel>
+                  {selectedSourcesCount > 0 ? (
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={handleClearAllSources}
+                            className="p-1 rounded-full hover:bg-[#EDF2F7] text-gray-500 hover:text-gray-700"
+                            aria-label="Clear all selected sources"
+                          >
+                            <RotateCcw size={16} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
+                          <p>Clear all</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <button
+                      className="p-1 rounded-full text-transparent"
+                      aria-label="No sources to clear"
+                      disabled
+                    >
+                      <RotateCcw size={16} />
+                    </button>
+                  )}
+                </div>
+                <DropdownMenuSeparator />
+                {availableSources.map((source) => {
+                  const isChecked = selectedSources[source.id] || false
+                  return (
+                    <DropdownMenuItem
+                      key={source.id}
+                      onClick={() =>
+                        handleSourceSelectionChange(source.id, !isChecked)
+                      }
+                      onSelect={(e) => e.preventDefault()}
+                      className="relative flex items-center pl-2 pr-2 gap-2 cursor-pointer"
+                    >
+                      <div className="flex itemsbinoculars flex items-center gap-2">
+                        {getIcon(source.app, source.entity, {
+                          w: 16,
+                          h: 16,
                           mr: 0,
                         })}
-                      </span>
-                    ))}
-                    <span>
-                      {selectedSourcesCount} source
-                      {selectedSourcesCount > 1 ? "s" : ""}
-                    </span>
-                  </>
-                )}
-                <ChevronDown size={16} className="ml-1 text-gray-500" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-56 relative rounded-xl"
-              align="start"
-              side="top"
-            >
-              <div className="flex items-center justify-between px-2 py-1.5">
-                <DropdownMenuLabel className="p-0">
-                  Filter Sources
-                </DropdownMenuLabel>
-                {selectedSourcesCount > 0 ? (
-                  <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={handleClearAllSources}
-                          className="p-1 rounded-full hover:bg-[#EDF2F7] text-gray-500 hover:text-gray-700"
-                          aria-label="Clear all selected sources"
-                        >
-                          <RotateCcw size={16} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
-                        <p>Clear all</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ) : (
-                  <button
-                    className="p-1 rounded-full text-transparent"
-                    aria-label="No sources to clear"
-                    disabled
-                  >
-                    <RotateCcw size={16} />
-                  </button>
-                )}
-              </div>
-              <DropdownMenuSeparator />
-              {availableSources.map((source) => {
-                const isChecked = selectedSources[source.id] || false
-                return (
-                  <DropdownMenuItem
-                    key={source.id}
-                    onClick={() =>
-                      handleSourceSelectionChange(source.id, !isChecked)
-                    }
-                    onSelect={(e) => e.preventDefault()}
-                    className="relative flex items-center pl-2 pr-2 gap-2 cursor-pointer"
-                  >
-                    <div className="flex itemsbinoculars flex items-center gap-2">
-                      {getIcon(source.app, source.entity, {
-                        w: 16,
-                        h: 16,
-                        mr: 0,
-                      })}
-                      <span>{source.name}</span>
-                    </div>
-                    <div
-                      className={`ml-auto h-5 w-5 border rounded flex items-center justify-center ${
-                        isChecked
-                          ? "bg-green-500 border-green-500"
-                          : "border-gray-400"
-                      }`}
-                    >
-                      {isChecked && <Check className="h-4 w-4 text-white" />}
-                    </div>
-                  </DropdownMenuItem>
-                )
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                        <span>{source.name}</span>
+                      </div>
+                      <div
+                        className={`ml-auto h-5 w-5 border rounded flex items-center justify-center ${
+                          isChecked
+                            ? "bg-green-500 border-green-500"
+                            : "border-gray-400"
+                        }`}
+                      >
+                        {isChecked && <Check className="h-4 w-4 text-white" />}
+                      </div>
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )} {/* Closing tag for the conditional render */}
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}
