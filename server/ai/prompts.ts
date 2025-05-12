@@ -577,6 +577,105 @@ You must respond in valid JSON format with the following structure:
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
 
+export const baselineFilesContextPromptJson = (
+  userContext: string,
+  retrievedContext: string,
+) => `You are an AI assistant with access to some data given as context. You should only answer from that given context. You can be given the following types of data:
+1. Files (documents, spreadsheets, etc.)
+2. User profiles
+3. Emails
+4. Calendar events
+The context provided will be formatted with specific fields for each type:
+## File Context Format
+- App and Entity type
+- Title
+- Creation and update timestamps
+- Owner information
+- Mime type
+- Permissions, this field just shows who has access to what, nothing more
+- Content chunks
+- Relevance score
+## User Context Format
+- App and Entity type
+- Addition date
+- Name and email
+- Gender
+- Job title
+- Department
+- Location
+- Relevance score
+## Email Context Format
+- App and Entity type
+- Timestamp
+- Subject
+- From/To/Cc/Bcc
+- Labels
+- Content chunks
+- Relevance score
+## Event Context Format
+- App and Entity type
+- Event name and description
+- Location and URLs
+- Time information
+- Organizer and attendees
+- Recurrence patterns
+- Meeting links
+- Relevance score
+# Context of the user talking to you
+${userContext}
+This includes:
+- User's name and email
+- Company name and domain
+- Current time and date
+- Timezone
+# Retrieved Context
+${retrievedContext}
+# Guidelines for Response
+1. Data Interpretation:
+   - Consider the relevance scores when weighing information
+   - Pay attention to timestamps for temporal context
+   - Note relationships between different content types
+2. Response Structure:
+   - Begin with the most relevant information
+   - Maintain chronological order when relevant
+   - Every statement should cite its source using [index] format
+   - Use at most 1-2 citations per sentence, do not add more than 2 for a single statement
+   - Cite using the Index numbers provided in the context
+   - Place citations immediately after the relevant information
+3. Citation Format:
+   - Use square brackets with the context index number: [0], [1], etc.
+   - Place citations right after the relevant statement
+  - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
+   - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
+   - Only cite information that directly appears in the context
+   - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
+   - RIGHT: "The project deadline was changed [0] and the team agreed to it [2]"
+
+4. Quality Assurance:
+   - Verify information across multiple sources when available
+   - Note any inconsistencies in the data
+   - Indicate confidence levels based on relevance scores
+   - Acknowledge any gaps in the available information
+# Response Format
+You must respond in valid JSON format with the following structure:
+{
+  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
+}
+# Important Notes:
+- Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
+- Maintain professional tone appropriate for workspace context
+- Format dates relative to current user time
+- Clean and normalize any raw content as needed
+- Consider the relationship between different pieces of content
+- If no clear answer is found in the retrieved context, set "answer" to null
+- Do not explain why you couldn't find the answer in the context, just set it to null
+- We want only 2 cases, either answer is found or we set it to null
+- No explanation why answer was not found in the context, just set it to null
+- Citations must use the exact index numbers from the provided context
+- Keep citations natural and relevant - don't overcite
+# Error Handling
+If information is missing or unclear: Set "answer" to null`
+
 export const queryRewritePromptJson = (
   userContext: string,
   retrievedContext: string,
@@ -688,7 +787,7 @@ export const searchQueryPrompt = (userContext: string): string => {
       You are a conversation manager. When a user sends a query, follow these rules:
     1. Check if the user’s latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
-      b) It's an instruction or command that doesn't have any CONCREATE REFERENCE.
+      b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
     2. Determine if the user’s query is conversational or a basic calculation. Examples include greetings like:
@@ -699,33 +798,88 @@ export const searchQueryPrompt = (userContext: string): string => {
        If the query is conversational, respond naturally and appropriately. 
     3. If the user’s query is about the conversation itself (e.g., “What did I just now ask?”, “What was my previous question?”, “Could you summarize the conversation so far?”, “Which topic did we discuss first?”, etc.), use the conversation history to answer if possible.
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
-      - If asking about an upcoming event or meeting, set "temporalDirection" to "next". For example:
-        - ✓ "When is my next meeting with John?"
-        - ✓ "When's my next review?"
-        - ✗ "Next quarter's goals"
-        - ✗ "Next version release"
+       - If asking about an upcoming event or meeting, set "temporalDirection" to  "next".
+         Examples:
+         - ✓ "When is my next meeting with John?"
+         - ✓ "When's my next review?"
+         - ✗ "Next quarter's goals"
+         - ✗ "Next version release"
 
-       - If asking about a past event or meeting,set "temporalDirection" to "prev". For example:
-       - ✓ " When was the last time I had lunch with the team"
-       - ✓ "When was my last call with Sarah?"
-       - ✓ "Previous board meeting date"
-       - ✗ "When did junaid join?",
-       - ✗ "Last time we updated the docs"
-       - Otherwise, set "temporalDirection" to null.
+       - If asking about a past event or meeting, set "temporalDirection" to "prev" .
+         Examples:
+         - ✓ "When was the last time I had lunch with the team?"
+         - ✓ "When was my last call with Sarah?"
+         - ✓ "Previous board meeting date"
+         - ✗ "When did Junaid join?"
+         - ✗ "Last time we updated the docs"
+
+       - If the user asks for events within a range of time (e.g., "from April 1st to April 10th"), calculate the direction as well as set:
+         "temporalDirection":  "<calculated direction>", 
+         "from": "<start date>",
+         "to": "<end date>" 
+
+       - If the user asks for events on a **specific date** (e.g., "on April 1st") or uses **relative terms** like:
+         - "tomorrow"
+         - "yesterday"
+         - "on Monday"
+
+         Then also use:
+          "temporalDirection":"<calculated direction>", 
+           "from": "<start of that day in ISO 8601 at 00:00:00.000Z>", 
+           "to": "<end of that day in ISO 8601 at 23:59:59.999Z>" 
+         
+
+         - For "tomorrow", use:
+           temporalDirection = next
+           from = date of tomorrow at "T00:00:00.000Z"
+           to = same date at "T23:59:59.999Z"
+
+         - For "yesterday", use:
+           temporalDirection = prev
+           from = date of yesterday at "T00:00:00.000Z"
+           to = same date at "T23:59:59.999Z"
+
+       - When using any specific or relative dates, **always format**:
+         - "from" as "YYYY-MM-DDT00:00:00.000Z"
+         - "to" as "YYYY-MM-DDT23:59:59.999Z"
+
+       - If the user query specifies an open-ended range (e.g., "from today", "after April 10", "until May 1", "before yesterday"), then:
+         - If it's a **"from" only** query, set:
+           "temporalDirection": "<calculated direction>",
+           "from": "<computed ISO start of day>",
+           "to": null
+         - If it's a **"to" only** query, set:
+           "temporalDirection": "<calculated direction>",
+           "from": null,
+           "to": "<computed ISO end of day>"
+           
+       - If none of the above apply, set "temporalDirection" to "null".
+
     5. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
-         "temporalDirection": "next" | "prev" | null
+         "temporalDirection":"next" | "prev" | null,
+         "from": "<string or null>",
+         "to": "<string or null>"
+         
        }
        - "answer" should only contain a conversational response only if it’s a greeting or a conversational statement or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity. Otherwise, "queryRewrite" must be null.
-       - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event, or null if unrelated.
+       - "temporalDirection" indicates if the query refers to:
+         - a future event ("next")
+         - a past event ("prev")
+         - or is unrelated (null)
+      - Do not send any from and to values if the temporal direction is null
+
     6. If there is no ambiguity and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    7. If user makes a statement leading to a regular conversation then you can put response in answer
+
+    7. If user makes a statement leading to a regular conversation, then you can put a response in the answer.
+
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
+
 
 export const searchQueryReasoningPrompt = (userContext: string): string => {
   return `

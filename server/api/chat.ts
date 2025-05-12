@@ -45,6 +45,7 @@ import { MessageRole, Subsystem } from "@/types"
 import {
   getErrorMessage,
   getRelativeTime,
+  interpretDateFromReturnedTemporalValue,
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import {
@@ -58,7 +59,7 @@ import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSESt
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa, SearchModes } from "@/search/vespa"
+import { searchVespa, SearchModes, searchVespaInFiles } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
@@ -960,6 +961,191 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   queryRagSpan?.end()
 }
 
+async function* generateAnswerFromGivenContext(
+  input: string,
+  email: string,
+  userCtx: string,
+  alpha: number = 0.5,
+  fileIds: string[],
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
+  const message = input
+  let userAlpha = alpha
+  try {
+    const personalization = await getUserPersonalizationByEmail(db, email)
+    if (personalization) {
+      const nativeRankParams =
+        personalization.parameters?.[SearchModes.NativeRank]
+      if (nativeRankParams?.alpha !== undefined) {
+        userAlpha = nativeRankParams.alpha
+        Logger.info(
+          { email, alpha: userAlpha },
+          "Using personalized alpha for iterative RAG",
+        )
+      } else {
+        Logger.info(
+          { email },
+          "No personalized alpha found in settings, using default for iterative RAG",
+        )
+      }
+    } else {
+      Logger.warn(
+        { email },
+        "User personalization settings not found, using default alpha for iterative RAG",
+      )
+    }
+  } catch (err) {
+    Logger.error(
+      err,
+      "Failed to fetch personalization for iterative RAG, using default alpha",
+      { email },
+    )
+  }
+
+  const selectedFiles = fileIds && fileIds.length > 0
+
+  let previousResultsLength = 0
+  if (selectedFiles) {
+    let results = await searchVespaInFiles(message, email, fileIds, {
+      limit: fileIds?.length,
+      alpha: userAlpha,
+    })
+    if (!results.root.children) {
+      results.root.children = []
+    }
+    const startIndex = isReasoning ? previousResultsLength : 0
+    const initialContext = cleanContext(
+      results?.root?.children
+        ?.map(
+          (v, i) =>
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
+        )
+        ?.join("\n"),
+    )
+    Logger.info(
+      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+    )
+
+    const iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: isReasoning,
+      },
+      true,
+    )
+
+    let buffer = ""
+    let currentAnswer = ""
+    let parsed = { answer: "" }
+    let thinking = ""
+    let reasoning = isReasoning
+    let yieldedCitations = new Set<number>()
+    // tied to the json format and output expected, we expect the answer key to be present
+    const ANSWER_TOKEN = '"answer":'
+    for await (const chunk of iterator) {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            // first time
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+
+        if (!reasoning) {
+          buffer += chunk.text
+          try {
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
+            if (parsed.answer === null) {
+              break
+            }
+            if (parsed.answer && currentAnswer !== parsed.answer) {
+              if (currentAnswer === "") {
+                // First valid answer - send the whole thing
+                yield { text: parsed.answer }
+              } else {
+                // Subsequent chunks - send only the new part
+                const newText = parsed.answer.slice(currentAnswer.length)
+                yield { text: newText }
+              }
+              // Extract all citations from the parsed answer
+              // const citationSpan = chunkSpan.startSpan("check_citations")
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              currentAnswer = parsed.answer
+            }
+          } catch (err) {
+            const errMessage = (err as Error).message
+            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+            continue
+          }
+        }
+      }
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+    }
+    if (parsed.answer) {
+      return
+    } else if (
+      // Condition if fileIds are present has some values meaning context has been selected.
+      // If no answer found, exit and yield nothing related to selected context found
+      !parsed?.answer
+    ) {
+      yield {
+        text: "From the selected context, I could not find any information to answer it, please change your query",
+      }
+      return
+    }
+    if (isReasoning) {
+      previousResultsLength += results?.root?.children?.length || 0
+    }
+  }
+}
+
 const getSearchRangeSummary = (
   from: number,
   to: number,
@@ -971,8 +1157,34 @@ const getSearchRangeSummary = (
   summarySpan?.setAttribute("to", to)
   summarySpan?.setAttribute("direction", direction)
   const now = Date.now()
+  if ((direction === "next" || direction === "prev") && (from && to) ) {
+    // Ensure from is earlier than to
+    if (from > to) {
+      [from, to] = [to, from]
+    }
+
+    const fromDate = new Date(from)
+    const toDate = new Date(to)
+
+    const format = (date: Date) =>
+      `${date.toLocaleString("default", { month: "long" })} ${date.getDate()}, ${date.getFullYear()} - ${formatTime(date)}`
+
+    const formatTime = (date: Date) => {
+      const hours = date.getHours()
+      const minutes = date.getMinutes()
+      const ampm = hours >= 12 ? "PM" : "AM"
+      const hour12 = hours % 12 === 0 ? 12 : hours % 12
+      const paddedMinutes = minutes.toString().padStart(2, "0")
+      return `${hour12}:${paddedMinutes} ${ampm}`
+    }
+
+    fromDate.setHours(0, 0, 0, 0)
+    toDate.setHours(23, 59, 0, 0)
+
+    return `from ${format(fromDate)} to ${format(toDate)}`
+  } 
   // For "next" direction, we usually start from now
-  if (direction === "next") {
+  else if (direction === "next") {
     // Start from today/now
     const endDate = new Date(to)
     // Format end date to month/year if it's far in future
@@ -984,7 +1196,7 @@ const getSearchRangeSummary = (
     summarySpan?.setAttribute("result", result)
     summarySpan?.end()
     return result
-  }
+  }  
   // For "prev" direction
   else {
     const startDate = new Date(from)
@@ -1029,25 +1241,44 @@ async function* generatePointQueryTimeExpansion(
   const direction = classification.direction as string
   let costArr: number[] = []
 
-  let from = new Date().getTime()
-  let to = new Date().getTime()
+  const { fromDate, toDate } =
+    interpretDateFromReturnedTemporalValue(classification)
+
+  let from = fromDate ? fromDate.getTime() : new Date().getTime()
+  let to = toDate ? toDate.getTime() : new Date().getTime()
   let lastSearchedTime = direction === "prev" ? from : to
 
   let previousResultsLength = 0
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
+  const loopLimit = (fromDate && toDate) ? 2 : maxIterations
+
+  for (let iteration = 0; iteration < loopLimit; iteration++) {
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
     iterationSpan?.setAttribute("iteration", iteration)
     const windowSize = (2 + iteration) * weekInMs
 
     if (direction === "prev") {
-      to = lastSearchedTime
-      from = to - windowSize
-      lastSearchedTime = from
+      // If we have both the from and to time range we search only for that range
+      if(fromDate && toDate) {
+        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      }
+      // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date 
+      else {
+        to = toDate ? to : lastSearchedTime
+        from = to - windowSize
+        lastSearchedTime = from
+      }
+     
     } else {
-      from = lastSearchedTime
+      if(fromDate && toDate) {
+        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      }
+      // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date 
+      else {
+      from = fromDate ? from : lastSearchedTime
       to = from + windowSize
       lastSearchedTime = to
-    }
+      }
+    } 
 
     Logger.info(
       `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
@@ -1282,6 +1513,7 @@ async function* generatePointQueryTimeExpansion(
         previousResultsLength,
       )
     }
+
     iterationSpan?.end()
   }
 
@@ -1306,6 +1538,7 @@ export async function* UnderstandMessageAndAnswer(
   classification: TemporalClassifier,
   messages: Message[],
   alpha: number,
+  fileIds: string[],
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1318,8 +1551,19 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
-  // user is talking about an event
-  if (classification.direction !== null) {
+  if (fileIds && fileIds?.length > 0) {
+    Logger.info(
+      "User has selected some context with query, answering only based on that given context",
+    )
+    return yield* generateAnswerFromGivenContext(
+      message,
+      email,
+      userCtx,
+      alpha,
+      fileIds,
+    )
+  } else if (classification.direction !== null) {
+    // user is talking about an event
     Logger.info(
       `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
     )
@@ -1398,7 +1642,10 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId }: MessageReqType = body
+    let { message, chatId, modelId, stringifiedfileIds }: MessageReqType = body
+    const fileIds: string[] = stringifiedfileIds
+      ? JSON.parse(stringifiedfileIds)
+      : []
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1458,6 +1705,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            fileIds: fileIds,
           })
           return [chat, insertedMsg]
         },
@@ -1486,6 +1734,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
         },
@@ -1552,7 +1801,13 @@ export const MessageApi = async (c: Context) => {
           let answer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let parsed = {
+            answer: "",
+            queryRewrite: "",
+            temporalDirection:  null,
+            from: null,
+            to: null
+          }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -1657,7 +1912,9 @@ export const MessageApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection,
+              direction: parsed?.temporalDirection,
+              from: parsed?.from,
+              to: parsed?.to,
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
@@ -1667,6 +1924,7 @@ export const MessageApi = async (c: Context) => {
               classification,
               messagesWithNoErrResponse,
               0.5,
+              fileIds,
               understandSpan,
             )
             stream.writeSSE({
@@ -2066,6 +2324,17 @@ export const MessageRetryApi = async (c: Context) => {
     const prevUserMessage = isUserMessage
       ? originalMessage
       : conversation[conversation.length - 1]
+    let fileIds: string[] = []
+    const fileIdsFromDB = JSON.parse(
+      JSON.stringify(prevUserMessage?.fileIds || []),
+    )
+    if (
+      prevUserMessage.messageRole === "user" &&
+      fileIdsFromDB &&
+      fileIdsFromDB.length > 0
+    ) {
+      fileIds = fileIdsFromDB
+    }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
       conversation = []
@@ -2127,7 +2396,13 @@ export const MessageRetryApi = async (c: Context) => {
           let answer = ""
           let citations: Citation[] = [] // Changed to Citation[] for consistency
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let parsed = {
+            answer: "",
+            queryRewrite: "",
+            temporalDirection:  null, 
+            from: null, 
+            to: null
+          }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -2229,7 +2504,9 @@ export const MessageRetryApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection,
+              direction: parsed?.temporalDirection,
+              from: parsed?.from,
+              to: parsed?.to,
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
@@ -2239,6 +2516,7 @@ export const MessageRetryApi = async (c: Context) => {
               classification,
               convWithNoErrMsg,
               0.5,
+              fileIds,
               understandSpan,
             )
             // throw new Error("Hello, how are u doing?")
