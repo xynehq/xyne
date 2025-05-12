@@ -138,7 +138,7 @@ const availableSources: SourceItem[] = [
 
 const getPillDisplayTitle = (title: string): string => {
   const truncatedTitle =
-    title.length > 25 ? title.substring(0, 15) : title; // Removed + ""
+    title.length > 25 ? title.substring(0, 15) : title;
   return truncatedTitle;
 };
 
@@ -863,7 +863,7 @@ export const ChatBox = ({
   }, [showReferenceBox, activeAtMentionIndex])
 
   return (
-    <div className="relative flex flex-col w-full max-w-3xl">
+    <div className="relative flex flex-col w-full max-w-3xl pb-5">
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
