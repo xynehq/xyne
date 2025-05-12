@@ -59,7 +59,7 @@ import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSESt
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa, SearchModes } from "@/search/vespa"
+import { searchVespa, SearchModes, searchVespaInFiles } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
@@ -961,6 +961,191 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   queryRagSpan?.end()
 }
 
+async function* generateAnswerFromGivenContext(
+  input: string,
+  email: string,
+  userCtx: string,
+  alpha: number = 0.5,
+  fileIds: string[],
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
+  const message = input
+  let userAlpha = alpha
+  try {
+    const personalization = await getUserPersonalizationByEmail(db, email)
+    if (personalization) {
+      const nativeRankParams =
+        personalization.parameters?.[SearchModes.NativeRank]
+      if (nativeRankParams?.alpha !== undefined) {
+        userAlpha = nativeRankParams.alpha
+        Logger.info(
+          { email, alpha: userAlpha },
+          "Using personalized alpha for iterative RAG",
+        )
+      } else {
+        Logger.info(
+          { email },
+          "No personalized alpha found in settings, using default for iterative RAG",
+        )
+      }
+    } else {
+      Logger.warn(
+        { email },
+        "User personalization settings not found, using default alpha for iterative RAG",
+      )
+    }
+  } catch (err) {
+    Logger.error(
+      err,
+      "Failed to fetch personalization for iterative RAG, using default alpha",
+      { email },
+    )
+  }
+
+  const selectedFiles = fileIds && fileIds.length > 0
+
+  let previousResultsLength = 0
+  if (selectedFiles) {
+    let results = await searchVespaInFiles(message, email, fileIds, {
+      limit: fileIds?.length,
+      alpha: userAlpha,
+    })
+    if (!results.root.children) {
+      results.root.children = []
+    }
+    const startIndex = isReasoning ? previousResultsLength : 0
+    const initialContext = cleanContext(
+      results?.root?.children
+        ?.map(
+          (v, i) =>
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
+        )
+        ?.join("\n"),
+    )
+    Logger.info(
+      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+    )
+
+    const iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: isReasoning,
+      },
+      true,
+    )
+
+    let buffer = ""
+    let currentAnswer = ""
+    let parsed = { answer: "" }
+    let thinking = ""
+    let reasoning = isReasoning
+    let yieldedCitations = new Set<number>()
+    // tied to the json format and output expected, we expect the answer key to be present
+    const ANSWER_TOKEN = '"answer":'
+    for await (const chunk of iterator) {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            // first time
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+
+        if (!reasoning) {
+          buffer += chunk.text
+          try {
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
+            if (parsed.answer === null) {
+              break
+            }
+            if (parsed.answer && currentAnswer !== parsed.answer) {
+              if (currentAnswer === "") {
+                // First valid answer - send the whole thing
+                yield { text: parsed.answer }
+              } else {
+                // Subsequent chunks - send only the new part
+                const newText = parsed.answer.slice(currentAnswer.length)
+                yield { text: newText }
+              }
+              // Extract all citations from the parsed answer
+              // const citationSpan = chunkSpan.startSpan("check_citations")
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              currentAnswer = parsed.answer
+            }
+          } catch (err) {
+            const errMessage = (err as Error).message
+            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+            continue
+          }
+        }
+      }
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+    }
+    if (parsed.answer) {
+      return
+    } else if (
+      // Condition if fileIds are present has some values meaning context has been selected.
+      // If no answer found, exit and yield nothing related to selected context found
+      !parsed?.answer
+    ) {
+      yield {
+        text: "From the selected context, I could not find any information to answer it, please change your query",
+      }
+      return
+    }
+    if (isReasoning) {
+      previousResultsLength += results?.root?.children?.length || 0
+    }
+  }
+}
+
 const getSearchRangeSummary = (
   from: number,
   to: number,
@@ -1353,6 +1538,7 @@ export async function* UnderstandMessageAndAnswer(
   classification: TemporalClassifier,
   messages: Message[],
   alpha: number,
+  fileIds: string[],
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1365,8 +1551,19 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
-  // user is talking about an event
-  if (classification.direction !== null) {
+  if (fileIds && fileIds?.length > 0) {
+    Logger.info(
+      "User has selected some context with query, answering only based on that given context",
+    )
+    return yield* generateAnswerFromGivenContext(
+      message,
+      email,
+      userCtx,
+      alpha,
+      fileIds,
+    )
+  } else if (classification.direction !== null) {
+    // user is talking about an event
     Logger.info(
       `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
     )
@@ -1445,7 +1642,10 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId }: MessageReqType = body
+    let { message, chatId, modelId, stringifiedfileIds }: MessageReqType = body
+    const fileIds: string[] = stringifiedfileIds
+      ? JSON.parse(stringifiedfileIds)
+      : []
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1505,6 +1705,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            fileIds: fileIds,
           })
           return [chat, insertedMsg]
         },
@@ -1533,6 +1734,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
         },
@@ -1722,6 +1924,7 @@ export const MessageApi = async (c: Context) => {
               classification,
               messagesWithNoErrResponse,
               0.5,
+              fileIds,
               understandSpan,
             )
             stream.writeSSE({
@@ -2121,6 +2324,17 @@ export const MessageRetryApi = async (c: Context) => {
     const prevUserMessage = isUserMessage
       ? originalMessage
       : conversation[conversation.length - 1]
+    let fileIds: string[] = []
+    const fileIdsFromDB = JSON.parse(
+      JSON.stringify(prevUserMessage?.fileIds || []),
+    )
+    if (
+      prevUserMessage.messageRole === "user" &&
+      fileIdsFromDB &&
+      fileIdsFromDB.length > 0
+    ) {
+      fileIds = fileIdsFromDB
+    }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
       conversation = []
@@ -2302,6 +2516,7 @@ export const MessageRetryApi = async (c: Context) => {
               classification,
               convWithNoErrMsg,
               0.5,
+              fileIds,
               understandSpan,
             )
             // throw new Error("Hello, how are u doing?")
