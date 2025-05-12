@@ -29,6 +29,18 @@ export const ChatBox = ({
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto"; // Reset height to allow scrollHeight to be calculated correctly
+      const scrollHeight = inputRef.current.scrollHeight;
+      const minHeight = 40; // As per inline style
+      const maxHeight = 320; // As per inline style
+      const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight));
+      inputRef.current.style.height = `${newHeight}px`;
+    }
+  }, [query]); // Adjust height when query changes
+
   return (
     <div className="flex flex-col w-full border rounded-[20px] sticky bottom-[20px] bg-white  max-w-3xl">
       <div className="relative flex items-center">
@@ -48,7 +60,7 @@ export const ChatBox = ({
           style={{
             height: "auto",
             minHeight: "40px",
-            maxHeight: "108px",
+            maxHeight: "320px",
           }}
         />
       </div>
