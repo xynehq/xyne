@@ -45,6 +45,7 @@ import { MessageRole, Subsystem } from "@/types"
 import {
   getErrorMessage,
   getRelativeTime,
+  interpretDateFromReturnedTemporalValue,
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import {
@@ -971,8 +972,34 @@ const getSearchRangeSummary = (
   summarySpan?.setAttribute("to", to)
   summarySpan?.setAttribute("direction", direction)
   const now = Date.now()
+  if ((direction === "next" || direction === "prev") && (from && to) ) {
+    // Ensure from is earlier than to
+    if (from > to) {
+      [from, to] = [to, from]
+    }
+
+    const fromDate = new Date(from)
+    const toDate = new Date(to)
+
+    const format = (date: Date) =>
+      `${date.toLocaleString("default", { month: "long" })} ${date.getDate()}, ${date.getFullYear()} - ${formatTime(date)}`
+
+    const formatTime = (date: Date) => {
+      const hours = date.getHours()
+      const minutes = date.getMinutes()
+      const ampm = hours >= 12 ? "PM" : "AM"
+      const hour12 = hours % 12 === 0 ? 12 : hours % 12
+      const paddedMinutes = minutes.toString().padStart(2, "0")
+      return `${hour12}:${paddedMinutes} ${ampm}`
+    }
+
+    fromDate.setHours(0, 0, 0, 0)
+    toDate.setHours(23, 59, 0, 0)
+
+    return `from ${format(fromDate)} to ${format(toDate)}`
+  } 
   // For "next" direction, we usually start from now
-  if (direction === "next") {
+  else if (direction === "next") {
     // Start from today/now
     const endDate = new Date(to)
     // Format end date to month/year if it's far in future
@@ -984,7 +1011,7 @@ const getSearchRangeSummary = (
     summarySpan?.setAttribute("result", result)
     summarySpan?.end()
     return result
-  }
+  }  
   // For "prev" direction
   else {
     const startDate = new Date(from)
@@ -1029,25 +1056,44 @@ async function* generatePointQueryTimeExpansion(
   const direction = classification.direction as string
   let costArr: number[] = []
 
-  let from = new Date().getTime()
-  let to = new Date().getTime()
+  const { fromDate, toDate } =
+    interpretDateFromReturnedTemporalValue(classification)
+
+  let from = fromDate ? fromDate.getTime() : new Date().getTime()
+  let to = toDate ? toDate.getTime() : new Date().getTime()
   let lastSearchedTime = direction === "prev" ? from : to
 
   let previousResultsLength = 0
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
+  const loopLimit = (fromDate && toDate) ? 2 : maxIterations
+
+  for (let iteration = 0; iteration < loopLimit; iteration++) {
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
     iterationSpan?.setAttribute("iteration", iteration)
     const windowSize = (2 + iteration) * weekInMs
 
     if (direction === "prev") {
-      to = lastSearchedTime
-      from = to - windowSize
-      lastSearchedTime = from
+      // If we have both the from and to time range we search only for that range
+      if(fromDate && toDate) {
+        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      }
+      // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date 
+      else {
+        to = toDate ? to : lastSearchedTime
+        from = to - windowSize
+        lastSearchedTime = from
+      }
+     
     } else {
-      from = lastSearchedTime
+      if(fromDate && toDate) {
+        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      }
+      // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date 
+      else {
+      from = fromDate ? from : lastSearchedTime
       to = from + windowSize
       lastSearchedTime = to
-    }
+      }
+    } 
 
     Logger.info(
       `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
@@ -1282,6 +1328,7 @@ async function* generatePointQueryTimeExpansion(
         previousResultsLength,
       )
     }
+
     iterationSpan?.end()
   }
 
@@ -1552,7 +1599,13 @@ export const MessageApi = async (c: Context) => {
           let answer = ""
           let citations = []
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let parsed = {
+            answer: "",
+            queryRewrite: "",
+            temporalDirection:  null,
+            from: null,
+            to: null
+          }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -1657,7 +1710,9 @@ export const MessageApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection,
+              direction: parsed?.temporalDirection,
+              from: parsed?.from,
+              to: parsed?.to,
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
@@ -2127,7 +2182,13 @@ export const MessageRetryApi = async (c: Context) => {
           let answer = ""
           let citations: Citation[] = [] // Changed to Citation[] for consistency
           let citationMap: Record<number, number> = {}
-          let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+          let parsed = {
+            answer: "",
+            queryRewrite: "",
+            temporalDirection:  null, 
+            from: null, 
+            to: null
+          }
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -2229,7 +2290,9 @@ export const MessageRetryApi = async (c: Context) => {
               )
             }
             const classification: TemporalClassifier = {
-              direction: parsed.temporalDirection,
+              direction: parsed?.temporalDirection,
+              from: parsed?.from,
+              to: parsed?.to,
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(
