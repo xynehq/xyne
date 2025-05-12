@@ -228,7 +228,7 @@ export const ChatBox = ({
   const [activeAtMentionIndex, setActiveAtMentionIndex] = useState(-1)
   const [referenceSearchTerm, setReferenceSearchTerm] = useState("")
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
-  const [showSourcesButton, setShowSourcesButton] = useState(false) // Added this line
+  const [showSourcesButton, _] = useState(false) // Added this line
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
