@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button"
-import { RotateCcw } from "lucide-react"
 import {
   createFileRoute,
   redirect,
@@ -46,7 +45,8 @@ const submitServiceAccountForm = async (
     form: {
       "service-key": value.file,
       app: Apps.GoogleDrive,
-      email: value.email, // Pass email along with the file
+      email: value.email,
+      whitelistedEmails: value.whitelistedEmails,
     },
   })
   if (!response.ok) {
@@ -92,6 +92,7 @@ const submitOAuthForm = async (
 type ServiceAccountFormData = {
   email: string
   file: any
+  whitelistedEmails?: string
 }
 
 type OAuthFormData = {
@@ -111,7 +112,7 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value, navigate) // Call the async function
+        await submitOAuthForm(value, navigate)
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
@@ -227,6 +228,7 @@ export const ServiceAccountForm = ({
     defaultValues: {
       email: "",
       file: null,
+      whitelistedEmails: "",
     },
     onSubmit: async ({ value }) => {
       if (!value.file) {
@@ -284,6 +286,22 @@ export const ServiceAccountForm = ({
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
+          </>
+        )}
+      />
+
+      <Label htmlFor="whitelisted-emails">Whitelisted Emails (Optional)</Label>
+      <form.Field
+        name="whitelistedEmails"
+        children={(field) => (
+          <>
+            <Input
+              id="whitelisted-emails"
+              type="text"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="user1@example.com,user2@example.com"
+            />
           </>
         )}
       />
@@ -394,12 +412,143 @@ export const deleteOauthConnector = async (connectorId: string) => {
     )
   }
 }
+
+type IngestMoreSAFormData = {
+  connectorId: string
+  emails: string
+}
+
+const submitIngestMoreSAForm = async (
+  value: IngestMoreSAFormData & { emailsList: string[] },
+  navigate: UseNavigateResult<string>,
+) => {
+  const response = await api.admin.google.service_account.ingest_more.$post({
+    json: {
+      connectorId: value.connectorId,
+      emailsToIngest: value.emailsList,
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to ingest more users: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
+const IngestMoreUsersForm = ({
+  connectorId,
+  onSuccess,
+  setIsIngestingMore,
+}: {
+  connectorId: string
+  onSuccess: () => void
+  setIsIngestingMore: (isIngesting: boolean) => void
+}) => {
+  const { toast } = useToast()
+  const navigate = useNavigate()
+
+  const form = useForm<IngestMoreSAFormData>({
+    defaultValues: {
+      connectorId: connectorId,
+      emails: "",
+    },
+    onSubmit: async ({ value }) => {
+      const emailsList = value.emails
+        .split(",")
+        .map((e) => e.trim())
+        .filter((e) => e)
+      if (emailsList.length === 0) {
+        toast({
+          title: "No emails provided",
+          description: "Please enter at least one email address.",
+          variant: "destructive",
+        })
+        return
+      }
+      setIsIngestingMore(true)
+      try {
+        await submitIngestMoreSAForm({ ...value, emailsList }, navigate)
+        toast({
+          title: "Ingestion started for additional users",
+          description: "Processing is underway. See progress updates.",
+        })
+        onSuccess()
+        form.reset()
+      } catch (error) {
+        toast({
+          title: "Could not start ingestion for additional users",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: "destructive",
+        })
+      } finally {
+        setIsIngestingMore(false)
+      }
+    },
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        form.handleSubmit()
+      }}
+      className="grid w-full max-w-sm items-center gap-1.5 mt-4"
+    >
+      <Label htmlFor="ingest-more-emails">
+        Whitelisted Emails (comma-separated)
+      </Label>
+      <form.Field
+        name="emails"
+        validators={{
+          onChange: ({ value }) =>
+            !value ||
+            value
+              .split(",")
+              .map((e) => e.trim())
+              .filter((e) => e).length === 0
+              ? "At least one email is required"
+              : undefined,
+        }}
+        children={(field) => (
+          <>
+            <Input
+              id="ingest-more-emails"
+              type="text"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="user1@example.com,user2@example.com"
+            />
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <p className="text-red-600 text-sm">
+                {field.state.meta.errors.join(", ")}
+              </p>
+            ) : null}
+          </>
+        )}
+      />
+      <Button type="submit" disabled={form.state.isSubmitting}>
+        {form.state.isSubmitting ? (
+          <LoadingSpinner className="mr-2 h-4 w-4" />
+        ) : null}
+        Ingest More Users
+      </Button>
+    </form>
+  )
+}
+
 const ServiceAccountTab = ({
   connectors,
   onSuccess,
   isIntegrating,
   progress,
   refetch,
+  userStats,
 }: {
   connectors: Connectors[]
   updateStatus: string
@@ -412,7 +561,23 @@ const ServiceAccountTab = ({
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
   )
-  if (!isIntegrating && !googleSAConnector) {
+  const [isIngestingMore, setIsIngestingMore] = useState(false)
+
+  if (
+    isIntegrating &&
+    googleSAConnector &&
+    googleSAConnector.status === ConnectorStatus.Connecting
+  ) {
+    return (
+      <CardHeader>
+        <CardTitle>Google Workspace</CardTitle>
+        <CardDescription>Connecting {progress}%</CardDescription>
+        <Progress value={progress} className="p-0 w-[60%]" />
+      </CardHeader>
+    )
+  }
+
+  if (!googleSAConnector && !isIntegrating) {
     return (
       <Card>
         <CardHeader>
@@ -428,33 +593,55 @@ const ServiceAccountTab = ({
     )
   } else if (googleSAConnector) {
     return (
-      <CardHeader>
-        <CardTitle>Google Workspace</CardTitle>
-        {googleSAConnector.status === ConnectorStatus.Connecting ? (
-          <>
-            <CardDescription>Connecting {progress}%</CardDescription>
-            <Progress value={progress} className="p-0 w-[60%]" />
-          </>
-        ) : (
-          <>
-            <CardDescription>
-              Status: {googleSAConnector.status}
+      <Card>
+        <CardHeader>
+          <CardTitle>Google Workspace Service Account</CardTitle>
+          {googleSAConnector.status === ConnectorStatus.Connecting &&
+          !isIngestingMore ? (
+            <>
+              <CardDescription>Connecting {progress}%</CardDescription>
+              <Progress value={progress} className="p-0 w-[60%]" />
+            </>
+          ) : (
+            <>
+              <CardDescription>
+                Status: {googleSAConnector.status}
+              </CardDescription>
+            </>
+          )}
+        </CardHeader>
+        {googleSAConnector.status === ConnectorStatus.Connected && (
+          <CardContent>
+            <CardTitle className="text-md mb-1">Ingest More Users</CardTitle>
+            <CardDescription className="mb-3 text-sm">
+              Add more users to service account. Enter comma-separated emails.
             </CardDescription>
-          </>
+            <IngestMoreUsersForm
+              connectorId={(googleSAConnector as any).id}
+              onSuccess={() => {
+                refetch()
+              }}
+              setIsIngestingMore={setIsIngestingMore}
+            />
+            {isIngestingMore && (
+              <div className="mt-4">
+                <CardDescription>
+                  Ingesting additional users...{" "}
+                  {progress > 0 && progress < 100 ? `${progress}%` : ""}
+                </CardDescription>
+                {progress > 0 && progress < 100 && (
+                  <Progress value={progress} className="p-0 w-[60%] mt-1" />
+                )}
+              </div>
+            )}
+          </CardContent>
         )}
-
-        <button
-          className="flex justify-end w-full"
-          onClick={() => {
-            // restart the ingestion of that connector
-          }}
-        >
-          <RotateCcw stroke={"hsl(220 8.9% 46.1%)"} size={18} />
-        </button>
-      </CardHeader>
+      </Card>
     )
   }
+  return <LoaderContent />
 }
+
 export const showUserStats = (
   userStats: { [email: string]: any },
   activeTab: string,
