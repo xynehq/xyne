@@ -1190,7 +1190,7 @@ export const ChatBox = ({
               input.focus(); // Re-focus the input
             }}
           />
-          {showSourcesButton && ( // Added this condition
+          {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
             <DropdownMenu
               open={isSourceMenuOpen}
               onOpenChange={setIsSourceMenuOpen}
