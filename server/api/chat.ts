@@ -623,7 +623,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     classification.filters.app &&
     classification.filters.entity
   ) {
-    Logger.info("User requested metadata search")
+    Logger.info("User requested metadata search : Non Temporal Search")
     const metadataSearchSpan = rootSpan?.startSpan("metadata_results_search")
 
     let { app, entity } = classification.filters
@@ -1089,7 +1089,7 @@ async function* generatePointQueryTimeExpansion(
     classification.type == QueryType.RetrieveMetadata && startTime && endTime
 
   if (isMetadataRetrieval) {
-    Logger.info(`User requested metadata search`)
+    Logger.info(`User requested metadata search : Temporal Metadata Retrieval`)
 
     let { app, count, entity } = classification.filters
     const isValidAppAndEntity =

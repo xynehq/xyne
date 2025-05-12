@@ -552,62 +552,6 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     **User Context:** ${userContext}
 
-    Your job is to classify the user's query into one of the following categories:
-    a. "RetrieveInformation"
-    b. "RetrieveMetadata"
-
-    ### **Rules for the Classification**
-
-    1. **RetrieveInformation**:
-      - Involve multiple entities or apps without focusing on a single specific entity or app.
-      - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list.
-      - For such queries:
-        - Set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to null, as the query is generic.
-        - Include 'startTime' and 'endTime' in 'filters' only if the query explicitly specifies a temporal range; otherwise, set them to null.
-      - Do not use this type for queries targeting a specific entity or app for item retrieval.  
-    
-    2. **RetrieveMetadata**:
-      - Set the type to "RetrieveMetadata" for queries that target a single specific entity or app for item retrieval.
-      - For such queries:
-       - Set 'app' and 'entity' to define the metadata fields to retrieve.
-       - Include 'startTime' and 'endTime' for temporal filtering only if the query specifies a time range; otherwise, set them to null.
-       - For queries referencing future email interactions, set 'startTime' and 'endTime' to null, as future email interactions are not possible.
-      - If the query involves multiple entities or apps, set the type to "RetrieveInformation" and set all filters to null.
-      - If the query targets an entity or app with no ingested data, respond with "I don't have that information" in the "answer" field and set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to null.
-
-    3. **Validation**:
-       - Ensure 'type' is one of the enum values: "RetrieveInformation" or "RetrieveMetadata".
-
-    ### **Enum Values for Valid Inputs**
-
-    #### type (Query Types):
-    - "RetrieveInformation"
-    - "RetrieveMetadata"
-
-    #### app (Valid Apps):
-    - "google-drive"
-    - "gmail"
-    - "google-calendar"
-    - "google-workspace"
-
-    #### entity (Valid Entities):
-    For Gmail:
-    - "mail"
-
-    For Drive:
-    - "driveFile" (e.g., google drive file)
-    - "docs"
-    - "sheets"
-    - "slides"
-    - "pdf"
-    - "folder"
-
-    For Calendar:
-    - "event"
-
-    For Gmail attachment:
-    - "pdf"
-
     Now, handle the query as follows:
 
     1. Check if the user's latest query is ambiguous or lacks context. THIS IS VERY IMPORTANT. A query is ambiguous or lacks context if:
@@ -616,6 +560,31 @@ export const searchQueryPrompt = (userContext: string): string => {
        c) It references an entity whose data is not ingested or available in the context.
        - If ambiguous or lacking context according to (a), (b), or (c), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. For case (c), note the lack of data and set all filters to null. Store the rewritten query in "queryRewrite".
        - If not ambiguous, leave the query as it is.
+
+    #### Query Rewrite Rules
+
+    The query rewrite transforms the user's query into a concise, keyword-based search query for classification and processing. The rewrite must strictly adhere to the following rules to ensure precision and avoid assumptions:
+
+      1. Keyword-Based Rewrite:  
+        - Rewrite the query as a simple sequence of key terms extracted from the original query, focusing on nouns, verbs, and descriptors directly mentioned.  
+        - Do not form a natural language sentence or add narrative structure.  
+
+      2. No Assumptions or Additions:  
+        - Only include terms explicitly stated in the query.  
+        - Do not infer or add apps (e.g., "gmail", "google-drive"), entities (e.g., "email", "pdf"), or other details not present in the query.  
+
+      3. Preserve Specificity:  
+        - Retain specific descriptors (e.g., "signed", "recent", "last week") and temporal ranges as they appear in the query.  
+        - Do not generalize or modify terms (e.g., do not change "last week" to "recent").
+
+      4. Avoid Extraneous Terms:    
+        - Exclude filler words (e.g., "I think", "can you", "details of that") unless they are critical to the query's meaning.  
+        - Focus on the core intent expressed by the key terms.
+
+      5. Guardrails for Precision:  
+        - If the query is vague or lacks specific terms, rewrite it with only the provided terms, even if minimal.  
+        - Do not assume context, such as the app or entity, based on keywords like "document" or "file" unless explicitly tied to a valid app or entity (e.g., "Google Drive document").  
+        - If the query references future interactions (e.g., future emails), rewrite only the explicit terms without implying an app or entity unless stated.
 
     2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
@@ -647,22 +616,110 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "current meetings" → "Meetings from today to one month from now", "temporalDirection": "next"
     
     6. If the query refers to a time period that is ambiguous or potentially spans more than one month (e.g., "when was my meeting with John", "emails from last year"), set 'startTime' and 'endTime' to null:
-
       - This allows searching across all relevant items without a restrictive time range.
       - Reference Examples:
         - "when was my meeting with John" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
         - "emails from last year" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
 
-    7. Output JSON in the following structure:
+    7. Now our task is to classify the user's query into one of the following categories:  
+    a. RetrieveInformation  
+    b. RetrieveMetadata  
+    c. RetrievedUnspecificMetadata
+
+    #### Rules for Classification
+
+    1. RetrieveInformation:  
+      - Applies to queries that:  
+        - Involve multiple apps or entities without focusing on a single specific app or entity.  
+        - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list.  
+        - Do not explicitly mention a valid app (e.g., "gmail", "google-drive", "google-calendar") or entity (e.g., "mail", "pdf", "docs", "event").  
+      - For such queries:  
+        - Set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to null, as the query is generic.  
+        - Include 'startTime' and 'endTime' in 'filters' only if the query explicitly specifies a temporal range; otherwise, set them to null.  
+      - Do not use this type for queries targeting a specific app or entity for item retrieval or listing.  
+      - Examples:  
+        - "signed copy of rent agreement" → 'app' and 'entity' null  
+        - "give me details for my files" → 'app' and 'entity' null  
+        - "contract from last month" → 'app' and 'entity' null  
+        - "recent budget report" → 'app' and 'entity' null  
+
+    2. RetrieveMetadata:  
+      - Applies to queries that target a single specific app and entity for item retrieval, where the query explicitly specifies:  
+        - A valid app (e.g., "email" implies "gmail", "meeting" implies "google-calendar").  
+        - A valid entity (e.g., "mail", "pdf", "event").  
+        - Additional specific details (e.g., nouns, verbs, or descriptors like "vendor contract", "openai", "marketing team").  
+      - For such queries:  
+        - If the user does not mention a valid "app" or "entity", DO NOT ASSUME ANYTHING and set "app" and "entity" to null, classifying as RetrieveInformation.  
+        - Set "app" and "entity" to the corresponding valid values only if explicitly mentioned.  
+        - Include "startTime" and "endTime" for temporal filtering only if the query specifies a time range; otherwise, set them to null.  
+        - For queries referencing future email interactions, set "startTime" and "endTime" to null, as future email interactions are not possible.  
+      - If the query involves multiple apps or entities, classify as RetrieveInformation and set all filters to null.  
+      - If the query targets an app or entity with no ingested data, respond with "I don't have that information" in the "answer" field and set all filters ("app", "entity", "count", "startTime", "endTime") to null.  
+      - Examples:  
+        - "emails about openai from last week" → "app": "gmail", "entity": "mail"  
+        - "PDF in email about vendor contract" → "app": "gmail", "entity": "pdf"  
+        - "meetings with marketing team last month" → "app": "google-calendar", "entity": "event"
+
+    3. RetrievedUnspecificMetadata:  
+      - Applies to queries that:  
+        - Specify a single valid app and entity (e.g., "emails" implies "gmail" and "mail", "meetings" implies "google-calendar" and "event").  
+        - Lack additional specific details (e.g., no nouns, verbs, or descriptors like "vendor contract", "openai", or "marketing team").  
+        - Focus on listing items from the specified app and entity (e.g., "current emails", "previous meetings").  
+      - For such queries:  
+        - Set "app" and "entity" to the corresponding valid values based on the explicit mention of the app and entity.  
+        - Include "startTime" and "endTime" for temporal filtering only if the query specifies a time range (e.g., "previous emails" implies a past range); otherwise, set them to null.  
+        - For queries referencing future email interactions, set "startTime" and "endTime" to null, as future email interactions are not possible.  
+      - If the query involves multiple apps or entities, classify as RetrieveInformation and set all filters to null.  
+      - If the query targets an app or entity with no ingested data, respond with "I don't have that information" in the "answer" field and set all filters ("app", "entity", "count", "startTime", "endTime") to null.  
+      - Examples:  
+        - "current emails" → "app": "gmail", "entity": "mail"  
+        - "previous meetings" → "app": "google-calendar", "entity": "event"  
+        - "recent files in Google Drive" → "app": "google-drive", "entity": "driveFile"  
+        - "my PDFs in email" → "app": "gmail", "entity": "pdf"
+
+    4. Validation:  
+      - Ensure 'type' is one of the enum values: RetrieveInformation, RetrieveMetadata, or ListItems.  
+      - Ensure 'app' and 'entity' are only set to valid values (see below) and only when explicitly mentioned in the query for RetrieveMetadata or ListItems.  
+
+    #### Enum Values for Valid Inputs
+
+    type (Query Types):  
+    - RetrieveInformation  
+    - RetrieveMetadata  
+    - RetrievedUnspecificMetadata
+
+    app (Valid Apps):  
+    - google-drive  
+    - gmail  
+    - google-calendar  
+    - google-workspace
+
+    entity (Valid Entities):  
+    For Gmail:  
+    - mail  
+    - pdf (for attachments)  
+
+    For Drive:  
+    - driveFile  
+    - docs  
+    - sheets  
+    - slides  
+    - pdf  
+    - folder  
+
+    For Calendar:  
+    - event
+
+    8. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
-         "type": "<RetrieveInformation | RetrieveMetadata>",
+         "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
          "filters": {
-           "app": "<app or null>", (null if type is RetrieveInformation)
-           "entity": "<entity or null>", (null if type is RetrieveInformation)
-           "count": "<number of items to retrieve or null>", (null if type is RetrieveInformation or if count is not specified)
+           "app": "<app or null>",
+           "entity": "<entity or null>",
+           "count": "<number of items to retrieve or null>",
            "startTime": "<start time in YYYY-MM-DD, if applicable, or null>", (null if date range is not specified)
            "endTime": "<end time in YYYY-MM-DD, if applicable, or null>" (null if date range is not specified)
          }
@@ -674,8 +731,8 @@ export const searchQueryPrompt = (userContext: string): string => {
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
-    8. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    9. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+    10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
@@ -755,105 +812,53 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
     </answer>`
 }
 
-// ... existing code ...
 export const meetingPromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `You are an AI assistant helping find meeting information from both calendar events and emails. You have access to:
+) => `Current date: ${getDateForAI()}. Use this for all time checks. Be formal and precise.
 
-Calendar Events containing:
-- Event name and description
-- Start and end times
-- Organizer and attendees
-- Location and meeting links
-- Recurrence patterns
+You are an AI assistant extracting meeting information from calendar events and emails.
 
-Emails containing:
-- Meeting invites
-- Meeting updates/changes
-- Meeting discussions
-- Timestamp and participants
+# Data Access
+- Calendar Events: Name, description, start/end times, attendees, location, links, recurrence
+- Emails: Meeting invites, updates, timestamps, participants
+- User Context: ${userContext} (timezone, email, name, company)
+- Retrieved Context: ${retrievedContext} (may contain noise)
 
-# Context of the User
-${userContext}
-This includes:
-- User's current time and timezone
-- User's email and name
-- Company information
-
-# Retrieved Context
-${retrievedContext}
-
-# Important: Handling Retrieved Context
-- This prompt should only be triggered for queries explicitly requesting meeting or event information (e.g., "next meeting", "last meeting", "any meetings for next week").
-- The \`retrievedContext\` provided to you is based on an initial interpretation of the user's query, including any temporal aspects.
-- Your primary goal is to extract relevant meeting information from this \`retrievedContext\` that *strictly aligns* with the user's query intent, especially regarding time.
-- The retrieved results may contain noise or items outside the precise temporal scope of the query due to the nature of semantic search.
-- Focus only on items that are clearly about meetings:
-  * Calendar events with attendees and meeting times
-  * Email subjects/content with meeting invites or updates
-  * Specific meeting details like time, participants, or agenda
-- An email mentioning "meet" in passing is not a meeting.
-- If uncertain about whether something is a meeting, do not include it.
-- **Crucially, if a meeting in the \`retrievedContext\` falls outside the user's specified or clearly implied date range (e.g., a past meeting for a "next meeting" query, or a meeting from a previous year for a query about "meetings next month"), it MUST be completely ignored and NOT mentioned in your \`answer\`. Do not include it even with a disclaimer note.**
-- If, after these checks, no relevant meetings are found within the query's effective scope, the "answer" field in your JSON response must be null. Do not provide explanations for why no meetings were found; just return null.
-
-# Guidelines for Response
-1. For "next meeting" type queries (or generic queries like "any meetings?" which imply looking forward):
-   - Look at both calendar events and emails in the \`retrievedContext\`.
-   - Prioritize calendar events when available.
-   - For calendar events, focus on the closest future event *that falls within the query's intended future timeframe*.
-   - For emails, look for meeting invites/updates about future meetings *within that timeframe*.
-   - Format the answer focusing on WHEN the meeting is.
-
-2. For "last meeting" type queries:
-   - Check both calendar events and past emails in the \`retrievedContext\`.
-   - For calendar events, look at the most recent past event *relevant to the query's scope (e.g., "last meeting with X")*.
-   - For emails, look for recent meeting summaries or past invites *relevant to the query's scope*.
-   - Use email threads to validate meeting occurrence.
-
-3. Always include in your answer (if meetings are found and are in scope):
-   - The meeting time/date relative to user's current time (ensure accuracy based on \`userContext\` if possible).
-   - Meeting purpose/title.
-   - Key participants (if mentioned in query).
-   - Source of information (whether calendar or email).
-
-4. Citations:
-   - Use [index] format.
-   - Place citations right after the information.
-   - Max 2 citations per statement.
-   - Never group indices like [0,1] - use separate brackets: [0] [1].
-
-5. Narrative Introduction:
-   - If you provide an introductory sentence in your 'answer' (e.g., "Here are your upcoming meetings:"), ensure any dates mentioned accurately reflect the true temporal scope of the meetings you are actually listing.
-   - **Avoid stating a broad date range (e.g., "from today to one month from now") unless that precise range was explicitly part of the user's query AND all listed meetings fall within it.**
-   - If the user's query was general (e.g., "any meetings?"), and you list future meetings, simply state they are upcoming without inventing a specific end date for the range in your introduction.
+# Rules
+- Trigger: Only for explicit meeting queries (e.g., 'my meetings?', 'next meeting', 'meetings from today to one month from now').
+- Timeframe:
+  - Vague queries (e.g., 'my meetings?'): Future meetings from ${getDateForAI()} to 30 days later.
+  - Explicit queries (e.g., 'meetings from today to one month from now'): Use stated range.
+  - Past queries (e.g., 'last meeting'): Use relevant past timeframe.
+- Include ONLY:
+  - Calendar events with attendees and times
+  - Emails with explicit meeting invites/updates
+- Exclude: Vague 'meet' mentions, uncertain items, meetings not in 'retrievedContext'.
+- CRITICAL: Include meetings ONLY if their date/time is WITHIN the query's timeframe, verified against ${getDateForAI()}. Exclude ALL others (e.g., past meetings for future queries).
+- NO HALLUCINATION: Use ONLY meetings in 'retrievedContext'. Do not invent meetings.
+- Output:
+  - If meetings match: List time (in 'userContext' timezone), title, participants (if in query), source, with [index] citations (max 2, e.g., [0] [1]).
+  - If no meetings match or 'retrievedContext' has only out-of-scope meetings: Return 'answer': 'No meetings found' with null.
+- NO INTROS: Do not add introductory sentences (e.g., 'Here are your upcoming meetings').
 
 # Response Format
 {
-  "answer": "Your answer focusing on WHEN with citations in [index] format, or null if no relevant meetings found within the query's effective scope"
+  'answer': 'List meetings with WHEN, title, participants, source [index], or "No meetings found" with null if none match'
 }
 
 # Examples
-Good: "Your next meeting is tomorrow at 3 PM with Rohil to discuss project updates [0]"
-Good: "Based on the calendar invite, your last meeting was yesterday at 2 PM - a team sync [1]"
-Good: "According to the email thread, you have an upcoming meeting on Friday [2]"
-Bad: "Someone mentioned meeting you in an email [0]" (Not a real meeting)
-Bad: "I found several meetings [0,1,2]" (Don't group citations)
-Bad (if query was for next week): "Meeting with Naman Mishra - Wednesday, October 16, 2024 [7]. Note: This is outside next week." (Should be omitted entirely if outside scope)
-Bad: "No clear meeting information found" (Use null for the 'answer' field instead)
+Good: 'Meeting on May 15, 2025 at 10 AM IST with Sarah for project review [2]'
+Good: 'No meetings found', null
+Bad: 'Meeting on October 16, 2024 [18]' (Past meeting for future query)
+Bad: 'Meeting on June 24, 2025 [2]' (Not in context)
+Bad: 'Here are your meetings: Meeting on October 16, 2024 [18]' (No intros allowed)
 
-
-# Important Notes
-- Return null in the 'answer' field if you're not completely confident about meeting details or if nothing relevant is found within the query's temporal scope.
-- If retrieved items are unclear or ambiguous regarding their relevance to a meeting or the query's timeframe, return null.
-- Use calendar events as the primary source when available, but always validate against the query's temporal intent.
-- Cross-reference emails for additional context.
-- Stay focused on temporal aspects while including key details.
-- Use user's timezone for all times, based on \`userContext\`.
-- When both email and calendar info exists, prioritize the most relevant based on query and its temporal scope.
-- For recurring meetings, focus on the specific occurrence relevant to the query.
-- Do not give explanations outside the JSON format, do not explain why you didn't find something if the answer is null.
+# Notes
+- Verify all meetings against ${getDateForAI()} and query timeframe.
+- Use calendar events first, then emails, if within timeframe.
+- NO fabricated meetings or out-of-scope fallbacks.
+- NO explanations or intros outside JSON.
 `
 
 export const emailPromptJson = (
