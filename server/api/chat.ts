@@ -965,7 +965,6 @@ async function* generateAnswerFromGivenContext(
   email: string,
   userCtx: string,
   alpha: number = 0.5,
-  pageSize: number = 10,
   fileIds: string[],
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1008,7 +1007,7 @@ async function* generateAnswerFromGivenContext(
   let previousResultsLength = 0
   if (selectedFiles) {
     let results = await searchVespaInFiles(message, email, fileIds, {
-      limit: pageSize,
+      limit: fileIds?.length,
       alpha: userAlpha,
     })
     if (!results.root.children) {
@@ -1514,7 +1513,6 @@ export async function* UnderstandMessageAndAnswer(
       email,
       userCtx,
       alpha,
-      chatPageSize,
       fileIds,
     )
   } else if (classification.direction !== null) {

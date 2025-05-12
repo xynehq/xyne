@@ -376,56 +376,8 @@ export const HybridDefaultProfileInFiles = (
   hits: number,
   profile: SearchModes = SearchModes.NativeRank,
   fileIds: string[],
-  timestampRange?: { to: number | null; from: number | null } | null,
-  excludedIds?: string[],
   notInMailLabels?: string[],
 ): YqlProfile => {
-  let fileTimestamp = ""
-  let mailTimestamp = ""
-  let userTimestamp = ""
-  let eventTimestamp = ""
-
-  if (timestampRange && !timestampRange.from && !timestampRange.to) {
-    throw new Error("Invalid timestamp range")
-  }
-
-  let fileTimestampConditions: string[] = []
-  let mailTimestampConditions: string[] = []
-  let userTimestampConditions: string[] = []
-  let eventTimestampConditions: string[] = []
-
-  if (timestampRange && timestampRange.from) {
-    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
-    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
-    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
-    eventTimestampConditions.push(`startTime >= ${timestampRange.from}`) // Using startTime for events
-  }
-  if (timestampRange && timestampRange.to) {
-    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
-    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
-    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
-    eventTimestampConditions.push(`startTime <= ${timestampRange.to}`)
-  }
-
-  if (timestampRange && timestampRange.from && timestampRange.to) {
-    fileTimestamp = fileTimestampConditions.join(" and ")
-    mailTimestamp = mailTimestampConditions.join(" and ")
-    userTimestamp = userTimestampConditions.join(" and ")
-    eventTimestamp = eventTimestampConditions.join(" and ")
-  } else {
-    fileTimestamp = fileTimestampConditions.join("")
-    mailTimestamp = mailTimestampConditions.join("")
-    userTimestamp = userTimestampConditions.join("")
-    eventTimestamp = eventTimestampConditions.join("")
-  }
-
-  let exclusionCondition = ""
-  if (excludedIds && excludedIds.length > 0) {
-    exclusionCondition = excludedIds
-      .map((id) => `docId contains '${id}'`)
-      .join(" or ")
-  }
-
   let mailLabelQuery = ""
   if (notInMailLabels && notInMailLabels.length > 0) {
     mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
@@ -454,7 +406,6 @@ export const HybridDefaultProfileInFiles = (
               or
               ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
             )
-            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
             and permissions contains @email ${mailLabelQuery}
             ${specificContextQuery} 
           )
@@ -470,18 +421,16 @@ export const HybridDefaultProfileInFiles = (
           or
           (
             ({targetHits:${hits}}userInput(@query))
-            ${timestampRange ? `and ${userTimestamp}` : ""}
             and permissions contains @email ${specificContextQuery}
           )
           or
           (
             ({targetHits:${hits}}userInput(@query))
             and owner contains @email
-            ${timestampRange ? `and ${userTimestamp}` : ""}
             ${specificContextQuery}
           )
         )
-        ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
+      )`,
   }
 }
 
@@ -667,8 +616,6 @@ export const searchVespaInFiles = async (
     alpha = 0.5,
     limit = config.page,
     offset = 0,
-    timestampRange = null,
-    excludedIds = [],
     notInMailLabels = [],
     rankProfile = SearchModes.NativeRank,
     requestDebug = false,
@@ -676,16 +623,12 @@ export const searchVespaInFiles = async (
     maxHits = 400,
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  // Determine the timestamp cutoff based on lastUpdated
-  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
   let { yql, profile } = HybridDefaultProfileInFiles(
     limit,
     rankProfile,
     fileIds,
-    timestampRange,
-    excludedIds,
     notInMailLabels,
   )
 
