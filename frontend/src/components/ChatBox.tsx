@@ -1020,6 +1020,34 @@ export const ChatBox = ({
             ref={inputRef}
             contentEditable
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
+            onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
+              e.preventDefault();
+              const text = e.clipboardData?.getData('text/plain');
+              const currentInput = inputRef.current;
+
+              if (text && currentInput) {
+                const selection = window.getSelection();
+                if (!selection || !selection.rangeCount) return;
+
+                const range = selection.getRangeAt(0);
+                range.deleteContents(); // Remove selected text or collapsed cursor position
+
+                const textNode = document.createTextNode(text);
+                range.insertNode(textNode);
+
+                // Move cursor to the end of pasted text
+                range.setStartAfter(textNode);
+                range.collapse(true);
+                selection.removeAllRanges(); // Clear existing selection
+                selection.addRange(range); // Set new selection
+
+                // Dispatch an 'input' event to trigger the onInput handler
+                // This ensures setQuery and @mention logic runs
+                currentInput.dispatchEvent(
+                  new Event('input', { bubbles: true, cancelable: true })
+                );
+              }
+            }}
             onInput={(e) => {
               const currentInput = inputRef.current;
               if (!currentInput) return;
