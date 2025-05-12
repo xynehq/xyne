@@ -46,7 +46,7 @@ export enum QueryCategory {
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
-  // ListItems = "ListItems",
+  RetrievedUnspecificMetadata = "RetrievedUnspecificMetadata",
   RetrieveMetadata = "RetrieveMetadata",
 }
 
@@ -128,12 +128,12 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
 })
 
-// export const listItemsSchema = z.object({
-//   type: z.literal(QueryType.ListItems),
-//   filters: FiltersSchema.extend({
-//     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-//   }),
-// })
+export const RetrievedUnspecificMetadataSchema = z.object({
+  type: z.literal(QueryType.RetrievedUnspecificMetadata),
+  filters: FiltersSchema.extend({
+    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  }),
+})
 
 export const RetrieveMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveMetadata),
@@ -148,6 +148,7 @@ export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
     filters: FiltersSchema,
   }),
   RetrieveMetadataSchema,
+  RetrievedUnspecificMetadataSchema,
 ])
 
 export const QueryContextRank = z.object({

@@ -710,6 +710,9 @@ export const searchQueryPrompt = (userContext: string): string => {
     For Calendar:  
     - event
 
+    For Google-Workspace:
+     - contacts
+
     8. Output JSON in the following structure:
        {
          "answer": "<string or null>",
