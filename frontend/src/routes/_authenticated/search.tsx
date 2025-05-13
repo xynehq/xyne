@@ -236,9 +236,13 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }, [search])
 
   useEffect(() => {
+    handleSearch()
+  }, [offset])
+
+  useEffect(() => {
     setOffset(0)
     handleSearch()
-  }, [filter, offset])
+  }, [filter])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
