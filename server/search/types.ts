@@ -49,21 +49,20 @@ export enum Apps {
 }
 
 export const isValidApp = (app: string): boolean => {
-  return Object.values(Apps).includes(app as Apps)
+  return Object.values(Apps).map(v => v.toLocaleLowerCase()).includes(app.toLocaleLowerCase() as Apps)
 }
 
 export const isValidEntity = (entity: string): boolean => {
+  const normalizedEntity = entity.toLocaleLowerCase()
   return (
-    Object.values(DriveEntity).includes(entity as DriveEntity) ||
-    Object.values(MailEntity).includes(entity as MailEntity) ||
-    Object.values(CalendarEntity).includes(entity as CalendarEntity) ||
-    Object.values(MailAttachmentEntity).includes(
-      entity as MailAttachmentEntity,
-    ) ||
-    Object.values(GooglePeopleEntity).includes(entity as GooglePeopleEntity)
+    Object.values(DriveEntity).map(v => v.toLocaleLowerCase()).includes(normalizedEntity) ||
+    Object.values(MailEntity).map(v => v.toLocaleLowerCase()).includes(normalizedEntity) ||
+    Object.values(CalendarEntity).map(v => v.toLocaleLowerCase()).includes(normalizedEntity) ||
+    Object.values(MailAttachmentEntity).map(v => v.toLocaleLowerCase()).includes(normalizedEntity) ||
+    Object.values(GooglePeopleEntity).map(v => v.toLocaleLowerCase()).includes(normalizedEntity)
+    // Object.values(SlackEntity).map(v => v.toLocaleLowerCase()).includes(normalizedEntity) ||
+    // Object.values(NotionEntity).map(v => v.toLocaleLowerCase()).includes(normalizedEntity)
   )
-  // Object.values(SlackEntity).includes(entity as SlackEntity) ||
-  // Object.values(NotionEntity).includes(entity as NotionEntity)
 }
 
 export enum GooglePeopleEntity {

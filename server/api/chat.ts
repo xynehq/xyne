@@ -1507,7 +1507,9 @@ async function* generateMetadataQueryAnswer(
       return yield* processIterator(iterator, results, 0)
     }
   }
-
+  Logger.info(
+    `Not able to perform metadata search`,
+  )
   return null
 }
 
