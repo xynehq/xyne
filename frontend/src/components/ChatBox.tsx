@@ -862,6 +862,17 @@ export const ChatBox = ({
     }
   }, [showReferenceBox, activeAtMentionIndex])
 
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto"; // Reset height to allow scrollHeight to be calculated correctly
+      const scrollHeight = inputRef.current.scrollHeight;
+      const minHeight = 52; // As per inline style
+      const maxHeight = 320; // As per inline style
+      const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight));
+      inputRef.current.style.height = `${newHeight}px`;
+    }
+  }, [query]);
+
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
       {showReferenceBox && (
@@ -1127,7 +1138,7 @@ export const ChatBox = ({
             }}
             style={{
               minHeight: "52px",
-              maxHeight: "150px",
+              maxHeight: "320px",
             }}
             onFocus={(e) => {
               const target = e.target
