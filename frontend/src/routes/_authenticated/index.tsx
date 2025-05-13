@@ -129,7 +129,6 @@ const Index = () => {
 
   const handleAsk = (
     messageToSend: string,
-    // isReasoningEnabled: boolean, // Removed parameter
     references: LocalReference[], 
     selectedSources?: string[]
   ) => {
@@ -137,8 +136,8 @@ const Index = () => {
       const searchParams: { q: string; reasoning?: boolean; refs?: string; sources?: string } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
-      if (isReasoningActive) { // Use component state
-        searchParams.reasoning = true // Set 'reasoning' to align with chat.tsx Zod schema
+      if (isReasoningActive) {
+        searchParams.reasoning = true
       }
 
       if (references && references.length > 0) {
