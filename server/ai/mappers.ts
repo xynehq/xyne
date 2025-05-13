@@ -236,6 +236,15 @@ export const modelDetailsMap: Record<
       },
     },
   },
+  [Models.Gemini_2_5_Pro_Preview]: {
+    name: "Gemini 2.5 Pro Preview",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.0025,
+        pricePerThousandOutputTokens: 0.01,
+      },
+    },
+  },
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {
@@ -258,4 +267,5 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Amazon_Nova_Pro]: AIProviders.AwsBedrock,
   [Models.Mistral_Large]: AIProviders.AwsBedrock,
   [Models.DeepSeek_R1]: AIProviders.AwsBedrock,
+  [Models.Gemini_2_5_Pro_Preview]: AIProviders.GoogleAI,
 }
