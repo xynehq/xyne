@@ -538,7 +538,7 @@ const endToEndFlow = async (
     filters: queryFilters,
     type: "",
     from: null,
-    to: null
+    to: null,
   }
   let buffer = ""
   for await (const chunk of searchOrAnswerIterator) {
@@ -576,8 +576,6 @@ const endToEndFlow = async (
         app: parsed.filters.app as any,
         entity: parsed.filters.entity as any,
       },
-      from: null,
-      to: null
     }
 
     const tracer = getTracer("chat")

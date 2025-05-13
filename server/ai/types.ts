@@ -56,10 +56,8 @@ export type Cost = {
 }
 
 export type TimeDirection = "next" | "prev" | null
-export interface  TemporalClassifier {
+export interface TemporalClassifier {
   direction: TimeDirection | null
-  from: string | null
-  to: string | null
 }
 
 export interface ModelParams {

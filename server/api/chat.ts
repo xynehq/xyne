@@ -1195,8 +1195,9 @@ async function* generatePointQueryTimeExpansion(
   const weekInMs = 12 * 24 * 60 * 60 * 1000
   let costArr: number[] = []
 
-  const { fromDate, toDate } =
-    interpretDateFromReturnedTemporalValue(classification)
+  const { fromDate, toDate } = interpretDateFromReturnedTemporalValue(
+    classification.filters,
+  )
 
   let from = fromDate ? fromDate.getTime() : new Date().getTime()
   let to = toDate ? toDate.getTime() : new Date().getTime()
@@ -1941,8 +1942,6 @@ export const MessageApi = async (c: Context) => {
                 app: parsed.filters.app as Apps,
                 entity: parsed.filters.entity as any,
               },
-              from: parsed?.from,
-              to: parsed?.to,
             }
 
             Logger.info(
@@ -2552,8 +2551,6 @@ export const MessageRetryApi = async (c: Context) => {
                 app: parsed.filters.app as Apps,
                 entity: parsed.filters.entity as any,
               },
-              from: parsed?.from,
-              to: parsed?.to,
             }
             const understandSpan = ragSpan.startSpan("understand_message")
             const iterator = UnderstandMessageAndAnswer(

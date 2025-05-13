@@ -399,7 +399,6 @@ If information is missing, unclear, or the query lacks context:
 3. Suggest ways to refine the search, avoiding event-related suggestions
 4. Note what additional context would be helpful, excluding event-related context`
 
-
 // Baseline Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
 export const baselinePromptJson = (
@@ -510,7 +509,6 @@ You must respond in valid JSON format with the following structure:
 # Error Handling
 If information is missing or unclear, or the query lacks context set "answer" as "null" 
 `
-
 
 // Baseline Reasoing Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format for reasoning cases.
@@ -625,7 +623,6 @@ If information is missing or unclear: Set "answer" to null
 </answer>
 To summarize: Think without json but answer always with json
 `
-
 
 export const baselineFilesContextPromptJson = (
   userContext: string,
