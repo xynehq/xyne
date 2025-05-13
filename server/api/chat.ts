@@ -1414,111 +1414,116 @@ async function* generateMetadataQueryAnswer(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  let from = 0,
-    to = 0
-  const direction = classification.direction as string
-  const isUnspecificMetadataRetrieval =
-    classification.type == QueryType.RetrievedUnspecificMetadata
-  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
+  const { app, entity, startTime, endTime } = classification.filters
 
-  let { app, entity, startTime, endTime } = classification.filters
+  const isUnspecificMetadataRetrieval =
+    classification.type === QueryType.RetrievedUnspecificMetadata
+  const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
 
-  from = new Date(startTime ?? "").getTime()
-  to = new Date(endTime ?? "").getTime()
+  const from = new Date(startTime ?? "").getTime()
+  const to = new Date(endTime ?? "").getTime()
+  const hasValidTimeRange = !isNaN(from) && !isNaN(to)
 
-  if (isValidAppAndEntity) {
-    let items: VespaSearchResult[] = []
-    let schema = entityToSchemaMapper(entity, app) as VespaSchema
+  // return if app/entity is not valid
+  if (!isValidAppAndEntity) {
+    Logger.info("Not able to perform metadata search")
+    return null
+  }
 
-    // Ensure `from` and `to` are valid timestamps before performing a search for unspecific metadata retrieval
-    if (!isNaN(from) && !isNaN(to) && isUnspecificMetadataRetrieval) {
-      span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
-      Logger.info(
-        `User requested metadata search : ${QueryType.RetrievedUnspecificMetadata}`,
-      )
-      const diffMs = to - from
-      const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
-      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const schema = entityToSchemaMapper(entity, app) as VespaSchema
+  let items: VespaSearchResult[] = []
 
-      let readable = ""
-      if (days) readable += `${days} days `
-      if (hours) readable += `${hours} hours `
-      Logger.info(
-        `Searching for documents from app: ${app} and entity: ${entity} ${readable ? `from ${readable}` : ""}`,
-      )
+  if (hasValidTimeRange && isUnspecificMetadataRetrieval) {
+    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
+    Logger.info(
+      `User requested metadata search : ${QueryType.RetrievedUnspecificMetadata}`,
+    )
+    // Format readable time range for logging
+    const diffMs = to - from
+    const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-      items =
-        (
-          await getItems({
-            email,
-            schema,
-            app,
-            entity,
-            timestampRange: { from, to },
-            limit: pageSize,
-          })
-        ).root.children || []
-      span?.setAttribute("metadata items found", items.length)
-      Logger.info(`Found ${items.length} items for metadata retrieval`)
+    let readable = ""
+    if (days) readable += `${days} days `
+    if (hours) readable += `${hours} hours `
 
-      // return early if no documents are found for QueryType.RetrievedUnspecificMetadata,
-      // as the query would be ambiguous and further searches would not yield meaningful results.
-      if (!items.length) {
-        return "no documents found"
-      }
-    } else if (isMetadataRetrieval) {
-      span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
-      Logger.info(
-        `User requested metadata search : ${QueryType.RetrieveMetadata}`,
-      )
-      items =
-        (
-          await searchVespa(input, email, app as Apps, entity as any, {
-            limit: pageSize,
-            alpha: userAlpha,
-            timestampRange: isNaN(from) || isNaN(to) ? null : { from, to },
-          })
-        ).root.children || []
-      span?.setAttribute("metadata items found", items.length)
-      Logger.info(`Found ${items.length} items for metadata retrieval`)
-    }
-    // if no documents found for specific metadata retrieval will go with iterative RAG
+    Logger.info(
+      `Searching for documents from app: ${app} and entity: ${entity} ${readable ? `from ${readable}` : ""}`,
+    )
+    items =
+      (
+        await getItems({
+          email,
+          schema,
+          app,
+          entity,
+          timestampRange: { from, to },
+          limit: pageSize,
+        })
+      ).root.children || []
+
+    span?.setAttribute("metadata items found", items.length)
+    Logger.info(`Found ${items.length} items for metadata retrieval`)
+
+    // Return early if no documents found for unspecific metadata retrieval
     if (!items.length) {
-      return null
-    } else {
-      const results = items
-      // const searchRangeSummary = getSearchRangeSummary(
-      //   from,
-      //   to,
-      //   direction,
-      //   span,
-      // )
-      const initialContext = buildContext(results, maxSummaryCount)
-
-      let iterator: AsyncIterableIterator<ConverseResponse>
-      if (app === Apps.Gmail) {
-        Logger.info("Using mailPromptJsonStream")
-        iterator = mailPromptJsonStream(input, userCtx, initialContext, {
-          stream: true,
-          modelId: defaultBestModel,
-          reasoning: isReasoning,
-        })
-      } else {
-        Logger.info("Using baselineRAGJsonStream")
-        iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
-          stream: true,
-          modelId: defaultBestModel,
-          reasoning: isReasoning,
-        })
-      }
-
-      return yield* processIterator(iterator, results, 0)
+      return "no documents found"
     }
   }
-  Logger.info(`Not able to perform metadata search`)
-  return null
+  // Handle specific metadata retrieval
+  else if (isMetadataRetrieval) {
+    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
+    Logger.info(
+      `User requested metadata search : ${QueryType.RetrieveMetadata}`,
+    )
+
+    // Search Vespa  here with input query
+    items =
+      (
+        await searchVespa(input, email, app as Apps, entity as any, {
+          limit: pageSize,
+          alpha: userAlpha,
+          timestampRange: hasValidTimeRange ? { from, to } : null,
+        })
+      ).root.children || []
+
+    span?.setAttribute("metadata items found", items.length)
+    Logger.info(`Found ${items.length} items for metadata retrieval`)
+
+    // Return null to fall through to iterative RAG if no items found
+    if (!items.length) {
+      return null
+    }
+  }
+  // If neither condition matched
+  else {
+    return null
+  }
+
+  // Process results and generate response
+  const results = items
+  const initialContext = buildContext(results, maxSummaryCount)
+
+  let iterator: AsyncIterableIterator<ConverseResponse>
+  if (app === Apps.Gmail) {
+    Logger.info("Using mailPromptJsonStream")
+    iterator = mailPromptJsonStream(input, userCtx, initialContext, {
+      stream: true,
+      modelId: defaultBestModel,
+      reasoning: isReasoning,
+    })
+  } else {
+    Logger.info("Using baselineRAGJsonStream")
+    iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+      stream: true,
+      modelId: defaultBestModel,
+      reasoning: isReasoning,
+    })
+  }
+
+  return yield* processIterator(iterator, results, 0)
 }
 
 export async function* UnderstandMessageAndAnswer(
@@ -1571,13 +1576,13 @@ export async function* UnderstandMessageAndAnswer(
     if (isUnspecificMetadataRetrieval && answer == "no documents found") {
       metadataRagSpan?.end()
       return yield {
-        text: "I could not find any information to answer it, please change your query",
+        text: "I could not found any relevant information for your query, please change your query",
       }
     }
 
     if (answer) {
       metadataRagSpan?.end()
-      return answer
+      return yield* answer
     }
     metadataRagSpan?.end()
     Logger.info(
