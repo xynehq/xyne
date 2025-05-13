@@ -19,7 +19,9 @@ export const UserStatsTable = ({
     <Table className="ml-[10px] mt-[10px] max-h-[400px]">
       <TableHeader>
         <TableRow>
-          {type === AuthType.ServiceAccount && <TableHead> User Email </TableHead>}
+          {type === AuthType.ServiceAccount && (
+            <TableHead> User Email </TableHead>
+          )}
           <TableHead>Gmail</TableHead>
           <TableHead>Drive</TableHead>
           <TableHead>Contacts</TableHead>
@@ -42,8 +44,7 @@ export const UserStatsTable = ({
             percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
           return (
             <TableRow key={email}>
-              {type === AuthType.ServiceAccount && <TableCell>{email}</TableCell>}
-              {type !== AuthType.OAuth && (
+              {type === AuthType.ServiceAccount && (
                 <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
                   {email}
                 </TableCell>
