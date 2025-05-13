@@ -236,6 +236,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }, [search])
 
   useEffect(() => {
+    setOffset(0)
     handleSearch()
   }, [filter, offset])
 
