@@ -1434,6 +1434,7 @@ async function* generateMetadataQueryAnswer(
 
     // Ensure `from` and `to` are valid timestamps before performing a search for unspecific metadata retrieval
     if (!isNaN(from) && !isNaN(to) && isUnspecificMetadataRetrieval) {
+      span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
       Logger.info(
         `User requested metadata search : ${QueryType.RetrievedUnspecificMetadata}`,
       )
@@ -1459,8 +1460,16 @@ async function* generateMetadataQueryAnswer(
             limit: pageSize,
           })
         ).root.children || []
+      span?.setAttribute("metadata items found", items.length)
       Logger.info(`Found ${items.length} items for metadata retrieval`)
+
+      // return early if no documents are found for QueryType.RetrievedUnspecificMetadata,
+      // as the query would be ambiguous and further searches would not yield meaningful results.
+      if (!items.length) {
+        return "no documents found"
+      }
     } else if (isMetadataRetrieval) {
+      span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
       Logger.info(
         `User requested metadata search : ${QueryType.RetrieveMetadata}`,
       )
@@ -1472,9 +1481,10 @@ async function* generateMetadataQueryAnswer(
             timestampRange: isNaN(from) || isNaN(to) ? null : { from, to },
           })
         ).root.children || []
+      span?.setAttribute("metadata items found", items.length)
       Logger.info(`Found ${items.length} items for metadata retrieval`)
     }
-    // if no documents found will go with iterative RAG
+    // if no documents found for specific metadata retrieval will go with iterative RAG
     if (!items.length) {
       return null
     } else {
@@ -1507,9 +1517,7 @@ async function* generateMetadataQueryAnswer(
       return yield* processIterator(iterator, results, 0)
     }
   }
-  Logger.info(
-    `Not able to perform metadata search`,
-  )
+  Logger.info(`Not able to perform metadata search`)
   return null
 }
 
@@ -1540,29 +1548,41 @@ export async function* UnderstandMessageAndAnswer(
 
   if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
     Logger.info("User is asking for metadata retrieval")
+
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
     metadataRagSpan?.setAttribute("comment", "metadata retrieval")
+    metadataRagSpan?.setAttribute(
+      "classification",
+      JSON.stringify(classification),
+    )
+    const count = classification.filters.count || chatPageSize
     const answer = yield* generateMetadataQueryAnswer(
       message,
       messages,
       email,
       userCtx,
       alpha,
-      classification.filters.count
-        ? classification.filters.count
-        : chatPageSize,
+      count,
       maxDefaultSummary,
       classification,
       metadataRagSpan,
     )
 
-    if (!answer) {
-      Logger.info(
-        `No context found for metadata retrieval, moving to iterative RAG`,
-      )
-    } else {
+    if (isUnspecificMetadataRetrieval && answer == "no documents found") {
+      metadataRagSpan?.end()
+      return yield {
+        text: "I could not find any information to answer it, please change your query",
+      }
+    }
+
+    if (answer) {
+      metadataRagSpan?.end()
       return answer
     }
+    metadataRagSpan?.end()
+    Logger.info(
+      "No context found for metadata retrieval, moving to iterative RAG",
+    )
   }
 
   if (fileIds && fileIds?.length > 0) {
