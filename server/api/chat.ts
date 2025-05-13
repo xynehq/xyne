@@ -61,7 +61,12 @@ import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSESt
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa, SearchModes, searchVespaInFiles,getItems } from "@/search/vespa"
+import {
+  searchVespa,
+  SearchModes,
+  searchVespaInFiles,
+  getItems,
+} from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
@@ -1106,10 +1111,10 @@ const getSearchRangeSummary = (
   summarySpan?.setAttribute("to", to)
   summarySpan?.setAttribute("direction", direction)
   const now = Date.now()
-  if ((direction === "next" || direction === "prev") && (from && to) ) {
+  if ((direction === "next" || direction === "prev") && from && to) {
     // Ensure from is earlier than to
     if (from > to) {
-      [from, to] = [to, from]
+      ;[from, to] = [to, from]
     }
 
     const fromDate = new Date(from)
@@ -1131,7 +1136,7 @@ const getSearchRangeSummary = (
     toDate.setHours(23, 59, 0, 0)
 
     return `from ${format(fromDate)} to ${format(toDate)}`
-  } 
+  }
   // For "next" direction, we usually start from now
   else if (direction === "next") {
     // Start from today/now
@@ -1145,7 +1150,7 @@ const getSearchRangeSummary = (
     summarySpan?.setAttribute("result", result)
     summarySpan?.end()
     return result
-  }  
+  }
   // For "prev" direction
   else {
     const startDate = new Date(from)
@@ -1185,7 +1190,6 @@ async function* generatePointQueryTimeExpansion(
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
   const direction = classification.direction as string
 
-  Logger.info("Proceeding with iterative RAG.")
   const message = input
   const maxIterations = 10
   const weekInMs = 12 * 24 * 60 * 60 * 1000
@@ -1199,7 +1203,7 @@ async function* generatePointQueryTimeExpansion(
   let lastSearchedTime = direction === "prev" ? from : to
 
   let previousResultsLength = 0
-  const loopLimit = (fromDate && toDate) ? 2 : maxIterations
+  const loopLimit = fromDate && toDate ? 2 : maxIterations
 
   for (let iteration = 0; iteration < loopLimit; iteration++) {
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
@@ -1208,27 +1212,30 @@ async function* generatePointQueryTimeExpansion(
 
     if (direction === "prev") {
       // If we have both the from and to time range we search only for that range
-      if(fromDate && toDate) {
-        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      if (fromDate && toDate) {
+        Logger.info(
+          `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
+        )
       }
-      // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date 
+      // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date
       else {
         to = toDate ? to : lastSearchedTime
         from = to - windowSize
         lastSearchedTime = from
       }
-     
     } else {
-      if(fromDate && toDate) {
-        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      if (fromDate && toDate) {
+        Logger.info(
+          `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
+        )
       }
-      // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date 
+      // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date
       else {
-      from = fromDate ? from : lastSearchedTime
-      to = from + windowSize
-      lastSearchedTime = to
+        from = fromDate ? from : lastSearchedTime
+        to = from + windowSize
+        lastSearchedTime = to
       }
-    } 
+    }
 
     Logger.info(
       `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
@@ -1520,7 +1527,7 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
-  
+
   const isUnspecificMetadataRetrieval =
     classification.type == QueryType.RetrievedUnspecificMetadata
   const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
@@ -1551,7 +1558,7 @@ export async function* UnderstandMessageAndAnswer(
       return answer
     }
   }
-  
+
   if (fileIds && fileIds?.length > 0) {
     Logger.info(
       "User has selected some context with query, answering only based on that given context",
@@ -1817,9 +1824,9 @@ export const MessageApi = async (c: Context) => {
             filters: queryFilters,
             type: "",
             from: null,
-            to: null
+            to: null,
           }
-          
+
           let thinking = ""
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
@@ -2431,8 +2438,8 @@ export const MessageRetryApi = async (c: Context) => {
             temporalDirection: null,
             filters: queryFilters,
             type: "",
-            from: null, 
-            to: null
+            from: null,
+            to: null,
           }
           let thinking = ""
           let reasoning =
