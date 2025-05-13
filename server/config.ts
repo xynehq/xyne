@@ -105,15 +105,6 @@ if (
   fastModelReasoning = true
 }
 
-let serviceAccountWhitelistedEmails: string[] = []
-if (process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
-  serviceAccountWhitelistedEmails = process.env[
-    "SERVICE_ACCOUNT_WHITELISTED_EMAILS"
-  ]
-    .split(",")
-    .map((v) => v.trim())
-}
-
 if (!slackHost) {
   slackHost = host
 }
@@ -160,6 +151,5 @@ export default {
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
-  serviceAccountWhitelistedEmails,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
 }

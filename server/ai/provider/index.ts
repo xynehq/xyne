@@ -51,6 +51,7 @@ import {
   analyzeInitialResultsOrRewriteV2SystemPrompt,
   AnalyzeUserQuerySystemPrompt,
   askQuestionUserPrompt,
+  baselineFilesContextPromptJson,
   baselinePrompt,
   baselinePromptJson,
   baselineReasoningPromptJson,
@@ -884,6 +885,7 @@ export const baselineRAGJsonStream = (
   userCtx: string,
   retrievedCtx: string,
   params: ModelParams,
+  specificFiles?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -894,7 +896,13 @@ export const baselineRAGJsonStream = (
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
-  if (defaultReasoning) {
+
+  if (specificFiles) {
+    params.systemPrompt = baselineFilesContextPromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
+  } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
     // this is extra work because we just now set Index <number>
@@ -1055,6 +1063,8 @@ export const temporalEventClassification = async (
     const parsedResponse = jsonParseLLMOutput(text)
     return {
       direction: parsedResponse.direction || null,
+      from: null,
+      to: null,
       cost: cost!,
     }
   } else {

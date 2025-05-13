@@ -14,6 +14,7 @@ import {
   type VespaSearchResults,
   type VespaUser,
   type VespaChatMessageSearch,
+  type ScoredChunk,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
@@ -28,16 +29,39 @@ const constructFileContext = (
   fields: VespaFileSearch,
   relevance: number,
   maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
 ): string => {
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
+  let chunks: ScoredChunk[] = []
   if (fields.matchfeatures) {
-    fields.chunks_summary = getSortedScoredChunks(
+    chunks = getSortedScoredChunks(
       fields.matchfeatures,
       fields.chunks_summary as string[],
-    ).map((v) => v.chunk)
+    )
+  } else {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  let content = ""
+  if (isSelectedFiles) {
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else {
+    content = chunks
+      .map((v) => v.chunk)
+      .slice(0, maxSummaryChunks)
+      .join("\n")
   }
 
   return `App: ${fields.app}
@@ -49,7 +73,7 @@ ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
 \nvespa relevance score: ${relevance}\n`
 }
 
@@ -71,16 +95,39 @@ const constructMailContext = (
   fields: VespaMailSearch,
   relevance: number,
   maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
 ): string => {
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
+  let chunks: ScoredChunk[] = []
   if (fields.matchfeatures) {
-    fields.chunks_summary = getSortedScoredChunks(
+    chunks = getSortedScoredChunks(
       fields.matchfeatures,
       fields.chunks_summary as string[],
-    ).map((v) => v.chunk)
+    )
+  } else {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  let content = ""
+  if (isSelectedFiles) {
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else {
+    content = chunks
+      .map((v) => v.chunk)
+      .slice(0, maxSummaryChunks)
+      .join("\n")
   }
 
   return `App: ${fields.app}
@@ -92,7 +139,7 @@ ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
 vespa relevance score: ${relevance}`
 }
 
@@ -125,16 +172,39 @@ const constructMailAttachmentContext = (
   fields: VespaMailAttachmentSearch,
   relevance: number,
   maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
 ): string => {
   if (!maxSummaryChunks) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
+  let chunks: ScoredChunk[] = []
   if (fields.matchfeatures) {
-    fields.chunks_summary = getSortedScoredChunks(
+    chunks = getSortedScoredChunks(
       fields.matchfeatures,
       fields.chunks_summary as string[],
-    ).map((v) => v.chunk)
+    )
+  } else {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  let content = ""
+  if (isSelectedFiles) {
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else {
+    content = chunks
+      .map((v) => v.chunk)
+      .slice(0, maxSummaryChunks)
+      .join("\n")
   }
 
   return `App: ${fields.app}
@@ -142,7 +212,7 @@ Entity: ${fields.entity}
 Sent: ${getRelativeTime(fields.timestamp)}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${fields.chunks_summary.slice(0, maxSummaryChunks).join("\n")}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
 vespa relevance score: ${relevance}`
 }
 
@@ -359,12 +429,14 @@ type AiContext = string
 export const answerContextMap = (
   searchResult: VespaSearchResults,
   maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
 ): AiContext => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileContext(
       searchResult.fields,
       searchResult.relevance,
       maxSummaryChunks,
+      isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields, searchResult.relevance)
@@ -373,6 +445,7 @@ export const answerContextMap = (
       searchResult.fields,
       searchResult.relevance,
       maxSummaryChunks,
+      isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
     return constructEventContext(searchResult.fields, searchResult.relevance)
@@ -381,6 +454,7 @@ export const answerContextMap = (
       searchResult.fields,
       searchResult.relevance,
       maxSummaryChunks,
+      isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
     // later can be based on app

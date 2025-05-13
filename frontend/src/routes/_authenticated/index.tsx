@@ -25,6 +25,18 @@ enum Tabs {
   Ask = "ask",
 }
 
+// Define a local Reference type matching the expected structure from ChatBox
+interface LocalReference {
+  id: string
+  title: string
+  url?: string
+  docId?: string
+  app?: string
+  entity?: string
+  type: "citation" | "global"
+  photoLink?: string
+}
+
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
@@ -107,14 +119,34 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (messageToSend: string) => {
-    if (query.trim()) {
+  const handleAsk = (
+    messageToSend: string,
+    references?: LocalReference[], // Use LocalReference here
+    selectedSources?: string[], // Add selectedSources parameter (make it optional or provide a default)
+  ) => {
+    if (messageToSend.trim()) {
+      // Use messageToSend here instead of query
+      const searchParams: { q: string; refs?: string; sources?: string } = {
+        q: encodeURIComponent(messageToSend.trim()),
+      }
+
+      if (references && references.length > 0) {
+        // Pass only reference IDs, stringified as JSON
+        searchParams.refs = JSON.stringify(references.map((ref) => ref.id))
+      }
+
+      if (selectedSources && selectedSources.length > 0) {
+        searchParams.sources = selectedSources.join(",")
+      }
+
       navigate({
         to: "/chat",
-        search: { q: encodeURIComponent(messageToSend.trim()) },
+        search: searchParams,
       })
+      // Log them to confirm they are received
     }
   }
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Tab") {
@@ -203,6 +235,7 @@ const Index = () => {
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}
+                  allCitations={new Map()} // Change this line
                 />
               </div>
             )}
