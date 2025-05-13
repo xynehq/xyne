@@ -9,7 +9,7 @@ import {
   useSearch,
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
-import { useEffect, useRef, useState, Fragment } from "react"
+import { useEffect, useRef, useState, Fragment, useMemo } from "react"
 import {
   ChatSSEvents,
   SelectPublicMessage,
@@ -1370,6 +1370,54 @@ const Sources = ({
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
+// Helper function to get citations specifically referenced in the message text
+// Assuming splitGroupedCitationsWithSpaces is defined/imported in this file's scope
+const getCitationsReferencedInText = (
+  textToParse: string,
+  availableCitations: Citation[],
+  sourceCitationMap?: Record<number, number>
+): Citation[] => {
+  if (!availableCitations || availableCitations.length === 0 || !textToParse) {
+    return [];
+  }
+
+  // This function needs to be accessible here, same as in processMessage
+  const processedText = splitGroupedCitationsWithSpaces(textToParse);
+
+  const referencedCitationsList: Citation[] = [];
+  const addedCitationIndices = new Set<number>(); // Tracks indices from availableCitations
+
+  const citationRegex = new RegExp(textToCitationIndex.source, 'g'); // Local instance for exec loop
+  let match;
+
+  while ((match = citationRegex.exec(processedText)) !== null) {
+    const citationNumberInText = parseInt(match[1], 10);
+    let actualCitationIndex: number | undefined;
+
+    if (sourceCitationMap) {
+      actualCitationIndex = sourceCitationMap[citationNumberInText];
+    } else {
+      actualCitationIndex = citationNumberInText - 1; // [1] -> index 0
+    }
+
+    if (
+      typeof actualCitationIndex === 'number' &&
+      actualCitationIndex >= 0 &&
+      actualCitationIndex < availableCitations.length
+    ) {
+      if (!addedCitationIndices.has(actualCitationIndex)) {
+        const citation = availableCitations[actualCitationIndex];
+        if (citation) { // Check if citation object exists
+          referencedCitationsList.push(citation);
+          addedCitationIndices.add(actualCitationIndex);
+        }
+      }
+    }
+  }
+  console.log(referencedCitationsList)
+  return referencedCitationsList;
+};
+
 const ChatMessage = ({
   message,
   thinking,
@@ -1424,6 +1472,12 @@ const ChatMessage = ({
       })
     }
   }
+
+  // Get citations specifically referenced in the main message
+  const messageReferencedCitations = useMemo(() => {
+    return getCitationsReferencedInText(message, citations, citationMap);
+  }, [message, citations, citationMap]);
+
   return (
     <div
       className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
@@ -1583,7 +1637,7 @@ const ChatMessage = ({
 
               <div className="flex flex-row ml-[52px]">
                 <MessageCitationList
-                  citations={citations.slice(0, 3)}
+                  citations={messageReferencedCitations.length < 3 ? citations.slice(0, 3) : messageReferencedCitations.slice(0, 3)}
                   onToggleSources={onToggleSources}
                 />
               </div>
