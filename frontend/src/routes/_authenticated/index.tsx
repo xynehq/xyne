@@ -40,6 +40,14 @@ interface LocalReference {
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
+  const [isReasoningActive, setIsReasoningActive] = useState(() => {
+    const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
+    return storedValue ? JSON.parse(storedValue) : false
+  })
+
+  useEffect(() => {
+    localStorage.setItem("isReasoningGlobalState", JSON.stringify(isReasoningActive))
+  }, [isReasoningActive])
 
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
@@ -121,13 +129,16 @@ const Index = () => {
 
   const handleAsk = (
     messageToSend: string,
-    references?: LocalReference[], // Use LocalReference here
-    selectedSources?: string[], // Add selectedSources parameter (make it optional or provide a default)
+    // isReasoningEnabled: boolean, // Removed parameter
+    references: LocalReference[], 
+    selectedSources?: string[]
   ) => {
     if (messageToSend.trim()) {
-      // Use messageToSend here instead of query
-      const searchParams: { q: string; refs?: string; sources?: string } = {
+      const searchParams: { q: string; reasoning?: boolean; refs?: string; sources?: string } = {
         q: encodeURIComponent(messageToSend.trim()),
+      }
+      if (isReasoningActive) { // Use component state
+        searchParams.reasoning = true // Set 'reasoning' to align with chat.tsx Zod schema
       }
 
       if (references && references.length > 0) {
@@ -236,6 +247,8 @@ const Index = () => {
                   setQuery={setQuery}
                   handleSend={handleAsk}
                   allCitations={new Map()} // Change this line
+                  isReasoningActive={isReasoningActive}
+                  setIsReasoningActive={setIsReasoningActive}
                 />
               </div>
             )}

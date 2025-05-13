@@ -1782,7 +1782,8 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, stringifiedfileIds }: MessageReqType = body
+    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled }: MessageReqType = body
+    
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []

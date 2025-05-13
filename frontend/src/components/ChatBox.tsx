@@ -11,6 +11,7 @@ import {
   Link,
   Search,
   RotateCcw,
+  Atom,
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
 import { Citation, Apps } from "shared/types"
@@ -73,7 +74,7 @@ interface Reference {
 interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void
-  handleSend: (
+  handleSend: ( // Signature updated
     messageToSend: string,
     references: Reference[],
     selectedSources?: string[],
@@ -82,6 +83,8 @@ interface ChatBoxProps {
   handleStop?: () => void
   chatId?: string | null
   allCitations: Map<string, Citation>
+  isReasoningActive: boolean // Added prop
+  setIsReasoningActive: (value: boolean | ((prevState: boolean) => boolean)) => void // Added prop
 }
 
 const availableSources: SourceItem[] = [
@@ -202,6 +205,8 @@ export const ChatBox = ({
   allCitations,
   handleStop,
   chatId,
+  isReasoningActive, // Use prop
+  setIsReasoningActive, // Use prop
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
@@ -232,6 +237,7 @@ export const ChatBox = ({
   const [referenceSearchTerm, setReferenceSearchTerm] = useState("")
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
+  // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
@@ -849,10 +855,10 @@ export const ChatBox = ({
       const updatedReferences = references.filter((ref) =>
         currentPillIds.includes(ref.id),
       )
-      handleSend(htmlMessage, [...updatedReferences], [...activeSourceIds])
+      handleSend(htmlMessage, [...updatedReferences], [...activeSourceIds]) // Pass only necessary args
       setReferences([]) // Clear after sending potentially updated list
     } else {
-      handleSend(htmlMessage, [...references], [...activeSourceIds])
+      handleSend(htmlMessage, [...references], [...activeSourceIds]) // Pass only necessary args
       setReferences([])
     }
 
@@ -1396,8 +1402,16 @@ export const ChatBox = ({
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}{" "}
-          {/* Closing tag for the conditional render */}
+          )} {/* Closing tag for the conditional render */}
+          <button
+          onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
+          className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${ // Changed text-xs to text-[11px]
+            isReasoningActive ? "text-green-600" : "text-[#464D53]" // Use prop for styling
+          }`}
+        >
+          <Atom size={16} className={isReasoningActive ? "text-green-600" : ""} /> {/* Use prop for styling */}
+          <span>Reasoning</span>
+         </button>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}
