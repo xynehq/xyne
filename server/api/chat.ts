@@ -35,9 +35,7 @@ import {
   getChatMessagesBefore,
   updateMessage,
 } from "@/db/message";
-import { 
-  syncConnectorTools,
-} from "@/db/tool";
+import { syncConnectorTools } from "@/db/tool";
 import {
   selectPublicChatSchema,
   selectPublicMessagesSchema,
@@ -3254,72 +3252,81 @@ export const MessageWithToolsApi = async (c: Context) => {
           Logger.info(
             "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
           );
-          const finalToolsList: Record<number,{ tools: {name: string, schema: string}[], client: Client }> = {};
-          
+          const finalToolsList: Record<
+            number,
+            { tools: { name: string; schema: string }[]; client: Client }
+          > = {};
+
           if (toolsList && toolsList.length > 0) {
             for (const item of toolsList) {
               const { connectorId, tools: toolNames } = item;
-              
+
               // Fetch connector info and create client
               const connector = await getConnector(db, connectorId);
               const config = connector.config as MCPClientConfig;
               const client = new Client({
-                name: `connector-${connectorId}`, 
-                version: config.version
+                name: `connector-${connectorId}`,
+                version: config.version,
               });
               await client.connect(new SSEClientTransport(new URL(config.url)));
-              
+
               // Fetch all available tools from the client
               // TODO: look in the DB. cache logic has to be discussed.
               const clientTools = await client.listTools();
-              
+
               // Update tool definitions in the database for future use
-              await syncConnectorTools(db, workspace.id, `connector-${connectorId}`, 
-                clientTools.map(tool => ({
+              await syncConnectorTools(
+                db,
+                workspace.id,
+                `connector-${connectorId}`,
+                clientTools.map((tool) => ({
                   toolName: tool.function.name,
                   toolSchema: JSON.stringify(tool),
-                  description: tool.function.description
-                }))
+                  description: tool.function.description,
+                })),
               );
-              
+
               // Create a map for quick lookup
               const toolSchemaMap = new Map(
-                clientTools.map(tool => [tool.name, JSON.stringify(tool)])
+                clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
               );
-              
+
               // Filter to only the requested tools
               const filteredTools = [];
               for (const toolName of toolNames) {
                 if (toolSchemaMap.has(toolName)) {
                   filteredTools.push({
                     name: toolName,
-                    schema: toolSchemaMap.get(toolName) || "" 
+                    schema: toolSchemaMap.get(toolName) || "",
                   });
                 } else {
                   Logger.info(
-                    `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`
+                    `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
                   );
                 }
               }
-              
+
               finalToolsList[connectorId] = {
                 tools: filteredTools,
                 client: client,
               };
             }
           }
-          
+
           // Build tools prompt
           let toolsPrompt = "";
+          // TODO: make more sense to move this inside prompt such that format of output can be written together.
           if (Object.keys(finalToolsList).length > 0) {
-            toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information and Your entire response MUST be a single, flat JSON response in the below format:
+            toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. If Tool Invocation is chosen then Your entire response MUST be a single, flat JSON response which should be in the below format:
   {"tool": "ACTUAL_TOOL_NAME", "arguments": {"param1_name": "param1_value", "param2_name": "param2_value", ...}}
   (Replace ACTUAL_TOOL_NAME with the chosen tool\'s name as described in the user message, e.g., "metadata_retrieval", "search". Include only the relevant arguments for that tool.)
 
 AVAILABLE_TOOLS:\n\n`;
-            
+
             // Format each client's tools
-            for (const [connectorId, { tools }] of Object.entries(finalToolsList)) {
+            for (const [connectorId, { tools }] of Object.entries(
+              finalToolsList,
+            )) {
               if (tools.length > 0) {
                 for (const tool of tools) {
                   toolsPrompt += `${tool.schema}\n\n`;
@@ -3327,7 +3334,7 @@ AVAILABLE_TOOLS:\n\n`;
               }
             }
           }
-          
+
           const searchOrAnswerIterator =
             generateSearchQueryOrAnswerFromConversation(
               message,
@@ -3360,22 +3367,24 @@ AVAILABLE_TOOLS:\n\n`;
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning;
           let buffer = "";
           const conversationSpan = streamSpan.startSpan("conversation_search");
-          
+
           // Define a function to handle the tool selection and invocation loop
           async function processToolSelectionLoop(
             initialBuffer: string,
-            initialMessages: any[]
+            initialMessages: any[],
           ) {
             let buffer = initialBuffer;
             let messages = [...initialMessages]; // Clone to avoid modifying the original array
             let toolCallCount = 0;
             const MAX_TOOL_CALLS = 5; // Safety limit to prevent infinite loops
             let finalAnswer = "";
-            
+
             while (toolCallCount < MAX_TOOL_CALLS) {
               try {
-                const potentialToolSelection = jsonParseLLMOutput(buffer) as ToolAnswerResponse;
-                
+                const potentialToolSelection = jsonParseLLMOutput(
+                  buffer,
+                ) as ToolAnswerResponse;
+
                 // Check if the response is a tool call
                 if (!potentialToolSelection || !potentialToolSelection.tool) {
                   // Not a tool call, this is the final answer
@@ -3386,140 +3395,178 @@ AVAILABLE_TOOLS:\n\n`;
                   }
                   break; // Exit the tool loop, we have our final answer
                 }
-                
+
                 // We have a tool call to process
                 toolCallCount++;
                 // TODO: ask LLM  to return the connectorId also. so filter later need not to be through all connectors.
                 const toolName = potentialToolSelection.tool;
                 const toolParams = potentialToolSelection.arguments;
-                
-                Logger.info(`Tool selection #${toolCallCount}: ${toolName} with params:`, toolParams);
-                
+
+                Logger.info(
+                  `Tool selection #${toolCallCount}: ${toolName} with params:`,
+                  toolParams,
+                );
+
                 // Find the connector ID and client that has this tool
                 let foundClient: Client | null = null;
                 let connectorId: number | null = null;
-                
+
                 // Search through all connectors and their tools to find the matching tool
-                for (const [connId, { tools, client }] of Object.entries(finalToolsList)) {
-                  const matchingTool = tools.find(t => t.name === toolName);
+                for (const [connId, { tools, client }] of Object.entries(
+                  finalToolsList,
+                )) {
+                  const matchingTool = tools.find((t) => t.name === toolName);
                   if (matchingTool) {
                     foundClient = client;
                     connectorId = parseInt(connId);
                     break;
                   }
                 }
-                
+
                 if (!foundClient || !connectorId) {
-                  Logger.error(`Tool ${toolName} was selected but not found in available tools`);
+                  Logger.error(
+                    `Tool ${toolName} was selected but not found in available tools`,
+                  );
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
-                    data: `\n\nError: Tool "${toolName}" was requested but is not available.\n\n`
+                    data: `\n\nError: Tool "${toolName}" was requested but is not available.\n\n`,
                   });
-                  
+
                   // Add error to messages and continue
                   messages.push({
                     role: "tool" as ConversationRole,
-                    content: [{ 
-                      text: `Tool: ${toolName}\nError: Tool not found in available tools` 
-                    }],
+                    content: [
+                      {
+                        text: `Tool: ${toolName}\nError: Tool not found in available tools`,
+                      },
+                    ],
                     tool_name: toolName,
                     tool_call_id: `tool-call-${Date.now()}`,
                   });
                 } else {
                   try {
                     // Create a tool response span for tracing
-                    const toolInvocationSpan = streamSpan.startSpan(`tool_invocation_${toolCallCount}`);
+                    const toolInvocationSpan = streamSpan.startSpan(
+                      `tool_invocation_${toolCallCount}`,
+                    );
                     toolInvocationSpan.setAttribute("tool_name", toolName);
-                    toolInvocationSpan.setAttribute("connector_id", connectorId);
-                    
+                    toolInvocationSpan.setAttribute(
+                      "connector_id",
+                      connectorId,
+                    );
+
                     // Inform the user about the tool invocation
                     stream.writeSSE({
                       event: ChatSSEvents.ResponseUpdate,
-                      data: `\n\nInvoking tool: ${toolName}...\n`
+                      data: `\n\nInvoking tool: ${toolName}...\n`,
                     });
-                    
+
                     // TODO: add a logic to validate the toolParams with the schema we have.
                     // Invoke the tool and get the result
-                    const toolResponse = await foundClient.callTool(toolName, {"arguments" :toolParams});
-                    
+                    const toolResponse = await foundClient.callTool(toolName, {
+                      arguments: toolParams,
+                    });
+
                     // Add tool response metadata to the span
-                    toolInvocationSpan.setAttribute("tool_response_status", "success");
+                    toolInvocationSpan.setAttribute(
+                      "tool_response_status",
+                      "success",
+                    );
                     toolInvocationSpan.end();
-                    
+
                     // Format the tool response for display
-                    const formattedToolResponse = JSON.stringify(toolResponse, null, 2);
-                    
-                    Logger.info(`Tool ${toolName} response received:`, formattedToolResponse);
-                    
+                    const formattedToolResponse = JSON.stringify(
+                      toolResponse,
+                      null,
+                      2,
+                    );
+
+                    Logger.info(
+                      `Tool ${toolName} response received:`,
+                      formattedToolResponse,
+                    );
+
                     // Show the tool response to the user
                     stream.writeSSE({
                       event: ChatSSEvents.ResponseUpdate,
-                      data: `Tool response:\n\`\`\`json\n${formattedToolResponse}\n\`\`\`\n\n`
+                      data: `Tool response:\n\`\`\`json\n${formattedToolResponse}\n\`\`\`\n\n`,
                     });
-                    
+
                     // Add tool response to conversation history
                     messages.push({
                       role: "tool" as ConversationRole,
-                      content: [{ 
-                        text: `Tool: ${toolName}\nResponse: ${formattedToolResponse}` 
-                      }],
+                      content: [
+                        {
+                          text: `Tool: ${toolName}\nResponse: ${formattedToolResponse}`,
+                        },
+                      ],
                       tool_name: toolName,
                       tool_call_id: `tool-call-${Date.now()}`,
                     });
                   } catch (error) {
                     const errMessage = (error as Error).message;
-                    Logger.error(error, `Error invoking tool ${toolName}: ${errMessage}`);
-                    
+                    Logger.error(
+                      error,
+                      `Error invoking tool ${toolName}: ${errMessage}`,
+                    );
+
                     stream.writeSSE({
                       event: ChatSSEvents.ResponseUpdate,
-                      data: `\n\nError using tool "${toolName}": ${errMessage}\n\n`
+                      data: `\n\nError using tool "${toolName}": ${errMessage}\n\n`,
                     });
-                    
+
                     // Add error to conversation history
                     messages.push({
                       role: "tool" as ConversationRole,
-                      content: [{ 
-                        text: `Tool: ${toolName}\nError: ${errMessage}` 
-                      }],
+                      content: [
+                        {
+                          text: `Tool: ${toolName}\nError: ${errMessage}`,
+                        },
+                      ],
                       tool_name: toolName,
                       tool_call_id: `tool-call-${Date.now()}`,
                     });
                   }
                 }
-                
+
                 // Ask the model to continue the conversation with the tool results
                 stream.writeSSE({
                   event: ChatSSEvents.ResponseUpdate,
-                  data: `Thinking...\n`
+                  data: `Thinking...\n`,
                 });
-                
+
                 // Reset buffer for the next iteration
                 buffer = "";
-                
+
                 // Generate a continuation response using the updated message history
-                const continuationIterator = generateSearchQueryOrAnswerFromConversation(
-                  message, // Use the original message for continuity
-                  ctx,
-                  {
-                    modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                    stream: true,
-                    json: true, // Keep JSON format so we can detect more tool calls
-                    reasoning: false,
-                    messages: messages, // Pass the updated messages with tool results
-                  },
-                  toolsPrompt, // Include the tools again
-                );
-                
+                const continuationIterator =
+                  generateSearchQueryOrAnswerFromConversation(
+                    message, // Use the original message for continuity
+                    ctx,
+                    {
+                      modelId:
+                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                          .modelId,
+                      stream: true,
+                      json: true, // Keep JSON format so we can detect more tool calls
+                      reasoning: false,
+                      messages: messages, // Pass the updated messages with tool results
+                    },
+                    toolsPrompt, // Include the tools again
+                  );
+
                 // Process and collect the continuation response
                 for await (const chunk of continuationIterator) {
                   if (stream.closed) {
-                    Logger.info("Stream closed during tool continuation. Breaking.");
+                    Logger.info(
+                      "Stream closed during tool continuation. Breaking.",
+                    );
                     break;
                   }
-                  
+
                   if (chunk.text) {
                     buffer += chunk.text;
-                    
+
                     // Try to parse early to see if we have a complete response
                     try {
                       const partialResponse = jsonParseLLMOutput(buffer);
@@ -3532,72 +3579,81 @@ AVAILABLE_TOOLS:\n\n`;
                       // Incomplete JSON, continue collecting
                     }
                   }
-                  
+
                   if (chunk.cost) {
                     costArr.push(chunk.cost);
                   }
                 }
-                
+
                 // If we have a final answer after continuation, break the loop
                 if (finalAnswer) {
                   break;
                 }
-                
               } catch (error) {
                 // Error in the tool calling loop
-                Logger.error(error, `Error in tool calling loop: ${(error as Error).message}`);
+                Logger.error(
+                  error,
+                  `Error in tool calling loop: ${(error as Error).message}`,
+                );
                 stream.writeSSE({
                   event: ChatSSEvents.ResponseUpdate,
-                  data: `\n\nAn error occurred while processing tools: ${(error as Error).message}\n\n`
+                  data: `\n\nAn error occurred while processing tools: ${
+                    (error as Error).message
+                  }\n\n`,
                 });
                 break;
               }
             }
-            
+
             // If we hit the max tool calls, explain to the user
             if (toolCallCount >= MAX_TOOL_CALLS && !finalAnswer) {
-              Logger.warn(`Reached maximum tool call limit (${MAX_TOOL_CALLS})`);
+              Logger.warn(
+                `Reached maximum tool call limit (${MAX_TOOL_CALLS})`,
+              );
               stream.writeSSE({
                 event: ChatSSEvents.ResponseUpdate,
-                data: `\n\nReached the maximum number of sequential tool calls (${MAX_TOOL_CALLS}). Stopping to prevent an infinite loop.\n\n`
+                data: `\n\nReached the maximum number of sequential tool calls (${MAX_TOOL_CALLS}). Stopping to prevent an infinite loop.\n\n`,
               });
-              
+
               // Generate a final response that explains we hit the limit
-              const finalResponseIterator = generateSearchQueryOrAnswerFromConversation(
-                "Please provide a final answer based on all the tool calls so far without using any more tools.",
-                ctx,
-                {
-                  modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                  stream: true,
-                  json: false,
-                  reasoning: false,
-                  messages: messages,
-                },
-                ""  // No tools to prevent more tool calls
-              );
-              
+              const finalResponseIterator =
+                generateSearchQueryOrAnswerFromConversation(
+                  "Please provide a final answer based on all the tool calls so far without using any more tools.",
+                  ctx,
+                  {
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .modelId,
+                    stream: true,
+                    json: false,
+                    reasoning: false,
+                    messages: messages,
+                  },
+                  "", // No tools to prevent more tool calls
+                );
+
               // Process the final response
               for await (const chunk of finalResponseIterator) {
                 if (stream.closed) break;
-                
+
                 if (chunk.text) {
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
-                    data: chunk.text
+                    data: chunk.text,
                   });
                   finalAnswer += chunk.text;
                 }
-                
+
                 if (chunk.cost) {
                   costArr.push(chunk.cost);
                 }
               }
             }
-            
+
             // Return the messages and final answer
             return {
               finalAnswer,
-              messages
+              messages,
             };
           }
 
@@ -3642,42 +3698,50 @@ AVAILABLE_TOOLS:\n\n`;
                 buffer += chunk.text;
                 try {
                   // Check for tool selection in the current buffer
-                  const potentialToolSelection = jsonParseLLMOutput(buffer) as ToolAnswerResponse;
-                  
+                  const potentialToolSelection = jsonParseLLMOutput(
+                    buffer,
+                  ) as ToolAnswerResponse;
+
                   if (potentialToolSelection && potentialToolSelection.tool) {
                     // We detected a tool call, enter the tool processing loop
-                    const toolLoopSpan = streamSpan.startSpan("tool_processing_loop");
-                    
+                    const toolLoopSpan = streamSpan.startSpan(
+                      "tool_processing_loop",
+                    );
+
                     try {
                       // Start the tool processing loop
-                      const { finalAnswer, messages: updatedMessages } = await processToolSelectionLoop(
-                        buffer,
-                        messagesWithNoErrResponse
-                      );
-                      
+                      const { finalAnswer, messages: updatedMessages } =
+                        await processToolSelectionLoop(
+                          buffer,
+                          messagesWithNoErrResponse,
+                        );
+
                       // Update our messages with the result of the tool processing
                       messagesWithNoErrResponse = updatedMessages;
-                      
+
                       // Set the answer to the final result
                       parsed.answer = finalAnswer;
                       currentAnswer = finalAnswer;
-                      
+
                       // Send the final answer if it wasn't already streamed
                       if (finalAnswer && finalAnswer !== buffer) {
                         stream.writeSSE({
                           event: ChatSSEvents.ResponseUpdate,
-                          data: finalAnswer
+                          data: finalAnswer,
                         });
                       }
-                      
+
                       toolLoopSpan.setAttribute("tool_calls_completed", true);
                       toolLoopSpan.end();
                     } catch (error) {
                       Logger.error(error, "Error in tool processing loop");
-                      toolLoopSpan.setAttribute("error", (error as Error).message);
+                      toolLoopSpan.setAttribute(
+                        "error",
+                        (error as Error).message,
+                      );
                       toolLoopSpan.end();
                     }
-                    
+
                     // Reset buffer after tool processing
                     buffer = "";
                   } else {
@@ -3699,7 +3763,9 @@ AVAILABLE_TOOLS:\n\n`;
                         });
                       } else {
                         // Subsequent chunks - send only the new part
-                        const newText = parsed.answer.slice(currentAnswer.length);
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        );
                         stream.writeSSE({
                           event: ChatSSEvents.ResponseUpdate,
                           data: newText,
