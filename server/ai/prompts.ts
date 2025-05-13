@@ -1305,7 +1305,7 @@ Before finalizing results:
    - PAST intent: Reverse chronological order (most recent first)
 4. Apply result count limits if specified in query
 5. If no items remain after filtering:
-   - For meeting queries: Set 'answer': "No meetings found"
+   - For meeting queries: Set 'answer': "null"
    - For non-meeting queries: Set 'answer': "null"
 
 ## Response Generation Rules
@@ -1319,7 +1319,7 @@ Before finalizing results:
   - PAST intent: Reverse chronological (most recent first)
 - Include ONLY meetings that match the temporal intent after ALL filtering
 - NEVER include narrative introductions like "Upcoming meetings:" or "Past meetings:"
-- If no meetings match after temporal filtering, ALWAYS return exactly: 'answer': "No meetings found"
+- If no meetings match after temporal filtering, ALWAYS return exactly: 'answer': "null"
 
 ### Non-Meeting Query Responses
 - Format based on entity type (email, file, user)
@@ -1332,7 +1332,7 @@ Before finalizing results:
 
 # Response Format
 {
-  "answer": "Detailed answer to the query with citations in [index] format, or 'No meetings found' for meeting queries, or 'null' for non-meeting queries if no relevant data is found. Can include well-formatted markdown inside the answer field."
+  "answer": "Detailed answer to the query with citations in [index] format, or 'null' for non-meeting queries if no relevant data is found. Can include well-formatted markdown inside the answer field."
 }
 
 # Final Validation Checklist
@@ -1344,7 +1344,7 @@ Before submitting your response, verify:
 5. For past-focused queries: NO future items are included
 6. All items are properly cited with [index]
 7. If no matching items exist after filtering:
-   - Meeting queries: 'answer' is exactly "No meetings found"
+   - Meeting queries: 'answer' is exactly "null"
    - Non-meeting queries: 'answer' is exactly "null"
 8. No explanations or narrative are included outside the JSON structure
 9. No information beyond retrievedContext is included (no hallucination)
@@ -1352,10 +1352,11 @@ Before submitting your response, verify:
 11. For non-meeting queries with no results:
     - VERIFY that the response does NOT contain any meeting-related terminology
     - ENSURE the response is exactly "null" without any meeting references
+    - For the final iteration, don't include any meeting-related words or phrases if the query is not about meetings
 
 # Important Notes
 - Meeting Queries:
-  - Return 'answer': "No meetings found" if:
+  - Return 'answer': "null" if:
     - No relevant meetings match the query's temporal intent after strict filtering.
     - Meeting details are unclear or ambiguous.
     - Only past meetings are found for future-focused queries (or vice versa).
