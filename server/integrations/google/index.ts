@@ -113,6 +113,14 @@ import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
 import { getConnectorByExternalId } from "@/db/connector"
 
+import {
+  ingestionDuration,
+  totalIngestedFiles,
+  blockedFilesTotal,
+  ingestionErrorsTotal,
+} from "@/metrics/google/google-drive-metrics"
+
+
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -1271,6 +1279,7 @@ const insertFilesForUser = async (
         processedFiles += skippedFilesCount
         tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
         Logger.info(`Skipped ${skippedFilesCount} unchanged Drive files`)
+         blockedFilesTotal.inc({ app: "google-drive-ingestion", email: userEmail }, skippedFilesCount)
       }
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
@@ -1304,9 +1313,21 @@ const insertFilesForUser = async (
         return v
       })
       for (const doc of pdfs) {
-        processedFiles += 1
-        await insertDocument(doc)
-        tracker.updateUserStats(userEmail, StatType.Drive, 1)
+        const mime = doc.mimeType ?? "unknown"
+        const end = ingestionDuration.startTimer({ mime_type: mime })
+
+        try {
+          await insertDocument(doc)
+          totalIngestedFiles.inc({ file_id: doc.docId, mime_type: mime, status: "success" })
+          tracker.updateUserStats(userEmail, StatType.Drive, 1)
+          processedFiles += 1
+        } catch (err) {
+          totalIngestedFiles.inc({ file_id: doc.docId, mime_type: mime, status: "failed" })
+          ingestionErrorsTotal.inc({ file_id: doc.docId, error_type: "insert_failed", mime_type: mime })
+          Logger.error(err, `Error inserting PDF doc: ${doc.docId}`)
+        } finally {
+          end()
+        }
       }
       const [documents, slides, sheetsObj]: [
         VespaFileWithDrivePermission[],
@@ -1342,12 +1363,23 @@ const insertFilesForUser = async (
       })
 
       for (const doc of allFiles) {
-        await insertDocument(doc)
-        // do not update for Sheet as we will add the actual count later
-        if (doc.mimeType !== DriveMime.Sheets) {
-          processedFiles += 1
-          tracker.updateUserStats(userEmail, StatType.Drive, 1)
-        }
+          const mime = doc.mimeType ?? "unknown"
+          const end = ingestionDuration.startTimer({ mime_type: mime })
+
+          try {
+            await insertDocument(doc)
+            totalIngestedFiles.inc({file_id: doc.docId, mime_type: mime, status: "success" })
+            if (doc.mimeType !== DriveMime.Sheets) {
+              processedFiles += 1
+              tracker.updateUserStats(userEmail, StatType.Drive, 1)
+            }
+          } catch (err) {
+            totalIngestedFiles.inc({file_id: doc.docId, mime_type: mime, status: "failed" })
+            ingestionErrorsTotal.inc({ file_id: doc.docId, error_type: "insert_failed", mime_type: mime })
+            Logger.error(err, `Error inserting Drive doc: ${doc.docId}`)
+          } finally {
+            end()
+          }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
 

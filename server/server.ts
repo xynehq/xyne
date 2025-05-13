@@ -79,6 +79,7 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
+import { register } from "@/metrics/google/google-drive-metrics"
 
 export type Variables = JwtVariables
 
@@ -430,6 +431,19 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 export const init = async () => {
   await initQueue()
 }
+
+app.get("/metrics/gdrive", async (c) => {
+  try {
+    const metrics = await register.metrics()
+    return c.text(metrics, 200, {
+      "Content-Type": register.contentType,
+    })
+  } catch (err) {
+    return c.text("Error generating metrics", 500)
+  }
+})
+
+
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
