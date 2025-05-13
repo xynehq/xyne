@@ -18,6 +18,7 @@ import {
   extractUserIdsFromBlocks,
   fetchThreadMessages,
   insertMember,
+  formatSlackSpecialMentions,
 } from "@/integrations/slack/index"
 import { getLogger } from "@/logger"
 import { GaxiosError } from "gaxios"
@@ -106,6 +107,7 @@ export async function insertChannelMessages(
   memberMap: Map<string, User>,
   tracker: Tracker,
   timestamp: string = "0",
+  channelMap: Map<string, string>,
 ): Promise<boolean> {
   const syncTimestamp = parseFloat(timestamp)
   const ThreehrsBack =
@@ -144,7 +146,7 @@ export async function insertChannelMessages(
             )
           }
         }
-
+        text = formatSlackSpecialMentions(text, channelMap, channelId)
         message.text = text
         const messageId = message.client_msg_id
         const messageUpdatedTs = parseFloat(message.edited?.ts! ?? message.ts)
@@ -183,14 +185,13 @@ export async function insertChannelMessages(
               Logger.error("Error inserting message", error, message)
             }
             changesMade = true
-            
+
             tracker.updateUserStats(email, StatType.Slack_Message, 1)
           } else {
             const vespaUpdatedTs = parseFloat(
               String(vespaDoc[messageId!].updatedAt ?? "0"),
             )
             if (vespaUpdatedTs < messageUpdatedTs) {
-              
               await UpdateDocument(chatMessageSchema, messageId!, {
                 text: message.text,
                 updatedAt: messageUpdatedTs,
@@ -247,6 +248,7 @@ export async function insertChannelMessages(
                   )
                 }
               }
+              text = formatSlackSpecialMentions(text, channelMap, channelId)
 
               if (!memberMap.get(reply.user)) {
                 memberMap.set(
@@ -266,7 +268,6 @@ export async function insertChannelMessages(
               const vespaDoc = await ifDocumentsExist([replyId!])
 
               if (!vespaDoc[replyId!]?.exists) {
-
                 await insertChatMessage(
                   client,
                   reply,
@@ -283,7 +284,6 @@ export async function insertChannelMessages(
                 )
 
                 if (vespaUpdatedTs < replyUpdatedTs) {
-
                   await UpdateDocument(
                     chatMessageSchema,
                     reply.client_msg_id!,
@@ -318,7 +318,6 @@ export async function insertChannelMessages(
   return changesMade
 }
 
-
 export const handleSlackChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
@@ -336,7 +335,7 @@ export const handleSlackChanges = async (
 
     const memberMap = new Map<string, User>()
     const teamMap = new Map<string, Team>()
-
+    const channelMap = new Map<string, string>()
     // Ensure team info is in the map
 
     // Process all sync jobs, not just the first one
@@ -382,6 +381,11 @@ export const handleSlackChanges = async (
           )
         })
 
+        for (const conv of conversations) {
+          if (conv.id && conv.name) {
+            channelMap.set(conv.id, conv.name)
+          }
+        }
         if (!conversations || conversations.length === 0) {
           Logger.info(`No channels found for sync job ${syncJob.id}`)
           await db.transaction(async (trx) => {
@@ -451,7 +455,7 @@ export const handleSlackChanges = async (
                     const document = await GetDocument(chatUserSchema, docId)
                     const newuser = document as unknown as ChatUserCore
 
-                    const newUser : User = {
+                    const newUser: User = {
                       id: newuser.fields.docId,
                       team_id: newuser.fields.teamId,
                       name: newuser.fields.name,
@@ -473,7 +477,7 @@ export const handleSlackChanges = async (
                   }
                 }
               }
-             
+
               for (const memberId of currentMemberIds) {
                 if (!memberMap.has(memberId)) {
                   try {
@@ -502,9 +506,7 @@ export const handleSlackChanges = async (
                       await insertMember(userResp.user)
                     }
                   } catch (error) {
-
                     Logger.error(`Error fetching user ${memberId}: ${error}`)
-
                   }
                 }
               }
@@ -548,6 +550,8 @@ export const handleSlackChanges = async (
                   abortController,
                   memberMap,
                   tracker,
+                  "0",
+                  channelMap,
                 )
 
                 // Mark this channel as synced
@@ -671,6 +675,7 @@ export const handleSlackChanges = async (
                     memberMap,
                     tracker,
                     lastSyncTimestamp.toString(),
+                    channelMap,
                   ))
 
                 // Mark this channel as synced
@@ -804,5 +809,3 @@ const mergeStats = (prev: ChangeStats, current: ChangeStats): ChangeStats => {
   prev.summary += `\n${current.summary}`
   return prev
 }
-
-

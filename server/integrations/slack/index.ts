@@ -232,7 +232,34 @@ export function extractUserIdsFromBlocks(message: SlackMessage): string[] {
   }
   return userIds
 }
+export function formatSlackSpecialMentions(
+  text: string | undefined,
+  channelMap: Map<string, string>,
+  currentChannelId: string,
+): string {
+  if (!text) return ""
 
+  let formattedText = text
+
+  // Get current channel name
+  const currentChannelName = channelMap.get(currentChannelId) || "this"
+
+  // Replace special mentions with more descriptive text
+  formattedText = formattedText.replace(/<!channel>/gi, `@channel`)
+
+  formattedText = formattedText.replace(/<!here>/gi, `@here`)
+
+  // Handle channel mentions with empty display name: <#C12345|>
+  formattedText = formattedText.replace(
+    /<#([A-Z0-9]+)\|>/g,
+    (match, channelId) => {
+      const channelName = channelMap.get(channelId)
+      return channelName ? `#${channelName}` : `#unknown-channel`
+    },
+  )
+
+  return formattedText
+}
 /**
  * Fetches all messages from a channel.
  * For each message that is a thread parent, it also fetches the thread replies.
@@ -245,6 +272,7 @@ export async function insertChannelMessages(
   memberMap: Map<string, User>,
   tracker: Tracker,
   timestamp: string = "0",
+  channelMap: Map<string, string>,
 ): Promise<void> {
   let cursor: string | undefined = undefined
 
@@ -287,6 +315,7 @@ export async function insertChannelMessages(
             )
           }
         }
+        text = formatSlackSpecialMentions(text, channelMap, channelId)
         message.text = text
         // Add the top-level message
         if (
@@ -378,6 +407,7 @@ export async function insertChannelMessages(
                   )
                 }
               }
+              text = formatSlackSpecialMentions(text, channelMap, channelId)
               if (!memberMap.get(reply.user)) {
                 memberMap.set(
                   reply.user,
@@ -678,6 +708,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     })
     const tracker = new Tracker(Apps.Slack, AuthType.OAuth)
     const team = await safeGetTeamInfo(client)
+    const channelMap = new Map<string, string>()
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
@@ -701,6 +732,9 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           conversation.is_member)
       )
     })
+    for (const conv of conversations) {
+      if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
+    }
     // only insert conversations that are not yet inserted already
     const existenceMap = await ifDocumentsExistInSchema(
       chatContainerSchema,
@@ -773,6 +807,8 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         abortController,
         memberMap,
         tracker,
+        "0",
+        channelMap,
       )
       tracker.updateUserStats(data.email, StatType.Slack_Conversation, 1)
       await insertConversation(conversationWithPermission)
