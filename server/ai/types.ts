@@ -34,7 +34,68 @@ export enum Models {
 
   DeepSeek_R1 = "us.deepseek.r1-v1:0",
   Mistral_Large = "mistral.mistral-large-2402-v1:0",
+  Gemini_2_5_Pro_Preview = "gemini-2.5-pro-preview-03-25", // Added new Gemini model
 }
+
+// New Enum for UI-friendly model names
+// The keys should ideally mirror the keys in the Models enum for consistency
+export enum FriendlyModelUIName {
+  Llama_3_2_1B = "Llama 3.2 1B",
+  Llama_3_2_3B = "Llama 3.2 3B",
+  Llama_3_1_70B = "Llama 3.1 70B",
+  Llama_3_1_8B = "Llama 3.1 8B",
+  Llama_3_1_405B = "Llama 3.1 405B",
+  Gpt_4o = "GPT-4o",
+  Gpt_4o_mini = "GPT-4o Mini",
+  Gpt_4 = "GPT-4",
+  CohereCmdRPlus = "Cohere Command R+",
+  CohereCmdR = "Cohere Command R",
+  Claude_3_5_SonnetV2 = "Claude 3.5 Sonnet v2", // Specific to us.anthropic.claude-3-5-sonnet-20241022-v2:0
+  Claude_3_7_Sonnet = "Claude 3.7 Sonnet",     // Specific to us.anthropic.claude-3-7-sonnet-20250219-v1:0
+  Claude_3_5_Sonnet = "Claude 3.5 Sonnet",     // Specific to anthropic.claude-3-5-sonnet-20240620-v1:0
+  Claude_3_5_Haiku = "Claude 3.5 Haiku",
+  Amazon_Nova_Micro = "Amazon Nova Micro",
+  Amazon_Nova_Lite = "Amazon Nova Lite",
+  Amazon_Nova_Pro = "Amazon Nova Pro",
+  DeepSeek_R1 = "DeepSeek R1",
+  Mistral_Large = "Mistral Large",
+  Gemini_2_5_Pro_Preview = "Gemini 2.5 Pro Preview", // Added new Gemini friendly name
+}
+
+// Type for the actual model ID strings (values from the Models enum)
+export type ModelId = `${Models}`;
+
+// Type for the friendly UI name strings (values from the FriendlyModelUIName enum)
+export type FrontendModelNameString = `${FriendlyModelUIName}`;
+
+// Map from actual ModelId (string) to FriendlyModelNameString
+export const ModelIdToFriendlyNameMap: Record<ModelId, FrontendModelNameString> = {
+  [Models.Llama_3_2_1B]: FriendlyModelUIName.Llama_3_2_1B,
+  [Models.Llama_3_2_3B]: FriendlyModelUIName.Llama_3_2_3B,
+  [Models.Llama_3_1_70B]: FriendlyModelUIName.Llama_3_1_70B,
+  [Models.Llama_3_1_8B]: FriendlyModelUIName.Llama_3_1_8B,
+  [Models.Llama_3_1_405B]: FriendlyModelUIName.Llama_3_1_405B,
+  [Models.Gpt_4o]: FriendlyModelUIName.Gpt_4o,
+  [Models.Gpt_4o_mini]: FriendlyModelUIName.Gpt_4o_mini,
+  [Models.Gpt_4]: FriendlyModelUIName.Gpt_4,
+  [Models.CohereCmdRPlus]: FriendlyModelUIName.CohereCmdRPlus,
+  [Models.CohereCmdR]: FriendlyModelUIName.CohereCmdR,
+  [Models.Claude_3_5_SonnetV2]: FriendlyModelUIName.Claude_3_5_SonnetV2,
+  [Models.Claude_3_7_Sonnet]: FriendlyModelUIName.Claude_3_7_Sonnet,
+  [Models.Claude_3_5_Sonnet]: FriendlyModelUIName.Claude_3_5_Sonnet,
+  [Models.Claude_3_5_Haiku]: FriendlyModelUIName.Claude_3_5_Haiku,
+  [Models.Amazon_Nova_Micro]: FriendlyModelUIName.Amazon_Nova_Micro,
+  [Models.Amazon_Nova_Lite]: FriendlyModelUIName.Amazon_Nova_Lite,
+  [Models.Amazon_Nova_Pro]: FriendlyModelUIName.Amazon_Nova_Pro,
+  [Models.DeepSeek_R1]: FriendlyModelUIName.DeepSeek_R1,
+  [Models.Mistral_Large]: FriendlyModelUIName.Mistral_Large,
+  [Models.Gemini_2_5_Pro_Preview]: FriendlyModelUIName.Gemini_2_5_Pro_Preview, // Added mapping for new Gemini model
+};
+
+// Map from FriendlyModelNameString back to actual ModelId (string)
+export const FriendlyNameToModelIdMap = Object.fromEntries(
+  Object.entries(ModelIdToFriendlyNameMap).map(([id, name]) => [name, id as ModelId])
+) as Record<FrontendModelNameString, ModelId>;
 
 export enum QueryCategory {
   Self = "Self",
@@ -64,7 +125,7 @@ export interface ModelParams {
   max_new_tokens?: number
   top_p?: number
   temperature?: number
-  modelId: Models
+  modelId: ModelId // Changed from Models to ModelId
   systemPrompt?: string
   prompt?: string
   userCtx?: string

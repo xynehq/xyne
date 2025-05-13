@@ -35,6 +35,7 @@ let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 
+export const configuredModelProviders: string[] = []
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -45,7 +46,12 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_3_7_Sonnet
-} else if (process.env["OPENAI_API_KEY"]) {
+  configuredModelProviders.push(Models.Claude_3_5_Haiku)
+  configuredModelProviders.push(Models.Claude_3_7_Sonnet)
+  configuredModelProviders.push(Models.Claude_3_5_Sonnet) // As listed in GetConfiguredModelsApi
+}
+
+if (process.env["OPENAI_API_KEY"]) {
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)
@@ -56,19 +62,28 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
-} else if (process.env["OLLAMA_MODEL"]) {
+  configuredModelProviders.push(Models.Gpt_4o_mini)
+  configuredModelProviders.push(Models.Gpt_4o)
+} 
+// Changed from 'else if' to 'if' for Ollama and subsequent providers,
+// allowing multiple to be configured. Default models will be set by the last one active.
+if (process.env["OLLAMA_MODEL"]) {
   OllamaModel = process.env["OLLAMA_MODEL"]
-  defaultFastModel = process.env["OLLAMA_FAST_MODEL"]
-    ? (process.env["OLLAMA_FAST_MODEL"] as Models)
-    : (OllamaModel as Models)
+  const ollamaFastEnv = process.env["OLLAMA_FAST_MODEL"] as Models | undefined;
+  defaultFastModel = ollamaFastEnv || (OllamaModel as Models)
   defaultBestModel = OllamaModel as Models
-} else if (process.env["TOGETHER_MODEL"] && process.env["TOGETHER_API_KEY"]) {
+  configuredModelProviders.push(OllamaModel as Models)
+  if (ollamaFastEnv && ollamaFastEnv !== (OllamaModel as Models)) {
+    configuredModelProviders.push(ollamaFastEnv)
+  }
+} 
+
+if (process.env["TOGETHER_MODEL"] && process.env["TOGETHER_API_KEY"]) {
   TogetherAIModel = process.env["TOGETHER_MODEL"]
   TogetherApiKey = process.env["TOGETHER_API_KEY"]
-  defaultFastModel = process.env["TOGETHER_FAST_MODEL"]
-    ? (process.env["TOGETHER_FAST_MODEL"] as Models)
-    : (TogetherAIModel as Models)
-  defaultBestModel = TogetherAIModel as Models
+  const togetherFastEnv = process.env["TOGETHER_FAST_MODEL"] as Models | undefined;
+  defaultFastModel = togetherFastEnv || (TogetherAIModel as Models)
+  defaultBestModel = TogetherAIModel as Models    
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)
@@ -76,21 +91,38 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
       aiProviderBaseUrl = process.env["BASE_URL"]
     }
   }
-} else if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
+  configuredModelProviders.push(TogetherAIModel as Models)
+  if (togetherFastEnv && togetherFastEnv !== (TogetherAIModel as Models)) {
+    configuredModelProviders.push(togetherFastEnv)
+  }
+} 
+
+if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {
   FireworksAIModel = process.env["FIREWORKS_MODEL"] as Models
   FireworksApiKey = process.env["FIREWORKS_API_KEY"]
   defaultFastModel = process.env["FIREWORKS_FAST_MODEL"]
     ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
     : (FireworksAIModel as Models)
   defaultBestModel = FireworksAIModel as Models
-} else if (process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"]) {
+  configuredModelProviders.push(FireworksAIModel as Models)
+  if (process.env["FIREWORKS_FAST_MODEL"] && process.env["FIREWORKS_FAST_MODEL"] !== FireworksAIModel) {
+    configuredModelProviders.push(process.env["FIREWORKS_FAST_MODEL"] as Models)
+  }
+}
+
+if (process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"]) {
   GeminiAIModel = process.env["GEMINI_MODEL"] as Models
   GeminiApiKey = process.env["GEMINI_API_KEY"]
   defaultFastModel = process.env["GEMINI_FAST_MODEL"]
     ? (process.env["GEMINI_FAST_MODEL"] as Models)
     : (GeminiAIModel as Models)
   defaultBestModel = GeminiAIModel as Models
+  configuredModelProviders.push(GeminiAIModel as Models)
+  if (process.env["GEMINI_FAST_MODEL"] && process.env["GEMINI_FAST_MODEL"] !== GeminiAIModel) {
+    configuredModelProviders.push(process.env["GEMINI_FAST_MODEL"] as Models)
+  }
 }
+
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
 
@@ -152,4 +184,5 @@ export default {
   EndThinkingToken,
   JobExpiryHours: 23,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
+  configuredModelProviders: [...new Set(configuredModelProviders)], // Ensure unique model IDs
 }
