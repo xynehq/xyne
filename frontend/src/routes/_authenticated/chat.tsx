@@ -1414,7 +1414,6 @@ const getCitationsReferencedInText = (
       }
     }
   }
-  console.log(referencedCitationsList)
   return referencedCitationsList;
 };
 
