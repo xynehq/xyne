@@ -554,6 +554,8 @@ const endToEndFlow = async (
 
     const classification: TemporalClassifier = {
       direction: parsed.temporalDirection,
+      from: null,
+      to: null
     }
 
     const tracer = getTracer("chat")
@@ -567,6 +569,7 @@ const endToEndFlow = async (
       classification,
       messages,
       0.5,
+      [],
       ragSpan,
     )
 
