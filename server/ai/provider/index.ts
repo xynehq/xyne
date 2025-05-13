@@ -59,7 +59,6 @@ import {
   emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
-  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
@@ -67,7 +66,7 @@ import {
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
-  // temporalEventClassifier,
+  temporalDirectionJsonPrompt,
   userChatSystem,
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -934,7 +933,7 @@ export const baselineRAGJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
-export const meetingPromptJsonStream = (
+export const temporalPromptJsonStream = (
   userQuery: string,
   userCtx: string,
   retrievedCtx: string,
@@ -943,7 +942,7 @@ export const meetingPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,

@@ -20,6 +20,7 @@ import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
 import { getSortedScoredChunks } from "@/search/mappers"
+import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -229,6 +230,7 @@ Status: ${fields.status ? fields.status : "Status unknown"}
 Location: ${fields.location ? fields.location : "No location specified"}
 Created: ${getRelativeTime(fields.createdAt)}
 Updated: ${getRelativeTime(fields.updatedAt)}
+Today's Date: ${getDateForAI()}
 Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}
 End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}

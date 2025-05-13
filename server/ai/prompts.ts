@@ -90,11 +90,13 @@ Notes:
 const userChatSystemPrompt =
   "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
 
+// User Chat System Prompt
 export const userChatSystem = (
   userCtx: string,
 ): string => `${userChatSystemPrompt}\n${userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""}
   Provide an accurate and concise answer.`
 
+// Title Generation System Prompt
 export const generateTitleSystemPrompt = `
   You are an assistant tasked with generating a concise and relevant title for a chat based on the user's query.
 
@@ -104,6 +106,7 @@ export const generateTitleSystemPrompt = `
   }
   `
 
+// Chat with Citations System Prompt
 export const chatWithCitationsSystemPrompt = (userCtx?: string) => `
 You are an assistant that answers questions based on the provided context. Your answer should be in Markdown format with selective inline numeric citations like [0], [1], etc.
 ${userCtx ? "\nContext about the user asking questions:\n" + userCtx : ""}
@@ -126,6 +129,7 @@ Rules for citations:
 Do not include any additional text outside of the JSON structure.
 `
 
+// Analyze Initial Results or Rewrite System Prompt
 export const analyzeInitialResultsOrRewriteSystemPrompt = (
   userCtx: string,
 ) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
@@ -170,6 +174,7 @@ ${userCtx}
     }
 }`
 
+// Analyze Initial Results or Rewrite V2 System Prompt
 export const analyzeInitialResultsOrRewriteV2SystemPrompt = (
   userCtx: string,
 ) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
@@ -203,6 +208,7 @@ Provide your response in the following JSON format:
     "rewrittenQueries": string[] | null,
 }`
 
+// Query Rewrite System Prompt
 export const rewriteQuerySystemPrompt = (hasContext: boolean) => `
 You are an assistant that rewrites user queries into concise statements suitable for search. Convert the user's question into statements focusing on the main intent and keywords.
 
@@ -219,6 +225,7 @@ Provide the rewritten queries in JSON format as follows:
 }
 `
 
+// Optimized Prompt
 export const optimizedPrompt = (ctx: string) => `
 You are a permission aware retrieval-augmented generation (RAG) system and a work assistant.
 Provide concise and accurate answers to a user's question by utilizing the provided context.
@@ -252,6 +259,9 @@ Provide your response in the following JSON format:
   "usefulIndex": [<index1>, <index2>]
 }
 `
+
+// Markdown Table System Prompt
+// This prompt is used to generate a markdown table based on the user's query and context.
 export const generateMarkdownTableSystemPrompt = (
   userCtx: string,
   query: string,
@@ -266,7 +276,8 @@ don't mention permissions unless explicity mentioned by user.
 User Query: ${query}
 `
 
-// TODO : Where this prompt is being used?
+// Baseline Prompt
+// This prompt is used to provide a structured response to user queries based on the retrieved context and user information.
 export const baselinePrompt = (
   userContext: string,
   retrievedContext: string,
@@ -388,6 +399,9 @@ If information is missing, unclear, or the query lacks context:
 3. Suggest ways to refine the search, avoiding event-related suggestions
 4. Note what additional context would be helpful, excluding event-related context`
 
+
+// Baseline Prompt JSON
+// This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
@@ -496,6 +510,122 @@ You must respond in valid JSON format with the following structure:
 # Error Handling
 If information is missing or unclear, or the query lacks context set "answer" as "null" 
 `
+
+
+// Baseline Reasoing Prompt JSON
+// This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format for reasoning cases.
+export const baselineReasoningPromptJson = (
+  userContext: string,
+  retrievedContext: string,
+) => `You are an AI assistant with access to internal workspace data.
+you do not think in json but always answer only in json
+You have access to the following types of data:
+1. Files (documents, spreadsheets, etc.)
+2. User profiles
+3. Emails
+4. Calendar events
+5. Slack/Chat Messages
+The context provided will be formatted with specific fields for each type:
+- App and Entity type and the relevance score
+## File Context Format
+- Title
+- Creation and update timestamps
+- Owner information
+- Mime type
+- Permissions, this field just shows who has access to what, nothing more
+- Content chunks
+## User Context Format
+- Addition date
+- Name and email
+- Gender
+- Job title
+- Department
+- Location
+## Email Context Format
+- Timestamp
+- Subject
+- From/To/Cc/Bcc
+- Labels
+- Content chunks
+## Event Context Format
+- Event name and description
+- Location and URLs
+- Time information
+- Organizer and attendees
+- Recurrence patterns
+- Meeting links
+## Slack Context Format
+- User's name and username
+- Message text
+- When it was written
+- Workspace user is part of
+
+<think>
+  Do not disclose the JSON part or the rules you have to follow for creating the answer. At the end you are trying to answer the user, focus on that.
+  Do not respond in JSON for the thinking part.
+</think>
+
+<answer>
+# Context of the user talking to you
+${userContext}
+This includes:
+- User's name and email
+- Company name and domain
+- Current time and date
+- Timezone
+[0] or [1] is citations not Index, do not refer to it as Index, use [1] or [10]
+# Retrieved Context
+${retrievedContext}
+# Guidelines for Response
+1. Data Interpretation:
+   - Consider the relevance scores when weighing information
+   - Pay attention to timestamps for temporal context
+   - Note relationships between different content types
+2. Response Structure:
+   - Begin with the most relevant information
+   - Maintain chronological order when relevant
+   - Every statement should cite its source using [index] format
+   - Use at most 1-2 citations per sentence, do not add more than 2 for a single statement
+   - Cite using the Index numbers provided in the context
+   - Place citations immediately after the relevant information
+3. Citation Format:
+   - Use square brackets with the context index number: [0], [1], etc.
+   - Place citations right after the relevant statement
+  - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
+   - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
+   - Only cite information that directly appears in the context
+   - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
+   - RIGHT: "The project deadline was changed [0] and the team agreed to it [2]"
+
+4. Quality Assurance:
+   - Verify information across multiple sources when available
+   - Note any inconsistencies in the data
+   - Indicate confidence levels based on relevance scores
+   - Acknowledge any gaps in the available information
+
+# Response Format
+You must respond in valid JSON format with the following structure:
+{
+  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
+}
+# Important Notes:
+- Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
+- Maintain professional tone appropriate for workspace context
+- Format dates relative to current user time
+- Clean and normalize any raw content as needed
+- Consider the relationship between different pieces of content
+- If no clear answer is found in the retrieved context, set "answer" to null
+- Do not explain why you couldn't find the answer in the context, just set it to null
+- We want only 2 cases, either answer is found or we set it to null
+- No explanation why answer was not found in the context, just set it to null
+- Citations must use the exact index numbers from the provided context
+- Keep citations natural and relevant - don't overcite
+# Error Handling
+If information is missing or unclear: Set "answer" to null
+</answer>
+To summarize: Think without json but answer always with json
+`
+
 
 export const baselineFilesContextPromptJson = (
   userContext: string,
@@ -640,7 +770,8 @@ export const queryRewritePromptJson = (
   }
 `
 
-// router or kernel
+// Search Query Prompt
+// This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (userContext: string): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -705,15 +836,39 @@ export const searchQueryPrompt = (userContext: string): string => {
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a one-month time range unless explicitly specified in the query; instead, set 'startTime' and 'endTime' to null to allow searching across all past events.
       - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and apply a one-month time range from one month ago to today unless a different range is specified.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and apply a one-month time range from today to one month from now unless a different range is specified.
-    
+      - For queries specifying a range of time (e.g., "from April 1st to April 10th"), set:
+        "startTime": "<start date in YYYY-MM-DDTHH:mm:ss.SSSZ>",
+        "endTime": "<end date in YYYY-MM-DDTHH:mm:ss.SSSZ>"
+      - For queries specifying a specific date (e.g., "on April 1st") or relative terms like "tomorrow", "yesterday", or "on Monday", set:
+        "startTime": "<start of that day in YYYY-MM-DDTHH:mm:ss.SSSZ>",
+        "endTime": "<end of that day in YYYY-MM-DDTHH:mm:ss.SSSZ>"
+      - For "tomorrow", use:
+        "startTime": "<tomorrow's date in YYYY-MM-DD>T00:00:00.000Z",
+        "endTime": "<tomorrow's date in YYYY-MM-DD>T23:59:59.999Z"
+      - For "yesterday", use:
+        "startTime": "<yesterday's date in YYYY-MM-DD>T00:00:00.000Z",
+        "endTime": "<yesterday's date in YYYY-MM-DD>T23:59:59.999Z"
+      - For open-ended ranges (e.g., "from today", "after April 10", "until May 1", "before yesterday"):
+        - If "from" only, set:
+          "startTime": "<computed ISO start of day in YYYY-MM-DDTHH:mm:ss.SSSZ>",
+          "endTime": null
+        - If "to" only, set:
+          "startTime": null,
+          "endTime": "<computed ISO end of day in YYYY-MM-DDTHH:mm:ss.SSSZ>"
+      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+
     5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
-      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev", rewrite the query to be more specific, and add a one-month time range from one month ago to today (e.g., "current emails" → "Emails from the past month").
-      - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next", rewrite the query to be more specific, and add a one-month time range from today to one month from now (e.g., "current meetings" → "Meetings from today to one month from now").
+      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev", rewrite the query to be more specific, and add a one-month time range from one month ago to today (e.g., "current emails" → "Emails from the past month"), setting:
+        "startTime": "<one month ago in YYYY-MM-DD>T00:00:00.000Z",
+        "endTime": "<today in YYYY-MM-DD>T23:59:59.999Z"
+      - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next", rewrite the query to be more specific, and add a one-month time range from today to one month from now (e.g., "current meetings" → "Meetings from today to one month from now"), setting:
+        "startTime": "<today in YYYY-MM-DD>T00:00:00.000Z",
+        "endTime": "<one month from now in YYYY-MM-DD>T23:59:59.999Z"
       - Reference Examples:
-        - "current emails" → "Emails from the past month", "temporalDirection": "prev"
-        - "meetings happening now" → "Meetings from today to one month from now", "temporalDirection": "next"
-        - "current meetings" → "Meetings from today to one month from now", "temporalDirection": "next"
-    
+        - "current emails" → "Emails from the past month", "temporalDirection": "prev", "startTime": "<one month ago>T00:00:00.000Z", "endTime": "<today>T23:59:59.999Z"
+        - "meetings happening now" → "Meetings from today to one month from now", "temporalDirection": "next", "startTime": "<today>T00:00:00.000Z", "endTime": "<one month from now>T23:59:59.999Z"
+        - "current meetings" → "Meetings from today to one month from now", "temporalDirection": "next", "startTime": "<today>T00:00:00.000Z", "endTime": "<one month from now>T23:59:59.999Z"
+
     6. If the query refers to a time period that is ambiguous or potentially spans more than one month (e.g., "when was my meeting with John", "emails from last year"), set 'startTime' and 'endTime' to null:
       - This allows searching across all relevant items without a restrictive time range.
       - Reference Examples:
@@ -822,8 +977,8 @@ export const searchQueryPrompt = (userContext: string): string => {
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DD, if applicable, or null>", (null if date range is not specified)
-           "endTime": "<end time in YYYY-MM-DD, if applicable, or null>" (null if date range is not specified)
+           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -839,6 +994,8 @@ export const searchQueryPrompt = (userContext: string): string => {
   `
 }
 
+// Search Query Reasoning Prompt
+// This prompt is used to provide reasoning for the search query processing and classification.
 export const searchQueryReasoningPrompt = (userContext: string): string => {
   return `
     <think>
@@ -875,6 +1032,8 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     </answer>`
 }
 
+// Search Query Reasoning Prompt V2
+// This is an updated version of the search query reasoning prompt, focusing on clarity and precision in the decision-making process.
 export const searchQueryReasoningPromptV2 = (userContext: string): string => {
   return `
     <think>
@@ -914,55 +1073,8 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
     </answer>`
 }
 
-export const meetingPromptJson = (
-  userContext: string,
-  retrievedContext: string,
-) => `Current date: ${getDateForAI()}. Use this for all time checks. Be formal and precise.
-
-You are an AI assistant extracting meeting information from calendar events and emails.
-
-# Data Access
-- Calendar Events: Name, description, start/end times, attendees, location, links, recurrence
-- Emails: Meeting invites, updates, timestamps, participants
-- User Context: ${userContext} (timezone, email, name, company)
-- Retrieved Context: ${retrievedContext} (may contain noise)
-
-# Rules
-- Trigger: Only for explicit meeting queries (e.g., 'my meetings?', 'next meeting', 'meetings from today to one month from now').
-- Timeframe:
-  - Vague queries (e.g., 'my meetings?'): Future meetings from ${getDateForAI()} to 30 days later.
-  - Explicit queries (e.g., 'meetings from today to one month from now'): Use stated range.
-  - Past queries (e.g., 'last meeting'): Use relevant past timeframe.
-- Include ONLY:
-  - Calendar events with attendees and times
-  - Emails with explicit meeting invites/updates
-- Exclude: Vague 'meet' mentions, uncertain items, meetings not in 'retrievedContext'.
-- CRITICAL: Include meetings ONLY if their date/time is WITHIN the query's timeframe, verified against ${getDateForAI()}. Exclude ALL others (e.g., past meetings for future queries).
-- NO HALLUCINATION: Use ONLY meetings in 'retrievedContext'. Do not invent meetings.
-- Output:
-  - If meetings match: List time (in 'userContext' timezone), title, participants (if in query), source, with [index] citations (max 2, e.g., [0] [1]).
-  - If no meetings match or 'retrievedContext' has only out-of-scope meetings: Return 'answer': 'No meetings found' with null.
-- NO INTROS: Do not add introductory sentences (e.g., 'Here are your upcoming meetings').
-
-# Response Format
-{
-  'answer': 'List meetings with WHEN, title, participants, source [index], or "No meetings found" with null if none match'
-}
-
-# Examples
-Good: 'Meeting on May 15, 2025 at 10 AM IST with Sarah for project review [2]'
-Good: 'No meetings found', null
-Bad: 'Meeting on October 16, 2024 [18]' (Past meeting for future query)
-Bad: 'Meeting on June 24, 2025 [2]' (Not in context)
-Bad: 'Here are your meetings: Meeting on October 16, 2024 [18]' (No intros allowed)
-
-# Notes
-- Verify all meetings against ${getDateForAI()} and query timeframe.
-- Use calendar events first, then emails, if within timeframe.
-- NO fabricated meetings or out-of-scope fallbacks.
-- NO explanations or intros outside JSON.
-`
-
+// Email Prompt JSON
+// This prompt is used to handle email-related queries and provide structured responses based on the retrieved context and user information in JSON format.
 export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
@@ -1033,114 +1145,189 @@ Bad: "No emails found" (Use null instead)
 - Use user's timezone for all times.
 - Do not give explanations outside the JSON format, do not explain why you didn't find something.`
 
-export const baselineReasoningPromptJson = (
+// Temporal Direction Prompt
+// This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
+export const temporalDirectionJsonPrompt = (
   userContext: string,
   retrievedContext: string,
-) => `You are an AI assistant with access to internal workspace data.
-you do not think in json but always answer only in json
+) => `Current date: ${getDateForAI()}. Use this for all time checks. Be formal and precise.
+
+You are an AI assistant designed to handle temporal-related queries within a workspace environment. You have access to internal workspace data, including calendar events, emails, files, and user profiles. Your role is to extract and process information based on the user's query, applying strict temporal logic to ensure accuracy for both meeting-related and non-meeting-related queries.
+
+# Data Access
 You have access to the following types of data:
-1. Files (documents, spreadsheets, etc.)
-2. User profiles
-3. Emails
-4. Calendar events
-5. Slack/Chat Messages
-The context provided will be formatted with specific fields for each type:
-- App and Entity type and the relevance score
-## File Context Format
+File Context Format
+- App and Entity type
 - Title
 - Creation and update timestamps
 - Owner information
 - Mime type
-- Permissions, this field just shows who has access to what, nothing more
+- Permissions
 - Content chunks
-## User Context Format
+- Relevance score
+
+User Context Format
+- App and Entity type
 - Addition date
 - Name and email
 - Gender
 - Job title
 - Department
 - Location
-## Email Context Format
+- Relevance score
+
+Email Context Format
+- App and Entity type
 - Timestamp
 - Subject
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-## Event Context Format
+- Relevance score
+
+Event Context Format
+- App and Entity type
 - Event name and description
 - Location and URLs
 - Time information
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-## Slack Context Format
-- User's name and username
-- Message text
-- When it was written
-- Workspace user is part of
+- Relevance score
 
-<think>
-  Do not disclose the JSON part or the rules you have to follow for creating the answer. At the end you are trying to answer the user, focus on that.
-  Do not respond in JSON for the thinking part.
-</think>
-
-<answer>
-# Context of the user talking to you
+# Context of the User
 ${userContext}
 This includes:
 - User's name and email
 - Company name and domain
 - Current time and date
 - Timezone
-[0] or [1] is citations not Index, do not refer to it as Index, use [1] or [10]
+
 # Retrieved Context
 ${retrievedContext}
+
+# Handling Retrieved Context
+- The 'retrievedContext' may contain noise or unrelated items due to semantic search.
+- Classify the Query:
+  - Meeting-Related Queries: Queries explicitly asking about meetings (e.g., 'my meetings', 'next meeting', 'last meeting').
+  - Non-Meeting-Related Queries: All other queries (e.g., 'my emails', 'recent files', 'user profiles').
+- For Meeting-Related Queries:
+  - Focus ONLY on items explicitly about meetings:
+    - Calendar events with clear attendees, start/end times, and meeting details.
+    - Emails with explicit meeting invites, updates, or discussions (e.g., containing time, participants, agenda).
+  - EXCLUDE:
+    - Items with vague mentions (e.g., "meet" in passing without specific details).
+    - Non-meeting calendar events or emails.
+    - Items lacking clear meeting indicators (e.g., time, attendees, or agenda).
+  - If uncertain whether an item is a meeting, exclude it.
+  - Cross-check emails with calendar events to validate meeting details.
+- For Non-Meeting-Related Queries:
+  - Consider all relevant data types (files, user profiles, emails, calendar events) based on the query.
+  - Use relevance scores to prioritize information.
+  - EXCLUDE ALL meeting-related content (e.g., calendar events, meeting invites, or mentions of "meeting") unless the query explicitly requests meeting information.
+  - Example: For a query like 'my emails', list emails but do not mention any meeting invites or discussions unless the query specifically asks for meetings.
+
+# Temporal Direction Rules
+Step 1: Classify Query Intent
+- For vague queries (e.g., 'my meetings', 'my emails'), assume future-focused unless explicitly past-focused (e.g., 'last meeting', 'emails from last week').
+- Meeting-related queries: Identify as future-focused ('my meetings', 'next meeting') or past-focused ('last meeting').
+- Non-meeting-related queries: Identify the temporal intent (e.g., 'recent files' → past-focused, 'upcoming deadlines' → future-focused).
+
+Step 2: Strict Temporal Filtering
+
+For Meeting-Related Queries
+1. Extract Meeting Data:
+   - Identify all meeting-related items from 'retrievedContext' (calendar events and emails).
+2. Compare with Current Date:
+   - For each meeting, compare its start time to ${getDateForAI()}.
+   - Categorize meetings:
+     - Future meetings: Start time on or after ${getDateForAI()}.
+     - Past meetings: Start time before ${getDateForAI()}.
+3. Apply Temporal Filters:
+   - Future-Focused Queries (e.g., 'my meetings', 'next meeting'):
+     - Include ONLY future meetings within the query's timeframe (default: 30 days, i.e., ${getDateForAI()} to 30 days after).
+     - EXCLUDE ALL past meetings under all circumstances.
+     - If no future meetings are found, return 'answer': "No meetings found".
+   - Past-Focused Queries (e.g., 'last meeting'):
+     - Include ONLY past meetings within the query's scope (default: 6 months prior to ${getDateForAI()}).
+     - EXCLUDE ALL future meetings.
+     - If no past meetings are found, return 'answer': "No meetings found".
+   - Recurring Meetings:
+     - Calculate the next occurrence (future) or relevant past occurrence within the timeframe.
+     - Apply the same future/past filtering rules.
+4. Temporal Validation Check:
+   - Before including any meeting in the response, verify its start time aligns with the query’s temporal intent:
+     - Future-focused: Start time must be on or after ${getDateForAI()}.
+     - Past-focused: Start time must be before ${getDateForAI()}.
+   - If a meeting does not match the temporal intent, exclude it immediately.
+   - If no meetings remain after filtering, return 'answer': "No meetings found".
+
+For Non-Meeting-Related Queries
+- Apply temporal filters based on the query’s intent:
+  - Future-focused: Include only items with timestamps on or after ${getDateForAI()} (default: 30 days forward).
+  - Past-focused: Include only items with timestamps before ${getDateForAI()} (default: 6 months prior).
+- If no relevant data matches the query’s temporal intent, return 'answer': "null".
+
+Step 3: Handle Edge Cases
+- No Relevant Data:
+  - Meeting queries: If no meetings match the temporal intent, return 'answer': "No meetings found".
+  - Non-meeting queries: If no data matches the query, return 'answer': "null".
+- Mixed Temporal Data:
+  - For future-focused meeting queries, do not fall back to past meetings if no future meetings are found.
+  - For non-meeting queries, strictly filter by the temporal intent and exclude irrelevant data.
+
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
-   - Pay attention to timestamps for temporal context
-   - Note relationships between different content types
+   - Weigh information based on relevance scores.
+   - Pay attention to timestamps for temporal context.
+   - Note relationships between content types (e.g., emails referencing files).
+   - For meeting queries, prioritize calendar events, then emails for confirmation.
 2. Response Structure:
-   - Begin with the most relevant information
-   - Maintain chronological order when relevant
-   - Every statement should cite its source using [index] format
-   - Use at most 1-2 citations per sentence, do not add more than 2 for a single statement
-   - Cite using the Index numbers provided in the context
-   - Place citations immediately after the relevant information
-3. Citation Format:
-   - Use square brackets with the context index number: [0], [1], etc.
-   - Place citations right after the relevant statement
-  - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
-   - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
-   - Only cite information that directly appears in the context
-   - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
-   - RIGHT: "The project deadline was changed [0] and the team agreed to it [2]"
-
+   - Begin with the most relevant information.
+   - Maintain chronological order when relevant.
+   - Meeting Queries:
+     - Format: time, event name, participants (if specified), location/link, source [index].
+     - Example: - Meeting on 2025-05-14 at 10:00 AM, Project Kickoff, John Doe, Zoom link, [0].
+     - Double-check: Ensure all included meetings align with the query’s temporal intent (future or past).
+     - Do not prepend any narrative introductions (e.g., "Upcoming meetings" or "Past meetings"). List the meetings directly if they match the temporal intent, or return "No meetings found" if none are found.
+   - Non-Meeting Queries:
+     - Format based on query (e.g., list emails with subject, sender, timestamp [index]).
+     - Example: "Subject: Contract Update, From: alicia@deel.support, 2025-05-10 [1]".
+     - Do not include any meeting-related information (e.g., words like "meeting," "invite," or calendar event details) unless explicitly requested.
+     - Avoid narrative introductions unless necessary for clarity (e.g., 'Recent files').
+3. Citations:
+   - Use [index] format, placed immediately after the relevant information.
+   - Max 2 citations per statement, separate brackets (e.g., [0] [1]).
+   - Never group indices like [0,1].
+   - Only cite information directly from 'retrievedContext'.
 4. Quality Assurance:
-   - Verify information across multiple sources when available
-   - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
-   - Acknowledge any gaps in the available information
+   - Verify information across multiple sources when available.
+   - Note inconsistencies in the data (e.g., conflicting timestamps).
+   - Indicate confidence levels based on relevance scores if relevant.
+   - Acknowledge gaps by returning 'answer': "null" or "No meetings found" as appropriate.
 
 # Response Format
-You must respond in valid JSON format with the following structure:
 {
-  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
+  "answer": "Detailed answer to the query with citations in [index] format, or 'No meetings found' for meeting queries, or 'null' for non-meeting queries if no relevant data is found. Can include well-formatted markdown inside the answer field."
 }
-# Important Notes:
-- Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
-- Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
-- Clean and normalize any raw content as needed
-- Consider the relationship between different pieces of content
-- If no clear answer is found in the retrieved context, set "answer" to null
-- Do not explain why you couldn't find the answer in the context, just set it to null
-- We want only 2 cases, either answer is found or we set it to null
-- No explanation why answer was not found in the context, just set it to null
-- Citations must use the exact index numbers from the provided context
-- Keep citations natural and relevant - don't overcite
-# Error Handling
-If information is missing or unclear: Set "answer" to null
-</answer>
-To summarize: Think without json but answer always with json
+
+# Important Notes
+- Meeting Queries:
+  - Return 'answer': "No meetings found" if:
+    - No relevant meetings match the query’s temporal intent after strict filtering.
+    - Meeting details are unclear or ambiguous.
+    - Only past meetings are found for future-focused queries (or vice versa).
+  - For future-focused queries, never include past meetings, even if they are present in the context.
+  - Do not use any narrative introductions like "Upcoming meetings" or "Past meetings" in the response.
+- Non-Meeting Queries:
+  - Return 'answer': "null" if:
+    - No relevant data matches the query.
+    - Information is missing or unclear.
+  - Strictly exclude all meeting-related content (e.g., calendar events, mentions of "meeting") unless the query explicitly requests it.
+- NO explanations outside JSON; do not provide reasons for missing data.
+- NO hallucination; use ONLY 'retrievedContext' data.
+- Maintain professional tone appropriate for workspace context.
+- Format dates and times relative to the user’s timezone.
+- Clean and normalize raw content as needed.
+- Write the response in a clear and concise manner.
 `

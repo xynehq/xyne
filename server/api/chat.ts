@@ -6,7 +6,7 @@ import {
   generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
-  meetingPromptJsonStream,
+  temporalPromptJsonStream,
   queryRewriter,
 } from "@/ai/provider"
 import {
@@ -1353,7 +1353,8 @@ async function* generatePointQueryTimeExpansion(
 
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
-    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
+    Logger.info("Using temporalPromptJsonStream")
+    const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: isReasoning,
@@ -1487,12 +1488,14 @@ async function* generateMetadataQueryAnswer(
 
       let iterator: AsyncIterableIterator<ConverseResponse>
       if (app === Apps.Gmail) {
+        Logger.info("Using mailPromptJsonStream")
         iterator = mailPromptJsonStream(input, userCtx, initialContext, {
           stream: true,
           modelId: defaultBestModel,
           reasoning: isReasoning,
         })
       } else {
+        Logger.info("Using baselineRAGJsonStream")
         iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
           stream: true,
           modelId: defaultBestModel,
