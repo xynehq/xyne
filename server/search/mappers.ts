@@ -38,6 +38,7 @@ import {
   GooglePeopleEntity,
   CalendarEntity,
   Apps,
+  type VespaSchema,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -366,8 +367,8 @@ export function handleVespaGroupResponse(
 export const entityToSchemaMapper = (
   entityName?: string,
   app?: string,
-): string | null => {
-  const entitySchemaMap: Record<string, string> = {
+): VespaSchema | null => {
+  const entitySchemaMap: Record<string, VespaSchema> = {
     ...Object.fromEntries(
       Object.values(DriveEntity).map((e) => [e, fileSchema]),
     ),

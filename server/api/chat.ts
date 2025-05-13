@@ -610,112 +610,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       { email },
     )
   }
-
-  const { startTime, endTime } = classification.filters
-  let from,
-    to = 0
-  from = new Date(startTime ?? "").getTime()
-  to = new Date(endTime ?? "").getTime()
-
-  if (
-    classification &&
-    classification.filters &&
-    classification.filters.app &&
-    classification.filters.entity
-  ) {
-    Logger.info("User requested metadata search : Non Temporal Search")
-    const metadataSearchSpan = rootSpan?.startSpan("metadata_results_search")
-
-    let { app, entity } = classification.filters
-    let count =
-      "count" in classification.filters
-        ? classification.filters.count
-        : undefined
-
-    const diffMs = to - from
-    const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-    let readable = ""
-    if (days) readable += `${days} days `
-    if (hours) readable += `${hours} hours `
-
-    const isValidAppAndEntity = isValidApp(app) && isValidEntity(entity)
-    if (isValidAppAndEntity) {
-      Logger.info(
-        `Searching for documents from app: ${app} and entity: ${entity}`,
-      )
-      let schema = entityToSchemaMapper(entity, app) as VespaSchema
-
-      let items: VespaSearchResult[] = []
-      if (!isNaN(from) && !isNaN(to)) {
-        Logger.info(
-          `Searching for documents from app: ${app} and entity: ${entity} from the past ${days} days`,
-        )
-        items =
-          (
-            await getItems({
-              email,
-              schema,
-              app,
-              entity,
-              timestampRange: { from, to },
-              limit: count ? count : pageSize,
-            })
-          ).root.children || []
-      } else {
-        Logger.info(
-          `Time range is not valid, Searching for documents from app: ${app} and entity: ${entity}`,
-        )
-        // here will do normal search vespa applying app & entity filters
-        items =
-          (
-            await searchVespa(message, email, app, entity, {
-              limit: count ? count : pageSize,
-              alpha: userAlpha,
-              span: metadataSearchSpan,
-            })
-          ).root.children || []
-      }
-
-      Logger.debug(`Found ${items.length} items for metadata retrieval`)
-      if (!items.length) {
-        Logger.info(
-          "No context found for metadata retrieval, moving to iterative RAG",
-        )
-      } else {
-        const results = items
-        metadataSearchSpan?.setAttribute("result_count", results?.length || 0)
-        metadataSearchSpan?.setAttribute(
-          "result_ids",
-          JSON.stringify(
-            results?.map((r: VespaSearchResult) => (r.fields as any).docId) ||
-              [],
-          ),
-        )
-        const initialContext = buildContext(results, maxSummaryCount)
-
-        let iterator: AsyncIterableIterator<ConverseResponse>
-        if (app === Apps.Gmail) {
-          iterator = mailPromptJsonStream(input, userCtx, initialContext, {
-            stream: true,
-            modelId: defaultBestModel,
-            reasoning: isReasoning,
-          })
-        } else {
-          iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
-            stream: true,
-            modelId: defaultBestModel,
-            reasoning: isReasoning,
-          })
-        }
-
-        yield* processIterator(iterator, results)
-        return
-      }
-    }
-  }
-
   const initialSearchSpan = rootSpan?.startSpan("latestResults_search")
 
   const monthInMs = 30 * 24 * 60 * 60 * 1000
@@ -1081,112 +975,6 @@ async function* generatePointQueryTimeExpansion(
   let to = new Date().getTime()
   const direction = classification.direction as string
 
-  const { endTime, startTime } = classification.filters
-
-  // we will check if startTime and endTime are present,
-  // if not we go with the iterative RAG
-  const isUnspecificMetadataRetrieval =
-    classification.type == QueryType.RetrievedUnspecificMetadata
-  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
-
-  if (isUnspecificMetadataRetrieval || isMetadataRetrieval) {
-    let { app, count, entity } = classification.filters
-    const isValidAppAndEntity =
-      isValidApp(app as Apps) && isValidEntity(entity as any)
-
-    from = new Date(startTime ?? "").getTime()
-    to = new Date(endTime ?? "").getTime()
-
-    if (
-      isValidAppAndEntity &&
-      (isMetadataRetrieval || isUnspecificMetadataRetrieval)
-    ) {
-      let items: VespaSearchResult[] = []
-      let schema = entityToSchemaMapper(entity, app) as VespaSchema
-      // Ensure `from` and `to` are valid timestamps before performing a search for unspecific metadata retrieval
-      if (!isNaN(from) && !isNaN(to) && isUnspecificMetadataRetrieval) {
-        Logger.info(
-          `User requested metadata search : ${QueryType.RetrievedUnspecificMetadata}`,
-        )
-        const diffMs = to - from
-        const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
-        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-        let readable = ""
-        if (days) readable += `${days} days `
-        if (hours) readable += `${hours} hours `
-        Logger.info(
-          `Searching for documents from app: ${app} and entity: ${entity} ${readable ? `from ${readable}` : ""}`,
-        )
-
-        items =
-          (
-            await getItems({
-              email,
-              schema,
-              app,
-              entity,
-              timestampRange: { from, to },
-              limit: count ? count : pageSize,
-            })
-          ).root.children || []
-        Logger.info(`Found ${items.length} items for metadata retrieval`)
-        // if no documents found will go with iterative RAG
-        if (!items.length) {
-          Logger.info(
-            `No context found for metadata retrieval: ${QueryType.RetrievedUnspecificMetadata}, moving to iterative RAG`,
-          )
-        }
-      } else if (isMetadataRetrieval) {
-        Logger.info(
-          `User requested metadata search : ${QueryType.RetrieveMetadata}`,
-        )
-        items =
-          (
-            await searchVespa(input, email, app as Apps, entity as any, {
-              limit: count ? count : pageSize,
-              alpha: userAlpha,
-              timestampRange: isNaN(from) || isNaN(to) ? null : { from, to },
-            })
-          ).root.children || []
-        Logger.info(`Found ${items.length} items for metadata retrieval`)
-      }
-      // if no documents found will go with iterative RAG
-      if (!items.length) {
-        Logger.info(
-          `No context found for metadata retrieval:  ${QueryType.RetrieveMetadata}, moving to iterative RAG`,
-        )
-      } else {
-        const results = items
-        const searchRangeSummary = getSearchRangeSummary(
-          from,
-          to,
-          direction,
-          rootSpan,
-        )
-        const initialContext = buildContext(results, maxSummaryCount)
-
-        let iterator: AsyncIterableIterator<ConverseResponse>
-        if (app === Apps.Gmail) {
-          iterator = mailPromptJsonStream(input, userCtx, initialContext, {
-            stream: true,
-            modelId: defaultBestModel,
-            reasoning: isReasoning,
-          })
-        } else {
-          iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
-            stream: true,
-            modelId: defaultBestModel,
-            reasoning: isReasoning,
-          })
-        }
-
-        yield* processIterator(iterator, results, 0)
-        return
-      }
-    }
-  }
-
   Logger.info("Proceeding with iterative RAG.")
   const message = input
   const maxIterations = 10
@@ -1372,6 +1160,114 @@ async function* generatePointQueryTimeExpansion(
   eventRagSpan?.end()
 }
 
+async function* generateMetadataQueryAnswer(
+  input: string,
+  messages: Message[],
+  email: string,
+  userCtx: string,
+  userAlpha: number = 0.5,
+  pageSize: number = 10,
+  maxSummaryCount: number | undefined,
+  classification: TemporalClassifier & QueryRouterResponse,
+  span?: Span,
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
+  let from = 0,
+    to = 0
+  const direction = classification.direction as string
+  const isUnspecificMetadataRetrieval =
+    classification.type == QueryType.RetrievedUnspecificMetadata
+  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
+
+  let { app, entity, startTime, endTime } = classification.filters
+  const isValidAppAndEntity =
+    isValidApp(app as Apps) && isValidEntity(entity as any)
+
+  from = new Date(startTime ?? "").getTime()
+  to = new Date(endTime ?? "").getTime()
+
+  if (isValidAppAndEntity) {
+    let items: VespaSearchResult[] = []
+    let schema = entityToSchemaMapper(entity, app) as VespaSchema
+
+    // Ensure `from` and `to` are valid timestamps before performing a search for unspecific metadata retrieval
+    if (!isNaN(from) && !isNaN(to) && isUnspecificMetadataRetrieval) {
+      Logger.info(
+        `User requested metadata search : ${QueryType.RetrievedUnspecificMetadata}`,
+      )
+      const diffMs = to - from
+      const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+      let readable = ""
+      if (days) readable += `${days} days `
+      if (hours) readable += `${hours} hours `
+      Logger.info(
+        `Searching for documents from app: ${app} and entity: ${entity} ${readable ? `from ${readable}` : ""}`,
+      )
+
+      items =
+        (
+          await getItems({
+            email,
+            schema,
+            app,
+            entity,
+            timestampRange: { from, to },
+            limit: pageSize,
+          })
+        ).root.children || []
+      Logger.info(`Found ${items.length} items for metadata retrieval`)
+    } else if (isMetadataRetrieval) {
+      Logger.info(
+        `User requested metadata search : ${QueryType.RetrieveMetadata}`,
+      )
+      items =
+        (
+          await searchVespa(input, email, app as Apps, entity as any, {
+            limit: pageSize,
+            alpha: userAlpha,
+            timestampRange: isNaN(from) || isNaN(to) ? null : { from, to },
+          })
+        ).root.children || []
+      Logger.info(`Found ${items.length} items for metadata retrieval`)
+    }
+    // if no documents found will go with iterative RAG
+    if (!items.length) {
+      return null
+    } else {
+      const results = items
+      // const searchRangeSummary = getSearchRangeSummary(
+      //   from,
+      //   to,
+      //   direction,
+      //   span,
+      // )
+      const initialContext = buildContext(results, maxSummaryCount)
+
+      let iterator: AsyncIterableIterator<ConverseResponse>
+      if (app === Apps.Gmail) {
+        iterator = mailPromptJsonStream(input, userCtx, initialContext, {
+          stream: true,
+          modelId: defaultBestModel,
+          reasoning: isReasoning,
+        })
+      } else {
+        iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+          stream: true,
+          modelId: defaultBestModel,
+          reasoning: isReasoning,
+        })
+      }
+
+      return yield* processIterator(iterator, results, 0)
+    }
+  }
+
+  return null
+}
+
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
@@ -1391,6 +1287,37 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
+  
+  const isUnspecificMetadataRetrieval =
+    classification.type == QueryType.RetrievedUnspecificMetadata
+  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
+
+  if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
+    Logger.info("User is asking for metadata retrieval")
+    const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
+    metadataRagSpan?.setAttribute("comment", "metadata retrieval")
+    const answer = yield* generateMetadataQueryAnswer(
+      message,
+      messages,
+      email,
+      userCtx,
+      alpha,
+      classification.filters.count
+        ? classification.filters.count
+        : chatPageSize,
+      maxDefaultSummary,
+      classification,
+      metadataRagSpan,
+    )
+
+    if (!answer) {
+      Logger.info(
+        `No context found for metadata retrieval, moving to iterative RAG`,
+      )
+    } else {
+      return answer
+    }
+  }
   // user is talking about an event
   if (classification.direction !== null) {
     Logger.info(`Direction: ${classification.direction}`)
