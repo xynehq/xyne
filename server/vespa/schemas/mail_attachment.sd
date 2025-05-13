@@ -63,7 +63,7 @@ schema mail_attachment {
     
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
     indexing: input chunks | embed | attribute | index
     attribute {
       distance-metric: angular
@@ -92,7 +92,7 @@ schema mail_attachment {
 
   rank-profile initial {
     inputs {
-      query(e) tensor<bfloat16>(v[DIMS])
+      query(e) tensor<bfloat16>(v[384])
       query(alpha) double
       query(recency_decay_rate) double
     }

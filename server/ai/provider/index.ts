@@ -1073,6 +1073,7 @@ export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
   params: ModelParams,
+  toolContext: string,
 ): AsyncIterableIterator<ConverseResponse> {
   //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
@@ -1086,6 +1087,8 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }
+
+  params.systemPrompt += toolContext;
 
   const baseMessage = {
     role: ConversationRole.USER,

@@ -111,6 +111,7 @@ export const messageSchema = z.object({
   chatId: z.string().optional(),
   modelId: z.string().min(1),
   stringifiedfileIds: z.string(),
+  toolsList: z.array(z.object({connectorId: z.number().nonnegative(), tools: z.array(z.string())})).optional(),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
