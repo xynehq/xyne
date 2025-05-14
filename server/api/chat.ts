@@ -56,19 +56,19 @@ import {
   ToolResultContentBlock,
   type ConversationRole,
   type Message,
-} from "@aws-sdk/client-bedrock-runtime"
-import type { Context } from "hono"
-import { HTTPException } from "hono/http-exception"
-import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSEStreamingApi
-import { z } from "zod"
-import type { chatSchema } from "@/api/search"
-import { getTracer, type Span, type Tracer } from "@/tracer"
+} from "@aws-sdk/client-bedrock-runtime";
+import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { streamSSE, type SSEStreamingApi } from "hono/streaming"; // Import SSEStreamingApi
+import { z } from "zod";
+import type { chatSchema } from "@/api/search";
+import { getTracer, type Span, type Tracer } from "@/tracer";
 import {
   searchVespa,
   SearchModes,
   searchVespaInFiles,
   getItems,
-} from "@/search/vespa"
+} from "@/search/vespa";
 import {
   Apps,
   chatMessageSchema,
@@ -105,9 +105,9 @@ import {
 import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
-} from "@/db/personalization"
-import { entityToSchemaMapper } from "@/search/mappers"
-import { is } from "drizzle-orm"
+} from "@/db/personalization";
+import { entityToSchemaMapper } from "@/search/mappers";
+import { is } from "drizzle-orm";
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -455,97 +455,97 @@ async function* processIterator(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  let buffer = ""
-  let currentAnswer = ""
-  let parsed = { answer: "" }
-  let thinking = ""
-  let reasoning = isReasoning
-  let yieldedCitations = new Set<number>()
+  let buffer = "";
+  let currentAnswer = "";
+  let parsed = { answer: "" };
+  let thinking = "";
+  let reasoning = isReasoning;
+  let yieldedCitations = new Set<number>();
   // tied to the json format and output expected, we expect the answer key to be present
-  const ANSWER_TOKEN = '"answer":'
+  const ANSWER_TOKEN = '"answer":';
 
   for await (const chunk of iterator) {
     if (chunk.text) {
       if (reasoning) {
         if (thinking && !chunk.text.includes(EndThinkingToken)) {
-          thinking += chunk.text
+          thinking += chunk.text;
           yield* checkAndYieldCitations(
             thinking,
             yieldedCitations,
             results,
             previousResultsLength,
-          )
-          yield { text: chunk.text, reasoning }
+          );
+          yield { text: chunk.text, reasoning };
         } else {
           // first time
-          const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+          const startThinkingIndex = chunk.text.indexOf(StartThinkingToken);
           if (
             startThinkingIndex !== -1 &&
             chunk.text.trim().length > StartThinkingToken.length
           ) {
             let token = chunk.text.slice(
               startThinkingIndex + StartThinkingToken.length,
-            )
+            );
             if (chunk.text.includes(EndThinkingToken)) {
-              token = chunk.text.split(EndThinkingToken)[0]
-              thinking += token
+              token = chunk.text.split(EndThinkingToken)[0];
+              thinking += token;
             } else {
-              thinking += token
+              thinking += token;
             }
             yield* checkAndYieldCitations(
               thinking,
               yieldedCitations,
               results,
               previousResultsLength,
-            )
-            yield { text: token, reasoning }
+            );
+            yield { text: token, reasoning };
           }
         }
       }
       if (reasoning && chunk.text.includes(EndThinkingToken)) {
-        reasoning = false
-        chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        reasoning = false;
+        chunk.text = chunk.text.split(EndThinkingToken)[1].trim();
       }
       if (!reasoning) {
-        buffer += chunk.text
+        buffer += chunk.text;
         try {
-          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN);
           // If we have a null answer, break this inner loop and continue outer loop
           // seen some cases with just "}"
           if (parsed.answer === null || parsed.answer === "}") {
-            break
+            break;
           }
 
           // If we have an answer and it's different from what we've seen
           if (parsed.answer && currentAnswer !== parsed.answer) {
             if (currentAnswer === "") {
               // First valid answer - send the whole thing
-              yield { text: parsed.answer }
+              yield { text: parsed.answer };
             } else {
               // Subsequent chunks - send only the new part
-              const newText = parsed.answer.slice(currentAnswer.length)
-              yield { text: newText }
+              const newText = parsed.answer.slice(currentAnswer.length);
+              yield { text: newText };
             }
             yield* checkAndYieldCitations(
               parsed.answer,
               yieldedCitations,
               results,
               previousResultsLength,
-            )
-            currentAnswer = parsed.answer
+            );
+            currentAnswer = parsed.answer;
           }
         } catch (e) {
           // If we can't parse the JSON yet, continue accumulating
-          continue
+          continue;
         }
       }
     }
 
     if (chunk.cost) {
-      yield { cost: chunk.cost }
+      yield { cost: chunk.cost };
     }
   }
-  return parsed.answer
+  return parsed.answer;
 }
 
 function buildContext(
@@ -563,7 +563,7 @@ function buildContext(
           )}`,
       )
       ?.join("\n"),
-  )
+  );
 }
 
 async function* generateIterativeTimeFilterAndQueryRewrite(
@@ -586,15 +586,15 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // @ts-ignore
   const rootSpan = queryRagSpan?.startSpan(
     "generateIterativeTimeFilterAndQueryRewrite",
-  )
-  rootSpan?.setAttribute("input", input)
-  rootSpan?.setAttribute("email", email)
-  rootSpan?.setAttribute("alpha", alpha)
-  rootSpan?.setAttribute("pageSize", pageSize)
-  rootSpan?.setAttribute("maxPageNumber", maxPageNumber)
-  rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
+  );
+  rootSpan?.setAttribute("input", input);
+  rootSpan?.setAttribute("email", email);
+  rootSpan?.setAttribute("alpha", alpha);
+  rootSpan?.setAttribute("pageSize", pageSize);
+  rootSpan?.setAttribute("maxPageNumber", maxPageNumber);
+  rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none");
 
-  const message = input
+  const message = input;
 
   let userAlpha = alpha;
   try {
@@ -627,7 +627,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       { email },
     );
   }
-  const initialSearchSpan = rootSpan?.startSpan("latestResults_search")
+  const initialSearchSpan = rootSpan?.startSpan("latestResults_search");
 
   // Ensure we have search terms even after stopword removal
   const monthInMs = 30 * 24 * 60 * 60 * 1000;
@@ -690,7 +690,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const initialContext = buildContext(
         results?.root?.children,
         maxSummaryCount,
-      )
+      );
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter");
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
@@ -754,14 +754,17 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           JSON.stringify(
             totalResults.map((r: VespaSearchResult) => (r.fields as any).docId),
           ),
-        )
-        totalResultsSpan?.end()
-        const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(totalResults, maxSummaryCount)
+        );
+        totalResultsSpan?.end();
+        const contextSpan = querySpan?.startSpan("build_context");
+        const initialContext = buildContext(totalResults, maxSummaryCount);
 
-        contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-        contextSpan?.setAttribute("context", initialContext || "")
-        contextSpan?.setAttribute("number_of_chunks", totalResults.length)
+        contextSpan?.setAttribute(
+          "context_length",
+          initialContext?.length || 0,
+        );
+        contextSpan?.setAttribute("context", initialContext || "");
+        contextSpan?.setAttribute("number_of_chunks", totalResults.length);
         Logger.info(
           `[Query Rewrite Path] Number of contextual chunks being passed: ${totalResults.length}`,
         );
@@ -780,21 +783,21 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             messages,
             reasoning: isReasoning,
           },
-        )
+        );
 
         const answer = yield* processIterator(
           iterator,
           totalResults,
           previousResultsLength,
-        )
+        );
         if (answer) {
-          ragSpan?.setAttribute("answer_found", true)
-          ragSpan?.end()
-          querySpan?.end()
-          pageSpan?.end()
-          rootSpan?.end()
-          queryRagSpan?.end()
-          return
+          ragSpan?.setAttribute("answer_found", true);
+          ragSpan?.end();
+          querySpan?.end();
+          pageSpan?.end();
+          rootSpan?.end();
+          queryRagSpan?.end();
+          return;
         }
         if (isReasoning) {
           previousResultsLength += totalResults.length;
@@ -868,18 +871,18 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           (r: VespaSearchResult) => (r.fields as any).docId,
         ) || [],
       ),
-    )
-    pageSearchSpan?.end()
-    const startIndex = isReasoning ? previousResultsLength : 0
-    const contextSpan = pageSpan?.startSpan("build_context")
+    );
+    pageSearchSpan?.end();
+    const startIndex = isReasoning ? previousResultsLength : 0;
+    const contextSpan = pageSpan?.startSpan("build_context");
     const initialContext = buildContext(
       results?.root?.children,
       maxSummaryCount,
       startIndex,
-    )
+    );
 
-    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-    contextSpan?.setAttribute("context", initialContext || "")
+    contextSpan?.setAttribute("context_length", initialContext?.length || 0);
+    contextSpan?.setAttribute("context", initialContext || "");
     contextSpan?.setAttribute(
       "number_of_chunks",
       results?.root?.children?.length || 0,
@@ -903,15 +906,15 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       iterator,
       results?.root?.children,
       previousResultsLength,
-    )
+    );
 
     if (answer) {
-      ragSpan?.setAttribute("answer_found", true)
-      ragSpan?.end()
-      pageSpan?.end()
-      rootSpan?.end()
-      queryRagSpan?.end()
-      return
+      ragSpan?.setAttribute("answer_found", true);
+      ragSpan?.end();
+      pageSpan?.end();
+      rootSpan?.end();
+      queryRagSpan?.end();
+      return;
     }
     if (isReasoning) {
       previousResultsLength += results?.root?.children?.length || 0;
@@ -1126,15 +1129,15 @@ const getSearchRangeSummary = (
   direction: string,
   parentSpan?: Span,
 ) => {
-  const summarySpan = parentSpan?.startSpan("getSearchRangeSummary")
-  summarySpan?.setAttribute("from", from)
-  summarySpan?.setAttribute("to", to)
-  summarySpan?.setAttribute("direction", direction)
-  const now = Date.now()
+  const summarySpan = parentSpan?.startSpan("getSearchRangeSummary");
+  summarySpan?.setAttribute("from", from);
+  summarySpan?.setAttribute("to", to);
+  summarySpan?.setAttribute("direction", direction);
+  const now = Date.now();
   if ((direction === "next" || direction === "prev") && from && to) {
     // Ensure from is earlier than to
     if (from > to) {
-      ;[from, to] = [to, from]
+      [from, to] = [to, from];
     }
 
     const fromDate = new Date(from);
@@ -1157,7 +1160,7 @@ const getSearchRangeSummary = (
     fromDate.setHours(0, 0, 0, 0);
     toDate.setHours(23, 59, 0, 0);
 
-    return `from ${format(fromDate)} to ${format(toDate)}`
+    return `from ${format(fromDate)} to ${format(toDate)}`;
   }
   // For "next" direction, we usually start from now
   else if (direction === "next") {
@@ -1166,12 +1169,14 @@ const getSearchRangeSummary = (
     // Format end date to month/year if it's far in future
     const endStr =
       Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
-        ? `${endDate.toLocaleString("default", { month: "long" })} ${endDate.getFullYear()}`
-        : getRelativeTime(to)
-    const result = `from today until ${endStr}`
-    summarySpan?.setAttribute("result", result)
-    summarySpan?.end()
-    return result
+        ? `${endDate.toLocaleString("default", {
+            month: "long",
+          })} ${endDate.getFullYear()}`
+        : getRelativeTime(to);
+    const result = `from today until ${endStr}`;
+    summarySpan?.setAttribute("result", result);
+    summarySpan?.end();
+    return result;
   }
   // For "prev" direction
   else {
@@ -1211,24 +1216,24 @@ async function* generatePointQueryTimeExpansion(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none");
   rootSpan?.setAttribute("direction", classification.direction || "unknown");
 
-  let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
-  const direction = classification.direction as string
+  let userAlpha = await getUserPersonalizationAlpha(db, email, alpha);
+  const direction = classification.direction as string;
 
-  const message = input
-  const maxIterations = 10
-  const weekInMs = 12 * 24 * 60 * 60 * 1000
-  let costArr: number[] = []
+  const message = input;
+  const maxIterations = 10;
+  const weekInMs = 12 * 24 * 60 * 60 * 1000;
+  let costArr: number[] = [];
 
   const { fromDate, toDate } = interpretDateFromReturnedTemporalValue(
     classification.filters,
-  )
+  );
 
   let from = fromDate ? fromDate.getTime() : new Date().getTime();
   let to = toDate ? toDate.getTime() : new Date().getTime();
   let lastSearchedTime = direction === "prev" ? from : to;
 
-  let previousResultsLength = 0
-  const loopLimit = fromDate && toDate ? 2 : maxIterations
+  let previousResultsLength = 0;
+  const loopLimit = fromDate && toDate ? 2 : maxIterations;
 
   for (let iteration = 0; iteration < loopLimit; iteration++) {
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`);
@@ -1240,7 +1245,7 @@ async function* generatePointQueryTimeExpansion(
       if (fromDate && toDate) {
         Logger.info(
           `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
-        )
+        );
       }
       // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date
       else {
@@ -1252,13 +1257,13 @@ async function* generatePointQueryTimeExpansion(
       if (fromDate && toDate) {
         Logger.info(
           `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
-        )
+        );
       }
       // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date
       else {
-        from = fromDate ? from : lastSearchedTime
-        to = from + windowSize
-        lastSearchedTime = to
+        from = fromDate ? from : lastSearchedTime;
+        to = from + windowSize;
+        lastSearchedTime = to;
       }
     }
 
@@ -1362,16 +1367,16 @@ async function* generatePointQueryTimeExpansion(
     }
 
     // Prepare context for LLM
-    const contextSpan = iterationSpan?.startSpan("build_context")
-    const startIndex = isReasoning ? previousResultsLength : 0
+    const contextSpan = iterationSpan?.startSpan("build_context");
+    const startIndex = isReasoning ? previousResultsLength : 0;
     const initialContext = buildContext(
       combinedResults?.root?.children,
       maxSummaryCount,
       startIndex,
-    )
+    );
 
-    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-    contextSpan?.setAttribute("context", initialContext || "")
+    contextSpan?.setAttribute("context_length", initialContext?.length || 0);
+    contextSpan?.setAttribute("context", initialContext || "");
     contextSpan?.setAttribute(
       "number_of_chunks",
       combinedResults?.root?.children?.length || 0,
@@ -1379,8 +1384,8 @@ async function* generatePointQueryTimeExpansion(
     contextSpan?.end();
 
     // Stream LLM response
-    const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
-    Logger.info("Using temporalPromptJsonStream")
+    const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream");
+    Logger.info("Using temporalPromptJsonStream");
     const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
@@ -1391,15 +1396,15 @@ async function* generatePointQueryTimeExpansion(
       iterator,
       combinedResults?.root?.children,
       previousResultsLength,
-    )
-    ragSpan?.end()
+    );
+    ragSpan?.end();
     if (answer) {
-      ragSpan?.setAttribute("answer_found", true)
-      iterationSpan?.end()
-      Logger.debug(`Ending rootSpan at ${new Date().toISOString()}`)
-      rootSpan?.end()
-      eventRagSpan?.end()
-      return
+      ragSpan?.setAttribute("answer_found", true);
+      iterationSpan?.end();
+      Logger.debug(`Ending rootSpan at ${new Date().toISOString()}`);
+      rootSpan?.end();
+      eventRagSpan?.end();
+      return;
     }
     // only increment in the case of reasoning
     if (isReasoning) {
@@ -1434,29 +1439,29 @@ async function* generatePointQueryTimeExpansion(
 
 const formatTimeDuration = (from: number | null, to: number | null): string => {
   if (from === null && to === null) {
-    return ""
+    return "";
   }
 
-  const diffMs = Math.abs((to as number) - (from as number))
-  const minutes = Math.floor(diffMs / (1000 * 60)) % 60
-  const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
-  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  let readable = ""
+  const diffMs = Math.abs((to as number) - (from as number));
+  const minutes = Math.floor(diffMs / (1000 * 60)) % 60;
+  const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  let readable = "";
 
   if (days > 0) {
-    readable += `${days} day${days !== 1 ? "s" : ""} `
+    readable += `${days} day${days !== 1 ? "s" : ""} `;
   }
 
   if (hours > 0 || (days > 0 && minutes > 0)) {
-    readable += `${hours} hour${hours !== 1 ? "s" : ""} `
+    readable += `${hours} hour${hours !== 1 ? "s" : ""} `;
   }
 
   if (minutes > 0 && days === 0) {
-    readable += `${minutes} minute${minutes !== 1 ? "s" : ""} `
+    readable += `${minutes} minute${minutes !== 1 ? "s" : ""} `;
   }
 
-  return readable.trim()
-}
+  return readable.trim();
+};
 
 async function* generateMetadataQueryAnswer(
   input: string,
@@ -1471,57 +1476,58 @@ async function* generateMetadataQueryAnswer(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  const { app, entity, startTime, endTime } = classification.filters
+  const { app, entity, startTime, endTime } = classification.filters;
 
-  const direction = classification.direction as string
+  const direction = classification.direction as string;
   const isUnspecificMetadataRetrieval =
-    classification.type === QueryType.RetrievedUnspecificMetadata
-  const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
+    classification.type === QueryType.RetrievedUnspecificMetadata;
+  const isMetadataRetrieval =
+    classification.type === QueryType.RetrieveMetadata;
   const isValidAppAndEntity =
-    isValidApp(app as Apps) && isValidEntity(entity as any)
+    isValidApp(app as Apps) && isValidEntity(entity as any);
 
-  const from = new Date(startTime ?? "").getTime()
-  const to = new Date(endTime ?? "").getTime()
-  const hasValidTimeRange = !isNaN(from) && !isNaN(to)
+  const from = new Date(startTime ?? "").getTime();
+  const to = new Date(endTime ?? "").getTime();
+  const hasValidTimeRange = !isNaN(from) && !isNaN(to);
 
   // Return early if app/entity is not valid
   if (!isValidAppAndEntity) {
-    Logger.info("Not able to perform metadata search")
-    return null
+    Logger.info("Not able to perform metadata search");
+    return null;
   }
 
-  const schema = entityToSchemaMapper(entity, app) as VespaSchema
-  let items: VespaSearchResult[] = []
+  const schema = entityToSchemaMapper(entity, app) as VespaSchema;
+  let items: VespaSearchResult[] = [];
 
   if (isUnspecificMetadataRetrieval) {
-    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
+    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata);
     Logger.info(
       `User requested metadata search: ${QueryType.RetrievedUnspecificMetadata}`,
-    )
+    );
 
-    const count = classification.filters.count || 5
+    const count = classification.filters.count || 5;
     let timestampRange: { from: number | null; to: number | null } = {
       from: hasValidTimeRange ? from : null,
       to: hasValidTimeRange ? to : null,
-    }
+    };
 
     // For "next/upcoming" events, search from now into the future when no valid time range is provided
     if (direction === "next" && !hasValidTimeRange) {
       timestampRange = {
         from: new Date().getTime(),
         to: null,
-      }
+      };
     }
     const timeDescription = formatTimeDuration(
       timestampRange.from,
       timestampRange.to,
-    )
+    );
 
-    const directionText = direction === "prev" ? "going back" : "up to"
+    const directionText = direction === "prev" ? "going back" : "up to";
     Logger.info(
       `Searching for documents from app "${app}" and entity "${entity}"` +
         (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
-    )
+    );
 
     items =
       (
@@ -1534,22 +1540,22 @@ async function* generateMetadataQueryAnswer(
           limit: count,
           asc: classification.filters.sortDirection === "asc",
         })
-      ).root.children || []
+      ).root.children || [];
 
-    span?.setAttribute("metadata items found", items.length)
-    Logger.info(`Found ${items.length} items for metadata retrieval`)
+    span?.setAttribute("metadata items found", items.length);
+    Logger.info(`Found ${items.length} items for metadata retrieval`);
 
     // Return early if no documents found for unspecific metadata retrieval
     if (!items.length) {
-      return "no documents found"
+      return "no documents found";
     }
   }
   // Handle specific metadata retrieval
   else if (isMetadataRetrieval) {
-    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
+    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata);
     Logger.info(
       `User requested metadata search : ${QueryType.RetrieveMetadata}`,
-    )
+    );
 
     // Search Vespa here with input query
     items =
@@ -1559,100 +1565,100 @@ async function* generateMetadataQueryAnswer(
           alpha: userAlpha,
           timestampRange: hasValidTimeRange ? { from, to } : null,
         })
-      ).root.children || []
+      ).root.children || [];
 
-    span?.setAttribute("metadata items found", items.length)
-    Logger.info(`Found ${items.length} items for metadata retrieval`)
+    span?.setAttribute("metadata items found", items.length);
+    Logger.info(`Found ${items.length} items for metadata retrieval`);
 
     // Return null to fall through to iterative RAG if no items found
     if (!items.length) {
-      return null
+      return null;
     }
   }
   // If neither condition matched
   else {
-    return null
+    return null;
   }
 
-  const results = items
-  const initialContext = buildContext(results, maxSummaryCount)
+  const results = items;
+  const initialContext = buildContext(results, maxSummaryCount);
 
-  let iterator: AsyncIterableIterator<ConverseResponse>
+  let iterator: AsyncIterableIterator<ConverseResponse>;
   if (app === Apps.Gmail) {
-    Logger.info("Using mailPromptJsonStream")
+    Logger.info("Using mailPromptJsonStream");
     iterator = mailPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: isReasoning,
-    })
+    });
   } else {
-    Logger.info("Using baselineRAGJsonStream")
+    Logger.info("Using baselineRAGJsonStream");
     iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: isReasoning,
-    })
+    });
   }
 
-  return yield* processIterator(iterator, results, 0)
+  return yield* processIterator(iterator, results, 0);
 }
 
 const fallbackText = (
   classification: TemporalClassifier & QueryRouterResponse,
 ): string => {
-  const { app, entity } = classification.filters
-  const direction = classification.direction || ""
-  const { startTime, endTime } = classification.filters
-  const from = new Date(startTime ?? "").getTime()
-  const to = new Date(endTime ?? "").getTime()
-  const timePhrase = formatTimeDuration(from, to)
+  const { app, entity } = classification.filters;
+  const direction = classification.direction || "";
+  const { startTime, endTime } = classification.filters;
+  const from = new Date(startTime ?? "").getTime();
+  const to = new Date(endTime ?? "").getTime();
+  const timePhrase = formatTimeDuration(from, to);
 
-  let searchDescription = ""
+  let searchDescription = "";
 
   if (app === Apps.GoogleCalendar && entity === "event") {
-    searchDescription = "calendar events"
+    searchDescription = "calendar events";
   } else if (app === Apps.Gmail) {
     if (entity === "mail") {
-      searchDescription = "emails"
+      searchDescription = "emails";
     } else if (entity === "pdf") {
-      searchDescription = "email attachments"
+      searchDescription = "email attachments";
     }
   } else if (app === Apps.GoogleDrive) {
     if (entity === "driveFile") {
-      searchDescription = "files"
+      searchDescription = "files";
     } else if (entity === "docs") {
-      searchDescription = "Google Docs"
+      searchDescription = "Google Docs";
     } else if (entity === "sheets") {
-      searchDescription = "Google Sheets"
+      searchDescription = "Google Sheets";
     } else if (entity === "slides") {
-      searchDescription = "Google Slides"
+      searchDescription = "Google Slides";
     } else if (entity === "pdf") {
-      searchDescription = "PDF files"
+      searchDescription = "PDF files";
     } else if (entity === "folder") {
-      searchDescription = "folders"
+      searchDescription = "folders";
     }
   } else if (
     app === Apps.GoogleWorkspace &&
     entity === GooglePeopleEntity.Contacts
   ) {
-    searchDescription = "contacts"
+    searchDescription = "contacts";
   } else {
-    searchDescription = "information"
+    searchDescription = "information";
   }
 
-  let timeDescription = ""
+  let timeDescription = "";
   if (timePhrase) {
     if (direction === "prev") {
-      timeDescription = ` from the past ${timePhrase}`
+      timeDescription = ` from the past ${timePhrase}`;
     } else if (direction === "next") {
-      timeDescription = ` for the next ${timePhrase}`
+      timeDescription = ` for the next ${timePhrase}`;
     } else {
-      timeDescription = ` within that time period`
+      timeDescription = ` within that time period`;
     }
   }
 
-  return `${searchDescription}${timeDescription}`
-}
+  return `${searchDescription}${timeDescription}`;
+};
 
 export async function* UnderstandMessageAndAnswer(
   email: string,
@@ -1671,24 +1677,24 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?.setAttribute(
     "temporal_direction",
     classification.direction || "none",
-  )
-  passedSpan?.setAttribute("alpha", alpha)
-  passedSpan?.setAttribute("message_count", messages.length)
+  );
+  passedSpan?.setAttribute("alpha", alpha);
+  passedSpan?.setAttribute("message_count", messages.length);
 
   const isUnspecificMetadataRetrieval =
-    classification.type == QueryType.RetrievedUnspecificMetadata
-  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
+    classification.type == QueryType.RetrievedUnspecificMetadata;
+  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata;
 
   if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
-    Logger.info("User is asking for metadata retrieval")
+    Logger.info("User is asking for metadata retrieval");
 
-    const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
-    metadataRagSpan?.setAttribute("comment", "metadata retrieval")
+    const metadataRagSpan = passedSpan?.startSpan("metadata_rag");
+    metadataRagSpan?.setAttribute("comment", "metadata retrieval");
     metadataRagSpan?.setAttribute(
       "classification",
       JSON.stringify(classification),
-    )
-    const count = classification.filters.count || chatPageSize
+    );
+    const count = classification.filters.count || chatPageSize;
     const answer = yield* generateMetadataQueryAnswer(
       message,
       messages,
@@ -1699,25 +1705,25 @@ export async function* UnderstandMessageAndAnswer(
       maxDefaultSummary,
       classification,
       metadataRagSpan,
-    )
+    );
 
     if (isUnspecificMetadataRetrieval && answer === "no documents found") {
-      metadataRagSpan?.end()
+      metadataRagSpan?.end();
 
-      const fallbackMessage = fallbackText(classification)
+      const fallbackMessage = fallbackText(classification);
       return yield {
         text: `I couldn't find any ${fallbackMessage}. Would you like to try a different search?`,
-      }
+      };
     }
 
     if (answer) {
-      metadataRagSpan?.end()
-      return yield* answer
+      metadataRagSpan?.end();
+      return yield* answer;
     }
-    metadataRagSpan?.end()
+    metadataRagSpan?.end();
     Logger.info(
       "No context found for metadata retrieval, moving to iterative RAG",
-    )
+    );
   }
 
   if (fileIds && fileIds?.length > 0) {
@@ -1972,17 +1978,17 @@ export const MessageApi = async (c: Context) => {
           // add any citations for it, we can refer to the original message for citations
           // one more bug is now llm automatically copies the citation text sometimes without any reference
           // leads to [NaN] in the answer
-          let currentAnswer = ""
-          let answer = ""
-          let citations = []
-          let citationMap: Record<number, number> = {}
+          let currentAnswer = "";
+          let answer = "";
+          let citations = [];
+          let citationMap: Record<number, number> = {};
           let queryFilters = {
             app: "",
             entity: "",
             startTime: "",
             endTime: "",
             count: 0,
-          }
+          };
           let parsed = {
             answer: "",
             queryRewrite: "",
@@ -1991,9 +1997,9 @@ export const MessageApi = async (c: Context) => {
             type: "",
             from: null,
             to: null,
-          }
+          };
 
-          let thinking = ""
+          let thinking = "";
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning;
           let buffer = "";
@@ -2104,12 +2110,12 @@ export const MessageApi = async (c: Context) => {
                 app: parsed.filters.app as Apps,
                 entity: parsed.filters.entity as any,
               },
-            }
+            };
 
             Logger.info(
               `Classifying the query as:, ${JSON.stringify(classification)}`,
-            )
-            const understandSpan = ragSpan.startSpan("understand_message")
+            );
+            const understandSpan = ragSpan.startSpan("understand_message");
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,
@@ -2258,12 +2264,12 @@ export const MessageApi = async (c: Context) => {
             await stream.writeSSE({
               event: ChatSSEvents.Error,
               data: "Can you please make your query more specific?",
-            })
+            });
             // Add the error message to last user message
             await addErrMessageToMessage(
               lastMessage,
               "Can you please make your query more specific?",
-            )
+            );
 
             await stream.writeSSE({
               data: "",
@@ -2578,26 +2584,31 @@ export const MessageRetryApi = async (c: Context) => {
           );
           const searchSpan = streamSpan.startSpan("conversation_search");
           const searchOrAnswerIterator =
-            generateSearchQueryOrAnswerFromConversation(message, ctx, {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: true,
-              json: true,
-              reasoning:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: convWithNoErrMsg,
-            },"")
-          let currentAnswer = ""
-          let answer = ""
-          let citations: Citation[] = [] // Changed to Citation[] for consistency
-          let citationMap: Record<number, number> = {}
+            generateSearchQueryOrAnswerFromConversation(
+              message,
+              ctx,
+              {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: true,
+                json: true,
+                reasoning:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: convWithNoErrMsg,
+              },
+              "",
+            );
+          let currentAnswer = "";
+          let answer = "";
+          let citations: Citation[] = []; // Changed to Citation[] for consistency
+          let citationMap: Record<number, number> = {};
           let queryFilters = {
             app: "",
             entity: "",
             startTime: "",
             endTime: "",
             count: 0,
-          }
+          };
           let parsed = {
             answer: "",
             queryRewrite: "",
@@ -2606,8 +2617,8 @@ export const MessageRetryApi = async (c: Context) => {
             type: "",
             from: null,
             to: null,
-          }
-          let thinking = ""
+          };
+          let thinking = "";
           let reasoning =
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning;
           let buffer = "";
@@ -2715,8 +2726,8 @@ export const MessageRetryApi = async (c: Context) => {
                 app: parsed.filters.app as Apps,
                 entity: parsed.filters.entity as any,
               },
-            }
-            const understandSpan = ragSpan.startSpan("understand_message")
+            };
+            const understandSpan = ragSpan.startSpan("understand_message");
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,

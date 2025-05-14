@@ -1,13 +1,13 @@
-import type { TxnOrClient } from "@/types";
+import type { TxnOrClient } from "@/types"
 import {
   tools,
   selectToolSchema,
   type InsertTool,
   type SelectTool,
-} from "./schema";
-import { createId } from "@paralleldrive/cuid2";
-import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+} from "./schema"
+import { createId } from "@paralleldrive/cuid2"
+import { and, eq } from "drizzle-orm"
+import { z } from "zod"
 
 /**
  * Insert a new tool into the database
@@ -16,21 +16,21 @@ export const insertTool = async (
   trx: TxnOrClient,
   tool: Omit<InsertTool, "id">,
 ): Promise<SelectTool> => {
-  const toolArr = await trx.insert(tools).values(tool).returning();
+  const toolArr = await trx.insert(tools).values(tool).returning()
 
   if (!toolArr || !toolArr.length) {
-    throw new Error('Error in insert of tool "returning"');
+    throw new Error('Error in insert of tool "returning"')
   }
 
-  const parsedData = selectToolSchema.safeParse(toolArr[0]);
+  const parsedData = selectToolSchema.safeParse(toolArr[0])
   if (!parsedData.success) {
     throw new Error(
       `Could not get tool after inserting: ${parsedData.error.toString()}`,
-    );
+    )
   }
 
-  return parsedData.data;
-};
+  return parsedData.data
+}
 
 /**
  * Get all tools for a workspace
@@ -42,10 +42,10 @@ export const getWorkspaceTools = async (
   const toolRecords = await trx
     .select()
     .from(tools)
-    .where(eq(tools.workspaceId, workspaceId));
+    .where(eq(tools.workspaceId, workspaceId))
 
-  return z.array(selectToolSchema).parse(toolRecords);
-};
+  return z.array(selectToolSchema).parse(toolRecords)
+}
 
 /**
  * Get tools filtered by connector Id
@@ -59,11 +59,14 @@ export const getToolsByConnectorId = async (
     .select()
     .from(tools)
     .where(
-      and(eq(tools.workspaceId, workspaceId), eq(tools.connectorId, connectorId)),
-    );
+      and(
+        eq(tools.workspaceId, workspaceId),
+        eq(tools.connectorId, connectorId),
+      ),
+    )
 
-  return z.array(selectToolSchema).parse(toolRecords);
-};
+  return z.array(selectToolSchema).parse(toolRecords)
+}
 
 /**
  * Get tools filtered by tool name
@@ -78,10 +81,10 @@ export const getToolsByName = async (
     .from(tools)
     .where(
       and(eq(tools.workspaceId, workspaceId), eq(tools.toolName, toolName)),
-    );
+    )
 
-  return z.array(selectToolSchema).parse(toolRecords);
-};
+  return z.array(selectToolSchema).parse(toolRecords)
+}
 
 /**
  * Get a specific tool by connector Id and tool name
@@ -101,14 +104,14 @@ export const getToolByConnectorIdAndToolName = async (
         eq(tools.connectorId, connectorId),
         eq(tools.toolName, toolName),
       ),
-    );
+    )
 
   if (!toolRecords || !toolRecords.length) {
-    return null;
+    return null
   }
 
-  return selectToolSchema.parse(toolRecords[0]);
-};
+  return selectToolSchema.parse(toolRecords[0])
+}
 
 /**
  * Update an existing tool
@@ -125,21 +128,21 @@ export const updateTool = async (
       updatedAt: new Date(),
     })
     .where(eq(tools.id, toolId))
-    .returning();
+    .returning()
 
   if (!updatedTools || !updatedTools.length) {
-    throw new Error("Could not update the tool");
+    throw new Error("Could not update the tool")
   }
 
-  const [toolVal] = updatedTools;
-  const parsedRes = selectToolSchema.safeParse(toolVal);
+  const [toolVal] = updatedTools
+  const parsedRes = selectToolSchema.safeParse(toolVal)
 
   if (!parsedRes.success) {
-    throw new Error(`zod error: Invalid tool: ${parsedRes.error.toString()}`);
+    throw new Error(`zod error: Invalid tool: ${parsedRes.error.toString()}`)
   }
 
-  return parsedRes.data;
-};
+  return parsedRes.data
+}
 
 /**
  * Delete a tool by ID
@@ -148,8 +151,8 @@ export const deleteToolById = async (
   trx: TxnOrClient,
   toolId: number,
 ): Promise<void> => {
-  await trx.delete(tools).where(eq(tools.id, toolId));
-};
+  await trx.delete(tools).where(eq(tools.id, toolId))
+}
 
 /**
  * Delete tools by connector Id
@@ -163,12 +166,15 @@ export const deleteToolsByConnectorId = async (
   const result = await trx
     .delete(tools)
     .where(
-      and(eq(tools.workspaceId, workspaceId), eq(tools.connectorId, connectorId)),
+      and(
+        eq(tools.workspaceId, workspaceId),
+        eq(tools.connectorId, connectorId),
+      ),
     )
-    .returning({ id: tools.id });
+    .returning({ id: tools.id })
 
-  return result.length; // Return number of deleted records
-};
+  return result.length // Return number of deleted records
+}
 
 /**
  * Check if a tool exists by connector id and tool name
@@ -188,10 +194,10 @@ export const toolExists = async (
         eq(tools.connectorId, connectorId),
         eq(tools.toolName, toolName),
       ),
-    );
+    )
 
-  return result.length > 0;
-};
+  return result.length > 0
+}
 
 /**
  * Upsert a tool (create if it doesn't exist, update if it does)
@@ -200,26 +206,26 @@ export const upsertTool = async (
   trx: TxnOrClient,
   tool: Omit<InsertTool, "id">,
 ): Promise<SelectTool> => {
-  const { workspaceId, connectorId, toolName } = tool;
+  const { workspaceId, connectorId, toolName } = tool
 
   const existingTool = await getToolByConnectorIdAndToolName(
     trx,
     workspaceId,
     connectorId,
     toolName,
-  );
+  )
 
   if (existingTool) {
     // Update existing tool
     return updateTool(trx, existingTool.id, {
       toolSchema: tool.toolSchema,
       description: tool.description,
-    });
+    })
   } else {
     // Create new tool
-    return insertTool(trx, tool);
+    return insertTool(trx, tool)
   }
-};
+}
 
 /**
  * Get all tool schemas for a specific connector as a combined string
@@ -230,54 +236,54 @@ export const getConnectorToolSchemasAsString = async (
   workspaceId: number,
   connectorId: integer,
 ): Promise<string> => {
-  const clientTools = await getToolsByConnectorId(trx, workspaceId, connectorId);
+  const clientTools = await getToolsByConnectorId(trx, workspaceId, connectorId)
 
   if (!clientTools.length) {
-    return "";
+    return ""
   }
 
   // Combine all tool schemas with newlines
   return clientTools
     .map((tool) => `## Tool: ${tool.toolName}\n${tool.toolSchema}`)
-    .join("\n\n");
-};
+    .join("\n\n")
+}
 
 /**
- * Get all tool schemas as a structured object by connector 
+ * Get all tool schemas as a structured object by connector
  * For building the finalToolsList that was used in previous examples
  */
 export const getAllToolSchemasByConnectorId = async (
   trx: TxnOrClient,
   workspaceId: number,
 ): Promise<Record<string, { tools: { name: string; schema: string }[] }>> => {
-  const allTools = await getWorkspaceTools(trx, workspaceId);
+  const allTools = await getWorkspaceTools(trx, workspaceId)
 
   const toolsByConnector: Record<
     string,
     { tools: { name: string; schema: string }[] }
-  > = {};
+  > = {}
 
-  // Group tools by connector 
+  // Group tools by connector
   for (const tool of allTools) {
-    const { connectorId, toolName, toolSchema } = tool;
+    const { connectorId, toolName, toolSchema } = tool
 
     if (!toolsByConnector[connectorId]) {
-      toolsByConnector[connectorId] = { tools: [] };
+      toolsByConnector[connectorId] = { tools: [] }
     }
 
     toolsByConnector[connectorId].tools.push({
       name: toolName,
       schema: toolSchema,
-    });
+    })
   }
 
-  return toolsByConnector;
-};
+  return toolsByConnector
+}
 
 /**
  * Synchronize tools for a connector with the database
  * This will add new tools, update existing ones, and remove tools that are no longer available
- * 
+ *
  * @param trx - Database transaction or client
  * @param workspaceId - Workspace ID
  * @param connectorId - Connector ID
@@ -289,75 +295,75 @@ export const syncConnectorTools = async (
   workspaceId: number,
   connectorId: number,
   currentTools: Array<{
-    toolName: string,
-    toolSchema: string,
+    toolName: string
+    toolSchema: string
     description?: string
-  }>
+  }>,
 ): Promise<void> => {
   try {
     // Step 1: Get existing tools for this connector from the database
-    const existingTools = await getToolsByConnectorId(trx, workspaceId, connectorId);
-    
+    const existingTools = await getToolsByConnectorId(
+      trx,
+      workspaceId,
+      connectorId,
+    )
+
     // Create a map of existing tool names for efficient lookup
     const existingToolMap = new Map(
-      existingTools.map(tool => [tool.toolName, tool])
-    );
-    
+      existingTools.map((tool) => [tool.toolName, tool]),
+    )
+
     // Create a set of current tool names for efficient lookup
-    const currentToolNames = new Set(
-      currentTools.map(tool => tool.toolName)
-    );
-    
+    const currentToolNames = new Set(currentTools.map((tool) => tool.toolName))
+
     // Step 2: Add or update tools
-    const upsertPromises = currentTools.map(tool => 
+    const upsertPromises = currentTools.map((tool) =>
       upsertTool(trx, {
         workspaceId,
         connectorId,
         toolName: tool.toolName,
         toolSchema: tool.toolSchema,
-        description: tool.description || null
-      })
-    );
-    
+        description: tool.description || null,
+      }),
+    )
+
     // Wait for all upsert operations to complete
-    await Promise.all(upsertPromises);
-    
+    await Promise.all(upsertPromises)
+
     // Step 3: Identify tools that need to be removed (in DB but not in current list)
     const toolsToRemove = existingTools.filter(
-      tool => !currentToolNames.has(tool.toolName)
-    );
-    
+      (tool) => !currentToolNames.has(tool.toolName),
+    )
+
     // Step 4: Remove tools that are no longer available
     if (toolsToRemove.length > 0) {
-      const deletePromises = toolsToRemove.map(tool => 
-        deleteToolById(trx, tool.id)
-      );
-      
+      const deletePromises = toolsToRemove.map((tool) =>
+        deleteToolById(trx, tool.id),
+      )
+
       // Wait for all delete operations to complete
-      await Promise.all(deletePromises);
-      
+      await Promise.all(deletePromises)
+
       // Log the removal of tools
       Logger.info(
-        `Removed ${toolsToRemove.length} obsolete tools for connector ${connectorId} in workspace ${workspaceId}`
-      );
+        `Removed ${toolsToRemove.length} obsolete tools for connector ${connectorId} in workspace ${workspaceId}`,
+      )
     }
-    
+
     // Log the sync summary
     Logger.info(
       `Synced tools for connector ${connectorId} in workspace ${workspaceId}: ` +
-      `${currentTools.length} current tools, ${toolsToRemove.length} removed`
-    );
+        `${currentTools.length} current tools, ${toolsToRemove.length} removed`,
+    )
   } catch (error) {
     // Log and rethrow the error
     Logger.error(
       error,
-      `Failed to sync tools for connector ${connectorId} in workspace ${workspaceId}`
-    );
-    throw new Error(
-      `Tool synchronization failed: ${(error as Error).message}`
-    );
+      `Failed to sync tools for connector ${connectorId} in workspace ${workspaceId}`,
+    )
+    throw new Error(`Tool synchronization failed: ${(error as Error).message}`)
   }
-};
+}
 
 /**
  * Synchronize tools for multiple connectors
@@ -366,22 +372,25 @@ export const syncConnectorTools = async (
 export const syncMultipleConnectorTools = async (
   trx: TxnOrClient,
   workspaceId: number,
-  connectorTools: Record<number, Array<{
-    toolName: string,
-    toolSchema: string,
-    description?: string
-  }>>
+  connectorTools: Record<
+    number,
+    Array<{
+      toolName: string
+      toolSchema: string
+      description?: string
+    }>
+  >,
 ): Promise<void> => {
   // Process each connector's tools
   const syncPromises = Object.entries(connectorTools).map(
-    ([connectorId, tools]) => 
-      syncConnectorTools(trx, workspaceId, parseInt(connectorId), tools)
-  );
-  
+    ([connectorId, tools]) =>
+      syncConnectorTools(trx, workspaceId, parseInt(connectorId), tools),
+  )
+
   // Wait for all synchronization operations to complete
-  await Promise.all(syncPromises);
-  
+  await Promise.all(syncPromises)
+
   Logger.info(
-    `Completed tool synchronization for ${Object.keys(connectorTools).length} connectors in workspace ${workspaceId}`
-  );
-};
+    `Completed tool synchronization for ${Object.keys(connectorTools).length} connectors in workspace ${workspaceId}`,
+  )
+}

@@ -489,3 +489,74 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
     })
   }
 }
+
+export const AddApiKeyMCPConnector = async (c: Context) => {
+  Logger.info("ApiKeyMCPConnector")
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: ApiKeyMCPConnector = c.req.valid("form")
+  const apiKey = form.apiKey
+  const url = form.url
+  const app = form.name
+
+  // Start a transaction
+  return await db.transaction(async (trx) => {
+    try {
+      // Insert the connection within the transaction
+      const connector = await insertConnector(
+        trx,
+        user.workspaceId,
+        user.id,
+        user.workspaceExternalId,
+        app,
+        ConnectorType.MCP,
+        AuthType.ApiKey,
+        Apps.MCP,
+        { url: url, version: "0.0.1" },
+        null,
+        null,
+        null,
+        apiKey,
+      )
+
+      const SaasJobPayload: SaaSJob = {
+        connectorId: connector.id,
+        workspaceId: user.workspaceId,
+        userId: user.id,
+        app,
+        externalId: connector.externalId,
+        authType: connector.authType as AuthType,
+        email: sub,
+      }
+      // Enqueue the background job within the same transaction
+      const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
+        singletonKey: connector.externalId,
+        priority: 1,
+        retryLimit: 0,
+      })
+
+      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+
+      return c.json({
+        success: true,
+        message: "Connection created, job enqueued",
+        id: connector.externalId,
+      })
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
+      )
+      throw new HTTPException(500, {
+        message: "Error creating connection or enqueuing job",
+      })
+    }
+  })
+}

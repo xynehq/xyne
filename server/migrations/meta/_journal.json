@@ -57,6 +57,13 @@
       "when": 1747154803245,
       "tag": "0007_wakeful_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1747220706337,
+      "tag": "0008_cold_mysterio",
+      "breakpoints": true
     }
   ]
 }

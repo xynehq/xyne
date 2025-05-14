@@ -1,10 +1,10 @@
-import config from "@/config";
-import { z } from "zod";
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types";
-import type { PgTransaction } from "drizzle-orm/pg-core";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { JWT, type OAuth2Client } from "google-auth-library";
-import { connect } from "bun";
+import config from "@/config"
+import { z } from "zod"
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import type { PgTransaction } from "drizzle-orm/pg-core"
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
+import { JWT, type OAuth2Client } from "google-auth-library"
+import { connect } from "bun"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -40,7 +40,7 @@ const baseSearchSchema = z.object({
     .transform((x) => (x ? x === "true" : false))
     .pipe(z.boolean())
     .optional(),
-});
+})
 
 export const searchSchema = baseSearchSchema.refine(
   (data) => (data.app && data.entity) || (!data.app && !data.entity),
@@ -48,66 +48,74 @@ export const searchSchema = baseSearchSchema.refine(
     message: "app and entity must be provided together",
     path: ["app", "entity"],
   },
-);
+)
 
 export const answerSchema = z.object({
   query: z.string(),
   app: z.nativeEnum(Apps).optional(),
   entity: z.string().min(1).optional(),
-});
+})
 
 export const searchQuerySchema = baseSearchSchema.extend({
   permissions: z.array(z.string()),
-});
+})
 
-export type SearchQuery = z.infer<typeof searchQuerySchema>;
+export type SearchQuery = z.infer<typeof searchQuerySchema>
 
 export const oauthStartQuerySchema = z.object({
   app: z.nativeEnum(Apps),
-});
+})
 
-export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>;
+export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
   "service-key": z.any(),
   app: z.nativeEnum(Apps),
   email: z.string().email(),
   whitelistedEmails: z.string().optional(),
-});
+})
 
 export type ServiceAccountConnection = z.infer<
   typeof addServiceConnectionSchema
->;
+>
 
 export const addApiKeyConnectorSchema = z.object({
   app: z.nativeEnum(Apps),
   apiKey: z.string(),
-});
+})
 
-export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>;
+export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
+
+export const addApiKeyMCPConnectorSchema = z.object({
+  apiKey: z.string(),
+  url: z.string(),
+  name: z.string(),
+})
+
+export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
   scopes: z.array(z.string()),
   app: z.nativeEnum(Apps),
-});
+})
 
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
-});
+})
 
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
   status: z.nativeEnum(ConnectorStatus),
-});
+})
 
 export const serviceAccountIngestMoreSchema = z.object({
   connectorId: z.string(),
   emailsToIngest: z.array(z.string().email()),
-});
+})
 
-export type OAuthProvider = z.infer<typeof createOAuthProvider>;
+export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 // Define an enum for connection types
 export enum ConnectorType {
@@ -121,30 +129,32 @@ export enum ConnectorType {
   File = "File",
   // Where we can scrape and crawl
   Website = "Website",
+  // All MCP Clients
+  MCP = "Mcp",
 }
 
 export type SaaSJob = {
-  connectorId: number;
-  workspaceId: number;
-  userId: number;
-  app: Apps;
-  externalId: string;
-  authType: AuthType;
-  email: string;
-  whiteListedEmails?: string[];
-};
+  connectorId: number
+  workspaceId: number
+  userId: number
+  app: Apps
+  externalId: string
+  authType: AuthType
+  email: string
+  whiteListedEmails?: string[]
+}
 
-export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">;
+export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
-export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase;
+export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
 
 export type OAuthCredentials = {
   data: {
-    access_token: string;
-    refresh_token: string;
-    accessTokenExpiresAt: Date;
-  };
-};
+    access_token: string
+    refresh_token: string
+    accessTokenExpiresAt: Date
+  }
+}
 
 export enum SyncCron {
   // Sync based on a token provided by the external API
@@ -166,7 +176,7 @@ const DefaultTokenSchema = z.object({
   type: z.literal("default"),
   token: z.string(),
   lastSyncedAt: z.coerce.date(),
-});
+})
 
 // Google Drive and Contact change token
 // clubbing drive, contact and other contact tokens
@@ -176,48 +186,45 @@ const GoogleDriveChangeTokenSchema = z.object({
   contactsToken: z.string(),
   otherContactsToken: z.string(),
   lastSyncedAt: z.coerce.date(),
-});
+})
 
 const GmailChangeTokenSchema = z.object({
   type: z.literal("gmailChangeToken"),
   historyId: z.string(),
   lastSyncedAt: z.coerce.date(),
-});
+})
 
 const CalendarEventsChangeTokenSchema = z.object({
   type: z.literal("calendarEventsChangeToken"),
   calendarEventsToken: z.string(),
   lastSyncedAt: z.coerce.date(),
-});
+})
 
 const ChangeTokenSchema = z.discriminatedUnion("type", [
   DefaultTokenSchema,
   GoogleDriveChangeTokenSchema,
   GmailChangeTokenSchema,
   CalendarEventsChangeTokenSchema,
-]);
+])
 
 // Define UpdatedAtVal schema
 const UpdatedAtValSchema = z.object({
   type: z.literal("updatedAt"),
   updatedAt: z.coerce.date(),
-});
+})
 
 // Define Config schema (either ChangeToken or UpdatedAtVal)
-export const SyncConfigSchema = z.union([
-  ChangeTokenSchema,
-  UpdatedAtValSchema,
-]);
+export const SyncConfigSchema = z.union([ChangeTokenSchema, UpdatedAtValSchema])
 
 // TypeScript type for Config
-export type SyncConfig = z.infer<typeof SyncConfigSchema>;
+export type SyncConfig = z.infer<typeof SyncConfigSchema>
 
-export type ChangeToken = z.infer<typeof ChangeTokenSchema>;
-export type GoogleChangeToken = z.infer<typeof GoogleDriveChangeTokenSchema>;
-export type GmailChangeToken = z.infer<typeof GmailChangeTokenSchema>;
+export type ChangeToken = z.infer<typeof ChangeTokenSchema>
+export type GoogleChangeToken = z.infer<typeof GoogleDriveChangeTokenSchema>
+export type GmailChangeToken = z.infer<typeof GmailChangeTokenSchema>
 export type CalendarEventsChangeToken = z.infer<
   typeof CalendarEventsChangeTokenSchema
->;
+>
 
 namespace Google {
   export const DriveFileSchema = z.object({
@@ -249,16 +256,16 @@ namespace Google {
         }),
       )
       .nullable(),
-  });
-  export type DriveFile = z.infer<typeof DriveFileSchema>;
+  })
+  export type DriveFile = z.infer<typeof DriveFileSchema>
 }
 
-export type GoogleClient = JWT | OAuth2Client;
+export type GoogleClient = JWT | OAuth2Client
 
 export type GoogleServiceAccount = {
-  client_email: string;
-  private_key: string;
-};
+  client_email: string
+  private_key: string
+}
 
 export enum MessageTypes {
   JwtParams = "JwtParams",
@@ -295,9 +302,9 @@ export enum OperationStatus {
 }
 
 export type additionalMessage = Partial<{
-  Status: OperationStatus;
-  TimeTaken: number;
-}>;
+  Status: OperationStatus
+  TimeTaken: number
+}>
 
 export enum MessageRole {
   System = "system",
@@ -308,9 +315,9 @@ export enum MessageRole {
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
-});
+})
 
 export const MCPClientConfig = z.object({
   url: z.string(),
-  version: z.string()
-});
+  version: z.string(),
+})

@@ -167,6 +167,4 @@ export const QueryContextRank = z.object({
 
 export type QueryContextRank = z.infer<typeof QueryContextRank>;
 
-// export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
-
 export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>;

@@ -47,6 +47,22 @@ export const IntegrationsSidebar = ({ role }: { role: string }) => {
                 Slack
               </span>
             </li>
+            <li
+              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/mcp") ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+              onClick={() => {
+                router.navigate({
+                  to:
+                    // role === UserRole.SuperAdmin || role === UserRole.Admin
+                    "/integrations/mcp",
+                  // : "/integrations/slack",
+                })
+              }}
+            >
+              <img width={16} src={SlackSvg} className="ml-[8px]" />
+              <span className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
+                MCP Client
+              </span>
+            </li>
           </ul>
         </div>
       </div>

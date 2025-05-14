@@ -46,6 +46,8 @@ export enum Apps {
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+
+  MCP = "mcp",
 }
 
 export const isValidApp = (app: string): boolean => {

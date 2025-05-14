@@ -5,15 +5,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import { AuthType } from "shared/types"
+} from "@/components/ui/table";
+import { AuthType } from "shared/types";
 
 export const UserStatsTable = ({
   userStats,
   type,
 }: {
-  userStats: { [email: string]: any }
-  type: AuthType
+  userStats: { [email: string]: any };
+  type: AuthType;
 }) => {
   return (
     <Table className="ml-[10px] mt-[10px] max-h-[400px]">
@@ -38,10 +38,11 @@ export const UserStatsTable = ({
               ((stats.gmailCount + stats.driveCount) * 100) /
               (stats.totalDrive + stats.totalMail)
             ).toFixed(2),
-          )
-          const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
+          );
+          const elapsed =
+            (new Date().getTime() - stats.startedAt) / (60 * 1000);
           const eta =
-            percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
+            percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0;
           return (
             <TableRow key={email}>
               {type === AuthType.ServiceAccount && (
@@ -57,9 +58,9 @@ export const UserStatsTable = ({
               <TableCell>{percentage}</TableCell>
               <TableCell>{eta.toFixed(0)}</TableCell>
             </TableRow>
-          )
+          );
         })}
       </TableBody>
     </Table>
-  )
-}
+  );
+};

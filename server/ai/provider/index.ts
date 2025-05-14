@@ -1088,7 +1088,7 @@ export function generateSearchQueryOrAnswerFromConversation(
     params.systemPrompt = searchQueryPrompt(userContext)
   }
 
-  params.systemPrompt += toolContext;
+  params.systemPrompt += toolContext
 
   const baseMessage = {
     role: ConversationRole.USER,
