@@ -1548,7 +1548,6 @@ export async function* UnderstandMessageAndAnswer(
   classification: TemporalClassifier,
   messages: Message[],
   alpha: number,
-  fileIds: string[],
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1561,18 +1560,7 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
-  if (fileIds && fileIds?.length > 0) {
-    Logger.info(
-      "User has selected some context with query, answering only based on that given context",
-    )
-    return yield* generateAnswerFromGivenContext(
-      message,
-      email,
-      userCtx,
-      alpha,
-      fileIds,
-    )
-  } else if (classification.direction !== null) {
+  if (classification.direction !== null) {
     // user is talking about an event
     Logger.info(
       `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
@@ -2248,7 +2236,6 @@ export const MessageApi = async (c: Context) => {
                 classification,
                 messagesWithNoErrResponse,
                 0.5,
-                fileIds,
                 understandSpan,
               )
               stream.writeSSE({
@@ -2841,7 +2828,6 @@ export const MessageRetryApi = async (c: Context) => {
               classification,
               convWithNoErrMsg,
               0.5,
-              fileIds,
               understandSpan,
             )
             // throw new Error("Hello, how are u doing?")
