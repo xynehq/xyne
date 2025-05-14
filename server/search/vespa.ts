@@ -1035,6 +1035,7 @@ interface GetItemsParams {
   limit?: number
   offset?: number
   email: string
+  asc: boolean
   // query: string
 }
 
@@ -1051,6 +1052,7 @@ export const getItems = async (
     limit = config.page,
     offset = 0,
     email,
+    asc,
   } = params
 
   // Construct conditions based on parameters
@@ -1113,7 +1115,9 @@ export const getItems = async (
   const whereClause =
     conditions.length > 0 ? `where ${conditions.join(" and ")}` : "where true"
 
-  const orderByClause = timestampField ? `order by ${timestampField} desc` : ""
+  const orderByClause = timestampField
+    ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
+    : ""
 
   // Construct YQL query with limit and offset
   const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`

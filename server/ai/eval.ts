@@ -189,7 +189,7 @@ const FactualityScorer = async (
   } else {
     provider = new OpenAIProvider(new OpenAI({ apiKey: openAiKey }))
     Logger.info("Evaluating with openai")
-    if (!params.modelId) params.modelId = Models.Gpt_4o_mini
+    params.modelId = Models.Gpt_4o_mini
   }
 
   params.systemPrompt = evaluateSystemPrompt(

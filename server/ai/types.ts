@@ -132,6 +132,7 @@ export const RetrievedUnspecificMetadataSchema = z.object({
   type: z.literal(QueryType.RetrievedUnspecificMetadata),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+    sortDirection: z.string().optional(),
   }),
 })
 

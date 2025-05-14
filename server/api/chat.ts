@@ -73,6 +73,7 @@ import {
   entitySchema,
   eventSchema,
   fileSchema,
+  GooglePeopleEntity,
   isValidApp,
   isValidEntity,
   mailAttachmentSchema,
@@ -1401,6 +1402,32 @@ async function* generatePointQueryTimeExpansion(
   eventRagSpan?.end()
 }
 
+const formatTimeDuration = (from: number | null, to: number | null): string => {
+  if (from === null && to === null) {
+    return ""
+  }
+
+  const diffMs = Math.abs((to as number) - (from as number))
+  const minutes = Math.floor(diffMs / (1000 * 60)) % 60
+  const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  let readable = ""
+
+  if (days > 0) {
+    readable += `${days} day${days !== 1 ? "s" : ""} `
+  }
+
+  if (hours > 0 || (days > 0 && minutes > 0)) {
+    readable += `${hours} hour${hours !== 1 ? "s" : ""} `
+  }
+
+  if (minutes > 0 && days === 0) {
+    readable += `${minutes} minute${minutes !== 1 ? "s" : ""} `
+  }
+
+  return readable.trim()
+}
+
 async function* generateMetadataQueryAnswer(
   input: string,
   messages: Message[],
@@ -1416,6 +1443,7 @@ async function* generateMetadataQueryAnswer(
 > {
   const { app, entity, startTime, endTime } = classification.filters
 
+  const direction = classification.direction as string
   const isUnspecificMetadataRetrieval =
     classification.type === QueryType.RetrievedUnspecificMetadata
   const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
@@ -1426,7 +1454,7 @@ async function* generateMetadataQueryAnswer(
   const to = new Date(endTime ?? "").getTime()
   const hasValidTimeRange = !isNaN(from) && !isNaN(to)
 
-  // return if app/entity is not valid
+  // Return early if app/entity is not valid
   if (!isValidAppAndEntity) {
     Logger.info("Not able to perform metadata search")
     return null
@@ -1435,23 +1463,36 @@ async function* generateMetadataQueryAnswer(
   const schema = entityToSchemaMapper(entity, app) as VespaSchema
   let items: VespaSearchResult[] = []
 
-  if (hasValidTimeRange && isUnspecificMetadataRetrieval) {
+  if (isUnspecificMetadataRetrieval) {
     span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
     Logger.info(
-      `User requested metadata search : ${QueryType.RetrievedUnspecificMetadata}`,
+      `User requested metadata search: ${QueryType.RetrievedUnspecificMetadata}`,
     )
-    // Format readable time range for logging
-    const diffMs = to - from
-    const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-    let readable = ""
-    if (days) readable += `${days} days `
-    if (hours) readable += `${hours} hours `
+    const count = classification.filters.count || 5
+    let timestampRange: { from: number | null; to: number | null } = {
+      from: hasValidTimeRange ? from : null,
+      to: hasValidTimeRange ? to : null,
+    }
 
+    // For "next/upcoming" events, search from now into the future when no valid time range is provided
+    if (direction === "next" && !hasValidTimeRange) {
+      timestampRange = {
+        from: new Date().getTime(),
+        to: null,
+      }
+    }
+    const timeDescription = formatTimeDuration(
+      timestampRange.from,
+      timestampRange.to,
+    )
+
+    const directionText = direction === "prev" ? "going back" : "up to"
     Logger.info(
-      `Searching for documents from app: ${app} and entity: ${entity} ${readable ? `from ${readable}` : ""}`,
+      `Searching for documents from app "${app}" and entity "${entity}"` +
+        (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
     )
+
     items =
       (
         await getItems({
@@ -1459,8 +1500,9 @@ async function* generateMetadataQueryAnswer(
           schema,
           app,
           entity,
-          timestampRange: { from, to },
-          limit: pageSize,
+          timestampRange,
+          limit: count,
+          asc: classification.filters.sortDirection === "asc",
         })
       ).root.children || []
 
@@ -1468,7 +1510,6 @@ async function* generateMetadataQueryAnswer(
     Logger.info(`Found ${items.length} items for metadata retrieval`)
 
     // Return early if no documents found for unspecific metadata retrieval
-    // as the query would be ambiguous and further searches would not yield meaningful results
     if (!items.length) {
       return "no documents found"
     }
@@ -1526,6 +1567,63 @@ async function* generateMetadataQueryAnswer(
   return yield* processIterator(iterator, results, 0)
 }
 
+const fallbackText = (
+  classification: TemporalClassifier & QueryRouterResponse,
+): string => {
+  const { app, entity } = classification.filters
+  const direction = classification.direction || ""
+  const { startTime, endTime } = classification.filters
+  const from = new Date(startTime ?? "").getTime()
+  const to = new Date(endTime ?? "").getTime()
+  const timePhrase = formatTimeDuration(from, to)
+
+  let searchDescription = ""
+
+  if (app === Apps.GoogleCalendar && entity === "event") {
+    searchDescription = "calendar events"
+  } else if (app === Apps.Gmail) {
+    if (entity === "mail") {
+      searchDescription = "emails"
+    } else if (entity === "pdf") {
+      searchDescription = "email attachments"
+    }
+  } else if (app === Apps.GoogleDrive) {
+    if (entity === "driveFile") {
+      searchDescription = "files"
+    } else if (entity === "docs") {
+      searchDescription = "Google Docs"
+    } else if (entity === "sheets") {
+      searchDescription = "Google Sheets"
+    } else if (entity === "slides") {
+      searchDescription = "Google Slides"
+    } else if (entity === "pdf") {
+      searchDescription = "PDF files"
+    } else if (entity === "folder") {
+      searchDescription = "folders"
+    }
+  } else if (
+    app === Apps.GoogleWorkspace &&
+    entity === GooglePeopleEntity.Contacts
+  ) {
+    searchDescription = "contacts"
+  } else {
+    searchDescription = "information"
+  }
+
+  let timeDescription = ""
+  if (timePhrase) {
+    if (direction === "prev") {
+      timeDescription = ` from the past ${timePhrase}`
+    } else if (direction === "next") {
+      timeDescription = ` for the next ${timePhrase}`
+    } else {
+      timeDescription = ` within that time period`
+    }
+  }
+
+  return `${searchDescription}${timeDescription}`
+}
+
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
@@ -1573,10 +1671,12 @@ export async function* UnderstandMessageAndAnswer(
       metadataRagSpan,
     )
 
-    if (isUnspecificMetadataRetrieval && answer == "no documents found") {
+    if (isUnspecificMetadataRetrieval && answer === "no documents found") {
       metadataRagSpan?.end()
+
+      const fallbackMessage = fallbackText(classification)
       return yield {
-        text: "I could not found any relevant information for your query, please change your query",
+        text: `I couldn't find any ${fallbackMessage}. Would you like to try a different search?`,
       }
     }
 
