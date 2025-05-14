@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm"
-import { db } from "./client"
+import { db } from "@/db/client"
 import {
   selectUserSchema,
   selectWorkspaceSchema,
@@ -7,10 +7,11 @@ import {
   users,
   workspacePublicSchema,
   workspaces,
+  type InsertUser,
   type InternalUserWorkspace,
   type PublicUserWorkspace,
   type SelectUser,
-} from "./schema"
+} from "@/db/schema"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
@@ -148,4 +149,16 @@ export const getUserById = async (
     throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
   }
   return parsedRes.data
+}
+
+export const updateUser = async (
+  trx: TxnOrClient,
+  userId: number,
+  update: Partial<InsertUser>,
+) => {
+  return await trx
+    .update(users)
+    .set(update)
+    .where(eq(users.id, userId))
+    .returning()
 }

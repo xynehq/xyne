@@ -1,19 +1,20 @@
 import {
   ArrowRight,
+  Atom,
   Globe,
+  Infinity,
   Sparkles,
-  Square
+  Square,
 } from "lucide-react"
 import { useEffect, useRef, Dispatch, SetStateAction } from "react"
-import Attach from "@/assets/attach.svg?react"
 
 interface ChatBoxProps {
   query: string
   setQuery: Dispatch<SetStateAction<string>>
   handleSend: (message: string) => void
-  isStreaming?: boolean
+  isStreaming: boolean
   isAgenticMode?: boolean
-  setIsAgenticMode?: Dispatch<SetStateAction<boolean>>
+  setIsAgenticMode: Dispatch<SetStateAction<boolean>>
   handleStop?: () => void
   chatId?: string | null
 }
@@ -24,7 +25,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
   handleSend,
   isStreaming = false,
   isAgenticMode = false,
-  setIsAgenticMode = () => {}, // Default no-op function
+  setIsAgenticMode,
   handleStop,
   chatId,
 }: ChatBoxProps) => {
@@ -64,30 +65,36 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
         />
       </div>
       <div
-        className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-2 cursor-text"
+        className="flex ml-[16px] mr-[6px] mb-[6px] items-center pt-2 cursor-text"
         onClick={() => {
           inputRef?.current?.focus()
         }}
       >
-        <Attach className="text-[#464D53] cursor-pointer" />
-        <Globe size={16} className="text-[#464D53] cursor-pointer" />
+        {/* <Attach className="text-[#464D53] cursor-pointer" />
+        <Globe size={16} className="text-[#464D53] cursor-pointer" /> */}
         <div
           onClick={(e) => {
             e.stopPropagation()
             setIsAgenticMode(!isAgenticMode)
           }}
-          className={`flex items-center justify-center p-1.5 rounded-full cursor-pointer`}
+          className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
         >
-          <Sparkles
-            size={16}
-            className={isAgenticMode ? "text-blue-500" : "text-[#464D53]"}
+          <Infinity
+            size={14}
+            strokeWidth={2.4}
+            className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
           />
+          <span
+            className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+          >
+            Agent
+          </span>
         </div>
         {isStreaming && chatId ? (
           <button
             onClick={handleStop}
             style={{ marginLeft: "auto" }}
-            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+            className="flex bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
           >
             <Square className="text-white" size={16} />
           </button>
@@ -96,7 +103,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
             disabled={isStreaming}
             onClick={() => handleSend(query)}
             style={{ marginLeft: "auto" }}
-            className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
+            className="flex bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
           >
             <ArrowRight className="text-white" size={16} />
           </button>

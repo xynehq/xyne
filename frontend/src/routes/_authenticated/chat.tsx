@@ -1,4 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
+import { MessageMode } from "shared/types"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -9,8 +10,18 @@ import {
   useSearch,
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
-import { useEffect, useRef, useState, Fragment } from "react"
-import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
+import { useEffect, useRef, useState, Fragment, useMemo } from "react"
+import {
+  ChatSSEvents,
+  SelectPublicMessage,
+  Citation,
+  AgentReasoningStep,
+  AgentReasoningStepType,
+  AgentReasoningToolParameters,
+  AgentReasoningToolResult,
+  // AgentToolName, // Not directly used in ChatPage state logic for now
+} from "shared/types" // Import MessageMode and new Agent types
+// import { MessageMode } from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
@@ -38,13 +49,92 @@ import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
 
+// Helper function to map database messages to frontend messages
+// This function takes raw messages from the database (SelectPublicMessage)
+// and transforms them into the format expected by the frontend (FrontendSelectPublicMessage),
+// ensuring that 'thinking' is parsed correctly for agentic messages and 'mode' is set appropriately.
+const mapDbMessagesToFrontendMessages = (
+  dbMessages: SelectPublicMessage[] | undefined | null,
+): FrontendSelectPublicMessage[] => {
+  if (!dbMessages) {
+    return []
+  }
+  return dbMessages.map((m: SelectPublicMessage) => {
+    let finalThinking: string | AgentReasoningStep[] | undefined | null =
+      m.thinking
+    let finalMode: MessageMode | undefined | null = m.mode
+
+    // Attempt to parse thinking if it's a string that looks like a JSON array (potential agentic steps)
+    if (typeof m.thinking === "string" && m.thinking.trim().startsWith("[")) {
+      try {
+        const parsed = JSON.parse(m.thinking)
+        // Check if parsed result is an array and its elements look like AgentReasoningStep objects
+        if (
+          Array.isArray(parsed) &&
+          (parsed.length === 0 ||
+            (typeof parsed[0] === "object" &&
+              parsed[0] !== null &&
+              "type" in parsed[0]))
+        ) {
+          finalThinking = parsed as AgentReasoningStep[]
+          // If we successfully parsed agentic steps, ensure mode is Agentic
+          // This handles cases where 'mode' might not have been explicitly set to Agentic in older data
+          // but 'thinking' clearly contains agentic steps.
+          if (finalMode !== MessageMode.Agentic) {
+            finalMode = MessageMode.Agentic
+          }
+        }
+        // If not an array of step-like objects, finalThinking remains the original string, mode remains original.
+      } catch (e) {
+        // JSON.parse failed. This might happen with malformed or legacy string data.
+        // If original mode was Agentic, this is a legacy/error case; wrap the thinking in a LogMessage.
+        if (finalMode === MessageMode.Agentic) {
+          finalThinking = [
+            {
+              type: AgentReasoningStepType.LogMessage,
+              message: `Legacy agent thinking (parse error on load): ${m.thinking}`,
+            },
+          ]
+        }
+        // Otherwise (if mode was not Agentic), finalThinking remains m.thinking (string), and mode remains m.mode.
+      }
+    } else if (
+      finalMode === MessageMode.Agentic &&
+      typeof m.thinking === "string"
+    ) {
+      // Mode is Agentic, but thinking is a string that doesn't look like a JSON array
+      // (e.g., simple log string from an older version or a non-JSON string).
+      // Wrap it as a LogMessage to be handled by AgenticThinkingRenderer.
+      finalThinking = [
+        {
+          type: AgentReasoningStepType.LogMessage,
+          message: `Legacy agent thinking: ${m.thinking}`,
+        },
+      ]
+    }
+    // If m.thinking was already AgentReasoningStep[] and m.mode was Agentic, it's processed correctly by the above.
+    // If m.thinking was a simple string (not JSON array-like) and m.mode was Ask, it's also handled.
+
+    return {
+      ...m,
+      mode: finalMode || MessageMode.Ask, // Default to Ask if mode is somehow null/undefined
+      thinking: finalThinking,
+    } as FrontendSelectPublicMessage
+  })
+}
+
 type CurrentResp = {
   resp: string
   chatId?: string
   messageId?: string
   sources?: Citation[]
   citationMap?: Record<number, number>
-  thinking?: string
+  thinking?: string | AgentReasoningStep[] // Can be string or array of steps
+}
+
+// Define a more specific type for messages in the frontend state
+type FrontendSelectPublicMessage = Omit<SelectPublicMessage, "thinking"> & {
+  thinking?: string | AgentReasoningStep[]
 }
 
 interface ChatPageProps {
@@ -61,7 +151,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
   const [isAgenticMode, setIsAgenticMode] = useState(
-    chatParams.agentic === "true",
+    Boolean(chatParams.agentic),
   )
   const isWithChatId = !!(params as any).chatId
   const data = useLoaderData({
@@ -83,8 +173,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const hasHandledQueryParam = useRef(false)
 
   const [query, setQuery] = useState("")
-  const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    isWithChatId ? data?.messages || [] : [],
+  // Use the new FrontendSelectPublicMessage type for the messages state
+  // Initialize messages by processing data from the loader using the helper function.
+  const [messages, setMessages] = useState<FrontendSelectPublicMessage[]>(() =>
+    mapDbMessagesToFrontendMessages(
+      isWithChatId ? (data?.messages as SelectPublicMessage[] | undefined) : [],
+    ),
   )
   const [chatId, setChatId] = useState<string | null>(
     (params as any).chatId || null,
@@ -104,7 +198,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId ? !!data?.chat?.isBookmarked || false : false,
   )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const [dots, setDots] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
@@ -221,7 +315,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   useEffect(() => {
     if (!hasHandledQueryParam.current || isWithChatId) {
-      setMessages(isWithChatId ? data?.messages || [] : [])
+      // When data.messages changes (e.g., navigating to a different chat),
+      // re-process them using the same helper function to ensure consistency.
+      setMessages(
+        isWithChatId
+          ? mapDbMessagesToFrontendMessages(
+              data?.messages as SelectPublicMessage[] | undefined,
+            )
+          : [],
+      )
     }
     setChatId((params as any).chatId || null)
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
@@ -255,19 +357,24 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const handleSend = async (messageToSend: string) => {
     if (!messageToSend || isStreaming) return
 
-    // Reset userHasScrolled to false when a new message is sent.
-    // This ensures that the view will scroll down automatically as the new message streams in,
-    // unless the user manually scrolls up during the streaming.
     setUserHasScrolled(false)
     setQuery("")
     setMessages((prevMessages) => [
       ...prevMessages,
-      { messageRole: "user", message: messageToSend },
+      {
+        messageRole: "user",
+        message: messageToSend,
+      } as FrontendSelectPublicMessage,
     ])
 
     setIsStreaming(true)
-    setCurrentResp({ resp: "", thinking: "" })
-    currentRespRef.current = { resp: "", sources: [], thinking: "" }
+    const initialThinkingForSend = isAgenticMode ? [] : ""
+    setCurrentResp({ resp: "", thinking: initialThinkingForSend })
+    currentRespRef.current = {
+      resp: "",
+      sources: [],
+      thinking: initialThinkingForSend,
+    }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
@@ -281,20 +388,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
-      // Store EventSource
       withCredentials: true,
     })
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.CitationsUpdate,
       (event) => {
-        // Use ref
         const { contextChunks, citationMap } = JSON.parse(event.data)
         if (currentRespRef.current) {
           currentRespRef.current.sources = contextChunks
           currentRespRef.current.citationMap = citationMap
           setCurrentResp((prevResp) => ({
-            ...prevResp,
+            ...prevResp!,
             resp: prevResp?.resp || "",
             sources: contextChunks,
             citationMap,
@@ -304,21 +409,72 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      // Use ref
-      setCurrentResp((prevResp) => ({
-        ...(prevResp || { resp: "", thinking: event.data || "" }),
-        thinking: (prevResp?.thinking || "") + event.data,
-      }))
+      if (isAgenticMode) {
+        try {
+          const reasoningStep = JSON.parse(event.data) as AgentReasoningStep
+          setCurrentResp((prevResp) => {
+            const currentThinkingArray = (prevResp?.thinking ||
+              []) as AgentReasoningStep[]
+            return {
+              ...(prevResp || { resp: "", thinking: [] }),
+              thinking: [...currentThinkingArray, reasoningStep],
+            }
+          })
+          if (currentRespRef.current) {
+            const currentThinkingRefArray = (currentRespRef.current.thinking ||
+              []) as AgentReasoningStep[]
+            currentRespRef.current.thinking = [
+              ...currentThinkingRefArray,
+              reasoningStep,
+            ]
+          }
+        } catch (e) {
+          console.error(
+            "Failed to parse agentic reasoning step:",
+            e,
+            event.data,
+          )
+          const logStep: AgentReasoningStep = {
+            type: AgentReasoningStepType.LogMessage,
+            message: `Raw (parse error): ${event.data}`,
+          }
+          setCurrentResp((prevResp) => {
+            const currentThinkingArray = (prevResp?.thinking ||
+              []) as AgentReasoningStep[]
+            return {
+              ...(prevResp || { resp: "", thinking: [] }),
+              thinking: [...currentThinkingArray, logStep],
+            }
+          })
+          if (currentRespRef.current) {
+            const currentThinkingRefArray = (currentRespRef.current.thinking ||
+              []) as AgentReasoningStep[]
+            currentRespRef.current.thinking = [
+              ...currentThinkingRefArray,
+              logStep,
+            ]
+          }
+        }
+      } else {
+        // Non-agentic mode: append as string
+        setCurrentResp((prevResp) => ({
+          ...(prevResp || { resp: "", thinking: "" }),
+          thinking: ((prevResp?.thinking as string) || "") + event.data,
+        }))
+        if (currentRespRef.current) {
+          currentRespRef.current.thinking =
+            ((currentRespRef.current.thinking as string) || "") + event.data
+        }
+      }
     })
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
       (event) => {
-        // Use ref
         setCurrentResp((prevResp) => {
           const updatedResp = prevResp
             ? { ...prevResp, resp: prevResp.resp + event.data }
-            : { resp: event.data }
+            : { resp: event.data, thinking: isAgenticMode ? [] : "" } // Ensure thinking is initialized
           currentRespRef.current = updatedResp
           return updatedResp
         })
@@ -328,7 +484,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseMetadata,
       (event) => {
-        // Use ref
         const { chatId, messageId } = JSON.parse(event.data)
         setChatId(chatId)
         if (chatId) {
@@ -347,7 +502,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         if (messageId) {
           if (currentRespRef.current) {
             setCurrentResp((resp) => {
-              const updatedResp = resp || { resp: "" }
+              const updatedResp = resp || {
+                resp: "",
+                thinking: isAgenticMode ? [] : "",
+              }
               updatedResp.chatId = chatId
               updatedResp.messageId = messageId
               currentRespRef.current = updatedResp
@@ -359,7 +517,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               if (lastMessage.messageRole === "assistant") {
                 return [
                   ...prevMessages.slice(0, -1),
-                  { ...lastMessage, externalId: messageId },
+                  {
+                    ...lastMessage,
+                    externalId: messageId,
+                  } as FrontendSelectPublicMessage,
                 ]
               }
               return prevMessages
@@ -372,13 +533,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ChatTitleUpdate,
       (event) => {
-        // Use ref
         setChatTitle(event.data)
       },
     )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
-      // Use ref
       const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
@@ -389,20 +548,20 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             externalId: currentResp.messageId,
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
-            thinking: currentResp.thinking,
-          },
+            thinking: currentResp.thinking, // This is now string | AgentReasoningStep[]
+            mode: isAgenticMode ? MessageMode.Agentic : MessageMode.Ask,
+          } as FrontendSelectPublicMessage,
         ])
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setStopMsg(false)
       setIsStreaming(false)
     })
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
-      // Use ref
       console.error("Error with SSE:", event.data)
       const currentResp = currentRespRef.current
       if (currentResp) {
@@ -414,36 +573,30 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             externalId: currentResp.messageId,
             sources: currentResp.sources,
             citationMap: currentResp.citationMap,
-            thinking: currentResp.thinking,
-          },
+            thinking: currentResp.thinking, // This is now string | AgentReasoningStep[]
+            mode: isAgenticMode ? MessageMode.Agentic : MessageMode.Ask,
+          } as FrontendSelectPublicMessage,
         ])
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setStopMsg(false)
       setIsStreaming(false)
     })
 
     eventSourceRef.current.onerror = (error) => {
-      // Use ref
-      // Check if the stop was intentional
       if (userStopped) {
-        setUserStopped(false) // Reset the flag
-        // Clean up state, similar to handleStop or End event
+        setUserStopped(false)
         setCurrentResp(null)
         currentRespRef.current = null
         setStopMsg(false)
         setIsStreaming(false)
-        // Close again just in case, and clear ref
         eventSourceRef.current?.close()
         eventSourceRef.current = null
-        // Do NOT add an error message in this case
         return
       }
-
-      // If it wasn't a user stop, proceed with error handling as before
       console.error("Error with SSE:", error)
       const currentResp = currentRespRef.current
       if (currentResp) {
@@ -452,13 +605,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           {
             messageRole: "assistant",
             message: `Error occurred: please try again`,
-          },
+            externalId: currentResp.messageId,
+            sources: currentResp.sources,
+            citationMap: currentResp.citationMap,
+            thinking: currentResp.thinking,
+            mode: isAgenticMode ? MessageMode.Agentic : MessageMode.Ask,
+          } as FrontendSelectPublicMessage,
         ])
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setStopMsg(false)
       setIsStreaming(false)
     }
@@ -467,18 +625,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }
 
   const handleStop = async () => {
-    setUserStopped(true) // Indicate intentional stop before closing
+    setUserStopped(true)
 
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
-      eventSourceRef.current = null // Clear the ref
+      eventSourceRef.current = null
     }
 
     setIsStreaming(false)
 
-    // 4. Attempt to send stop request to backend if IDs are available
     if (chatId && isStreaming) {
-      // This `isStreaming` check might be redundant now, but let's keep it for safety
       try {
         await api.chat.stop.$post({
           json: {
@@ -493,34 +649,30 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           variant: "destructive",
           duration: 1000,
         })
-        // Backend stop failed, but client-side is already stopped
       }
     }
 
-    // 5. Add partial response to messages if available
     if (currentRespRef.current && currentRespRef.current.resp) {
-      // Use currentRespRef.current directly
       setMessages((prevMessages) => [
         ...prevMessages,
         {
           messageRole: "assistant",
-          message: currentRespRef.current?.resp || " ", // Use currentRespRef.current
-          externalId: currentRespRef.current?.messageId, // Use currentRespRef.current
-          sources: currentRespRef.current?.sources, // Use currentRespRef.current
-          citationMap: currentRespRef.current?.citationMap, // Use currentRespRef.current
-          thinking: currentRespRef.current?.thinking, // Use currentRespRef.current
-        },
+          message: currentRespRef.current?.resp || " ",
+          externalId: currentRespRef.current?.messageId,
+          sources: currentRespRef.current?.sources,
+          citationMap: currentRespRef.current?.citationMap,
+          thinking: currentRespRef.current?.thinking, // This is now string | AgentReasoningStep[]
+          mode: isAgenticMode ? MessageMode.Agentic : MessageMode.Ask,
+        } as FrontendSelectPublicMessage,
       ])
     }
 
-    // 6. Clear streaming-related state *after* backend request and message handling
     setCurrentResp(null)
     currentRespRef.current = null
     setStopMsg(false)
-    // 7. Invalidate router state after a short delay to refetch loader data
     setTimeout(() => {
       router.invalidate()
-    }, 1000) // Delay for 500ms
+    }, 1000)
   }
 
   const handleRetry = async (messageId: string) => {
@@ -549,9 +701,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             messageRole: "assistant",
             message: "",
             isRetrying: true,
-            thinking: "",
+            thinking: isAgenticMode ? [] : "", // Conditional thinking init
             sources: [],
-          })
+            mode: isAgenticMode ? MessageMode.Agentic : MessageMode.Ask,
+          } as FrontendSelectPublicMessage)
         }
 
         return updatedMessages
@@ -563,10 +716,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               message: "",
               isRetrying: true,
               sources: [],
-              thinking: "",
-            }
+              thinking: isAgenticMode ? [] : "", // Conditional thinking init
+              mode: isAgenticMode ? MessageMode.Agentic : MessageMode.Ask,
+            } as FrontendSelectPublicMessage
           }
-          return msg
+          return msg as FrontendSelectPublicMessage
         })
       }
     })
@@ -578,16 +732,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       url.searchParams.append("agentic", "true")
     }
 
-    setStopMsg(true) // Ensure stop message can be sent for retries
+    setStopMsg(true)
     eventSourceRef.current = new EventSource(url.toString(), {
-      // Store EventSource
       withCredentials: true,
     })
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
       (event) => {
-        // Use ref
         if (userMsgWithErr) {
           setMessages((prevMessages) => {
             const index = prevMessages.findIndex(
@@ -619,7 +771,27 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      // Use ref
+      let newThinkingForRetry: string | AgentReasoningStep[]
+      if (isAgenticMode) {
+        try {
+          const parsedStep = JSON.parse(event.data) as AgentReasoningStep
+          newThinkingForRetry = [parsedStep] // Start with the new step
+        } catch (e) {
+          console.error(
+            "Failed to parse agentic reasoning step during retry:",
+            e,
+            event.data,
+          )
+          const logStep: AgentReasoningStep = {
+            type: AgentReasoningStepType.LogMessage,
+            message: `Raw (parse error during retry): ${event.data}`,
+          }
+          newThinkingForRetry = [logStep]
+        }
+      } else {
+        newThinkingForRetry = event.data
+      }
+
       if (userMsgWithErr) {
         setMessages((prevMessages) => {
           const index = prevMessages.findIndex(
@@ -631,20 +803,42 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           }
 
           const newMessages = [...prevMessages]
-          newMessages[index + 1] = {
-            ...newMessages[index + 1],
-            thinking: (newMessages[index + 1].thinking || "") + event.data,
+          const existingThinking = newMessages[index + 1].thinking
+          if (isAgenticMode) {
+            newMessages[index + 1].thinking = Array.isArray(existingThinking)
+              ? [
+                  ...existingThinking,
+                  ...(newThinkingForRetry as AgentReasoningStep[]),
+                ]
+              : newThinkingForRetry
+          } else {
+            newMessages[index + 1].thinking =
+              (existingThinking || "") + (newThinkingForRetry as string)
           }
-
           return newMessages
         })
       } else {
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, thinking: (msg.thinking || "") + event.data }
-              : msg,
-          ),
+        setMessages(
+          (prevMessages) =>
+            prevMessages.map((msg) => {
+              if (msg.externalId === messageId && msg.isRetrying) {
+                const existingThinking = msg.thinking
+                let updatedThinking: string | AgentReasoningStep[]
+                if (isAgenticMode) {
+                  updatedThinking = Array.isArray(existingThinking)
+                    ? [
+                        ...existingThinking,
+                        ...(newThinkingForRetry as AgentReasoningStep[]),
+                      ]
+                    : newThinkingForRetry
+                } else {
+                  updatedThinking =
+                    (existingThinking || "") + (newThinkingForRetry as string)
+                }
+                return { ...msg, thinking: updatedThinking }
+              }
+              return msg
+            }) as FrontendSelectPublicMessage[],
         )
       }
     })
@@ -652,7 +846,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseMetadata,
       (event) => {
-        // Use ref
         const userMessage = messages.find(
           (msg) => msg.externalId === messageId && msg.messageRole === "user",
         )
@@ -684,7 +877,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     eventSourceRef.current.addEventListener(
       ChatSSEvents.CitationsUpdate,
       (event) => {
-        // Use ref
         const { contextChunks, citationMap } = JSON.parse(event.data)
         setMessages((prevMessages) => {
           if (userMsgWithErr) {
@@ -719,7 +911,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     )
 
     eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
-      // Use ref
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
           const index = prevMessages.findIndex(
@@ -748,13 +939,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setIsStreaming(false)
     })
 
     eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
-      // Use ref
       console.error("Retry Error with SSE:", event.data)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -784,13 +974,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setIsStreaming(false)
     })
 
     eventSourceRef.current.onerror = (error) => {
-      // Use ref
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -816,8 +1005,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSourceRef.current?.close() // Use ref
-      eventSourceRef.current = null // Clear ref
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setIsStreaming(false)
     }
   }
@@ -847,16 +1036,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleScroll = () => {
     const isAtBottom = isScrolledToBottom()
-    // Set userHasScrolled to true if the user scrolls up from the bottom.
-    // This will prevent the automatic scrolling behavior while the user is manually scrolling.
     setUserHasScrolled(!isAtBottom)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
-    // Only scroll to the bottom if the container exists and the user has not manually scrolled up.
-    // This prevents the view from jumping to the bottom if the user is trying to read previous messages
-    // while a new message is streaming in.
     if (!container || userHasScrolled) return
 
     container.scrollTop = container.scrollHeight
@@ -958,8 +1142,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           </div>
         </div>
 
-        {/* The onScroll event handler is attached to this div because it's the scrollable container for messages. */}
-        {/* This ensures that scroll events are captured correctly to manage the auto-scroll behavior. */}
         <div
           className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
           ref={messagesContainerRef}
@@ -980,7 +1162,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       message={message.message}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
-                      thinking={message.thinking}
+                      thinking={
+                        message.thinking ??
+                        (message.mode === MessageMode.Agentic ? [] : "")
+                      }
                       citations={message.sources}
                       messageId={message.externalId}
                       handleRetry={handleRetry}
@@ -1001,14 +1186,19 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         }
                       }}
                       sourcesVisible={isSourcesVisible}
-                      isStreaming={isStreaming}
+                      isStreaming={false}
                       isDebugMode={isDebugMode}
                       onShowRagTrace={handleShowRagTrace}
+                      messageMode={message.mode || MessageMode.Ask}
+                      isAgenticMode={message.mode === MessageMode.Agentic}
                     />
                     {userMessageWithErr && (
                       <ChatMessage
                         message={message.errorMessage}
-                        thinking={message.thinking}
+                        thinking={
+                          message.thinking ??
+                          (message.mode === MessageMode.Agentic ? [] : "")
+                        }
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
@@ -1031,9 +1221,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                           }
                         }}
                         sourcesVisible={isSourcesVisible}
-                        isStreaming={isStreaming}
+                        isStreaming={false}
                         isDebugMode={isDebugMode}
                         onShowRagTrace={handleShowRagTrace}
+                        messageMode={message.mode || MessageMode.Ask}
+                        isAgenticMode={message.mode === MessageMode.Agentic}
                       />
                     )}
                   </Fragment>
@@ -1043,7 +1235,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 <ChatMessage
                   message={currentResp.resp}
                   citations={currentResp.sources}
-                  thinking={currentResp.thinking || ""}
+                  thinking={currentResp.thinking || (isAgenticMode ? [] : "")} // Ensure correct type
                   isUser={false}
                   responseDone={false}
                   handleRetry={handleRetry}
@@ -1067,9 +1259,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   sourcesVisible={
                     showSources && currentMessageId === currentResp.messageId
                   }
-                  isStreaming={isStreaming}
+                  isStreaming={true}
                   isDebugMode={isDebugMode}
                   onShowRagTrace={handleShowRagTrace}
+                  messageMode={
+                    isAgenticMode ? MessageMode.Agentic : MessageMode.Ask
+                  }
+                  isAgenticMode={isAgenticMode}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -1268,12 +1464,14 @@ const ChatMessage = ({
   onToggleSources,
   citationMap,
   sourcesVisible,
-  isStreaming = false,
+  isStreaming, // Removed default, now required
   isDebugMode,
   onShowRagTrace,
+  messageMode, // New required prop
+  isAgenticMode = false, // Kept for other potential uses, defaults to false
 }: {
   message: string
-  thinking: string
+  thinking: string | AgentReasoningStep[] // Updated prop type
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -1284,9 +1482,11 @@ const ChatMessage = ({
   onToggleSources: () => void
   citationMap?: Record<number, number>
   sourcesVisible: boolean
-  isStreaming?: boolean
+  isStreaming: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
+  messageMode: MessageMode
+  isAgenticMode?: boolean
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1309,6 +1509,119 @@ const ChatMessage = ({
       })
     }
   }
+
+  // Custom component to render agentic thinking content with better handling of code blocks during streaming
+  const AgenticThinkingRenderer = ({
+    steps,
+  }: { steps: AgentReasoningStep[] }) => {
+    return (
+      <div className="agentic-thinking">
+        {steps.map((step, index) => {
+          switch (step.type) {
+            case AgentReasoningStepType.AnalyzingQuery:
+              return (
+                <div key={index} className="text-[#627384] mb-1 mt-2">
+                  {step.details}
+                </div>
+              )
+            case AgentReasoningStepType.Iteration:
+              return (
+                <div
+                  key={index}
+                  className="text-[#1C1D1F] font-medium mb-2 mt-3"
+                >
+                  ### Iteration {step.iteration}
+                </div>
+              )
+            case AgentReasoningStepType.Planning:
+              return (
+                <div key={index} className="text-[#627384] mb-1 mt-2">
+                  {step.details}
+                </div>
+              )
+            case AgentReasoningStepType.ToolSelected:
+              return (
+                <div key={index} className="text-[#627384] mb-1">
+                  <span className="font-medium">Tool selected:</span>
+                  <span className="inline-block bg-[#F3F5F8] rounded px-1 ml-1 font-mono text-sm">
+                    {step.toolName}
+                  </span>
+                </div>
+              )
+            case AgentReasoningStepType.ToolParameters:
+              const params = step as AgentReasoningToolParameters
+              return (
+                <div key={index} className="text-[#627384] mb-1">
+                  <div className="font-medium">Parameters:</div>
+                  <pre className="bg-[#F3F5F8] p-2 rounded text-sm font-mono overflow-x-auto mb-2 language-json">
+                    <code>{JSON.stringify(params.parameters, null, 2)}</code>
+                  </pre>
+                </div>
+              )
+            case AgentReasoningStepType.ToolExecuting:
+              return (
+                <div key={index} className="text-[#627384] mb-1 mt-2">
+                  Executing tool:{" "}
+                  <span className="inline-block bg-[#F3F5F8] rounded px-1 ml-1 font-mono text-sm">
+                    {step.toolName}
+                  </span>
+                  ...
+                </div>
+              )
+            case AgentReasoningStepType.ToolResult:
+              const resultStep = step as AgentReasoningToolResult
+              return (
+                <div key={index} className="text-[#627384] mb-1 mt-2">
+                  <div className="font-medium">
+                    Tool result ({resultStep.toolName}):
+                  </div>
+                  <div>{resultStep.resultSummary}</div>
+                  {resultStep.itemsFound !== undefined && (
+                    <div>(Found {resultStep.itemsFound} item(s))</div>
+                  )}
+                  {resultStep.error && (
+                    <div className="text-red-500">
+                      Error: {resultStep.error}
+                    </div>
+                  )}
+                </div>
+              )
+            case AgentReasoningStepType.Synthesis:
+              return (
+                <div key={index} className="text-[#627384] mb-1 mt-2">
+                  {step.details}
+                </div>
+              )
+            case AgentReasoningStepType.ValidationError:
+              return (
+                <div key={index} className="text-orange-500 mb-1 mt-2">
+                  Validation Error: {step.details}
+                </div>
+              )
+            case AgentReasoningStepType.BroadeningSearch:
+              return (
+                <div key={index} className="text-blue-500 mb-1 mt-2">
+                  Broadening Search: {step.details}
+                </div>
+              )
+            case AgentReasoningStepType.LogMessage:
+              if (step.message === "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━") {
+                return <hr key={index} className="my-2 border-gray-300" />
+              }
+              return (
+                <div key={index} className="text-[#627384] mb-1">
+                  {step.message}
+                </div>
+              )
+            default:
+              const _exhaustiveCheck: never = step // Ensures all cases are handled
+              return <div key={index}>Unknown step: {JSON.stringify(step)}</div>
+          }
+        })}
+      </div>
+    )
+  }
+
   return (
     <div
       className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
@@ -1327,17 +1640,25 @@ const ChatMessage = ({
             <div className="mt-[4px] markdown-content">
               {thinking && (
                 <div className="border-l-2 border-[#E6EBF5] pl-2 mb-4 text-gray-600">
-                  <MarkdownPreview
-                    source={processMessage(thinking)}
-                    wrapperElement={{
-                      "data-color-mode": "light",
-                    }}
-                    style={{
-                      padding: 0,
-                      backgroundColor: "transparent",
-                      color: "#627384",
-                    }}
-                  />
+                  {messageMode === MessageMode.Agentic &&
+                  Array.isArray(thinking) ? (
+                    <AgenticThinkingRenderer steps={thinking} />
+                  ) : (
+                    typeof thinking === "string" &&
+                    thinking.length > 0 && (
+                      <MarkdownPreview
+                        source={processMessage(thinking)} // For 'ask' mode, process for citations
+                        wrapperElement={{
+                          "data-color-mode": "light",
+                        }}
+                        style={{
+                          padding: 0,
+                          backgroundColor: "transparent",
+                          color: "#627384",
+                        }}
+                      />
+                    )
+                  )}
                 </div>
               )}
               {message === "" ? (
