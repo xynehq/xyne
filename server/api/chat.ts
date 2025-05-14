@@ -2124,7 +2124,7 @@ export const MessageApi = async (c: Context) => {
                   })
                   // reasoningSpan.end()
                 }
-                if (!reasoning && !chunk.reasoning) {
+                if (!chunk.reasoning) {
                   answer += chunk.text
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
@@ -2733,7 +2733,7 @@ export const MessageRetryApi = async (c: Context) => {
                     data: chunk.text,
                   })
                 }
-                if (!reasoning && !chunk.reasoning) {
+                if (!chunk.reasoning) {
                   answer += chunk.text
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
