@@ -493,6 +493,7 @@ ${retrievedContext}
    - Note any inconsistencies in the data
    - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information
+   
 # Response Format
 You must respond in valid JSON format with the following structure:
 {
@@ -798,24 +799,33 @@ export const searchQueryPrompt = (userContext: string): string => {
       - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev". 
       - Otherwise, set "temporalDirection" to null.
       - For queries like "previous emails" or "next emails" or "previous meetings" or "next meetings" that lack a concrete time range:
-        - For "previous emails" or "previous meetings", rewrite the query to be more specific and add a time range from six months ago to today.
-        - For "next meetings", rewrite the query to be more specific and add a time range from today to six months from now.
-        - For "next emails", rewrite the query to be more specific, but set 'startTime' and 'endTime' to null, as future email interactions are not possible.
-      - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; instead, set 'startTime' and 'endTime' to null to allow searching across all past events.
-      - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and apply a time range from six months ago to today unless a different range is specified.
-      - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and apply a time range from today to next six months unless a different range is specified.
+        - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+      - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
+      - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
+      - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
 
     5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
-      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev", rewrite the query to be more specific, and add a time range from six months ago to today (e.g., "current emails" → "Emails from the past six months"), setting:
-      - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next", rewrite the query to be more specific, and add a time range from today to six months from now (e.g., "current meetings" → "Meetings from today to six months from now"), setting:
+      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+      - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
 
-    6. If the query refers to a time period that is ambiguous or potentially spans more than six months (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
+    6. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
       - This allows searching across all relevant items without a restrictive time range.
       - Reference Examples:
         - "when was my meeting with John" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
 
-    7. Now our task is to classify the user's query into one of the following categories:  
+    7. Determine the appropriate sorting direction based on query terms:
+      - For ANY query about "latest", "recent", "newest", "current" items (emails, files, documents, meetings, etc.), set "sortDirection" to "desc" (newest/most recent first)
+      - For ANY query about "oldest", "earliest" items (emails, files, documents, meetings, etc.), set "sortDirection" to "asc" (oldest first)
+      - If no sorting preference is indicated or can be inferred, set "sortDirection" to null
+      - Example queries and their sorting directions:
+        - "Give me my latest emails" → sortDirection: "desc"
+        - "Show me my oldest files in Drive" → sortDirection: "asc"
+        - "Recent spreadsheets" → sortDirection: "desc"
+        - "Earliest meetings with marketing team" → sortDirection: "asc"
+        - "Documents from last month" → sortDirection: null (no clear sorting preference)
+
+    8. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
     b. RetrieveMetadata  
     c. RetrievedUnspecificMetadata
@@ -850,7 +860,7 @@ export const searchQueryPrompt = (userContext: string): string => {
         d) Contains project or task identifiers (e.g., 'Project Alpha', 'Q2 planning')
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
-      - Include temporal filters if specified
+      - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
     - Examples:
       - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail'
       - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf'
@@ -865,7 +875,7 @@ export const searchQueryPrompt = (userContext: string): string => {
       - Focus on listing or retrieving items based solely on app, entity, and possibly time indicators
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
-      - Include temporal filters if specified
+      - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
     - Examples:
       - 'current emails' -> 'app': 'gmail', 'entity': 'mail'
       - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event'
@@ -959,13 +969,15 @@ export const searchQueryPrompt = (userContext: string): string => {
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>"
+           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "sortDirection": "<'asc' | 'desc' | null>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
        - "type" and "filters" are used for routing and fetching data.
+       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
@@ -974,6 +986,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
+
 
 // Search Query Reasoning Prompt
 // This prompt is used to provide reasoning for the search query processing and classification.
@@ -1133,7 +1146,7 @@ export const temporalDirectionJsonPrompt = (
   retrievedContext: string,
 ) => `Current date: ${getDateForAI()}. Use this for all time checks. Be formal and precise.
 
-You are an AI assistant designed to handle temporal-related queries within a workspace environment. You have access to internal workspace data, including calendar events, emails, files, and user profiles. Your role is to extract and process information based on the user's query, applying strict temporal logic to ensure accuracy for both meeting-related and non-meeting-related queries.
+You are an AI assistant designed to handle temporal-related queries within a workspace environment. You have access to internal workspace data, including calendar events, emails, files, and user profiles. Your role is to extract and process information based on the user's query, applying strict temporal logic to ensure accuracy for all types of content.
 
 # Data Access
 You have access to the following types of data:
@@ -1193,8 +1206,8 @@ ${retrievedContext}
 
 ## Query Classification System
 1. Identify the primary entity type explicitly requested:
-   - MEETING: Calendar events, meeting invites, calls, or explicit meeting discussions
-   - EMAIL: Email messages excluding meeting invites
+   - EVENT: Calendar events, meeting invites, calls, or explicit meeting discussions
+   - EMAIL: Email messages
    - FILE: Documents, spreadsheets, presentations, etc.
    - USER: User profiles and contact information
    - MIXED: Multiple entity types or unclear entity type
@@ -1202,34 +1215,23 @@ ${retrievedContext}
 2. Identify the temporal intent using these exact rules:
    - FUTURE: Query explicitly or implicitly refers to upcoming or future items
      - Keywords: "next", "upcoming", "scheduled", "future", "tomorrow", "this week", "this month"
-     - Default for meeting queries without temporal indicators (e.g., "my meetings")
+     - Default for event-related queries without temporal indicators (e.g., "my meetings")
    - PAST: Query explicitly refers to past or historical items
      - Keywords: "last", "previous", "past", "recent", "yesterday", "last week", "last month"
-     - Default for non-meeting queries without temporal indicators (e.g., "my emails")
+     - Default for non-event queries without temporal indicators (e.g., "my emails")
    - PRESENT: Query explicitly refers to current items
      - Keywords: "today", "current", "now", "ongoing"
-     - For meetings: Treat as FUTURE (include today's upcoming meetings)
-     - For non-meetings: Treat as PAST (include today's items)
+     - For events: Include today's upcoming events
+     - For non-events: Include today's items
    - ALL: Query explicitly requests items regardless of time
      - Keywords: "all", "any", "ever"
 
-## Meeting Identification Criteria
-An item is a meeting IF AND ONLY IF it meets AT LEAST ONE of these criteria:
-- Is a calendar event with:
-  a) Clear start and end times, AND
-  b) At least one attendee besides the organizer
-- Is an email that:
-  a) Contains explicit meeting invite formatting, OR
-  b) Contains ALL of these elements:
-     i) Specific date and time 
-     ii) Clear indication of participants
-     iii) Meeting purpose or agenda
-     iv) Optional: location (physical or virtual link)
-
-DO NOT classify as a meeting:
-- Calendar entries that are reminders, tasks, or solo events
-- Emails that mention "meet" or "discuss" without specific time, participants, and agenda
-- Any content where meeting status is ambiguous
+## Content Identification Criteria
+Classify items based on entity type,:
+- EVENT: Calendar entries, scheduled activities with time components
+- EMAIL: Email communications
+- FILE: Documents, spreadsheets, presentations, images, etc.
+- USER: User profile information and contacts
 
 ## Temporal Processing Algorithm
 
@@ -1237,19 +1239,14 @@ DO NOT classify as a meeting:
 1. Parse all items in retrievedContext
 2. For each item:
    a) Extract timestamp information (creation date, start time, end time)
-   b) Classify as meeting or non-meeting using criteria above
-   c) For meetings, extract:
-      - Start time
-      - End time
-      - Participants
-      - Location/link
+   b) Classify by entity type (event, email, file, user)
+   c) For all items with timestamps, extract:
+      - Start time/creation time
+      - End time (if applicable)
+      - Creator/participants/sender
       - Title/subject
-      - Recurrence pattern (if any)
-   d) For non-meetings, extract:
-      - Timestamp
-      - Creator/sender
-      - Title/subject
-      - Type (email, file, user profile)
+      - Location/link (if applicable)
+      - Recurrence pattern (if applicable)
 3. Apply relevance scoring:
    a) Higher weight for exact matches to query keywords
    b) Lower weight for partial or semantic matches
@@ -1257,122 +1254,97 @@ DO NOT classify as a meeting:
 ### Step 2: Strict Temporal Filtering
 Compare each item's timestamp against the current date: ${getDateForAI()}
 
-FOR MEETING ITEMS:
+FOR ALL ITEMS:
 - If query intent is FUTURE:
-  - INCLUDE ONLY items where start_time >= ${getDateForAI()}
+  - INCLUDE ONLY items where timestamp >= ${getDateForAI()}
   - Default timeframe: from ${getDateForAI()} to 30 days after
-  - EXCLUDE ALL items where start_time < ${getDateForAI()} (past meetings)
+  - EXCLUDE ALL items where timestamp < ${getDateForAI()} (past items)
 - If query intent is PAST:
-  - INCLUDE ONLY items where start_time < ${getDateForAI()}
+  - INCLUDE ONLY items where timestamp < ${getDateForAI()}
   - Default timeframe: from 6 months before ${getDateForAI()} to ${getDateForAI()}
-  - EXCLUDE ALL items where start_time >= ${getDateForAI()} (future meetings)
+  - EXCLUDE ALL items where timestamp >= ${getDateForAI()} (future items)
 - If query intent is PRESENT:
-  - Filter as FUTURE, but prioritize meetings occurring today
+  - Include items from today, prioritizing current and upcoming items
 - If query intent is ALL:
   - Apply any explicit time constraints from query
   - Without explicit constraints, default to ±6 months from current date
 
-FOR NON-MEETING ITEMS:
-- If query intent is FUTURE:
-  - For actionable items (tasks, deadlines): Include where due_date >= ${getDateForAI()}
-  - For static items (files, emails): Generally exclude as most are past-created
-- If query intent is PAST:
-  - Include items with timestamp < ${getDateForAI()}
-  - Default timeframe: from 6 months before to ${getDateForAI()}
-- If query intent is PRESENT:
-  - Include items with timestamp = today's date
-  - Default to PAST handling otherwise
-- If query intent is ALL:
-  - Apply any explicit time constraints from query
-  - Without explicit constraints, default to past 6 months
-
-### Step 3: Handling Recurring Meetings
-For recurring meetings:
+### Step 3: Handling Recurring Events
+For recurring events:
 1. Extract recurrence pattern (daily, weekly, monthly, custom)
 2. Calculate next occurrence after ${getDateForAI()} for FUTURE queries
 3. Calculate most recent occurrence before ${getDateForAI()} for PAST queries
 4. Verify calculated occurrence falls within query's timeframe
-5. Include meeting only if calculated occurrence matches temporal intent
+5. Include event only if calculated occurrence matches temporal intent
 
 ### Step 4: Result Validation
 Before finalizing results:
 1. Re-verify each item's timestamp against temporal intent:
-   - FUTURE intent: Confirm start_time >= ${getDateForAI()}
-   - PAST intent: Confirm start_time < ${getDateForAI()}
+   - FUTURE intent: Confirm timestamp >= ${getDateForAI()}
+   - PAST intent: Confirm timestamp < ${getDateForAI()}
 2. Check query-specific constraints (e.g., participant names, keywords)
 3. Sort results:
    - FUTURE intent: Chronological order (earliest first)
    - PAST intent: Reverse chronological order (most recent first)
 4. Apply result count limits if specified in query
 5. If no items remain after filtering:
-   - For meeting queries: Set 'answer': "null"
-   - For non-meeting queries: Set 'answer': "null"
+   - Set 'answer': "null"
 
 ## Response Generation Rules
 
-### Meeting Query Responses
-- Format each meeting as:
-  "{Date} at {Time}, {Title}, {Participants}, {Location/Link}, [{Index}]"
-  Example: "2025-05-14 at 10:00 AM, Project Kickoff, with John Doe, Zoom link, [0]"
-- Sort meetings:
-  - FUTURE intent: Chronological (earliest first)
-  - PAST intent: Reverse chronological (most recent first)
-- Include ONLY meetings that match the temporal intent after ALL filtering
-- NEVER include narrative introductions like "Upcoming meetings:" or "Past meetings:"
-- If no meetings match after temporal filtering, ALWAYS return exactly: 'answer': "null"
-
-### Non-Meeting Query Responses
-- Format based on entity type (email, file, user)
+### Output Structure
+- The response MUST be a JSON object with a single key, "answer", and its value as either:
+  - A string containing the formatted response (markdown allowed for formatting).
+  - The exact string "null" if no relevant items are found after filtering.
+- Format each item according to its entity type:
+  - Events: "{Date} at {Time}, {Title}, {Participants}, {Location/Link} [{Index}]"
   - Emails: "Subject: {Subject}, From: {Sender}, {Date} [{Index}]"
   - Files: "{Title}, {Type}, Last modified: {Date}, {Owner} [{Index}]"
   - Users: "{Name}, {Title}, {Department}, {Location} [{Index}]"
-- EXCLUDE ALL meeting information unless explicitly requested
-- NEVER include the words "meeting", "meetings", or meeting-related terminology in non-meeting responses
-- If no items match after temporal filtering, return exactly: 'answer': "null"
+- Sort items:
+  - FUTURE intent: Chronological order (earliest first)
+  - PAST intent: Reverse chronological order (most recent first)
+- Include ONLY items that match the temporal intent after all filtering.
+- If no items match, return exactly: {"answer": "null"}.
 
-# Response Format
-{
-  "answer": "Detailed answer to the query with citations in [index] format, or 'null' for non-meeting queries if no relevant data is found. Can include well-formatted markdown inside the answer field."
-}
+### Response Constraints
+- The response MUST contain no additional keys or metadata beyond the "answer" key.
+- Do NOT include narrative text (e.g., "Upcoming items:", "Past items:", or explanations) in the answer value.
+- Do NOT include any text outside the JSON structure.
+- Use markdown for formatting within the "answer" string only if it enhances clarity (e.g., lists, bold text).
+- Ensure all timestamps are formatted in the user's timezone.
+- Citations MUST be included in [index] format for each item.
+- If the answer is "null", it MUST be a string, not a JSON null value.
 
-# Final Validation Checklist
+## Final Validation Checklist
 Before submitting your response, verify:
 1. Temporal intent (FUTURE/PAST/PRESENT/ALL) is correctly identified
 2. All included items match the temporal intent (strict time-based filtering)
-3. Meeting classification is accurate using the criteria above
+3. Entity classification is accurate
 4. For future-focused queries: NO past items are included
 5. For past-focused queries: NO future items are included
 6. All items are properly cited with [index]
-7. If no matching items exist after filtering:
-   - Meeting queries: 'answer' is exactly "null"
-   - Non-meeting queries: 'answer' is exactly "null"
-8. No explanations or narrative are included outside the JSON structure
-9. No information beyond retrievedContext is included (no hallucination)
-10. Date and time formatting is appropriate for user's timezone
-11. For non-meeting queries with no results:
-    - VERIFY that the response does NOT contain any meeting-related terminology
-    - ENSURE the response is exactly "null" without any meeting references
-    - For the final iteration, don't include any meeting-related words or phrases if the query is not about meetings
+7. If no matching items exist after filtering, return {"answer": "null"}
+8. Response is a JSON object with only the "answer" key
+9. No narrative, explanations, or text outside the JSON structure
+10. No information beyond retrievedContext is included (no hallucination)
+11. Date and time formatting is appropriate for user's timezone
+12. Response is concise, professional, and workspace-appropriate
 
 # Important Notes
-- Meeting Queries:
-  - Return 'answer': "null" if:
-    - No relevant meetings match the query's temporal intent after strict filtering.
-    - Meeting details are unclear or ambiguous.
-    - Only past meetings are found for future-focused queries (or vice versa).
-  - For future-focused queries, never include past meetings, even if they are present in the context.
-  - Do not use any narrative introductions like "Upcoming meetings" or "Past meetings" in the response.
-- Non-Meeting Queries:
-  - Return 'answer': "null" if:
-    - No relevant data matches the query.
-    - Information is missing or unclear.
-  - Strictly exclude all meeting-related content (e.g., calendar events, mentions of "meeting") unless the query explicitly requests it.
-  - For non-meeting queries with no results, NEVER include meeting-related terminology or references in the response.
-  - The response must be exactly "null" without any additional words or context.
-- NO explanations outside JSON; do not provide reasons for missing data.
+- Return {"answer": "null"} if:
+  - No relevant items match the query's temporal intent after strict filtering.
+  - Item details are unclear or ambiguous.
+  - Only past items are found for future-focused queries (or vice versa).
+- For future-focused queries, never include past items, even if present in the context.
+- NO explanations or narrative outside the JSON structure.
 - NO hallucination; use ONLY 'retrievedContext' data.
 - Maintain professional tone appropriate for workspace context.
-- Format dates and times relative to the user's timezone.
 - Clean and normalize raw content as needed.
-- Write the response in a clear and concise manner.
+
+# Response Format
+Return ONLY the following JSON structure:
+{
+  "answer": "Formatted response string with citations in [index] format, or 'null' if no relevant data is found. Markdown may be used within the string for formatting."
+}
 `
