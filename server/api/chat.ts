@@ -1468,6 +1468,7 @@ async function* generateMetadataQueryAnswer(
     Logger.info(`Found ${items.length} items for metadata retrieval`)
 
     // Return early if no documents found for unspecific metadata retrieval
+    // as the query would be ambiguous and further searches would not yield meaningful results
     if (!items.length) {
       return "no documents found"
     }
@@ -1479,7 +1480,7 @@ async function* generateMetadataQueryAnswer(
       `User requested metadata search : ${QueryType.RetrieveMetadata}`,
     )
 
-    // Search Vespa  here with input query
+    // Search Vespa here with input query
     items =
       (
         await searchVespa(input, email, app as Apps, entity as any, {
@@ -1502,7 +1503,6 @@ async function* generateMetadataQueryAnswer(
     return null
   }
 
-  // Process results and generate response
   const results = items
   const initialContext = buildContext(results, maxSummaryCount)
 
