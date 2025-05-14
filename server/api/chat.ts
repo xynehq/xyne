@@ -2,6 +2,7 @@ import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
+  decideToSearchInVespaOrNot,
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
@@ -59,7 +60,13 @@ import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSESt
 import { z } from "zod"
 import type { chatSchema } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
-import { searchVespa, SearchModes, searchVespaInFiles } from "@/search/vespa"
+import {
+  searchVespa,
+  SearchModes,
+  searchVespaInFiles,
+  getDocumentOrNull,
+  GetDocumentByDocId,
+} from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
@@ -1157,10 +1164,10 @@ const getSearchRangeSummary = (
   summarySpan?.setAttribute("to", to)
   summarySpan?.setAttribute("direction", direction)
   const now = Date.now()
-  if ((direction === "next" || direction === "prev") && (from && to) ) {
+  if ((direction === "next" || direction === "prev") && from && to) {
     // Ensure from is earlier than to
     if (from > to) {
-      [from, to] = [to, from]
+      ;[from, to] = [to, from]
     }
 
     const fromDate = new Date(from)
@@ -1182,7 +1189,7 @@ const getSearchRangeSummary = (
     toDate.setHours(23, 59, 0, 0)
 
     return `from ${format(fromDate)} to ${format(toDate)}`
-  } 
+  }
   // For "next" direction, we usually start from now
   else if (direction === "next") {
     // Start from today/now
@@ -1196,7 +1203,7 @@ const getSearchRangeSummary = (
     summarySpan?.setAttribute("result", result)
     summarySpan?.end()
     return result
-  }  
+  }
   // For "prev" direction
   else {
     const startDate = new Date(from)
@@ -1249,7 +1256,7 @@ async function* generatePointQueryTimeExpansion(
   let lastSearchedTime = direction === "prev" ? from : to
 
   let previousResultsLength = 0
-  const loopLimit = (fromDate && toDate) ? 2 : maxIterations
+  const loopLimit = fromDate && toDate ? 2 : maxIterations
 
   for (let iteration = 0; iteration < loopLimit; iteration++) {
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
@@ -1258,27 +1265,30 @@ async function* generatePointQueryTimeExpansion(
 
     if (direction === "prev") {
       // If we have both the from and to time range we search only for that range
-      if(fromDate && toDate) {
-        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      if (fromDate && toDate) {
+        Logger.info(
+          `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
+        )
       }
-      // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date 
+      // If we have either no fromDate and toDate, or a to date but no from date - then we set the from date
       else {
         to = toDate ? to : lastSearchedTime
         from = to - windowSize
         lastSearchedTime = from
       }
-     
     } else {
-      if(fromDate && toDate) {
-        Logger.info(`Direction is ${direction} and time range is provided : from ${from} and ${to}`)
+      if (fromDate && toDate) {
+        Logger.info(
+          `Direction is ${direction} and time range is provided : from ${from} and ${to}`,
+        )
       }
-      // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date 
+      // If we have either no fromDate and toDate, or a from date but no to date - then we set the from date
       else {
-      from = fromDate ? from : lastSearchedTime
-      to = from + windowSize
-      lastSearchedTime = to
+        from = fromDate ? from : lastSearchedTime
+        to = from + windowSize
+        lastSearchedTime = to
       }
-    } 
+    }
 
     Logger.info(
       `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
@@ -1601,6 +1611,49 @@ export async function* UnderstandMessageAndAnswer(
   }
 }
 
+export async function* UnderstandMessageAndAnswerForGivenContext(
+  email: string,
+  userCtx: string,
+  message: string,
+  alpha: number,
+  fileIds: string[],
+  shoudlSearch: string | null,
+  passedSpan?: Span,
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
+  passedSpan?.setAttribute("email", email)
+  passedSpan?.setAttribute("message", message)
+  passedSpan?.setAttribute("alpha", alpha)
+  // If search is recommeded or it can't decide if the query is summariztion type query, we search
+  if (shoudlSearch === "true" || shoudlSearch === null) {
+    Logger.info("Searching for relevant files and answering")
+    return yield* generateAnswerFromGivenContext(
+      message,
+      email,
+      userCtx,
+      alpha,
+      fileIds,
+    )
+  } else if (shoudlSearch === "false") {
+    Logger.info(
+      "Summarzie, explain, top level query so not searching for files",
+    )
+    // If explain/summarize query type then get whole documents, then find out best chunks
+    for (const docId of fileIds) {
+      const doc = await GetDocumentByDocId(docId)
+      // const doc = await getDocumentOrNull("file", docId)
+      console.log("doc")
+      console.log(doc?.root?.children)
+      console.log("doc")
+    }
+    yield {
+      text: "Summarzie, explain, top level query so not searching for files",
+    }
+    return
+  }
+}
+
 const handleError = (error: any) => {
   let errorMessage = "Something went wrong. Please try again."
   if (error?.code === OpenAIError.RateLimitError) {
@@ -1771,160 +1824,110 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          const messagesWithNoErrResponse = messages
-            .slice(0, messages.length - 1)
-            .filter((msg) => !msg?.errorMessage)
-            .map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            }))
-
-          Logger.info(
-            "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
-          )
-          const searchOrAnswerIterator =
-            generateSearchQueryOrAnswerFromConversation(message, ctx, {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: true,
-              json: true,
-              reasoning:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: messagesWithNoErrResponse,
-            })
-
-          // TODO: for now if the answer is from the conversation itself we don't
-          // add any citations for it, we can refer to the original message for citations
-          // one more bug is now llm automatically copies the citation text sometimes without any reference
-          // leads to [NaN] in the answer
-          let currentAnswer = ""
-          let answer = ""
-          let citations = []
-          let citationMap: Record<number, number> = {}
-          let parsed = {
-            answer: "",
-            queryRewrite: "",
-            temporalDirection:  null,
-            from: null,
-            to: null
-          }
-          let thinking = ""
-          let reasoning =
-            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-          let buffer = ""
-          const conversationSpan = streamSpan.startSpan("conversation_search")
-          for await (const chunk of searchOrAnswerIterator) {
-            if (stream.closed) {
-              Logger.info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
-              )
-              break
+          if (fileIds && fileIds.length > 0) {
+            Logger.info(
+              "User has selected some context with query, answering only based on that given context",
+            )
+            Logger.info(
+              `Deciding based on user given context and query whether to search or not`,
+            )
+            const searchDeciderIterator = decideToSearchInVespaOrNot(
+              message,
+              ctx,
+              {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: true,
+                json: true,
+                reasoning:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+              },
+            )
+            let answer = ""
+            let citations = []
+            let citationMap: Record<number, number> = {}
+            let parsed = {
+              requiresSearch: "",
             }
-            if (chunk.text) {
-              if (reasoning) {
-                if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                  thinking += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: chunk.text,
-                  })
-                } else {
-                  // first time
-                  if (!chunk.text.includes(StartThinkingToken)) {
-                    let token = chunk.text
-                    if (chunk.text.includes(EndThinkingToken)) {
-                      token = chunk.text.split(EndThinkingToken)[0]
-                      thinking += token
-                    } else {
-                      thinking += token
-                    }
+            let thinking = ""
+            let reasoning =
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            let buffer = ""
+            const conversationSpan = streamSpan.startSpan("conversation_search")
+            for await (const chunk of searchDeciderIterator) {
+              if (stream.closed) {
+                Logger.info(
+                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                )
+                break
+              }
+              if (chunk.text) {
+                if (reasoning) {
+                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                    thinking += chunk.text
                     stream.writeSSE({
                       event: ChatSSEvents.Reasoning,
-                      data: token,
+                      data: chunk.text,
                     })
-                  }
-                }
-              }
-              if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                reasoning = false
-                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-              }
-              if (!reasoning) {
-                buffer += chunk.text
-                try {
-                  parsed = jsonParseLLMOutput(buffer) || {}
-                  if (parsed.answer && currentAnswer !== parsed.answer) {
-                    if (currentAnswer === "") {
-                      Logger.info(
-                        "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                      )
+                  } else {
+                    // first time
+                    if (!chunk.text.includes(StartThinkingToken)) {
+                      let token = chunk.text
+                      if (chunk.text.includes(EndThinkingToken)) {
+                        token = chunk.text.split(EndThinkingToken)[0]
+                        thinking += token
+                      } else {
+                        thinking += token
+                      }
                       stream.writeSSE({
-                        event: ChatSSEvents.Start,
-                        data: "",
-                      })
-                      // First valid answer - send the whole thing
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: parsed.answer,
-                      })
-                    } else {
-                      // Subsequent chunks - send only the new part
-                      const newText = parsed.answer.slice(currentAnswer.length)
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: newText,
+                        event: ChatSSEvents.Reasoning,
+                        data: token,
                       })
                     }
-                    currentAnswer = parsed.answer
                   }
-                } catch (err) {
-                  const errMessage = (err as Error).message
-                  Logger.error(
-                    err,
-                    `Error while parsing LLM output ${errMessage}`,
-                  )
-                  continue
+                }
+                if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                  reasoning = false
+                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                }
+                if (!reasoning) {
+                  buffer += chunk.text
+                  try {
+                    parsed = jsonParseLLMOutput(buffer) || {}
+                  } catch (err) {
+                    const errMessage = (err as Error).message
+                    Logger.error(
+                      err,
+                      `Error while parsing LLM output ${errMessage}`,
+                    )
+                    continue
+                  }
                 }
               }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
             }
-            if (chunk.cost) {
-              costArr.push(chunk.cost)
-            }
-          }
 
-          conversationSpan.setAttribute("answer_found", parsed.answer)
-          conversationSpan.setAttribute("answer", answer)
-          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
-          conversationSpan.end()
+            conversationSpan.setAttribute("answer_found", parsed.requiresSearch)
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.end()
 
-          if (parsed.answer === null || parsed.answer === "") {
             const ragSpan = streamSpan.startSpan("rag_processing")
-            if (parsed.queryRewrite) {
-              Logger.info(
-                `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
-              )
-              message = parsed.queryRewrite
-              Logger.info(`Rewritten query: ${message}`)
-              ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
-            } else {
-              Logger.info(
-                "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
-              )
-            }
-            const classification: TemporalClassifier = {
-              direction: parsed?.temporalDirection,
-              from: parsed?.from,
-              to: parsed?.to,
-            }
+
+            Logger.info(
+              `Is search recommended after analayzing user query? -> ${parsed.requiresSearch}`,
+            )
+
             const understandSpan = ragSpan.startSpan("understand_message")
-            const iterator = UnderstandMessageAndAnswer(
+
+            const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
               message,
-              classification,
-              messagesWithNoErrResponse,
               0.5,
               fileIds,
+              parsed.requiresSearch,
               understandSpan,
             )
             stream.writeSSE({
@@ -2001,95 +2004,417 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
             ragSpan.end()
-          } else if (parsed.answer) {
-            answer = parsed.answer
-          }
-          if (answer) {
-            // TODO: incase user loses permission
-            // to one of the citations what do we do?
-            // somehow hide that citation and change
-            // the answer to reflect that
-            const msg = await insertMessage(db, {
-              chatId: chat.id,
-              userId: user.id,
-              workspaceExternalId: workspace.externalId,
-              chatExternalId: chat.externalId,
-              messageRole: MessageRole.Assistant,
-              email: user.email,
-              sources: citations,
-              message: processMessage(answer, citationMap),
-              thinking,
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-            })
-            assistantMessageId = msg.externalId
-            const traceJson = tracer.serializeToJson()
-            await insertChatTrace({
-              workspaceId: workspace.id,
-              userId: user.id,
-              chatId: chat.id,
-              messageId: msg.id,
-              chatExternalId: chat.externalId,
-              email: user.email,
-              messageExternalId: msg.externalId,
-              traceJson,
-            })
-            Logger.info(`Inserted trace for message ${msg.externalId}`)
-            await stream.writeSSE({
-              event: ChatSSEvents.ResponseMetadata,
-              data: JSON.stringify({
-                chatId: chat.externalId,
-                messageId: msg.externalId, // Use the stored assistant message ID
-              }),
-            })
-            const endSpan = streamSpan.startSpan("send_end_event")
-            await stream.writeSSE({
-              data: "",
-              event: ChatSSEvents.End,
-            })
-            endSpan.end()
-            streamSpan.end()
-            rootSpan.end()
-          } else {
-            const errorSpan = streamSpan.startSpan("handle_no_answer")
-            const allMessages = await getChatMessages(db, chat?.externalId)
-            const lastMessage = allMessages[allMessages.length - 1]
-            // Store potential assistant message ID even on error for metadata
-            await stream.writeSSE({
-              event: ChatSSEvents.ResponseMetadata,
-              data: JSON.stringify({
-                chatId: chat.externalId,
-                messageId: lastMessage.externalId,
-              }),
-            })
-            await stream.writeSSE({
-              event: ChatSSEvents.Error,
-              data: "Error while trying to answer",
-            })
-            // Add the error message to last user message
-            await addErrMessageToMessage(
-              lastMessage,
-              "Error while trying to answer",
-            )
 
-            await stream.writeSSE({
-              data: "",
-              event: ChatSSEvents.End,
-            })
-            errorSpan.end()
-            streamSpan.end()
-            rootSpan.end()
-            const traceJson = tracer.serializeToJson()
-            await insertChatTrace({
-              workspaceId: workspace.id,
-              userId: user.id,
-              chatId: chat.id,
-              messageId: lastMessage.id,
-              chatExternalId: chat.externalId,
-              email: user.email,
-              messageExternalId: lastMessage.externalId,
-              traceJson,
-            })
+            if (answer) {
+              // TODO: incase user loses permission
+              // to one of the citations what do we do?
+              // somehow hide that citation and change
+              // the answer to reflect that
+              const msg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: citations,
+                message: processMessage(answer, citationMap),
+                thinking,
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              })
+              assistantMessageId = msg.externalId
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: msg.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: msg.externalId,
+                traceJson,
+              })
+              Logger.info(`Inserted trace for message ${msg.externalId}`)
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: msg.externalId, // Use the stored assistant message ID
+                }),
+              })
+              const endSpan = streamSpan.startSpan("send_end_event")
+              await stream.writeSSE({
+                data: "",
+                event: ChatSSEvents.End,
+              })
+              endSpan.end()
+              streamSpan.end()
+              rootSpan.end()
+            } else {
+              const errorSpan = streamSpan.startSpan("handle_no_answer")
+              const allMessages = await getChatMessages(db, chat?.externalId)
+              const lastMessage = allMessages[allMessages.length - 1]
+              // Store potential assistant message ID even on error for metadata
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: lastMessage.externalId,
+                }),
+              })
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: "Error while trying to answer",
+              })
+              // Add the error message to last user message
+              await addErrMessageToMessage(
+                lastMessage,
+                "Error while trying to answer",
+              )
+
+              await stream.writeSSE({
+                data: "",
+                event: ChatSSEvents.End,
+              })
+              errorSpan.end()
+              streamSpan.end()
+              rootSpan.end()
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: lastMessage.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: lastMessage.externalId,
+                traceJson,
+              })
+            }
+          } else {
+            const messagesWithNoErrResponse = messages
+              .slice(0, messages.length - 1)
+              .filter((msg) => !msg?.errorMessage)
+              .map((m) => ({
+                role: m.messageRole as ConversationRole,
+                content: [{ text: m.message }],
+              }))
+
+            Logger.info(
+              "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+            )
+            const searchOrAnswerIterator =
+              generateSearchQueryOrAnswerFromConversation(message, ctx, {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: true,
+                json: true,
+                reasoning:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: messagesWithNoErrResponse,
+              })
+
+            // TODO: for now if the answer is from the conversation itself we don't
+            // add any citations for it, we can refer to the original message for citations
+            // one more bug is now llm automatically copies the citation text sometimes without any reference
+            // leads to [NaN] in the answer
+            let currentAnswer = ""
+            let answer = ""
+            let citations = []
+            let citationMap: Record<number, number> = {}
+            let parsed = {
+              answer: "",
+              queryRewrite: "",
+              temporalDirection: null,
+              from: null,
+              to: null,
+            }
+            let thinking = ""
+            let reasoning =
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            let buffer = ""
+            const conversationSpan = streamSpan.startSpan("conversation_search")
+            for await (const chunk of searchOrAnswerIterator) {
+              if (stream.closed) {
+                Logger.info(
+                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                )
+                break
+              }
+              if (chunk.text) {
+                if (reasoning) {
+                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                  } else {
+                    // first time
+                    if (!chunk.text.includes(StartThinkingToken)) {
+                      let token = chunk.text
+                      if (chunk.text.includes(EndThinkingToken)) {
+                        token = chunk.text.split(EndThinkingToken)[0]
+                        thinking += token
+                      } else {
+                        thinking += token
+                      }
+                      stream.writeSSE({
+                        event: ChatSSEvents.Reasoning,
+                        data: token,
+                      })
+                    }
+                  }
+                }
+                if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                  reasoning = false
+                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                }
+                if (!reasoning) {
+                  buffer += chunk.text
+                  try {
+                    parsed = jsonParseLLMOutput(buffer) || {}
+                    if (parsed.answer && currentAnswer !== parsed.answer) {
+                      if (currentAnswer === "") {
+                        Logger.info(
+                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.Start,
+                          data: "",
+                        })
+                        // First valid answer - send the whole thing
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: parsed.answer,
+                        })
+                      } else {
+                        // Subsequent chunks - send only the new part
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: newText,
+                        })
+                      }
+                      currentAnswer = parsed.answer
+                    }
+                  } catch (err) {
+                    const errMessage = (err as Error).message
+                    Logger.error(
+                      err,
+                      `Error while parsing LLM output ${errMessage}`,
+                    )
+                    continue
+                  }
+                }
+              }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+            }
+
+            conversationSpan.setAttribute("answer_found", parsed.answer)
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+            conversationSpan.end()
+
+            if (parsed.answer === null || parsed.answer === "") {
+              const ragSpan = streamSpan.startSpan("rag_processing")
+              if (parsed.queryRewrite) {
+                Logger.info(
+                  `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
+                )
+                message = parsed.queryRewrite
+                Logger.info(`Rewritten query: ${message}`)
+                ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+              } else {
+                Logger.info(
+                  "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+                )
+              }
+              const classification: TemporalClassifier = {
+                direction: parsed?.temporalDirection,
+                from: parsed?.from,
+                to: parsed?.to,
+              }
+              const understandSpan = ragSpan.startSpan("understand_message")
+              const iterator = UnderstandMessageAndAnswer(
+                email,
+                ctx,
+                message,
+                classification,
+                messagesWithNoErrResponse,
+                0.5,
+                fileIds,
+                understandSpan,
+              )
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+
+              answer = ""
+              thinking = ""
+              reasoning = isReasoning
+              citations = []
+              citationMap = {}
+              let citationValues: Record<number, string> = {}
+              for await (const chunk of iterator) {
+                if (stream.closed) {
+                  Logger.info(
+                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                  )
+                  break
+                }
+                if (chunk.text) {
+                  if (chunk.reasoning) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                    // reasoningSpan.end()
+                  }
+                  if (!chunk.reasoning) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+                }
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                if (chunk.citation) {
+                  const { index, item } = chunk.citation
+                  citations.push(item)
+                  citationMap[index] = citations.length - 1
+                  Logger.info(
+                    `Found citations and sending it, current count: ${citations.length}`,
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap,
+                    }),
+                  })
+                  citationValues[index] = item
+                }
+              }
+              understandSpan.setAttribute("citation_count", citations.length)
+              understandSpan.setAttribute(
+                "citation_map",
+                JSON.stringify(citationMap),
+              )
+              understandSpan.setAttribute(
+                "citation_values",
+                JSON.stringify(citationValues),
+              )
+              understandSpan.end()
+              const answerSpan = ragSpan.startSpan("process_final_answer")
+              answerSpan.setAttribute(
+                "final_answer",
+                processMessage(answer, citationMap),
+              )
+              answerSpan.setAttribute("actual_answer", answer)
+              answerSpan.setAttribute("final_answer_length", answer.length)
+              answerSpan.end()
+              ragSpan.end()
+            } else if (parsed.answer) {
+              answer = parsed.answer
+            }
+            if (answer) {
+              // TODO: incase user loses permission
+              // to one of the citations what do we do?
+              // somehow hide that citation and change
+              // the answer to reflect that
+              const msg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: citations,
+                message: processMessage(answer, citationMap),
+                thinking,
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              })
+              assistantMessageId = msg.externalId
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: msg.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: msg.externalId,
+                traceJson,
+              })
+              Logger.info(`Inserted trace for message ${msg.externalId}`)
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: msg.externalId, // Use the stored assistant message ID
+                }),
+              })
+              const endSpan = streamSpan.startSpan("send_end_event")
+              await stream.writeSSE({
+                data: "",
+                event: ChatSSEvents.End,
+              })
+              endSpan.end()
+              streamSpan.end()
+              rootSpan.end()
+            } else {
+              const errorSpan = streamSpan.startSpan("handle_no_answer")
+              const allMessages = await getChatMessages(db, chat?.externalId)
+              const lastMessage = allMessages[allMessages.length - 1]
+              // Store potential assistant message ID even on error for metadata
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: lastMessage.externalId,
+                }),
+              })
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: "Error while trying to answer",
+              })
+              // Add the error message to last user message
+              await addErrMessageToMessage(
+                lastMessage,
+                "Error while trying to answer",
+              )
+
+              await stream.writeSSE({
+                data: "",
+                event: ChatSSEvents.End,
+              })
+              errorSpan.end()
+              streamSpan.end()
+              rootSpan.end()
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: lastMessage.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: lastMessage.externalId,
+                traceJson,
+              })
+            }
           }
         } catch (error) {
           const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
@@ -2399,9 +2724,9 @@ export const MessageRetryApi = async (c: Context) => {
           let parsed = {
             answer: "",
             queryRewrite: "",
-            temporalDirection:  null, 
-            from: null, 
-            to: null
+            temporalDirection: null,
+            from: null,
+            to: null,
           }
           let thinking = ""
           let reasoning =

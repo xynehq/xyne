@@ -695,6 +695,19 @@ export const GetDocument = async (
   }
 }
 
+export const GetDocumentByDocId = async (
+  docId: string,
+): Promise<VespaGetResult> => {
+  try {
+    const options = { namespace: NAMESPACE, docId }
+    return vespa.getDocumentByOnlyDocId(options)
+  } catch (error) {
+    Logger.error(error, `Error fetching document docId: ${docId}`)
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
+  }
+}
+
 /**
  * Fetches a single random document from a specific schema.
  */

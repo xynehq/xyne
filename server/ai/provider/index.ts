@@ -56,6 +56,7 @@ import {
   baselinePromptJson,
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
+  documentSearchDecider,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
   meetingPromptJson,
@@ -65,6 +66,7 @@ import {
   queryRewritePromptJson,
   queryRouterPrompt,
   rewriteQuerySystemPrompt,
+  searchDeciderPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
   temporalEventClassifier,
@@ -1103,6 +1105,40 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function decideToSearchInVespaOrNot(
+  currentMessage: string,
+  userContext: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
+  params.json = true
+  // let defaultReasoning = isReasoning
+
+  // if (params.reasoning !== undefined) {
+  //   defaultReasoning = params.reasoning
+  // }
+  // if (defaultReasoning) {
+  //   params.systemPrompt = searchQueryReasoningPrompt(userContext)
+  // } else {
+  params.systemPrompt = documentSearchDecider(userContext)
+  // }
 
   const baseMessage = {
     role: ConversationRole.USER,
