@@ -126,6 +126,8 @@ export const messageRetrySchema = z.object({
   }),
 })
 
+export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
+
 export const AutocompleteApi = async (c: Context) => {
   try {
     const { sub } = c.get(JwtPayloadKey)

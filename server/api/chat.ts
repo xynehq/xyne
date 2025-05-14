@@ -59,7 +59,7 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSEStreamingApi
 import { z } from "zod"
-import type { chatSchema } from "@/api/search"
+import type { chatSchema, MessageRetryReqType } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import {
   searchVespa,
@@ -2440,7 +2440,7 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId , isReasoningEnabled } = body
+    const { messageId , isReasoningEnabled }: MessageRetryReqType = body
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
