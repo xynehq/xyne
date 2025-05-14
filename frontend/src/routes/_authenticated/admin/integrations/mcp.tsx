@@ -1,7 +1,6 @@
 import { createFileRoute, useRouterState } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { toast, useToast } from "@/hooks/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "@tanstack/react-router";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +11,7 @@ import { Apps, AuthType } from "shared/types";
 import { PublicUser, PublicWorkspace } from "shared/types";
 import { Sidebar } from "@/components/Sidebar";
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar";
-import { Edit, Trash2, RefreshCw } from "lucide-react";
+import { Trash2, RefreshCw } from "lucide-react";
 
 import {
   Card,
@@ -20,7 +19,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card";
 import {
   Table,
@@ -288,8 +286,6 @@ export const MCPClient = ({
   workspace: PublicWorkspace;
 }) => {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const [showAddForm, setShowAddForm] = useState(false);
 
   // Get all connectors
   const { isPending, error, data, refetch } = useQuery<any[]>({
@@ -314,6 +310,7 @@ export const MCPClient = ({
       }
     },
   });
+  console.log("error occurred: ", error);
 
   // Filter MCP client connectors
   const mcpConnectors =
@@ -424,7 +421,6 @@ export const MCPClient = ({
 
 export const Route = createFileRoute("/_authenticated/admin/integrations/mcp")({
   beforeLoad: async ({ params, context }) => {
-    const userWorkspace = context;
     return params;
   },
   loader: async (params) => {
