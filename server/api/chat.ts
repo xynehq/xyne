@@ -1799,8 +1799,8 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled}: MessageReqType = body
-    const userRequestsReasoning = isReasoningEnabled === true
+    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled }: MessageReqType = body
+    const userRequestsReasoning = isReasoningEnabled
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []
@@ -2440,8 +2440,8 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId , isReasoningEnabled} = body
-    const userRequestsReasoning = isReasoningEnabled === true
+    const { messageId , isReasoningEnabled } = body
+    const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     rootSpan.setAttribute("email", email)
