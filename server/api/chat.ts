@@ -59,7 +59,7 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSEStreamingApi
 import { z } from "zod"
-import type { chatSchema } from "@/api/search"
+import type { chatSchema, MessageRetryReqType } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import {
   searchVespa,
@@ -442,6 +442,7 @@ async function* processIterator(
   iterator: AsyncIterableIterator<ConverseResponse>,
   results: VespaSearchResult[],
   previousResultsLength: number = 0,
+  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -449,7 +450,7 @@ async function* processIterator(
   let currentAnswer = ""
   let parsed = { answer: "" }
   let thinking = ""
-  let reasoning = isReasoning
+  let reasoning = config.isReasoning && userRequestsReasoning
   let yieldedCitations = new Set<number>()
   // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'
@@ -776,6 +777,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           iterator,
           totalResults,
           previousResultsLength,
+          config.isReasoning && userRequestsReasoning,
         )
         if (answer) {
           ragSpan?.setAttribute("answer_found", true)
@@ -891,6 +893,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       iterator,
       results?.root?.children,
       previousResultsLength,
+      config.isReasoning && userRequestsReasoning,
     )
 
     if (answer) {
@@ -1369,6 +1372,7 @@ async function* generatePointQueryTimeExpansion(
       iterator,
       combinedResults?.root?.children,
       previousResultsLength,
+      config.isReasoning && userRequestsReasoning,
     )
     ragSpan?.end()
     if (answer) {
@@ -1568,7 +1572,12 @@ async function* generateMetadataQueryAnswer(
     })
   }
 
-  return yield* processIterator(iterator, results, 0)
+  return yield* processIterator(
+    iterator,
+    results,
+    0,
+    config.isReasoning && userRequestsReasoning,
+  )
 }
 
 const fallbackText = (
@@ -1790,8 +1799,8 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled}: MessageReqType = body
-    const userRequestsReasoning = isReasoningEnabled === true
+    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled }: MessageReqType = body
+    const userRequestsReasoning = isReasoningEnabled
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []
@@ -2431,8 +2440,8 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId , isReasoningEnabled} = body
-    const userRequestsReasoning = isReasoningEnabled === "true"
+    const { messageId , isReasoningEnabled }: MessageRetryReqType = body
+    const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     rootSpan.setAttribute("email", email)
