@@ -56,18 +56,17 @@ import {
   baselinePromptJson,
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
+  emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
-  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
   queryRewritePromptJson,
-  queryRouterPrompt,
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
-  temporalEventClassifier,
+  temporalDirectionJsonPrompt,
   userChatSystem,
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -771,46 +770,6 @@ export enum QueryType {
   // RetrieveMetadata = "RetrieveMetadata",
 }
 
-export const routeQuery = async (
-  userQuery: string,
-  params: ModelParams,
-): Promise<{ result: QueryRouterResponse; cost: number }> => {
-  if (!params.modelId) {
-    params.modelId = defaultFastModel
-  }
-  params.systemPrompt = queryRouterPrompt
-  params.json = true
-
-  const baseMessage = {
-    role: ConversationRole.USER,
-    content: [
-      {
-        text: `User Query: "${userQuery}"`,
-      },
-    ],
-  }
-
-  params.messages = []
-  const messages: Message[] = params.messages
-    ? [...params.messages, baseMessage]
-    : [baseMessage]
-
-  const { text, cost } = await getProviderByModel(params.modelId).converse(
-    messages,
-    params,
-  )
-
-  if (text) {
-    const parsedResponse = jsonParseLLMOutput(text)
-    return {
-      result: QueryRouterResponseSchema.parse(parsedResponse),
-      cost: cost!,
-    }
-  } else {
-    throw new Error("No response from LLM")
-  }
-}
-
 export const listItems = (
   query: string,
   userCtx: string,
@@ -974,7 +933,7 @@ export const baselineRAGJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
-export const meetingPromptJsonStream = (
+export const temporalPromptJsonStream = (
   userQuery: string,
   userCtx: string,
   retrievedCtx: string,
@@ -983,7 +942,33 @@ export const meetingPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const mailPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1052,7 +1037,7 @@ export const temporalEventClassification = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = temporalEventClassifier(userQuery)
+  // params.systemPrompt = temporalEventClassifier(userQuery)
   params.json = true
 
   const baseMessage = {
@@ -1077,8 +1062,6 @@ export const temporalEventClassification = async (
     const parsedResponse = jsonParseLLMOutput(text)
     return {
       direction: parsedResponse.direction || null,
-      from: null,
-      to: null,
       cost: cost!,
     }
   } else {

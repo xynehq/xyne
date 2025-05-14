@@ -48,6 +48,37 @@ export enum Apps {
   Slack = "slack",
 }
 
+export const isValidApp = (app: string): boolean => {
+  return app
+    ? Object.values(Apps)
+        .map((v) => v.toLowerCase())
+        .includes(app.toLowerCase() as Apps)
+    : false
+}
+
+export const isValidEntity = (entity: string): boolean => {
+  const normalizedEntity = entity?.toLowerCase()
+  return normalizedEntity
+    ? Object.values(DriveEntity)
+        .map((v) => v.toLowerCase())
+        .includes(normalizedEntity) ||
+        Object.values(MailEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(CalendarEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(MailAttachmentEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(GooglePeopleEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity)
+      // Object.values(SlackEntity).map(v => v.toLowerCase()).includes(normalizedEntity) ||
+      // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
+    : false
+}
+
 export enum GooglePeopleEntity {
   Contacts = "Contacts",
   OtherContacts = "OtherContacts",
