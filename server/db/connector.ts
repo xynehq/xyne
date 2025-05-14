@@ -1,5 +1,5 @@
-import { createId } from "@paralleldrive/cuid2"
-import { db } from "./client"
+import { createId } from "@paralleldrive/cuid2";
+import { db } from "./client";
 import {
   connectors,
   ingestionStateSchema,
@@ -8,14 +8,14 @@ import {
   type IngestionStateUnion,
   type SelectConnector,
   type SelectOAuthProvider,
-} from "./schema"
-import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
-import { Subsystem } from "@/types"
-import { and, eq } from "drizzle-orm"
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
-import { Google } from "arctic"
-import config from "@/config"
-import { getLogger } from "@/logger"
+} from "./schema";
+import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types";
+import { Subsystem } from "@/types";
+import { and, eq } from "drizzle-orm";
+import { Apps, AuthType, ConnectorStatus } from "@/shared/types";
+import { Google } from "arctic";
+import config from "@/config";
+import { getLogger } from "@/logger";
 import {
   ConnectionInsertionError,
   NoConnectorsFound,
@@ -23,12 +23,12 @@ import {
   MissingOauthConnectorCredentialsError,
   FetchProviderFailed,
   UpdateConnectorFailed,
-} from "@/errors"
-import { IsGoogleApp } from "@/utils"
-import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
-import { getErrorMessage } from "@/utils"
-import { syncJobs, syncHistory } from "./schema"
-const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
+} from "@/errors";
+import { IsGoogleApp } from "@/utils";
+import { getOAuthProviderByConnectorId } from "@/db/oauthProvider";
+import { getErrorMessage } from "@/utils";
+import { syncJobs, syncHistory } from "./schema";
+const Logger = getLogger(Subsystem.Db).child({ module: "connector" });
 
 export const insertConnector = async (
   trx: TxnOrClient,
@@ -46,7 +46,7 @@ export const insertConnector = async (
   apiKey?: string | null,
   status?: ConnectorStatus | null,
 ) => {
-  const externalId = createId() // Generate unique external ID
+  const externalId = createId(); // Generate unique external ID
   try {
     const inserted = await trx
       .insert(connectors)
@@ -66,20 +66,20 @@ export const insertConnector = async (
         apiKey,
         ...(status ? { status } : {}),
       })
-      .returning()
-    Logger.info("Connection inserted successfully")
-    return inserted[0]
+      .returning();
+    Logger.info("Connection inserted successfully");
+    return inserted[0];
   } catch (error) {
     Logger.error(
       error,
       `Error inserting connection:, ${error} \n ${(error as Error).stack}`,
-    )
+    );
     throw new ConnectionInsertionError({
       message: "Could not insert connection",
       cause: error as Error,
-    })
+    });
   }
-}
+};
 
 // for the admin we can get all the connectors
 export const getConnectors = async (workspaceId: string, userId: number) => {
@@ -91,6 +91,8 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
       type: connectors.type,
       status: connectors.status,
       createdAt: connectors.createdAt,
+      config: connectors.config,
+      connectorId: connectors.id,
     })
     .from(connectors)
     .where(
@@ -98,9 +100,9 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
         eq(connectors.workspaceExternalId, workspaceId),
         eq(connectors.userId, userId),
       ),
-    )
-  return res
-}
+    );
+  return res;
+};
 
 // don't call this
 // call the function that ensures the credentials are always refreshed
@@ -112,20 +114,20 @@ export const getConnector = async (
     .select()
     .from(connectors)
     .where(eq(connectors.id, connectorId))
-    .limit(1)
+    .limit(1);
   if (res.length) {
-    const parsedRes = selectConnectorSchema.safeParse(res[0])
+    const parsedRes = selectConnectorSchema.safeParse(res[0]);
     if (!parsedRes.success) {
-      throw parsedRes.error
+      throw parsedRes.error;
     }
     // TODO: maybe add a check if OAuth and expired token then throw error
-    return parsedRes.data
+    return parsedRes.data;
   } else {
     throw new NoConnectorsFound({
       message: `Could not get the connector with id: ${connectorId}`,
-    })
+    });
   }
-}
+};
 
 const IsTokenExpired = (
   app: Apps,
@@ -133,15 +135,15 @@ const IsTokenExpired = (
   bufferInSeconds: number,
 ): boolean => {
   if (IsGoogleApp(app)) {
-    const tokens = oauthCredentials.data
-    const now: Date = new Date()
+    const tokens = oauthCredentials.data;
+    const now: Date = new Date();
     // make the type as Date, currently the date is stringified
-    const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime()
-    const currentTime = now.getTime()
-    return currentTime + bufferInSeconds * 1000 > expirationTime
+    const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime();
+    const currentTime = now.getTime();
+    return currentTime + bufferInSeconds * 1000 > expirationTime;
   }
-  return false
-}
+  return false;
+};
 
 // this method ensures that if it retuns the connector then the access token will always be valid
 // it takes upon itself to refresh if expired
@@ -158,21 +160,21 @@ export const getOAuthConnectorWithCredentials = async (
         eq(connectors.authType, AuthType.OAuth),
       ),
     )
-    .limit(1)
+    .limit(1);
 
   if (!res.length) {
     throw new NoOauthConnectorFound({
       message: `Could not get the oauth connector with id:  ${connectorId}`,
-    })
+    });
   }
 
-  const oauthRes: SelectConnector = selectConnectorSchema.parse(res[0])
+  const oauthRes: SelectConnector = selectConnectorSchema.parse(res[0]);
 
   if (!oauthRes.oauthCredentials) {
-    throw new MissingOauthConnectorCredentialsError({})
+    throw new MissingOauthConnectorCredentialsError({});
   }
   // parse the string
-  oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials)
+  oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials);
 
   // google tokens have expiry of 1 hour
   // 5 minutes before expiry we refresh them
@@ -182,46 +184,46 @@ export const getOAuthConnectorWithCredentials = async (
     if (IsGoogleApp(oauthRes.app)) {
       // we will need the provider now to refresh the token
       const providers: SelectOAuthProvider[] =
-        await getOAuthProviderByConnectorId(trx, connectorId)
+        await getOAuthProviderByConnectorId(trx, connectorId);
 
       if (!providers.length) {
-        Logger.error("Could not fetch provider while refreshing Google Token")
+        Logger.error("Could not fetch provider while refreshing Google Token");
         throw new FetchProviderFailed({
           message: "Could not fetch provider while refreshing Google Token",
-        })
+        });
       }
-      const [googleProvider] = providers
+      const [googleProvider] = providers;
       const google = new Google(
         googleProvider.clientId!,
         googleProvider.clientSecret,
         `${config.host}/oauth/callback`,
-      )
-      const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
+      );
+      const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data;
       const refreshedTokens = await google.refreshAccessToken(
         tokens.refresh_token,
-      )
+      );
       // update the token values
-      tokens.access_token = refreshedTokens.accessToken()
+      tokens.access_token = refreshedTokens.accessToken();
       tokens.accessTokenExpiresAt = new Date(
         refreshedTokens.accessTokenExpiresAt(),
-      )
+      );
 
-      oauthRes.oauthCredentials.data = tokens
+      oauthRes.oauthCredentials.data = tokens;
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
         oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
-      })
-      Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
+      });
+      Logger.info(`Connector successfully updated: ${updatedConnector.id}`);
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,
-      )
+      );
       throw new Error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,
-      )
+      );
     }
   }
-  return oauthRes
-}
+  return oauthRes;
+};
 
 export const getConnectorByExternalId = async (
   trx: TxnOrClient,
@@ -237,27 +239,27 @@ export const getConnectorByExternalId = async (
         eq(connectors.userId, userId),
       ),
     )
-    .limit(1)
+    .limit(1);
   if (res.length) {
-    const parsedRes = selectConnectorSchema.safeParse(res[0])
+    const parsedRes = selectConnectorSchema.safeParse(res[0]);
     if (!parsedRes.success) {
       Logger.error(
         `Failed to parse connector data for externalId ${connectorId}: ${parsedRes.error.toString()}`,
-      )
+      );
       throw new NoConnectorsFound({
         message: `Could not parse connector data for externalId: ${connectorId}`,
-      })
+      });
     }
-    return parsedRes.data
+    return parsedRes.data;
   } else {
     Logger.error(
       `Connector not found for external ID ${connectorId} and user ID ${userId}`,
-    )
+    );
     throw new NoConnectorsFound({
       message: `Connector not found for external ID ${connectorId} and user ID ${userId}`,
-    })
+    });
   }
-}
+};
 
 export const updateConnector = async (
   trx: TxnOrClient,
@@ -269,15 +271,15 @@ export const updateConnector = async (
     .update(connectors)
     .set(updateData)
     .where(eq(connectors.id, connectorId))
-    .returning()
+    .returning();
 
   if (!updatedConnectors || !updatedConnectors.length) {
-    Logger.error(`Could not update connector`)
-    throw new UpdateConnectorFailed("Could not update connector")
+    Logger.error(`Could not update connector`);
+    throw new UpdateConnectorFailed("Could not update connector");
   }
-  const [connectorVal] = updatedConnectors
-  return selectConnectorSchema.parse(connectorVal)
-}
+  const [connectorVal] = updatedConnectors;
+  return selectConnectorSchema.parse(connectorVal);
+};
 
 export const deleteConnector = async (
   trx: TxnOrClient,
@@ -291,8 +293,8 @@ export const deleteConnector = async (
         eq(connectors.externalId, connectorId),
         eq(connectors.userId, userId),
       ),
-    )
-}
+    );
+};
 
 export const deleteOauthConnector = async (
   trx: TxnOrClient,
@@ -300,27 +302,27 @@ export const deleteOauthConnector = async (
 ): Promise<void> => {
   Logger.info(
     `Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`,
-  )
+  );
   try {
-    await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
-    Logger.debug(`Deleted sync jobs for connector ID: ${connectorId}`)
+    await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId));
+    Logger.debug(`Deleted sync jobs for connector ID: ${connectorId}`);
 
     await trx
       .delete(oauthProviders)
-      .where(eq(oauthProviders.connectorId, connectorId))
-    Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
+      .where(eq(oauthProviders.connectorId, connectorId));
+    Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`);
 
-    await trx.delete(connectors).where(eq(connectors.id, connectorId))
+    await trx.delete(connectors).where(eq(connectors.id, connectorId));
   } catch (error) {
     Logger.error(
       { error, connectorId },
       `Error deleting connector and related data: ${getErrorMessage(error)}`,
-    )
+    );
     throw new Error(
       `Failed to delete connector ${connectorId}: ${getErrorMessage(error)}`,
-    )
+    );
   }
-}
+};
 
 export async function loadConnectorState<T extends IngestionStateUnion>(
   trx: TxnOrClient,
@@ -338,27 +340,27 @@ export async function loadConnectorState<T extends IngestionStateUnion>(
         eq(connectors.userId, userId),
       ),
     )
-    .limit(1)
+    .limit(1);
 
   if (result.length === 0) {
     Logger.warn(
       `No connector found for id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`,
-    )
-    return null
+    );
+    return null;
   }
 
-  const state = result[0].state as Record<string, any>
+  const state = result[0].state as Record<string, any>;
   if (Object.keys(state).length === 0) {
-    return null // Treat empty object as no state
+    return null; // Treat empty object as no state
   }
-  const parsedState = ingestionStateSchema.safeParse(result[0].state)
+  const parsedState = ingestionStateSchema.safeParse(result[0].state);
   if (parsedState.success) {
-    return parsedState.data as T
+    return parsedState.data as T;
   } else {
     Logger.warn(
       `Invalid state format for connector ${connectorId}: ${parsedState.error}`,
-    )
-    return null
+    );
+    return null;
   }
 }
 
@@ -379,16 +381,16 @@ export async function saveConnectorState<T extends IngestionStateUnion>(
         eq(connectors.userId, userId),
       ),
     )
-    .returning({ id: connectors.id })
+    .returning({ id: connectors.id });
 
   if (updated.length === 0) {
     Logger.error(
       `Failed to update state for connector id=${connectorId}, workspaceId=${workspaceId}, userId=${userId}`,
-    )
+    );
     throw new UpdateConnectorFailed(
       `Could not update state for connector ${connectorId}`,
-    )
+    );
   }
 
-  Logger.debug(`State saved for connector ${connectorId}`)
+  Logger.debug(`State saved for connector ${connectorId}`);
 }

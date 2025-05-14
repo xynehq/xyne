@@ -50,6 +50,27 @@
       "when": 1746705585221,
       "tag": "0006_careful_odin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1747154803245,
+      "tag": "0007_wakeful_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1747220706337,
+      "tag": "0008_cold_mysterio",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1747227993495,
+      "tag": "0009_unique_roxanne_simpson",
+      "breakpoints": true
     }
   ]
 }
