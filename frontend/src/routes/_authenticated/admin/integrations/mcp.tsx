@@ -1,18 +1,18 @@
-import { createFileRoute, useRouterState } from "@tanstack/react-router"
-import { useEffect, useState } from "react"
-import { useForm } from "@tanstack/react-form"
-import { toast, useToast } from "@/hooks/use-toast"
-import { useNavigate } from "@tanstack/react-router"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { api } from "@/api"
-import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType } from "shared/types"
-import { PublicUser, PublicWorkspace } from "shared/types"
-import { Sidebar } from "@/components/Sidebar"
-import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
-import { Edit, Trash2, RefreshCw } from "lucide-react"
+import { createFileRoute, useRouterState } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { useForm } from "@tanstack/react-form";
+import { toast, useToast } from "@/hooks/use-toast";
+import { useNavigate } from "@tanstack/react-router";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { api } from "@/api";
+import { getErrorMessage } from "@/lib/utils";
+import { Apps, AuthType } from "shared/types";
+import { PublicUser, PublicWorkspace } from "shared/types";
+import { Sidebar } from "@/components/Sidebar";
+import { IntegrationsSidebar } from "@/components/IntegrationsSidebar";
+import { Edit, Trash2, RefreshCw } from "lucide-react";
 
 import {
   Card,
@@ -21,7 +21,7 @@ import {
   CardHeader,
   CardTitle,
   CardFooter,
-} from "@/components/ui/card"
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -29,9 +29,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import { useQuery } from "@tanstack/react-query"
-import { ConnectorStatus } from "shared/types"
+} from "@/components/ui/table";
+import { useQuery } from "@tanstack/react-query";
+import { ConnectorStatus } from "shared/types";
 
 // Function to submit the MCP client connector details
 const submitMCPClient = async (
@@ -42,21 +42,21 @@ const submitMCPClient = async (
     form: {
       url: value.url,
       apiKey: value.apiKey,
-      name: Apps.MCP,
+      name: value.name,
     },
-  })
+  });
   if (!response.ok) {
     if (response.status === 401) {
-      navigate({ to: "/auth" })
-      throw new Error("Unauthorized")
+      navigate({ to: "/auth" });
+      throw new Error("Unauthorized");
     }
-    const errorText = await response.text()
+    const errorText = await response.text();
     throw new Error(
       `Failed to add MCP connector: ${response.status} ${response.statusText} - ${errorText}`,
-    )
+    );
   }
-  return response.json()
-}
+  return response.json();
+};
 
 // Delete MCP client connector
 const deleteMCPClient = async (connectorId: string) => {
@@ -64,47 +64,47 @@ const deleteMCPClient = async (connectorId: string) => {
     form: {
       connectorId,
     },
-  })
+  });
   if (!res.ok) {
     if (res.status === 401) {
-      throw new Error("Unauthorized")
+      throw new Error("Unauthorized");
     }
-    throw new Error("Could not delete connector")
+    throw new Error("Could not delete connector");
   }
-  return res.json()
-}
+  return res.json();
+};
 
 // MCP Client Form Component
 export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
-  const { toast } = useToast()
-  const navigate = useNavigate()
+  const { toast } = useToast();
+  const navigate = useNavigate();
   const form = useForm<{ name: string; url: string; apiKey: string }>({
     defaultValues: { name: "", url: "", apiKey: "" },
     onSubmit: async ({ value }) => {
       try {
-        await submitMCPClient(value, navigate)
+        await submitMCPClient(value, navigate);
         toast({
           title: "MCP Client Connected",
           description: "MCP Client successfully connected. Updating status...",
-        })
+        });
         // Reset the form
-        form.reset()
-        onSuccess()
+        form.reset();
+        onSuccess();
       } catch (error) {
         toast({
           title: "Could not connect MCP Client",
           description: `Error: ${getErrorMessage(error)}`,
           variant: "destructive",
-        })
+        });
       }
     },
-  })
+  });
 
   return (
     <form
       onSubmit={(e) => {
-        e.preventDefault()
-        form.handleSubmit()
+        e.preventDefault();
+        form.handleSubmit();
       }}
       className="grid w-full items-center gap-1.5"
     >
@@ -188,8 +188,8 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
         Add MCP Client
       </Button>
     </form>
-  )
-}
+  );
+};
 
 // List of MCP clients
 const MCPClientsList = ({
@@ -197,16 +197,16 @@ const MCPClientsList = ({
   onDelete,
   onRefresh,
 }: {
-  clients: any[]
-  onDelete: (id: string) => Promise<void>
-  onRefresh: () => void
+  clients: any[];
+  onDelete: (id: string) => Promise<void>;
+  onRefresh: () => void;
 }) => {
-  const { toast } = useToast()
+  const { toast } = useToast();
 
   if (clients.length === 0) {
     return (
       <p className="text-center text-gray-500 my-4">No MCP clients added yet</p>
-    )
+    );
   }
 
   return (
@@ -222,7 +222,9 @@ const MCPClientsList = ({
         <TableBody>
           {clients.map((client) => (
             <TableRow key={client.id}>
-              <TableCell className="font-medium">{client.url}</TableCell>
+              <TableCell className="font-medium">
+                {client.config ? client.config.url : null}
+              </TableCell>
               <TableCell>
                 <span
                   className={`px-2 py-1 rounded-full text-xs ${
@@ -245,18 +247,18 @@ const MCPClientsList = ({
                     size="icon"
                     onClick={async () => {
                       try {
-                        await onDelete(client.id)
+                        await onDelete(client.id);
                         toast({
                           title: "Client Removed",
                           description:
                             "MCP Client has been removed successfully",
-                        })
+                        });
                       } catch (error) {
                         toast({
                           title: "Removal Failed",
                           description: getErrorMessage(error),
                           variant: "destructive",
-                        })
+                        });
                       }
                     }}
                   >
@@ -274,54 +276,54 @@ const MCPClientsList = ({
         </Button>
       </div>
     </div>
-  )
-}
+  );
+};
 
 // Main MCP component
 export const MCPClient = ({
   user,
   workspace,
 }: {
-  user: PublicUser
-  workspace: PublicWorkspace
+  user: PublicUser;
+  workspace: PublicWorkspace;
 }) => {
-  const navigate = useNavigate()
-  const { toast } = useToast()
-  const [showAddForm, setShowAddForm] = useState(false)
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [showAddForm, setShowAddForm] = useState(false);
 
   // Get all connectors
   const { isPending, error, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        const res = await api.admin.connectors.all.$get()
+        const res = await api.admin.connectors.all.$get();
         if (!res.ok) {
           if (res.status === 401) {
-            throw new Error("Unauthorized")
+            throw new Error("Unauthorized");
           }
-          throw new Error("Could not get connectors")
+          throw new Error("Could not get connectors");
         }
-        return res.json()
+        return res.json();
       } catch (error) {
-        const message = getErrorMessage(error)
+        const message = getErrorMessage(error);
         if (message === "Unauthorized") {
-          navigate({ to: "/auth" })
-          return []
+          navigate({ to: "/auth" });
+          return [];
         }
-        throw error
+        throw error;
       }
     },
-  })
+  });
 
   // Filter MCP client connectors
   const mcpConnectors =
     data?.filter((v) => v.app === Apps.MCP && v.authType === AuthType.ApiKey) ||
-    []
+    [];
 
   const handleDeleteClient = async (connectorId: string) => {
-    await deleteMCPClient(connectorId)
-    refetch()
-  }
+    await deleteMCPClient(connectorId);
+    refetch();
+  };
 
   return (
     <div className="flex w-full h-full">
@@ -366,7 +368,7 @@ export const MCPClient = ({
               ) : (
                 <MCPClientForm
                   onSuccess={() => {
-                    refetch()
+                    refetch();
                   }}
                 />
               )}
@@ -417,20 +419,20 @@ export const MCPClient = ({
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
 export const Route = createFileRoute("/_authenticated/admin/integrations/mcp")({
   beforeLoad: async ({ params, context }) => {
-    const userWorkspace = context
-    return params
+    const userWorkspace = context;
+    return params;
   },
   loader: async (params) => {
-    return params
+    return params;
   },
   component: () => {
-    const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <MCPClient user={user} workspace={workspace} />
+    const matches = useRouterState({ select: (s) => s.matches });
+    const { user, workspace } = matches[matches.length - 1].context;
+    return <MCPClient user={user} workspace={workspace} />;
   },
-})
+});

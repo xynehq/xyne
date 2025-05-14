@@ -193,7 +193,7 @@ export const connectors = pgTable(
       .default(sql`NOW()`),
   },
   (t) => ({
-    uniqueConnector: unique().on(t.workspaceId, t.userId, t.app, t.authType),
+    uniqueConnector: unique().on(t.workspaceId, t.userId, t.app, t.authType, t.name),
   }),
 )
 

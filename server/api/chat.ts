@@ -3273,7 +3273,11 @@ export const MessageWithToolsApi = async (c: Context) => {
               const { connectorId, tools: toolNames } = item;
 
               // Fetch connector info and create client
-              const connector = await getConnector(db, connectorId);
+              const connector = await getConnectorByExternalId(
+                db,
+                connectorId,
+                user.id,
+              );
               const config = connector.config as MCPClientConfig;
               const client = new Client({
                 name: `connector-${connectorId}`,
@@ -3289,7 +3293,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               await syncConnectorTools(
                 db,
                 workspace.id,
-                `connector-${connectorId}`,
+                connector.id,
                 clientTools.map((tool) => ({
                   toolName: tool.function.name,
                   toolSchema: JSON.stringify(tool),
