@@ -566,6 +566,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
   classification: TemporalClassifier & QueryRouterResponse,
+  userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -767,7 +768,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             stream: true,
             modelId: defaultBestModel,
             messages,
-            reasoning: isReasoning,
+            reasoning: config.isReasoning && userRequestsReasoning,
           },
         )
 
@@ -785,7 +786,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           queryRagSpan?.end()
           return
         }
-        if (isReasoning) {
+        if (config.isReasoning && userRequestsReasoning) {
           previousResultsLength += totalResults.length
         }
         ragSpan?.end()
@@ -883,7 +884,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
-      reasoning: isReasoning,
+      reasoning: config.isReasoning && userRequestsReasoning,
     })
 
     const answer = yield* processIterator(
@@ -900,7 +901,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       queryRagSpan?.end()
       return
     }
-    if (isReasoning) {
+    if (config.isReasoning && userRequestsReasoning) {
       previousResultsLength += results?.root?.children?.length || 0
       pageSpan?.setAttribute("previous_results_length", previousResultsLength)
     }
@@ -922,6 +923,7 @@ async function* generateAnswerFromGivenContext(
   userCtx: string,
   alpha: number = 0.5,
   fileIds: string[],
+  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -989,7 +991,7 @@ async function* generateAnswerFromGivenContext(
       {
         stream: true,
         modelId: defaultBestModel,
-        reasoning: isReasoning,
+        reasoning: config.isReasoning && userRequestsReasoning,
       },
       true,
     )
@@ -998,7 +1000,7 @@ async function* generateAnswerFromGivenContext(
     let currentAnswer = ""
     let parsed = { answer: "" }
     let thinking = ""
-    let reasoning = isReasoning
+    let reasoning = config.isReasoning && userRequestsReasoning
     let yieldedCitations = new Set<number>()
     // tied to the json format and output expected, we expect the answer key to be present
     const ANSWER_TOKEN = '"answer":'
@@ -1095,7 +1097,7 @@ async function* generateAnswerFromGivenContext(
       }
       return
     }
-    if (isReasoning) {
+    if (config.isReasoning && userRequestsReasoning) {
       previousResultsLength += results?.root?.children?.length || 0
     }
   }
@@ -1175,6 +1177,7 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
+  userRequestsReasoning?: boolean,
   eventRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1359,7 +1362,7 @@ async function* generatePointQueryTimeExpansion(
     const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
-      reasoning: isReasoning,
+      reasoning: config.isReasoning && userRequestsReasoning,
     })
 
     const answer = yield* processIterator(
@@ -1377,7 +1380,7 @@ async function* generatePointQueryTimeExpansion(
       return
     }
     // only increment in the case of reasoning
-    if (isReasoning) {
+    if (config.isReasoning && userRequestsReasoning) {
       previousResultsLength += combinedResults?.root?.children?.length || 0
       iterationSpan?.setAttribute(
         "previous_results_length",
@@ -1437,6 +1440,7 @@ async function* generateMetadataQueryAnswer(
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
   classification: TemporalClassifier & QueryRouterResponse,
+  userRequestsReasoning?: boolean,
   span?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1553,14 +1557,14 @@ async function* generateMetadataQueryAnswer(
     iterator = mailPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
-      reasoning: isReasoning,
+      reasoning: config.isReasoning && userRequestsReasoning,
     })
   } else {
     Logger.info("Using baselineRAGJsonStream")
     iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
-      reasoning: isReasoning,
+      reasoning: config.isReasoning && userRequestsReasoning,
     })
   }
 
@@ -1633,6 +1637,7 @@ export async function* UnderstandMessageAndAnswer(
   alpha: number,
   fileIds: string[],
   passedSpan?: Span,
+  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1668,6 +1673,7 @@ export async function* UnderstandMessageAndAnswer(
       count,
       maxDefaultSummary,
       classification,
+      userRequestsReasoning,
       metadataRagSpan,
     )
 
@@ -1717,6 +1723,7 @@ export async function* UnderstandMessageAndAnswer(
       alpha,
       chatPageSize,
       maxDefaultSummary,
+      userRequestsReasoning,
       eventRagSpan,
     )
   } else {
@@ -1736,6 +1743,7 @@ export async function* UnderstandMessageAndAnswer(
       3,
       maxDefaultSummary,
       classification,
+      userRequestsReasoning,
       ragSpan,
     )
   }
@@ -1782,8 +1790,8 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled }: MessageReqType = body
-    
+    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled}: MessageReqType = body
+    const userRequestsReasoning = isReasoningEnabled === true
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []
@@ -1930,6 +1938,7 @@ export const MessageApi = async (c: Context) => {
               stream: true,
               json: true,
               reasoning:
+                userRequestsReasoning &&
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
               messages: messagesWithNoErrResponse,
             })
@@ -1961,6 +1970,7 @@ export const MessageApi = async (c: Context) => {
 
           let thinking = ""
           let reasoning =
+            userRequestsReasoning &&
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
           const conversationSpan = streamSpan.startSpan("conversation_search")
@@ -2085,6 +2095,7 @@ export const MessageApi = async (c: Context) => {
               0.5,
               fileIds,
               understandSpan,
+              userRequestsReasoning,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -2093,7 +2104,7 @@ export const MessageApi = async (c: Context) => {
 
             answer = ""
             thinking = ""
-            reasoning = isReasoning
+            reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
@@ -2105,7 +2116,7 @@ export const MessageApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
-                if (chunk.reasoning) {
+                if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
@@ -2113,7 +2124,7 @@ export const MessageApi = async (c: Context) => {
                   })
                   // reasoningSpan.end()
                 }
-                if (!chunk.reasoning) {
+                if (!reasoning && !chunk.reasoning) {
                   answer += chunk.text
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
@@ -2420,7 +2431,8 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId } = body
+    const { messageId , isReasoningEnabled} = body
+    const userRequestsReasoning = isReasoningEnabled === "true"
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     rootSpan.setAttribute("email", email)
@@ -2548,6 +2560,7 @@ export const MessageRetryApi = async (c: Context) => {
               stream: true,
               json: true,
               reasoning:
+                userRequestsReasoning &&
                 ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
               messages: convWithNoErrMsg,
             })
@@ -2573,6 +2586,7 @@ export const MessageRetryApi = async (c: Context) => {
           }
           let thinking = ""
           let reasoning =
+            userRequestsReasoning &&
             ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
           let buffer = ""
           for await (const chunk of searchOrAnswerIterator) {
@@ -2690,6 +2704,7 @@ export const MessageRetryApi = async (c: Context) => {
               0.5,
               fileIds,
               understandSpan,
+              userRequestsReasoning,
             )
             // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
@@ -2698,7 +2713,7 @@ export const MessageRetryApi = async (c: Context) => {
             })
             answer = ""
             thinking = ""
-            reasoning = isReasoning
+            reasoning = config.isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
@@ -2711,14 +2726,14 @@ export const MessageRetryApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
-                if (chunk.reasoning) {
+                if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
                     data: chunk.text,
                   })
                 }
-                if (!chunk.reasoning) {
+                if (!reasoning && !chunk.reasoning) {
                   answer += chunk.text
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
