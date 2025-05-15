@@ -1939,7 +1939,7 @@ export const MessageApi = async (c: Context) => {
           const messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
             .filter((msg) => !msg?.errorMessage)
-            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message?.trim()))
+            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
             .map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
@@ -2557,13 +2557,22 @@ export const MessageRetryApi = async (c: Context) => {
 
         try {
           let message = prevUserMessage.message
-          const convWithNoErrMsg = (isUserMessage ? conversation : conversation.slice(0, conversation.length - 1))
-            .filter((msg) => !msg?.errorMessage)
-            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message?.trim()))
-            .map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            }));
+          const convWithNoErrMsg = isUserMessage
+            ? conversation
+                .filter((con) => !con?.errorMessage)
+                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
+            : conversation
+                .slice(0, conversation.length - 1)
+                .filter((con) => !con?.errorMessage)
+                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message))
+                .map((m) => ({
+                  role: m.messageRole as ConversationRole,
+                  content: [{ text: m.message }],
+                }))
           Logger.info(
             "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
           )
