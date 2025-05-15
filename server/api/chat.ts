@@ -1106,7 +1106,6 @@ async function* generateAnswerFromGivenContext(
   }
 }
 
-
 const getSearchRangeSummary = (
   from: number,
   to: number,
@@ -1968,7 +1967,6 @@ export const MessageApi = async (c: Context) => {
             let thinking = ""
             let reasoning =
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-            let buffer = ""
             const conversationSpan = streamSpan.startSpan("conversation_search")
             conversationSpan.setAttribute("answer", answer)
             conversationSpan.end()
@@ -1992,7 +1990,7 @@ export const MessageApi = async (c: Context) => {
 
             answer = ""
             thinking = ""
-            reasoning = isReasoning
+            reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
@@ -2001,10 +1999,11 @@ export const MessageApi = async (c: Context) => {
                 Logger.info(
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
+                wasStreamClosedPrematurely = true
                 break
               }
               if (chunk.text) {
-                if (chunk.reasoning) {
+                if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
@@ -2074,7 +2073,7 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap),
-                thinking,
+                thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -2090,27 +2089,21 @@ export const MessageApi = async (c: Context) => {
                 messageExternalId: msg.externalId,
                 traceJson,
               })
-              Logger.info(`Inserted trace for message ${msg.externalId}`)
+              Logger.info(
+                `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+              )
               await stream.writeSSE({
                 event: ChatSSEvents.ResponseMetadata,
                 data: JSON.stringify({
                   chatId: chat.externalId,
-                  messageId: msg.externalId, // Use the stored assistant message ID
+                  messageId: assistantMessageId,
                 }),
               })
-              const endSpan = streamSpan.startSpan("send_end_event")
-              await stream.writeSSE({
-                data: "",
-                event: ChatSSEvents.End,
-              })
-              endSpan.end()
-              streamSpan.end()
-              rootSpan.end()
             } else {
               const errorSpan = streamSpan.startSpan("handle_no_answer")
               const allMessages = await getChatMessages(db, chat?.externalId)
               const lastMessage = allMessages[allMessages.length - 1]
-              // Store potential assistant message ID even on error for metadata
+
               await stream.writeSSE({
                 event: ChatSSEvents.ResponseMetadata,
                 data: JSON.stringify({
@@ -2120,21 +2113,13 @@ export const MessageApi = async (c: Context) => {
               })
               await stream.writeSSE({
                 event: ChatSSEvents.Error,
-                data: "Error while trying to answer",
+                data: "Can you please make your query more specific?",
               })
-              // Add the error message to last user message
               await addErrMessageToMessage(
                 lastMessage,
-                "Error while trying to answer",
+                "Can you please make your query more specific?",
               )
 
-              await stream.writeSSE({
-                data: "",
-                event: ChatSSEvents.End,
-              })
-              errorSpan.end()
-              streamSpan.end()
-              rootSpan.end()
               const traceJson = tracer.serializeToJson()
               await insertChatTrace({
                 workspaceId: workspace.id,
@@ -2146,7 +2131,9 @@ export const MessageApi = async (c: Context) => {
                 messageExternalId: lastMessage.externalId,
                 traceJson,
               })
+              errorSpan.end()
             }
+
             const endSpan = streamSpan.startSpan("send_end_event")
             await stream.writeSSE({
               data: "",
