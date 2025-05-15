@@ -343,7 +343,7 @@ export async function insertChannelMessages(
           }
 
           // case to avoid bot messages
-          insertChatMessage(
+          await insertChatMessage(
             client,
             message,
             channelId,
@@ -425,7 +425,7 @@ export async function insertChannelMessages(
               } //case when text is empty
               reply.team = await getTeam(client, reply)
 
-              insertChatMessage(
+             await insertChatMessage(
                 client,
                 reply,
                 channelId,
