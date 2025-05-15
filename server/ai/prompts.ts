@@ -593,8 +593,7 @@ The context provided will be formatted with specific fields for each type:
 - Owner information
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
-- Content chunks
-- Relevance score
+- Content
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -603,15 +602,13 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
 - Subject
 - From/To/Cc/Bcc
 - Labels
-- Content chunks
-- Relevance score
+- Content
 ## Event Context Format
 - App and Entity type
 - Event name and description
@@ -620,7 +617,6 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:

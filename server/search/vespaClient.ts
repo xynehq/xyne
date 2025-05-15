@@ -383,7 +383,7 @@ class VespaClient {
 
   async getDocumentsByOnlyDocIds(
     options: VespaConfigValues & { docIds: string[] },
-  ): Promise<VespaGetResult> {
+  ): Promise<VespaSearchResponse> {
     const { docIds } = options
     const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
     const yqlQuery = `select * from sources * where (${yqlIds})`

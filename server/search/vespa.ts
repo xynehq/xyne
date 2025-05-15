@@ -697,7 +697,7 @@ export const GetDocument = async (
 
 export const GetDocumentsByDocIds = async (
   docIds: string[],
-): Promise<VespaGetResult> => {
+): Promise<VespaSearchResponse> => {
   try {
     const options = { namespace: NAMESPACE, docIds }
     return vespa.getDocumentsByOnlyDocIds(options)

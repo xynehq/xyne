@@ -977,7 +977,6 @@ async function* generateAnswerFromGivenContext(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  const message = input
   let userAlpha = alpha
   try {
     const personalization = await getUserPersonalizationByEmail(db, email)
@@ -1011,11 +1010,6 @@ async function* generateAnswerFromGivenContext(
   }
 
   let previousResultsLength = 0
-
-  // let results = await searchVespaInFiles(message, email, fileIds, {
-  //   limit: fileIds?.length,
-  //   alpha: userAlpha,
-  // })
   const results = await GetDocumentsByDocIds(fileIds)
   console.log("documents")
   console.log(results.root.children)
@@ -1028,7 +1022,7 @@ async function* generateAnswerFromGivenContext(
     results?.root?.children
       ?.map(
         (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
+          `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 0, true)}`,
       )
       ?.join("\n"),
   )
