@@ -117,6 +117,14 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
+  stringifiedfileIds: z.string(),
+  isReasoningEnabled: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
@@ -129,7 +137,16 @@ export const messageRetrySchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
+  isReasoningEnabled: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
+
+export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
 
 export const AutocompleteApi = async (c: Context) => {
   try {

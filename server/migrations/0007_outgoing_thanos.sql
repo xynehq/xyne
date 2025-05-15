@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "fileIds" jsonb DEFAULT '[]'::jsonb NOT NULL;

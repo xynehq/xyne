@@ -373,6 +373,68 @@ export const HybridDefaultProfile = (
   }
 }
 
+export const HybridDefaultProfileInFiles = (
+  hits: number,
+  profile: SearchModes = SearchModes.NativeRank,
+  fileIds: string[],
+  notInMailLabels?: string[],
+): YqlProfile => {
+  let mailLabelQuery = ""
+  if (notInMailLabels && notInMailLabels.length > 0) {
+    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
+  const contextClauses: string[] = []
+
+  if (fileIds?.length) {
+    const idFilters = fileIds.map((id) => `docId contains '${id}'`)
+    contextClauses.push(...idFilters)
+  }
+
+  const specificContextQuery = contextClauses.length
+    ? `and (${contextClauses.join(" or ")})`
+    : ""
+
+  // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
+  return {
+    profile: profile,
+    yql: `
+        select * from sources ${AllSources}
+        where ((
+          (
+            (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+            )
+            and permissions contains @email ${mailLabelQuery}
+            ${specificContextQuery} 
+          )
+            or
+            (
+              (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+            )
+              and permissions contains @email ${specificContextQuery}
+            )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            and permissions contains @email ${specificContextQuery}
+          )
+          or
+          (
+            ({targetHits:${hits}}userInput(@query))
+            and owner contains @email
+            ${specificContextQuery}
+          )
+        )
+      )`,
+  }
+}
+
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
@@ -534,6 +596,57 @@ export const searchVespa = async (
       : {}),
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
+    ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+  }
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
+  try {
+    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+  } catch (error) {
+    throw new ErrorPerformingSearch({
+      cause: error as Error,
+      sources: AllSources,
+    })
+  }
+}
+
+export const searchVespaInFiles = async (
+  query: string,
+  email: string,
+  fileIds: string[],
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+  }: Partial<VespaQueryConfig>,
+): Promise<VespaSearchResponse> => {
+  const isDebugMode = config.isDebugMode || requestDebug || false
+
+  let { yql, profile } = HybridDefaultProfileInFiles(
+    limit,
+    rankProfile,
+    fileIds,
+    notInMailLabels,
+  )
+
+  const hybridDefaultPayload = {
+    yql,
+    query,
+    email,
+    "ranking.profile": profile,
+    "input.query(e)": "embed(@query)",
+    "input.query(alpha)": alpha,
+    maxHits,
+    hits: limit,
+    ...(offset
+      ? {
+          offset,
+        }
+      : {}),
     ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
@@ -923,9 +1036,7 @@ interface GetItemsParams {
   limit?: number
   offset?: number
   email: string
-  orderBy?: string
-  filterQuery?: string
-  excludedIds?: string[]
+  asc: boolean
 }
 
 export const getItems = async (
@@ -939,9 +1050,7 @@ export const getItems = async (
     limit = config.page,
     offset = 0,
     email,
-    orderBy,
-    filterQuery,
-    excludedIds,
+    asc,
   } = params
 
   // Construct conditions based on parameters
@@ -969,29 +1078,23 @@ export const getItems = async (
 
   let timestampField = ""
 
-  // Choose appropriate timestamp field based on schema if orderBy isn't specific
-  if (!orderBy) {
-    if (schema === mailSchema) {
-      timestampField = "timestamp"
-    } else if (schema === fileSchema) {
-      timestampField = "updatedAt"
-    } else if (schema === eventSchema) {
-      timestampField = "startTime"
-    } else if (schema === userSchema) {
-      timestampField = "creationTime"
-    } else {
-      timestampField = "updatedAt" // Fallback
-    }
+  // Choose appropriate timestamp field based on schema
+  if (schema === mailSchema || schema === mailAttachmentSchema) {
+    timestampField = "timestamp"
+  } else if (schema === fileSchema) {
+    timestampField = "updatedAt"
+  } else if (schema === eventSchema) {
+    timestampField = "startTime"
+  } else if (schema === userSchema) {
+    timestampField = "creationTime"
+  } else {
+    timestampField = "updatedAt"
   }
 
   // Timestamp conditions
   if (timestampRange) {
     let timeConditions: string[] = []
     let fieldForRange = timestampField // Use default field unless orderBy overrides
-    if (orderBy) {
-      // Extract field name from orderBy clause (e.g., "startTime desc" -> "startTime")
-      fieldForRange = orderBy.split(" ")[0]
-    }
 
     if (timestampRange.from) {
       timeConditions.push(
@@ -1008,21 +1111,13 @@ export const getItems = async (
     }
   }
 
-  // Add filterQuery condition using userInput
-  if (filterQuery) {
-    conditions.push(`(userInput(@query))`)
-  }
-
   // Combine conditions
   const whereClause =
     conditions.length > 0 ? `where ${conditions.join(" and ")}` : "where true"
 
-  // Use provided orderBy or default based on timestampField (defaulting to asc)
-  const orderByClause = orderBy
-    ? `order by ${orderBy}`
-    : timestampField
-      ? `order by ${timestampField} asc`
-      : ""
+  const orderByClause = timestampField
+    ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
+    : ""
 
   // Construct YQL query with limit and offset
   const yql = `select * from sources ${schema} ${whereClause} ${orderByClause} limit ${limit} offset ${offset}`
@@ -1032,7 +1127,6 @@ export const getItems = async (
     email,
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
-    ...(filterQuery ? { query: filterQuery } : {}),
     "ranking.profile": "unranked",
     hits: limit,
     offset: offset,

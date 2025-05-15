@@ -1,6 +1,6 @@
 {
-  "id": "7f590dab-50df-4ecb-8a12-a67ac5fe03e3",
-  "prevId": "4088ce0e-ace1-4f16-b517-0a7678db23ec",
+  "id": "5a120ff7-fbf7-4b69-9465-8bd0f39c6f41",
+  "prevId": "7f590dab-50df-4ecb-8a12-a67ac5fe03e3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -578,6 +578,13 @@
         },
         "sources": {
           "name": "sources",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "fileIds": {
+          "name": "fileIds",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
