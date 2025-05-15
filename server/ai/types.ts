@@ -1,6 +1,6 @@
-import { type Message } from "@aws-sdk/client-bedrock-runtime";
-import { z } from "zod";
-import { Apps, entitySchema } from "@/search/types";
+import { type Message } from "@aws-sdk/client-bedrock-runtime"
+import { z } from "zod"
+import { Apps, entitySchema } from "@/search/types"
 
 export enum AIProviders {
   OpenAI = "openai",
@@ -51,82 +51,79 @@ export enum QueryType {
 }
 
 export type Cost = {
-  pricePerThousandInputTokens: number;
-  pricePerThousandOutputTokens: number;
-};
+  pricePerThousandInputTokens: number
+  pricePerThousandOutputTokens: number
+}
 
-export type TimeDirection = "next" | "prev" | null;
+export type TimeDirection = "next" | "prev" | null
 export interface TemporalClassifier {
-  direction: TimeDirection | null;
+  direction: TimeDirection | null
 }
 
 export interface ModelParams {
-  max_new_tokens?: number;
-  top_p?: number;
-  temperature?: number;
-  modelId: Models;
-  systemPrompt?: string;
-  prompt?: string;
-  userCtx?: string;
-  stream: boolean;
-  json?: boolean;
-  messages?: Message[];
-  reasoning?: boolean;
+  max_new_tokens?: number
+  top_p?: number
+  temperature?: number
+  modelId: Models
+  systemPrompt?: string
+  prompt?: string
+  userCtx?: string
+  stream: boolean
+  json?: boolean
+  messages?: Message[]
+  reasoning?: boolean
 }
 
 export interface ConverseResponse {
-  text?: string;
-  metadata?: any;
-  cost?: number;
-  reasoning?: boolean;
+  text?: string
+  metadata?: any
+  cost?: number
+  reasoning?: boolean
 }
 
 export interface LLMProvider {
   converseStream(
     messages: Message[],
     params?: ModelParams,
-  ): AsyncIterableIterator<ConverseResponse>;
+  ): AsyncIterableIterator<ConverseResponse>
   converseStream(
     messages: Message[],
     params?: ModelParams,
-  ): AsyncIterableIterator<ConverseResponse>;
-  converse(
-    messages: Message[],
-    params?: ModelParams,
-  ): Promise<ConverseResponse>;
+  ): AsyncIterableIterator<ConverseResponse>
+  converse(messages: Message[], params?: ModelParams): Promise<ConverseResponse>
 }
 
 export interface AnswerResponse {
-  answer: string | null;
+  answer: string | null
 }
 
 export const QueryAnalysisSchema = z.object({
   category: z.nativeEnum(QueryCategory),
   mentionedNames: z.array(z.string()),
   mentionedEmails: z.array(z.string()),
-});
+})
 
-export type QueryAnalysisResult = z.infer<typeof QueryAnalysisSchema>;
+export type QueryAnalysisResult = z.infer<typeof QueryAnalysisSchema>
 
 export const initialResultsOrRewriteSchema = z.object({
   answer: z.string().optional(),
   citations: z.array(z.number()),
   rewrittenQueries: z.array(z.string()).optional(),
-});
+})
 
-export type ResultsOrRewrite = z.infer<typeof initialResultsOrRewriteSchema>;
+export type ResultsOrRewrite = z.infer<typeof initialResultsOrRewriteSchema>
 
 export const SearchAnswerResponse = z.object({
   answer: z.string().nullable(),
   citations: z.array(z.number()).nullable(),
   searchQueries: z.array(z.string()),
   usefulIndex: z.array(z.number()),
-});
+})
 
 export const ToolAnswerResponse = z.object({
   tool: z.string(),
   arguments: z.object(z.any()),
-});
+})
 
 // Zod schemas for filters
 export const FiltersSchema = z.object({
@@ -134,7 +131,7 @@ export const FiltersSchema = z.object({
   entity: entitySchema.optional(),
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
-});
+})
 
 export const RetrievedUnspecificMetadataSchema = z.object({
   type: z.literal(QueryType.RetrievedUnspecificMetadata),
@@ -142,14 +139,14 @@ export const RetrievedUnspecificMetadataSchema = z.object({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
     sortDirection: z.string().optional(),
   }),
-});
+})
 
 export const RetrieveMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveMetadata),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   }),
-});
+})
 
 export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
   z.object({
@@ -158,13 +155,13 @@ export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
   }),
   RetrieveMetadataSchema,
   RetrievedUnspecificMetadataSchema,
-]);
+])
 
 export const QueryContextRank = z.object({
   canBeAnswered: z.boolean(),
   contextualChunks: z.array(z.number()),
-});
+})
 
-export type QueryContextRank = z.infer<typeof QueryContextRank>;
+export type QueryContextRank = z.infer<typeof QueryContextRank>
 
-export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>;
+export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>

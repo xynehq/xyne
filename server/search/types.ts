@@ -76,9 +76,9 @@ export const isValidEntity = (entity: string): boolean => {
         Object.values(GooglePeopleEntity)
           .map((v) => v.toLowerCase())
           .includes(normalizedEntity)
-      // Object.values(SlackEntity).map(v => v.toLowerCase()).includes(normalizedEntity) ||
+    : // Object.values(SlackEntity).map(v => v.toLowerCase()).includes(normalizedEntity) ||
       // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
-    : false
+      false
 }
 
 export enum GooglePeopleEntity {

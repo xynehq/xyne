@@ -1,4 +1,4 @@
-import { getDateForAI } from "@/utils/index";
+import { getDateForAI } from "@/utils/index"
 
 export const askQuestionSelfCleanupPrompt = (
   query: string,
@@ -8,7 +8,7 @@ export const askQuestionSelfCleanupPrompt = (
   The user is asking about themselves. Focus on providing information that is personally relevant and ignore promotional content unless it directly pertains to the user's query.
   Context:
   ${context}
-  `;
+  `
 
 export const askQuestionUserPrompt = (
   query: string,
@@ -20,7 +20,7 @@ export const askQuestionUserPrompt = (
   Based on the following context, provide an accurate and concise answer.
   Ignore any promotional content or irrelevant data.
   Context:
-  ${context}`;
+  ${context}`
 
 export const AnalyzeUserQuerySystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are relevant to the user's query. Based only on the provided metadata, determine whether each chunk is likely to contribute meaningfully to answering the query.
 Return a JSON structure with:
@@ -40,7 +40,7 @@ Prioritize selecting only the chunks that contain relevant information for answe
 
 Use these metadata fields to determine relevance. Avoid selecting chunks that appear unrelated, repetitive, or without valuable context.
 
-Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`;
+Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`
 
 export const metadataAnalysisSystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are most relevant to the user's query.
 
@@ -66,7 +66,7 @@ When reviewing, use these guidelines:
 - If there's recent information on the topic, include it as it may provide additional useful context.
 - If the **Entity** is **Email**, consider the **Labels** field to gauge its relevance.
 
-Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`;
+Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
 
 export const peopleQueryAnalysisSystemPrompt = `
 You are an assistant that analyzes user queries to categorize them and extract any names or emails mentioned.
@@ -87,10 +87,10 @@ Notes:
 - If the user mentions another employee or internal person, set "category" to "InternalPerson".
 - If the user mentions someone outside the company, set "category" to "ExternalPerson".
 - If no person is mentioned or the query is about other topics, set "category" to "Other".
-- Extract any names or emails mentioned in the user query, and include them in the respective lists.`;
+- Extract any names or emails mentioned in the user query, and include them in the respective lists.`
 
 const userChatSystemPrompt =
-  "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context.";
+  "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
 
 // User Chat System Prompt
 export const userChatSystem = (
@@ -98,7 +98,7 @@ export const userChatSystem = (
 ): string => `${userChatSystemPrompt}\n${
   userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""
 }
-  Provide an accurate and concise answer.`;
+  Provide an accurate and concise answer.`
 
 // Title Generation System Prompt
 export const generateTitleSystemPrompt = `
@@ -108,7 +108,7 @@ export const generateTitleSystemPrompt = `
   {
     "title": "Your generated title here"
   }
-  `;
+  `
 
 // Chat with Citations System Prompt
 export const chatWithCitationsSystemPrompt = (userCtx?: string) => `
@@ -131,7 +131,7 @@ Rules for citations:
 - Omit citations for general knowledge or derived conclusions
 
 Do not include any additional text outside of the JSON structure.
-`;
+`
 
 // Analyze Initial Results or Rewrite System Prompt
 export const analyzeInitialResultsOrRewriteSystemPrompt = (
@@ -176,7 +176,7 @@ ${userCtx}
         "start": string | null,  // "YYYY-MM-DD"
         "end": string | null     // "YYYY-MM-DD" or null
     }
-}`;
+}`
 
 // Analyze Initial Results or Rewrite V2 System Prompt
 export const analyzeInitialResultsOrRewriteV2SystemPrompt = (
@@ -210,7 +210,7 @@ Provide your response in the following JSON format:
     "answer": "<answer or null>",
     "citations": number[],  // Array of context indices actually used in the answer
     "rewrittenQueries": string[] | null,
-}`;
+}`
 
 // Query Rewrite System Prompt
 export const rewriteQuerySystemPrompt = (hasContext: boolean) => `
@@ -231,7 +231,7 @@ Provide the rewritten queries in JSON format as follows:
 {
   "rewrittenQueries": ["Rewritten query 1", "Rewritten query 2", ...]
 }
-`;
+`
 
 // Optimized Prompt
 export const optimizedPrompt = (ctx: string) => `
@@ -266,7 +266,7 @@ Provide your response in the following JSON format:
   "searchQueries": ["<query1>", "<query2>"],
   "usefulIndex": [<index1>, <index2>]
 }
-`;
+`
 
 // Markdown Table System Prompt
 // This prompt is used to generate a markdown table based on the user's query and context.
@@ -282,7 +282,7 @@ Given the user's query and the context (data), generate a markdown table that pr
 don't mention permissions unless explicity mentioned by user.
 
 User Query: ${query}
-`;
+`
 
 // Baseline Prompt
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information.
@@ -405,7 +405,7 @@ If information is missing, unclear, or the query lacks context:
 1. Acknowledge the limitation in the Analyze section, without referencing meetings or events
 2. Respond with "I don't have that information" in the Answer section
 3. Suggest ways to refine the search, avoiding event-related suggestions
-4. Note what additional context would be helpful, excluding event-related context`;
+4. Note what additional context would be helpful, excluding event-related context`
 
 // Baseline Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
@@ -516,7 +516,7 @@ You must respond in valid JSON format with the following structure:
 - For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
 If information is missing or unclear, or the query lacks context set "answer" as "null" 
-`;
+`
 
 // Baseline Reasoing Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format for reasoning cases.
@@ -630,7 +630,7 @@ You must respond in valid JSON format with the following structure:
 If information is missing or unclear: Set "answer" to null
 </answer>
 To summarize: Think without json but answer always with json
-`;
+`
 
 export const baselineFilesContextPromptJson = (
   userContext: string,
@@ -729,7 +729,7 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null`;
+If information is missing or unclear: Set "answer" to null`
 
 export const queryRewritePromptJson = (
   userContext: string,
@@ -773,7 +773,7 @@ export const queryRewritePromptJson = (
       "rewritten query 3"
     ]
   }
-`;
+`
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
@@ -993,8 +993,8 @@ export const searchQueryPrompt = (userContext: string): string => {
     9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     Make sure you always comply with these steps and only produce the JSON output described.
-  `;
-};
+  `
+}
 
 // Search Query Reasoning Prompt
 // This prompt is used to provide reasoning for the search query processing and classification.
@@ -1031,8 +1031,8 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     8. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
     9. You do not think on this stage for long, this is a decision node, you keep it minimal
     Make sure you always comply with these steps and only produce the JSON output described.
-    </answer>`;
-};
+    </answer>`
+}
 
 // Search Query Reasoning Prompt V2
 // This is an updated version of the search query reasoning prompt, focusing on clarity and precision in the decision-making process.
@@ -1072,8 +1072,8 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
       Both fields default to null unless:
       - answer: contains text from conversation matching user query
       - queryRewrite: contains clarified version of ambiguous queries
-    </answer>`;
-};
+    </answer>`
+}
 
 // Email Prompt JSON
 // This prompt is used to handle email-related queries and provide structured responses based on the retrieved context and user information in JSON format.
@@ -1145,7 +1145,7 @@ Bad: "No emails found" (Use null instead)
 - Return null if you're not completely confident about the email details.
 - Stay focused on temporal aspects while including key details.
 - Use user's timezone for all times.
-- Do not give explanations outside the JSON format, do not explain why you didn't find something.`;
+- Do not give explanations outside the JSON format, do not explain why you didn't find something.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
@@ -1233,4 +1233,4 @@ YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
   "answer": "Formatted response string with citations or 'null' if no relevant data is found"
 }
 
-REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`;
+REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
