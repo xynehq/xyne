@@ -10,7 +10,7 @@ const trimmedSubject = (subject: string): string => {
   return subject;
 };
 
-const removeNewLinesWithSpaces = (text: string | undefined | null): string => {
+const newLineToSpace = (text: string | undefined | null): string => {
   if (!text) return "";
   return text.replace(/\n/g, " ").replace(/\s\s+/g, " ").trim();
 };
@@ -148,7 +148,7 @@ export const SearchResult = ({
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={removeNewLinesWithSpaces(summary.chunk)} />
+            <HighlightedText key={idx} chunk_summary={newLineToSpace(summary.chunk)} />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -238,7 +238,7 @@ export const SearchResult = ({
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={removeNewLinesWithSpaces(summary.chunk)} />
+            <HighlightedText key={idx} chunk_summary={newLineToSpace(summary.chunk)} />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -290,7 +290,7 @@ export const SearchResult = ({
           {Array.isArray(result.chunks_summary) &&
             !!result.chunks_summary.length &&
             result.chunks_summary.map((summary, idx) => (
-              <HighlightedText chunk_summary={removeNewLinesWithSpaces(summary)} key={idx} />
+              <HighlightedText chunk_summary={newLineToSpace(summary)} key={idx} />
             ))}
         </p>
         {/* Debug Info Display (Features Only) */}
@@ -331,7 +331,7 @@ export const SearchResult = ({
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={removeNewLinesWithSpaces(summary.chunk)} />
+            <HighlightedText key={idx} chunk_summary={newLineToSpace(summary.chunk)} />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -384,7 +384,7 @@ export const SearchResult = ({
             </p>
           </a>
         </div>
-        {result.text && <HighlightedText chunk_summary={removeNewLinesWithSpaces(result.text)} />}
+        {result.text && <HighlightedText chunk_summary={newLineToSpace(result.text)} />}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">
