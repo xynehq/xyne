@@ -147,8 +147,10 @@ const availableSources: SourceItem[] = [
 ]
 
 const getPillDisplayTitle = (title: string): string => {
-  const truncatedTitle = title.length > 15 ? title.substring(0, 15) : title
-  return truncatedTitle + "..."
+  if (title.length > 15) {
+    return title.substring(0, 15) + "..."
+  }
+  return title
 }
 
 const getCaretCharacterOffsetWithin = (element: Node) => {
@@ -1378,8 +1380,6 @@ export const ChatBox = ({
               const input = inputRef.current
               if (!input) return
 
-              // Store current child nodes to preserve their HTML structure.
-              const existingChildNodes = Array.from(input.childNodes)
               const textContentBeforeAt = input.textContent || ""
 
               const textToAppend =
@@ -1392,8 +1392,6 @@ export const ChatBox = ({
 
               const atTextNode = document.createTextNode(textToAppend)
 
-              input.innerHTML = ""
-              existingChildNodes.forEach((node) => input.appendChild(node)) // Re-append preserved nodes
               input.appendChild(atTextNode)
 
               const newTextContent = input.textContent || ""
