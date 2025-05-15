@@ -1799,7 +1799,13 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, stringifiedfileIds, isReasoningEnabled }: MessageReqType = body
+    let {
+      message,
+      chatId,
+      modelId,
+      stringifiedfileIds,
+      isReasoningEnabled,
+    }: MessageReqType = body
     const userRequestsReasoning = isReasoningEnabled
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
@@ -1908,6 +1914,7 @@ export const MessageApi = async (c: Context) => {
         streamKey = `${chat.externalId}` // Create the stream key
         activeStreams.set(streamKey, stream) // Add stream to the map
         Logger.info(`Added stream ${streamKey} to active streams map.`)
+        let wasStreamClosedPrematurely = false
         const streamSpan = rootSpan.startSpan("stream_response")
         streamSpan.setAttribute("chatId", chat.externalId)
         try {
@@ -1932,6 +1939,7 @@ export const MessageApi = async (c: Context) => {
           const messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
             .filter((msg) => !msg?.errorMessage)
+            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
             .map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
@@ -1988,6 +1996,7 @@ export const MessageApi = async (c: Context) => {
               Logger.info(
                 "[MessageApi] Stream closed during conversation search loop. Breaking.",
               )
+              wasStreamClosedPrematurely = true
               break
             }
             if (chunk.text) {
@@ -2122,6 +2131,7 @@ export const MessageApi = async (c: Context) => {
                 Logger.info(
                   "[MessageApi] Stream closed during conversation search loop. Breaking.",
                 )
+                wasStreamClosedPrematurely = true
                 break
               }
               if (chunk.text) {
@@ -2183,11 +2193,14 @@ export const MessageApi = async (c: Context) => {
           } else if (parsed.answer) {
             answer = parsed.answer
           }
-          if (answer) {
+
+          // Determine if a message (even partial) should be saved
+          if (answer || wasStreamClosedPrematurely) {
             // TODO: incase user loses permission
             // to one of the citations what do we do?
             // somehow hide that citation and change
             // the answer to reflect that
+
             const msg = await insertMessage(db, {
               chatId: chat.id,
               userId: user.id,
@@ -2197,11 +2210,12 @@ export const MessageApi = async (c: Context) => {
               email: user.email,
               sources: citations,
               message: processMessage(answer, citationMap),
-              thinking,
+              thinking: thinking,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
             assistantMessageId = msg.externalId
+
             const traceJson = tracer.serializeToJson()
             await insertChatTrace({
               workspaceId: workspace.id,
@@ -2213,27 +2227,22 @@ export const MessageApi = async (c: Context) => {
               messageExternalId: msg.externalId,
               traceJson,
             })
-            Logger.info(`Inserted trace for message ${msg.externalId}`)
+            Logger.info(
+              `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+            )
+
             await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
               data: JSON.stringify({
                 chatId: chat.externalId,
-                messageId: msg.externalId, // Use the stored assistant message ID
+                messageId: assistantMessageId,
               }),
             })
-            const endSpan = streamSpan.startSpan("send_end_event")
-            await stream.writeSSE({
-              data: "",
-              event: ChatSSEvents.End,
-            })
-            endSpan.end()
-            streamSpan.end()
-            rootSpan.end()
           } else {
             const errorSpan = streamSpan.startSpan("handle_no_answer")
             const allMessages = await getChatMessages(db, chat?.externalId)
             const lastMessage = allMessages[allMessages.length - 1]
-            // Store potential assistant message ID even on error for metadata
+
             await stream.writeSSE({
               event: ChatSSEvents.ResponseMetadata,
               data: JSON.stringify({
@@ -2245,19 +2254,11 @@ export const MessageApi = async (c: Context) => {
               event: ChatSSEvents.Error,
               data: "Can you please make your query more specific?",
             })
-            // Add the error message to last user message
             await addErrMessageToMessage(
               lastMessage,
               "Can you please make your query more specific?",
             )
 
-            await stream.writeSSE({
-              data: "",
-              event: ChatSSEvents.End,
-            })
-            errorSpan.end()
-            streamSpan.end()
-            rootSpan.end()
             const traceJson = tracer.serializeToJson()
             await insertChatTrace({
               workspaceId: workspace.id,
@@ -2269,7 +2270,17 @@ export const MessageApi = async (c: Context) => {
               messageExternalId: lastMessage.externalId,
               traceJson,
             })
+            errorSpan.end()
           }
+
+          const endSpan = streamSpan.startSpan("send_end_event")
+          await stream.writeSSE({
+            data: "",
+            event: ChatSSEvents.End,
+          })
+          endSpan.end()
+          streamSpan.end()
+          rootSpan.end()
         } catch (error) {
           const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
           streamErrorSpan.addEvent("error", {
@@ -2440,7 +2451,7 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId , isReasoningEnabled }: MessageRetryReqType = body
+    const { messageId, isReasoningEnabled }: MessageRetryReqType = body
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
@@ -2547,6 +2558,7 @@ export const MessageRetryApi = async (c: Context) => {
           const convWithNoErrMsg = isUserMessage
             ? conversation
                 .filter((con) => !con?.errorMessage)
+                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2554,6 +2566,7 @@ export const MessageRetryApi = async (c: Context) => {
             : conversation
                 .slice(0, conversation.length - 1)
                 .filter((con) => !con?.errorMessage)
+                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message))
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
