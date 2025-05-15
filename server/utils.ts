@@ -8,7 +8,7 @@ import { stopwords as englishStopwords } from "@orama/stopwords/english"
 import { Apps } from "@/search/types"
 import type { OAuth2Client } from "google-auth-library"
 import crypto from "node:crypto"
-import type { TemporalClassifier } from "@/ai/types"
+import type { QueryRouterResponse, TemporalClassifier } from "@/ai/types"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -242,11 +242,11 @@ export const hashPdfFilename = (filename: string): string => {
 }
 
 export const interpretDateFromReturnedTemporalValue = (
-  value: TemporalClassifier,
+  value: QueryRouterResponse["filters"],
 ) => {
   // Convert UTC timestamps to local time zone
-  const from = value.from ? new Date(value.from) : null
-  const to = value.to ? new Date(value.to) : null
+  const from = value.startTime ? new Date(value.startTime) : null
+  const to = value.endTime ? new Date(value.endTime) : null
 
   return { fromDate: from, toDate: to }
 }
