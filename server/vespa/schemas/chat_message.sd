@@ -118,7 +118,7 @@ schema chat_message {
   import field chatRef.isIm as isIm {}
   import field chatRef.isMpim as isMpim {}
 
-  field text_embeddings type tensor<bfloat16>(v[384]) {
+  field text_embeddings type tensor<bfloat16>(v[DIMS]) {
     indexing: input text | embed | attribute | index
     attribute {
       distance-metric: angular
@@ -131,7 +131,7 @@ schema chat_message {
 
   rank-profile initial {
     inputs {
-      query(e) tensor<bfloat16>(v[384])
+      query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
     }
 
