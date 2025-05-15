@@ -610,7 +610,7 @@ export const ChatBox = ({
     newPill.target = "_blank"
     newPill.rel = "noopener noreferrer"
     newPill.className =
-      "reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-sm rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline"
+      "reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-semi-bold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline"
     newPill.contentEditable = "false"
     newPill.dataset.referenceId = newRef.id
     newPill.title = newRef.title
