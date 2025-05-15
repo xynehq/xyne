@@ -2200,8 +2200,6 @@ export const MessageApi = async (c: Context) => {
             // to one of the citations what do we do?
             // somehow hide that citation and change
             // the answer to reflect that
-            const messageToSave = processMessage(answer, citationMap)
-            const thinkingToSave = thinking
 
             const msg = await insertMessage(db, {
               chatId: chat.id,
@@ -2211,8 +2209,8 @@ export const MessageApi = async (c: Context) => {
               messageRole: MessageRole.Assistant,
               email: user.email,
               sources: citations,
-              message: messageToSave,
-              thinking: thinkingToSave,
+              message: processMessage(answer, citationMap),
+              thinking: thinking,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             })
