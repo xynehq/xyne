@@ -54,11 +54,7 @@ const constructFileContext = (
 
   let content = ""
   if (isSelectedFiles) {
-    content = chunks
-      .slice(0, maxSummaryChunks)
-      .sort((a, b) => a.index - b.index)
-      .map((v) => v.chunk)
-      .join("\n")
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -124,11 +120,7 @@ const constructMailContext = (
 
   let content = ""
   if (isSelectedFiles) {
-    content = chunks
-      .slice(0, maxSummaryChunks)
-      .sort((a, b) => a.index - b.index)
-      .map((v) => v.chunk)
-      .join("\n")
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -202,11 +194,7 @@ const constructMailAttachmentContext = (
 
   let content = ""
   if (isSelectedFiles) {
-    content = chunks
-      .slice(0, maxSummaryChunks)
-      .sort((a, b) => a.index - b.index)
-      .map((v) => v.chunk)
-      .join("\n")
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
