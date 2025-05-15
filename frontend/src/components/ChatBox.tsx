@@ -610,7 +610,7 @@ export const ChatBox = ({
     newPill.target = "_blank"
     newPill.rel = "noopener noreferrer"
     newPill.className =
-      "reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-sm rounded px-0.5 inline-flex items-center cursor-pointer no-underline" // Added text-sm for slightly smaller font
+      "reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-sm rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline"
     newPill.contentEditable = "false"
     newPill.dataset.referenceId = newRef.id
     newPill.title = newRef.title
@@ -627,6 +627,7 @@ export const ChatBox = ({
 
     if (newRef.app && newRef.entity) {
       const iconContainer = document.createElement("span")
+      iconContainer.style.alignSelf = "center";
       const iconNode = getIcon(newRef.app, newRef.entity, {
         w: 14,
         h: 14,
