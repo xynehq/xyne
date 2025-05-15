@@ -65,7 +65,7 @@ import {
   SearchModes,
   searchVespaInFiles,
   getDocumentOrNull,
-  GetDocumentByDocId,
+  GetDocumentsByDocIds,
 } from "@/search/vespa"
 import {
   Apps,
@@ -1010,146 +1010,150 @@ async function* generateAnswerFromGivenContext(
     )
   }
 
-  const selectedFiles = fileIds && fileIds.length > 0
-
   let previousResultsLength = 0
-  if (selectedFiles) {
-    let results = await searchVespaInFiles(message, email, fileIds, {
-      limit: fileIds?.length,
-      alpha: userAlpha,
-    })
-    if (!results.root.children) {
-      results.root.children = []
-    }
-    const startIndex = isReasoning ? previousResultsLength : 0
-    const initialContext = cleanContext(
-      results?.root?.children
-        ?.map(
-          (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
-        )
-        ?.join("\n"),
-    )
-    Logger.info(
-      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
-    )
 
-    const iterator = baselineRAGJsonStream(
-      input,
-      userCtx,
-      initialContext,
-      {
-        stream: true,
-        modelId: defaultBestModel,
-        reasoning: isReasoning,
-      },
-      true,
-    )
+  // let results = await searchVespaInFiles(message, email, fileIds, {
+  //   limit: fileIds?.length,
+  //   alpha: userAlpha,
+  // })
+  const results = await GetDocumentsByDocIds(fileIds)
+  console.log("documents")
+  console.log(results.root.children)
+  console.log("documents")
+  if (!results.root.children) {
+    results.root.children = []
+  }
+  const startIndex = isReasoning ? previousResultsLength : 0
+  const initialContext = cleanContext(
+    results?.root?.children
+      ?.map(
+        (v, i) =>
+          `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
+      )
+      ?.join("\n"),
+  )
+  Logger.info(
+    `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+  )
 
-    let buffer = ""
-    let currentAnswer = ""
-    let parsed = { answer: "" }
-    let thinking = ""
-    let reasoning = isReasoning
-    let yieldedCitations = new Set<number>()
-    // tied to the json format and output expected, we expect the answer key to be present
-    const ANSWER_TOKEN = '"answer":'
-    for await (const chunk of iterator) {
-      if (chunk.text) {
-        if (reasoning) {
-          if (thinking && !chunk.text.includes(EndThinkingToken)) {
-            thinking += chunk.text
+  console.log("initialContext")
+  console.log(initialContext)
+  console.log("initialContext")
+  const iterator = baselineRAGJsonStream(
+    input,
+    userCtx,
+    initialContext,
+    {
+      stream: true,
+      modelId: defaultBestModel,
+      reasoning: isReasoning,
+    },
+    true,
+  )
+
+  let buffer = ""
+  let currentAnswer = ""
+  let parsed = { answer: "" }
+  let thinking = ""
+  let reasoning = isReasoning
+  let yieldedCitations = new Set<number>()
+  // tied to the json format and output expected, we expect the answer key to be present
+  const ANSWER_TOKEN = '"answer":'
+  for await (const chunk of iterator) {
+    if (chunk.text) {
+      if (reasoning) {
+        if (thinking && !chunk.text.includes(EndThinkingToken)) {
+          thinking += chunk.text
+          yield* checkAndYieldCitations(
+            thinking,
+            yieldedCitations,
+            results?.root?.children,
+            previousResultsLength,
+          )
+          yield { text: chunk.text, reasoning }
+        } else {
+          // first time
+          const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+          if (
+            startThinkingIndex !== -1 &&
+            chunk.text.trim().length > StartThinkingToken.length
+          ) {
+            let token = chunk.text.slice(
+              startThinkingIndex + StartThinkingToken.length,
+            )
+            if (chunk.text.includes(EndThinkingToken)) {
+              token = chunk.text.split(EndThinkingToken)[0]
+              thinking += token
+            } else {
+              thinking += token
+            }
+
             yield* checkAndYieldCitations(
               thinking,
               yieldedCitations,
               results?.root?.children,
               previousResultsLength,
             )
-            yield { text: chunk.text, reasoning }
-          } else {
-            // first time
-            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
-            if (
-              startThinkingIndex !== -1 &&
-              chunk.text.trim().length > StartThinkingToken.length
-            ) {
-              let token = chunk.text.slice(
-                startThinkingIndex + StartThinkingToken.length,
-              )
-              if (chunk.text.includes(EndThinkingToken)) {
-                token = chunk.text.split(EndThinkingToken)[0]
-                thinking += token
-              } else {
-                thinking += token
-              }
-
-              yield* checkAndYieldCitations(
-                thinking,
-                yieldedCitations,
-                results?.root?.children,
-                previousResultsLength,
-              )
-              yield { text: token, reasoning }
-            }
-          }
-        }
-        if (reasoning && chunk.text.includes(EndThinkingToken)) {
-          reasoning = false
-          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-        }
-
-        if (!reasoning) {
-          buffer += chunk.text
-          try {
-            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
-            if (parsed.answer === null) {
-              break
-            }
-            if (parsed.answer && currentAnswer !== parsed.answer) {
-              if (currentAnswer === "") {
-                // First valid answer - send the whole thing
-                yield { text: parsed.answer }
-              } else {
-                // Subsequent chunks - send only the new part
-                const newText = parsed.answer.slice(currentAnswer.length)
-                yield { text: newText }
-              }
-              // Extract all citations from the parsed answer
-              // const citationSpan = chunkSpan.startSpan("check_citations")
-              yield* checkAndYieldCitations(
-                parsed.answer,
-                yieldedCitations,
-                results?.root?.children,
-                previousResultsLength,
-              )
-              currentAnswer = parsed.answer
-            }
-          } catch (err) {
-            const errMessage = (err as Error).message
-            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
-            continue
+            yield { text: token, reasoning }
           }
         }
       }
-      if (chunk.cost) {
-        yield { cost: chunk.cost }
+      if (reasoning && chunk.text.includes(EndThinkingToken)) {
+        reasoning = false
+        chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+      }
+
+      if (!reasoning) {
+        buffer += chunk.text
+        try {
+          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
+          if (parsed.answer === null) {
+            break
+          }
+          if (parsed.answer && currentAnswer !== parsed.answer) {
+            if (currentAnswer === "") {
+              // First valid answer - send the whole thing
+              yield { text: parsed.answer }
+            } else {
+              // Subsequent chunks - send only the new part
+              const newText = parsed.answer.slice(currentAnswer.length)
+              yield { text: newText }
+            }
+            // Extract all citations from the parsed answer
+            // const citationSpan = chunkSpan.startSpan("check_citations")
+            yield* checkAndYieldCitations(
+              parsed.answer,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            currentAnswer = parsed.answer
+          }
+        } catch (err) {
+          const errMessage = (err as Error).message
+          Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+          continue
+        }
       }
     }
-    if (parsed.answer) {
-      return
-    } else if (
-      // Condition if fileIds are present has some values meaning context has been selected.
-      // If no answer found, exit and yield nothing related to selected context found
-      !parsed?.answer
-    ) {
-      yield {
-        text: "From the selected context, I could not find any information to answer it, please change your query",
-      }
-      return
+    if (chunk.cost) {
+      yield { cost: chunk.cost }
     }
-    if (isReasoning) {
-      previousResultsLength += results?.root?.children?.length || 0
+  }
+  if (parsed.answer) {
+    return
+  } else if (
+    // Condition if fileIds are present has some values meaning context has been selected.
+    // If no answer found, exit and yield nothing related to selected context found
+    !parsed?.answer
+  ) {
+    yield {
+      text: "From the selected context, I could not find any information to answer it, please change your query",
     }
+    return
+  }
+  if (isReasoning) {
+    previousResultsLength += results?.root?.children?.length || 0
   }
 }
 
@@ -1605,7 +1609,6 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   message: string,
   alpha: number,
   fileIds: string[],
-  shoudlSearch: string | null,
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1614,32 +1617,14 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute("alpha", alpha)
   // If search is recommeded or it can't decide if the query is summariztion type query, we search
-  if (shoudlSearch === "true" || shoudlSearch === null) {
-    Logger.info("Searching for relevant files and answering")
-    return yield* generateAnswerFromGivenContext(
-      message,
-      email,
-      userCtx,
-      alpha,
-      fileIds,
-    )
-  } else if (shoudlSearch === "false") {
-    Logger.info(
-      "Summarzie, explain, top level query so not searching for files",
-    )
-    // If explain/summarize query type then get whole documents, then find out best chunks
-    for (const docId of fileIds) {
-      const doc = await GetDocumentByDocId(docId)
-      // const doc = await getDocumentOrNull("file", docId)
-      console.log("doc")
-      console.log(doc?.root?.children)
-      console.log("doc")
-    }
-    yield {
-      text: "Summarzie, explain, top level query so not searching for files",
-    }
-    return
-  }
+
+  return yield* generateAnswerFromGivenContext(
+    message,
+    email,
+    userCtx,
+    alpha,
+    fileIds,
+  )
 }
 
 const handleError = (error: any) => {
@@ -1684,6 +1669,9 @@ export const MessageApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("query")
     let { message, chatId, modelId, stringifiedfileIds }: MessageReqType = body
+    console.log("stringifiedfileIds")
+    console.log(stringifiedfileIds)
+    console.log("stringifiedfileIds\n")
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []
@@ -1819,93 +1807,21 @@ export const MessageApi = async (c: Context) => {
             Logger.info(
               `Deciding based on user given context and query whether to search or not`,
             )
-            const searchDeciderIterator = decideToSearchInVespaOrNot(
-              message,
-              ctx,
-              {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                reasoning:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              },
-            )
+            console.log("message")
+            console.log(message)
+            console.log("message")
             let answer = ""
             let citations = []
             let citationMap: Record<number, number> = {}
-            let parsed = {
-              requiresSearch: "",
-            }
             let thinking = ""
             let reasoning =
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
             let buffer = ""
             const conversationSpan = streamSpan.startSpan("conversation_search")
-            for await (const chunk of searchDeciderIterator) {
-              if (stream.closed) {
-                Logger.info(
-                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
-                )
-                break
-              }
-              if (chunk.text) {
-                if (reasoning) {
-                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                    thinking += chunk.text
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: chunk.text,
-                    })
-                  } else {
-                    // first time
-                    if (!chunk.text.includes(StartThinkingToken)) {
-                      let token = chunk.text
-                      if (chunk.text.includes(EndThinkingToken)) {
-                        token = chunk.text.split(EndThinkingToken)[0]
-                        thinking += token
-                      } else {
-                        thinking += token
-                      }
-                      stream.writeSSE({
-                        event: ChatSSEvents.Reasoning,
-                        data: token,
-                      })
-                    }
-                  }
-                }
-                if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                  reasoning = false
-                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                }
-                if (!reasoning) {
-                  buffer += chunk.text
-                  try {
-                    parsed = jsonParseLLMOutput(buffer) || {}
-                  } catch (err) {
-                    const errMessage = (err as Error).message
-                    Logger.error(
-                      err,
-                      `Error while parsing LLM output ${errMessage}`,
-                    )
-                    continue
-                  }
-                }
-              }
-              if (chunk.cost) {
-                costArr.push(chunk.cost)
-              }
-            }
-
-            conversationSpan.setAttribute("answer_found", parsed.requiresSearch)
             conversationSpan.setAttribute("answer", answer)
             conversationSpan.end()
 
             const ragSpan = streamSpan.startSpan("rag_processing")
-
-            Logger.info(
-              `Is search recommended after analayzing user query? -> ${parsed.requiresSearch}`,
-            )
 
             const understandSpan = ragSpan.startSpan("understand_message")
 
@@ -1915,7 +1831,6 @@ export const MessageApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              parsed.requiresSearch,
               understandSpan,
             )
             stream.writeSSE({

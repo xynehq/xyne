@@ -381,18 +381,19 @@ class VespaClient {
     }
   }
 
-  async getDocumentByOnlyDocId(
-    options: VespaConfigValues & { docId: string },
+  async getDocumentsByOnlyDocIds(
+    options: VespaConfigValues & { docIds: string[] },
   ): Promise<VespaGetResult> {
-    const { docId } = options
-    const yqlQuery = `select * from sources * where docId contains '${docId}'`
+    const { docIds } = options
+    const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
+    const yqlQuery = `select * from sources * where (${yqlIds})`
     const url = `${this.vespaEndpoint}/search/`
 
     try {
       const payload = {
         yql: yqlQuery,
-        hits: 1,
-        maxHits: 1,
+        hits: docIds?.length,
+        maxHits: docIds?.length,
       }
 
       const response = await this.fetchWithRetry(url, {
@@ -414,7 +415,7 @@ class VespaClient {
       return result
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      throw new Error(`Error fetching document docId: ${docId} - ${errMessage}`)
+      throw new Error(`Error fetching documents: ${errMessage}`)
     }
   }
 

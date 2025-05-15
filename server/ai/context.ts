@@ -24,6 +24,7 @@ import { getSortedScoredChunks } from "@/search/mappers"
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
 // Function for handling file context
+// todo for handling position, add context such as the user referred to this file {FILE_TITLE} and this is its query
 const constructFileContext = (
   fields: VespaFileSearch,
   relevance: number,
@@ -34,19 +35,14 @@ const constructFileContext = (
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  const sortedChunks = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  )
-
   let content = ""
   if (isSelectedFiles) {
-    content = sortedChunks
-      .slice(0, maxSummaryChunks)
-      .sort((a, b) => a.index - b.index)
-      .map((v) => v.chunk)
-      .join("\n")
+    content = fields?.chunks_summary?.join(" ")!
   } else {
+    const sortedChunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    )
     content = sortedChunks
       .map((v) => v.chunk)
       .slice(0, maxSummaryChunks)
