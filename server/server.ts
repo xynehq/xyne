@@ -79,7 +79,7 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
-import { register } from "@/metrics/google/google-drive-metrics"
+import { register } from "@/metrics/google/google-drive-file-metrics"
 
 export type Variables = JwtVariables
 

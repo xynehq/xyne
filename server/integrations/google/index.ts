@@ -112,14 +112,7 @@ import {
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
 import { getConnectorByExternalId } from "@/db/connector"
-
-import {
-  ingestionDuration,
-  totalIngestedFiles,
-  blockedFilesTotal,
-  ingestionErrorsTotal,
-} from "@/metrics/google/google-drive-metrics"
-
+import { extractionDuration, fileExtractionErrorsTotal } from "@/metrics/google/google-drive-file-metrics"
 
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
@@ -677,7 +670,7 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
     })
     const { contacts, otherContacts, contactsToken, otherContactsToken } =
       await listAllContacts(oauth2Client)
-    await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
+    await insertContactsToVespa(contacts, otherContacts, userEmail, tracker) // metadata
     // get change token for any changes during drive integration
     const { startPageToken }: drive_v3.Schema$StartPageToken = (
       await driveClient.changes.getStartPageToken()
@@ -687,9 +680,9 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
     }
 
     const [_, historyId, { calendarEventsToken }] = await Promise.all([
-      insertFilesForUser(oauth2Client, userEmail, connector, tracker),
-      handleGmailIngestion(oauth2Client, userEmail, tracker),
-      insertCalendarEvents(oauth2Client, userEmail, tracker),
+      insertFilesForUser(oauth2Client, userEmail, connector, tracker), // detail
+      handleGmailIngestion(oauth2Client, userEmail, tracker), // detail
+      insertCalendarEvents(oauth2Client, userEmail, tracker), // metadata
     ])
 
     setTimeout(() => {
@@ -1156,7 +1149,7 @@ export const getPresentationToBeIngested = async (
     // Index with empty content if totalTextLen exceeds MAX_GD_SLIDES_TEXT_LEN
     if (totalTextLen > MAX_GD_SLIDES_TEXT_LEN) {
       Logger.error(
-        `Text Length excedded for ${presentation.name}, indexing with empty content`,
+        `Text Length exceeded for ${presentation.name}, indexing with empty content`,
       )
       chunks = []
     }
@@ -1279,7 +1272,6 @@ const insertFilesForUser = async (
         processedFiles += skippedFilesCount
         tracker.updateUserStats(userEmail, StatType.Drive, skippedFilesCount)
         Logger.info(`Skipped ${skippedFilesCount} unchanged Drive files`)
-         blockedFilesTotal.inc({ app: "google-drive-ingestion", email: userEmail }, skippedFilesCount)
       }
       const googleDocsMetadata = pageFiles.filter(
         (v: drive_v3.Schema$File) => v.mimeType === DriveMime.Docs,
@@ -1313,21 +1305,9 @@ const insertFilesForUser = async (
         return v
       })
       for (const doc of pdfs) {
-        const mime = doc.mimeType ?? "unknown"
-        const end = ingestionDuration.startTimer({ mime_type: mime })
-
-        try {
-          await insertDocument(doc)
-          totalIngestedFiles.inc({ file_id: doc.docId, mime_type: mime, status: "success" })
-          tracker.updateUserStats(userEmail, StatType.Drive, 1)
-          processedFiles += 1
-        } catch (err) {
-          totalIngestedFiles.inc({ file_id: doc.docId, mime_type: mime, status: "failed" })
-          ingestionErrorsTotal.inc({ file_id: doc.docId, error_type: "insert_failed", mime_type: mime })
-          Logger.error(err, `Error inserting PDF doc: ${doc.docId}`)
-        } finally {
-          end()
-        }
+        processedFiles += 1
+        await insertDocument(doc)
+        tracker.updateUserStats(userEmail, StatType.Drive, 1)
       }
       const [documents, slides, sheetsObj]: [
         VespaFileWithDrivePermission[],
@@ -1363,23 +1343,12 @@ const insertFilesForUser = async (
       })
 
       for (const doc of allFiles) {
-          const mime = doc.mimeType ?? "unknown"
-          const end = ingestionDuration.startTimer({ mime_type: mime })
-
-          try {
-            await insertDocument(doc)
-            totalIngestedFiles.inc({file_id: doc.docId, mime_type: mime, status: "success" })
-            if (doc.mimeType !== DriveMime.Sheets) {
-              processedFiles += 1
-              tracker.updateUserStats(userEmail, StatType.Drive, 1)
-            }
-          } catch (err) {
-            totalIngestedFiles.inc({file_id: doc.docId, mime_type: mime, status: "failed" })
-            ingestionErrorsTotal.inc({ file_id: doc.docId, error_type: "insert_failed", mime_type: mime })
-            Logger.error(err, `Error inserting Drive doc: ${doc.docId}`)
-          } finally {
-            end()
-          }
+        await insertDocument(doc)
+        // do not update for Sheet as we will add the actual count later
+        if (doc.mimeType !== DriveMime.Sheets) {
+          processedFiles += 1
+          tracker.updateUserStats(userEmail, StatType.Drive, 1)
+        }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
 
@@ -1819,8 +1788,9 @@ export const googlePDFsVespa = async (
         Logger.debug(
           `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
         )
+        const endDownloadTimer = extractionDuration.startTimer({file_id_or_name: pdf.id??pdf.name??pdfFileName, mime_type:pdf.mimeType??"pdfFile"})
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
-
+        endDownloadTimer()
         const docs: Document[] = await safeLoadPDF(pdfPath)
         if (!docs || docs.length === 0) {
           await deleteDocument(pdfPath)
@@ -1870,6 +1840,7 @@ export const googlePDFsVespa = async (
             // Logger.warn(`Could not delete PDF file ${pdfPath}: ${deleteError}`)
           }
         }
+        fileExtractionErrorsTotal.inc({file_id_or_name:pdf.id??pdf.name??pdfFileName, error_type:"pdf_extraction_error", mime_type:pdf.mimeType??"pdfFile"})
         // we cannot break the whole pdf pipeline for one error
         return null
       }
@@ -2205,6 +2176,7 @@ export const googleDocsVespa = async (
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
+      const endDownloadDuration = extractionDuration.startTimer({file_id_or_name:doc.id??doc.name??"", mime_type: doc.mimeType??"document"})
       try {
         const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
           await retryWithBackoff(
@@ -2269,6 +2241,7 @@ export const googleDocsVespa = async (
         // if (count % 5 === 0) {
         //   sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
         // }
+        endDownloadDuration()
         return result
       } catch (error) {
         const errorMessage = getErrorMessage(error)
@@ -2276,6 +2249,7 @@ export const googleDocsVespa = async (
           error,
           `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
         )
+        fileExtractionErrorsTotal.inc({file_id_or_name:doc.id??doc.name??"",error_type:"doc_extraction_failed", mime_type:doc.mimeType??""})
         return null
       }
     }),
