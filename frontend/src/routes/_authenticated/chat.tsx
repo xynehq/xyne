@@ -1452,6 +1452,9 @@ const ChatMessage = ({
                       backgroundColor: "transparent",
                       color: "#627384",
                     }}
+                    components={{
+                      a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />
+                    }}
                   />
                 </div>
               )}
@@ -1471,6 +1474,7 @@ const ChatMessage = ({
                     color: "#1C1D1F",
                   }}
                   components={{
+                    a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
                     table: ({ node, ...props }) => (
                       <div className="overflow-x-auto w-[720px] my-2">
                         <table
