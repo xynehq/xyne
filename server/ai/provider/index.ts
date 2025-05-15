@@ -56,20 +56,19 @@ import {
   baselinePromptJson,
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
+  emailPromptJson,
   documentSearchDecider,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
-  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
   queryRewritePromptJson,
-  queryRouterPrompt,
   rewriteQuerySystemPrompt,
   searchDeciderPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
-  temporalEventClassifier,
+  temporalDirectionJsonPrompt,
   userChatSystem,
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -404,7 +403,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     }
     // we only want to do this if enough text has accumulated
     // we don't want to do case where just `json` comes and we wrap it as answer
-    if (startBrace === -1 && jsonKey && text.length > 10) {
+    if (startBrace === -1 && jsonKey && text.trim() !== "json") {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
@@ -428,6 +427,19 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         })
         jsonVal = parse(withNewLines.trim())
       }
+
+      /* Edge case: If the last two characters are \\", Json.parse replaces \\ with ". We need to remove the last " from the value.
+          Example:
+          Input text: '{"answer": "Prasad \\""}'
+          After JSON.parse: { answer: 'Prasad "' }  // Note the extra quote at the end
+          After this fix: { answer: 'Prasad' }     // Extra quote removed
+          
+          This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
+      */
+      if (jsonKey && text.slice(-2) === `\\"` && jsonVal[jsonKey.slice(1, -2)][jsonVal[jsonKey.slice(1, -2)].length - 1] === `"`) {
+        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(0, -1)
+      }
+
       // edge case "null\n}
       if (jsonKey) {
         const key = jsonKey.slice(0, -1).replaceAll('"', "")
@@ -773,46 +785,6 @@ export enum QueryType {
   // RetrieveMetadata = "RetrieveMetadata",
 }
 
-export const routeQuery = async (
-  userQuery: string,
-  params: ModelParams,
-): Promise<{ result: QueryRouterResponse; cost: number }> => {
-  if (!params.modelId) {
-    params.modelId = defaultFastModel
-  }
-  params.systemPrompt = queryRouterPrompt
-  params.json = true
-
-  const baseMessage = {
-    role: ConversationRole.USER,
-    content: [
-      {
-        text: `User Query: "${userQuery}"`,
-      },
-    ],
-  }
-
-  params.messages = []
-  const messages: Message[] = params.messages
-    ? [...params.messages, baseMessage]
-    : [baseMessage]
-
-  const { text, cost } = await getProviderByModel(params.modelId).converse(
-    messages,
-    params,
-  )
-
-  if (text) {
-    const parsedResponse = jsonParseLLMOutput(text)
-    return {
-      result: QueryRouterResponseSchema.parse(parsedResponse),
-      cost: cost!,
-    }
-  } else {
-    throw new Error("No response from LLM")
-  }
-}
-
 export const listItems = (
   query: string,
   userCtx: string,
@@ -976,7 +948,7 @@ export const baselineRAGJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
-export const meetingPromptJsonStream = (
+export const temporalPromptJsonStream = (
   userQuery: string,
   userCtx: string,
   retrievedCtx: string,
@@ -985,7 +957,33 @@ export const meetingPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const mailPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1054,7 +1052,7 @@ export const temporalEventClassification = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = temporalEventClassifier(userQuery)
+  // params.systemPrompt = temporalEventClassifier(userQuery)
   params.json = true
 
   const baseMessage = {
@@ -1079,8 +1077,6 @@ export const temporalEventClassification = async (
     const parsedResponse = jsonParseLLMOutput(text)
     return {
       direction: parsedResponse.direction || null,
-      from: null,
-      to: null,
       cost: cost!,
     }
   } else {

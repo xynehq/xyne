@@ -83,13 +83,14 @@ interface ChatPageProps {
   workspace: PublicWorkspace
 }
 
+const REASONING_STATE_KEY = "isReasoningGlobalState";
+
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
   })
-  // console.log("chatParams:", chatParams) // For debugging
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
 
@@ -146,6 +147,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   ) // State for all citations
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
+
+  const [isReasoningActive, setIsReasoningActive] = useState(() => {
+    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
+    return storedValue ? JSON.parse(storedValue) : false
+  })
+
+  useEffect(() => {
+    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
+  }, [isReasoningActive])
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -339,23 +349,34 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           .filter((s) => s.length > 0)
       }
 
-      handleSend(messageToSend, referencesForHandleSend, sourcesArray)
+      // Set reasoning state from URL param if present
+      if (typeof chatParams.reasoning === 'boolean') {
+        setIsReasoningActive(chatParams.reasoning)
+      }
+
+      handleSend(
+        messageToSend,
+        referencesForHandleSend,
+        sourcesArray,
+      )
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
         search: (prev) => ({
           ...prev,
           q: undefined,
+          reasoning: undefined,
           refs: undefined,
           sources: undefined,
         }),
         replace: true,
       })
     }
-  }, [chatParams.q, chatParams.refs, chatParams.sources, router])
+  }, [chatParams.q, chatParams.reasoning, chatParams.refs, chatParams.sources, router])
 
   const handleSend = async (
     messageToSend: string,
+    // isReasoningEnabled?: boolean, // Removed: handleSend will use isReasoningActive state
     addedReferences: Reference[] = [],
     selectedSources: string[] = [],
   ) => {
@@ -398,6 +419,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     //     JSON.stringify(appEntities),
     //   )
     // }
+    if(isReasoningActive) {
+        url.searchParams.append("isReasoningEnabled", "true")
+    }
 
     eventSourceRef.current = new EventSource(url.toString(), {
       // Store EventSource
@@ -694,6 +718,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
+    url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
     setStopMsg(true) // Ensure stop message can be sent for retries
     eventSourceRef.current = new EventSource(url.toString(), {
       // Store EventSource
@@ -1210,6 +1235,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               isStreaming={isStreaming}
               allCitations={allCitations}
               chatId={chatId}
+              isReasoningActive={isReasoningActive}
+              setIsReasoningActive={setIsReasoningActive}
             />
           </div>
           <Sources
@@ -1602,6 +1629,7 @@ const chatParams = z.object({
     .transform((val) => val === "true")
     .optional()
     .default("false"),
+  reasoning: z.boolean().optional(),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()
