@@ -987,6 +987,15 @@ async function* generateAnswerFromGivenContext(
   console.log(initialContext)
   console.log("initialContext")
 
+  console.log("initialContext Length")
+  console.log(initialContext.length)
+  console.log("initialContext Length")
+
+  if (initialContext.length > 300000) {
+    yield { text: "Selected context is too large, pls select smaller files" }
+    return
+  }
+
   const iterator = baselineRAGJsonStream(
     input,
     userCtx,
