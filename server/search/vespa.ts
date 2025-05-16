@@ -332,43 +332,52 @@ export const HybridDefaultProfile = (
   return {
     profile: profile,
     yql: `
-        select * from sources ${AllSources}
-        where ((
+    select * from sources ${AllSources}
+        where (
           (
             (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+              (
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+              )
+              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
+              and permissions contains @email
+              ${mailLabelQuery}
+              ${appOrEntityFilter}
             )
-            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
-            and permissions contains @email ${mailLabelQuery}
-            ${appOrEntityFilter}
-          )
             or
             (
               (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-            )
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+              )
               ${appOrEntityFilter}
+              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
               and permissions contains @email
             )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and permissions contains @email`}
+            or
+            (
+              ({targetHits:${hits}}userInput(@query))
+              ${timestampRange ? `and (${userTimestamp})` : ""}
+              ${
+                !hasAppOrEntity
+                  ? `and app contains "${Apps.GoogleWorkspace}"`
+                  : `${appOrEntityFilter} and permissions contains @email`
+              }
+            )
+            or
+            (
+              ({targetHits:${hits}}userInput(@query))
+              and owner contains @email
+              ${timestampRange ? `and ${userTimestamp}` : ""}
+              ${appOrEntityFilter}
+            )
           )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            and owner contains @email
-            ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${appOrEntityFilter}
-          )
+          ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
         )
-        ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
+    `,
   }
 }
 
@@ -480,23 +489,44 @@ const HybridDefaultProfileAppEntityCounts = (
   return {
     profile: SearchModes.NativeRank,
     yql: `select * from sources ${AllSources}
-            where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
-            or (
+            where (
+              (
+                (
+                  ({targetHits:${hits}}userInput(@query))
+                  or
+                  ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+                )
+                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+                and permissions contains @email
+                ${mailLabelQuery}
+              )
+              or
+              (
+                (
+                  ({targetHits:${hits}}userInput(@query))
+                  or
+                  ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+                )
+                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+                and permissions contains @email
+              )
+              or
               (
                 ({targetHits:${hits}}userInput(@query))
-              or
-                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+                ${timestampRange ? `and ${userTimestamp}` : ""}
+                and app contains "${Apps.GoogleWorkspace}"
               )
-              and permissions contains @email
+              or
+              (
+                ({targetHits:${hits}}userInput(@query))
+                and owner contains @email
+                ${timestampRange ? `and ${userTimestamp}` : ""}
+              )
             )
-            or (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
-            or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestampRange ? `and ${userTimestamp} ` : ""})
             limit 0
             | all(
                 group(app) each(
-                group(entity) each(output(count()))
+                    group(entity) each(output(count()))
                 )
             )`,
   }
