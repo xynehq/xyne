@@ -717,7 +717,8 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear: Set "answer" to null
+If the query given by user is irrelevant to the given context, set "answer" to null`
 
 export const queryRewritePromptJson = (
   userContext: string,
@@ -981,50 +982,6 @@ export const searchQueryPrompt = (userContext: string): string => {
     9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     Make sure you always comply with these steps and only produce the JSON output described.
-  `
-}
-
-export const searchDeciderPrompt = (userContext: string): string => {
-  return `
-      basic user context: ${userContext}
-      You are a decision engine that determines whether a document search is required or not based on the user's query 
-      When a user sends a query, follow this rule:
-      Output JSON in the following structure:
-      {
-        "answer": "yes" | "no" | null, 
-      }
-        - If the user query is something like "summarize", "summarize this document", "give a breif on this document", "explain this document". Basically when the user is asking about top-level things of the document then in that case that document should not be searched. In that case the "answer" shoule be set to "no".
-        - If the user query is asking information or data that is you think from inside the document then the document needs to be searched and in that case the "answer" should be set to "yes"
-        - If you are not able to decide whether the user query is asking for a summary or information/data from inside the document, set the "answer" to null  
-    Make sure you always comply with these steps and only produce the JSON output described.
-  `
-}
-
-export const documentSearchDecider = (userContext: string): string => {
-  return `
-    User Context: ${userContext}
-    You are a specialized decision engine that determines whether a document search operation is necessary based on the user's query.
-    OUTPUT FORMAT:
-    Return a JSON object with this exact structure:
-    {
-      "requiresSearch": "true" | "false" | null,
-    }
-    DECISION RULES:
-    1. Set "requiresSearch" to "false" when:
-       - User wants document-level analysis (summarization, overview, main points)
-       - User asks about document metadata (author, title, date, length)
-       - User requests structural information (number of sections, chapters)
-       - Examples: "summarize this document", "what's this about?", "give me the key points"
-    2. Set "requiresSearch" to "true" when:
-       - User asks for specific facts, data points, or quotes inside the document
-       - User wants to know if specific information exists within the document
-       - User requests information about specific sections or pages
-       - Examples: "does it mention AI regulations?", "what data supports their main argument?", "find all references to climate change"
-    3. Set "requiresSearch" to NULL when:
-       - The query is ambiguous between document-level vs specific content
-       - The query requires clarification to determine search needs
-       - The query doesn't relate to document content at all
-    Your only output should be the JSON object described above.
   `
 }
 

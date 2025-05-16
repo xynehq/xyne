@@ -2,7 +2,6 @@ import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
-  decideToSearchInVespaOrNot,
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
