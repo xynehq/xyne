@@ -1828,7 +1828,7 @@ export const MessageApi = async (c: Context) => {
       Logger.error(`[MessageApi] Invalid model name received: ${modelNameFromRequest}`);
       throw new HTTPException(400, { message: `Invalid model name: ${modelNameFromRequest}` });
     }
-    Logger.info(`[MessageApi] Mapped modelName '${modelNameFromRequest}' to actualModelId: ${actualModelId}.`);
+    Logger.info(`[MessageApi] Mapped modelName '${modelNameFromRequest}' to actualModelId: ${actualModelId}., 'isReasoningEnabled:', ${userRequestsReasoning}`);
 
     if (!message) {
       throw new HTTPException(400, {

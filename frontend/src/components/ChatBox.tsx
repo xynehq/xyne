@@ -367,6 +367,27 @@ export const ChatBox = ({
     fetchModels();
   }, []);
 
+  const isModelAllowedForReasoningToggle = useMemo(() => {
+    if (selectedLlm && selectedLlm.name) {
+      const modelName = selectedLlm.name;
+      // Reasoning toggle is enabled ONLY for these specific models
+      return modelName === "Claude 3.7 Sonnet" || modelName === "DeepSeek R1";
+    }
+    return false;
+  }, [selectedLlm]);
+
+  useEffect(() => {
+    // Force reasoning state based on whether the model allows its toggle
+    // If allowed (Claude 3.7 Sonnet, DeepSeek R1), reasoning is ON.
+    // If not allowed (other models), reasoning is OFF.
+    if (isModelAllowedForReasoningToggle) {
+      setIsReasoningActive(true);
+    } else {
+      setIsReasoningActive(false);
+    }
+  }, [selectedLlm, isModelAllowedForReasoningToggle, setIsReasoningActive]);
+
+  const isReasoningToggleDisabled = !isModelAllowedForReasoningToggle;
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
@@ -1625,20 +1646,43 @@ export const ChatBox = ({
             </div>
           )}
         </div>
-          <button
-            onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-              // Changed text-xs to text-[11px]
-              isReasoningActive ? "text-green-600" : "text-[#464D53]" // Use prop for styling
-            }`}
-          >
-            <Atom
-              size={16}
-              className={isReasoningActive ? "text-green-600" : ""}
-            />{" "}
-            {/* Use prop for styling */}
-            <span>Reasoning</span>
-          </button>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    if (!isReasoningToggleDisabled) {
+                      setIsReasoningActive(!isReasoningActive);
+                    }
+                  }}
+                  disabled={isReasoningToggleDisabled}
+                  className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
+                    isReasoningActive ? "text-green-600" : "text-[#464D53]"
+                  } ${
+                    isReasoningToggleDisabled
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:bg-gray-100"
+                  }`}
+                >
+                  <Atom
+                    size={16}
+                    className={`${
+                      isReasoningActive ? "text-green-600" : "text-[#464D53]"
+                    }`}
+                  />{" "}
+                  <span>Reasoning</span>
+                </button>
+              </TooltipTrigger>
+              {isReasoningToggleDisabled && selectedLlm && (
+                <TooltipContent
+                  side="top"
+                  className="bg-gray-800 text-white text-xs rounded-sm"
+                >
+                  <p>Not available for {selectedLlm.name}</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}

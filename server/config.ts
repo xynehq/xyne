@@ -48,7 +48,8 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultBestModel = Models.Claude_3_7_Sonnet
   configuredModelProviders.push(Models.Claude_3_5_Haiku)
   configuredModelProviders.push(Models.Claude_3_7_Sonnet)
-  configuredModelProviders.push(Models.Claude_3_5_Sonnet) // As listed in GetConfiguredModelsApi
+  configuredModelProviders.push(Models.Claude_3_5_Sonnet)
+  configuredModelProviders.push(Models.DeepSeek_R1) // As listed in GetConfiguredModelsApi
 }
 
 if (process.env["OPENAI_API_KEY"]) {
@@ -64,6 +65,7 @@ if (process.env["OPENAI_API_KEY"]) {
   defaultBestModel = Models.Gpt_4o
   configuredModelProviders.push(Models.Gpt_4o_mini)
   configuredModelProviders.push(Models.Gpt_4o)
+  configuredModelProviders.push(Models.Gpt_4_1)
 } 
 // Changed from 'else if' to 'if' for Ollama and subsequent providers,
 // allowing multiple to be configured. Default models will be set by the last one active.

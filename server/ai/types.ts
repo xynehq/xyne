@@ -21,6 +21,7 @@ export enum Models {
   Gpt_4o = "gpt-4o",
   Gpt_4o_mini = "gpt-4o-mini",
   Gpt_4 = "gpt-4",
+  Gpt_4_1 = "gpt-4.1-2025-04-14",
 
   CohereCmdRPlus = "cohere.command-r-plus-v1:0",
   CohereCmdR = "cohere.command-r-v1:0",
@@ -48,6 +49,7 @@ export enum FriendlyModelUIName {
   Gpt_4o = "GPT-4o",
   Gpt_4o_mini = "GPT-4o Mini",
   Gpt_4 = "GPT-4",
+  Gpt_4_1 = "GPT-4.1",
   CohereCmdRPlus = "Cohere Command R+",
   CohereCmdR = "Cohere Command R",
   Claude_3_5_SonnetV2 = "Claude 3.5 Sonnet v2", // Specific to us.anthropic.claude-3-5-sonnet-20241022-v2:0
@@ -80,6 +82,7 @@ export const ModelIdToFriendlyNameMap: Record<ModelId, FrontendModelNameString> 
   [Models.Gpt_4]: FriendlyModelUIName.Gpt_4,
   [Models.CohereCmdRPlus]: FriendlyModelUIName.CohereCmdRPlus,
   [Models.CohereCmdR]: FriendlyModelUIName.CohereCmdR,
+  [Models.Gpt_4_1]: FriendlyModelUIName.Gpt_4_1,
   [Models.Claude_3_5_SonnetV2]: FriendlyModelUIName.Claude_3_5_SonnetV2,
   [Models.Claude_3_7_Sonnet]: FriendlyModelUIName.Claude_3_7_Sonnet,
   [Models.Claude_3_5_Sonnet]: FriendlyModelUIName.Claude_3_5_Sonnet,

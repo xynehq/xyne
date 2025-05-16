@@ -245,6 +245,19 @@ export const modelDetailsMap: Record<
       },
     },
   },
+  [Models.Gpt_4_1]: {
+    name: "GPT-4.1",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.03,
+        pricePerThousandOutputTokens: 0.06,
+      },
+      batch: {
+        pricePerThousandInputTokens: 0.015,
+        pricePerThousandOutputTokens: 0.03,
+      },
+    },
+  }
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {
@@ -256,6 +269,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Gpt_4o]: AIProviders.OpenAI,
   [Models.Gpt_4o_mini]: AIProviders.OpenAI,
   [Models.Gpt_4]: AIProviders.OpenAI,
+  [Models.Gpt_4_1]: AIProviders.OpenAI,
   [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
   [Models.CohereCmdR]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
