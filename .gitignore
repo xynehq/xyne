@@ -198,3 +198,5 @@ server/downloads
 build
 server/eval-results
 server/.venv/*
+
+*routeTree.gen*

@@ -531,6 +531,7 @@ export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
 ): Promise<{ title: string; cost: number }> => {
+    Logger.info("inside generateTitleUsingQuery")
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -541,6 +542,7 @@ export const generateTitleUsingQuery = async (
     }
 
     params.json = true
+    Logger.info("inside generateTitleUsingQuery")
 
     let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
@@ -555,6 +557,7 @@ export const generateTitleUsingQuery = async (
       ],
       params,
     )
+    Logger.info("after getProvider generateTitleUsingQuery")
     if (isReasoning && text?.includes(EndThinkingToken)) {
       text = text?.split(EndThinkingToken)[1]
     }

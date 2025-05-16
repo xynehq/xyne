@@ -1,9 +1,9 @@
-import { Search } from "lucide-react"
-import { useRef, useEffect, forwardRef } from "react"
-import { SearchFilters } from "@/components/SearchFilter"
-import { ArrowRight, X } from "lucide-react" // Assuming ArrowRight and X are imported from lucide-react
-import { AutocompleteElement } from "@/components/Autocomplete"
-import { useNavigate } from "@tanstack/react-router"
+import { Search } from "lucide-react";
+import { useRef, useEffect, forwardRef } from "react";
+import { SearchFilters } from "@/components/SearchFilter";
+import { ArrowRight, X } from "lucide-react"; // Assuming ArrowRight and X are imported from lucide-react
+import { AutocompleteElement } from "@/components/Autocomplete";
+import { useNavigate } from "@tanstack/react-router";
 
 export const SearchBar = forwardRef<HTMLDivElement, any>(
   (
@@ -24,26 +24,26 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
     },
     autocompleteRef,
   ) => {
-    const inputRef = useRef<HTMLInputElement | null>(null)
-    const navigate = useNavigate({ from: "/search" })
-    const trimmedQuery = query.trim()
+    const inputRef = useRef<HTMLInputElement | null>(null);
+    const navigate = useNavigate({ from: "/search" });
+    const trimmedQuery = query.trim();
 
     useEffect(() => {
       if (inputRef.current) {
-        inputRef.current.focus()
+        inputRef.current.focus();
       }
-    }, [])
+    }, []);
 
     const navigateToSearch = () => {
-      if (hasSearched) setActiveQuery(query) // Update activeQuery
+      if (hasSearched) setActiveQuery(query); // Update activeQuery
       navigate({
         to: "/search",
         search: {
           query: encodeURIComponent(decodeURIComponent(query)),
         },
         state: { isQueryTyped: !!query.length },
-      })
-    }
+      });
+    };
 
     return (
       <div
@@ -75,8 +75,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   placeholder="Search anything across apps..."
                   value={query}
                   onChange={(e) => {
-                    setQuery(e.target.value)
-                    setAutocompleteQuery(e.target.value)
+                    setQuery(e.target.value);
+                    setAutocompleteQuery(e.target.value);
                   }}
                   className={`text-[#1C1D1F] flex-grow text-[15px] focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] leading-[24px] focus:outline-none ${
                     hasSearched ? "bg-[#F0F4F7]" : ""
@@ -84,11 +84,11 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       if (trimmedQuery) {
-                        setOffset(0)
-                        navigateToSearch()
+                        setOffset(0);
+                        navigateToSearch();
                         setFilter((prevFilter: { lastUpdated?: string }) => ({
                           lastUpdated: prevFilter.lastUpdated || "anytime",
-                        }))
+                        }));
                         // we only want to look for answer if at least
                         // 3 words are there in the query
                       }
@@ -102,8 +102,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   <button
                     onClick={() => {
                       if (trimmedQuery) {
-                        handleSearch()
-                        navigateToSearch()
+                        handleSearch();
+                        navigateToSearch();
                       }
                     }}
                     className="flex mr-2 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-[20px] w-[32px] h-[32px] items-center justify-center"
@@ -115,8 +115,8 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                     className="text-[#ACB8D1] cursor-pointer mr-[16px]"
                     size={20}
                     onClick={(e) => {
-                      setQuery("")
-                      inputRef.current?.focus()
+                      setQuery("");
+                      inputRef.current?.focus();
                     }}
                   />
                 )}
@@ -130,11 +130,11 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                         key={index}
                         onClick={() => {
                           if (result.type === "file") {
-                            setQuery(result.title)
+                            setQuery(result.title);
                           } else if (result.type === "user_query") {
-                            setQuery(result.query_text)
+                            setQuery(result.query_text);
                           }
-                          setAutocompleteResults([])
+                          setAutocompleteResults([]);
                         }}
                         result={result}
                       />
@@ -151,6 +151,6 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
           </div>
         )}
       </div>
-    )
+    );
   },
-)
+);

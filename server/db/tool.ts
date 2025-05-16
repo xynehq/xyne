@@ -8,6 +8,9 @@ import {
 import { createId } from "@paralleldrive/cuid2"
 import { and, eq } from "drizzle-orm"
 import { z } from "zod"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+const Logger = getLogger(Subsystem.Db).child({ module: "tool" })
 
 /**
  * Insert a new tool into the database
