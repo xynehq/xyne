@@ -57,7 +57,6 @@ import {
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   emailPromptJson,
-  documentSearchDecider,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
   metadataAnalysisSystemPrompt,
@@ -65,7 +64,6 @@ import {
   peopleQueryAnalysisSystemPrompt,
   queryRewritePromptJson,
   rewriteQuerySystemPrompt,
-  searchDeciderPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
   temporalDirectionJsonPrompt,
@@ -436,8 +434,17 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
           
           This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
       */
-      if (jsonKey && text.slice(-2) === `\\"` && jsonVal[jsonKey.slice(1, -2)][jsonVal[jsonKey.slice(1, -2)].length - 1] === `"`) {
-        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(0, -1)
+      if (
+        jsonKey &&
+        text.slice(-2) === `\\"` &&
+        jsonVal[jsonKey.slice(1, -2)][
+          jsonVal[jsonKey.slice(1, -2)].length - 1
+        ] === `"`
+      ) {
+        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(
+          0,
+          -1,
+        )
       }
 
       // edge case "null\n}
@@ -894,6 +901,22 @@ const indexToCitation = (text: string): string => {
   return text.replace(/Index (\d+)/g, "[$1]")
 }
 
+// todo add type here
+const buildUserQuery = (userQuery: any[]) => {
+  let builtQuery = ""
+  userQuery.map((obj) => {
+    if (obj.type === "text") {
+      builtQuery += `${obj.value} `
+    } else if (obj.type === "pill") {
+      builtQuery += `<User referred file with title "${obj?.value?.title}" here> `
+    }
+  })
+  console.log("builtQuery")
+  console.log(builtQuery)
+  console.log("builtQuery")
+  return builtQuery
+}
+
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
@@ -937,6 +960,7 @@ export const baselineRAGJsonStream = (
     content: [
       {
         text: `${userQuery}`,
+        // text: buildUserQuery(JSON.parse(userQuery)),
       },
     ],
   }
