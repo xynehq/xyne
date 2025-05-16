@@ -43,8 +43,9 @@ import {
   QueryContextRank,
   QueryAnalysisSchema,
   QueryRouterResponseSchema,
-  Models,
+  Models, // This is the enum
   AIProviders,
+  type ModelId, // This is the string literal type `${Models}`
 } from "@/ai/types"
 import {
   analyzeInitialResultsOrRewriteSystemPrompt,
@@ -227,10 +228,10 @@ const getProviderMap = (): Partial<Record<AIProviders, LLMProvider>> => {
   return providerMap
 }
 
-export const getProviderByModel = (modelId: Models): LLMProvider => {
+export const getProviderByModel = (modelId: ModelId): LLMProvider => { // Changed Models to ModelId
   const ProviderMap = getProviderMap()
 
-  const providerType = ModelToProviderMap[modelId]
+  const providerType = ModelToProviderMap[modelId] // modelId is now type ModelId (string)
     ? ModelToProviderMap[modelId]
     : OllamaModel
       ? AIProviders.Ollama
