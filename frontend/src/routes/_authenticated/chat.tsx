@@ -1611,6 +1611,10 @@ const Sources = ({
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
+const renderMarkdownLink = ({ node, ...linkProps }: { node?: any; [key: string]: any }) => (
+  <a {...linkProps} target="_blank" rel="noopener noreferrer" />
+);
+
 const ChatMessage = ({
   message,
   thinking,
@@ -1837,6 +1841,7 @@ const ChatMessage = ({
                     color: "#1C1D1F",
                   }}
                   components={{
+                    a: renderMarkdownLink,
                     table: ({ node, ...props }) => (
                       <div className="overflow-x-auto w-[720px] my-2">
                         <table

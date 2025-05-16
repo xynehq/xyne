@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react" // Ensure React is imported
+import React, { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -51,6 +51,7 @@ interface SearchResult {
   subject?: string
   name?: string
   title?: string
+  filename?: string
   from?: string
   timestamp?: number
   updatedAt?: number
@@ -76,7 +77,6 @@ interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void
   handleSend: (
-    // Signature updated
     messageToSend: string,
     references: Reference[],
     selectedSources?: string[],
@@ -87,10 +87,10 @@ interface ChatBoxProps {
   handleStop?: () => void
   chatId?: string | null
   allCitations: Map<string, Citation>
-  isReasoningActive: boolean // Added prop
+  isReasoningActive: boolean
   setIsReasoningActive: (
     value: boolean | ((prevState: boolean) => boolean),
-  ) => void // Added prop
+  ) => void
 }
 
 const availableSources: SourceItem[] = [
@@ -150,8 +150,10 @@ const availableSources: SourceItem[] = [
 ]
 
 const getPillDisplayTitle = (title: string): string => {
-  const truncatedTitle = title.length > 25 ? title.substring(0, 15) : title
-  return truncatedTitle
+  if (title.length > 15) {
+    return title.substring(0, 15) + "..."
+  }
+  return title
 }
 
 const getCaretCharacterOffsetWithin = (element: Node) => {
@@ -243,9 +245,74 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
   const [totalCount, setTotalCount] = useState(0)
   const [activeAtMentionIndex, setActiveAtMentionIndex] = useState(-1)
   const [referenceSearchTerm, setReferenceSearchTerm] = useState("")
+  const [referenceBoxLeft, setReferenceBoxLeft] = useState(0)
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
   // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+
+  const updateReferenceBoxPosition = (atIndex: number) => {
+    const inputElement = inputRef.current
+    if (!inputElement || atIndex < 0) {
+      const parentRect = inputElement
+        ?.closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect()
+      const inputRect = inputElement?.getBoundingClientRect()
+      if (parentRect && inputRect) {
+        setReferenceBoxLeft(inputRect.left - parentRect.left)
+      } else {
+        setReferenceBoxLeft(0)
+      }
+      return
+    }
+
+    const range = document.createRange()
+    let currentPos = 0
+    let targetNode: Node | null = null
+    let targetOffsetInNode = 0
+
+    function findDomPosition(node: Node, charIndex: number): boolean {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const textLength = node.textContent?.length || 0
+        if (currentPos <= charIndex && charIndex < currentPos + textLength) {
+          targetNode = node
+          targetOffsetInNode = charIndex - currentPos
+          return true
+        }
+        currentPos += textLength
+      } else {
+        for (const child of node.childNodes) {
+          if (findDomPosition(child, charIndex)) return true
+        }
+      }
+      return false
+    }
+
+    if (findDomPosition(inputElement, atIndex)) {
+      range.setStart(targetNode!, targetOffsetInNode)
+      range.setEnd(targetNode!, targetOffsetInNode + 1)
+      const rect = range.getBoundingClientRect()
+      const parentRect = inputElement
+        .closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect()
+
+      if (parentRect) {
+        setReferenceBoxLeft(rect.left - parentRect.left)
+      } else {
+        const inputRect = inputElement.getBoundingClientRect()
+        setReferenceBoxLeft(rect.left - inputRect.left)
+      }
+    } else {
+      const inputRect = inputElement.getBoundingClientRect()
+      const parentRect = inputElement
+        .closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect()
+      if (parentRect) {
+        setReferenceBoxLeft(inputRect.left - parentRect.left)
+      } else {
+        setReferenceBoxLeft(0)
+      }
+    }
+  }
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
@@ -543,14 +610,29 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
     }
 
     // Add the new pill
-    const newPill = document.createElement("span")
+    const newPill = document.createElement("a")
+    newPill.href = newRef.url || "#"
+    newPill.target = "_blank"
+    newPill.rel = "noopener noreferrer"
     newPill.className =
-      "reference-pill bg-[#F1F5F9] text-[#374151] rounded-lg px-2 py-0.4 inline-flex items-center"
+      "reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-semi-bold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline"
     newPill.contentEditable = "false"
-    newPill.dataset.referenceId = newRef.id // Add data-reference-id
+    newPill.dataset.referenceId = newRef.id
+    newPill.title = newRef.title
+
+    // Prevent click inside contentEditable from navigating if URL is '#' and to stop potential issues with contentEditable parent
+    newPill.addEventListener("click", (e) => {
+      if (newPill.getAttribute("href") === "#") {
+        e.preventDefault()
+      }
+      // For actual links, let the default behavior proceed (opening in new tab)
+      // but stop propagation to prevent contentEditable parent from interfering.
+      e.stopPropagation()
+    })
 
     if (newRef.app && newRef.entity) {
       const iconContainer = document.createElement("span")
+      iconContainer.style.alignSelf = "center";
       const iconNode = getIcon(newRef.app, newRef.entity, {
         w: 14,
         h: 14,
@@ -688,6 +770,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
       result.name ||
       result.subject ||
       result.title ||
+      result.filename ||
       (result.type === "user" && result.email) ||
       "Untitled"
     const refId = result.docId || (result.type === "user" && result.email) || ""
@@ -929,7 +1012,10 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
-          className="absolute bottom-[calc(80%+8px)] left-0 bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          className="absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          style={{
+            left: activeAtMentionIndex !== -1 ? `${referenceBoxLeft}px` : "0px",
+          }}
         >
           {activeAtMentionIndex === -1 && (
             <div className="p-2 border-b border-gray-200 relative">
@@ -947,7 +1033,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
           )}
           <div
             ref={scrollContainerRef}
-            className="max-h-[250px] overflow-y-auto p-1"
+            className="min-h-[40px] max-h-[250px] overflow-y-auto p-1"
           >
             {searchMode === "citations" && activeAtMentionIndex !== -1 && (
               <>
@@ -987,69 +1073,98 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
                       )
                     })}
                   </>
+                ) : derivedReferenceSearch.length > 0 ? (
+                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    No citations found for "{derivedReferenceSearch}".
+                  </p>
                 ) : (
-                  <p className="text-sm text-gray-500 px-2 py-1">
-                    search for your docs...
+                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    Start typing to search citations from this chat.
                   </p>
                 )}
               </>
             )}
             {searchMode === "global" && (
               <>
-                {isGlobalLoading && globalResults.length === 0 && (
-                  <p className="text-sm text-gray-500 px-2 py-1">Loading...</p>
-                )}
+                {isGlobalLoading &&
+                  globalResults.length === 0 &&
+                  !globalError && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      {currentSearchTerm
+                        ? `Searching for "${currentSearchTerm}"...`
+                        : "Searching..."}
+                    </p>
+                  )}
                 {globalError && (
-                  <p className="text-sm text-red-500 px-2 py-1">
+                  <p className="text-sm text-red-500 px-2 py-1 text-center">
                     {globalError}
                   </p>
                 )}
-                {globalResults.map((result, index) => {
-                  const displayTitle =
-                    result.name ||
-                    result.subject ||
-                    result.title ||
-                    (result.type === "user" && result.email) ||
-                    "Untitled"
-                  return (
-                    <div
-                      key={result.docId || result.email || index}
-                      ref={(el) => (referenceItemsRef.current[index] = el)}
-                      className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
-                        index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
-                      }`}
-                      onClick={() => handleSelectGlobalResult(result)}
-                      onMouseEnter={() => setSelectedRefIndex(index)}
-                    >
-                      <div className="flex items-center gap-2">
-                        {result.type === "user" && result.photoLink ? (
-                          <img
-                            src={result.photoLink}
-                            alt={displayTitle}
-                            className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          getIcon(result.app, result.entity, {
-                            w: 16,
-                            h: 16,
-                            mr: 0,
-                          })
-                        )}
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {displayTitle}
-                        </p>
-                      </div>
-                      {result.type !== "user" && (
-                        <p className="text-xs text-gray-500 truncate ml-6">
-                          {result.from ? `From: ${result.from} | ` : ""}
-                          {formatTimestamp(
-                            result.timestamp || result.updatedAt,
+                {!isGlobalLoading &&
+                  !globalError &&
+                  globalResults.length === 0 &&
+                  currentSearchTerm &&
+                  currentSearchTerm.length > 0 && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      No results found for "{currentSearchTerm}".
+                    </p>
+                  )}
+                {!isGlobalLoading &&
+                  !globalError &&
+                  globalResults.length === 0 &&
+                  (!currentSearchTerm || currentSearchTerm.length === 0) && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      Type to search for documents, messages, and more.
+                    </p>
+                  )}
+                {globalResults.length > 0 &&
+                  globalResults.map((result, index) => {
+                    const displayTitle =
+                      result.name ||
+                      result.subject ||
+                      result.title ||
+                      result.filename ||
+                      (result.type === "user" && result.email) ||
+                      "Untitled"
+                    return (
+                      <div
+                        key={result.docId || result.email || index}
+                        ref={(el) => (referenceItemsRef.current[index] = el)}
+                        className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
+                          index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
+                        }`}
+                        onClick={() => handleSelectGlobalResult(result)}
+                        onMouseEnter={() => setSelectedRefIndex(index)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {result.type === "user" && result.photoLink ? (
+                            <img
+                              src={result.photoLink}
+                              alt={displayTitle}
+                              className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            getIcon(result.app, result.entity, {
+                              w: 16,
+                              h: 16,
+                              mr: 0,
+                            })
                           )}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })}
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {displayTitle}
+                          </p>
+                        </div>
+                        {result.type !== "user" && (
+                          <p className="text-xs text-gray-500 truncate ml-6">
+                            {result.from ? `From: ${result.from} | ` : ""}
+                            {formatTimestamp(
+                              result.timestamp || result.updatedAt,
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
                 {!globalError &&
                   globalResults.length > 0 &&
                   globalResults.length < totalCount && (
@@ -1172,6 +1287,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
                   // It's a new trigger point or the box was closed. Activate for this '@'.
                   setActiveAtMentionIndex(newActiveMentionIndex)
                   setShowReferenceBox(true)
+                  updateReferenceBoxPosition(newActiveMentionIndex)
                   setReferenceSearchTerm("") // Clear search for new mention context
                   setGlobalResults([])
                   setGlobalError(null)
@@ -1270,31 +1386,34 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
               const input = inputRef.current
               if (!input) return
 
-              const currentText = input.textContent || ""
-              // Add "@" or " @" to ensure it's validly placed
+              const textContentBeforeAt = input.textContent || ""
+
               const textToAppend =
-                currentText.length === 0 ||
-                currentText.endsWith(" ") ||
-                currentText.endsWith("\n") ||
-                currentText.endsWith("\u00A0")
+                textContentBeforeAt.length === 0 ||
+                textContentBeforeAt.endsWith(" ") ||
+                textContentBeforeAt.endsWith("\n") ||
+                textContentBeforeAt.endsWith("\u00A0")
                   ? "@"
                   : " @"
-              const newValue = currentText + textToAppend
 
-              input.textContent = newValue
-              setQuery(newValue)
+              const atTextNode = document.createTextNode(textToAppend)
+
+              input.appendChild(atTextNode)
+
+              const newTextContent = input.textContent || ""
+              setQuery(newTextContent)
               setIsPlaceholderVisible(
-                newValue.length === 0 && document.activeElement !== input,
+                newTextContent.length === 0 && document.activeElement !== input,
               )
 
               const newAtSymbolIndex =
-                currentText.length + (textToAppend === "@" ? 0 : 1) // Index of the newly added @
-              setCaretPosition(input, newValue.length) // Move cursor to the end
+                textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
+              setCaretPosition(input, newTextContent.length)
 
-              // Since textToAppend ensures valid placement, directly activate the mention UI
               setActiveAtMentionIndex(newAtSymbolIndex)
               setReferenceSearchTerm("")
               setShowReferenceBox(true)
+              updateReferenceBoxPosition(newAtSymbolIndex)
               setSearchMode("citations")
               setGlobalResults([])
               setGlobalError(null)
@@ -1302,7 +1421,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
               setTotalCount(0)
               setSelectedRefIndex(-1)
 
-              input.focus() // Re-focus the input
+              input.focus()
             }}
           />
           {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
@@ -1410,7 +1529,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}{" "}
+          )}
           {/* Closing tag for the conditional render */}
           <button
             onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
