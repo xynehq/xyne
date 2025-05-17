@@ -103,6 +103,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
     lastUpdated: (search.lastUpdated as LastUpdated) || "anytime",
   })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const observerTargetRef = useRef<HTMLDivElement | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const [showDebugInfo, setDebugInfo] = useState(
@@ -121,11 +123,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
         : totalCount
       : totalCount
 
-  // Added for infinite scroll functionality
-  const bottomRef = useRef<HTMLDivElement | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-
   const handleNext = () => {
+    setIsLoadingMore(true)
     const newOffset = offset + page
     setOffset(newOffset)
   }
@@ -159,34 +158,27 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   // Intersection observer for infinite scroll
   useEffect(() => {
-    if (!bottomRef.current) return
-
     const observer = new IntersectionObserver(
       (entries) => {
-        const [entry] = entries
-        if (
-          entry.isIntersecting &&
-          results.length > 0 &&
-          filterPageSize > page &&
-          results.length < filterPageSize &&
-          !isLoading
-        ) {
-          // Load more results when bottom is visible
-          setIsLoading(true)
-          handleNext()
+        if (entries[0].isIntersecting && !isLoadingMore) {
+          if (results.length < filterPageSize && results.length > 0) {
+            handleNext()
+          }
         }
       },
-      { threshold: 0.5 }, // Trigger when 10% of the element is visible
+      { threshold: 1.0 },
     )
 
-    observer.observe(bottomRef.current)
+    if (observerTargetRef.current) {
+      observer.observe(observerTargetRef.current)
+    }
 
     return () => {
-      if (bottomRef.current) {
-        observer.unobserve(bottomRef.current)
+      if (observerTargetRef.current) {
+        observer.unobserve(observerTargetRef.current)
       }
     }
-  }, [results, filterPageSize, page, isLoading, handleNext])
+  }, [results, isLoadingMore, groups, searchMeta, filter])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -237,12 +229,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   useEffect(() => {
     handleSearch()
-  }, [offset])
-
-  useEffect(() => {
-    setOffset(0)
-    handleSearch()
-  }, [filter])
+  }, [offset, filter])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
@@ -383,9 +370,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
           setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
-
-        // Reset loading state after results are received
-        setIsLoading(false)
       } else {
         const errorText = await response.text()
         if (!response.ok) {
@@ -402,7 +386,11 @@ export const Search = ({ user, workspace }: IndexProps) => {
     } catch (error) {
       logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
-      setIsLoading(false) // Reset loading state on error
+    } finally {
+      if (newOffset > 0) {
+        // only set loading more to false if it was a "load more" operation
+        setIsLoadingMore(false)
+      }
     }
   }
 
@@ -544,17 +532,13 @@ export const Search = ({ user, workspace }: IndexProps) => {
                     />
                   ))}
                 </div>
+                <div ref={observerTargetRef} style={{ height: "1px" }} />{" "}
+                {/* Sentinel element */}
               </div>
             )}
-
-            {/* Infinite scroll loading indicator and bottom reference */}
-            {results.length > 0 && (
-              <div ref={bottomRef} className="py-4 flex justify-center">
-                {isLoading &&
-                filterPageSize > page &&
-                results.length < filterPageSize ? (
-                  <LoaderContent />
-                ) : null}
+            {isLoadingMore && (
+              <div className="flex justify-center items-center p-4 text-[#464B53]">
+                <LoaderContent />
               </div>
             )}
           </div>
