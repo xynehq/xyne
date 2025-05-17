@@ -22,7 +22,7 @@ import {
 } from "@/integrations/slack/index"
 import { getLogger } from "@/logger"
 import { GaxiosError } from "gaxios"
-const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
+const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 
 import type { Channel } from "@slack/web-api/dist/types/response/ChannelsListResponse"
 import type { Member } from "@slack/web-api/dist/types/response/UsersListResponse"
@@ -436,7 +436,6 @@ export const handleSlackChanges = async (
                 existenceMap[channel.id] && existenceMap[channel.id].exists
 
               // Always get current channel members to ensure up-to-date permissions
-
               const currentMemberIds = await getConversationUsers(
                 user,
                 client,
@@ -446,8 +445,7 @@ export const handleSlackChanges = async (
                 `Current members for channel ${channel.name || channel.id}: ${currentMemberIds.length}`,
               )
 
-              // Get permissions (email addresses) for current members
-              // First ensure all members are in the memberMap
+              // First ensure all members are in the memberMap from Vespa
               const resp = await ifDocumentsExist(currentMemberIds)
               if (resp) {
                 for (const [docId, data] of Object.entries(resp)) {
@@ -471,6 +469,7 @@ export const handleSlackChanges = async (
                       profile: {
                         display_name: newUser.profile?.display_name,
                         image_192: newUser.profile!.image_192,
+                        email: newUser.profile?.email,
                       },
                       name: newUser.name,
                     })
@@ -478,19 +477,42 @@ export const handleSlackChanges = async (
                 }
               }
 
-              for (const memberId of currentMemberIds) {
-                if (!memberMap.has(memberId)) {
-                  try {
-                    const userResp = await client.users.info({ user: memberId })
+              // Get missing members from Slack API in a single batch
+              const missingMemberIds = currentMemberIds.filter(
+                (id) => !memberMap.has(id),
+              )
 
-                    if (userResp.ok && userResp.user) {
-                      memberMap.set(userResp.user.id!, userResp.user)
+              if (missingMemberIds.length > 0) {
+                Logger.info(
+                  `Fetching ${missingMemberIds.length} missing members from Slack API`,
+                )
+                const concurrencyLimit = pLimit(5)
+                const memberPromises = missingMemberIds.map(
+                  (memberId: string) =>
+                    concurrencyLimit(async () => {
+                      try {
+                        return await client.users.info({ user: memberId })
+                      } catch (error) {
+                        Logger.error(
+                          `Error fetching user ${memberId}: ${error}`,
+                        )
+                        return { ok: false }
+                      }
+                    }),
+                )
 
-                      // Check if team exists in map
-                      if (
-                        userResp.user.team_id &&
-                        !teamMap.has(userResp.user.team_id)
-                      ) {
+                const memberResponses = await Promise.all(memberPromises)
+
+                for (const userResp of memberResponses) {
+                  if (userResp.ok && userResp.user) {
+                    memberMap.set(userResp.user.id!, userResp.user)
+
+                    // Check if team exists in map
+                    if (
+                      userResp.user.team_id &&
+                      !teamMap.has(userResp.user.team_id)
+                    ) {
+                      try {
                         const teamResp = await client.team.info({
                           team: userResp.user.team_id,
                         })
@@ -499,29 +521,25 @@ export const handleSlackChanges = async (
                           await insertTeam(teamResp.team!, false)
                           jobStats.added++
                         }
+                      } catch (error) {
+                        Logger.error(
+                          `Error fetching team for user ${userResp.user.id}: ${error}`,
+                        )
                       }
-
-                      // Insert member in Vespa
-                      jobStats.added++
-                      await insertMember(userResp.user)
                     }
-                  } catch (error) {
-                    Logger.error(`Error fetching user ${memberId}: ${error}`)
+
+                    // Insert member in Vespa
+                    try {
+                      await insertMember(userResp.user)
+                      jobStats.added++
+                    } catch (error) {
+                      Logger.error(
+                        `Error inserting member ${userResp.user.id}: ${error}`,
+                      )
+                    }
                   }
                 }
               }
-              const concurrencyLimit = pLimit(5)
-              const memberPromises = currentMemberIds.map((memberId: string) =>
-                concurrencyLimit(() => client.users.info({ user: memberId })),
-              )
-              const members: User[] = (await Promise.all(memberPromises))
-                .map((userResp) => {
-                  if (userResp.user) {
-                    memberMap.set(userResp.user.id!, userResp.user)
-                    return userResp.user as User
-                  }
-                })
-                .filter((user) => !!user)
 
               let currentPermissions: string[] = currentMemberIds
                 .map((m: string) => {
@@ -530,6 +548,7 @@ export const handleSlackChanges = async (
                 })
                 .filter((email): email is string => !!email)
 
+              // Ensure current user's email is in permissions
               if (!currentPermissions.includes(email)) {
                 currentPermissions.push(email)
               }
