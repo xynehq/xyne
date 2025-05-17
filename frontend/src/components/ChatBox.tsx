@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react" // Ensure React is imported
+import React, { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
   Globe,
   AtSign,
   Layers,
+  Infinity,
   Square,
   ChevronDown,
   Check,
@@ -81,6 +82,8 @@ interface ChatBoxProps {
     selectedSources?: string[],
   ) => void
   isStreaming?: boolean
+  isAgenticMode?: boolean
+  setIsAgenticMode: Dispatch<SetStateAction<boolean>>
   handleStop?: () => void
   chatId?: string | null
   allCitations: Map<string, Citation>
@@ -202,11 +205,13 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
-export const ChatBox = ({
+export const ChatBox: React.FC<ChatBoxProps> = ({
   query,
   setQuery,
   handleSend,
   isStreaming = false,
+  isAgenticMode = false,
+  setIsAgenticMode,
   allCitations,
   handleStop,
   chatId,
@@ -1372,8 +1377,8 @@ export const ChatBox = ({
           />
         </div>
         <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-          <Attach className="text-[#464D53] cursor-pointer" />
-          <Globe size={16} className="text-[#464D53] cursor-pointer" />
+          {/* <Attach className="text-[#464D53] cursor-pointer" />
+          <Globe size={16} className="text-[#464D53] cursor-pointer" /> */}
           <AtSign
             size={16}
             className="text-[#464D53] cursor-pointer reference-trigger"
@@ -1540,6 +1545,24 @@ export const ChatBox = ({
             {/* Use prop for styling */}
             <span>Reasoning</span>
           </button>
+          <div
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsAgenticMode(!isAgenticMode)
+            }}
+            className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
+          >
+            <Infinity
+              size={14}
+              strokeWidth={2.4}
+              className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
+            />
+            <span
+              className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+            >
+              Agent
+            </span>
+          </div>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}
@@ -1560,6 +1583,7 @@ export const ChatBox = ({
           )}
         </div>
       </div>
+      <div className="absolute right-[14px] bottom-[10px] flex items-center"></div>
     </div>
   )
 }

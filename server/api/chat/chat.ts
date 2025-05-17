@@ -1,6 +1,5 @@
 import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
-  // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
@@ -86,12 +85,17 @@ import {
   type VespaMail,
   type VespaMailAttachment,
   type VespaMailSearch,
-  type VespaSchema,
-  type VespaSearchResponse,
   type VespaSearchResult,
-  type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
+  CalendarEntity,
+  MailEntity,
+  DriveEntity,
+  type Entity,
+  type VespaSearchResponse,
+  type VespaSearchResults,
+  type VespaGroupType,
+  type VespaSchema, // Added import for VespaSchema
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -104,6 +108,20 @@ import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
+import VespaClient from "@/search/vespaClient"
+import { generatePlannerActionJsonStream } from "@/ai/provider"
+import {
+  addErrMessageToMessage,
+  checkAndYieldCitations,
+  handleError,
+  processMessage,
+  searchToCitation,
+} from "@/api/chat/utils"
+import type { Citation } from "@/api/chat/types"
+import { activeStreams } from "./streams"
+import { MessageApiAgenticMinimal } from "@/api/chat/agent"
+import { MessageMode } from "shared/types" // Import MessageMode
+
 import { entityToSchemaMapper } from "@/search/mappers"
 import { is } from "drizzle-orm"
 const {
@@ -119,9 +137,6 @@ const {
   EndThinkingToken,
 } = config
 const Logger = getLogger(Subsystem.Chat)
-
-// Map to store active streams: Key = "chatId", Value = SSEStreamingApi instance
-const activeStreams = new Map<string, SSEStreamingApi>()
 
 // this is not always the case but unless our router detects that we need
 // these we will by default remove them
@@ -274,21 +289,6 @@ export const ChatBookmarkApi = async (c: Context) => {
   }
 }
 
-const MinimalCitationSchema = z.object({
-  docId: z.string(),
-  title: z.string().optional(),
-  url: z.string().optional(),
-  app: z.nativeEnum(Apps),
-  entity: entitySchema,
-})
-
-export type Citation = z.infer<typeof MinimalCitationSchema>
-
-interface CitationResponse {
-  answer?: string
-  citations?: number[]
-}
-
 export const GetChatTraceApi = async (c: Context) => {
   try {
     // @ts-ignore - Assume validation is handled by middleware in server.ts
@@ -321,120 +321,6 @@ export const GetChatTraceApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: "Could not fetch chat trace",
     })
-  }
-}
-
-const searchToCitation = (result: VespaSearchResults): Citation => {
-  const fields = result.fields
-  if (result.fields.sddocname === userSchema) {
-    return {
-      docId: (fields as VespaUser).docId,
-      title: (fields as VespaUser).name,
-      url: `https://contacts.google.com/${(fields as VespaUser).email}`,
-      app: (fields as VespaUser).app,
-      entity: (fields as VespaUser).entity,
-    }
-  } else if (result.fields.sddocname === fileSchema) {
-    return {
-      docId: (fields as VespaFile).docId,
-      title: (fields as VespaFile).title,
-      url: (fields as VespaFile).url || "",
-      app: (fields as VespaFile).app,
-      entity: (fields as VespaFile).entity,
-    }
-  } else if (result.fields.sddocname === mailSchema) {
-    return {
-      docId: (fields as VespaMail).docId,
-      title: (fields as VespaMail).subject,
-      url: `https://mail.google.com/mail/u/0/#inbox/${fields.docId}`,
-      app: (fields as VespaMail).app,
-      entity: (fields as VespaMail).entity,
-    }
-  } else if (result.fields.sddocname === eventSchema) {
-    return {
-      docId: (fields as VespaEvent).docId,
-      title: (fields as VespaEvent).name || "No Title",
-      url: (fields as VespaEvent).url,
-      app: (fields as VespaEvent).app,
-      entity: (fields as VespaEvent).entity,
-    }
-  } else if (result.fields.sddocname === mailAttachmentSchema) {
-    return {
-      docId: (fields as VespaMailAttachment).docId,
-      title: (fields as VespaMailAttachment).filename || "No Filename",
-      url: `https://mail.google.com/mail/u/0/#inbox/${(fields as VespaMailAttachment).mailId}?projector=1&messagePartId=0.${(fields as VespaMailAttachment).partId}&disp=safe&zw`,
-      app: (fields as VespaMailAttachment).app,
-      entity: (fields as VespaMailAttachment).entity,
-    }
-  } else if (result.fields.sddocname === chatMessageSchema) {
-    return {
-      docId: (fields as VespaChatMessage).docId,
-      title: (fields as VespaChatMessage).text,
-      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${(fields as VespaChatMessage).channelId}/p${(fields as VespaChatMessage).updatedAt}`,
-      app: (fields as VespaChatMessage).app,
-      entity: (fields as VespaChatMessage).entity,
-    }
-  } else {
-    throw new Error("Invalid search result type for citation")
-  }
-}
-
-const searchToCitations = (
-  results: z.infer<typeof VespaSearchResultsSchema>[],
-): Citation[] => {
-  if (results.length === 0) {
-    return []
-  }
-  return results.map((result) => searchToCitation(result as VespaSearchResults))
-}
-
-export const textToCitationIndex = /\[(\d+)\]/g
-
-export const processMessage = (
-  text: string,
-  citationMap: Record<number, number>,
-) => {
-  if (!text) {
-    return ""
-  }
-
-  text = splitGroupedCitationsWithSpaces(text)
-  return text.replace(textToCitationIndex, (match, num) => {
-    const index = citationMap[num]
-
-    return typeof index === "number" ? `[${index + 1}]` : ""
-  })
-}
-
-// the Set is passed by reference so that singular object will get updated
-// but need to be kept in mind
-const checkAndYieldCitations = function* (
-  text: string,
-  yieldedCitations: Set<number>,
-  results: any[],
-  baseIndex: number = 0,
-) {
-  let match
-  while ((match = textToCitationIndex.exec(text)) !== null) {
-    const citationIndex = parseInt(match[1], 10)
-    if (!yieldedCitations.has(citationIndex)) {
-      const item = results[citationIndex - baseIndex]
-      if (item) {
-        yield {
-          citation: {
-            index: citationIndex,
-            item: searchToCitation(item as VespaSearchResults),
-          },
-        }
-        yieldedCitations.add(citationIndex)
-      } else {
-        Logger.error(
-          "Found a citation index but could not find it in the search result ",
-          citationIndex,
-          results.length,
-        )
-      }
-    }
   }
 }
 
@@ -1077,9 +963,9 @@ async function* generateAnswerFromGivenContext(
               )
               currentAnswer = parsed.answer
             }
-          } catch (err) {
-            const errMessage = (err as Error).message
-            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+          } catch (err: any) {
+            // Continue accumulating chunks if we can't parse yet
+            Logger.debug(`Partial JSON parse error: ${getErrorMessage(err)}`)
             continue
           }
         }
@@ -1758,34 +1644,26 @@ export async function* UnderstandMessageAndAnswer(
   }
 }
 
-const handleError = (error: any) => {
-  let errorMessage = "Something went wrong. Please try again."
-  if (error?.code === OpenAIError.RateLimitError) {
-    errorMessage = "Rate limit exceeded. Please try again later."
-  } else if (error?.code === OpenAIError.InvalidAPIKey) {
-    errorMessage =
-      "Invalid API key provided. Please check your API key and ensure it is correct."
-  }
-  return errorMessage
-}
-
-const addErrMessageToMessage = async (
-  lastMessage: SelectMessage,
-  errorMessage: string,
-) => {
-  if (lastMessage.messageRole === MessageRole.User) {
-    await updateMessageByExternalId(db, lastMessage?.externalId, {
-      errorMessage,
-    })
-  }
-}
-
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageApi")
 
+  // Check if we're in agentic mode
+  const isAgentic = c.req.query("agentic") === "true"
+  rootSpan.setAttribute("isAgentic", isAgentic)
+  Logger.info(
+    `MessageApi called with agentic mode: ${isAgentic ? "enabled" : "disabled"}`,
+  )
+
+  // If we're in agentic mode, call the agentic handler directly
+  if (isAgentic) {
+    // Call the Agentic handler function here
+    return MessageApiAgenticMinimal(c, rootSpan)
+  }
+
+  // Continue with regular non-agentic message processing
   let stream: any
   let chat: SelectChat
   let assistantMessageId: string | null = null
@@ -1817,6 +1695,9 @@ export const MessageApi = async (c: Context) => {
     }
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
+
+    const currentMode = isAgentic ? MessageMode.Agentic : MessageMode.Ask
+    rootSpan.setAttribute("messageMode", currentMode)
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -1869,6 +1750,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            mode: currentMode, // Set mode for user message
             fileIds: fileIds,
           })
           return [chat, insertedMsg]
@@ -1897,6 +1779,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
+            mode: currentMode,
             modelId,
             fileIds,
           })
@@ -1936,10 +1819,28 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
+          // Different flow for agentic vs non-agentic mode
+          if (isAgentic) {
+            Logger.info("Using agentic flow for message processing")
+            // Placeholder for agentic flow
+            await stream.writeSSE({
+              event: ChatSSEvents.Reasoning,
+              data: "Using agentic mode to process your request...",
+            })
+
+            // For now, we'll use the regular flow but add a note about agentic mode
+            // Normal flow continues below...
+          } else {
+            Logger.info("Using regular non-agentic flow for message processing")
+          }
+
           const messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
             .filter((msg) => !msg?.errorMessage)
-            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+            .filter(
+              (msg) =>
+                !(msg.messageRole === MessageRole.Assistant && !msg.message),
+            ) // filter out assistant messages with no content
             .map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
@@ -2210,9 +2111,10 @@ export const MessageApi = async (c: Context) => {
               email: user.email,
               sources: citations,
               message: processMessage(answer, citationMap),
-              thinking: thinking,
+              thinking,
               modelId:
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              mode: MessageMode.Ask, // Assistant message in non-agentic flow is 'ask'
             })
             assistantMessageId = msg.externalId
 
@@ -2451,13 +2353,17 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId, isReasoningEnabled }: MessageRetryReqType = body
+    const { messageId, isReasoningEnabled, agentic }: MessageRetryReqType = body
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
     rootSpan.setAttribute("messageId", messageId)
+
+    const currentMode = agentic ? MessageMode.Agentic : MessageMode.Ask
+    rootSpan.setAttribute("currentMode", currentMode)
+    rootSpan.setAttribute("isAgenticRetry", agentic)
 
     const costArr: number[] = []
     // Fetch the original message
@@ -2558,7 +2464,12 @@ export const MessageRetryApi = async (c: Context) => {
           const convWithNoErrMsg = isUserMessage
             ? conversation
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                ) // filter out assistant messages with no content
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2566,7 +2477,12 @@ export const MessageRetryApi = async (c: Context) => {
             : conversation
                 .slice(0, conversation.length - 1)
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message))
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                )
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2831,6 +2747,7 @@ export const MessageRetryApi = async (c: Context) => {
                   createdAt: new Date(
                     new Date(originalMessage.createdAt).getTime() + 1,
                   ),
+                  mode: currentMode, // Set mode
                 })
                 relevantMessageId = msg.externalId
               })
@@ -2842,6 +2759,7 @@ export const MessageRetryApi = async (c: Context) => {
                 sources: citations,
                 thinking,
                 errorMessage: null,
+                mode: currentMode, // Set mode
               })
             }
           } else {
@@ -2868,6 +2786,7 @@ export const MessageRetryApi = async (c: Context) => {
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
+                    mode: currentMode, // Set mode
                   })
                   return msg
                 })
@@ -2887,6 +2806,7 @@ export const MessageRetryApi = async (c: Context) => {
                   sources: citations,
                   thinking,
                   errorMessage: null,
+                  mode: currentMode, // Set mode
                 })
               }
             } else {
@@ -2987,7 +2907,9 @@ export const MessageRetryApi = async (c: Context) => {
           event: ChatSSEvents.Error,
           data: errFromMap,
         })
-        await addErrMessageToMessage(originalMessage, errFromMap)
+        // Add the error message to last user message
+        // await addErrMessageToMessage(lastMessage, errFromMap)
+
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
@@ -3029,7 +2951,6 @@ export const MessageRetryApi = async (c: Context) => {
   }
 }
 
-// New API Endpoint to stop streaming
 export const StopStreamingApi = async (c: Context) => {
   try {
     // @ts-ignore - Assuming validation middleware handles this

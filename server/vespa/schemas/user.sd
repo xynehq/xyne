@@ -240,6 +240,65 @@ schema user {
         }
     }
 
+    # New rank profile designed for sorting: implements recency binning with hybrid scoring within bins.
+    rank-profile global_sorted inherits initial {
+        # Query inputs allowing control over recency parameters
+        inputs {
+            # query(e) and query(alpha) are inherited from 'initial'
+            query(bin_size_days) double: 1.0
+        }
+
+        # Constants for recency binning
+        constants {
+            ONE_DAY_IN_SECONDS: 86400.0
+            THREE_MONTHS_IN_SECONDS: 7890000 
+            RECENCY_BIN_MULTIPLIER: 1000000.0
+            MAX_SCORE_BASE: 1000000000.0
+        }
+
+        # Calculate document age in days with proper handling of missing timestamps
+        # Using lastLoggedIn for user, assuming it's in milliseconds
+        function document_age_days() {
+          expression: max(0.0, if(isNan(attribute(lastLoggedIn)) == 1, THREE_MONTHS_IN_SECONDS / ONE_DAY_IN_SECONDS, (now() - (attribute(lastLoggedIn) / 1000)) / ONE_DAY_IN_SECONDS))
+        }
+
+        # Assign documents to time-based bins
+        function recency_bin_index() {
+          expression: floor(document_age_days() / query(bin_size_days))
+        }
+
+        # Score based on recency bin - newer bins get MUCH higher scores
+        function recency_bin_score() {
+          expression: MAX_SCORE_BASE - (recency_bin_index() * RECENCY_BIN_MULTIPLIER)
+        }
+
+        # Calculate the hybrid relevance score (combining vector and lexical search)
+        function hybrid_relevance_score() {
+          expression: (query(alpha) * vector_score()) + ((1 - query(alpha)) * combined_nativeRank)
+        }
+
+        # --- Ranking Expression ---
+        first-phase {
+          # Final score = Score from recency bin + full hybrid relevance score
+          expression: recency_bin_score() + hybrid_relevance_score()
+        }
+
+        # Include all relevant features for debugging/monitoring
+        match-features {
+          query(alpha)
+          vector_score
+          combined_nativeRank
+          matchedFieldCount # Make sure matchedFieldCount is defined in 'initial' or here if used
+          # Specific nativeRank fields for user
+          nativeRank(name)
+          nativeRank(email)
+          document_age_days
+          recency_bin_index
+          recency_bin_score
+          hybrid_relevance_score
+        }
+    }
+
     rank-profile default_bm25 inherits initial {
 
         global-phase {

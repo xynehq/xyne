@@ -4,7 +4,6 @@ import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
-import { connect } from "bun"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
