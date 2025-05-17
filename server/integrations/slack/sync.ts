@@ -379,6 +379,7 @@ export const handleSlackChanges = async (
               conversation.is_member)
           )
         })
+        const user = await getAuthenticatedUserId(client)
 
         for (const conv of conversations) {
           if (conv.id && conv.name) {
@@ -435,7 +436,7 @@ export const handleSlackChanges = async (
                 existenceMap[channel.id] && existenceMap[channel.id].exists
 
               // Always get current channel members to ensure up-to-date permissions
-              const user = await getAuthenticatedUserId(client)
+
               const currentMemberIds = await getConversationUsers(
                 user,
                 client,
