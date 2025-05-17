@@ -931,6 +931,7 @@ async function* generateAnswerFromGivenContext(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
+  const message = input
   let userAlpha = alpha
   try {
     const personalization = await getUserPersonalizationByEmail(db, email)
@@ -1101,17 +1102,220 @@ async function* generateAnswerFromGivenContext(
     return
   } else if (
     // Condition if fileIds are present has some values meaning context has been selected.
-    // If no answer found, exit and yield nothing related to selected context found
     !parsed?.answer
   ) {
-    yield {
-      text: "From the selected context, I could not find any information to answer it, please change your query",
+    Logger.info(
+      "No answer was found when all chunks were given, trying to answer after searching vespa now",
+    )
+    // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
+    let results = await searchVespaInFiles(message, email, fileIds, {
+      limit: fileIds?.length,
+      alpha: userAlpha,
+    })
+    if (!results.root.children) {
+      results.root.children = []
     }
-    return
+    const startIndex = isReasoning ? previousResultsLength : 0
+    const initialContext = cleanContext(
+      results?.root?.children
+        ?.map(
+          (v, i) =>
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
+        )
+        ?.join("\n"),
+    )
+    Logger.info(
+      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+    )
+    console.log("searching initialContext")
+    console.log(initialContext)
+    console.log("searching initialContext")
+    // const iterator = baselineRAGJsonStream(
+    //   input,
+    //   userCtx,
+    //   initialContext,
+    //   {
+    //     stream: true,
+    //     modelId: defaultBestModel,
+    //     reasoning: config.isReasoning && userRequestsReasoning,
+    //   },
+    //   true,
+    // )
+    const iterator = withThrottlingBackoff(
+      () =>
+        baselineRAGJsonStream(
+          input,
+          userCtx,
+          initialContext,
+          {
+            stream: true,
+            modelId: defaultBestModel,
+            reasoning: config.isReasoning && userRequestsReasoning,
+          },
+          true,
+        ),
+      /* maxRetries: */ 5,
+      /* baseDelayMs: */ 2000,
+    )
+
+    let buffer = ""
+    let currentAnswer = ""
+    let parsed = { answer: "" }
+    let thinking = ""
+    let reasoning = config.isReasoning && userRequestsReasoning
+    let yieldedCitations = new Set<number>()
+    // tied to the json format and output expected, we expect the answer key to be present
+    const ANSWER_TOKEN = '"answer":'
+    for await (const chunk of iterator) {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            // first time
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+
+              yield* checkAndYieldCitations(
+                thinking,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+
+        if (!reasoning) {
+          buffer += chunk.text
+          try {
+            parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
+            if (parsed.answer === null) {
+              break
+            }
+            if (parsed.answer && currentAnswer !== parsed.answer) {
+              if (currentAnswer === "") {
+                // First valid answer - send the whole thing
+                yield { text: parsed.answer }
+              } else {
+                // Subsequent chunks - send only the new part
+                const newText = parsed.answer.slice(currentAnswer.length)
+                yield { text: newText }
+              }
+              // Extract all citations from the parsed answer
+              // const citationSpan = chunkSpan.startSpan("check_citations")
+              yield* checkAndYieldCitations(
+                parsed.answer,
+                yieldedCitations,
+                results?.root?.children,
+                previousResultsLength,
+              )
+              currentAnswer = parsed.answer
+            }
+          } catch (err) {
+            const errMessage = (err as Error).message
+            Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+            continue
+          }
+        }
+      }
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+    }
+    if (parsed.answer) {
+      return
+    } else if (
+      // If no answer found, exit and yield nothing related to selected context found
+      !parsed?.answer
+    ) {
+      yield {
+        text: "From the selected context, I could not find any information to answer it, please change your query",
+      }
+      return
+    }
+    if (config.isReasoning && userRequestsReasoning) {
+      previousResultsLength += results?.root?.children?.length || 0
+    }
+    // yield {
+    //   text: "From the selected context, I could not find any information to answer it, please change your query",
+    // }
+    // return
   }
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += results?.root?.children?.length || 0
   }
+}
+
+// a tiny delay helper
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Wraps any async-iterable factory and retries on ThrottlingException
+ */
+export function withThrottlingBackoff<T>(
+  factory: () => AsyncIterable<T>,
+  maxRetries = 5,
+  baseDelayMs = 1000,
+) {
+  return (async function* retryingIterator() {
+    let attempt = 0
+    while (true) {
+      try {
+        // (re)create the iterator
+        for await (const item of factory()) {
+          yield item
+        }
+        // completed without errors → done
+        return
+      } catch (err: any) {
+        const isThrottling =
+          err.name === "ThrottlingException" ||
+          err.type === "ThrottlingException" ||
+          err.message?.includes("ThrottlingException")
+        if (isThrottling && attempt < maxRetries) {
+          // compute 2^attempt * baseDelay + jitter
+          const backoff = Math.pow(2, attempt) * baseDelayMs
+          const jitter = Math.random() * 100
+          const waitTime = backoff + jitter
+          Logger.warn(
+            `[AI] ThrottlingException encountered. ` +
+              `Retrying in ${waitTime.toFixed(0)}ms ` +
+              `(${attempt + 1}/${maxRetries})`,
+          )
+          await delay(waitTime)
+          attempt++
+          continue // retry
+        }
+        // not a ThrottlingException, or retries exhausted → rethrow
+        // throw err
+      }
+    }
+  })()
 }
 
 const getSearchRangeSummary = (

@@ -53,7 +53,14 @@ const constructFileContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
+    console.log("helllooo")
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
     content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
@@ -72,7 +79,7 @@ ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-${!isSelectedFiles ? `\nvespa relevance score: ${relevance}\n` : ""}`
+${fields?.matchfeatures ? `\nvespa relevance score: ${relevance}\n` : ""}`
 }
 
 // TODO: tell if workspace that this is an employee
