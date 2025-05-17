@@ -1026,7 +1026,7 @@ export const MessageApiAgenticMinimal = async (
               limit: searchOptionsVespa.limit,
               offset: searchOptionsVespa.offset,
               email,
-              orderBy: orderByString,
+              asc: params.order_direction === "asc",
               excludedIds: params.excludedIds, // Pass excludedIds from params directly
             })
             children = (searchResults?.root?.children || []).filter(
@@ -1328,8 +1328,6 @@ export const MessageApiAgenticMinimal = async (
       *   UNDERSTAND/SUMMARIZE content?
   2.  **Identify Data Source Hints:** Are there keywords suggesting a source (email, drive, calendar, slack, doc, sheet, meeting, user, contact, person, etc.)? If a service like "Uber" or "Lyft" is mentioned, consider if related documents (like receipts) might be in Gmail; if so, 'item_type' for metadata_retrieval should be 'email' and 'app' (if specified) should be 'gmail'.
   3.  **Check Log & State:** (Internal check: Did the previous step find the requested quantity? Was a single item validated? Did a tool return an 'Invalid app' error for a specific app name? If so, avoid that app name.)
-      // --- REMOVED FAULTY INSTRUCTION ---
-      // *   **Explicit Quantity Check:** If the User Query explicitly asked for a number N ... THEN the current action *must* be SYNTHESIZE_ANSWER.
 
   **Action Selection (Choose ONE):**
 

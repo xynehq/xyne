@@ -1036,6 +1036,7 @@ interface GetItemsParams {
   limit?: number
   offset?: number
   email: string
+  excludedIds?: string[]
   asc: boolean
 }
 
@@ -1050,6 +1051,7 @@ export const getItems = async (
     limit = config.page,
     offset = 0,
     email,
+    excludedIds, // Added excludedIds here
     asc,
   } = params
 
@@ -1109,6 +1111,14 @@ export const getItems = async (
     if (timeConditions.length > 0) {
       conditions.push(`(${timeConditions.join(" and ")})`)
     }
+  }
+
+  // Excluded IDs condition
+  if (excludedIds && excludedIds.length > 0) {
+    const exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+    conditions.push(`!(${exclusionCondition})`)
   }
 
   // Combine conditions

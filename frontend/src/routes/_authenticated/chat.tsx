@@ -1611,9 +1611,12 @@ const Sources = ({
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
-const renderMarkdownLink = ({ node, ...linkProps }: { node?: any; [key: string]: any }) => (
+const renderMarkdownLink = ({
+  node,
+  ...linkProps
+}: { node?: any; [key: string]: any }) => (
   <a {...linkProps} target="_blank" rel="noopener noreferrer" />
-);
+)
 
 const ChatMessage = ({
   message,

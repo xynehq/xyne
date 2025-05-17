@@ -1,4 +1,11 @@
-import React, { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react"
+import React, {
+  Dispatch,
+  SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -632,7 +639,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
 
     if (newRef.app && newRef.entity) {
       const iconContainer = document.createElement("span")
-      iconContainer.style.alignSelf = "center";
+      iconContainer.style.alignSelf = "center"
       const iconNode = getIcon(newRef.app, newRef.entity, {
         w: 14,
         h: 14,
