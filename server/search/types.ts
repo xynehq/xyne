@@ -524,6 +524,7 @@ export const VespaChatContainerSchema = z.object({
 
   createdAt: z.number(),
   updatedAt: z.number(),
+  lastSyncedAt: z.number(),
 
   topic: z.string(),
   description: z.string(),
