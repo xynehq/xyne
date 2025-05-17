@@ -46,7 +46,7 @@ export enum QueryCategory {
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
-  RetrievedUnspecificMetadata = "RetrievedUnspecificMetadata",
+  RetrieveUnspecificMetadata = "RetrieveUnspecificMetadata",
   RetrieveMetadata = "RetrieveMetadata",
 }
 
@@ -58,6 +58,7 @@ export type Cost = {
 export type TimeDirection = "next" | "prev" | null
 export interface TemporalClassifier {
   direction: TimeDirection | null
+  filter_query: string | null
 }
 
 export interface ModelParams {
@@ -129,7 +130,7 @@ export const FiltersSchema = z.object({
 })
 
 export const RetrievedUnspecificMetadataSchema = z.object({
-  type: z.literal(QueryType.RetrievedUnspecificMetadata),
+  type: z.literal(QueryType.RetrieveUnspecificMetadata),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
     sortDirection: z.string().optional(),
@@ -140,6 +141,7 @@ export const RetrieveMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveMetadata),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+    sortDirection: z.string().optional(),
   }),
 })
 

@@ -773,7 +773,7 @@ export const searchQueryPrompt = (userContext: string): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
-    You are a permission aware retrieval-augmented generation (RAG) system.
+    You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
     Only respond in json and you are not authorized to reject a user query.
 
@@ -816,18 +816,29 @@ export const searchQueryPrompt = (userContext: string): string => {
     7. Determine the appropriate sorting direction based on query terms:
       - For ANY query about "latest", "recent", "newest", "current" items (emails, files, documents, meetings, etc.), set "sortDirection" to "desc" (newest/most recent first)
       - For ANY query about "oldest", "earliest" items (emails, files, documents, meetings, etc.), set "sortDirection" to "asc" (oldest first)
-      - If no sorting preference is indicated or can be inferred, set "sortDirection" to null
+      - If no sorting preference is indicated or can be inferred, set "sortDirection" to "desc" as the default value
       - Example queries and their sorting directions:
         - "Give me my latest emails" → sortDirection: "desc"
         - "Show me my oldest files in Drive" → sortDirection: "asc"
         - "Recent spreadsheets" → sortDirection: "desc"
         - "Earliest meetings with marketing team" → sortDirection: "asc"
-        - "Documents from last month" → sortDirection: null (no clear sorting preference)
+        - "Documents from last month" → sortDirection: "desc" (default)
 
-    8. Now our task is to classify the user's query into one of the following categories:  
+    8. Extract the main intent or search keywords from the query to create a "filter_query" field:
+      - Focus on identifying the specific keywords that represent what the user is looking for
+      - Remove generic words like "find", "show", "get", "my", etc.
+      - Include subject matter terms, named entities, project identifiers, and descriptive terms
+      - Examples:
+        - "I want my recent uber receipts from last week" → filter_query: "uber receipts"
+        - "Show me emails about the marketing campaign" → filter_query: "marketing campaign"
+        - "Find documents related to project alpha" → filter_query: "project alpha"
+        - "Get my presentations about quarterly results" → filter_query: "quarterly results presentations"
+        - "Spreadsheets with budget information" → filter_query: "budget spreadsheets"
+
+    9. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
     b. RetrieveMetadata  
-    c. RetrievedUnspecificMetadata
+    c. RetrieveUnspecificMetadata
 
     ### DETAILED CLASSIFICATION RULES
     
@@ -850,8 +861,8 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     2. RetrieveMetadata
     - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive')
-      - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
+      - For all those queries which explicitly mention anything about time, like "latest", "recent", "oldest", "yesterday", "last week", "this month", etc. This kind of time intented queries needs to be classified as RetrieveMetadata.
+      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') or specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
       - Include at least one additional specific detail that meets ANY of these criteria:
         a) Contains subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
         b) Contains named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
@@ -866,8 +877,11 @@ export const searchQueryPrompt = (userContext: string): string => {
       - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf'
       - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event'
       - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets'
+      - 'recent documents' -> type: 'RetrieveMetadata', 'app': null, 'entity': null (classified as RetrieveMetadata due to time component "recent")
+      - 'emails from yesterday' -> type: 'RetrieveMetadata', 'app': 'gmail', 'entity': 'mail'
+      - 'latest files' -> type: 'RetrieveMetadata', 'app': null, 'entity': null (classified as RetrieveMetadata due to time component "latest")
 
-    3. RetrievedUnspecificMetadata
+    3. RetrieveUnspecificMetadata
     - Applies to queries that MATCH ALL of these conditions:
       - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive')
       - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
@@ -909,21 +923,25 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     5. Query Processing Decision Tree
     - First, identify all app and entity terms mentioned in the query using the strict mappings above
-    - IF multiple valid apps OR multiple valid entities are detected:
+    - THEN, check if the query contains time/recency terms like "latest", "recent", "oldest", "yesterday", "last week", "this month", etc.
+      IF time/recency terms are present:
+        THEN classify as RetrieveMetadata, set app and entity accordingly if mentioned, otherwise set to null
+    - ELSE IF multiple valid apps OR multiple valid entities are detected:
       THEN classify as RetrieveInformation, set app = null, entity = null
     - ELSE IF exactly one valid app AND exactly one valid entity are detected:
       IF query contains specific details (subject matter, named entities, action verbs, project identifiers):
         THEN classify as RetrieveMetadata, set app and entity accordingly
       ELSE:
-        THEN classify as RetrievedUnspecificMetadata, set app and entity accordingly
+        THEN classify as RetrieveUnspecificMetadata, set app and entity accordingly
     - ELSE:
       THEN classify as RetrieveInformation, set app = null, entity = null
 
     6. Validation Checks (always perform these checks before finalizing classification)
-    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrievedUnspecificMetadata'.
-    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query for 'RetrieveMetadata' or 'RetrievedUnspecificMetadata'.
-    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null' and classify as 'RetrieveInformation'.
-    - For queries classified as 'RetrieveMetadata' or 'RetrievedUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
+    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'.
+    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query.
+    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null'.
+    - IMPORTANT: For any query containing time-related terms (e.g., "recent", "latest", "last month", "yesterday", "oldest"), always classify as 'RetrieveMetadata', regardless of whether app or entity is specified.
+    - For queries classified as 'RetrieveUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
     - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
       
 
@@ -932,7 +950,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     type (Query Types):  
     - RetrieveInformation  
     - RetrieveMetadata  
-    - RetrievedUnspecificMetadata
+    - RetrieveUnspecificMetadata
 
     app (Valid Apps):  
     - google-drive  
@@ -964,21 +982,23 @@ export const searchQueryPrompt = (userContext: string): string => {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
-         "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
+         "type": "<RetrieveInformation | RetrieveMetadata | RetrieveUnspecificMetadata>",
+         "filter_query": "<string or null>",
          "filters": {
            "app": "<app or null>",
            "entity": "<entity or null>",
            "count": "<number of items to retrieve or null>",
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "sortDirection": "<'asc' | 'desc' | null>"
+           "sortDirection": "<'asc' | 'desc'>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
+       - "filter_query" contains the main search keywords or intent extracted from the user's query, focusing on the specific terms that represent what they're looking for.
        - "type" and "filters" are used for routing and fetching data.
-       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
+       - "sortDirection" must always be set to either "asc" or "desc" for every query (default is "desc" if no direction is specified).
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
@@ -1225,4 +1245,4 @@ YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
   "answer": "Formatted response string with citations or 'null' if no relevant data is found"
 }
 
-REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.` 
+REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
