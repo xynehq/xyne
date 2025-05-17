@@ -114,6 +114,53 @@ class VespaClient {
       throw new Error(`Vespa search error: ${error.message}`)
     }
   }
+  private async fetchDocumentBatch(
+    schema: VespaSchema,
+    options: VespaConfigValues,
+    limit: number,
+    offset: number,
+  ): Promise<any[]> {
+    const yqlQuery = `select * from sources ${schema} where true`
+    const searchPayload = {
+      yql: yqlQuery,
+      hits: limit,
+      offset,
+      timeout: "10s",
+    }
+
+    const response = await this.search<VespaSearchResponse>(searchPayload)
+    return (response.root?.children || []).map((doc) => doc.fields)
+  }
+
+  async getAllDocumentsParallel(
+    schema: VespaSchema,
+    options: VespaConfigValues,
+    concurrency: number = 3,
+  ): Promise<any[]> {
+    // First get document count
+    const countResponse = await this.getDocumentCount(schema, options)
+    const totalCount = countResponse?.root?.fields?.totalCount || 0
+
+    if (totalCount === 0) return []
+
+    // Calculate optimal batch size and create batch tasks
+    const batchSize = 500
+    const tasks = []
+
+    for (let offset = 0; offset < totalCount; offset += batchSize) {
+      tasks.push(() =>
+        this.fetchDocumentBatch(schema, options, batchSize, offset),
+      )
+    }
+
+    // Run tasks with concurrency limit
+    const pLimit = (await import("p-limit")).default
+    const limit = pLimit(concurrency)
+    const results = await Promise.all(tasks.map((task) => limit(task)))
+
+    // Flatten results
+    return results.flat()
+  }
 
   async deleteAllDocuments(options: VespaConfigValues): Promise<void> {
     const { cluster, namespace, schema } = options
@@ -542,6 +589,103 @@ class VespaClient {
     }
   }
 
+  async ifDocumentsExistInChatContainer(
+    docIds: string[],
+  ): Promise<
+    Record<
+      string,
+      { exists: boolean; updatedAt: number | null; permissions: string[] }
+    >
+  > {
+    // If no docIds are provided, return an empty record
+    if (!docIds.length) {
+      return {}
+    }
+
+    // Set a reasonable batch size for each query
+    const BATCH_SIZE = 500
+    let existenceMap: Record<
+      string,
+      { exists: boolean; updatedAt: number | null; permissions: string[] }
+    > = {}
+
+    // Process docIds in batches
+    for (let i = 0; i < docIds.length; i += BATCH_SIZE) {
+      const batchDocIds = docIds.slice(i, i + BATCH_SIZE)
+      Logger.info(
+        `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batchDocIds.length} document IDs`,
+      )
+
+      // Construct the YQL query for this batch
+      const yqlIds = batchDocIds.map((id) => `"${id}"`).join(", ")
+      const yqlQuery = `select docId, updatedAt, permissions from chat_container where docId in (${yqlIds})`
+      const url = `${this.vespaEndpoint}/search/`
+
+      try {
+        const payload = {
+          yql: yqlQuery,
+          hits: batchDocIds.length,
+          maxHits: batchDocIds.length + 1,
+        }
+
+        const response = await this.fetchWithRetry(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        })
+
+        if (!response.ok) {
+          const errorText = response.statusText
+          throw new Error(
+            `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+          )
+        }
+
+        const result = await response.json()
+
+        // Extract found documents with their docId, updatedAt, and permissions
+        const foundDocs =
+          result.root?.children?.map((hit: any) => ({
+            docId: hit.fields.docId as string,
+            updatedAt: hit.fields.updatedAt as number | undefined,
+            permissions: hit.fields.permissions as string[] | undefined,
+          })) || []
+
+        // Add to the result map for this batch
+        const batchExistenceMap = batchDocIds.reduce(
+          (acc, id) => {
+            const foundDoc = foundDocs.find(
+              (doc: { docId: string }) => doc.docId === id,
+            )
+            acc[id] = {
+              exists: !!foundDoc,
+              updatedAt: foundDoc?.updatedAt ?? null,
+              permissions: foundDoc?.permissions ?? [], // Empty array if not found or no permissions
+            }
+            return acc
+          },
+          {} as Record<
+            string,
+            { exists: boolean; updatedAt: number | null; permissions: string[] }
+          >,
+        )
+
+        // Merge the batch results into the overall map
+        existenceMap = { ...existenceMap, ...batchExistenceMap }
+      } catch (error) {
+        const errMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Error checking batch of chat container documents existence: ${errMessage}`,
+        )
+        throw error
+      }
+    }
+
+    return existenceMap
+  }
   // TODO: Add pagination if docId's are more than
   // max hits and merge the finaly Record
   async ifDocumentsExist(

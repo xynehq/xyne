@@ -27,7 +27,9 @@ import type {
   VespaMailAttachment,
   VespaChatContainer,
   Inserts,
+  VespaChatUserSearchSchema,
   VespaSearchResults,
+  ChatUserCore,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -709,7 +711,7 @@ const getDocumentCount = async () => {
 export const GetDocument = async (
   schema: VespaSchema,
   docId: string,
-): Promise<VespaGetResult> => {
+): Promise<VespaGetResult | ChatUserCore> => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     return vespa.getDocument(options)
@@ -841,6 +843,21 @@ export const ifDocumentsExist = async (
 ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
   try {
     return await vespa.ifDocumentsExist(docIds)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const ifDocumentsExistInChatContainer = async (
+  docIds: string[],
+): Promise<
+  Record<
+    string,
+    { exists: boolean; updatedAt: number | null; permissions: string[] }
+  >
+> => {
+  try {
+    return await vespa.ifDocumentsExistInChatContainer(docIds)
   } catch (error) {
     throw error
   }
@@ -1166,6 +1183,38 @@ export const getItems = async (
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: schema,
+    })
+  }
+}
+
+export const fetchAllDocumentsFromSchema = async (
+  schema: VespaSchema,
+  concurrency: number = 3,
+): Promise<any[]> => {
+  try {
+    const options = {
+      namespace: NAMESPACE,
+      schema,
+      cluster: CLUSTER,
+    }
+
+    // Call the getAllDocumentsParallel method and return its result directly
+    const allDocuments = await vespa.getAllDocumentsParallel(
+      schema,
+      options,
+      concurrency,
+    )
+
+    Logger.info(
+      `Fetched ${allDocuments.length} documents from schema ${schema}`,
+    )
+    return allDocuments
+  } catch (error) {
+    Logger.error(error, `Error fetching all documents from schema ${schema}`)
+    throw new ErrorRetrievingDocuments({
+      cause: error as Error,
+      sources: schema,
+      message: `Failed to fetch all documents from schema ${schema}: ${getErrorMessage(error)}`,
     })
   }
 }
