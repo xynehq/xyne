@@ -565,7 +565,7 @@ type VespaQueryConfig = {
   limit: number
   offset: number
   alpha: number
-  timestampRange: { from: number; to: number } | null
+  timestampRange: { from: number | null; to: number | null } | null
   excludedIds: string[]
   notInMailLabels: string[]
   rankProfile: SearchModes

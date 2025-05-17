@@ -827,7 +827,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     8. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
     b. RetrieveMetadata  
-    c. RetrievedUnspecificMetadata
+    c. RetrieveUnspecificMetadata
 
     ### DETAILED CLASSIFICATION RULES
     
@@ -867,7 +867,7 @@ export const searchQueryPrompt = (userContext: string): string => {
       - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event'
       - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets'
 
-    3. RetrievedUnspecificMetadata
+    3. RetrieveUnspecificMetadata
     - Applies to queries that MATCH ALL of these conditions:
       - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive')
       - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
@@ -915,15 +915,15 @@ export const searchQueryPrompt = (userContext: string): string => {
       IF query contains specific details (subject matter, named entities, action verbs, project identifiers):
         THEN classify as RetrieveMetadata, set app and entity accordingly
       ELSE:
-        THEN classify as RetrievedUnspecificMetadata, set app and entity accordingly
+        THEN classify as RetrieveUnspecificMetadata, set app and entity accordingly
     - ELSE:
       THEN classify as RetrieveInformation, set app = null, entity = null
 
     6. Validation Checks (always perform these checks before finalizing classification)
-    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrievedUnspecificMetadata'.
-    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query for 'RetrieveMetadata' or 'RetrievedUnspecificMetadata'.
+    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'.
+    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query for 'RetrieveMetadata' or 'RetrieveUnspecificMetadata'.
     - If 'app' or 'entity' is not explicitly mentioned, set them to 'null' and classify as 'RetrieveInformation'.
-    - For queries classified as 'RetrieveMetadata' or 'RetrievedUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
+    - For queries classified as 'RetrieveMetadata' or 'RetrieveUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
     - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
       
 
@@ -932,7 +932,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     type (Query Types):  
     - RetrieveInformation  
     - RetrieveMetadata  
-    - RetrievedUnspecificMetadata
+    - RetrieveUnspecificMetadata
 
     app (Valid Apps):  
     - google-drive  
@@ -964,7 +964,7 @@ export const searchQueryPrompt = (userContext: string): string => {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
-         "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
+         "type": "<RetrieveInformation | RetrieveMetadata | RetrieveUnspecificMetadata>",
          "filters": {
            "app": "<app or null>",
            "entity": "<entity or null>",
@@ -978,7 +978,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
        - "type" and "filters" are used for routing and fetching data.
-       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
+       - For "RetrieveUnspecificMetadata" you have to give the "sortDirection". 
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
@@ -1225,4 +1225,4 @@ YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
   "answer": "Formatted response string with citations or 'null' if no relevant data is found"
 }
 
-REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.` 
+REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
