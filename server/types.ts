@@ -65,6 +65,8 @@ export const oauthStartQuerySchema = z.object({
   app: z.nativeEnum(Apps),
 })
 
+export type SlackConfig = z.infer<typeof UpdatedAtValSchema>
+
 export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({

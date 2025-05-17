@@ -27,7 +27,9 @@ import type {
   VespaMailAttachment,
   VespaChatContainer,
   Inserts,
+  VespaChatUserSearchSchema,
   VespaSearchResults,
+  ChatUserCore,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -333,43 +335,52 @@ export const HybridDefaultProfile = (
   return {
     profile: profile,
     yql: `
-        select * from sources ${AllSources}
-        where ((
+    select * from sources ${AllSources}
+        where (
           (
             (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+              (
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+              )
+              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
+              and permissions contains @email
+              ${mailLabelQuery}
+              ${appOrEntityFilter}
             )
-            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
-            and permissions contains @email ${mailLabelQuery}
-            ${appOrEntityFilter}
-          )
             or
             (
               (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-            )
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+              )
               ${appOrEntityFilter}
+              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
               and permissions contains @email
             )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and permissions contains @email`}
+            or
+            (
+              ({targetHits:${hits}}userInput(@query))
+              ${timestampRange ? `and (${userTimestamp})` : ""}
+              ${
+                !hasAppOrEntity
+                  ? `and app contains "${Apps.GoogleWorkspace}"`
+                  : `${appOrEntityFilter} and permissions contains @email`
+              }
+            )
+            or
+            (
+              ({targetHits:${hits}}userInput(@query))
+              and owner contains @email
+              ${timestampRange ? `and ${userTimestamp}` : ""}
+              ${appOrEntityFilter}
+            )
           )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            and owner contains @email
-            ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${appOrEntityFilter}
-          )
+          ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
         )
-        ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
+    `,
   }
 }
 
@@ -481,23 +492,44 @@ const HybridDefaultProfileAppEntityCounts = (
   return {
     profile: SearchModes.NativeRank,
     yql: `select * from sources ${AllSources}
-            where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
-            or (
+            where (
+              (
+                (
+                  ({targetHits:${hits}}userInput(@query))
+                  or
+                  ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+                )
+                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+                and permissions contains @email
+                ${mailLabelQuery}
+              )
+              or
+              (
+                (
+                  ({targetHits:${hits}}userInput(@query))
+                  or
+                  ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+                )
+                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+                and permissions contains @email
+              )
+              or
               (
                 ({targetHits:${hits}}userInput(@query))
-              or
-                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+                ${timestampRange ? `and ${userTimestamp}` : ""}
+                and app contains "${Apps.GoogleWorkspace}"
               )
-              and permissions contains @email
+              or
+              (
+                ({targetHits:${hits}}userInput(@query))
+                and owner contains @email
+                ${timestampRange ? `and ${userTimestamp}` : ""}
+              )
             )
-            or (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
-            or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestampRange ? `and ${userTimestamp} ` : ""})
             limit 0
             | all(
                 group(app) each(
-                group(entity) each(output(count()))
+                    group(entity) each(output(count()))
                 )
             )`,
   }
@@ -680,7 +712,7 @@ const getDocumentCount = async () => {
 export const GetDocument = async (
   schema: VespaSchema,
   docId: string,
-): Promise<VespaGetResult> => {
+): Promise<VespaGetResult | ChatUserCore> => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     return vespa.getDocument(options)
@@ -812,6 +844,21 @@ export const ifDocumentsExist = async (
 ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
   try {
     return await vespa.ifDocumentsExist(docIds)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const ifDocumentsExistInChatContainer = async (
+  docIds: string[],
+): Promise<
+  Record<
+    string,
+    { exists: boolean; updatedAt: number | null; permissions: string[] }
+  >
+> => {
+  try {
+    return await vespa.ifDocumentsExistInChatContainer(docIds)
   } catch (error) {
     throw error
   }
@@ -1156,164 +1203,34 @@ export const getItems = async (
   }
 }
 
-// ==================================================
-// === Hybrid Search with Client-Side Sorting ===
-// ==================================================
+export const fetchAllDocumentsFromSchema = async (
+  schema: VespaSchema,
+  concurrency: number = 3,
+): Promise<any[]> => {
+  try {
+    const options = {
+      namespace: NAMESPACE,
+      schema,
+      cluster: CLUSTER,
+    }
 
-// Define interface for parameters, extending or reusing existing types if possible
-interface HybridSortParams extends Partial<VespaQueryConfig> {
-  // Reuse VespaQueryConfig structure
-  query: string
-  email: string
-  app: Apps | null
-  entity: Entity | null
-  orderBy: string // e.g., "timestamp desc", "updatedAt asc" (Required for this function)
-  k?: number // Number of relevant candidates to fetch before sorting
-  // Inherits limit, offset, alpha, timestampRange, excludedIds, notInMailLabels etc. from VespaQueryConfig
+    // Call the getAllDocumentsParallel method and return its result directly
+    const allDocuments = await vespa.getAllDocumentsParallel(
+      schema,
+      options,
+      concurrency,
+    )
+
+    Logger.info(
+      `Fetched ${allDocuments.length} documents from schema ${schema}`,
+    )
+    return allDocuments
+  } catch (error) {
+    Logger.error(error, `Error fetching all documents from schema ${schema}`)
+    throw new ErrorRetrievingDocuments({
+      cause: error as Error,
+      sources: schema,
+      message: `Failed to fetch all documents from schema ${schema}: ${getErrorMessage(error)}`,
+    })
+  }
 }
-
-/**
- * Performs a hybrid search using searchVespa to get top K relevant results,
- * then sorts these results client-side based on the orderBy parameter.
- * Useful for combining relevance ranking with metadata sorting when Vespa's
- * native orderBy conflicts with complex ranking profiles.
- *
- * Note: This sorts the top K *relevant* documents, not a global sort across the entire dataset.
- */
-// export const searchVespaHybridAndSort = async (
-//   params: HybridSortParams,
-// ): Promise<VespaSearchResponse> => {
-//   const {
-//     query,
-//     email,
-//     app,
-//     entity,
-//     limit = config.page, // Final limit to return
-//     offset = 0,
-//     orderBy, // The field and direction to sort by client-side
-//     k = 50, // Number of candidates to fetch from Vespa based on relevance
-//     span: parentSpan, // Use the passed span
-//     // Include other relevant parameters inherited from VespaQueryConfig
-//     alpha = 0.5,
-//     timestampRange = null,
-//     excludedIds = [],
-//     notInMailLabels = [],
-//     rankProfile = SearchModes.NativeRank, // Use the desired hybrid profile
-//     requestDebug = false,
-//     maxHits = 400, // Might need adjustment based on K
-//   } = params
-
-//   const rootSpan = parentSpan?.startSpan("searchVespaHybridAndSort") ?? null
-//   rootSpan?.setAttribute("query", query)
-//   rootSpan?.setAttribute("email", email)
-//   rootSpan?.setAttribute("orderBy", orderBy)
-//   rootSpan?.setAttribute("limit", limit)
-//   rootSpan?.setAttribute("offset", offset)
-//   rootSpan?.setAttribute("k", k)
-
-//   // --- Step 1: Fetch Top-K Relevant Candidates from Vespa ---
-//   const fetchSpan = rootSpan?.startSpan("fetch_top_k_relevant") ?? null
-//   let vespaResults: VespaSearchResponse
-//   try {
-//     vespaResults = await searchVespa(query, email, app, entity, {
-//       alpha,
-//       limit: k, // Fetch K candidates based on relevance
-//       offset: 0, // Always fetch from the start for relevance ranking
-//       timestampRange,
-//       excludedIds,
-//       notInMailLabels,
-//       rankProfile,
-//       requestDebug,
-//       span: fetchSpan,
-//       maxHits: Math.max(k, maxHits), // Ensure maxHits allows fetching K results
-//       orderBy: null, // IMPORTANT: Do NOT pass orderBy to Vespa here
-//     })
-//   } catch (error) {
-//     rootSpan?.setAttribute("fetch_error", getErrorMessage(error))
-//     rootSpan?.end()
-//     throw error // Re-throw the error if fetching fails
-//   } finally {
-//     fetchSpan?.end()
-//   }
-
-//   const children = vespaResults?.root?.children || []
-//   if (children.length === 0) {
-//     rootSpan?.setAttribute("results_after_fetch", 0)
-//     rootSpan?.end()
-//     return vespaResults // Return empty result set if nothing found
-//   }
-//   rootSpan?.setAttribute("results_after_fetch", children.length)
-
-//   // --- Step 2: Sort Client-Side ---
-//   const sortSpan = rootSpan?.startSpan("client_side_sort") ?? null
-//   let sortField: string | undefined
-//   let sortDirection: "asc" | "desc" = "desc" // Default direction
-
-//   try {
-//     const orderByParts = orderBy.trim().split(/\s+/)
-//     sortField = orderByParts[0]
-//     if (orderByParts[1]?.toLowerCase() === "asc") {
-//       sortDirection = "asc"
-//     }
-//     sortSpan?.setAttribute("sortField", sortField)
-//     sortSpan?.setAttribute("sortDirection", sortDirection)
-
-//     if (!sortField) {
-//       throw new Error("Invalid orderBy parameter: Missing field name.")
-//     }
-
-//     children.sort((a: any, b: any) => {
-//       // Safely access nested fields
-//       const valA = a?.fields?.[sortField!]
-//       const valB = b?.fields?.[sortField!]
-
-//       // Consistent handling of undefined/null values (place them last)
-//       const aIsNull = valA === undefined || valA === null
-//       const bIsNull = valB === undefined || valB === null
-
-//       if (aIsNull && bIsNull) return 0
-//       if (aIsNull) return 1 // a is null/undefined, goes after b
-//       if (bIsNull) return -1 // b is null/undefined, goes after a
-
-//       // Actual comparison
-//       if (valA < valB) return sortDirection === "asc" ? -1 : 1
-//       if (valA > valB) return sortDirection === "asc" ? 1 : -1
-//       return 0 // Values are equal
-//     })
-//   } catch (error) {
-//     sortSpan?.setAttribute("error", getErrorMessage(error))
-//     rootSpan?.setAttribute("sort_error", getErrorMessage(error))
-//     // Decide whether to continue without sorting or re-throw
-//     Logger.error(error, `Client-side sorting failed for orderBy: ${orderBy}`)
-//     // Optionally return unsorted but paginated results, or throw
-//     // For now, let's continue with potentially unsorted results if sort fails badly
-//   } finally {
-//     sortSpan?.end()
-//   }
-
-//   // --- Step 3: Apply original pagination (offset/limit) to the sorted list ---
-//   const paginateSpan = rootSpan?.startSpan("apply_pagination") ?? null
-//   const paginatedResults = children.slice(offset, offset + limit)
-//   paginateSpan?.setAttribute("paginated_count", paginatedResults.length)
-//   paginateSpan?.end()
-
-//   // Adjust the response structure if needed (e.g., totalCount might be misleading now)
-//   // For simplicity, we return the original totalCount from Vespa,
-//   // but acknowledge it refers to the *relevant* set before client-side sort & pagination.
-//   const finalResponse: VespaSearchResponse = {
-//     ...vespaResults, // Keep timing, diagnostics etc. from the initial Vespa call
-//     root: {
-//       ...vespaResults.root,
-//       children: paginatedResults,
-//       // Consider adding a note or modifying totalCount if needed for clarity downstream
-//       // fields: {
-//       //     ...vespaResults.root.fields,
-//       //     totalCountNote: `Total count (${vespaResults.root.fields?.totalCount}) refers to relevant items fetched before client-side sorting/pagination.`
-//       // }
-//     },
-//   }
-
-//   rootSpan?.setAttribute("final_result_count", paginatedResults.length)
-//   rootSpan?.end()
-//   return finalResponse
-// }
