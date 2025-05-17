@@ -155,7 +155,8 @@ export async function insertChannelMessages(
           message.type === "message" &&
           !message.subtype &&
           message.user &&
-          message.client_msg_id
+          message.client_msg_id &&
+          message.text != ""
         ) {
           if (!memberMap.get(message.user)) {
             memberMap.set(
@@ -166,9 +167,6 @@ export async function insertChannelMessages(
 
           message.mentions = mentions
           message.team = await getTeam(client, message)
-          if (message.text == "") {
-            message.text = "NA"
-          }
 
           const vespaDoc = await ifDocumentsExist([messageId!])
           if (!vespaDoc[messageId!]?.exists) {
@@ -229,7 +227,8 @@ export async function insertChannelMessages(
               reply.type === "message" &&
               !reply.subtype &&
               reply.user &&
-              reply.client_msg_id
+              reply.client_msg_id &&
+              reply.text != ""
             ) {
               const mentions = extractUserIdsFromBlocks(reply)
               let text = reply.text
@@ -258,7 +257,7 @@ export async function insertChannelMessages(
               }
 
               reply.mentions = mentions
-              reply.text = text || "NA"
+              reply.text = text
               reply.team = await getTeam(client, reply)
 
               const replyId = reply.client_msg_id
@@ -510,18 +509,49 @@ export const handleSlackChanges = async (
                   }
                 }
               }
+              const concurrencyLimit = pLimit(5)
+              const memberPromises = currentMemberIds.map((memberId: string) =>
+                concurrencyLimit(() => client.users.info({ user: memberId })),
+              )
+              const members: User[] = (await Promise.all(memberPromises))
+                .map((userResp) => {
+                  if (userResp.user) {
+                    memberMap.set(userResp.user.id!, userResp.user)
+                    return userResp.user as User
+                  }
+                })
+                .filter((user) => !!user)
 
-              // Now get the email addresses
-              const currentPermissions: string[] = currentMemberIds
-                .map((m) => {
-                  const user = memberMap.get(m)
+              let currentPermissions: string[] = currentMemberIds
+                .map((m: string) => {
+                  const user: User | undefined = memberMap.get(m)
                   return user?.profile?.email
                 })
                 .filter((email): email is string => !!email)
 
-              // Ensure current user's email is in permissions
               if (!currentPermissions.includes(email)) {
                 currentPermissions.push(email)
+              }
+
+              // Prepare channel document that will be used for both insert and update
+              const vespaChatContainer: VespaChatContainer = {
+                docId: channel.id!,
+                name: channel.name || "",
+                app: Apps.Slack,
+                creator: channel.creator || "",
+                isPrivate: channel.is_private || false,
+                isGeneral: channel.is_general || false,
+                isArchived: channel.is_archived || false,
+                isIm: channel.is_im || false,
+                isMpim: channel.is_mpim || false,
+                createdAt: channel.created || new Date().getTime(),
+                updatedAt: channel.updated || channel.created || 0,
+                lastSyncedAt: new Date().getTime(),
+                topic: channel.topic?.value || "",
+                description: channel.purpose?.value || "",
+                count: channel.num_members || 0,
+                channelName: channel.name || "",
+                permissions: currentPermissions,
               }
 
               if (!channelExists) {
@@ -536,9 +566,6 @@ export const handleSlackChanges = async (
                   permissions: currentPermissions,
                 }
 
-                await insertConversation(conversationWithPermission)
-                changeExist = true
-                jobStats.added++
                 // For new channels, fetch all messages using insertChannelMessages
                 Logger.info(
                   `Fetching all messages for new channel ${channel.name || channel.id}`,
@@ -553,134 +580,37 @@ export const handleSlackChanges = async (
                   "0",
                   channelMap,
                 )
-
-                // Mark this channel as synced
-                syncedChannels.add(channel.id)
+                await insertConversation(conversationWithPermission)
+                changeExist = true
+                jobStats.added++
               } else {
-                // Existing channel - check if permissions have changed
-                const existingPermissions =
-                  existenceMap[channel.id].permissions || []
-
-                // Check if permissions have changed by comparing arrays
-                const permissionsAdded = currentPermissions.filter(
-                  (p) => !existingPermissions.includes(p),
-                )
-                const permissionsRemoved = existingPermissions.filter(
-                  (p) => !currentPermissions.includes(p) && p !== email,
-                )
-
-                const permissionsChanged =
-                  permissionsAdded.length > 0 || permissionsRemoved.length > 0
-
-                if (permissionsChanged) {
-                  Logger.info(
-                    `Permissions changed for channel ${channel.name || channel.id}`,
-                  )
-                  if (permissionsAdded.length > 0) {
-                    Logger.info(`Users added: ${permissionsAdded.join(", ")}`)
-                  }
-                  if (permissionsRemoved.length > 0) {
-                    Logger.info(
-                      `Users removed: ${permissionsRemoved.join(", ")}`,
-                    )
-                  }
-
-                  // Update channel metadata and permissions
-                  const channelLastUpdated =
-                    channel.updated || channel.created || 0
-
-                  const vespaChatContainer: VespaChatContainer = {
-                    docId: channel.id!,
-                    name: channel.name || "",
-                    app: Apps.Slack,
-                    creator: channel.creator || "",
-                    isPrivate: channel.is_private || false,
-                    isGeneral: channel.is_general || false,
-                    isArchived: channel.is_archived || false,
-                    isIm: channel.is_im || false,
-                    isMpim: channel.is_mpim || false,
-                    createdAt: channel.created || 0,
-                    updatedAt: channel.updated || channel.created || 0,
-                    topic: channel.topic?.value || "",
-                    description: channel.purpose?.value || "",
-                    count: channel.num_members || 0,
-                    channelName: channel.name || "",
-                    permissions: currentPermissions,
-                  }
-
-                  await UpdateDocument(
-                    chatContainerSchema,
-                    channel.id,
-                    vespaChatContainer,
-                  )
-
-                  changeExist = true
-                  // Mark this channel as synced
-                  syncedChannels.add(channel.id)
-                } else {
-                  // Check if channel metadata has changed
-                  const channelLastUpdated =
-                    channel.updated || channel.created || 0
-                  const vespaLastUpdated =
-                    existenceMap[channel.id].updatedAt || 0
-
-                  if (channelLastUpdated > vespaLastUpdated) {
-                    Logger.info(
-                      `Channel metadata updated: ${channel.name || channel.id}`,
-                    )
-                    jobStats.updated++
-                    // Update channel metadata only
-                    const vespaChatContainer: VespaChatContainer = {
-                      docId: channel.id!,
-                      name: channel.name || "",
-                      app: Apps.Slack,
-                      creator: channel.creator || "",
-                      isPrivate: channel.is_private || false,
-                      isGeneral: channel.is_general || false,
-                      isArchived: channel.is_archived || false,
-                      isIm: channel.is_im || false,
-                      isMpim: channel.is_mpim || false,
-                      createdAt: channel.created || new Date().getTime(),
-                      updatedAt: channel.updated || channel.created!,
-                      topic: channel.topic?.value || "",
-                      description: channel.purpose?.value || "",
-                      count: channel.num_members || 0,
-                      channelName: channel.name || "",
-                      permissions: currentPermissions, // Still use current permissions to ensure they're up to date
-                    }
-
-                    await UpdateDocument(
-                      chatContainerSchema,
-                      channel.id,
-                      vespaChatContainer,
-                    )
-
-                    changeExist = true
-                    // Mark this channel as synced
-                    syncedChannels.add(channel.id)
-                  }
-                }
-
-                // For existing channels, fetch messages since last sync using insertChannelMessages
                 Logger.info(
                   `Fetching messages since last sync for channel ${channel.name || channel.id}`,
                 )
-                changeExist =
-                  changeExist ||
-                  (await insertChannelMessages(
-                    email,
-                    client,
-                    channel.id!,
-                    abortController,
-                    memberMap,
-                    tracker,
-                    lastSyncTimestamp.toString(),
-                    channelMap,
-                  ))
-
-                // Mark this channel as synced
-                syncedChannels.add(channel.id)
+                const messagesChanged = await insertChannelMessages(
+                  email,
+                  client,
+                  channel.id!,
+                  abortController,
+                  memberMap,
+                  tracker,
+                  lastSyncTimestamp.toString(),
+                  channelMap,
+                )
+                changeExist = changeExist || messagesChanged
               }
+
+              // Always update the document in Vespa regardless of whether it's new or existing
+              vespaChatContainer.lastSyncedAt = new Date().getTime()
+
+              await UpdateDocument(
+                chatContainerSchema,
+                channel.id,
+                vespaChatContainer,
+              )
+
+              // Mark this channel as synced
+              syncedChannels.add(channel.id)
             } catch (error) {
               Logger.error(`Error processing channel ${channel.id}: ${error}`)
             }

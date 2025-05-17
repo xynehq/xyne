@@ -322,7 +322,8 @@ export async function insertChannelMessages(
           message.type === "message" &&
           !message.subtype &&
           message.user &&
-          message.client_msg_id
+          message.client_msg_id &&
+          message.text != ""
           // memberMap[message.user]
         ) {
           // a deleted user's message could be there
@@ -338,9 +339,6 @@ export async function insertChannelMessages(
           }
           message.mentions = mentions
           message.team = await getTeam(client, message)
-          if (message.text == "") {
-            message.text = "NA"
-          }
 
           // case to avoid bot messages
           await insertChatMessage(
@@ -384,7 +382,8 @@ export async function insertChannelMessages(
               reply.type === "message" &&
               !reply.subtype &&
               reply.user &&
-              reply.client_msg_id
+              reply.client_msg_id &&
+              reply.text != ""
               // memberMap[reply.user]
             ) {
               const mentions = extractUserIdsFromBlocks(reply)
@@ -420,12 +419,10 @@ export async function insertChannelMessages(
               }
               reply.mentions = mentions
               reply.text = text
-              if (reply.text == "") {
-                reply.text = "NA"
-              } //case when text is empty
+
               reply.team = await getTeam(client, reply)
 
-             await insertChatMessage(
+              await insertChatMessage(
                 client,
                 reply,
                 channelId,
@@ -508,6 +505,7 @@ export const insertConversation = async (
     isMpim: conversation.is_mpim ?? false,
     createdAt: conversation.created ?? new Date().getTime(),
     updatedAt: conversation.updated ?? conversation.created!,
+    lastSyncedAt: new Date().getTime(),
     topic: conversation.topic?.value ?? "",
     description: conversation.purpose?.value!,
     permissions: conversation.permissions,
@@ -536,6 +534,7 @@ const insertConversations = async (
         isMpim: (conversation as Channel).is_mpim!,
         createdAt: (conversation as Channel).created!,
         updatedAt: (conversation as Channel).created!,
+        lastSyncedAt: new Date().getTime(),
         topic: (conversation as Channel).topic?.value!,
         description: (conversation as Channel).purpose?.value!,
         permissions: [],
