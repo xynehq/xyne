@@ -773,7 +773,7 @@ export const searchQueryPrompt = (userContext: string): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
-    You are a permission aware retrieval-augmented generation (RAG) system.
+    You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
     Only respond in json and you are not authorized to reject a user query.
 
@@ -861,7 +861,8 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     2. RetrieveMetadata
     - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') or a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
+      - For all those queries which explicitly mention anything about time, like "latest", "recent", "oldest", "yesterday", "last week", "this month", etc. This kind of time intented queries needs to be classified as RetrieveMetadata.
+      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') or specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
       - Include at least one additional specific detail that meets ANY of these criteria:
         a) Contains subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
         b) Contains named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
@@ -876,6 +877,9 @@ export const searchQueryPrompt = (userContext: string): string => {
       - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf'
       - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event'
       - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets'
+      - 'recent documents' -> type: 'RetrieveMetadata', 'app': null, 'entity': null (classified as RetrieveMetadata due to time component "recent")
+      - 'emails from yesterday' -> type: 'RetrieveMetadata', 'app': 'gmail', 'entity': 'mail'
+      - 'latest files' -> type: 'RetrieveMetadata', 'app': null, 'entity': null (classified as RetrieveMetadata due to time component "latest")
 
     3. RetrieveUnspecificMetadata
     - Applies to queries that MATCH ALL of these conditions:
@@ -919,7 +923,10 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     5. Query Processing Decision Tree
     - First, identify all app and entity terms mentioned in the query using the strict mappings above
-    - IF multiple valid apps OR multiple valid entities are detected:
+    - THEN, check if the query contains time/recency terms like "latest", "recent", "oldest", "yesterday", "last week", "this month", etc.
+      IF time/recency terms are present:
+        THEN classify as RetrieveMetadata, set app and entity accordingly if mentioned, otherwise set to null
+    - ELSE IF multiple valid apps OR multiple valid entities are detected:
       THEN classify as RetrieveInformation, set app = null, entity = null
     - ELSE IF exactly one valid app AND exactly one valid entity are detected:
       IF query contains specific details (subject matter, named entities, action verbs, project identifiers):
@@ -931,9 +938,10 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     6. Validation Checks (always perform these checks before finalizing classification)
     - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'.
-    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query for 'RetrieveMetadata' or 'RetrieveUnspecificMetadata'.
-    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null' and classify as 'RetrieveInformation'.
-    - For queries classified as 'RetrieveMetadata' or 'RetrieveUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
+    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query.
+    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null'.
+    - IMPORTANT: For any query containing time-related terms (e.g., "recent", "latest", "last month", "yesterday", "oldest"), always classify as 'RetrieveMetadata', regardless of whether app or entity is specified.
+    - For queries classified as 'RetrieveUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
     - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
       
 
