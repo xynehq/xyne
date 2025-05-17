@@ -166,17 +166,15 @@ export const Search = ({ user, workspace }: IndexProps) => {
           }
         }
       },
-      { threshold: 1.0 },
+      {
+        threshold: 0.5,
+      },
     )
-
     if (observerTargetRef.current) {
       observer.observe(observerTargetRef.current)
     }
-
     return () => {
-      if (observerTargetRef.current) {
-        observer.unobserve(observerTargetRef.current)
-      }
+      observer.disconnect()
     }
   }, [results, isLoadingMore, groups, searchMeta, filter])
 
@@ -388,7 +386,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
       setResults([]) // Clear results on error
     } finally {
       if (newOffset > 0) {
-        // only set loading more to false if it was a "load more" operation
         setIsLoadingMore(false)
       }
     }
@@ -532,13 +529,14 @@ export const Search = ({ user, workspace }: IndexProps) => {
                     />
                   ))}
                 </div>
-                <div ref={observerTargetRef} style={{ height: "1px" }} />{" "}
-                {/* Sentinel element */}
-              </div>
-            )}
-            {isLoadingMore && (
-              <div className="flex justify-center items-center p-4 text-[#464B53]">
-                <LoaderContent />
+                <div ref={observerTargetRef} style={{ height: "1px" }}>
+                  {isLoadingMore && (
+                    <div className="flex justify-center items-center p-4 text-[#464B53]">
+                      <LoaderContent />
+                    </div>
+                  )}
+                </div>{" "}
+                {/* Sentinel element with loader inside */}
               </div>
             )}
           </div>
