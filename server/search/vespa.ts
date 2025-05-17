@@ -256,6 +256,7 @@ export enum SearchModes {
   BM25 = "default_bm25",
   AI = "default_ai",
   Random = "default_random",
+  GlobalSorted = "global_sorted",
 }
 
 type YqlProfile = {
@@ -279,9 +280,10 @@ export const HybridDefaultProfile = (
   let userTimestamp = ""
   let eventTimestamp = ""
 
-  if (timestampRange && !timestampRange.from && !timestampRange.to) {
-    throw new Error("Invalid timestamp range")
-  }
+  // Commenting this out to allow searching by either "from" or "to" fields independently.
+  // if (timestampRange && !timestampRange.from && !timestampRange.to) {
+  //   throw new Error("Invalid timestamp range")
+  // }
 
   let fileTimestampConditions: string[] = []
   let mailTimestampConditions: string[] = []

@@ -58,6 +58,7 @@ export type Cost = {
 export type TimeDirection = "next" | "prev" | null
 export interface TemporalClassifier {
   direction: TimeDirection | null
+  filter_query: string | null
 }
 
 export interface ModelParams {
@@ -140,6 +141,7 @@ export const RetrieveMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveMetadata),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+    sortDirection: z.string().optional(),
   }),
 })
 

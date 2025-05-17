@@ -1461,7 +1461,7 @@ async function* generateMetadataQueryAnswer(
   const from = new Date(startTime ?? "").getTime()
   const to = new Date(endTime ?? "").getTime()
   const hasValidTimeRange = !isNaN(from) && !isNaN(to)
-
+  let chunksCount = maxSummaryCount
   // Return early if app/entity is not valid
   if (!isValidAppAndEntity) {
     Logger.info("Not able to perform metadata search")
@@ -1490,6 +1490,7 @@ async function* generateMetadataQueryAnswer(
     `Searching for documents from app "${app}" and entity "${entity}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
+
   const schema = entityToSchemaMapper(entity, app) as VespaSchema
   let items: VespaSearchResult[] = []
 
@@ -1498,9 +1499,10 @@ async function* generateMetadataQueryAnswer(
     Logger.info(
       `User requested metadata search: ${QueryType.RetrieveUnspecificMetadata}`,
     )
+    const { sortDirection, count } = classification.filters
 
-    const count = classification.filters.count || 5
-
+    // won't allow more than 50 items to be retrieved
+    const countLimit = Math.min(count, 50) || 5
     items =
       (
         await getItems({
@@ -1509,8 +1511,8 @@ async function* generateMetadataQueryAnswer(
           app,
           entity,
           timestampRange,
-          limit: count,
-          asc: classification.filters.sortDirection === "asc",
+          limit: countLimit,
+          asc: sortDirection === "asc",
         })
       ).root.children || []
 
@@ -1525,25 +1527,33 @@ async function* generateMetadataQueryAnswer(
   // Handle specific metadata retrieval
   else if (isMetadataRetrieval) {
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
-    Logger.info(
-      `User requested metadata search : ${QueryType.RetrieveMetadata}`,
-    )
+    Logger.info(`User requested metadata search: ${QueryType.RetrieveMetadata}`)
 
-    // Search Vespa here with input query
+    const { filter_query, filters } = classification
+    const query = filter_query || input
+    const rankProfile =
+      filters.sortDirection === "desc" && filter_query
+        ? SearchModes.GlobalSorted
+        : SearchModes.NativeRank
+
+    console.log(timestampRange, "time stapmp range")
     items =
       (
-        await searchVespa(input, email, app as Apps, entity as any, {
+        await searchVespa(query, email, app as Apps, entity as any, {
           limit: pageSize,
           alpha: userAlpha,
-          timestampRange: hasValidTimeRange ? timestampRange : null,
+          rankProfile,
+          timestampRange:
+            timestampRange.to || timestampRange.from ? timestampRange : null,
         })
       ).root.children || []
 
-    span?.setAttribute("metadata items found", items.length)
+    Logger.info(`Using rank profile: ${rankProfile}`)
     Logger.info(`Found ${items.length} items for metadata retrieval`)
+    span?.setAttribute("metadata_items_found", items.length)
+    span?.setAttribute("rank_profile", rankProfile)
 
     if (!items.length) {
-      // if time range is not valid, return null to fall back for iterative RAG
       return hasValidTimeRange ? "no documents found" : null
     }
   }
@@ -1552,8 +1562,17 @@ async function* generateMetadataQueryAnswer(
     return null
   }
 
-  const results = items
-  const initialContext = buildContext(results, maxSummaryCount)
+  if (
+    (classification.filter_query && classification.filters?.count <= 5) ||
+    (hasValidTimeRange && items.length <= 10)
+  ) {
+    chunksCount = 100
+    Logger.info(`chunks size for full context - ${100}`)
+    span?.setAttribute("full_context chunk_size", 100)
+  }
+
+  const results = items.slice(0, pageSize)
+  const initialContext = buildContext(results, chunksCount)
 
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app === Apps.Gmail) {
@@ -1977,15 +1996,15 @@ export const MessageApi = async (c: Context) => {
             startTime: "",
             endTime: "",
             count: 0,
+            sortDirection: "",
           }
           let parsed = {
             answer: "",
             queryRewrite: "",
             temporalDirection: null,
-            filters: queryFilters,
+            filter_query: "",
             type: "",
-            from: null,
-            to: null,
+            filters: queryFilters,
           }
 
           let thinking = ""
@@ -2096,6 +2115,7 @@ export const MessageApi = async (c: Context) => {
             const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
               type: parsed.type as QueryType,
+              filter_query: parsed.filter_query,
               filters: {
                 ...parsed.filters,
                 app: parsed.filters.app as Apps,
@@ -2609,15 +2629,15 @@ export const MessageRetryApi = async (c: Context) => {
             startTime: "",
             endTime: "",
             count: 0,
+            sortDirection: "",
           }
           let parsed = {
             answer: "",
             queryRewrite: "",
             temporalDirection: null,
-            filters: queryFilters,
+            filter_query: "",
             type: "",
-            from: null,
-            to: null,
+            filters: queryFilters,
           }
           let thinking = ""
           let reasoning =
@@ -2723,6 +2743,7 @@ export const MessageRetryApi = async (c: Context) => {
             const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
               type: parsed.type as QueryType,
+              filter_query: parsed.filter_query,
               filters: {
                 ...parsed.filters,
                 app: parsed.filters.app as Apps,
