@@ -381,6 +381,44 @@ class VespaClient {
     }
   }
 
+  async getDocumentsByOnlyDocIds(
+    options: VespaConfigValues & { docIds: string[] },
+  ): Promise<VespaSearchResponse> {
+    const { docIds } = options
+    const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
+    const yqlQuery = `select * from sources * where (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+
+    try {
+      const payload = {
+        yql: yqlQuery,
+        hits: docIds?.length,
+        maxHits: docIds?.length,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+      return result
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      throw new Error(`Error fetching documents: ${errMessage}`)
+    }
+  }
+
   async updateDocumentPermissions(
     permissions: string[],
     options: VespaConfigValues & { docId: string },

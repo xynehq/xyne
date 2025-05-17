@@ -66,6 +66,7 @@ import {
   SearchModes,
   searchVespaInFiles,
   getItems,
+  GetDocumentsByDocIds,
 } from "@/search/vespa"
 import {
   Apps,
@@ -963,10 +964,150 @@ async function* generateAnswerFromGivenContext(
     )
   }
 
-  const selectedFiles = fileIds && fileIds.length > 0
-
   let previousResultsLength = 0
-  if (selectedFiles) {
+  const results = await GetDocumentsByDocIds(fileIds)
+  console.log("documents")
+  console.log(results.root.children)
+  console.log("documents")
+  if (!results.root.children) {
+    results.root.children = []
+  }
+  const startIndex = isReasoning ? previousResultsLength : 0
+  const initialContext = cleanContext(
+    results?.root?.children
+      ?.map(
+        (v, i) =>
+          `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 0, true)}`,
+      )
+      ?.join("\n"),
+  )
+  Logger.info(
+    `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+  )
+  console.log("initialContext")
+  console.log(initialContext)
+  console.log("initialContext")
+
+  console.log("initialContext Length")
+  console.log(initialContext.length)
+  console.log("initialContext Length")
+
+  if (initialContext.length > 300000) {
+    yield { text: "Selected context is too large, pls select smaller files" }
+    return
+  }
+
+  const iterator = baselineRAGJsonStream(
+    input,
+    userCtx,
+    initialContext,
+    {
+      stream: true,
+      modelId: defaultBestModel,
+      reasoning: config.isReasoning && userRequestsReasoning,
+    },
+    true,
+  )
+
+  let buffer = ""
+  let currentAnswer = ""
+  let parsed = { answer: "" }
+  let thinking = ""
+  let reasoning = config.isReasoning && userRequestsReasoning
+  let yieldedCitations = new Set<number>()
+  // tied to the json format and output expected, we expect the answer key to be present
+  const ANSWER_TOKEN = '"answer":'
+  for await (const chunk of iterator) {
+    if (chunk.text) {
+      if (reasoning) {
+        if (thinking && !chunk.text.includes(EndThinkingToken)) {
+          thinking += chunk.text
+          yield* checkAndYieldCitations(
+            thinking,
+            yieldedCitations,
+            results?.root?.children,
+            previousResultsLength,
+          )
+          yield { text: chunk.text, reasoning }
+        } else {
+          // first time
+          const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+          if (
+            startThinkingIndex !== -1 &&
+            chunk.text.trim().length > StartThinkingToken.length
+          ) {
+            let token = chunk.text.slice(
+              startThinkingIndex + StartThinkingToken.length,
+            )
+            if (chunk.text.includes(EndThinkingToken)) {
+              token = chunk.text.split(EndThinkingToken)[0]
+              thinking += token
+            } else {
+              thinking += token
+            }
+
+            yield* checkAndYieldCitations(
+              thinking,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            yield { text: token, reasoning }
+          }
+        }
+      }
+      if (reasoning && chunk.text.includes(EndThinkingToken)) {
+        reasoning = false
+        chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+      }
+
+      if (!reasoning) {
+        buffer += chunk.text
+        try {
+          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN) || {}
+          if (parsed.answer === null) {
+            break
+          }
+          if (parsed.answer && currentAnswer !== parsed.answer) {
+            if (currentAnswer === "") {
+              // First valid answer - send the whole thing
+              yield { text: parsed.answer }
+            } else {
+              // Subsequent chunks - send only the new part
+              const newText = parsed.answer.slice(currentAnswer.length)
+              yield { text: newText }
+            }
+            // Extract all citations from the parsed answer
+            // const citationSpan = chunkSpan.startSpan("check_citations")
+            yield* checkAndYieldCitations(
+              parsed.answer,
+              yieldedCitations,
+              results?.root?.children,
+              previousResultsLength,
+            )
+            currentAnswer = parsed.answer
+          }
+        } catch (err) {
+          const errMessage = (err as Error).message
+          Logger.error(err, `Error while parsing LLM output ${errMessage}`)
+          continue
+        }
+      }
+    }
+    if (chunk.cost) {
+      yield { cost: chunk.cost }
+    }
+  }
+  if (parsed.answer) {
+    return
+  } else if (
+    // Condition if fileIds are present has some values meaning context has been selected.
+    !parsed?.answer
+  ) {
+    Logger.info(
+      "No answer was found when all chunks were given, trying to answer after searching vespa now",
+    )
+    // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     let results = await searchVespaInFiles(message, email, fileIds, {
       limit: fileIds?.length,
       alpha: userAlpha,
@@ -986,17 +1127,35 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
-
-    const iterator = baselineRAGJsonStream(
-      input,
-      userCtx,
-      initialContext,
-      {
-        stream: true,
-        modelId: defaultBestModel,
-        reasoning: config.isReasoning && userRequestsReasoning,
-      },
-      true,
+    console.log("searching initialContext")
+    console.log(initialContext)
+    console.log("searching initialContext")
+    // const iterator = baselineRAGJsonStream(
+    //   input,
+    //   userCtx,
+    //   initialContext,
+    //   {
+    //     stream: true,
+    //     modelId: defaultBestModel,
+    //     reasoning: config.isReasoning && userRequestsReasoning,
+    //   },
+    //   true,
+    // )
+    const iterator = withThrottlingBackoff(
+      () =>
+        baselineRAGJsonStream(
+          input,
+          userCtx,
+          initialContext,
+          {
+            stream: true,
+            modelId: defaultBestModel,
+            reasoning: config.isReasoning && userRequestsReasoning,
+          },
+          true,
+        ),
+      /* maxRetries: */ 5,
+      /* baseDelayMs: */ 2000,
     )
 
     let buffer = ""
@@ -1091,7 +1250,6 @@ async function* generateAnswerFromGivenContext(
     if (parsed.answer) {
       return
     } else if (
-      // Condition if fileIds are present has some values meaning context has been selected.
       // If no answer found, exit and yield nothing related to selected context found
       !parsed?.answer
     ) {
@@ -1103,7 +1261,61 @@ async function* generateAnswerFromGivenContext(
     if (config.isReasoning && userRequestsReasoning) {
       previousResultsLength += results?.root?.children?.length || 0
     }
+    // yield {
+    //   text: "From the selected context, I could not find any information to answer it, please change your query",
+    // }
+    // return
   }
+  if (config.isReasoning && userRequestsReasoning) {
+    previousResultsLength += results?.root?.children?.length || 0
+  }
+}
+
+// a tiny delay helper
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Wraps any async-iterable factory and retries on ThrottlingException
+ */
+export function withThrottlingBackoff<T>(
+  factory: () => AsyncIterable<T>,
+  maxRetries = 5,
+  baseDelayMs = 1000,
+) {
+  return (async function* retryingIterator() {
+    let attempt = 0
+    while (true) {
+      try {
+        // (re)create the iterator
+        for await (const item of factory()) {
+          yield item
+        }
+        // completed without errors → done
+        return
+      } catch (err: any) {
+        const isThrottling =
+          err.name === "ThrottlingException" ||
+          err.type === "ThrottlingException" ||
+          err.message?.includes("ThrottlingException")
+        if (isThrottling && attempt < maxRetries) {
+          // compute 2^attempt * baseDelay + jitter
+          const backoff = Math.pow(2, attempt) * baseDelayMs
+          const jitter = Math.random() * 100
+          const waitTime = backoff + jitter
+          Logger.warn(
+            `[AI] ThrottlingException encountered. ` +
+              `Retrying in ${waitTime.toFixed(0)}ms ` +
+              `(${attempt + 1}/${maxRetries})`,
+          )
+          await delay(waitTime)
+          attempt++
+          continue // retry
+        }
+        // not a ThrottlingException, or retries exhausted → rethrow
+        // throw err
+      }
+    }
+  })()
 }
 
 const getSearchRangeSummary = (
@@ -1644,7 +1856,6 @@ export async function* UnderstandMessageAndAnswer(
   classification: TemporalClassifier & QueryRouterResponse,
   messages: Message[],
   alpha: number,
-  fileIds: string[],
   passedSpan?: Span,
   userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
@@ -1705,18 +1916,7 @@ export async function* UnderstandMessageAndAnswer(
     )
   }
 
-  if (fileIds && fileIds?.length > 0) {
-    Logger.info(
-      "User has selected some context with query, answering only based on that given context",
-    )
-    return yield* generateAnswerFromGivenContext(
-      message,
-      email,
-      userCtx,
-      alpha,
-      fileIds,
-    )
-  } else if (classification.direction !== null) {
+  if (classification.direction !== null) {
     // user is talking about an event
     Logger.info(
       `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
@@ -1756,6 +1956,30 @@ export async function* UnderstandMessageAndAnswer(
       ragSpan,
     )
   }
+}
+
+export async function* UnderstandMessageAndAnswerForGivenContext(
+  email: string,
+  userCtx: string,
+  message: string,
+  alpha: number,
+  fileIds: string[],
+  passedSpan?: Span,
+): AsyncIterableIterator<
+  ConverseResponse & { citation?: { index: number; item: any } }
+> {
+  passedSpan?.setAttribute("email", email)
+  passedSpan?.setAttribute("message", message)
+  passedSpan?.setAttribute("alpha", alpha)
+  // If search is recommeded or it can't decide if the query is summariztion type query, we search
+
+  return yield* generateAnswerFromGivenContext(
+    message,
+    email,
+    userCtx,
+    alpha,
+    fileIds,
+  )
 }
 
 const handleError = (error: any) => {
@@ -1807,6 +2031,9 @@ export const MessageApi = async (c: Context) => {
       isReasoningEnabled,
     }: MessageReqType = body
     const userRequestsReasoning = isReasoningEnabled
+    console.log("stringifiedfileIds")
+    console.log(stringifiedfileIds)
+    console.log("stringifiedfileIds\n")
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []
@@ -1936,184 +2163,37 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          const messagesWithNoErrResponse = messages
-            .slice(0, messages.length - 1)
-            .filter((msg) => !msg?.errorMessage)
-            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
-            .map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            }))
-
-          Logger.info(
-            "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
-          )
-          const searchOrAnswerIterator =
-            generateSearchQueryOrAnswerFromConversation(message, ctx, {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: true,
-              json: true,
-              reasoning:
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: messagesWithNoErrResponse,
-            })
-
-          // TODO: for now if the answer is from the conversation itself we don't
-          // add any citations for it, we can refer to the original message for citations
-          // one more bug is now llm automatically copies the citation text sometimes without any reference
-          // leads to [NaN] in the answer
-          let currentAnswer = ""
-          let answer = ""
-          let citations = []
-          let citationMap: Record<number, number> = {}
-          let queryFilters = {
-            app: "",
-            entity: "",
-            startTime: "",
-            endTime: "",
-            count: 0,
-          }
-          let parsed = {
-            answer: "",
-            queryRewrite: "",
-            temporalDirection: null,
-            filters: queryFilters,
-            type: "",
-            from: null,
-            to: null,
-          }
-
-          let thinking = ""
-          let reasoning =
-            userRequestsReasoning &&
-            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-          let buffer = ""
-          const conversationSpan = streamSpan.startSpan("conversation_search")
-          for await (const chunk of searchOrAnswerIterator) {
-            if (stream.closed) {
-              Logger.info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
-              )
-              wasStreamClosedPrematurely = true
-              break
-            }
-            if (chunk.text) {
-              if (reasoning) {
-                if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                  thinking += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: chunk.text,
-                  })
-                } else {
-                  // first time
-                  if (!chunk.text.includes(StartThinkingToken)) {
-                    let token = chunk.text
-                    if (chunk.text.includes(EndThinkingToken)) {
-                      token = chunk.text.split(EndThinkingToken)[0]
-                      thinking += token
-                    } else {
-                      thinking += token
-                    }
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: token,
-                    })
-                  }
-                }
-              }
-              if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                reasoning = false
-                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-              }
-              if (!reasoning) {
-                buffer += chunk.text
-                try {
-                  parsed = jsonParseLLMOutput(buffer) || {}
-                  if (parsed.answer && currentAnswer !== parsed.answer) {
-                    if (currentAnswer === "") {
-                      Logger.info(
-                        "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                      )
-                      stream.writeSSE({
-                        event: ChatSSEvents.Start,
-                        data: "",
-                      })
-                      // First valid answer - send the whole thing
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: parsed.answer,
-                      })
-                    } else {
-                      // Subsequent chunks - send only the new part
-                      const newText = parsed.answer.slice(currentAnswer.length)
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: newText,
-                      })
-                    }
-                    currentAnswer = parsed.answer
-                  }
-                } catch (err) {
-                  const errMessage = (err as Error).message
-                  Logger.error(
-                    err,
-                    `Error while parsing LLM output ${errMessage}`,
-                  )
-                  continue
-                }
-              }
-            }
-            if (chunk.cost) {
-              costArr.push(chunk.cost)
-            }
-          }
-
-          conversationSpan.setAttribute("answer_found", parsed.answer)
-          conversationSpan.setAttribute("answer", answer)
-          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
-          conversationSpan.end()
-
-          if (parsed.answer === null || parsed.answer === "") {
-            const ragSpan = streamSpan.startSpan("rag_processing")
-            if (parsed.queryRewrite) {
-              Logger.info(
-                `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
-              )
-              message = parsed.queryRewrite
-              Logger.info(`Rewritten query: ${message}`)
-              ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
-            } else {
-              Logger.info(
-                "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
-              )
-            }
-            const classification: TemporalClassifier & QueryRouterResponse = {
-              direction: parsed.temporalDirection,
-              type: parsed.type as QueryType,
-              filters: {
-                ...parsed.filters,
-                app: parsed.filters.app as Apps,
-                entity: parsed.filters.entity as any,
-              },
-            }
-
+          if (fileIds && fileIds.length > 0) {
             Logger.info(
-              `Classifying the query as:, ${JSON.stringify(classification)}`,
+              "User has selected some context with query, answering only based on that given context",
             )
+            Logger.info(
+              `Deciding based on user given context and query whether to search or not`,
+            )
+            console.log("message")
+            console.log(message)
+            console.log("message")
+            let answer = ""
+            let citations = []
+            let citationMap: Record<number, number> = {}
+            let thinking = ""
+            let reasoning =
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            const conversationSpan = streamSpan.startSpan("conversation_search")
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.end()
+
+            const ragSpan = streamSpan.startSpan("rag_processing")
+
             const understandSpan = ragSpan.startSpan("understand_message")
-            const iterator = UnderstandMessageAndAnswer(
+
+            const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
               message,
-              classification,
-              messagesWithNoErrResponse,
               0.5,
               fileIds,
               understandSpan,
-              userRequestsReasoning,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -2190,97 +2270,441 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
             ragSpan.end()
-          } else if (parsed.answer) {
-            answer = parsed.answer
-          }
 
-          // Determine if a message (even partial) should be saved
-          if (answer || wasStreamClosedPrematurely) {
-            // TODO: incase user loses permission
-            // to one of the citations what do we do?
-            // somehow hide that citation and change
-            // the answer to reflect that
+            if (answer || wasStreamClosedPrematurely) {
+              // TODO: incase user loses permission
+              // to one of the citations what do we do?
+              // somehow hide that citation and change
+              // the answer to reflect that
+              const msg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: citations,
+                message: processMessage(answer, citationMap),
+                thinking: thinking,
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              })
+              assistantMessageId = msg.externalId
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: msg.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: msg.externalId,
+                traceJson,
+              })
+              Logger.info(
+                `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+              )
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: assistantMessageId,
+                }),
+              })
+            } else {
+              const errorSpan = streamSpan.startSpan("handle_no_answer")
+              const allMessages = await getChatMessages(db, chat?.externalId)
+              const lastMessage = allMessages[allMessages.length - 1]
 
-            const msg = await insertMessage(db, {
-              chatId: chat.id,
-              userId: user.id,
-              workspaceExternalId: workspace.externalId,
-              chatExternalId: chat.externalId,
-              messageRole: MessageRole.Assistant,
-              email: user.email,
-              sources: citations,
-              message: processMessage(answer, citationMap),
-              thinking: thinking,
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-            })
-            assistantMessageId = msg.externalId
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: lastMessage.externalId,
+                }),
+              })
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: "Can you please make your query more specific?",
+              })
+              await addErrMessageToMessage(
+                lastMessage,
+                "Can you please make your query more specific?",
+              )
 
-            const traceJson = tracer.serializeToJson()
-            await insertChatTrace({
-              workspaceId: workspace.id,
-              userId: user.id,
-              chatId: chat.id,
-              messageId: msg.id,
-              chatExternalId: chat.externalId,
-              email: user.email,
-              messageExternalId: msg.externalId,
-              traceJson,
-            })
-            Logger.info(
-              `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
-            )
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: lastMessage.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: lastMessage.externalId,
+                traceJson,
+              })
+              errorSpan.end()
+            }
 
+            const endSpan = streamSpan.startSpan("send_end_event")
             await stream.writeSSE({
-              event: ChatSSEvents.ResponseMetadata,
-              data: JSON.stringify({
-                chatId: chat.externalId,
-                messageId: assistantMessageId,
-              }),
+              data: "",
+              event: ChatSSEvents.End,
             })
+            endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
           } else {
-            const errorSpan = streamSpan.startSpan("handle_no_answer")
-            const allMessages = await getChatMessages(db, chat?.externalId)
-            const lastMessage = allMessages[allMessages.length - 1]
+            const messagesWithNoErrResponse = messages
+              .slice(0, messages.length - 1)
+              .filter((msg) => !msg?.errorMessage)
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              ) // filter out assistant messages with no content
+              .map((m) => ({
+                role: m.messageRole as ConversationRole,
+                content: [{ text: m.message }],
+              }))
 
-            await stream.writeSSE({
-              event: ChatSSEvents.ResponseMetadata,
-              data: JSON.stringify({
-                chatId: chat.externalId,
-                messageId: lastMessage.externalId,
-              }),
-            })
-            await stream.writeSSE({
-              event: ChatSSEvents.Error,
-              data: "Can you please make your query more specific?",
-            })
-            await addErrMessageToMessage(
-              lastMessage,
-              "Can you please make your query more specific?",
+            Logger.info(
+              "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
+            const searchOrAnswerIterator =
+              generateSearchQueryOrAnswerFromConversation(message, ctx, {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: true,
+                json: true,
+                reasoning:
+                  userRequestsReasoning &&
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: messagesWithNoErrResponse,
+              })
 
-            const traceJson = tracer.serializeToJson()
-            await insertChatTrace({
-              workspaceId: workspace.id,
-              userId: user.id,
-              chatId: chat.id,
-              messageId: lastMessage.id,
-              chatExternalId: chat.externalId,
-              email: user.email,
-              messageExternalId: lastMessage.externalId,
-              traceJson,
+            // TODO: for now if the answer is from the conversation itself we don't
+            // add any citations for it, we can refer to the original message for citations
+            // one more bug is now llm automatically copies the citation text sometimes without any reference
+            // leads to [NaN] in the answer
+            let currentAnswer = ""
+            let answer = ""
+            let citations = []
+            let citationMap: Record<number, number> = {}
+            let queryFilters = {
+              app: "",
+              entity: "",
+              startTime: "",
+              endTime: "",
+              count: 0,
+            }
+            let parsed = {
+              answer: "",
+              queryRewrite: "",
+              temporalDirection: null,
+              filters: queryFilters,
+              type: "",
+              from: null,
+              to: null,
+            }
+
+            let thinking = ""
+            let reasoning =
+              userRequestsReasoning &&
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            let buffer = ""
+            const conversationSpan = streamSpan.startSpan("conversation_search")
+            for await (const chunk of searchOrAnswerIterator) {
+              if (stream.closed) {
+                Logger.info(
+                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                )
+                wasStreamClosedPrematurely = true
+                break
+              }
+              if (chunk.text) {
+                if (reasoning) {
+                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                  } else {
+                    // first time
+                    if (!chunk.text.includes(StartThinkingToken)) {
+                      let token = chunk.text
+                      if (chunk.text.includes(EndThinkingToken)) {
+                        token = chunk.text.split(EndThinkingToken)[0]
+                        thinking += token
+                      } else {
+                        thinking += token
+                      }
+                      stream.writeSSE({
+                        event: ChatSSEvents.Reasoning,
+                        data: token,
+                      })
+                    }
+                  }
+                }
+                if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                  reasoning = false
+                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                }
+                if (!reasoning) {
+                  buffer += chunk.text
+                  try {
+                    parsed = jsonParseLLMOutput(buffer) || {}
+                    if (parsed.answer && currentAnswer !== parsed.answer) {
+                      if (currentAnswer === "") {
+                        Logger.info(
+                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.Start,
+                          data: "",
+                        })
+                        // First valid answer - send the whole thing
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: parsed.answer,
+                        })
+                      } else {
+                        // Subsequent chunks - send only the new part
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: newText,
+                        })
+                      }
+                      currentAnswer = parsed.answer
+                    }
+                  } catch (err) {
+                    const errMessage = (err as Error).message
+                    Logger.error(
+                      err,
+                      `Error while parsing LLM output ${errMessage}`,
+                    )
+                    continue
+                  }
+                }
+              }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+            }
+
+            conversationSpan.setAttribute("answer_found", parsed.answer)
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+            conversationSpan.end()
+
+            if (parsed.answer === null || parsed.answer === "") {
+              const ragSpan = streamSpan.startSpan("rag_processing")
+              if (parsed.queryRewrite) {
+                Logger.info(
+                  `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
+                )
+                message = parsed.queryRewrite
+                Logger.info(`Rewritten query: ${message}`)
+                ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+              } else {
+                Logger.info(
+                  "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+                )
+              }
+              const classification: TemporalClassifier & QueryRouterResponse = {
+                direction: parsed.temporalDirection,
+                type: parsed.type as QueryType,
+                filters: {
+                  ...parsed.filters,
+                  app: parsed.filters.app as Apps,
+                  entity: parsed.filters.entity as any,
+                },
+              }
+
+              Logger.info(
+                `Classifying the query as:, ${JSON.stringify(classification)}`,
+              )
+              const understandSpan = ragSpan.startSpan("understand_message")
+              const iterator = UnderstandMessageAndAnswer(
+                email,
+                ctx,
+                message,
+                classification,
+                messagesWithNoErrResponse,
+                0.5,
+                understandSpan,
+                userRequestsReasoning,
+              )
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+
+              answer = ""
+              thinking = ""
+              reasoning = isReasoning && userRequestsReasoning
+              citations = []
+              citationMap = {}
+              let citationValues: Record<number, string> = {}
+              for await (const chunk of iterator) {
+                if (stream.closed) {
+                  Logger.info(
+                    "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+                if (chunk.text) {
+                  if (reasoning && chunk.reasoning) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                    // reasoningSpan.end()
+                  }
+                  if (!chunk.reasoning) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+                }
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                if (chunk.citation) {
+                  const { index, item } = chunk.citation
+                  citations.push(item)
+                  citationMap[index] = citations.length - 1
+                  Logger.info(
+                    `Found citations and sending it, current count: ${citations.length}`,
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap,
+                    }),
+                  })
+                  citationValues[index] = item
+                }
+              }
+              understandSpan.setAttribute("citation_count", citations.length)
+              understandSpan.setAttribute(
+                "citation_map",
+                JSON.stringify(citationMap),
+              )
+              understandSpan.setAttribute(
+                "citation_values",
+                JSON.stringify(citationValues),
+              )
+              understandSpan.end()
+              const answerSpan = ragSpan.startSpan("process_final_answer")
+              answerSpan.setAttribute(
+                "final_answer",
+                processMessage(answer, citationMap),
+              )
+              answerSpan.setAttribute("actual_answer", answer)
+              answerSpan.setAttribute("final_answer_length", answer.length)
+              answerSpan.end()
+              ragSpan.end()
+            } else if (parsed.answer) {
+              answer = parsed.answer
+            }
+
+            // Determine if a message (even partial) should be saved
+            if (answer || wasStreamClosedPrematurely) {
+              // TODO: incase user loses permission
+              // to one of the citations what do we do?
+              // somehow hide that citation and change
+              // the answer to reflect that
+
+              const msg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: citations,
+                message: processMessage(answer, citationMap),
+                thinking: thinking,
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              })
+              assistantMessageId = msg.externalId
+
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: msg.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: msg.externalId,
+                traceJson,
+              })
+              Logger.info(
+                `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+              )
+
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: assistantMessageId,
+                }),
+              })
+            } else {
+              const errorSpan = streamSpan.startSpan("handle_no_answer")
+              const allMessages = await getChatMessages(db, chat?.externalId)
+              const lastMessage = allMessages[allMessages.length - 1]
+
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: lastMessage.externalId,
+                }),
+              })
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: "Can you please make your query more specific?",
+              })
+              await addErrMessageToMessage(
+                lastMessage,
+                "Can you please make your query more specific?",
+              )
+
+              const traceJson = tracer.serializeToJson()
+              await insertChatTrace({
+                workspaceId: workspace.id,
+                userId: user.id,
+                chatId: chat.id,
+                messageId: lastMessage.id,
+                chatExternalId: chat.externalId,
+                email: user.email,
+                messageExternalId: lastMessage.externalId,
+                traceJson,
+              })
+              errorSpan.end()
+            }
+
+            const endSpan = streamSpan.startSpan("send_end_event")
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
             })
-            errorSpan.end()
+            endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
           }
-
-          const endSpan = streamSpan.startSpan("send_end_event")
-          await stream.writeSSE({
-            data: "",
-            event: ChatSSEvents.End,
-          })
-          endSpan.end()
-          streamSpan.end()
-          rootSpan.end()
         } catch (error) {
           const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
           streamErrorSpan.addEvent("error", {
@@ -2558,7 +2982,12 @@ export const MessageRetryApi = async (c: Context) => {
           const convWithNoErrMsg = isUserMessage
             ? conversation
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                ) // filter out assistant messages with no content
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2566,7 +2995,12 @@ export const MessageRetryApi = async (c: Context) => {
             : conversation
                 .slice(0, conversation.length - 1)
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message))
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                )
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2724,7 +3158,6 @@ export const MessageRetryApi = async (c: Context) => {
               classification,
               convWithNoErrMsg,
               0.5,
-              fileIds,
               understandSpan,
               userRequestsReasoning,
             )

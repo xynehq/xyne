@@ -640,8 +640,7 @@ The context provided will be formatted with specific fields for each type:
 - Owner information
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
-- Content chunks
-- Relevance score
+- Content
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -650,15 +649,13 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
 - Subject
 - From/To/Cc/Bcc
 - Labels
-- Content chunks
-- Relevance score
+- Content
 ## Event Context Format
 - App and Entity type
 - Event name and description
@@ -667,7 +664,6 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -721,7 +717,8 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear: Set "answer" to null
+If the query given by user is irrelevant to the given context, set "answer" to null`
 
 export const queryRewritePromptJson = (
   userContext: string,
@@ -988,8 +985,6 @@ export const searchQueryPrompt = (userContext: string): string => {
   `
 }
 
-// Search Query Reasoning Prompt
-// This prompt is used to provide reasoning for the search query processing and classification.
 export const searchQueryReasoningPrompt = (userContext: string): string => {
   return `
     <think>
