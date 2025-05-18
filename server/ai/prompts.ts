@@ -641,6 +641,7 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
 - Content
+- Relevance score
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -656,6 +657,7 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content
+- Relevance score
 ## Event Context Format
 - App and Entity type
 - Event name and description

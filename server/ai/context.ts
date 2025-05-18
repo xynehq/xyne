@@ -81,15 +81,11 @@ ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-${fields?.matchfeatures ? `\nvespa relevance score: ${relevance}\n` : ""}`
+\nvespa relevance score: ${relevance}\n`
 }
 
 // TODO: tell if workspace that this is an employee
-const constructUserContext = (
-  fields: VespaUser,
-  relevance: number,
-  isSelectedFiles?: boolean,
-): string => {
+const constructUserContext = (fields: VespaUser, relevance: number): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Added: ${getRelativeTime(fields.creationTime)}
@@ -99,7 +95,7 @@ ${fields.gender ? `Gender: ${fields.gender}` : ""}
 ${fields.orgJobTitle ? `Job Title: ${fields.orgJobTitle}` : ""}
 ${fields.orgDepartment ? `Department: ${fields.orgDepartment}` : ""}
 ${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}
-${!isSelectedFiles ? `vespa relevance score: ${relevance}` : ""}`
+vespa relevance score: ${relevance}`
 }
 
 const constructMailContext = (
@@ -128,7 +124,15 @@ const constructMailContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
+    console.log("Giving 20 max chunks...")
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    console.log("Giving all chunks...")
     content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
@@ -147,13 +151,12 @@ ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-${!isSelectedFiles ? `vespa relevance score: ${relevance}` : ""}`
+vespa relevance score: ${relevance}`
 }
 
 const constructSlackMessageContext = (
   fields: VespaChatMessageSearch,
   relevance: number,
-  isSelectedFiles?: boolean,
 ): string => {
   let channelCtx = ``
   if (fields.isIm && fields.permissions) {
@@ -173,7 +176,7 @@ const constructSlackMessageContext = (
     ${fields.threadId ? "it's a message thread" : ""}
     Time: ${getRelativeTime(fields.createdAt)}
     User is part of Workspace: ${fields.teamName}
-    ${!isSelectedFiles ? `vespa relevance score: ${relevance}` : ""}`
+    vespa relevance score: ${relevance}`
 }
 
 const constructMailAttachmentContext = (
@@ -202,7 +205,15 @@ const constructMailAttachmentContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
+    console.log("Giving 20 max chunks...")
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    console.log("Giving all chunks...")
     content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
@@ -217,7 +228,7 @@ Sent: ${getRelativeTime(fields.timestamp)}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-${!isSelectedFiles ? `vespa relevance score: ${relevance}` : ""}`
+vespa relevance score: ${relevance}`
 }
 
 const constructEventContext = (
@@ -444,11 +455,7 @@ export const answerContextMap = (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
-    return constructUserContext(
-      searchResult.fields,
-      searchResult.relevance,
-      isSelectedFiles,
-    )
+    return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
     return constructMailContext(
       searchResult.fields,
@@ -470,7 +477,6 @@ export const answerContextMap = (
     return constructSlackMessageContext(
       searchResult.fields,
       searchResult.relevance,
-      isSelectedFiles,
     )
   } else {
     throw new Error(
