@@ -183,6 +183,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
       if (bottomRef.current) {
         observer.unobserve(bottomRef.current)
       }
+      observer.disconnect()
     }
   }, [results, filterPageSize, page, isLoading, handleNext])
 
