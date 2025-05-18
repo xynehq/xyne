@@ -988,15 +988,6 @@ async function* generateAnswerFromGivenContext(
   console.log(initialContext)
   console.log("initialContext")
 
-  console.log("initialContext Length")
-  console.log(initialContext.length)
-  console.log("initialContext Length")
-
-  if (initialContext.length > 200000) {
-    yield { text: "Selected context is too large, pls select smaller files" }
-    return
-  }
-
   const iterator = baselineRAGJsonStream(
     input,
     userCtx,
@@ -1253,10 +1244,6 @@ async function* generateAnswerFromGivenContext(
     if (config.isReasoning && userRequestsReasoning) {
       previousResultsLength += results?.root?.children?.length || 0
     }
-    // yield {
-    //   text: "From the selected context, I could not find any information to answer it, please change your query",
-    // }
-    // return
   }
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += results?.root?.children?.length || 0

@@ -942,6 +942,13 @@ export const baselineRAGJsonStream = (
       userCtx,
       indexToCitation(retrievedCtx),
     )
+    if (params.systemPrompt.length > 600_000) {
+      return (async function* (): AsyncIterableIterator<ConverseResponse> {
+        yield {
+          text: "Selected context is too large, please select smaller files",
+        }
+      })()
+    }
   } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
