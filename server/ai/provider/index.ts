@@ -903,12 +903,15 @@ const indexToCitation = (text: string): string => {
 
 // todo add type here
 const buildUserQuery = (userQuery: any[]) => {
+  console.log("given user Query")
+  console.log(userQuery)
+  console.log("given user Query")
   let builtQuery = ""
   userQuery.map((obj) => {
     if (obj.type === "text") {
       builtQuery += `${obj.value} `
     } else if (obj.type === "pill") {
-      builtQuery += `<User referred file with title "${obj?.value?.title}" here> `
+      builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
     }
   })
   console.log("builtQuery")
@@ -959,8 +962,7 @@ export const baselineRAGJsonStream = (
     role: ConversationRole.USER,
     content: [
       {
-        text: `${userQuery}`,
-        // text: buildUserQuery(JSON.parse(userQuery)),
+        text: buildUserQuery(JSON.parse(userQuery)),
       },
     ],
   }

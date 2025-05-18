@@ -992,7 +992,7 @@ async function* generateAnswerFromGivenContext(
   console.log(initialContext.length)
   console.log("initialContext Length")
 
-  if (initialContext.length > 300000) {
+  if (initialContext.length > 200000) {
     yield { text: "Selected context is too large, pls select smaller files" }
     return
   }
@@ -1112,6 +1112,9 @@ async function* generateAnswerFromGivenContext(
       limit: fileIds?.length,
       alpha: userAlpha,
     })
+    console.log("After search results")
+    console.log(results.root.children)
+    console.log("After search results")
     if (!results.root.children) {
       results.root.children = []
     }
@@ -1130,17 +1133,6 @@ async function* generateAnswerFromGivenContext(
     console.log("searching initialContext")
     console.log(initialContext)
     console.log("searching initialContext")
-    // const iterator = baselineRAGJsonStream(
-    //   input,
-    //   userCtx,
-    //   initialContext,
-    //   {
-    //     stream: true,
-    //     modelId: defaultBestModel,
-    //     reasoning: config.isReasoning && userRequestsReasoning,
-    //   },
-    //   true,
-    // )
     const iterator = withThrottlingBackoff(
       () =>
         baselineRAGJsonStream(
@@ -2167,11 +2159,9 @@ export const MessageApi = async (c: Context) => {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
-            Logger.info(
-              `Deciding based on user given context and query whether to search or not`,
-            )
             console.log("message")
             console.log(message)
+            console.log(typeof message)
             console.log("message")
             let answer = ""
             let citations = []

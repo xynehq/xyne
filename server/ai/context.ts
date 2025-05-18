@@ -26,7 +26,6 @@ import { getDateForAI } from "@/utils/index"
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
 // Function for handling file context
-// todo for handling position, add context such as the user referred to this file {FILE_TITLE} and this is its query
 const constructFileContext = (
   fields: VespaFileSearch,
   relevance: number,
@@ -43,7 +42,9 @@ const constructFileContext = (
       fields.matchfeatures,
       fields.chunks_summary as string[],
     )
+    console.log("Got sorted chunks...")
   } else {
+    console.log("Else part...")
     chunks =
       fields.chunks_summary?.map((chunk, idx) => ({
         chunk: typeof chunk == "string" ? chunk : chunk.chunk,
@@ -54,13 +55,14 @@ const constructFileContext = (
 
   let content = ""
   if (isSelectedFiles && fields?.matchfeatures) {
-    console.log("helllooo")
+    console.log("Giving 20 max chunks...")
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
   } else if (isSelectedFiles) {
+    console.log("Giving all chunks...")
     content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
