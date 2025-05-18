@@ -127,13 +127,13 @@ export const FiltersSchema = z.object({
   entity: entitySchema.optional(),
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
+  sortDirection: z.string().optional(),
 })
 
 export const RetrievedUnspecificMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveUnspecificMetadata),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-    sortDirection: z.string().optional(),
   }),
 })
 
@@ -141,7 +141,6 @@ export const RetrieveMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveMetadata),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-    sortDirection: z.string().optional(),
   }),
 })
 

@@ -1008,7 +1008,6 @@ export const searchQueryPrompt = (userContext: string): string => {
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
-
 // Search Query Reasoning Prompt
 // This prompt is used to provide reasoning for the search query processing and classification.
 export const searchQueryReasoningPrompt = (userContext: string): string => {

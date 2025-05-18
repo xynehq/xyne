@@ -1449,8 +1449,10 @@ async function* generateMetadataQueryAnswer(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  const { app, entity, startTime, endTime } = classification.filters
-
+  const { app, entity, startTime, endTime, sortDirection } =
+    classification.filters
+  const count =
+    "count" in classification.filters ? classification.filters.count : undefined
   const direction = classification.direction as string
   const isUnspecificMetadataRetrieval =
     classification.type === QueryType.RetrieveUnspecificMetadata
@@ -1458,51 +1460,77 @@ async function* generateMetadataQueryAnswer(
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
 
-  const from = new Date(startTime ?? "").getTime()
-  const to = new Date(endTime ?? "").getTime()
-  const hasValidTimeRange = !isNaN(from) && !isNaN(to)
-  let chunksCount = maxSummaryCount
-  // Return early if app/entity is not valid
-  if (!isValidAppAndEntity) {
-    Logger.info("Not able to perform metadata search")
-    return null
-  }
+  // Process timestamp range once
+  const from = startTime ? new Date(startTime).getTime() : null
+  const to = endTime ? new Date(endTime).getTime() : null
+  const hasValidTimeRange =
+    from !== null && !isNaN(from) && to !== null && !isNaN(to)
 
   let timestampRange: { from: number | null; to: number | null } = {
-    from: hasValidTimeRange ? from : null,
-    to: hasValidTimeRange ? to : null,
+    from: null,
+    to: null,
+  }
+  if (hasValidTimeRange) {
+    // If we have a valid time range, use the provided dates
+    timestampRange.from = from
+    timestampRange.to = to
+  } else if (direction === "next") {
+    // For "next/upcoming" requests without a valid range, search from now into the future
+    timestampRange.from = new Date().getTime()
   }
 
-  // For "next/upcoming" request, search from now into the future when no valid time range is provided
-  if (direction === "next" && !hasValidTimeRange) {
-    timestampRange = {
-      from: new Date().getTime(),
-      to: null,
-    }
-  }
   const timeDescription = formatTimeDuration(
     timestampRange.from,
     timestampRange.to,
   )
-
   const directionText = direction === "prev" ? "going back" : "up to"
+
   Logger.info(
     `Searching for documents from app "${app}" and entity "${entity}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
 
-  const schema = entityToSchemaMapper(entity, app) as VespaSchema
+  const schema = (entityToSchemaMapper(entity, app) ?? "*") as VespaSchema
   let items: VespaSearchResult[] = []
 
-  if (isUnspecificMetadataRetrieval) {
+  // Determine search strategy based on conditions
+  if (
+    !isValidAppAndEntity &&
+    classification.filter_query &&
+    classification.filters?.sortDirection === "desc"
+  ) {
+    Logger.info(
+      "User requested recent metadata retrieval without specifying app or entity.",
+    )
+    const searchOps = {
+      limit: pageSize,
+      alpha: userAlpha,
+      rankProfile: SearchModes.GlobalSorted,
+      timestampRange:
+        timestampRange.to || timestampRange.from ? timestampRange : null,
+    }
+
+    items =
+      (
+        await searchVespa(
+          classification.filter_query,
+          email,
+          null,
+          null,
+          searchOps,
+        )
+      ).root.children || []
+      
+    span?.setAttribute("metadata items found", items.length)
+    span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
+    Logger.info(`Using rank profile: ${SearchModes.GlobalSorted}`)
+  } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
+    const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
     span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
     Logger.info(
       `User requested metadata search: ${QueryType.RetrieveUnspecificMetadata}`,
     )
-    const { sortDirection, count } = classification.filters
 
-    // won't allow more than 50 items to be retrieved
-    const countLimit = Math.min(count, 50) || 5
     items =
       (
         await getItems({
@@ -1511,84 +1539,89 @@ async function* generateMetadataQueryAnswer(
           app,
           entity,
           timestampRange,
-          limit: countLimit,
+          limit: userSpecifiedCountLimit,
           asc: sortDirection === "asc",
         })
       ).root.children || []
 
     span?.setAttribute("metadata items found", items.length)
-    Logger.info(`Found ${items.length} items for metadata retrieval`)
 
-    // Return early if no documents found for unspecific metadata retrieval
+    // Early return if no documents found
     if (!items.length) {
       return "no documents found"
     }
-  }
-  // Handle specific metadata retrieval
-  else if (isMetadataRetrieval) {
+  } else if (isMetadataRetrieval && isValidAppAndEntity) {
+    // Specific metadata retrieval
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
     Logger.info(`User requested metadata search: ${QueryType.RetrieveMetadata}`)
 
-    const { filter_query, filters } = classification
+    const { filter_query } = classification
     const query = filter_query || input
     const rankProfile =
-      filters.sortDirection === "desc" && filter_query
+      sortDirection === "desc" && filter_query
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
-    console.log(timestampRange, "time stapmp range")
+    const searchOptions = {
+      limit: pageSize,
+      alpha: userAlpha,
+      rankProfile,
+      timestampRange:
+        timestampRange.to || timestampRange.from ? timestampRange : null,
+    }
+
     items =
       (
-        await searchVespa(query, email, app as Apps, entity as any, {
-          limit: pageSize,
-          alpha: userAlpha,
-          rankProfile,
-          timestampRange:
-            timestampRange.to || timestampRange.from ? timestampRange : null,
-        })
+        await searchVespa(
+          query,
+          email,
+          app as Apps,
+          entity as any,
+          searchOptions,
+        )
       ).root.children || []
 
     Logger.info(`Using rank profile: ${rankProfile}`)
-    Logger.info(`Found ${items.length} items for metadata retrieval`)
-    span?.setAttribute("metadata_items_found", items.length)
     span?.setAttribute("rank_profile", rankProfile)
 
     if (!items.length) {
       return hasValidTimeRange ? "no documents found" : null
     }
-  }
-  // If neither condition matched
-  else {
+  } else {
+    // None of the conditions matched
     return null
   }
 
-  if (
-    (classification.filter_query && classification.filters?.count <= 5) ||
-    (hasValidTimeRange && items.length <= 10)
-  ) {
-    chunksCount = 100
-    Logger.info(`chunks size for full context - ${100}`)
-    span?.setAttribute("full_context chunk_size", 100)
-  }
+  Logger.info(`Found ${items.length} items for metadata retrieval`)
+  span?.setAttribute("metadata_items_found", items.length)
 
+  // Process results
   const results = items.slice(0, pageSize)
-  const initialContext = buildContext(results, chunksCount)
+  const initialContext = buildContext(results, maxSummaryCount)
+
+  const streamOptions = {
+    stream: true,
+    modelId: defaultBestModel,
+    reasoning: config.isReasoning && userRequestsReasoning,
+  }
 
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app === Apps.Gmail) {
-    Logger.info("Using mailPromptJsonStream")
-    iterator = mailPromptJsonStream(input, userCtx, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-    })
+    Logger.info(`Using mailPromptJsonStream `)
+    iterator = mailPromptJsonStream(
+      input,
+      userCtx,
+      initialContext,
+      streamOptions,
+    )
   } else {
-    Logger.info("Using baselineRAGJsonStream")
-    iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-    })
+    Logger.info(`Using baselineRAGJsonStream`)
+    iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      initialContext,
+      streamOptions,
+    )
   }
 
   return yield* processIterator(
