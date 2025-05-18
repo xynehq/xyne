@@ -38,6 +38,7 @@ import type {
   ModelParams,
   QueryRouterResponse,
   TemporalClassifier,
+  UserQuery,
 } from "@/ai/types"
 import {
   QueryContextRank,
@@ -901,13 +902,12 @@ const indexToCitation = (text: string): string => {
   return text.replace(/Index (\d+)/g, "[$1]")
 }
 
-// todo add type here
-const buildUserQuery = (userQuery: any[]) => {
+const buildUserQuery = (userQuery: UserQuery) => {
   console.log("given user Query")
   console.log(userQuery)
   console.log("given user Query")
   let builtQuery = ""
-  userQuery.map((obj) => {
+  userQuery?.map((obj) => {
     if (obj.type === "text") {
       builtQuery += `${obj.value} `
     } else if (obj.type === "pill") {
@@ -958,11 +958,12 @@ export const baselineRAGJsonStream = (
     )
   }
   params.json = true // Set to true to ensure JSON response
+  const parsed = safeParse(userQuery)
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
       {
-        text: buildUserQuery(JSON.parse(userQuery)),
+        text: parsed ? buildUserQuery(parsed) : userQuery,
       },
     ],
   }
@@ -972,6 +973,14 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+const safeParse = (str: string) => {
+  try {
+    return JSON.parse(str)
+  } catch {
+    return null
+  }
 }
 
 export const temporalPromptJsonStream = (
