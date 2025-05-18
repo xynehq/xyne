@@ -103,8 +103,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
     lastUpdated: (search.lastUpdated as LastUpdated) || "anytime",
   })
   const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const observerTargetRef = useRef<HTMLDivElement | null>(null)
   const [answer, setAnswer] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const [showDebugInfo, setDebugInfo] = useState(
@@ -123,8 +121,12 @@ export const Search = ({ user, workspace }: IndexProps) => {
         : totalCount
       : totalCount
 
+  // Added for infinite scroll functionality
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
   const handleNext = () => {
-    setIsLoadingMore(true)
+    setIsLoading(true)
     const newOffset = offset + page
     setOffset(newOffset)
   }
@@ -158,25 +160,32 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   // Intersection observer for infinite scroll
   useEffect(() => {
+    if (!bottomRef.current) return
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !isLoadingMore) {
-          if (results.length < filterPageSize && results.length > 0) {
-            handleNext()
-          }
+        console.log("IntersectionObserver entries:", entries)
+        const [entry] = entries
+        if (
+          entry.isIntersecting &&
+          results.length > 0 &&
+          filterPageSize > page &&
+          results.length < filterPageSize &&
+          !isLoading
+        ) {
+          handleNext()
         }
       },
-      {
-        threshold: 0.5,
-      },
+      { threshold: 0.5 },
     )
-    if (observerTargetRef.current) {
-      observer.observe(observerTargetRef.current)
-    }
+
+    observer.observe(bottomRef.current)
+
     return () => {
-      observer.disconnect()
+      if (bottomRef.current) {
+        observer.unobserve(bottomRef.current)
+      }
     }
-  }, [results, isLoadingMore, groups, searchMeta, filter])
+  }, [results, filterPageSize, page, isLoading, handleNext])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -292,18 +301,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
         debug: showDebugInfo,
       }
 
-      let pageCount = page
       if (filter.app && filter.entity) {
         params.app = filter.app
         params.entity = filter.entity
-        // TODO: there seems to be a bug where if we don't
-        // even if group count value is lower than the page
-        // if we ask for sending the page size it actually
-        // finds that many even though as per groups it had less than page size
-        if (groups) {
-          pageCount = groups[filter.app][filter.entity]
-          params.page = page < pageCount ? page : pageCount
-        }
       }
 
       navigate({
@@ -311,7 +311,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         search: (prev) => ({
           ...prev,
           query: encodeURIComponent(activeQuery),
-          page,
+          page: page,
           offset: newOffset,
           app: params.app,
           entity: params.entity,
@@ -360,14 +360,18 @@ export const Search = ({ user, workspace }: IndexProps) => {
         })
 
         if (groupCount) {
-          // TODO: temp solution until we resolve groupCount from
-          // not always being true
-          if (!filter.app && !filter.entity) {
-            setSearchMeta({ totalCount: data.count })
+          let total = 0
+          for (const app in data.groupCount) {
+            const entities = data.groupCount[app]
+            for (const entity in entities) {
+              total += entities[entity]
+            }
           }
+          setSearchMeta({ totalCount: total })
           setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
+        // Reset loading state after results are received
       } else {
         const errorText = await response.text()
         if (!response.ok) {
@@ -384,9 +388,10 @@ export const Search = ({ user, workspace }: IndexProps) => {
     } catch (error) {
       logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
+      setIsLoading(false) // Reset loading state on error
     } finally {
       if (newOffset > 0) {
-        setIsLoadingMore(false)
+        setIsLoading(false)
       }
     }
   }
@@ -443,6 +448,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
             setFilter(updatedFilter)
+            setOffset(0)
           }}
         />
 
@@ -529,14 +535,17 @@ export const Search = ({ user, workspace }: IndexProps) => {
                     />
                   ))}
                 </div>
-                <div ref={observerTargetRef} style={{ height: "1px" }}>
-                  {isLoadingMore && (
-                    <div className="flex justify-center items-center p-4 text-[#464B53]">
-                      <LoaderContent />
-                    </div>
-                  )}
-                </div>{" "}
-                {/* Sentinel element with loader inside */}
+              </div>
+            )}
+
+            {/* Infinite scroll loading indicator and bottom reference */}
+            {results.length > 0 && (
+              <div ref={bottomRef} className="py-4 flex justify-center">
+                {isLoading &&
+                filterPageSize > page &&
+                results.length < filterPageSize ? (
+                  <LoaderContent />
+                ) : null}
               </div>
             )}
           </div>
