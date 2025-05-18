@@ -980,7 +980,7 @@ async function* generateAnswerFromGivenContext(
       ?.join("\n"),
   )
   Logger.info(
-    `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+    `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
   )
 
   const iterator = baselineRAGJsonStream(
@@ -1025,7 +1025,7 @@ async function* generateAnswerFromGivenContext(
         ?.join("\n"),
     )
     Logger.info(
-      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+      `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
     const iterator = withThrottlingBackoff(
       () =>
@@ -1762,7 +1762,6 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute("alpha", alpha)
-  // If search is recommeded or it can't decide if the query is summariztion type query, we search
 
   return yield* generateAnswerFromGivenContext(
     message,
