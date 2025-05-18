@@ -163,7 +163,6 @@ export const Search = ({ user, workspace }: IndexProps) => {
     if (!bottomRef.current) return
     const observer = new IntersectionObserver(
       (entries) => {
-        console.log("IntersectionObserver entries:", entries)
         const [entry] = entries
         if (
           entry.isIntersecting &&
