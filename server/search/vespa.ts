@@ -258,6 +258,7 @@ export enum SearchModes {
   BM25 = "default_bm25",
   AI = "default_ai",
   Random = "default_random",
+  GlobalSorted = "global_sorted",
 }
 
 type YqlProfile = {
@@ -1082,12 +1083,10 @@ interface GetItemsParams {
   limit?: number
   offset?: number
   email: string
+  excludedIds?: string[]
   asc: boolean
-  // query: string
 }
 
-// TODO: this won't work for user schema
-//
 export const getItems = async (
   params: GetItemsParams,
 ): Promise<VespaSearchResponse> => {
@@ -1099,6 +1098,7 @@ export const getItems = async (
     limit = config.page,
     offset = 0,
     email,
+    excludedIds, // Added excludedIds here
     asc,
   } = params
 
@@ -1143,19 +1143,29 @@ export const getItems = async (
   // Timestamp conditions
   if (timestampRange) {
     let timeConditions: string[] = []
+    let fieldForRange = timestampField // Use default field unless orderBy overrides
+
     if (timestampRange.from) {
       timeConditions.push(
-        `${timestampField} >= ${new Date(timestampRange.from).getTime()}`,
+        `${fieldForRange} >= ${new Date(timestampRange.from).getTime()}`,
       )
     }
     if (timestampRange.to) {
       timeConditions.push(
-        `${timestampField} <= ${new Date(timestampRange.to).getTime()}`,
+        `${fieldForRange} <= ${new Date(timestampRange.to).getTime()}`,
       )
     }
     if (timeConditions.length > 0) {
       conditions.push(`(${timeConditions.join(" and ")})`)
     }
+  }
+
+  // Excluded IDs condition
+  if (excludedIds && excludedIds.length > 0) {
+    const exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+    conditions.push(`!(${exclusionCondition})`)
   }
 
   // Combine conditions
@@ -1175,15 +1185,21 @@ export const getItems = async (
     ...(app ? { app } : {}),
     ...(entity ? { entity } : {}),
     "ranking.profile": "unranked",
+    hits: limit,
+    offset: offset,
   }
 
   try {
-    return await vespa.getItems(searchPayload)
+    // Assuming vespa.getItems maps to a generic search in the client
+    return await vespa.search<VespaSearchResponse>(searchPayload)
   } catch (error) {
-    throw new ErrorPerformingSearch({
+    const searchError = new ErrorPerformingSearch({
       cause: error as Error,
       sources: schema,
+      message: `getItems failed for schema ${schema}`,
     })
+    Logger.error(searchError, "Error in getItems function")
+    throw searchError
   }
 }
 

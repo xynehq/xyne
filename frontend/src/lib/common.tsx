@@ -19,6 +19,7 @@ import {
   NotionEntity,
   CalendarEntity,
   isMailAttachment,
+  SystemEntity,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
@@ -94,11 +95,21 @@ export const getIcon = (
     // ...existing Slack cases...
     return <img className={classNameVal} src={SlackSvg} />
   } else if (app === "pdf" || entity === PdfEntity.Default) {
-    // Added generic PDF
     return <img className={classNameVal} src={Pdf} />
   } else if (app === "event" || entity === EventEntity.Default) {
-    // Added generic Event
     return <CalendarDays size={12} className={classNameVal} />
+  } else if (app === Apps.Xyne) {
+    if (
+      entity === SystemEntity.UserProfile ||
+      entity === SystemEntity.SystemInfo
+    ) {
+      return (
+        <Users stroke="#464B53" size={size?.w || 12} className={classNameVal} />
+      )
+    }
+    // Fallback for other Xyne entities if any in the future
+    console.warn(`Unhandled entity ${entity} for app ${app}`)
+    return <FileText size={size?.w || 12} className={classNameVal} />
   } else {
     // Fallback or handle unknown app/entity
     console.warn(`Invalid app ${app} and entity ${entity}`)

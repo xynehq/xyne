@@ -431,11 +431,20 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
           Input text: '{"answer": "Prasad \\""}'
           After JSON.parse: { answer: 'Prasad "' }  // Note the extra quote at the end
           After this fix: { answer: 'Prasad' }     // Extra quote removed
-          
+
           This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
       */
-      if (jsonKey && text.slice(-2) === `\\"` && jsonVal[jsonKey.slice(1, -2)][jsonVal[jsonKey.slice(1, -2)].length - 1] === `"`) {
-        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(0, -1)
+      if (
+        jsonKey &&
+        text.slice(-2) === `\\"` &&
+        jsonVal[jsonKey.slice(1, -2)][
+          jsonVal[jsonKey.slice(1, -2)].length - 1
+        ] === `"`
+      ) {
+        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(
+          0,
+          -1,
+        )
       }
 
       // edge case "null\n}
@@ -1115,3 +1124,55 @@ export function generateSearchQueryOrAnswerFromConversation(
 
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
+
+// ***** NEW FUNCTION FOR AGENT PLANNER *****
+const PLANNER_SYSTEM_INSTRUCTION = `You are an AI agent\'s planning module.
+Your sole responsibility is to analyze the provided user query, conversation history, agent log, and available context fragments to decide the single next best action.
+The user message you receive will contain detailed instructions, available tools, and their descriptions.
+
+Based on this input, you MUST choose ONE of the following actions:
+1.  Select a tool to gather more information.
+2.  Decide to synthesize a final answer using currently available information.
+
+Your entire response MUST be a single, flat JSON object adhering to one of these exact structures:
+
+- If choosing to synthesize the answer:
+  {"tool": "SYNTHESIZE_ANSWER", "parameters": {}}
+
+- If choosing to use one of the available tools:
+  {"tool": "ACTUAL_TOOL_NAME", "parameters": {"param1_name": "param1_value", "param2_name": "param2_value", ...}}
+  (Replace ACTUAL_TOOL_NAME with the chosen tool\'s name as described in the user message, e.g., "metadata_retrieval", "search". Include only the relevant parameters for that tool.)
+
+Do NOT include any other text, explanations, apologies, or introductory phrases.
+Your output must be ONLY the valid JSON object for the chosen action.`
+
+export async function* generatePlannerActionJsonStream(
+  planningUserMessage: string, // This is the large, detailed prompt from chat.ts
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel // Planner can often use a faster model
+  }
+
+  const messagesForLLM: Message[] = [
+    {
+      role: ConversationRole.USER, // Or "user" as ConversationRole
+      content: [{ text: planningUserMessage }],
+    },
+  ]
+
+  // Set the dedicated system prompt for the planner
+  const planningParams: ModelParams = {
+    ...params,
+    systemPrompt: PLANNER_SYSTEM_INSTRUCTION,
+    json: true, // We are explicitly instructing the LLM to output JSON
+  }
+
+  // Assuming getProviderByModel(params.modelId).converseStream can take messages and ModelParams
+  // where ModelParams includes the systemPrompt.
+  yield* getProviderByModel(planningParams.modelId!).converseStream(
+    messagesForLLM,
+    planningParams,
+  )
+}
+// ***** END NEW FUNCTION *****

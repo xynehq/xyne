@@ -405,7 +405,7 @@ export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
 ) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
-any logic. Be formal as much as possible. 
+any logic. Be formal as much as possible.
 
 You are an AI assistant with access to internal workspace data. You have access to the following types of data:
 
@@ -504,10 +504,10 @@ You must respond in valid JSON format with the following structure:
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
-- If no clear answer is found in the retrieved context, set "answer" to "null" 
+- If no clear answer is found in the retrieved context, set "answer" to "null"
 - For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
-If information is missing or unclear, or the query lacks context set "answer" as "null" 
+If information is missing or unclear, or the query lacks context set "answer" as "null"
 `
 
 // Baseline Reasoing Prompt JSON
@@ -771,7 +771,7 @@ export const queryRewritePromptJson = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (userContext: string): string => {
   return `
-    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible.
 
     You are a permission aware retrieval-augmented generation (RAG) system.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
@@ -791,11 +791,11 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "Hello"
        - "Hey"
        - what is the time in Japan
-       If the query is conversational, respond naturally and appropriately. 
+       If the query is conversational, respond naturally and appropriately.
     3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
       - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
-      - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev". 
+      - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev".
       - Otherwise, set "temporalDirection" to null.
       - For queries like "previous emails" or "next emails" or "previous meetings" or "next meetings" that lack a concrete time range:
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -824,13 +824,13 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "Earliest meetings with marketing team" → sortDirection: "asc"
         - "Documents from last month" → sortDirection: null (no clear sorting preference)
 
-    8. Now our task is to classify the user's query into one of the following categories:  
-    a. RetrieveInformation  
-    b. RetrieveMetadata  
+    8. Now our task is to classify the user's query into one of the following categories:
+    a. RetrieveInformation
+    b. RetrieveMetadata
     c. RetrievedUnspecificMetadata
 
     ### DETAILED CLASSIFICATION RULES
-    
+
     1. RetrieveInformation
     - Applies to queries that MATCH ANY of these conditions:
       - Involve multiple apps or entities
@@ -890,7 +890,7 @@ export const searchQueryPrompt = (userContext: string): string => {
       - 'calendar', 'meetings', 'events', 'schedule' -> 'google-calendar'
       - 'drive', 'files', 'documents', 'folders' -> 'google-drive'
       - 'contacts', 'people', 'address book' -> 'google-workspace'
-    
+
     - Always apply these exact mappings for entity terms:
       - For Gmail app:
         - 'email', 'emails', 'mail', 'message', 'messages' -> 'mail'
@@ -925,35 +925,35 @@ export const searchQueryPrompt = (userContext: string): string => {
     - If 'app' or 'entity' is not explicitly mentioned, set them to 'null' and classify as 'RetrieveInformation'.
     - For queries classified as 'RetrieveMetadata' or 'RetrievedUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
     - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
-      
+
 
     #### Enum Values for Valid Inputs
 
-    type (Query Types):  
-    - RetrieveInformation  
-    - RetrieveMetadata  
+    type (Query Types):
+    - RetrieveInformation
+    - RetrieveMetadata
     - RetrievedUnspecificMetadata
 
-    app (Valid Apps):  
-    - google-drive  
-    - gmail  
-    - google-calendar  
+    app (Valid Apps):
+    - google-drive
+    - gmail
+    - google-calendar
     - google-workspace
 
-    entity (Valid Entities):  
-    For Gmail:  
-    - mail  
-    - pdf (for attachments)  
+    entity (Valid Entities):
+    For Gmail:
+    - mail
+    - pdf (for attachments)
 
-    For Drive:  
-    - driveFile  
-    - docs  
-    - sheets  
-    - slides  
-    - pdf  
-    - folder  
+    For Drive:
+    - driveFile
+    - docs
+    - sheets
+    - slides
+    - pdf
+    - folder
 
-    For Calendar:  
+    For Calendar:
     - event
 
     For Google-Workspace:
@@ -978,7 +978,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
        - "type" and "filters" are used for routing and fetching data.
-       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
+       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection".
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
@@ -1073,7 +1073,7 @@ export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
 ) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
-any logic. Be formal as much as possible. 
+any logic. Be formal as much as possible.
 
 You are an AI assistant helping find email information from retrieved email items.  You have access to:
 
@@ -1144,7 +1144,7 @@ Bad: "No emails found" (Use null instead)
 export const temporalDirectionJsonPrompt = (
   userContext: string,
   retrievedContext: string,
-) => `Current date: ${getDateForAI()}. 
+) => `Current date: ${getDateForAI()}.
 
 # Your Role
 You process temporal queries for workspace data (calendar events, emails, files, user profiles). Apply strict temporal logic to ensure accuracy.
@@ -1225,4 +1225,4 @@ YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
   "answer": "Formatted response string with citations or 'null' if no relevant data is found"
 }
 
-REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.` 
+REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
