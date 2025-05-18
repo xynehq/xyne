@@ -640,7 +640,7 @@ The context provided will be formatted with specific fields for each type:
 - Owner information
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
-- Content
+- Content chunks
 - Relevance score
 ## User Context Format
 - App and Entity type
@@ -656,7 +656,7 @@ The context provided will be formatted with specific fields for each type:
 - Subject
 - From/To/Cc/Bcc
 - Labels
-- Content
+- Content chunks
 - Relevance score
 ## Event Context Format
 - App and Entity type
@@ -666,6 +666,7 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
+- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -987,6 +988,8 @@ export const searchQueryPrompt = (userContext: string): string => {
   `
 }
 
+// Search Query Reasoning Prompt
+// This prompt is used to provide reasoning for the search query processing and classification.
 export const searchQueryReasoningPrompt = (userContext: string): string => {
   return `
     <think>
@@ -1222,4 +1225,4 @@ YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
   "answer": "Formatted response string with citations or 'null' if no relevant data is found"
 }
 
-REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.` 
+REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`

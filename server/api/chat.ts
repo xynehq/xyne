@@ -967,9 +967,6 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const results = await GetDocumentsByDocIds(fileIds)
-  console.log("documents")
-  console.log(results.root.children)
-  console.log("documents")
   if (!results.root.children) {
     results.root.children = []
   }
@@ -985,9 +982,6 @@ async function* generateAnswerFromGivenContext(
   Logger.info(
     `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
   )
-  console.log("initialContext")
-  console.log(initialContext)
-  console.log("initialContext")
 
   const iterator = baselineRAGJsonStream(
     input,
@@ -1093,20 +1087,16 @@ async function* generateAnswerFromGivenContext(
   if (parsed.answer) {
     return
   } else if (
-    // Condition if fileIds are present has some values meaning context has been selected.
     !parsed?.answer
   ) {
+    // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     Logger.info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     let results = await searchVespaInFiles(message, email, fileIds, {
       limit: fileIds?.length,
       alpha: userAlpha,
     })
-    console.log("After search results")
-    console.log(results.root.children)
-    console.log("After search results")
     if (!results.root.children) {
       results.root.children = []
     }
@@ -1122,9 +1112,6 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
-    console.log("searching initialContext")
-    console.log(initialContext)
-    console.log("searching initialContext")
     const iterator = withThrottlingBackoff(
       () =>
         baselineRAGJsonStream(
@@ -2003,9 +1990,6 @@ export const MessageApi = async (c: Context) => {
       isReasoningEnabled,
     }: MessageReqType = body
     const userRequestsReasoning = isReasoningEnabled
-    console.log("stringifiedfileIds")
-    console.log(stringifiedfileIds)
-    console.log("stringifiedfileIds\n")
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []
@@ -2139,10 +2123,6 @@ export const MessageApi = async (c: Context) => {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
-            console.log("message")
-            console.log(message)
-            console.log(typeof message)
-            console.log("message")
             let answer = ""
             let citations = []
             let citationMap: Record<number, number> = {}
@@ -2953,10 +2933,6 @@ export const MessageRetryApi = async (c: Context) => {
             Logger.info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
             )
-            console.log("message")
-            console.log(message)
-            console.log(typeof message)
-            console.log("message")
             let answer = ""
             let citations = []
             let citationMap: Record<number, number> = {}

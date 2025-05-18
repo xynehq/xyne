@@ -903,20 +903,14 @@ const indexToCitation = (text: string): string => {
 }
 
 const buildUserQuery = (userQuery: UserQuery) => {
-  console.log("given user Query")
-  console.log(userQuery)
-  console.log("given user Query")
   let builtQuery = ""
   userQuery?.map((obj) => {
-    if (obj.type === "text") {
-      builtQuery += `${obj.value} `
-    } else if (obj.type === "pill") {
+    if (obj?.type === "text") {
+      builtQuery += `${obj?.value} `
+    } else if (obj?.type === "pill") {
       builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
     }
   })
-  console.log("builtQuery")
-  console.log(builtQuery)
-  console.log("builtQuery")
   return builtQuery
 }
 

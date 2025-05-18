@@ -42,9 +42,7 @@ const constructFileContext = (
       fields.matchfeatures,
       fields.chunks_summary as string[],
     )
-    console.log("Got sorted chunks...")
   } else {
-    console.log("Else part...")
     chunks =
       fields.chunks_summary?.map((chunk, idx) => ({
         chunk: typeof chunk == "string" ? chunk : chunk.chunk,
@@ -55,14 +53,12 @@ const constructFileContext = (
 
   let content = ""
   if (isSelectedFiles && fields?.matchfeatures) {
-    console.log("Giving 20 max chunks...")
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
   } else if (isSelectedFiles) {
-    console.log("Giving all chunks...")
     content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
@@ -125,14 +121,12 @@ const constructMailContext = (
 
   let content = ""
   if (isSelectedFiles && fields?.matchfeatures) {
-    console.log("Giving 20 max chunks...")
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
   } else if (isSelectedFiles) {
-    console.log("Giving all chunks...")
     content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
@@ -206,14 +200,12 @@ const constructMailAttachmentContext = (
 
   let content = ""
   if (isSelectedFiles && fields?.matchfeatures) {
-    console.log("Giving 20 max chunks...")
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
   } else if (isSelectedFiles) {
-    console.log("Giving all chunks...")
     content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
