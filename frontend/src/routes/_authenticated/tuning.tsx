@@ -87,8 +87,7 @@ export default function TuningPage() {
     }
 
     fetchDatasets()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Added eslint-disable for toast dependency
+  }, [])
 
   useEffect(() => {
     // Only establish WebSocket connection if we have a jobId and it's running

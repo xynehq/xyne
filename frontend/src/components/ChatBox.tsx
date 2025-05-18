@@ -254,8 +254,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
   const [referenceSearchTerm, setReferenceSearchTerm] = useState("")
   const [referenceBoxLeft, setReferenceBoxLeft] = useState(0)
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
-  const [showSourcesButton, _] = useState(false) // Added this line
-  // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+  const [showSourcesButton, _] = useState(false)
 
   const updateReferenceBoxPosition = (atIndex: number) => {
     const inputElement = inputRef.current
@@ -1431,7 +1430,7 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
               input.focus()
             }}
           />
-          {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
+          {showSourcesButton && (
             <DropdownMenu
               open={isSourceMenuOpen}
               onOpenChange={setIsSourceMenuOpen}

@@ -19,9 +19,7 @@ import {
   AgentReasoningStepType,
   AgentReasoningToolParameters,
   AgentReasoningToolResult,
-  // AgentToolName, // Not directly used in ChatPage state logic for now
-} from "shared/types" // Import MessageMode and new Agent types
-// import { MessageMode } from "shared/types"
+} from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
@@ -167,7 +165,8 @@ interface ChatPageProps {
   workspace: PublicWorkspace
 }
 
-const REASONING_STATE_KEY = "isReasoningGlobalState"
+const REASONING_STATE = "isReasoningGlobalState"
+const AGENTIC_STATE = "agenticState"
 
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
@@ -214,7 +213,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     isWithChatId && data ? data?.chat?.title || null : null,
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
-  const [showRagTrace, setShowRagTrace] = useState(false) // Added state
+  const [showRagTrace, setShowRagTrace] = useState(false)
   const [stopMsg, setStopMsg] = useState<boolean>(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
@@ -237,18 +236,22 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const titleRef = useRef<HTMLInputElement | null>(null)
   const [allCitations, setAllCitations] = useState<Map<string, Citation>>(
     new Map(),
-  ) // State for all citations
-  const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
+  )
+  const eventSourceRef = useRef<EventSource | null>(null)
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
+    const storedValue = localStorage.getItem(REASONING_STATE)
     return storedValue ? JSON.parse(storedValue) : false
   })
 
   useEffect(() => {
-    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
+    localStorage.setItem(REASONING_STATE, JSON.stringify(isReasoningActive))
   }, [isReasoningActive])
+
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -1781,8 +1784,10 @@ const ChatMessage = ({
                 </div>
               )
             default:
-              const _exhaustiveCheck: never = step // Ensures all cases are handled
-              return <div key={index}>Unknown step: {JSON.stringify(step)}</div>
+              const stepType = step // Ensures all cases are handled
+              return (
+                <div key={index}>Unknown step: {JSON.stringify(stepType)}</div>
+              )
           }
         })}
       </div>

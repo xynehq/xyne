@@ -25,6 +25,8 @@ export {
   SlackEntity,
   Apps,
   isMailAttachment,
+  SystemEntity,
+  SystemEntitySchema,
 } from "search/types"
 export type { Entity } from "search/types"
 // @ts-ignore
