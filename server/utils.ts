@@ -96,7 +96,8 @@ export const getRelativeTime = (oldTimestamp: number) => {
 
 const MAX_RETRIES = 10
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+export const delay = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Retry logic with exponential backoff and jitter.

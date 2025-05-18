@@ -45,6 +45,7 @@ import { getLogger } from "@/logger"
 import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
+  delay,
   getErrorMessage,
   getRelativeTime,
   interpretDateFromReturnedTemporalValue,
@@ -1250,12 +1251,6 @@ async function* generateAnswerFromGivenContext(
   }
 }
 
-// a tiny delay helper
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-/**
- * Wraps any async-iterable factory and retries on ThrottlingException
- */
 export function withThrottlingBackoff<T>(
   factory: () => AsyncIterable<T>,
   maxRetries = 5,
@@ -1269,7 +1264,6 @@ export function withThrottlingBackoff<T>(
         for await (const item of factory()) {
           yield item
         }
-        // completed without errors → done
         return
       } catch (err: any) {
         const isThrottling =
@@ -1290,8 +1284,7 @@ export function withThrottlingBackoff<T>(
           attempt++
           continue // retry
         }
-        // not a ThrottlingException, or retries exhausted → rethrow
-        // throw err
+        throw err
       }
     }
   })()
