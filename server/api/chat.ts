@@ -2969,203 +2969,51 @@ export const MessageRetryApi = async (c: Context) => {
 
         try {
           let message = prevUserMessage.message
-          const convWithNoErrMsg = isUserMessage
-            ? conversation
-                .filter((con) => !con?.errorMessage)
-                .filter(
-                  (msg) =>
-                    !(
-                      msg.messageRole === MessageRole.Assistant && !msg.message
-                    ),
-                ) // filter out assistant messages with no content
-                .map((m) => ({
-                  role: m.messageRole as ConversationRole,
-                  content: [{ text: m.message }],
-                }))
-            : conversation
-                .slice(0, conversation.length - 1)
-                .filter((con) => !con?.errorMessage)
-                .filter(
-                  (msg) =>
-                    !(
-                      msg.messageRole === MessageRole.Assistant && !msg.message
-                    ),
-                )
-                .map((m) => ({
-                  role: m.messageRole as ConversationRole,
-                  content: [{ text: m.message }],
-                }))
-          Logger.info(
-            "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
-          )
-          const searchSpan = streamSpan.startSpan("conversation_search")
-          const searchOrAnswerIterator =
-            generateSearchQueryOrAnswerFromConversation(message, ctx, {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: true,
-              json: true,
-              reasoning:
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: convWithNoErrMsg,
-            })
-          let currentAnswer = ""
-          let answer = ""
-          let citations: Citation[] = [] // Changed to Citation[] for consistency
-          let citationMap: Record<number, number> = {}
-          let queryFilters = {
-            app: "",
-            entity: "",
-            startTime: "",
-            endTime: "",
-            count: 0,
-          }
-          let parsed = {
-            answer: "",
-            queryRewrite: "",
-            temporalDirection: null,
-            filters: queryFilters,
-            type: "",
-            from: null,
-            to: null,
-          }
-          let thinking = ""
-          let reasoning =
-            userRequestsReasoning &&
-            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-          let buffer = ""
-          for await (const chunk of searchOrAnswerIterator) {
-            if (stream.closed) {
-              Logger.info(
-                "[MessageRetryApi] Stream closed during conversation search loop. Breaking.",
-              )
-              wasStreamClosedPrematurely = true
-              break
-            }
-            if (chunk.text) {
-              if (reasoning) {
-                if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                  thinking += chunk.text
-                  stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: chunk.text,
-                  })
-                } else {
-                  // first time
-                  if (!chunk.text.includes(StartThinkingToken)) {
-                    let token = chunk.text
-                    if (chunk.text.includes(EndThinkingToken)) {
-                      token = chunk.text.split(EndThinkingToken)[0]
-                      thinking += token
-                    } else {
-                      thinking += token
-                    }
-                    stream.writeSSE({
-                      event: ChatSSEvents.Reasoning,
-                      data: token,
-                    })
-                  }
-                }
-              }
-              if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                reasoning = false
-                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-              }
-              buffer += chunk.text
-              if (!reasoning) {
-                try {
-                  parsed = jsonParseLLMOutput(buffer) || {}
-                  if (parsed.answer && currentAnswer !== parsed.answer) {
-                    if (currentAnswer === "") {
-                      Logger.info(
-                        "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                      )
-                      stream.writeSSE({
-                        event: ChatSSEvents.Start,
-                        data: "",
-                      })
-                      // First valid answer - send the whole thing
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: parsed.answer,
-                      })
-                    } else {
-                      // Subsequent chunks - send only the new part
-                      const newText = parsed.answer.slice(currentAnswer.length)
-                      stream.writeSSE({
-                        event: ChatSSEvents.ResponseUpdate,
-                        data: newText,
-                      })
-                    }
-                    currentAnswer = parsed.answer
-                  }
-                } catch (err) {
-                  Logger.error(
-                    err,
-                    `Error while parsing LLM output ${(err as Error).message}`,
-                  )
-                  continue
-                }
-              }
-            }
-            if (chunk.cost) {
-              costArr.push(chunk.cost)
-            }
-          }
-          searchSpan.setAttribute("answer_found", parsed.answer)
-          searchSpan.setAttribute("answer", answer)
-          searchSpan.setAttribute("query_rewrite", parsed.queryRewrite)
-          searchSpan.end()
+          if (fileIds && fileIds?.length > 0) {
+            Logger.info(
+              "[RETRY] User has selected some context with query, answering only based on that given context",
+            )
+            console.log("message")
+            console.log(message)
+            console.log(typeof message)
+            console.log("message")
+            let answer = ""
+            let citations = []
+            let citationMap: Record<number, number> = {}
+            let thinking = ""
+            let reasoning =
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            const conversationSpan = streamSpan.startSpan("conversation_search")
+            conversationSpan.setAttribute("answer", answer)
+            conversationSpan.end()
 
-          if (parsed.answer === null) {
             const ragSpan = streamSpan.startSpan("rag_processing")
-            if (parsed.queryRewrite) {
-              Logger.info(
-                "retry: The query is ambiguous and requires a mandatory query rewrite from the existing conversation / recent messages",
-              )
-              message = parsed.queryRewrite
-              ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
-            } else {
-              Logger.info(
-                "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
-              )
-            }
-            const classification: TemporalClassifier & QueryRouterResponse = {
-              direction: parsed.temporalDirection,
-              type: parsed.type as QueryType,
-              filters: {
-                ...parsed.filters,
-                app: parsed.filters.app as Apps,
-                entity: parsed.filters.entity as any,
-              },
-            }
+
             const understandSpan = ragSpan.startSpan("understand_message")
-            const iterator = UnderstandMessageAndAnswer(
+
+            const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
               message,
-              classification,
-              convWithNoErrMsg,
               0.5,
+              fileIds,
               understandSpan,
-              userRequestsReasoning,
             )
-            // throw new Error("Hello, how are u doing?")
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
             })
+
             answer = ""
             thinking = ""
-            reasoning = config.isReasoning && userRequestsReasoning
+            reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (stream.closed) {
                 Logger.info(
-                  "[MessageRetryApi] Stream closed during RAG loop. Breaking.",
+                  "[MessageRetryApi] Stream closed during conversation search loop. Breaking.",
                 )
                 wasStreamClosedPrematurely = true
                 break
@@ -3177,6 +3025,7 @@ export const MessageRetryApi = async (c: Context) => {
                     event: ChatSSEvents.Reasoning,
                     data: chunk.text,
                   })
+                  // reasoningSpan.end()
                 }
                 if (!chunk.reasoning) {
                   answer += chunk.text
@@ -3194,7 +3043,7 @@ export const MessageRetryApi = async (c: Context) => {
                 citations.push(item)
                 citationMap[index] = citations.length - 1
                 Logger.info(
-                  `retry: Found citations and sending it, current count: ${citations.length}`,
+                  `Found citations and sending it, current count: ${citations.length}`,
                 )
                 stream.writeSSE({
                   event: ChatSSEvents.CitationsUpdate,
@@ -3225,52 +3074,15 @@ export const MessageRetryApi = async (c: Context) => {
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
             ragSpan.end()
-          } else if (parsed.answer) {
-            answer = parsed.answer
-          }
 
-          // Database Update Logic
-          const insertSpan = streamSpan.startSpan("insert_assistant_message")
-          if (wasStreamClosedPrematurely) {
-            Logger.info(
-              `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
-            )
-            if (isUserMessage) {
-              await db.transaction(async (tx) => {
-                await updateMessage(tx, messageId, { errorMessage: "" })
-                const msg = await insertMessage(tx, {
-                  chatId: originalMessage.chatId,
-                  userId: user.id,
-                  workspaceExternalId: workspace.externalId,
-                  chatExternalId: originalMessage.chatExternalId,
-                  messageRole: MessageRole.Assistant,
-                  email: user.email,
-                  sources: citations,
-                  message: processMessage(answer, citationMap),
-                  thinking,
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                      .modelId,
-                  createdAt: new Date(
-                    new Date(originalMessage.createdAt).getTime() + 1,
-                  ),
-                })
-                relevantMessageId = msg.externalId
-              })
-            } else {
-              relevantMessageId = originalMessage.externalId
-              await updateMessage(db, messageId, {
-                message: processMessage(answer, citationMap),
-                updatedAt: new Date(),
-                sources: citations,
-                thinking,
-                errorMessage: null,
-              })
-            }
-          } else {
-            if (answer) {
+            // Database Update Logic
+            const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            if (wasStreamClosedPrematurely) {
+              Logger.info(
+                `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
+              )
               if (isUserMessage) {
-                let msg = await db.transaction(async (tx) => {
+                await db.transaction(async (tx) => {
                   await updateMessage(tx, messageId, { errorMessage: "" })
                   const msg = await insertMessage(tx, {
                     chatId: originalMessage.chatId,
@@ -3285,24 +3097,13 @@ export const MessageRetryApi = async (c: Context) => {
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                         .modelId,
-                    // The createdAt for this response which was error before
-                    // should be just 1 unit more than the respective user query's createdAt value
-                    // This is done to maintain order of user-assistant pattern of messages in UI
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
                   })
-                  return msg
+                  relevantMessageId = msg.externalId
                 })
-                relevantMessageId = msg.externalId
               } else {
-                Logger.info(
-                  `Updated trace for message ${originalMessage.externalId}`,
-                )
-                insertSpan.setAttribute(
-                  "message_id",
-                  originalMessage.externalId,
-                )
                 relevantMessageId = originalMessage.externalId
                 await updateMessage(db, messageId, {
                   message: processMessage(answer, citationMap),
@@ -3313,42 +3114,473 @@ export const MessageRetryApi = async (c: Context) => {
                 })
               }
             } else {
-              Logger.error(
-                `[MessageRetryApi] Stream finished but no answer generated.`,
-              )
-              const failureErrorMsg =
-                "Assistant failed to generate a response on retry."
-              await addErrMessageToMessage(originalMessage, failureErrorMsg)
-              relevantMessageId = originalMessage.externalId
-              await stream.writeSSE({
-                event: ChatSSEvents.Error,
-                data: failureErrorMsg,
-              })
+              if (answer) {
+                if (isUserMessage) {
+                  let msg = await db.transaction(async (tx) => {
+                    await updateMessage(tx, messageId, { errorMessage: "" })
+                    const msg = await insertMessage(tx, {
+                      chatId: originalMessage.chatId,
+                      userId: user.id,
+                      workspaceExternalId: workspace.externalId,
+                      chatExternalId: originalMessage.chatExternalId,
+                      messageRole: MessageRole.Assistant,
+                      email: user.email,
+                      sources: citations,
+                      message: processMessage(answer, citationMap),
+                      thinking,
+                      modelId:
+                        ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                          .modelId,
+                      // The createdAt for this response which was error before
+                      // should be just 1 unit more than the respective user query's createdAt value
+                      // This is done to maintain order of user-assistant pattern of messages in UI
+                      createdAt: new Date(
+                        new Date(originalMessage.createdAt).getTime() + 1,
+                      ),
+                    })
+                    return msg
+                  })
+                  relevantMessageId = msg.externalId
+                } else {
+                  Logger.info(
+                    `Updated trace for message ${originalMessage.externalId}`,
+                  )
+                  insertSpan.setAttribute(
+                    "message_id",
+                    originalMessage.externalId,
+                  )
+                  relevantMessageId = originalMessage.externalId
+                  await updateMessage(db, messageId, {
+                    message: processMessage(answer, citationMap),
+                    updatedAt: new Date(),
+                    sources: citations,
+                    thinking,
+                    errorMessage: null,
+                  })
+                }
+              } else {
+                Logger.error(
+                  `[MessageRetryApi] Stream finished but no answer generated.`,
+                )
+                const failureErrorMsg =
+                  "Assistant failed to generate a response on retry."
+                await addErrMessageToMessage(originalMessage, failureErrorMsg)
+                relevantMessageId = originalMessage.externalId
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: failureErrorMsg,
+                })
+              }
             }
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: originalMessage.chatExternalId,
+                messageId: relevantMessageId,
+              }),
+            })
+
+            const endSpan = streamSpan.startSpan("send_end_event")
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+            endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
+            const traceJson = tracer.serializeToJson()
+            await updateChatTrace(
+              originalMessage.chatExternalId,
+              originalMessage.externalId,
+              traceJson,
+            )
+          } else {
+            const convWithNoErrMsg = isUserMessage
+              ? conversation
+                  .filter((con) => !con?.errorMessage)
+                  .filter(
+                    (msg) =>
+                      !(
+                        msg.messageRole === MessageRole.Assistant &&
+                        !msg.message
+                      ),
+                  ) // filter out assistant messages with no content
+                  .map((m) => ({
+                    role: m.messageRole as ConversationRole,
+                    content: [{ text: m.message }],
+                  }))
+              : conversation
+                  .slice(0, conversation.length - 1)
+                  .filter((con) => !con?.errorMessage)
+                  .filter(
+                    (msg) =>
+                      !(
+                        msg.messageRole === MessageRole.Assistant &&
+                        !msg.message
+                      ),
+                  )
+                  .map((m) => ({
+                    role: m.messageRole as ConversationRole,
+                    content: [{ text: m.message }],
+                  }))
+            Logger.info(
+              "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+            )
+            const searchSpan = streamSpan.startSpan("conversation_search")
+            const searchOrAnswerIterator =
+              generateSearchQueryOrAnswerFromConversation(message, ctx, {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: true,
+                json: true,
+                reasoning:
+                  userRequestsReasoning &&
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: convWithNoErrMsg,
+              })
+            let currentAnswer = ""
+            let answer = ""
+            let citations: Citation[] = [] // Changed to Citation[] for consistency
+            let citationMap: Record<number, number> = {}
+            let queryFilters = {
+              app: "",
+              entity: "",
+              startTime: "",
+              endTime: "",
+              count: 0,
+            }
+            let parsed = {
+              answer: "",
+              queryRewrite: "",
+              temporalDirection: null,
+              filters: queryFilters,
+              type: "",
+              from: null,
+              to: null,
+            }
+            let thinking = ""
+            let reasoning =
+              userRequestsReasoning &&
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+            let buffer = ""
+            for await (const chunk of searchOrAnswerIterator) {
+              if (stream.closed) {
+                Logger.info(
+                  "[MessageRetryApi] Stream closed during conversation search loop. Breaking.",
+                )
+                wasStreamClosedPrematurely = true
+                break
+              }
+              if (chunk.text) {
+                if (reasoning) {
+                  if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                  } else {
+                    // first time
+                    if (!chunk.text.includes(StartThinkingToken)) {
+                      let token = chunk.text
+                      if (chunk.text.includes(EndThinkingToken)) {
+                        token = chunk.text.split(EndThinkingToken)[0]
+                        thinking += token
+                      } else {
+                        thinking += token
+                      }
+                      stream.writeSSE({
+                        event: ChatSSEvents.Reasoning,
+                        data: token,
+                      })
+                    }
+                  }
+                }
+                if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                  reasoning = false
+                  chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                }
+                buffer += chunk.text
+                if (!reasoning) {
+                  try {
+                    parsed = jsonParseLLMOutput(buffer) || {}
+                    if (parsed.answer && currentAnswer !== parsed.answer) {
+                      if (currentAnswer === "") {
+                        Logger.info(
+                          "retry: We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.Start,
+                          data: "",
+                        })
+                        // First valid answer - send the whole thing
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: parsed.answer,
+                        })
+                      } else {
+                        // Subsequent chunks - send only the new part
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: newText,
+                        })
+                      }
+                      currentAnswer = parsed.answer
+                    }
+                  } catch (err) {
+                    Logger.error(
+                      err,
+                      `Error while parsing LLM output ${(err as Error).message}`,
+                    )
+                    continue
+                  }
+                }
+              }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+            }
+            searchSpan.setAttribute("answer_found", parsed.answer)
+            searchSpan.setAttribute("answer", answer)
+            searchSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+            searchSpan.end()
+
+            if (parsed.answer === null) {
+              const ragSpan = streamSpan.startSpan("rag_processing")
+              if (parsed.queryRewrite) {
+                Logger.info(
+                  "retry: The query is ambiguous and requires a mandatory query rewrite from the existing conversation / recent messages",
+                )
+                message = parsed.queryRewrite
+                ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+              } else {
+                Logger.info(
+                  "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+                )
+              }
+              const classification: TemporalClassifier & QueryRouterResponse = {
+                direction: parsed.temporalDirection,
+                type: parsed.type as QueryType,
+                filters: {
+                  ...parsed.filters,
+                  app: parsed.filters.app as Apps,
+                  entity: parsed.filters.entity as any,
+                },
+              }
+              const understandSpan = ragSpan.startSpan("understand_message")
+              const iterator = UnderstandMessageAndAnswer(
+                email,
+                ctx,
+                message,
+                classification,
+                convWithNoErrMsg,
+                0.5,
+                understandSpan,
+                userRequestsReasoning,
+              )
+              // throw new Error("Hello, how are u doing?")
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+              answer = ""
+              thinking = ""
+              reasoning = config.isReasoning && userRequestsReasoning
+              citations = []
+              citationMap = {}
+              let citationValues: Record<number, string> = {}
+              for await (const chunk of iterator) {
+                if (stream.closed) {
+                  Logger.info(
+                    "[MessageRetryApi] Stream closed during RAG loop. Breaking.",
+                  )
+                  wasStreamClosedPrematurely = true
+                  break
+                }
+                if (chunk.text) {
+                  if (reasoning && chunk.reasoning) {
+                    thinking += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: chunk.text,
+                    })
+                  }
+                  if (!chunk.reasoning) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+                }
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+                if (chunk.citation) {
+                  const { index, item } = chunk.citation
+                  citations.push(item)
+                  citationMap[index] = citations.length - 1
+                  Logger.info(
+                    `retry: Found citations and sending it, current count: ${citations.length}`,
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.CitationsUpdate,
+                    data: JSON.stringify({
+                      contextChunks: citations,
+                      citationMap,
+                    }),
+                  })
+                  citationValues[index] = item
+                }
+              }
+              understandSpan.setAttribute("citation_count", citations.length)
+              understandSpan.setAttribute(
+                "citation_map",
+                JSON.stringify(citationMap),
+              )
+              understandSpan.setAttribute(
+                "citation_values",
+                JSON.stringify(citationValues),
+              )
+              understandSpan.end()
+              const answerSpan = ragSpan.startSpan("process_final_answer")
+              answerSpan.setAttribute(
+                "final_answer",
+                processMessage(answer, citationMap),
+              )
+              answerSpan.setAttribute("actual_answer", answer)
+              answerSpan.setAttribute("final_answer_length", answer.length)
+              answerSpan.end()
+              ragSpan.end()
+            } else if (parsed.answer) {
+              answer = parsed.answer
+            }
+
+            // Database Update Logic
+            const insertSpan = streamSpan.startSpan("insert_assistant_message")
+            if (wasStreamClosedPrematurely) {
+              Logger.info(
+                `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
+              )
+              if (isUserMessage) {
+                await db.transaction(async (tx) => {
+                  await updateMessage(tx, messageId, { errorMessage: "" })
+                  const msg = await insertMessage(tx, {
+                    chatId: originalMessage.chatId,
+                    userId: user.id,
+                    workspaceExternalId: workspace.externalId,
+                    chatExternalId: originalMessage.chatExternalId,
+                    messageRole: MessageRole.Assistant,
+                    email: user.email,
+                    sources: citations,
+                    message: processMessage(answer, citationMap),
+                    thinking,
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                        .modelId,
+                    createdAt: new Date(
+                      new Date(originalMessage.createdAt).getTime() + 1,
+                    ),
+                  })
+                  relevantMessageId = msg.externalId
+                })
+              } else {
+                relevantMessageId = originalMessage.externalId
+                await updateMessage(db, messageId, {
+                  message: processMessage(answer, citationMap),
+                  updatedAt: new Date(),
+                  sources: citations,
+                  thinking,
+                  errorMessage: null,
+                })
+              }
+            } else {
+              if (answer) {
+                if (isUserMessage) {
+                  let msg = await db.transaction(async (tx) => {
+                    await updateMessage(tx, messageId, { errorMessage: "" })
+                    const msg = await insertMessage(tx, {
+                      chatId: originalMessage.chatId,
+                      userId: user.id,
+                      workspaceExternalId: workspace.externalId,
+                      chatExternalId: originalMessage.chatExternalId,
+                      messageRole: MessageRole.Assistant,
+                      email: user.email,
+                      sources: citations,
+                      message: processMessage(answer, citationMap),
+                      thinking,
+                      modelId:
+                        ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                          .modelId,
+                      // The createdAt for this response which was error before
+                      // should be just 1 unit more than the respective user query's createdAt value
+                      // This is done to maintain order of user-assistant pattern of messages in UI
+                      createdAt: new Date(
+                        new Date(originalMessage.createdAt).getTime() + 1,
+                      ),
+                    })
+                    return msg
+                  })
+                  relevantMessageId = msg.externalId
+                } else {
+                  Logger.info(
+                    `Updated trace for message ${originalMessage.externalId}`,
+                  )
+                  insertSpan.setAttribute(
+                    "message_id",
+                    originalMessage.externalId,
+                  )
+                  relevantMessageId = originalMessage.externalId
+                  await updateMessage(db, messageId, {
+                    message: processMessage(answer, citationMap),
+                    updatedAt: new Date(),
+                    sources: citations,
+                    thinking,
+                    errorMessage: null,
+                  })
+                }
+              } else {
+                Logger.error(
+                  `[MessageRetryApi] Stream finished but no answer generated.`,
+                )
+                const failureErrorMsg =
+                  "Assistant failed to generate a response on retry."
+                await addErrMessageToMessage(originalMessage, failureErrorMsg)
+                relevantMessageId = originalMessage.externalId
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: failureErrorMsg,
+                })
+              }
+            }
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: originalMessage.chatExternalId,
+                messageId: relevantMessageId,
+              }),
+            })
+
+            const endSpan = streamSpan.startSpan("send_end_event")
+            await stream.writeSSE({
+              data: "",
+              event: ChatSSEvents.End,
+            })
+            endSpan.end()
+            streamSpan.end()
+            rootSpan.end()
+            const traceJson = tracer.serializeToJson()
+            await updateChatTrace(
+              originalMessage.chatExternalId,
+              originalMessage.externalId,
+              traceJson,
+            )
           }
-
-          await stream.writeSSE({
-            event: ChatSSEvents.ResponseMetadata,
-            data: JSON.stringify({
-              chatId: originalMessage.chatExternalId,
-              messageId: relevantMessageId,
-            }),
-          })
-
-          const endSpan = streamSpan.startSpan("send_end_event")
-          await stream.writeSSE({
-            data: "",
-            event: ChatSSEvents.End,
-          })
-          endSpan.end()
-          streamSpan.end()
-          rootSpan.end()
-          const traceJson = tracer.serializeToJson()
-          await updateChatTrace(
-            originalMessage.chatExternalId,
-            originalMessage.externalId,
-            traceJson,
-          )
         } catch (error) {
           const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
           streamErrorSpan.addEvent("error", {
