@@ -769,7 +769,6 @@ export const queryRewritePromptJson = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-
 export const searchQueryPrompt = (userContext: string): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -817,13 +816,14 @@ export const searchQueryPrompt = (userContext: string): string => {
     7. Determine the appropriate sorting direction based on query terms:
       - For ANY query about "latest", "recent", "newest", "current" items (emails, files, documents, meetings, etc.), set "sortDirection" to "desc" (newest/most recent first)
       - For ANY query about "oldest", "earliest" items (emails, files, documents, meetings, etc.), set "sortDirection" to "asc" (oldest first)
-      - If no sorting preference is indicated or can be inferred, set "sortDirection" to "desc" as the default value
+      - If no sorting preference is indicated or can be inferred, set "sortDirection" to null
       - Example queries and their sorting directions:
         - "Give me my latest emails" → sortDirection: "desc"
-        - "Show me my oldest files in Drive" → sortDirection: "asc"
+        - "Show me my oldest files in Drive" → sortDirection: "asc" 
         - "Recent spreadsheets" → sortDirection: "desc"
         - "Earliest meetings with marketing team" → sortDirection: "asc"
-        - "Documents from last month" → sortDirection: "desc" (default)
+        - "Documents from last month" → sortDirection: null (no clear direction specified)
+        - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
     8. Extract the main intent or search keywords from the query to create a "filter_query" field:
       - Focus on identifying the specific keywords that represent what the user is looking for
@@ -926,7 +926,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     - First, identify all app and entity terms mentioned in the query using the strict mappings above
     - THEN, extract filter_query by removing generic words and time-based terms
     - THEN, evaluate classification:
-      IF multiple valid apps OR multiple valid entities are detected with or without filter_query:
+      IF multiple valid apps OR multiple valid entities are detected with or without filter_query and IF there is no time based matching:
         THEN classify as RetrieveInformation, set app = null, entity = null
       ELSE IF exactly one valid app OR exactly one valid entity is detected:
         IF query contains specific details resulting in a non-null filter_query:
@@ -991,7 +991,7 @@ export const searchQueryPrompt = (userContext: string): string => {
            "count": "<number of items to retrieve or null>",
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "sortDirection": "<'asc' | 'desc'>"
+           "sortDirection": "<'asc' | 'desc' | null>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -999,7 +999,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
        - "filter_query" contains the main search keywords or intent extracted from the user's query, focusing on the specific terms that represent what they're looking for. If no specific terms remain after removing generic and time-based words, set filter_query to null.
        - "type" and "filters" are used for routing and fetching data.
-       - "sortDirection" must always be set to either "asc" or "desc" for every query (default is "desc" if no direction is specified).
+       - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
@@ -1007,6 +1007,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
+
 
 // Search Query Reasoning Prompt
 // This prompt is used to provide reasoning for the search query processing and classification.
@@ -1119,7 +1120,7 @@ ${retrievedContext}
 - The retrieved results may contain noise or unrelated items due to semantic search.
 - Focus on email items that match the query criteria (e.g., sender, time range).
 - Include emails regardless of whether they are meeting-related.
-- If no relevant emails are found, return null.
+- If no relevant emails are found, return "I couldn't find any emails matching your query".
 
 # Guidelines for Response
 1. For email queries (e.g., "previous 3 emails", "emails from John"):
@@ -1142,22 +1143,13 @@ ${retrievedContext}
    - Max 2 citations per email description.
    - Never group indices like [0,1] - use separate brackets: [0] [1].
 
-# Response Format
+# CRITICAL INSTRUCTION: RESPONSE FORMAT
+YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 {
-  "answer": "Your answer listing emails with citations in [index] format, or null if no relevant emails found"
+  "answer": "Formatted response string with citations or "I couldn't find any emails matching your query" if no relevant data is found"
 }
 
-# Examples
-Good: "Here are your previous 3 emails: 1. Yesterday at 2 PM, 'Project Update' from John [0]. 2. Two days ago at 10 AM, 'Meeting Invite' from Sarah [1]. 3. Three days ago at 5 PM, 'Newsletter' from news@company.com [2]."
-Good: "Your most recent email from John was yesterday at 1 PM, 'Re: Project Plan' [0]"
-Bad: "I found some emails [0,1]" (Don't group citations)
-Bad: "No emails found" (Use null instead)
-
-# Important Notes
-- Return null if you're not completely confident about the email details.
-- Stay focused on temporal aspects while including key details.
-- Use user's timezone for all times.
-- Do not give explanations outside the JSON format, do not explain why you didn't find something.`
+REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
