@@ -769,6 +769,7 @@ export const queryRewritePromptJson = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
+
 export const searchQueryPrompt = (userContext: string): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -834,6 +835,8 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "Find documents related to project alpha" → filter_query: "project alpha"
         - "Get my presentations about quarterly results" → filter_query: "quarterly results presentations"
         - "Spreadsheets with budget information" → filter_query: "budget spreadsheets"
+      - Time-based terms like "recent", "latest", "last week" should NOT be included in the filter_query
+      - If there are no specific search keywords after removing generic and time-based terms, set filter_query to null
 
     9. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
@@ -844,7 +847,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     
     1. RetrieveInformation
     - Applies to queries that MATCH ANY of these conditions:
-      - Involve multiple apps or entities
+      - Involve multiple apps or entities. If this is the case, just set type to "RetrieveInformation". 
       - Do not explicitly mention ANY single valid app or entity from the enum lists
       - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list
       - Ask a question about item content rather than retrieval (e.g., "what did John say about the project?")
@@ -861,42 +864,40 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     2. RetrieveMetadata
     - Applies to queries that MATCH ALL of these conditions:
-      - For all those queries which explicitly mention anything about time, like "latest", "recent", "oldest", "yesterday", "last week", "this month", etc. This kind of time intented queries needs to be classified as RetrieveMetadata.
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') or specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
+      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') OR specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
       - Include at least one additional specific detail that meets ANY of these criteria:
         a) Contains subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
         b) Contains named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
         c) Contains action verbs describing content (e.g., 'discussing', 'approved', 'rejected')
         d) Contains project or task identifiers (e.g., 'Project Alpha', 'Q2 planning')
+      - Any time-based terms (e.g., "recent", "latest", "last week", "this month") MUST be accompanied by a non-empty filter_query to qualify for RetrieveMetadata
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
       - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
       - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
     - Examples:
-      - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail'
-      - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf'
-      - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event'
-      - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets'
-      - 'recent documents' -> type: 'RetrieveMetadata', 'app': null, 'entity': null (classified as RetrieveMetadata due to time component "recent")
-      - 'emails from yesterday' -> type: 'RetrieveMetadata', 'app': 'gmail', 'entity': 'mail'
-      - 'latest files' -> type: 'RetrieveMetadata', 'app': null, 'entity': null (classified as RetrieveMetadata due to time component "latest")
+      - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail', filter_query: "openai"
+      - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf', filter_query: "vendor contract"
+      - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event', filter_query: "marketing team"
+      - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: "budget"
 
     3. RetrieveUnspecificMetadata
-    - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive')
-      - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
-      - DO NOT include any additional specific details beyond app, entity, and possibly time indicators
+    - Applies to queries that MATCH ANY of these conditions:
+      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive') or a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile') without any additional specific details
+      - Queries that contain only time-based terms (e.g., "recent", "latest", "oldest") along with app/entity but NO specific filter_query is NULL, only then we will classify as RetrieveUnspecificMetadata. DON'T set RetrieveUnspecificMetadata if filter_query is not null.
       - Focus on listing or retrieving items based solely on app, entity, and possibly time indicators
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
       - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
       - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
     - Examples:
-      - 'current emails' -> 'app': 'gmail', 'entity': 'mail'
-      - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event'
-      - 'recent files in Google Drive' -> 'app': 'google-drive', 'entity': 'driveFile'
-      - 'my PDFs in email' -> 'app': 'gmail', 'entity': 'pdf'
-      - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets'
+      - 'current emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
+      - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event', filter_query: null
+      - 'recent files in Google Drive' -> 'app': 'google-drive', 'entity': 'driveFile', filter_query: null
+      - 'my PDFs in email' -> 'app': 'gmail', 'entity': 'pdf', filter_query: null
+      - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: null
+      - 'most recent emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
+      - 'latest documents' -> 'app': 'google-drive', 'entity': 'docs', filter_query: null
 
     4. Strict Mapping Guidelines
     - Always apply these exact mappings for app terms:
@@ -923,25 +924,25 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     5. Query Processing Decision Tree
     - First, identify all app and entity terms mentioned in the query using the strict mappings above
-    - THEN, check if the query contains time/recency terms like "latest", "recent", "oldest", "yesterday", "last week", "this month", etc.
-      IF time/recency terms are present:
-        THEN classify as RetrieveMetadata, set app and entity accordingly if mentioned, otherwise set to null
-    - ELSE IF multiple valid apps OR multiple valid entities are detected:
-      THEN classify as RetrieveInformation, set app = null, entity = null
-    - ELSE IF exactly one valid app AND exactly one valid entity are detected:
-      IF query contains specific details (subject matter, named entities, action verbs, project identifiers):
-        THEN classify as RetrieveMetadata, set app and entity accordingly
+    - THEN, extract filter_query by removing generic words and time-based terms
+    - THEN, evaluate classification:
+      IF multiple valid apps OR multiple valid entities are detected with or without filter_query:
+        THEN classify as RetrieveInformation, set app = null, entity = null
+      ELSE IF exactly one valid app OR exactly one valid entity is detected:
+        IF query contains specific details resulting in a non-null filter_query:
+          THEN classify as RetrieveMetadata, set app and entity accordingly
+        ELSE:
+          THEN classify as RetrieveUnspecificMetadata, set app and entity accordingly
       ELSE:
-        THEN classify as RetrieveUnspecificMetadata, set app and entity accordingly
-    - ELSE:
-      THEN classify as RetrieveInformation, set app = null, entity = null
+        THEN classify as RetrieveInformation, set app = null, entity = null
 
     6. Validation Checks (always perform these checks before finalizing classification)
     - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'.
     - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query.
     - If 'app' or 'entity' is not explicitly mentioned, set them to 'null'.
-    - IMPORTANT: For any query containing time-related terms (e.g., "recent", "latest", "last month", "yesterday", "oldest"), always classify as 'RetrieveMetadata', regardless of whether app or entity is specified.
-    - For queries classified as 'RetrieveUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
+    - IMPORTANT: For time-based queries (containing terms like "recent", "latest", "last month", etc.):
+      - If filter_query is null (no specific content keywords), classify as 'RetrieveUnspecificMetadata'
+      - If filter_query is not null (has specific content keywords), classify as 'RetrieveMetadata'
     - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
       
 
@@ -996,7 +997,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
-       - "filter_query" contains the main search keywords or intent extracted from the user's query, focusing on the specific terms that represent what they're looking for.
+       - "filter_query" contains the main search keywords or intent extracted from the user's query, focusing on the specific terms that represent what they're looking for. If no specific terms remain after removing generic and time-based words, set filter_query to null.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" must always be set to either "asc" or "desc" for every query (default is "desc" if no direction is specified).
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
@@ -1004,8 +1005,7 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
-    Make sure you always comply with these steps and only produce the JSON output described.
-  `
+    Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
 // Search Query Reasoning Prompt
