@@ -2478,8 +2478,8 @@ export const MessageApi = async (c: Context) => {
               answer = parsed.answer
             }
 
-            // Determine if a message (even partial) should be saved
             if (answer || wasStreamClosedPrematurely) {
+              // Determine if a message (even partial) should be saved
               // TODO: incase user loses permission
               // to one of the citations what do we do?
               // somehow hide that citation and change
@@ -3148,15 +3148,15 @@ export const MessageRetryApi = async (c: Context) => {
               startTime: "",
               endTime: "",
               count: 0,
+              sortDirection: "",
             }
             let parsed = {
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
-              filters: queryFilters,
+              filter_query: "",
               type: "",
-              from: null,
-              to: null,
+              filters: queryFilters,
             }
             let thinking = ""
             let reasoning =
