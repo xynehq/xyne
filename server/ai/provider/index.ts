@@ -902,7 +902,7 @@ const indexToCitation = (text: string): string => {
   return text.replace(/Index (\d+)/g, "[$1]")
 }
 
-const buildUserQuery = (userQuery: UserQuery) => {
+export const buildUserQuery = (userQuery: UserQuery) => {
   let builtQuery = ""
   userQuery?.map((obj) => {
     if (obj?.type === "text") {
@@ -976,7 +976,7 @@ export const baselineRAGJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
-const safeParse = (str: string) => {
+export const safeParse = (str: string) => {
   try {
     return JSON.parse(str)
   } catch {

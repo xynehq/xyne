@@ -8,6 +8,8 @@ import {
   mailPromptJsonStream,
   temporalPromptJsonStream,
   queryRewriter,
+  safeParse,
+  buildUserQuery,
 } from "@/ai/provider"
 import {
   Models,
@@ -1008,7 +1010,9 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    let results = await searchVespaInFiles(message, email, fileIds, {
+    const parsed = safeParse(message)
+    const msgToSearch = parsed ? buildUserQuery(parsed) : message
+    let results = await searchVespaInFiles(msgToSearch, email, fileIds, {
       limit: fileIds?.length,
       alpha: userAlpha,
     })
@@ -2143,10 +2147,25 @@ export const MessageApi = async (c: Context) => {
                 (msg) =>
                   !(msg.messageRole === MessageRole.Assistant && !msg.message),
               ) // filter out assistant messages with no content
-              .map((m) => ({
-                role: m.messageRole as ConversationRole,
-                content: [{ text: m.message }],
-              }))
+              .map((msg) => {
+                // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
+                // then we should not give that exact stringified message as history
+                // We convert it into a AI friendly string only for giving it to LLM
+                const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []))
+                if (
+                  msg.messageRole === "user" &&
+                  fileIds &&
+                  fileIds.length > 0
+                ) {
+                  const orgMsg = msg.message
+                  const parsed = safeParse(orgMsg)
+                  msg.message = parsed ? buildUserQuery(parsed) : orgMsg
+                }
+                return {
+                  role: msg.messageRole as ConversationRole,
+                  content: [{ text: msg.message }],
+                }
+              })
 
             Logger.info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
@@ -2994,10 +3013,25 @@ export const MessageRetryApi = async (c: Context) => {
                         !msg.message
                       ),
                   ) // filter out assistant messages with no content
-                  .map((m) => ({
-                    role: m.messageRole as ConversationRole,
-                    content: [{ text: m.message }],
-                  }))
+                  .map((m) => {
+                    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
+                    // then we should not give that exact stringified message as history
+                    // We convert it into a AI friendly string only for giving it to LLM
+                    const fileIds = JSON.parse(JSON.stringify(m?.fileIds || []))
+                    if (
+                      m.messageRole === "user" &&
+                      fileIds &&
+                      fileIds.length > 0
+                    ) {
+                      const orgMsg = m.message
+                      const parsed = safeParse(orgMsg)
+                      m.message = parsed ? buildUserQuery(parsed) : orgMsg
+                    }
+                    return {
+                      role: m.messageRole as ConversationRole,
+                      content: [{ text: m.message }],
+                    }
+                  })
               : conversation
                   .slice(0, conversation.length - 1)
                   .filter((con) => !con?.errorMessage)
@@ -3008,10 +3042,26 @@ export const MessageRetryApi = async (c: Context) => {
                         !msg.message
                       ),
                   )
-                  .map((m) => ({
-                    role: m.messageRole as ConversationRole,
-                    content: [{ text: m.message }],
-                  }))
+                  .map((m) => {
+                    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
+                    // then we should not give that exact stringified message as history
+                    // We convert it into a AI friendly string only for giving it to LLM
+                    const fileIds = JSON.parse(JSON.stringify(m?.fileIds || []))
+                    if (
+                      m.messageRole === "user" &&
+                      fileIds &&
+                      fileIds.length > 0
+                    ) {
+                      const orgMsg = m.message
+                      const parsed = safeParse(orgMsg)
+                      m.message = parsed ? buildUserQuery(parsed) : orgMsg
+                    }
+                    return {
+                      role: m.messageRole as ConversationRole,
+                      content: [{ text: m.message }],
+                    }
+                  })
+
             Logger.info(
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
