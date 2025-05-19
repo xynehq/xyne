@@ -5,11 +5,9 @@ import {
   createFileRoute,
   useLoaderData,
   useRouter,
-  useNavigate,
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { getErrorMessage } from "@/lib/utils"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
 import {
@@ -27,7 +25,6 @@ import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
 import {
-  useQuery,
   useQueryClient,
   useMutation,
   useInfiniteQuery,
@@ -86,35 +83,7 @@ interface ChatPageProps {
   workspace: PublicWorkspace
 }
 
-export const getConnectors = async (): Promise<any> => {
-  const res = await api.admin.connectors.all.$get()
-  console.log("connector output: ", connectors)
-  if (!res.ok) {
-    if (res.status === 401) {
-      throw new Error("Unauthorized")
-    }
-    throw new Error("Could not get connectors")
-  }
-  return res.json()
-}
-
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
-  const navigator = useNavigate()
-  const { isPending, error, connectors, refetch } = useQuery<any[]>({
-    queryKey: ["all-connectors"],
-    queryFn: async (): Promise<any> => {
-      try {
-        return await getConnectors()
-      } catch (error) {
-        const message = getErrorMessage(error)
-        if (message === "Unauthorized") {
-          navigator({ to: "/auth" })
-          return []
-        }
-        throw error
-      }
-    },
-  })
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
@@ -177,7 +146,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   ) // State for all citations
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
-  // Add state for MCP connectors
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -423,8 +391,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     url.searchParams.append("message", encodeURIComponent(messageToSend))
 
     url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
-    url.searchParams.append("toolsList", JSON.stringify(connectors))
-    console.log("connectors: ", connectors) // debugging
 
     // if (appEntities.length > 0) {
     //   url.searchParams.append(
@@ -1244,7 +1210,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               isStreaming={isStreaming}
               allCitations={allCitations}
               chatId={chatId}
-              availableConnectors={connectors}
             />
           </div>
           <Sources
