@@ -1229,10 +1229,7 @@ export const ChatBox = ({
 
               const newValue = currentInput.textContent || ""
               setQuery(newValue)
-              setIsPlaceholderVisible(
-                newValue.length === 0 &&
-                  document.activeElement !== currentInput,
-              )
+              setIsPlaceholderVisible(newValue.length === 0)
 
               // Update references based on current pills in the input
               const currentPills = Array.from(currentInput.children).filter(
@@ -1397,9 +1394,7 @@ export const ChatBox = ({
 
               const newTextContent = input.textContent || ""
               setQuery(newTextContent)
-              setIsPlaceholderVisible(
-                newTextContent.length === 0 && document.activeElement !== input,
-              )
+              setIsPlaceholderVisible(newTextContent.length === 0)
 
               const newAtSymbolIndex =
                 textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
