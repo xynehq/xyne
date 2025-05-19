@@ -145,16 +145,20 @@ describe("HybridDefaultProfile", () => {
     expect(result.yql).toContain("updatedAt >= 1000 and updatedAt <= 2000")
   })
 
-  test("query with null timestamp", () => {
-    const timestampRange = { from: null, to: null }
-    expect(() =>
-      HybridDefaultProfile(
-        5,
-        null,
-        null,
-        SearchModes.NativeRank,
-        timestampRange,
-      ),
-    ).toThrow("Invalid timestamp range")
+  test("time range only contains from", () => {
+    const timestampRange = { from: 1000, to: null }
+
+    const result = HybridDefaultProfile(
+      5,
+      Apps.GoogleWorkspace,
+      DriveEntity.PDF,
+      SearchModes.NativeRank,
+      timestampRange,
+    )
+
+    expect(result.yql).toContain("app contains @app")
+    expect(result.yql).toContain("entity contains @entity")
+    expect(result.yql).toContain("updatedAt >= 1000")
+    expect(result.yql).toContain("timestamp >= 1000")
   })
 })
