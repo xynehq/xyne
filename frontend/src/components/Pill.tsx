@@ -1,18 +1,7 @@
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { getIcon } from "@/lib/common"
-import { Apps } from "shared/types"
-
-export interface Reference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type?: "citation" | "global"
-  photoLink?: string
-}
+import { Reference } from "@/types"
 
 const getPillDisplayTitle = (title: string): string => {
   if (title.length > 15) {
@@ -49,7 +38,7 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
 
   const iconNode =
     newRef.app && newRef.entity
-      ? getIcon(newRef.app as Apps, newRef.entity, {
+      ? getIcon(newRef.app, newRef.entity, {
           w: 14,
           h: 14,
           mr: 4,
@@ -79,7 +68,7 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
       href={newRef.url || "#"}
       target="_blank"
       rel="noopener noreferrer"
-      className="reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-semi-bold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline self-center"
+      className="reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-semibold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline self-center"
       contentEditable={false}
       data-reference-id={newRef.id}
       {...(newRef.docId && { "data-doc-id": newRef.docId })}

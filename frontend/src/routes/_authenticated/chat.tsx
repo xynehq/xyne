@@ -43,21 +43,10 @@ import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
-import React from "react" 
+import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Pill, Reference as PillReference } from "@/components/Pill"
-
-// Define Reference type (matching ChatBox)
-interface Reference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
-}
+import { Pill } from "@/components/Pill" 
+import { Reference } from "@/types"
 
 type CurrentResp = {
   resp: string
@@ -106,33 +95,35 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
   container.innerHTML = htmlString
   const parts: Array<ParsedMessagePart> = []
 
-  container.childNodes.forEach((node) => {
+  const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      if (node.textContent && node.textContent.trim() !== "") {
-        parts.push({ type: "text", value: node.textContent.trim() })
+      if (node.textContent) {
+        parts.push({ type: "text", value: node.textContent })
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const element = node as HTMLElement
+      const el = node as HTMLElement
       if (
-        element.tagName.toLowerCase() === "a" &&
-        element.classList.contains("reference-pill") &&
-        element.dataset.docId
+        el.tagName.toLowerCase() === "a" &&
+        el.classList.contains("reference-pill") &&
+        el.dataset.docId
       ) {
         parts.push({
           type: "pill",
           value: {
-            docId: element.dataset.docId,
-            url: element.getAttribute("href"),
-            title: element.getAttribute("title"),
-            app: element.dataset.app,
-            entity: element.dataset.entity,
+            docId: el.dataset.docId,
+            url: el.getAttribute("href"),
+            title: el.getAttribute("title"),
+            app: el.dataset.app,
+            entity: el.dataset.entity,
           },
         })
-      } else if (element.textContent && element.textContent.trim() !== "") {
-        parts.push({ type: "text", value: element.textContent.trim() })
+      } else {
+        Array.from(el.childNodes).forEach(walk)
       }
     }
-  })
+  }
+
+  Array.from(container.childNodes).forEach(walk)
   return parts
 }
 
@@ -155,15 +146,16 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           part.value &&
           typeof part.value === "object"
         ) {
-          const { docId, url, title, app, entity } = part.value
+          const { docId, url, title, app, entity, pillType } = part.value
 
-          const referenceForPill: PillReference = {
+          const referenceForPill: Reference = {
             id: docId,
             docId: docId,
             title: title || docId,
             url: url || undefined,
             app: app,
             entity: entity,
+            type: pillType || "global",
           }
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
@@ -172,7 +164,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
         htmlPart += " "
         return htmlPart
       })
-      .join("")
+      .join("").trimEnd()
   } catch (error) {
     return jsonString
   }
@@ -509,7 +501,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       url.searchParams.append("chatId", chatId)
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
-    console.log("messageToSend", messageJsonPayload)
     url.searchParams.append("message", encodeURIComponent(messageJsonPayload))
 
     url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))

@@ -34,6 +34,7 @@ import { DriveEntity } from "shared/types"
 import { api } from "@/api"
 import { Input } from "@/components/ui/input"
 import { Pill } from "./Pill"
+import { Reference } from "@/types"
 
 interface SourceItem {
   id: string
@@ -62,16 +63,6 @@ interface SearchResult {
   photoLink?: string
 }
 
-interface Reference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
-}
 
 interface ChatBoxProps {
   query: string
