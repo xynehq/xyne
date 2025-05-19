@@ -493,15 +493,20 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
     //   .filter((item) => item !== undefined)
 
-    const parsedMessageParts = parseMessageInput(messageToSend)
-    const messageJsonPayload = JSON.stringify(parsedMessageParts)
+    let finalMessagePayload: string
+    if (addedReferences.length === 0) {
+      finalMessagePayload = messageToSend
+    } else {
+      const parsedMessageParts = parseMessageInput(messageToSend)
+      finalMessagePayload = JSON.stringify(parsedMessageParts)
+    }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
-    url.searchParams.append("message", encodeURIComponent(messageJsonPayload))
+    url.searchParams.append("message", encodeURIComponent(finalMessagePayload))
     url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
 
     // if (appEntities.length > 0) {
