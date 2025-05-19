@@ -21,6 +21,7 @@ import {
   UpdateDocument,
   UpdateDocumentPermissions,
   UpdateEventCancelledInstances,
+  insertWithRetry,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -351,14 +352,14 @@ const handleGoogleDriveChange = async (
                 },
               )
               for (const data of allData) {
-                insertDocument(data)
+                await insertWithRetry(data, fileSchema)
               }
             } else {
               vespaData.permissions = toPermissionsList(
                 vespaData.permissions,
                 email,
               )
-              insertDocument(vespaData)
+              await insertWithRetry(vespaData, fileSchema)
             }
           }
         } catch (err) {
@@ -890,7 +891,7 @@ const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
       defaultStartTime: isDefaultStartTime,
     }
 
-    await insert(eventToBeIngested, eventSchema)
+    await insertWithRetry(eventToBeIngested, eventSchema)
   } catch (e) {
     Logger.error(
       e,

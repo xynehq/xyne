@@ -93,7 +93,7 @@ export const insertDocument = async (document: VespaFile) => {
 export const insertWithRetry = async (
   document: Inserts,
   schema: VespaSchema,
-  maxRetries = 5,
+  maxRetries = 8,
 ) => {
   let lastError: any
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -107,7 +107,7 @@ export const insertWithRetry = async (
         (error as Error).message.includes("429 Too Many Requests") &&
         attempt < maxRetries
       ) {
-        const delayMs = Math.min(Math.pow(2, attempt) * 1000, 10000) // Cap at 10s
+        const delayMs = Math.pow(2, attempt) * 2000
         Logger.warn(
           `Vespa 429 for ${document.docId}, retrying in ${delayMs}ms (attempt ${attempt + 1})`,
         )
