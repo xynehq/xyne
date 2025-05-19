@@ -1460,7 +1460,7 @@ async function* generateMetadataQueryAnswer(
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
 
-  // Process timestamp range once
+  // Process timestamp
   const from = startTime ? new Date(startTime).getTime() : null
   const to = endTime ? new Date(endTime).getTime() : null
   const hasValidTimeRange =
@@ -1490,7 +1490,7 @@ async function* generateMetadataQueryAnswer(
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
 
-  const schema = (entityToSchemaMapper(entity, app) ?? "*") as VespaSchema
+  const schema = entityToSchemaMapper(entity, app) as VespaSchema
   let items: VespaSearchResult[] = []
 
   // Determine search strategy based on conditions
@@ -1520,7 +1520,7 @@ async function* generateMetadataQueryAnswer(
           searchOps,
         )
       ).root.children || []
-      
+
     span?.setAttribute("metadata items found", items.length)
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
     Logger.info(`Using rank profile: ${SearchModes.GlobalSorted}`)
@@ -1594,11 +1594,19 @@ async function* generateMetadataQueryAnswer(
 
   Logger.info(`Found ${items.length} items for metadata retrieval`)
   span?.setAttribute("metadata_items_found", items.length)
-
   // Process results
   const results = items.slice(0, pageSize)
-  const initialContext = buildContext(results, maxSummaryCount)
+  let chunksCount = isMetadataRetrieval ? undefined : maxSummaryCount
 
+  if (app === Apps.GoogleDrive && isMetadataRetrieval) {
+    chunksCount = 100
+    Logger.info(`Using Google Drive, setting chunk size to ${chunksCount}`)
+    span?.setAttribute("Google Drive chunk_size", chunksCount)
+  } else {
+    Logger.info(`Sending full context`)
+  }
+
+  const initialContext = buildContext(results, chunksCount)
   const streamOptions = {
     stream: true,
     modelId: defaultBestModel,
