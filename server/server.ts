@@ -79,6 +79,7 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
+import { GetConfiguredModelsApi } from "./api/chat"
 
 export type Variables = JwtVariables
 
@@ -177,6 +178,7 @@ export const AppRoutes = app
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get("/chat/trace", zValidator("query", chatTraceSchema), GetChatTraceApi)
+
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
@@ -190,6 +192,7 @@ export const AppRoutes = app
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
+  .get("/models", GetConfiguredModelsApi)
   .post(
     "/tuning/tuneDataset",
     zValidator("json", tuneDatasetSchema),

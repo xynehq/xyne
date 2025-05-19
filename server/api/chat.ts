@@ -10,11 +10,16 @@ import {
   queryRewriter,
 } from "@/ai/provider"
 import {
-  Models,
   QueryType,
+  Models, // Enum of actual Model IDs
+  type ModelId, // Actual model ID string (e.g., "gpt-4o")
+  type FrontendModelNameString, // Friendly model name string (e.g., "GPT-4o")
+  ModelIdToFriendlyNameMap, // Maps ModelId to FriendlyModelNameString
+  FriendlyNameToModelIdMap, // Maps FriendlyModelNameString to ModelId
   type ConverseResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
+  FriendlyModelUIName, // Added for fallback in GetConfiguredModelsApi
 } from "@/ai/types"
 import config from "@/config"
 import {
@@ -106,6 +111,7 @@ import {
 } from "@/db/personalization"
 import { entityToSchemaMapper } from "@/search/mappers"
 import { is } from "drizzle-orm"
+import { configuredModelProviders } from "@/config"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -567,7 +573,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
   classification: TemporalClassifier & QueryRouterResponse,
-  userRequestsReasoning?: boolean,
+  modelId: ModelId | undefined,
+  userRequestsReasoning?: boolean, // Changed from Models to ModelId
   queryRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -767,7 +774,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           // maxPageNumber,
           {
             stream: true,
-            modelId: defaultBestModel,
+            modelId: modelId || defaultBestModel, // modelId is now ModelId type
             messages,
             reasoning: config.isReasoning && userRequestsReasoning,
           },
@@ -882,10 +889,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     contextSpan?.end()
 
     const ragSpan = pageSpan?.startSpan("baseline_rag")
-
     const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
       stream: true,
-      modelId: defaultBestModel,
+      modelId: modelId || defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
     })
 
@@ -1180,6 +1186,7 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
+  modelId: ModelId | undefined, // Changed from Models to ModelId
   userRequestsReasoning?: boolean,
   eventRagSpan?: Span,
 ): AsyncIterableIterator<
@@ -1364,8 +1371,8 @@ async function* generatePointQueryTimeExpansion(
     Logger.info("Using temporalPromptJsonStream")
     const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
-      modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
+      modelId: modelId || defaultBestModel, // modelId is now ModelId type
     })
 
     const answer = yield* processIterator(
@@ -1705,6 +1712,7 @@ export async function* UnderstandMessageAndAnswer(
   messages: Message[],
   alpha: number,
   fileIds: string[],
+  modelId: ModelId | undefined,
   passedSpan?: Span,
   userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
@@ -1792,6 +1800,7 @@ export async function* UnderstandMessageAndAnswer(
       alpha,
       chatPageSize,
       maxDefaultSummary,
+      modelId, // Passed modelId
       userRequestsReasoning,
       eventRagSpan,
     )
@@ -1812,7 +1821,9 @@ export async function* UnderstandMessageAndAnswer(
       3,
       maxDefaultSummary,
       classification,
+      modelId,
       userRequestsReasoning,
+       // Passed modelId
       ragSpan,
     )
   }
@@ -1845,12 +1856,12 @@ export const MessageApi = async (c: Context) => {
   // if the value exists then we send the error to the frontend via it
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageApi")
-
+  // console.log("MessageApi called")
   let stream: any
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-
+  // console.log("Chat API loaded", { configuredModelProviders: configuredModelProviders}) // Removed if it was for debugging
   try {
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
@@ -1862,7 +1873,7 @@ export const MessageApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
+      modelId: modelNameFromRequest,
       stringifiedfileIds,
       isReasoningEnabled,
     }: MessageReqType = body
@@ -1870,6 +1881,15 @@ export const MessageApi = async (c: Context) => {
     const fileIds: string[] = stringifiedfileIds
       ? JSON.parse(stringifiedfileIds)
       : []
+    // Convert friendly name (FriendlyModelNameString) from request to actual ModelId
+    const actualModelId = FriendlyNameToModelIdMap[modelNameFromRequest as FrontendModelNameString];
+
+    if (!actualModelId) {
+      Logger.error(`[MessageApi] Invalid model name received: ${modelNameFromRequest}`);
+      throw new HTTPException(400, { message: `Invalid model name: ${modelNameFromRequest}` });
+    }
+    Logger.info(`[MessageApi] Mapped modelName '${modelNameFromRequest}' to actualModelId: ${actualModelId}., 'isReasoningEnabled:', ${userRequestsReasoning}`);
+
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1896,7 +1916,7 @@ export const MessageApi = async (c: Context) => {
       const titleSpan = chatCreationSpan.startSpan("generate_title")
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId, // This uses ModelId from config
         stream: false,
       })
       title = titleResp.title
@@ -1922,13 +1942,13 @@ export const MessageApi = async (c: Context) => {
           const insertedMsg = await insertMessage(tx, {
             chatId: chat.id,
             userId: user.id,
-            chatExternalId: chat.externalId,
             workspaceExternalId: workspace.externalId,
+            chatExternalId: chat.externalId,
             messageRole: MessageRole.User,
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || defaultBestModel, // Ensure a valid ModelId is passed
             fileIds: fileIds,
           })
           return [chat, insertedMsg]
@@ -1957,7 +1977,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || defaultBestModel, // Ensure a valid ModelId is passed
             fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
@@ -2168,6 +2188,7 @@ export const MessageApi = async (c: Context) => {
               `Classifying the query as:, ${JSON.stringify(classification)}`,
             )
             const understandSpan = ragSpan.startSpan("understand_message")
+            Logger.info(`[MessageApi] Calling UnderstandMessageAndAnswer with modelId: ${actualModelId || defaultBestModel}`);
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,
@@ -2176,6 +2197,7 @@ export const MessageApi = async (c: Context) => {
               messagesWithNoErrResponse,
               0.5,
               fileIds,
+              actualModelId,
               understandSpan,
               userRequestsReasoning,
             )
@@ -2205,7 +2227,6 @@ export const MessageApi = async (c: Context) => {
                     event: ChatSSEvents.Reasoning,
                     data: chunk.text,
                   })
-                  // reasoningSpan.end()
                 }
                 if (!chunk.reasoning) {
                   answer += chunk.text
@@ -2264,6 +2285,15 @@ export const MessageApi = async (c: Context) => {
             // to one of the citations what do we do?
             // somehow hide that citation and change
             // the answer to reflect that
+            let finalModelForDb: ModelId;
+            if (parsed.answer && !parsed.queryRewrite) { // Answer came directly from conversation history check
+                finalModelForDb = ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId;
+                Logger.info(`[MessageApi] Assistant message (from conversation) will be saved with modelId: ${finalModelForDb}`);
+            } else { // Answer came from RAG pipeline
+                // modelId here is from modelIdFromRequest, or defaultBestModel if not provided by request
+                finalModelForDb = actualModelId || defaultBestModel;
+                Logger.info(`[MessageApi] Assistant message (from RAG) will be saved with modelId: ${finalModelForDb}`);
+            }
 
             const msg = await insertMessage(db, {
               chatId: chat.id,
@@ -2275,8 +2305,7 @@ export const MessageApi = async (c: Context) => {
               sources: citations,
               message: processMessage(answer, citationMap),
               thinking: thinking,
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+              modelId: finalModelForDb,
             })
             assistantMessageId = msg.externalId
 
@@ -2562,8 +2591,9 @@ export const MessageRetryApi = async (c: Context) => {
     conversationSpan.setAttribute("conversationLength", conversation.length)
     conversationSpan.end()
 
-    // Use the same modelId
-    const modelId = originalMessage.modelId as Models
+    // Use the same modelId. originalMessage.modelId is already the actual ModelId from DB.
+    const actualModelId = originalMessage.modelId as ModelId; 
+    Logger.info(`[MessageRetryApi] Retrying message. Original message actualModelId: ${actualModelId}`);
 
     // Get user and workspace
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -2792,6 +2822,7 @@ export const MessageRetryApi = async (c: Context) => {
               },
             }
             const understandSpan = ragSpan.startSpan("understand_message")
+            Logger.info(`[MessageRetryApi] Calling UnderstandMessageAndAnswer with modelId: ${actualModelId || defaultBestModel}`);
             const iterator = UnderstandMessageAndAnswer(
               email,
               ctx,
@@ -2800,6 +2831,7 @@ export const MessageRetryApi = async (c: Context) => {
               convWithNoErrMsg,
               0.5,
               fileIds,
+              actualModelId,
               understandSpan,
               userRequestsReasoning,
             )
@@ -2883,6 +2915,18 @@ export const MessageRetryApi = async (c: Context) => {
 
           // Database Update Logic
           const insertSpan = streamSpan.startSpan("insert_assistant_message")
+
+          let modelUsedForDbRetry: ModelId;
+          // modelId here refers to originalMessage.modelId as ModelId
+          if (parsed.answer && !parsed.queryRewrite) { // Answer came directly from conversation history check
+              modelUsedForDbRetry = ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId;
+              Logger.info(`[MessageRetryApi] Assistant message (from conversation retry) will be saved/updated with modelId: ${modelUsedForDbRetry}`);
+          } else { // Answer came from RAG pipeline
+              // modelId here is from originalMessage.modelId, or defaultBestModel if not specified in original message
+              modelUsedForDbRetry = actualModelId || defaultBestModel;
+              Logger.info(`[MessageRetryApi] Assistant message (from RAG retry) will be saved/updated with modelId: ${modelUsedForDbRetry}`);
+          }
+
           if (wasStreamClosedPrematurely) {
             Logger.info(
               `[MessageRetryApi] Stream closed prematurely. Saving partial state.`,
@@ -2917,6 +2961,7 @@ export const MessageRetryApi = async (c: Context) => {
                 sources: citations,
                 thinking,
                 errorMessage: null,
+                modelId: modelUsedForDbRetry,
               })
             }
           } else {
@@ -2934,9 +2979,7 @@ export const MessageRetryApi = async (c: Context) => {
                     sources: citations,
                     message: processMessage(answer, citationMap),
                     thinking,
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                        .modelId,
+                    modelId: modelUsedForDbRetry,
                     // The createdAt for this response which was error before
                     // should be just 1 unit more than the respective user query's createdAt value
                     // This is done to maintain order of user-assistant pattern of messages in UI
@@ -2962,6 +3005,7 @@ export const MessageRetryApi = async (c: Context) => {
                   sources: citations,
                   thinking,
                   errorMessage: null,
+                  modelId: modelUsedForDbRetry,
                 })
               }
             } else {
@@ -3157,3 +3201,69 @@ export const StopStreamingApi = async (c: Context) => {
     throw new HTTPException(500, { message: "Could not stop streaming." })
   }
 }
+
+export const GetConfiguredModelsApi = async (c: Context) => {
+    // modelsToShow will now have id as FriendlyModelNameString and name as string (possibly with a suffix)
+    const modelsToShow: { id: FrontendModelNameString; name: string }[] = [];
+    const addedNames = new Set<FrontendModelNameString>();
+
+    const addModelById = (modelIdToAdd: ModelId | undefined, nameSuffix?: string) => {
+        if (modelIdToAdd && typeof modelIdToAdd === 'string' && modelIdToAdd.trim() !== "") {
+            // Get friendly name (FriendlyModelNameString) from actual ModelId
+            const friendlyName = ModelIdToFriendlyNameMap[modelIdToAdd as ModelId]; 
+            if (friendlyName && !addedNames.has(friendlyName)) {
+                // Both 'id' and 'name' fields for the frontend will use the friendly FriendlyModelNameString
+                modelsToShow.push({ id: friendlyName, name: nameSuffix ? `${friendlyName} ${nameSuffix}` : friendlyName });
+                addedNames.add(friendlyName);
+            } else if (!friendlyName) {
+                Logger.warn(`[GetConfiguredModelsApi] Model ID '${modelIdToAdd}' from config has no corresponding friendly name in ModelIdToFriendlyNameMap.`);
+            }
+        }
+    };
+
+    // Start with default models from config, as these reflect the priority
+    if (config.defaultBestModel) {
+        addModelById(config.defaultBestModel as ModelId);
+    }
+    if (config.defaultFastModel) {
+        addModelById(config.defaultFastModel as ModelId);
+    }
+
+    // Add all models from the configuredModelProviders list
+    Logger.info(`[GetConfiguredModelsApi] Configured model providers: ${config.configuredModelProviders}`);
+    if (config.configuredModelProviders && Array.isArray(config.configuredModelProviders)) {
+        for (const configuredModelId of config.configuredModelProviders) {
+            addModelById(configuredModelId as ModelId);
+        }
+    }
+
+    // If the list is still empty after processing configured providers and defaults,
+    // add a hardcoded default. This ensures the API always returns at least one model.
+    if (modelsToShow.length === 0) {
+        // Use a known FriendlyModelNameString from the FriendlyModelUIName enum as a fallback
+        const fallbackFriendlyName = FriendlyModelUIName.Gpt_4o_mini; // This is a FriendlyModelNameString
+        // Ensure this fallbackFriendlyName is a valid key in FriendlyNameToModelIdMap to confirm it's a recognized friendly name
+        if (FriendlyNameToModelIdMap[fallbackFriendlyName]) { 
+             modelsToShow.push({ id: fallbackFriendlyName, name: `${fallbackFriendlyName} (Default)` });
+             addedNames.add(fallbackFriendlyName); // Also add to set to be consistent
+        } else {
+            Logger.error(`[GetConfiguredModelsApi] Default fallback friendly name '${fallbackFriendlyName}' is not a valid mapped friendly name. Attempting to use the first available model.`);
+            // As an ultimate fallback, pick the first model from ModelIdToFriendlyNameMap
+            const firstAvailableModelId = Object.keys(ModelIdToFriendlyNameMap)[0] as ModelId | undefined;
+            if (firstAvailableModelId) {
+                const firstName = ModelIdToFriendlyNameMap[firstAvailableModelId];
+                if (firstName && !addedNames.has(firstName)) { // Ensure mapping exists and not already added
+                    modelsToShow.push({ id: firstName, name: `${firstName} (Default Fallback)` });
+                    addedNames.add(firstName);
+                } else if (!firstName) {
+                     Logger.error("[GetConfiguredModelsApi] Could not get a friendly name for the first available model ID.");
+                } else {
+                     Logger.info("[GetConfiguredModelsApi] First available model was already added or its friendly name is invalid.");
+                }
+            } else {
+                Logger.error("[GetConfiguredModelsApi] ModelIdToFriendlyNameMap is empty. No models can be configured.");
+            }
+        }
+    }
+    return c.json(modelsToShow);
+};

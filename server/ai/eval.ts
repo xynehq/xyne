@@ -592,6 +592,7 @@ const endToEndFlow = async (
       messages,
       0.5,
       [],
+      modelId,
       ragSpan,
     )
 

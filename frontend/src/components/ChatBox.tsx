@@ -77,6 +77,7 @@ interface ChatBoxProps {
   setQuery: (query: string) => void
   handleSend: (
     messageToSend: string,
+    llmModelId: string,
     references: Reference[],
     selectedSources?: string[],
   ) => void
@@ -88,6 +89,11 @@ interface ChatBoxProps {
   setIsReasoningActive: (
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
+}
+
+interface LlmModel {
+  id: string;
+  name: string;
 }
 
 const availableSources: SourceItem[] = [
@@ -308,6 +314,80 @@ export const ChatBox = ({
       }
     }
   }
+
+  const [llmModels, setLlmModels] = useState<LlmModel[]>([]);
+  const [selectedLlm, setSelectedLlm] = useState<LlmModel | null>(null); // Default to null initially
+  const [isLlmDropdownOpen, setIsLlmDropdownOpen] = useState(false)
+
+  useEffect(() => {
+    const fetchModels = async () => {
+      let storedModelId: string | null = null;
+      try {
+        storedModelId = localStorage.getItem('selectedLlmModelId');
+      } catch (e) {
+        console.warn("Failed to read selected model from localStorage", e);
+      }
+
+      try {
+        const response = await api.models.$get();
+        const fetchedModels: LlmModel[] = await response.json();
+
+        if (fetchedModels && fetchedModels.length > 0) {
+          setLlmModels(fetchedModels);
+          let modelToSelect: LlmModel | null = null;
+
+          if (storedModelId) {
+            modelToSelect = fetchedModels.find(m => m.id === storedModelId) || null;
+          }
+
+          if (!modelToSelect) { // If not found in localStorage or not valid
+            modelToSelect = fetchedModels.find(m => m.id === "o3-mini") || null;
+          }
+
+          if (!modelToSelect && fetchedModels.length > 0) { // If o3-mini not found, take the first
+            modelToSelect = fetchedModels[0];
+          }
+          
+          setSelectedLlm(modelToSelect);
+
+        } else {
+          // API returned no models or empty array
+          const fallbackModel = { id: "gpt-4o-mini", name: "GPT-4o mini (Default)" };
+          setLlmModels([fallbackModel]);
+          setSelectedLlm(fallbackModel);
+        }
+      } catch (error) {
+        console.error("Failed to fetch LLM models:", error);
+        const fallbackModel = { id: "gpt-4o-mini", name: "GPT-4o mini (Default)" };
+        setLlmModels([fallbackModel]);
+        setSelectedLlm(fallbackModel);
+      }
+    };
+
+    fetchModels();
+  }, []);
+
+  const isModelAllowedForReasoningToggle = useMemo(() => {
+    if (selectedLlm && selectedLlm.name) {
+      const modelName = selectedLlm.name;
+      // Reasoning toggle is enabled ONLY for these specific models
+      return modelName === "Claude 3.7 Sonnet" || modelName === "DeepSeek R1";
+    }
+    return false;
+  }, [selectedLlm]);
+
+  useEffect(() => {
+    // Force reasoning state based on whether the model allows its toggle
+    // If allowed (Claude 3.7 Sonnet, DeepSeek R1), reasoning is ON.
+    // If not allowed (other models), reasoning is OFF.
+    if (isModelAllowedForReasoningToggle) {
+      setIsReasoningActive(true);
+    } else {
+      setIsReasoningActive(false);
+    }
+  }, [selectedLlm, isModelAllowedForReasoningToggle, setIsReasoningActive]);
+
+  const isReasoningToggleDisabled = !isModelAllowedForReasoningToggle;
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
@@ -924,6 +1004,12 @@ export const ChatBox = ({
   }, [showReferenceBox])
 
   const handleSendMessage = () => {
+    if (!selectedLlm) {
+      console.error("No LLM selected, cannot send message.");
+      // Optionally, show a user-facing error or prevent action
+      return;
+    }
+
     const activeSourceIds = Object.entries(selectedSources)
       .filter(([, isSelected]) => isSelected)
       .map(([id]) => id)
@@ -941,10 +1027,10 @@ export const ChatBox = ({
       const updatedReferences = references.filter((ref) =>
         currentPillIds.includes(ref.id),
       )
-      handleSend(htmlMessage, [...updatedReferences], [...activeSourceIds]) // Pass only necessary args
+      handleSend(htmlMessage, selectedLlm.id ,[...updatedReferences], [...activeSourceIds]) // Pass only necessary args
       setReferences([]) // Clear after sending potentially updated list
     } else {
-      handleSend(htmlMessage, [...references], [...activeSourceIds]) // Pass only necessary args
+      handleSend(htmlMessage, selectedLlm.id, [...references], [...activeSourceIds]) // Pass only necessary args
       setReferences([])
     }
 
@@ -1502,7 +1588,7 @@ export const ChatBox = ({
                       onSelect={(e) => e.preventDefault()}
                       className="relative flex items-center pl-2 pr-2 gap-2 cursor-pointer"
                     >
-                      <div className="flex itemsbinoculars flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                         {getIcon(source.app, source.entity, {
                           w: 16,
                           h: 16,
@@ -1526,20 +1612,77 @@ export const ChatBox = ({
             </DropdownMenu>
           )}
           {/* Closing tag for the conditional render */}
+          <div className="relative ml-2">
           <button
-            onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-              // Changed text-xs to text-[11px]
-              isReasoningActive ? "text-green-600" : "text-[#464D53]" // Use prop for styling
-            }`}
+            onClick={() => setIsLlmDropdownOpen(!isLlmDropdownOpen)}
+            className="flex items-center justify-center text-[#464D53] text-[13px] font-medium p-1 rounded-xl hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={llmModels.length === 0} // Disable if no models are loaded
           >
-            <Atom
-              size={16}
-              className={isReasoningActive ? "text-green-600" : ""}
-            />{" "}
-            {/* Use prop for styling */}
-            <span>Reasoning</span>
+            {selectedLlm ? selectedLlm.name : "Loading models..."}
+            <ChevronDown size={16} className="ml-1" />
           </button>
+          {isLlmDropdownOpen && llmModels.length > 0 && (
+            <div className="absolute bottom-full mb-2 w-48 bg-white border border-gray-200 rounded-2xl py-1 z-10 overflow-hidden">
+              {llmModels.map((model) => (
+                <div
+                  key={model.id}
+                  onClick={() => {
+                    setSelectedLlm(model);
+                    try {
+                      localStorage.setItem('selectedLlmModelId', model.id);
+                    } catch (e) {
+                      console.warn("Failed to save selected model to localStorage", e);
+                    }
+                    setIsLlmDropdownOpen(false);
+                  }}
+                  className={`px-3 py-2 text-[13px] hover:bg-gray-100 cursor-pointer flex items-center justify-between ${selectedLlm?.id === model.id ? "text-green-500" : "" // Use optional chaining for selectedLlm
+                  }`}
+                >
+                  {model.name}
+                  {selectedLlm?.id === model.id && <Check size={16} className="text-green-500" /> // Use optional chaining for selectedLlm
+                  }
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    if (!isReasoningToggleDisabled) {
+                      setIsReasoningActive(!isReasoningActive);
+                    }
+                  }}
+                  disabled={isReasoningToggleDisabled}
+                  className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
+                    isReasoningActive ? "text-green-600" : "text-[#464D53]"
+                  } ${
+                    isReasoningToggleDisabled
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:bg-gray-100"
+                  }`}
+                >
+                  <Atom
+                    size={16}
+                    className={`${
+                      isReasoningActive ? "text-green-600" : "text-[#464D53]"
+                    }`}
+                  />{" "}
+                  <span>Reasoning</span>
+                </button>
+              </TooltipTrigger>
+              {isReasoningToggleDisabled && selectedLlm && (
+                <TooltipContent
+                  side="top"
+                  className="bg-gray-800 text-white text-xs rounded-sm"
+                >
+                  <p>Not available for {selectedLlm.name}</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}
@@ -1550,8 +1693,10 @@ export const ChatBox = ({
             </button>
           ) : (
             <button
-              disabled={isStreaming}
-              onClick={() => handleSendMessage()}
+              disabled={isStreaming || !selectedLlm}
+              onClick={() => {
+                  handleSendMessage()
+              }}
               style={{ marginLeft: "auto" }}
               className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
             >

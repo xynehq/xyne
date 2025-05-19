@@ -129,12 +129,17 @@ const Index = () => {
 
   const handleAsk = (
     messageToSend: string,
+    llmModelId: string, // Added llmModelId
     references: LocalReference[], 
     selectedSources?: string[]
   ) => {
     if (messageToSend.trim()) {
-      const searchParams: { q: string; reasoning?: boolean; refs?: string; sources?: string } = {
+      const searchParams: { q: string; reasoning?: boolean; refs?: string; sources?: string; llmModelId?: string } = {
         q: encodeURIComponent(messageToSend.trim()),
+      };
+
+      if (llmModelId) { // Add llmModelId to searchParams if it exists
+        searchParams.llmModelId = llmModelId;
       }
       if (isReasoningActive) {
         searchParams.reasoning = true
@@ -142,20 +147,20 @@ const Index = () => {
 
       if (references && references.length > 0) {
         // Pass only reference IDs, stringified as JSON
-        searchParams.refs = JSON.stringify(references.map((ref) => ref.id))
+        searchParams.refs = JSON.stringify(references.map((ref) => ref.id));
       }
 
       if (selectedSources && selectedSources.length > 0) {
-        searchParams.sources = selectedSources.join(",")
+        searchParams.sources = selectedSources.join(",");
       }
 
       navigate({
         to: "/chat",
         search: searchParams,
-      })
+      });
       // Log them to confirm they are received
     }
-  }
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

@@ -308,7 +308,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   useEffect(() => {
     if (chatParams.q && !hasHandledQueryParam.current) {
       const messageToSend = decodeURIComponent(chatParams.q)
-
       let refIdArray: string[] = []
       // Process chatParams.refs safely
       const _refs = chatParams.refs as string | string[] | undefined
@@ -356,6 +355,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
       handleSend(
         messageToSend,
+        chatParams.llmModelId || "gpt-4o-mini",
         referencesForHandleSend,
         sourcesArray,
       )
@@ -366,17 +366,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           ...prev,
           q: undefined,
           reasoning: undefined,
+          llmModelId: undefined,
           refs: undefined,
           sources: undefined,
         }),
         replace: true,
       })
     }
-  }, [chatParams.q, chatParams.reasoning, chatParams.refs, chatParams.sources, router])
+  }, [chatParams.q, chatParams.llmModelId, chatParams.reasoning, chatParams.refs, chatParams.sources, router])
 
   const handleSend = async (
     messageToSend: string,
-    // isReasoningEnabled?: boolean, // Removed: handleSend will use isReasoningActive state
+    llmModelId: string,
     addedReferences: Reference[] = [],
     selectedSources: string[] = [],
   ) => {
@@ -408,7 +409,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
-    url.searchParams.append("modelId", "gpt-4o-mini")
+    // Use the passed llmModelId
+    url.searchParams.append("modelId", llmModelId)
     url.searchParams.append("message", encodeURIComponent(messageToSend))
 
     url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
@@ -1657,6 +1659,7 @@ const chatParams = z.object({
     .string()
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
+  llmModelId: z.string().optional(), // Added llmModelId
 })
 
 type XyneChat = z.infer<typeof chatParams>
