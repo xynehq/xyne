@@ -1449,56 +1449,86 @@ async function* generateMetadataQueryAnswer(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  const { app, entity, startTime, endTime } = classification.filters
-
+  const { app, entity, startTime, endTime, sortDirection } =
+    classification.filters
+  const count =
+    "count" in classification.filters ? classification.filters.count : undefined
   const direction = classification.direction as string
   const isUnspecificMetadataRetrieval =
-    classification.type === QueryType.RetrievedUnspecificMetadata
+    classification.type === QueryType.RetrieveUnspecificMetadata
   const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
 
-  const from = new Date(startTime ?? "").getTime()
-  const to = new Date(endTime ?? "").getTime()
-  const hasValidTimeRange = !isNaN(from) && !isNaN(to)
+  // Process timestamp
+  const from = startTime ? new Date(startTime).getTime() : null
+  const to = endTime ? new Date(endTime).getTime() : null
+  const hasValidTimeRange =
+    from !== null && !isNaN(from) && to !== null && !isNaN(to)
 
-  // Return early if app/entity is not valid
-  if (!isValidAppAndEntity) {
-    Logger.info("Not able to perform metadata search")
-    return null
+  let timestampRange: { from: number | null; to: number | null } = {
+    from: null,
+    to: null,
   }
+  if (hasValidTimeRange) {
+    // If we have a valid time range, use the provided dates
+    timestampRange.from = from
+    timestampRange.to = to
+  } else if (direction === "next") {
+    // For "next/upcoming" requests without a valid range, search from now into the future
+    timestampRange.from = new Date().getTime()
+  }
+
+  const timeDescription = formatTimeDuration(
+    timestampRange.from,
+    timestampRange.to,
+  )
+  const directionText = direction === "prev" ? "going back" : "up to"
+
+  Logger.info(
+    `Searching for documents from app "${app}" and entity "${entity}"` +
+      (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
+  )
 
   const schema = entityToSchemaMapper(entity, app) as VespaSchema
   let items: VespaSearchResult[] = []
 
-  if (isUnspecificMetadataRetrieval) {
-    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
+  // Determine search strategy based on conditions
+  if (
+    !isValidAppAndEntity &&
+    classification.filter_query &&
+    classification.filters?.sortDirection === "desc"
+  ) {
     Logger.info(
-      `User requested metadata search: ${QueryType.RetrievedUnspecificMetadata}`,
+      "User requested recent metadata retrieval without specifying app or entity.",
     )
-
-    const count = classification.filters.count || 5
-    let timestampRange: { from: number | null; to: number | null } = {
-      from: hasValidTimeRange ? from : null,
-      to: hasValidTimeRange ? to : null,
+    const searchOps = {
+      limit: pageSize,
+      alpha: userAlpha,
+      rankProfile: SearchModes.GlobalSorted,
+      timestampRange:
+        timestampRange.to || timestampRange.from ? timestampRange : null,
     }
 
-    // For "next/upcoming" events, search from now into the future when no valid time range is provided
-    if (direction === "next" && !hasValidTimeRange) {
-      timestampRange = {
-        from: new Date().getTime(),
-        to: null,
-      }
-    }
-    const timeDescription = formatTimeDuration(
-      timestampRange.from,
-      timestampRange.to,
-    )
+    items =
+      (
+        await searchVespa(
+          classification.filter_query,
+          email,
+          null,
+          null,
+          searchOps,
+        )
+      ).root.children || []
 
-    const directionText = direction === "prev" ? "going back" : "up to"
+    span?.setAttribute("metadata items found", items.length)
+    span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
+    Logger.info(`Using rank profile: ${SearchModes.GlobalSorted}`)
+  } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
+    const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
+    span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
     Logger.info(
-      `Searching for documents from app "${app}" and entity "${entity}"` +
-        (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
+      `User requested metadata search: ${QueryType.RetrieveUnspecificMetadata}`,
     )
 
     items =
@@ -1509,67 +1539,97 @@ async function* generateMetadataQueryAnswer(
           app,
           entity,
           timestampRange,
-          limit: count,
-          asc: classification.filters.sortDirection === "asc",
+          limit: userSpecifiedCountLimit,
+          asc: sortDirection === "asc",
         })
       ).root.children || []
 
     span?.setAttribute("metadata items found", items.length)
-    Logger.info(`Found ${items.length} items for metadata retrieval`)
 
-    // Return early if no documents found for unspecific metadata retrieval
+    // Early return if no documents found
     if (!items.length) {
       return "no documents found"
     }
-  }
-  // Handle specific metadata retrieval
-  else if (isMetadataRetrieval) {
-    span?.setAttribute("metadata_type", QueryType.RetrievedUnspecificMetadata)
-    Logger.info(
-      `User requested metadata search : ${QueryType.RetrieveMetadata}`,
-    )
+  } else if (isMetadataRetrieval && isValidAppAndEntity) {
+    // Specific metadata retrieval
+    span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
+    Logger.info(`User requested metadata search: ${QueryType.RetrieveMetadata}`)
 
-    // Search Vespa here with input query
+    const { filter_query } = classification
+    const query = filter_query || input
+    const rankProfile =
+      sortDirection === "desc" && filter_query
+        ? SearchModes.GlobalSorted
+        : SearchModes.NativeRank
+
+    const searchOptions = {
+      limit: pageSize,
+      alpha: userAlpha,
+      rankProfile,
+      timestampRange:
+        timestampRange.to || timestampRange.from ? timestampRange : null,
+    }
+
     items =
       (
-        await searchVespa(input, email, app as Apps, entity as any, {
-          limit: pageSize,
-          alpha: userAlpha,
-          timestampRange: hasValidTimeRange ? { from, to } : null,
-        })
+        await searchVespa(
+          query,
+          email,
+          app as Apps,
+          entity as any,
+          searchOptions,
+        )
       ).root.children || []
 
-    span?.setAttribute("metadata items found", items.length)
-    Logger.info(`Found ${items.length} items for metadata retrieval`)
+    Logger.info(`Using rank profile: ${rankProfile}`)
+    span?.setAttribute("rank_profile", rankProfile)
 
-    // Return null to fall through to iterative RAG if no items found
     if (!items.length) {
-      return null
+      return hasValidTimeRange ? "no documents found" : null
     }
-  }
-  // If neither condition matched
-  else {
+  } else {
+    // None of the conditions matched
     return null
   }
 
-  const results = items
-  const initialContext = buildContext(results, maxSummaryCount)
+  Logger.info(`Found ${items.length} items for metadata retrieval`)
+  span?.setAttribute("metadata_items_found", items.length)
+  // Process results
+  const results = items.slice(0, pageSize)
+  let chunksCount = isMetadataRetrieval ? undefined : maxSummaryCount
+
+  if (app === Apps.GoogleDrive && isMetadataRetrieval) {
+    chunksCount = 100
+    Logger.info(`Using Google Drive, setting chunk size to ${chunksCount}`)
+    span?.setAttribute("Google Drive chunk_size", chunksCount)
+  } else {
+    Logger.info(`Sending full context`)
+  }
+
+  const initialContext = buildContext(results, chunksCount)
+  const streamOptions = {
+    stream: true,
+    modelId: defaultBestModel,
+    reasoning: config.isReasoning && userRequestsReasoning,
+  }
 
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app === Apps.Gmail) {
-    Logger.info("Using mailPromptJsonStream")
-    iterator = mailPromptJsonStream(input, userCtx, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-    })
+    Logger.info(`Using mailPromptJsonStream `)
+    iterator = mailPromptJsonStream(
+      input,
+      userCtx,
+      initialContext,
+      streamOptions,
+    )
   } else {
-    Logger.info("Using baselineRAGJsonStream")
-    iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-    })
+    Logger.info(`Using baselineRAGJsonStream`)
+    iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      initialContext,
+      streamOptions,
+    )
   }
 
   return yield* processIterator(
@@ -1660,7 +1720,7 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?.setAttribute("message_count", messages.length)
 
   const isUnspecificMetadataRetrieval =
-    classification.type == QueryType.RetrievedUnspecificMetadata
+    classification.type == QueryType.RetrieveUnspecificMetadata
   const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
 
   if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
@@ -1686,7 +1746,7 @@ export async function* UnderstandMessageAndAnswer(
       metadataRagSpan,
     )
 
-    if (isUnspecificMetadataRetrieval && answer === "no documents found") {
+    if (answer === "no documents found") {
       metadataRagSpan?.end()
 
       const fallbackMessage = fallbackText(classification)
@@ -1939,7 +1999,10 @@ export const MessageApi = async (c: Context) => {
           const messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
             .filter((msg) => !msg?.errorMessage)
-            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+            .filter(
+              (msg) =>
+                !(msg.messageRole === MessageRole.Assistant && !msg.message),
+            ) // filter out assistant messages with no content
             .map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
@@ -1974,15 +2037,15 @@ export const MessageApi = async (c: Context) => {
             startTime: "",
             endTime: "",
             count: 0,
+            sortDirection: "",
           }
           let parsed = {
             answer: "",
             queryRewrite: "",
             temporalDirection: null,
-            filters: queryFilters,
+            filter_query: "",
             type: "",
-            from: null,
-            to: null,
+            filters: queryFilters,
           }
 
           let thinking = ""
@@ -2093,6 +2156,7 @@ export const MessageApi = async (c: Context) => {
             const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
               type: parsed.type as QueryType,
+              filter_query: parsed.filter_query,
               filters: {
                 ...parsed.filters,
                 app: parsed.filters.app as Apps,
@@ -2558,7 +2622,12 @@ export const MessageRetryApi = async (c: Context) => {
           const convWithNoErrMsg = isUserMessage
             ? conversation
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                ) // filter out assistant messages with no content
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2566,7 +2635,12 @@ export const MessageRetryApi = async (c: Context) => {
             : conversation
                 .slice(0, conversation.length - 1)
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message))
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                )
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2596,15 +2670,15 @@ export const MessageRetryApi = async (c: Context) => {
             startTime: "",
             endTime: "",
             count: 0,
+            sortDirection: "",
           }
           let parsed = {
             answer: "",
             queryRewrite: "",
             temporalDirection: null,
-            filters: queryFilters,
+            filter_query: "",
             type: "",
-            from: null,
-            to: null,
+            filters: queryFilters,
           }
           let thinking = ""
           let reasoning =
@@ -2710,6 +2784,7 @@ export const MessageRetryApi = async (c: Context) => {
             const classification: TemporalClassifier & QueryRouterResponse = {
               direction: parsed.temporalDirection,
               type: parsed.type as QueryType,
+              filter_query: parsed.filter_query,
               filters: {
                 ...parsed.filters,
                 app: parsed.filters.app as Apps,

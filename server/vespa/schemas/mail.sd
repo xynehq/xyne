@@ -91,9 +91,9 @@ schema mail {
 
     }
     field labels type array<string> {
-    indexing: attribute | summary | index
-    attribute: fast-search
-  }
+      indexing: attribute | summary | index
+      attribute: fast-search
+    }
   }
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
     indexing: input chunks | embed | attribute | index
@@ -148,7 +148,7 @@ schema mail {
       function doc_recency() {
         expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
       }
-      
+
       function vector_score() {
         expression: closeness(field, chunk_embeddings)
       }
@@ -171,11 +171,11 @@ schema mail {
       function chunk_scores() {
         expression: elementwise(bm25(chunks), x, double)
       }
-      
+
     }
 
   rank-profile default_native inherits initial {
-       
+
       first-phase {
         expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
       }
@@ -198,6 +198,67 @@ schema mail {
       nativeRank(subject)
       nativeRank(chunks)
       chunk_scores
+    }
+  }
+
+  # New rank profile designed for sorting: implements recency binning with hybrid scoring within bins.
+  rank-profile global_sorted inherits initial {
+    # Query inputs allowing control over recency parameters
+    inputs {
+        # query(e) and query(alpha) are inherited from 'initial'
+        query(bin_size_days) double: 1.0
+    }
+
+    # Constants for recency binning
+    constants {
+        ONE_DAY_IN_SECONDS: 86400.0
+        # Using a large multiplier ensures bin differences dominate
+        RECENCY_BIN_MULTIPLIER: 1000000.0
+        # Base score high enough to accommodate many bins
+        MAX_SCORE_BASE: 1000000000.0
+    }
+
+    # Calculate document age in days with proper handling of missing timestamps
+    function document_age_days() {
+      expression: max(0.0, if(isNan(attribute(timestamp)) == 1, THREE_MONTHS_IN_SECONDS / ONE_DAY_IN_SECONDS, (now() - (attribute(timestamp) / 1000)) / ONE_DAY_IN_SECONDS))
+    }
+
+    # Assign documents to time-based bins
+    function recency_bin_index() {
+      expression: floor(document_age_days() / query(bin_size_days))
+    }
+
+    # Score based on recency bin - newer bins get MUCH higher scores
+    function recency_bin_score() {
+      expression: MAX_SCORE_BASE - (recency_bin_index() * RECENCY_BIN_MULTIPLIER)
+    }
+
+    # Calculate the hybrid relevance score (combining vector and lexical search)
+    # Uses the full range of scores without artificial normalization
+    function hybrid_relevance_score() {
+      expression: (query(alpha) * vector_score()) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    # --- Ranking Expression ---
+    first-phase {
+      # Final score = Score from recency bin + full hybrid relevance score
+      # This ensures recent documents always win, but relevance is preserved within bins
+      expression: recency_bin_score() + hybrid_relevance_score()
+    }
+
+    # Include all relevant features for debugging/monitoring
+    match-features {
+      query(alpha)
+      vector_score
+      chunk_scores
+      combined_nativeRank
+      matchedFieldCount
+      nativeRank(subject)
+      nativeRank(chunks)
+      document_age_days
+      recency_bin_index
+      recency_bin_score
+      hybrid_relevance_score
     }
   }
 
@@ -233,7 +294,7 @@ schema mail {
 
   # change here for ai queries accordingly
   rank-profile default_ai inherits initial {
-       
+
       first-phase {
         expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
       }
@@ -241,7 +302,7 @@ schema mail {
       global-phase {
         expression {
           (
-            (query(alpha) * vector_score) + 
+            (query(alpha) * vector_score) +
             ((1 - query(alpha)) *  combined_nativeRank)
           )
         }
