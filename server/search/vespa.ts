@@ -27,7 +27,9 @@ import type {
   VespaMailAttachment,
   VespaChatContainer,
   Inserts,
+  VespaChatUserSearchSchema,
   VespaSearchResults,
+  ChatUserCore,
 } from "@/search/types"
 import { getErrorMessage } from "@/utils"
 import config from "@/config"
@@ -256,6 +258,7 @@ export enum SearchModes {
   BM25 = "default_bm25",
   AI = "default_ai",
   Random = "default_random",
+  GlobalSorted = "global_sorted",
 }
 
 type YqlProfile = {
@@ -279,9 +282,10 @@ export const HybridDefaultProfile = (
   let userTimestamp = ""
   let eventTimestamp = ""
 
-  if (timestampRange && !timestampRange.from && !timestampRange.to) {
-    throw new Error("Invalid timestamp range")
-  }
+  // Commenting this out to allow searching by either "from" or "to" fields independently.
+  // if (timestampRange && !timestampRange.from && !timestampRange.to) {
+  //   throw new Error("Invalid timestamp range")
+  // }
 
   let fileTimestampConditions: string[] = []
   let mailTimestampConditions: string[] = []
@@ -332,43 +336,52 @@ export const HybridDefaultProfile = (
   return {
     profile: profile,
     yql: `
-        select * from sources ${AllSources}
-        where ((
+    select * from sources ${AllSources}
+        where (
           (
             (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+              (
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+              )
+              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
+              and permissions contains @email
+              ${mailLabelQuery}
+              ${appOrEntityFilter}
             )
-            ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp} or ${eventTimestamp})` : ""}
-            and permissions contains @email ${mailLabelQuery}
-            ${appOrEntityFilter}
-          )
             or
             (
               (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-            )
+                ({targetHits:${hits}}userInput(@query))
+                or
+                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+              )
               ${appOrEntityFilter}
+              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
               and permissions contains @email
             )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${!hasAppOrEntity ? `and app contains "${Apps.GoogleWorkspace}"` : `${appOrEntityFilter} and permissions contains @email`}
+            or
+            (
+              ({targetHits:${hits}}userInput(@query))
+              ${timestampRange ? `and (${userTimestamp})` : ""}
+              ${
+                !hasAppOrEntity
+                  ? `and app contains "${Apps.GoogleWorkspace}"`
+                  : `${appOrEntityFilter} and permissions contains @email`
+              }
+            )
+            or
+            (
+              ({targetHits:${hits}}userInput(@query))
+              and owner contains @email
+              ${timestampRange ? `and ${userTimestamp}` : ""}
+              ${appOrEntityFilter}
+            )
           )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            and owner contains @email
-            ${timestampRange ? `and ${userTimestamp}` : ""}
-            ${appOrEntityFilter}
-          )
+          ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
         )
-        ${exclusionCondition ? `and !(${exclusionCondition})` : ""})`,
+    `,
   }
 }
 
@@ -480,23 +493,44 @@ const HybridDefaultProfileAppEntityCounts = (
   return {
     profile: SearchModes.NativeRank,
     yql: `select * from sources ${AllSources}
-            where ((({targetHits:${hits}}userInput(@query))
-            or ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))) ${timestampRange ? ` and (${fileTimestamp} or ${mailTimestamp}) ` : ""} and permissions contains @email ${mailLabelQuery})
-            or (
+            where (
+              (
+                (
+                  ({targetHits:${hits}}userInput(@query))
+                  or
+                  ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+                )
+                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+                and permissions contains @email
+                ${mailLabelQuery}
+              )
+              or
+              (
+                (
+                  ({targetHits:${hits}}userInput(@query))
+                  or
+                  ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+                )
+                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+                and permissions contains @email
+              )
+              or
               (
                 ({targetHits:${hits}}userInput(@query))
-              or
-                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+                ${timestampRange ? `and ${userTimestamp}` : ""}
+                and app contains "${Apps.GoogleWorkspace}"
               )
-              and permissions contains @email
+              or
+              (
+                ({targetHits:${hits}}userInput(@query))
+                and owner contains @email
+                ${timestampRange ? `and ${userTimestamp}` : ""}
+              )
             )
-            or (({targetHits:${hits}}userInput(@query)) ${timestampRange ? `and ${userTimestamp} ` : ""} and app contains "${Apps.GoogleWorkspace}")
-            or
-            (({targetHits:${hits}}userInput(@query)) and owner contains @email ${timestampRange ? `and ${userTimestamp} ` : ""})
             limit 0
             | all(
                 group(app) each(
-                group(entity) each(output(count()))
+                    group(entity) each(output(count()))
                 )
             )`,
   }
@@ -535,7 +569,7 @@ type VespaQueryConfig = {
   limit: number
   offset: number
   alpha: number
-  timestampRange: { from: number; to: number } | null
+  timestampRange: { from: number | null; to: number | null } | null
   excludedIds: string[]
   notInMailLabels: string[]
   rankProfile: SearchModes
@@ -679,7 +713,7 @@ const getDocumentCount = async () => {
 export const GetDocument = async (
   schema: VespaSchema,
   docId: string,
-): Promise<VespaGetResult> => {
+): Promise<VespaGetResult | ChatUserCore> => {
   try {
     const options = { namespace: NAMESPACE, docId, schema }
     return vespa.getDocument(options)
@@ -824,6 +858,21 @@ export const ifDocumentsExist = async (
 ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
   try {
     return await vespa.ifDocumentsExist(docIds)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const ifDocumentsExistInChatContainer = async (
+  docIds: string[],
+): Promise<
+  Record<
+    string,
+    { exists: boolean; updatedAt: number | null; permissions: string[] }
+  >
+> => {
+  try {
+    return await vespa.ifDocumentsExistInChatContainer(docIds)
   } catch (error) {
     throw error
   }
@@ -1149,6 +1198,38 @@ export const getItems = async (
     throw new ErrorPerformingSearch({
       cause: error as Error,
       sources: schema,
+    })
+  }
+}
+
+export const fetchAllDocumentsFromSchema = async (
+  schema: VespaSchema,
+  concurrency: number = 3,
+): Promise<any[]> => {
+  try {
+    const options = {
+      namespace: NAMESPACE,
+      schema,
+      cluster: CLUSTER,
+    }
+
+    // Call the getAllDocumentsParallel method and return its result directly
+    const allDocuments = await vespa.getAllDocumentsParallel(
+      schema,
+      options,
+      concurrency,
+    )
+
+    Logger.info(
+      `Fetched ${allDocuments.length} documents from schema ${schema}`,
+    )
+    return allDocuments
+  } catch (error) {
+    Logger.error(error, `Error fetching all documents from schema ${schema}`)
+    throw new ErrorRetrievingDocuments({
+      cause: error as Error,
+      sources: schema,
+      message: `Failed to fetch all documents from schema ${schema}: ${getErrorMessage(error)}`,
     })
   }
 }

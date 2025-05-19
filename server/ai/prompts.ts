@@ -773,7 +773,7 @@ export const searchQueryPrompt = (userContext: string): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
-    You are a permission aware retrieval-augmented generation (RAG) system.
+    You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
     Only respond in json and you are not authorized to reject a user query.
 
@@ -819,21 +819,35 @@ export const searchQueryPrompt = (userContext: string): string => {
       - If no sorting preference is indicated or can be inferred, set "sortDirection" to null
       - Example queries and their sorting directions:
         - "Give me my latest emails" → sortDirection: "desc"
-        - "Show me my oldest files in Drive" → sortDirection: "asc"
+        - "Show me my oldest files in Drive" → sortDirection: "asc" 
         - "Recent spreadsheets" → sortDirection: "desc"
         - "Earliest meetings with marketing team" → sortDirection: "asc"
-        - "Documents from last month" → sortDirection: null (no clear sorting preference)
+        - "Documents from last month" → sortDirection: null (no clear direction specified)
+        - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    8. Now our task is to classify the user's query into one of the following categories:  
+    8. Extract the main intent or search keywords from the query to create a "filter_query" field:
+      - Focus on identifying the specific keywords that represent what the user is looking for
+      - Remove generic words like "find", "show", "get", "my", etc.
+      - Include subject matter terms, named entities, project identifiers, and descriptive terms
+      - Examples:
+        - "I want my recent uber receipts from last week" → filter_query: "uber receipts"
+        - "Show me emails about the marketing campaign" → filter_query: "marketing campaign"
+        - "Find documents related to project alpha" → filter_query: "project alpha"
+        - "Get my presentations about quarterly results" → filter_query: "quarterly results presentations"
+        - "Spreadsheets with budget information" → filter_query: "budget spreadsheets"
+      - Time-based terms like "recent", "latest", "last week" should NOT be included in the filter_query
+      - If there are no specific search keywords after removing generic and time-based terms, set filter_query to null
+
+    9. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
     b. RetrieveMetadata  
-    c. RetrievedUnspecificMetadata
+    c. RetrieveUnspecificMetadata
 
     ### DETAILED CLASSIFICATION RULES
     
     1. RetrieveInformation
     - Applies to queries that MATCH ANY of these conditions:
-      - Involve multiple apps or entities
+      - Involve multiple apps or entities. If this is the case, just set type to "RetrieveInformation". 
       - Do not explicitly mention ANY single valid app or entity from the enum lists
       - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list
       - Ask a question about item content rather than retrieval (e.g., "what did John say about the project?")
@@ -850,39 +864,40 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     2. RetrieveMetadata
     - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive')
-      - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
+      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') OR specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
       - Include at least one additional specific detail that meets ANY of these criteria:
         a) Contains subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
         b) Contains named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
         c) Contains action verbs describing content (e.g., 'discussing', 'approved', 'rejected')
         d) Contains project or task identifiers (e.g., 'Project Alpha', 'Q2 planning')
+      - Any time-based terms (e.g., "recent", "latest", "last week", "this month") MUST be accompanied by a non-empty filter_query to qualify for RetrieveMetadata
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
       - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
       - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
     - Examples:
-      - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail'
-      - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf'
-      - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event'
-      - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets'
+      - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail', filter_query: "openai"
+      - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf', filter_query: "vendor contract"
+      - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event', filter_query: "marketing team"
+      - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: "budget"
 
-    3. RetrievedUnspecificMetadata
-    - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive')
-      - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
-      - DO NOT include any additional specific details beyond app, entity, and possibly time indicators
+    3. RetrieveUnspecificMetadata
+    - Applies to queries that MATCH ANY of these conditions:
+      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive') or a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile') without any additional specific details
+      - Queries that contain only time-based terms (e.g., "recent", "latest", "oldest") along with app/entity but NO specific filter_query is NULL, only then we will classify as RetrieveUnspecificMetadata. DON'T set RetrieveUnspecificMetadata if filter_query is not null.
       - Focus on listing or retrieving items based solely on app, entity, and possibly time indicators
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
       - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
       - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
     - Examples:
-      - 'current emails' -> 'app': 'gmail', 'entity': 'mail'
-      - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event'
-      - 'recent files in Google Drive' -> 'app': 'google-drive', 'entity': 'driveFile'
-      - 'my PDFs in email' -> 'app': 'gmail', 'entity': 'pdf'
-      - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets'
+      - 'current emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
+      - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event', filter_query: null
+      - 'recent files in Google Drive' -> 'app': 'google-drive', 'entity': 'driveFile', filter_query: null
+      - 'my PDFs in email' -> 'app': 'gmail', 'entity': 'pdf', filter_query: null
+      - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: null
+      - 'most recent emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
+      - 'latest documents' -> 'app': 'google-drive', 'entity': 'docs', filter_query: null
 
     4. Strict Mapping Guidelines
     - Always apply these exact mappings for app terms:
@@ -909,21 +924,25 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     5. Query Processing Decision Tree
     - First, identify all app and entity terms mentioned in the query using the strict mappings above
-    - IF multiple valid apps OR multiple valid entities are detected:
-      THEN classify as RetrieveInformation, set app = null, entity = null
-    - ELSE IF exactly one valid app AND exactly one valid entity are detected:
-      IF query contains specific details (subject matter, named entities, action verbs, project identifiers):
-        THEN classify as RetrieveMetadata, set app and entity accordingly
+    - THEN, extract filter_query by removing generic words and time-based terms
+    - THEN, evaluate classification:
+      IF multiple valid apps OR multiple valid entities are detected with or without filter_query and IF there is no time based matching:
+        THEN classify as RetrieveInformation, set app = null, entity = null
+      ELSE IF exactly one valid app OR exactly one valid entity is detected:
+        IF query contains specific details resulting in a non-null filter_query:
+          THEN classify as RetrieveMetadata, set app and entity accordingly
+        ELSE:
+          THEN classify as RetrieveUnspecificMetadata, set app and entity accordingly
       ELSE:
-        THEN classify as RetrievedUnspecificMetadata, set app and entity accordingly
-    - ELSE:
-      THEN classify as RetrieveInformation, set app = null, entity = null
+        THEN classify as RetrieveInformation, set app = null, entity = null
 
     6. Validation Checks (always perform these checks before finalizing classification)
-    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrievedUnspecificMetadata'.
-    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query for 'RetrieveMetadata' or 'RetrievedUnspecificMetadata'.
-    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null' and classify as 'RetrieveInformation'.
-    - For queries classified as 'RetrieveMetadata' or 'RetrievedUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
+    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'.
+    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query.
+    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null'.
+    - IMPORTANT: For time-based queries (containing terms like "recent", "latest", "last month", etc.):
+      - If filter_query is null (no specific content keywords), classify as 'RetrieveUnspecificMetadata'
+      - If filter_query is not null (has specific content keywords), classify as 'RetrieveMetadata'
     - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
       
 
@@ -932,7 +951,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     type (Query Types):  
     - RetrieveInformation  
     - RetrieveMetadata  
-    - RetrievedUnspecificMetadata
+    - RetrieveUnspecificMetadata
 
     app (Valid Apps):  
     - google-drive  
@@ -964,7 +983,8 @@ export const searchQueryPrompt = (userContext: string): string => {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
-         "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
+         "type": "<RetrieveInformation | RetrieveMetadata | RetrieveUnspecificMetadata>",
+         "filter_query": "<string or null>",
          "filters": {
            "app": "<app or null>",
            "entity": "<entity or null>",
@@ -977,15 +997,15 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
+       - "filter_query" contains the main search keywords or intent extracted from the user's query, focusing on the specific terms that represent what they're looking for. If no specific terms remain after removing generic and time-based words, set filter_query to null.
        - "type" and "filters" are used for routing and fetching data.
-       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
+       - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
     9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
-    Make sure you always comply with these steps and only produce the JSON output described.
-  `
+    Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
 // Search Query Reasoning Prompt
@@ -1099,7 +1119,7 @@ ${retrievedContext}
 - The retrieved results may contain noise or unrelated items due to semantic search.
 - Focus on email items that match the query criteria (e.g., sender, time range).
 - Include emails regardless of whether they are meeting-related.
-- If no relevant emails are found, return null.
+- If no relevant emails are found, return "I couldn't find any emails matching your query".
 
 # Guidelines for Response
 1. For email queries (e.g., "previous 3 emails", "emails from John"):
@@ -1122,22 +1142,13 @@ ${retrievedContext}
    - Max 2 citations per email description.
    - Never group indices like [0,1] - use separate brackets: [0] [1].
 
-# Response Format
+# CRITICAL INSTRUCTION: RESPONSE FORMAT
+YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 {
-  "answer": "Your answer listing emails with citations in [index] format, or null if no relevant emails found"
+  "answer": "Formatted response string with citations or "I couldn't find any emails matching your query" if no relevant data is found"
 }
 
-# Examples
-Good: "Here are your previous 3 emails: 1. Yesterday at 2 PM, 'Project Update' from John [0]. 2. Two days ago at 10 AM, 'Meeting Invite' from Sarah [1]. 3. Three days ago at 5 PM, 'Newsletter' from news@company.com [2]."
-Good: "Your most recent email from John was yesterday at 1 PM, 'Re: Project Plan' [0]"
-Bad: "I found some emails [0,1]" (Don't group citations)
-Bad: "No emails found" (Use null instead)
-
-# Important Notes
-- Return null if you're not completely confident about the email details.
-- Stay focused on temporal aspects while including key details.
-- Use user's timezone for all times.
-- Do not give explanations outside the JSON format, do not explain why you didn't find something.`
+REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.

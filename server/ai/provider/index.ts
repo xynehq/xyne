@@ -1084,7 +1084,7 @@ export const queryRewriter = async (
 export const temporalEventClassification = async (
   userQuery: string,
   params: ModelParams,
-): Promise<TemporalClassifier & { cost: number }> => {
+): Promise<Omit<TemporalClassifier, "filter_query"> & { cost: number }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }

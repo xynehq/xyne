@@ -77,7 +77,7 @@ export const getSortedScoredChunks = (
   }
 
   if (
-    matchfeatures?.chunk_scores?.cells &&
+    !matchfeatures?.chunk_scores?.cells ||
     !Object.keys(matchfeatures?.chunk_scores?.cells).length
   ) {
     const mappedChunks = existingChunksSummary.map((v, index) => ({
