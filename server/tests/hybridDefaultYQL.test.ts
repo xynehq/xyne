@@ -159,6 +159,6 @@ describe("HybridDefaultProfile", () => {
     expect(result.yql).toContain("app contains @app")
     expect(result.yql).toContain("entity contains @entity")
     expect(result.yql).toContain("updatedAt >= 1000")
-    expect(result.yql).toContain("timestamp >= 1000")
+    expect(result.yql).not.toContain("updatedAt <=")
   })
 })
