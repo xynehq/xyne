@@ -531,7 +531,7 @@ export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
 ): Promise<{ title: string; cost: number }> => {
-    Logger.info("inside generateTitleUsingQuery")
+  Logger.info("inside generateTitleUsingQuery")
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel

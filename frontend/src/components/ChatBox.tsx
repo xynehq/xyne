@@ -203,7 +203,6 @@ export const ChatBox = ({
   handleStop,
   chatId,
   availableConnectors = [],
-
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
@@ -915,22 +914,22 @@ export const ChatBox = ({
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
       {availableConnectors.length > 0 && (
-          <div className="flex justify-end mb-2">
-            <select
-              className="text-sm border border-gray-300 rounded-md px-2 py-1"
-              value={selectedConnector || ""}
-              onChange={(e) => setSelectedConnector(e.target.value || undefined)}
-              disabled={isStreaming}
-            >
-              <option value="">Default (No Connector)</option>
-              {availableConnectors.map((connector) => (
-                <option key={connector.id} value={connector.id}>
-                  {connector.name || connector.url || connector.id}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="flex justify-end mb-2">
+          <select
+            className="text-sm border border-gray-300 rounded-md px-2 py-1"
+            value={selectedConnector || ""}
+            onChange={(e) => setSelectedConnector(e.target.value || undefined)}
+            disabled={isStreaming}
+          >
+            <option value="">Default (No Connector)</option>
+            {availableConnectors.map((connector) => (
+              <option key={connector.id} value={connector.id}>
+                {connector.name || connector.url || connector.id}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
