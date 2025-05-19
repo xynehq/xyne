@@ -486,7 +486,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
     const fileIds = addedReferences
-      .filter((ref) => ref.type === "global" && ref.docId)
+      .filter((ref) => ref.docId)
       .map((ref) => ref.docId!)
 
     // const appEntities = selectedSources
@@ -502,7 +502,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
     url.searchParams.append("message", encodeURIComponent(messageJsonPayload))
-
     url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
 
     // if (appEntities.length > 0) {
