@@ -33,6 +33,8 @@ import { getIcon } from "@/lib/common"
 import { DriveEntity } from "shared/types"
 import { api } from "@/api"
 import { Input } from "@/components/ui/input"
+import { Pill } from "./Pill"
+import { Reference } from "@/types"
 
 interface SourceItem {
   id: string
@@ -61,16 +63,6 @@ interface SearchResult {
   photoLink?: string
 }
 
-interface Reference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
-}
 
 interface ChatBoxProps {
   query: string
@@ -145,13 +137,6 @@ const availableSources: SourceItem[] = [
     icon: getIcon("pdf", "pdf_default", { w: 16, h: 16, mr: 8 }),
   },
 ]
-
-const getPillDisplayTitle = (title: string): string => {
-  if (title.length > 15) {
-    return title.substring(0, 15) + "..."
-  }
-  return title
-}
 
 const getCaretCharacterOffsetWithin = (element: Node) => {
   let caretOffset = 0
@@ -558,10 +543,9 @@ export const ChatBox = ({
           const refId = (node as HTMLElement).dataset.referenceId
           const ref = references.find(
             (r) =>
-              r.id === refId || // Prefer ID matching
-              getPillDisplayTitle(r.title) === pillText ||
-              r.title === pillText ||
-              `@[${getPillDisplayTitle(r.title)}]` === pillText,
+              r.id === refId ||
+              // getPillDisplayTitle is now in Pill.tsx, simplify matching here
+              r.title === pillText,
           )
           existingPills.push({ node: node as HTMLElement, ref: ref || null })
         }
@@ -604,49 +588,19 @@ export const ChatBox = ({
       currentPos += beforeAt.length
     }
 
-    // Add the new pill
-    const newPill = document.createElement("a")
-    newPill.href = newRef.url || "#"
-    newPill.target = "_blank"
-    newPill.rel = "noopener noreferrer"
-    newPill.className =
-      "reference-pill bg-[#F1F5F9] hover:bg-slate-200 text-[#2074FA] text-sm font-semi-bold rounded px-0.5 inline-flex items-baseline cursor-pointer no-underline"
-    newPill.contentEditable = "false"
-    newPill.dataset.referenceId = newRef.id
-    newPill.title = newRef.title
+    // Add the new pill using Pill component
+    const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />)
+    const tempDiv = document.createElement("div")
+    tempDiv.innerHTML = pillHtmlString
+    const pillElement = tempDiv.firstChild as HTMLElement | null
 
-    // Prevent click inside contentEditable from navigating if URL is '#' and to stop potential issues with contentEditable parent
-    newPill.addEventListener("click", (e) => {
-      if (newPill.getAttribute("href") === "#") {
-        e.preventDefault()
-      }
-      // For actual links, let the default behavior proceed (opening in new tab)
-      // but stop propagation to prevent contentEditable parent from interfering.
-      e.stopPropagation()
-    })
-
-    if (newRef.app && newRef.entity) {
-      const iconContainer = document.createElement("span")
-      iconContainer.style.alignSelf = "center";
-      const iconNode = getIcon(newRef.app, newRef.entity, {
-        w: 14,
-        h: 14,
-        mr: 4,
-      })
-
-      if (React.isValidElement(iconNode)) {
-        iconContainer.innerHTML = renderToStaticMarkup(iconNode)
-      } else if (typeof iconNode === "string") {
-        iconContainer.textContent = iconNode
-      } else {
-        iconContainer.textContent = "▫️"
-      }
-      newPill.appendChild(iconContainer)
+    if (pillElement) {
+      nodes.push(pillElement)
+    } else {
+      const fallbackText = document.createTextNode(`@[${newRef.title}]`)
+      nodes.push(fallbackText)
+      console.error("Failed to render Pill to DOM element.")
     }
-    newPill.appendChild(
-      document.createTextNode(getPillDisplayTitle(newRef.title)),
-    )
-    nodes.push(newPill)
 
     // Add a space after the new pill
     const spaceNode = document.createTextNode("\u00A0")
@@ -692,15 +646,14 @@ export const ChatBox = ({
   }
 
   const handleAddReference = (citation: Citation) => {
-    const citationApp = (citation as any).app
-    const citationEntity = (citation as any).entity
-
+    const docId = citation.docId
     const newRef: Reference = {
-      id: citation.url,
+      id: docId,
+      docId: docId,
       title: citation.title,
       url: citation.url,
-      app: typeof citationApp === "string" ? citationApp : undefined,
-      entity: typeof citationEntity === "string" ? citationEntity : undefined,
+      app: citation.app,
+      entity: citation.entity,
       type: "citation",
     }
 

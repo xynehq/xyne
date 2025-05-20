@@ -19,22 +19,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
+import { Reference } from "@/types"
 
 enum Tabs {
   Search = "search",
   Ask = "ask",
-}
-
-// Define a local Reference type matching the expected structure from ChatBox
-interface LocalReference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
 }
 
 const Index = () => {
@@ -129,7 +118,7 @@ const Index = () => {
 
   const handleAsk = (
     messageToSend: string,
-    references: LocalReference[], 
+    references: Reference[],
     selectedSources?: string[]
   ) => {
     if (messageToSend.trim()) {

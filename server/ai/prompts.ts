@@ -650,7 +650,6 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -721,7 +720,8 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear: Set "answer" to null
+If the query given by user is irrelevant to the given context, set "answer" to null`
 
 export const queryRewritePromptJson = (
   userContext: string,

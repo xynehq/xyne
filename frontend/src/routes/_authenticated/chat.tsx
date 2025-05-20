@@ -43,19 +43,10 @@ import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
-// Removed duplicate Citation import here
-
-// Define Reference type (matching ChatBox)
-interface Reference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
-}
+import React from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { Pill } from "@/components/Pill" 
+import { Reference } from "@/types"
 
 type CurrentResp = {
   resp: string
@@ -83,7 +74,103 @@ interface ChatPageProps {
   workspace: PublicWorkspace
 }
 
-const REASONING_STATE_KEY = "isReasoningGlobalState";
+// Define the structure for parsed message parts, including app, entity, and pillType for pills
+type ParsedMessagePart =
+  | { type: "text"; value: string }
+  | {
+      type: "pill"
+      value: {
+        docId: string
+        url: string | null
+        title: string | null
+        app?: string
+        entity?: string
+        pillType?: "citation" | "global"
+      }
+    }
+
+// Helper function to parse HTML message input
+const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
+  const container = document.createElement("div")
+  container.innerHTML = htmlString
+  const parts: Array<ParsedMessagePart> = []
+
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) {
+        parts.push({ type: "text", value: node.textContent })
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement
+      if (
+        el.tagName.toLowerCase() === "a" &&
+        el.classList.contains("reference-pill") &&
+        el.dataset.docId
+      ) {
+        parts.push({
+          type: "pill",
+          value: {
+            docId: el.dataset.docId,
+            url: el.getAttribute("href"),
+            title: el.getAttribute("title"),
+            app: el.dataset.app,
+            entity: el.dataset.entity,
+          },
+        })
+      } else {
+        Array.from(el.childNodes).forEach(walk)
+      }
+    }
+  }
+
+  Array.from(container.childNodes).forEach(walk)
+  return parts
+}
+
+// Helper function to convert JSON message parts back to HTML using Pill component
+const jsonToHtmlMessage = (jsonString: string): string => {
+  try {
+    const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
+    if (!Array.isArray(parts)) {
+      // If not our specific JSON structure, treat as plain HTML/text string
+      return jsonString
+    }
+
+    return parts
+      .map((part, index) => {
+        let htmlPart = ""
+        if (part.type === "text") {
+          htmlPart = part.value
+        } else if (
+          part.type === "pill" &&
+          part.value &&
+          typeof part.value === "object"
+        ) {
+          const { docId, url, title, app, entity, pillType } = part.value
+
+          const referenceForPill: Reference = {
+            id: docId,
+            docId: docId,
+            title: title || docId,
+            url: url || undefined,
+            app: app,
+            entity: entity,
+            type: pillType || "global",
+          }
+          htmlPart = renderToStaticMarkup(
+            React.createElement(Pill, { newRef: referenceForPill }),
+          )
+        }
+        htmlPart += " "
+        return htmlPart
+      })
+      .join("").trimEnd()
+  } catch (error) {
+    return jsonString
+  }
+}
+
+const REASONING_STATE_KEY = "isReasoningGlobalState"
 
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
@@ -350,15 +437,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
 
       // Set reasoning state from URL param if present
-      if (typeof chatParams.reasoning === 'boolean') {
+      if (typeof chatParams.reasoning === "boolean") {
         setIsReasoningActive(chatParams.reasoning)
       }
 
-      handleSend(
-        messageToSend,
-        referencesForHandleSend,
-        sourcesArray,
-      )
+      handleSend(messageToSend, referencesForHandleSend, sourcesArray)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -372,7 +455,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         replace: true,
       })
     }
-  }, [chatParams.q, chatParams.reasoning, chatParams.refs, chatParams.sources, router])
+  }, [
+    chatParams.q,
+    chatParams.reasoning,
+    chatParams.refs,
+    chatParams.sources,
+    router,
+  ])
 
   const handleSend = async (
     messageToSend: string,
@@ -397,20 +486,27 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
     const fileIds = addedReferences
-      .filter((ref) => ref.type === "global" && ref.docId)
+      .filter((ref) => ref.docId)
       .map((ref) => ref.docId!)
 
     // const appEntities = selectedSources
     //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
     //   .filter((item) => item !== undefined)
 
+    let finalMessagePayload: string
+    if (addedReferences.length === 0) {
+      finalMessagePayload = messageToSend
+    } else {
+      const parsedMessageParts = parseMessageInput(messageToSend)
+      finalMessagePayload = JSON.stringify(parsedMessageParts)
+    }
+
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
-    url.searchParams.append("message", encodeURIComponent(messageToSend))
-
+    url.searchParams.append("message", encodeURIComponent(finalMessagePayload))
     url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
 
     // if (appEntities.length > 0) {
@@ -419,8 +515,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     //     JSON.stringify(appEntities),
     //   )
     // }
-    if(isReasoningActive) {
-        url.searchParams.append("isReasoningEnabled", "true")
+    if (isReasoningActive) {
+      url.searchParams.append("isReasoningEnabled", "true")
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
@@ -1460,7 +1556,7 @@ const ChatMessage = ({
       className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
-        <div dangerouslySetInnerHTML={{ __html: message }} />
+        <div dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
       ) : (
         <div
           className={`flex flex-col mt-[40px] ${citationUrls.length ? "mb-[35px]" : ""}`}
