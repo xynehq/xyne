@@ -19,6 +19,7 @@ import {
   addApiKeyConnectorSchema,
   addApiKeyMCPConnectorSchema,
   addServiceConnectionSchema,
+  addStdioMCPConnectorSchema,
   answerSchema,
   createOAuthProvider,
   deleteConnectorSchema,
@@ -36,6 +37,7 @@ import {
   DeleteOauthConnector,
   GetConnectors,
   StartOAuth,
+  AddStdioMCPConnector,
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
 } from "@/api/admin"
@@ -236,6 +238,11 @@ export const AppRoutes = app
     "/apikey/mcp/create",
     zValidator("form", addApiKeyMCPConnectorSchema),
     AddApiKeyMCPConnector,
+  )
+  .post(
+    "/stdio/mcp/create",
+    zValidator("form", addStdioMCPConnectorSchema),
+    AddStdioMCPConnector,
   )
   .get("/connectors/all", GetConnectors)
   .post(

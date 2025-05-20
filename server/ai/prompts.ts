@@ -777,7 +777,7 @@ export const queryRewritePromptJson = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string): string => {
+export const searchQueryPrompt = (userContext: string, toolContext): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -787,7 +787,9 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     **User Context:** ${userContext}
 
-    Now, handle the query as follows:
+    ${toolContext}
+
+    Now, handle the query as follows only if no tool invocation is required to solve this query, if required just respond back with JSON output with respective schema:
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -967,7 +969,20 @@ export const searchQueryPrompt = (userContext: string): string => {
     For Google-Workspace:
      - contacts
 
-    8. Output JSON in the following structure:
+    7. Output JSON should be one of the following structure based on whether its a tool invocation response of answer:
+
+      7.1)
+
+        { "tool": "ACTUAL_TOOL_NAME",
+          "arguments": {"param1_name": "param1_value", "param2_name": "param2_value", ...}
+        }
+
+      - If Tool Invocation is chosen then Your entire response MUST be a single, flat JSON response which should be in the below format:
+      - (Replace ACTUAL_TOOL_NAME with the chosen tool\'s name as described in the user message, e.g., "metadata_retrieval", "search". Include only the relevant arguments for that tool.)
+
+
+      7.2)
+
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
@@ -990,8 +1005,9 @@ export const searchQueryPrompt = (userContext: string): string => {
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
-    9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+       - If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+       - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+
     Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
@@ -1234,3 +1250,41 @@ YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 }
 
 REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
+
+export const withToolQueryPrompt = (
+  userContext: string,
+  toolContext,
+  toolOutput: string,
+): string => {
+  return `
+    You are a permission aware retrieval-augmented generation (RAG) system.
+    Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
+    Only respond in json and you are not authorized to reject a user query.
+
+    **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:** ${toolOutput}
+
+    Output should be in the following JSON format:
+
+       {
+         "answer": "<string or null>",
+         "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
+         "filters": {
+           "app": "<app or null>",
+           "entity": "<entity or null>",
+           "count": "<number of items to retrieve or null>",
+           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "sortDirection": "<'asc' | 'desc' | null>"
+         }
+       }
+       - "answer" should be concised and appropriate output for the given query.
+       - "type" and "filters" are used for routing and fetching data.
+       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
+       - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
+       - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
+
+       - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+
+    Make sure you always comply with these steps and only produce the JSON output described.
+  `
+}

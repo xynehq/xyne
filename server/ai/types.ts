@@ -122,7 +122,7 @@ export const SearchAnswerResponse = z.object({
 
 export const ToolAnswerResponse = z.object({
   tool: z.string(),
-  arguments: z.object(z.any()),
+  arguments: z.record(z.string(), z.any()).optional(),
 })
 
 // Zod schemas for filters

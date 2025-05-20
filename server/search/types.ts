@@ -48,6 +48,7 @@ export enum Apps {
   Slack = "slack",
 
   MCP = "mcp",
+  GITHUB_MCP = "github_mcp",
 }
 
 export const isValidApp = (app: string): boolean => {

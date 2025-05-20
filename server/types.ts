@@ -94,6 +94,15 @@ export const addApiKeyMCPConnectorSchema = z.object({
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
+export const addStdioMCPConnectorSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  name: z.string(),
+  appType: z.string(),
+})
+
+export type StdioMCPConnector = z.infer<typeof addStdioMCPConnectorSchema>
+
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
@@ -319,5 +328,11 @@ export const AnswerWithCitationsSchema = z.object({
 
 export const MCPClientConfig = z.object({
   url: z.string(),
+  version: z.string(),
+})
+
+export const MCPClientStdioConfig = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
   version: z.string(),
 })

@@ -4,6 +4,7 @@ import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { syncConnectorTools, deleteToolsByConnectorId } from "@/db/tool"
 import {
   deleteConnector,
@@ -19,6 +20,8 @@ import {
   type OAuthStartQuery,
   type SaaSJob,
   type ServiceAccountConnection,
+  type ApiKeyMCPConnector,
+  type StdioMCPConnector,
   Subsystem,
 } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
@@ -572,6 +575,105 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       // Fetch all available tools from the client
       // TODO: look in the DB. cache logic has to be discussed.
       const clientTools = await client.listTools()
+      await client.close()
+
+      // Update tool definitions in the database for future use
+      await syncConnectorTools(
+        db,
+        user.workspaceId,
+        connector.id,
+        clientTools.tools.map((tool) => ({
+          toolName: tool.name,
+          toolSchema: JSON.stringify(tool),
+          description: tool.description,
+        })),
+      )
+    } catch (error) {
+      status = ConnectorStatus.Failed
+      Logger.error(`error occurred while connecting to connector ${error}`)
+    }
+    await updateConnector(db, connector.id, { status: status })
+    return c.json({
+      success: true,
+      message: "Connector added",
+      id: connector.externalId,
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      error,
+      `${new AddServiceConnectionError({
+        cause: error as Error,
+      })} \n : ${errMessage} : ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error creating connection or enqueuing job",
+    })
+  }
+}
+
+export const AddStdioMCPConnector = async (c: Context) => {
+  Logger.info("StdioMCPConnector")
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: StdioMCPConnector = c.req.valid("form")
+  const command = form.command
+  const args = form.args.join(" ")
+  const name = form.name
+  let app
+  let status = ConnectorStatus.NotConnected
+  Logger.info(`called with req body ${form} ${form.appType}`)
+  switch (form.appType) {
+    case "github":
+      app = Apps.GITHUB_MCP
+      break
+    default:
+      app = Apps.MCP
+  }
+
+  try {
+    // Insert the connection within the transaction
+    const connector = await insertConnector(
+      db,
+      user.workspaceId,
+      user.id,
+      user.workspaceExternalId,
+      app,
+      ConnectorType.MCP,
+      AuthType.Custom,
+      app,
+      { command: command, args: args, version: "0.1.0" },
+      null,
+      null,
+      null,
+      null,
+    )
+    try {
+      const config = connector.config as MCPClientStdioConfig
+      const client = new Client({
+        name: `connector-${connector.externalId}`,
+        version: config.version,
+      })
+      Logger.info(
+        `invoking stdio to ${config.command} with args: ${config.args}`,
+      )
+      await client.connect(
+        new StdioClientTransport({
+          command: config.command,
+          args: config.args.split(" "),
+        }),
+      )
+      status = ConnectorStatus.Connected
+      // Fetch all available tools from the client
+      // TODO: look in the DB. cache logic has to be discussed.
+      const clientTools = await client.listTools()
+      await client.close()
 
       // Update tool definitions in the database for future use
       await syncConnectorTools(

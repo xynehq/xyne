@@ -1,6 +1,7 @@
 import { createFileRoute, useRouterState } from "@tanstack/react-router"
+import { useEffect, useRef, useState } from "react"
 import { useForm } from "@tanstack/react-form"
-import { useToast } from "@/hooks/use-toast"
+import { useToast, toast } from "@/hooks/use-toast"
 import { useNavigate } from "@tanstack/react-router"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,7 +12,10 @@ import { Apps, AuthType } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
-import { Trash2, RefreshCw } from "lucide-react"
+import { Trash2, RefreshCw, Square, Pause, Play, X } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Progress } from "@/components/ui/progress"
+import { wsClient } from "@/api" // ensure wsClient is imported
 
 import {
   Card,
@@ -30,6 +34,36 @@ import {
 } from "@/components/ui/table"
 import { useQuery } from "@tanstack/react-query"
 import { ConnectorStatus } from "shared/types"
+
+// Enum for connector actions
+enum ConnectAction {
+  Nil,
+  Pause,
+  Start,
+  Stop,
+  Remove,
+  Edit,
+}
+
+// Function to update connector status
+export const updateConnectorStatus = async (
+  connectorId: string,
+  status: ConnectorStatus,
+) => {
+  const res = await api.admin.connector.update_status.$post({
+    form: {
+      connectorId,
+      status,
+    },
+  })
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized")
+    }
+    throw new Error("Could not update connector status")
+  }
+  return res.json()
+}
 
 // Function to submit the MCP client connector details
 const submitMCPClient = async (
@@ -56,6 +90,32 @@ const submitMCPClient = async (
   return response.json()
 }
 
+// Function to submit the MCP stdio connector details
+const submitMCPStdio = async (
+  value: { name: string; command: string; args: string; appType: string },
+  navigate: ReturnType<typeof useNavigate>,
+) => {
+  const response = await api.admin.stdio.mcp.create.$post({
+    form: {
+      command: value.command,
+      args: value.args.split(" "), // Split args by space into an array
+      name: value.name,
+      appType: value.appType,
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to add MCP stdio connector: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
 // Delete MCP client connector
 const deleteMCPClient = async (connectorId: string) => {
   const res = await api.admin.connector.delete.$delete({
@@ -68,6 +128,18 @@ const deleteMCPClient = async (connectorId: string) => {
       throw new Error("Unauthorized")
     }
     throw new Error("Could not delete connector")
+  }
+  return res.json()
+}
+
+// Get all connectors
+export const getConnectors = async (): Promise<any> => {
+  const res = await api.admin.connectors.all.$get()
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Unauthorized")
+    }
+    throw new Error("Could not get connectors")
   }
   return res.json()
 }
@@ -189,14 +261,174 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
   )
 }
 
-// List of MCP clients
+// MCP Stdio Form Component
+export const MCPStdioForm = ({ onSuccess }: { onSuccess: () => void }) => {
+  const { toast } = useToast()
+  const navigate = useNavigate()
+  const form = useForm<{
+    name: string
+    command: string
+    args: string
+    appType: string
+  }>({
+    defaultValues: { name: "", command: "", args: "", appType: "" },
+    onSubmit: async ({ value }) => {
+      try {
+        await submitMCPStdio(value, navigate)
+        toast({
+          title: "MCP Stdio Connected",
+          description: "MCP Stdio successfully connected. Updating status...",
+        })
+        // Reset the form
+        form.reset()
+        onSuccess()
+      } catch (error) {
+        toast({
+          title: "Could not connect MCP Stdio",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: "destructive",
+        })
+      }
+    },
+  })
+
+  // App types for the dropdown
+  const appTypes = [
+    { value: "github", label: "GitHub" },
+    { value: "custom", label: "Custom" },
+  ]
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        form.handleSubmit()
+      }}
+      className="grid w-full items-center gap-1.5"
+    >
+      <Label htmlFor="name" className="mt-2">
+        App Name
+      </Label>
+      <form.Field
+        name="name"
+        validators={{
+          onChange: ({ value }) =>
+            !value ? "App Name is required" : undefined,
+        }}
+        children={(field) => (
+          <>
+            <Input
+              id="name"
+              type="text"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="Enter MCP App Name"
+            />
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <div className="text-red-500 text-sm">
+                {field.state.meta.errors[0]}
+              </div>
+            ) : null}
+          </>
+        )}
+      />
+
+      <Label htmlFor="appType" className="mt-2">
+        App Type
+      </Label>
+      <form.Field
+        name="appType"
+        validators={{
+          onChange: ({ value }) =>
+            !value ? "App Type is required" : undefined,
+        }}
+        children={(field) => (
+          <>
+            <select
+              id="appType"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+            >
+              <option value="" disabled>
+                Select App Type
+              </option>
+              {appTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <div className="text-red-500 text-sm">
+                {field.state.meta.errors[0]}
+              </div>
+            ) : null}
+          </>
+        )}
+      />
+
+      <Label htmlFor="command" className="mt-2">
+        Command
+      </Label>
+      <form.Field
+        name="command"
+        validators={{
+          onChange: ({ value }) => (!value ? "Command is required" : undefined),
+        }}
+        children={(field) => (
+          <>
+            <Input
+              id="command"
+              type="text"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="Enter command (e.g., npm, python, bash)"
+            />
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <div className="text-red-500 text-sm">
+                {field.state.meta.errors[0]}
+              </div>
+            ) : null}
+          </>
+        )}
+      />
+
+      <Label htmlFor="args" className="mt-2">
+        Arguments
+      </Label>
+      <form.Field
+        name="args"
+        children={(field) => (
+          <>
+            <Input
+              id="args"
+              type="text"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="Enter command arguments (e.g., --port 3000)"
+            />
+          </>
+        )}
+      />
+
+      <Button type="submit" className="mt-4">
+        Add MCP Stdio
+      </Button>
+    </form>
+  )
+}
+
+// List of MCP clients with enhanced controls
 const MCPClientsList = ({
   clients,
   onDelete,
+  onUpdateStatus,
   onRefresh,
 }: {
   clients: any[]
   onDelete: (id: string) => Promise<void>
+  onUpdateStatus: (id: string, status: ConnectorStatus) => Promise<void>
   onRefresh: () => void
 }) => {
   const { toast } = useToast()
@@ -212,7 +444,9 @@ const MCPClientsList = ({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>URL</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Details</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -221,7 +455,17 @@ const MCPClientsList = ({
           {clients.map((client) => (
             <TableRow key={client.id}>
               <TableCell className="font-medium">
-                {client.config ? client.config.url : null}
+                {client.name || "Unnamed"}
+              </TableCell>
+              <TableCell>
+                {client.authType === AuthType.ApiKey ? "API Key" : "Stdio"}
+              </TableCell>
+              <TableCell>
+                {client.config
+                  ? client.authType === AuthType.ApiKey
+                    ? client.config.url
+                    : `${client.config.command} ${client.config.args || ""}`
+                  : null}
               </TableCell>
               <TableCell>
                 <span
@@ -240,6 +484,73 @@ const MCPClientsList = ({
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
+                  {client.status === ConnectorStatus.Connected && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={async () => {
+                        try {
+                          await onUpdateStatus(
+                            client.id,
+                            ConnectorStatus.Paused,
+                          )
+                        } catch (error) {
+                          toast({
+                            title: "Action Failed",
+                            description: getErrorMessage(error),
+                            variant: "destructive",
+                          })
+                        }
+                      }}
+                    >
+                      <Pause className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {client.status === ConnectorStatus.Paused && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={async () => {
+                        try {
+                          await onUpdateStatus(
+                            client.id,
+                            ConnectorStatus.Connected,
+                          )
+                        } catch (error) {
+                          toast({
+                            title: "Action Failed",
+                            description: getErrorMessage(error),
+                            variant: "destructive",
+                          })
+                        }
+                      }}
+                    >
+                      <Play className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {(client.status === ConnectorStatus.Connecting ||
+                    client.status === ConnectorStatus.Paused) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={async () => {
+                        try {
+                          await onUpdateStatus(
+                            client.id,
+                            ConnectorStatus.NotConnected,
+                          )
+                        } catch (error) {
+                          toast({
+                            title: "Action Failed",
+                            description: getErrorMessage(error),
+                            variant: "destructive",
+                          })
+                        }
+                      }}
+                    >
+                      <Square className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -260,7 +571,7 @@ const MCPClientsList = ({
                       }
                     }}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
               </TableCell>
@@ -312,10 +623,9 @@ export const MCPClient = ({
   })
   console.log("error occurred: ", error)
 
-  // Filter MCP client connectors
+  // Filter MCP client connectors (both API Key and Stdio) // TODO: add more generic way to filter
   const mcpConnectors =
-    data?.filter((v) => v.app === Apps.MCP && v.authType === AuthType.ApiKey) ||
-    []
+    data?.filter((v) => v.app === Apps.MCP || v.app == Apps.GITHUB_MCP) || []
 
   const handleDeleteClient = async (connectorId: string) => {
     await deleteMCPClient(connectorId)
@@ -335,7 +645,7 @@ export const MCPClient = ({
             <CardHeader>
               <CardTitle>Add New MCP Client</CardTitle>
               <CardDescription>
-                Connect to an MCP client by providing the URL and API key
+                Connect to an MCP client using API key or stdio
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -363,11 +673,26 @@ export const MCPClient = ({
                   </svg>
                 </div>
               ) : (
-                <MCPClientForm
-                  onSuccess={() => {
-                    refetch()
-                  }}
-                />
+                <Tabs defaultValue="apikey">
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="apikey">API Key</TabsTrigger>
+                    <TabsTrigger value="stdio">Stdio</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="apikey">
+                    <MCPClientForm
+                      onSuccess={() => {
+                        refetch()
+                      }}
+                    />
+                  </TabsContent>
+                  <TabsContent value="stdio">
+                    <MCPStdioForm
+                      onSuccess={() => {
+                        refetch()
+                      }}
+                    />
+                  </TabsContent>
+                </Tabs>
               )}
             </CardContent>
           </Card>

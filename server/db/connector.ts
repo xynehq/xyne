@@ -104,6 +104,30 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
   return res
 }
 
+export const getConnectorByApp = async (
+  trx: TxnOrClient,
+  userId: number,
+  app: Apps,
+): Promise<SelectConnector> => {
+  const res = await db
+    .select()
+    .from(connectors)
+    .where(and(eq(connectors.app, app), eq(connectors.userId, userId)))
+    .limit(1)
+  if (res.length) {
+    const parsedRes = selectConnectorSchema.safeParse(res[0])
+    if (!parsedRes.success) {
+      throw parsedRes.error
+    }
+    // TODO: maybe add a check if OAuth and expired token then throw error
+    return parsedRes.data
+  } else {
+    throw new NoConnectorsFound({
+      message: `Could not get the connector with id: ${userId}`,
+    })
+  }
+}
+
 // don't call this
 // call the function that ensures the credentials are always refreshed
 export const getConnector = async (

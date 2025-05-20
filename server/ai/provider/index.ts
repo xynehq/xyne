@@ -68,6 +68,7 @@ import {
   searchQueryReasoningPrompt,
   temporalDirectionJsonPrompt,
   userChatSystem,
+  withToolQueryPrompt,
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
@@ -1087,11 +1088,36 @@ export function generateSearchQueryOrAnswerFromConversation(
   }
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
+    params.systemPrompt += toolContext
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext)
+    params.systemPrompt = searchQueryPrompt(userContext, toolContext)
   }
 
-  params.systemPrompt += toolContext
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function generateAnswerBasedOnToolOutput(
+  currentMessage: string,
+  userContext: string,
+  params: ModelParams,
+  toolContext: string,
+  toolOutput: string,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+  params.systemPrompt = withToolQueryPrompt(userContext, toolContext, toolOutput)
 
   const baseMessage = {
     role: ConversationRole.USER,
