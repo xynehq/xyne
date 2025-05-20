@@ -1820,6 +1820,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   alpha: number,
   fileIds: string[],
   passedSpan?: Span,
+  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1833,6 +1834,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     userCtx,
     alpha,
     fileIds,
+    userRequestsReasoning,
   )
 }
 
@@ -2023,6 +2025,7 @@ export const MessageApi = async (c: Context) => {
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
+              userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
             const conversationSpan = streamSpan.startSpan("conversation_search")
             conversationSpan.setAttribute("answer", answer)
@@ -2039,6 +2042,7 @@ export const MessageApi = async (c: Context) => {
               0.5,
               fileIds,
               understandSpan,
+              userRequestsReasoning,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -2850,6 +2854,7 @@ export const MessageRetryApi = async (c: Context) => {
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
+              userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
             const conversationSpan = streamSpan.startSpan("conversation_search")
             conversationSpan.setAttribute("answer", answer)
@@ -2866,6 +2871,7 @@ export const MessageRetryApi = async (c: Context) => {
               0.5,
               fileIds,
               understandSpan,
+              userRequestsReasoning,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
