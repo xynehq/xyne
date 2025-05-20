@@ -35,6 +35,7 @@ import {
   insertDocument,
   insertUser,
   UpdateEventCancelledInstances,
+  insertWithRetry,
 } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
 import type { WSContext } from "hono/ws"
@@ -72,6 +73,7 @@ import {
   eventSchema,
   type VespaEvent,
   type VespaFileWithDrivePermission,
+  fileSchema,
 } from "@/search/types"
 import {
   UserListingError,
@@ -560,7 +562,7 @@ const insertCalendarEvents = async (
       defaultStartTime: isDefaultStartTime,
     }
 
-    await insert(eventToBeIngested, eventSchema)
+    await insertWithRetry(eventToBeIngested, eventSchema)
     tracker.updateUserStats(userEmail, StatType.Events, 1)
   }
 
@@ -1305,7 +1307,7 @@ const insertFilesForUser = async (
       })
       for (const doc of pdfs) {
         processedFiles += 1
-        await insertDocument(doc)
+        await insertWithRetry(doc, fileSchema)
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
       }
       const [documents, slides, sheetsObj]: [
@@ -1342,7 +1344,7 @@ const insertFilesForUser = async (
       })
 
       for (const doc of allFiles) {
-        await insertDocument(doc)
+        await insertWithRetry(doc, fileSchema)
         // do not update for Sheet as we will add the actual count later
         if (doc.mimeType !== DriveMime.Sheets) {
           processedFiles += 1
