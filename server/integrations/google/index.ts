@@ -467,18 +467,23 @@ const insertCalendarEvents = async (
   let events: calendar_v3.Schema$Event[] = []
   const calendar = google.calendar({ version: "v3", auth: client })
 
-  // Use provided date range or default to one year before/after
-  const currentDateTime = startDate ? new Date(startDate) : new Date()
-  const nextYearDateTime = endDate
-    ? new Date(endDate)
-    : new Date(currentDateTime)
+  let timeMinForQuery: Date
+  let timeMaxForQuery: Date
 
-  // If no dates provided, set default range to one year before/after
-  if (!startDate) {
-    currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
+  if (startDate) {
+    timeMinForQuery = new Date(startDate)
+  } else {
+    // Default start date: 1 year ago from today
+    timeMinForQuery = new Date()
+    timeMinForQuery.setFullYear(timeMinForQuery.getFullYear() - 1)
   }
-  if (!endDate) {
-    nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
+
+  if (endDate) {
+    timeMaxForQuery = new Date(endDate)
+  } else {
+    // Default end date: 1 year from today
+    timeMaxForQuery = new Date()
+    timeMaxForQuery.setFullYear(timeMaxForQuery.getFullYear() + 1)
   }
 
   try {
@@ -487,13 +492,13 @@ const insertCalendarEvents = async (
         () =>
           calendar.events.list({
             calendarId: "primary",
-            timeMin: currentDateTime.toISOString(),
-            timeMax: nextYearDateTime.toISOString(),
+            timeMin: timeMinForQuery.toISOString(),
+            timeMax: timeMaxForQuery.toISOString(),
             maxResults: maxCalendarEventResults,
             pageToken: nextPageToken,
             fields: eventFields,
           }),
-        `Fetching calendar events from ${currentDateTime.toISOString()} to ${nextYearDateTime.toISOString()}`,
+        `Fetching calendar events from ${timeMinForQuery.toISOString()} to ${timeMaxForQuery.toISOString()}`,
         Apps.GoogleCalendar,
         0,
         client,
@@ -2150,11 +2155,10 @@ export async function* listFiles(
     dateFilters.push(`modifiedTime >= '${formattedStartDate}'`)
   }
   if (endDate) {
-    const endDateObj = new Date(endDate)
-    // To make 'before' exclusive of the endDate, we use '<'
-    // If endDate was '2025-05-21', we want files *before* this date.
-    const formattedEndDate = endDateObj.toISOString().split("T")[0]
-    dateFilters.push(`modifiedTime < '${formattedEndDate}'`)
+    const endDateObj = new Date(endDate) // e.g., 2024-05-20T00:00:00.000Z
+    endDateObj.setDate(endDateObj.getDate() + 1) // Becomes 2024-05-21T00:00:00.000Z
+    const formattedExclusiveEndDate = endDateObj.toISOString().split("T")[0] // "2024-05-21"
+    dateFilters.push(`modifiedTime < '${formattedExclusiveEndDate}'`) // Includes all of 2024-05-20
   }
 
   if (dateFilters.length > 0) {
@@ -2404,9 +2408,10 @@ export async function countDriveFiles(
     dateFilters.push(`modifiedTime >= '${formattedStartDate}'`)
   }
   if (endDate) {
-    const endDateObj = new Date(endDate)
-    const formattedEndDate = endDateObj.toISOString().split("T")[0]
-    dateFilters.push(`modifiedTime < '${formattedEndDate}'`)
+    const endDateObj = new Date(endDate) // e.g., 2024-05-20T00:00:00.000Z
+    endDateObj.setDate(endDateObj.getDate() + 1) // Becomes 2024-05-21T00:00:00.000Z
+    const formattedExclusiveEndDate = endDateObj.toISOString().split("T")[0] // "2024-05-21"
+    dateFilters.push(`modifiedTime < '${formattedExclusiveEndDate}'`) // Includes all of 2024-05-20
   }
 
   let query = "trashed = false"

@@ -47,12 +47,12 @@ export enum OAuthIntegrationStatus {
 }
 
 export interface Reference {
-  id: string;
-  title: string;
-  url?: string;
-  docId?: string;
-  app?: string;
-  entity?: string;
-  type: "citation" | "global";
-  photoLink?: string;
+  id: string
+  title: string
+  url?: string
+  docId?: string
+  app?: string
+  entity?: string
+  type: "citation" | "global"
+  photoLink?: string
 }

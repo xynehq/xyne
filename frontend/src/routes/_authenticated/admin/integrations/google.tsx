@@ -499,6 +499,35 @@ const IngestMoreUsersForm = ({
           submissionEndDate = new Date().toISOString().split("T")[0]
         }
 
+        // Validate that startDate is not after endDate if both are provided
+        if (
+          submissionStartDate &&
+          submissionEndDate &&
+          new Date(submissionStartDate) > new Date(submissionEndDate)
+        ) {
+          toast({
+            title: "Invalid date range",
+            description: "Start date must be before the end date.",
+            variant: "destructive",
+          })
+          setIsIngestingMore(false)
+          return
+        }
+
+        if (
+          !value.insertDriveAndContacts &&
+          !value.insertGmail &&
+          !value.insertCalendar
+        ) {
+          toast({
+            title: "No service selected",
+            description: "Please select at least one Google service to ingest.",
+            variant: "destructive",
+          })
+          setIsIngestingMore(false)
+          return
+        }
+
         await submitIngestMoreSAForm(
           {
             ...value,

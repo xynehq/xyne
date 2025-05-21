@@ -122,7 +122,7 @@ const Index = () => {
   const handleAsk = (
     messageToSend: string,
     references: Reference[],
-    selectedSources?: string[]
+    selectedSources?: string[],
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {

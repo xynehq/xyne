@@ -45,7 +45,7 @@ import { toast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Pill } from "@/components/Pill" 
+import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
 
 type CurrentResp = {
@@ -164,7 +164,8 @@ const jsonToHtmlMessage = (jsonString: string): string => {
         htmlPart += " "
         return htmlPart
       })
-      .join("").trimEnd()
+      .join("")
+      .trimEnd()
   } catch (error) {
     return jsonString
   }
