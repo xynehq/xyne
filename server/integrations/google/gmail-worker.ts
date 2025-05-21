@@ -40,6 +40,7 @@ import {
   parseAttachments,
 } from "@/integrations/google/worker-utils"
 import { StatType } from "@/integrations/tracker"
+import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested, totalIngestedMails } from "@/metrics/google/gmail-metrics"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -175,11 +176,13 @@ export const handleGmailIngestion = async (
             // Increment counters only on success
             insertedMessagesInBatch++
             insertedPdfAttachmentsInBatch += insertedPdfCount
+            totalIngestedMails.inc({mail_id:message.id??"", mail_title:message.payload?.filename??"", mime_type:message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
           } catch (error) {
             Logger.error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
+            ingestionMailErrorsTotal.inc({mail_id:message.id??"",mail_title:message.payload?.filename??"",mime_type:message.payload?.mimeType??"GOOGLE_MAIL",status:"FAILED"}, 1)
           } finally {
             // release from memory
             msgResp = null
@@ -364,6 +367,7 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
+            totalAttachmentIngested.inc({mail_id:messageId, mime_type:mimeType, attachment_id:attachmentId, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: ""}, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -372,6 +376,7 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
+             totalAttachmentError.inc({mail_id:messageId, mime_type:mimeType, attachment_id:body.attachmentId??"", status:"FAILED",email:"", error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
           }
         }
       }

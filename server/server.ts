@@ -79,7 +79,7 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
-import { register } from "@/metrics/google/google-drive-file-metrics"
+import metricRegister from "@/metrics/sharedRegistry"
 
 export type Variables = JwtVariables
 
@@ -432,11 +432,11 @@ export const init = async () => {
   await initQueue()
 }
 
-app.get("/metrics/gdrive", async (c) => {
+app.get("/metrics", async (c) => {
   try {
-    const metrics = await register.metrics()
+    const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
-      "Content-Type": register.contentType,
+      "Content-Type": metricRegister.contentType,
     })
   } catch (err) {
     return c.text("Error generating metrics", 500)
