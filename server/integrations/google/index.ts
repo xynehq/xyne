@@ -2144,25 +2144,19 @@ export async function* listFiles(
 
   if (startDate) {
     const startDateObj = new Date(startDate)
-    // Format date as YYYY/MM/DD for 'after:' query
-    const formattedStartDate = startDateObj
-      .toISOString()
-      .split("T")[0]
-      .replace(/-/g, "/")
-    dateFilters.push(`after:${formattedStartDate}`)
+    const formattedStartDate = startDateObj.toISOString().split("T")[0]
+    dateFilters.push(`modifiedTime >= '${formattedStartDate}'`)
   }
   if (endDate) {
     const endDateObj = new Date(endDate)
-    // Format date as YYYY/MM/DD for 'before:' query
-    const formattedEndDate = endDateObj
-      .toISOString()
-      .split("T")[0]
-      .replace(/-/g, "/")
-    dateFilters.push(`before:${formattedEndDate}`)
+    // To make 'before' exclusive of the endDate, we use '<'
+    // If endDate was '2025-05-21', we want files *before* this date.
+    const formattedEndDate = endDateObj.toISOString().split("T")[0]
+    dateFilters.push(`modifiedTime < '${formattedEndDate}'`)
   }
 
   if (dateFilters.length > 0) {
-    query = `${query} ${dateFilters.join(" ")}`
+    query = `${query} and ${dateFilters.join(" and ")}`
   }
 
   do {
@@ -2404,24 +2398,18 @@ export async function countDriveFiles(
 
   if (startDate) {
     const startDateObj = new Date(startDate)
-    const formattedStartDate = startDateObj
-      .toISOString()
-      .split("T")[0]
-      .replace(/-/g, "/")
-    dateFilters.push(`after:${formattedStartDate}`)
+    const formattedStartDate = startDateObj.toISOString().split("T")[0]
+    dateFilters.push(`modifiedTime >= '${formattedStartDate}'`)
   }
   if (endDate) {
     const endDateObj = new Date(endDate)
-    const formattedEndDate = endDateObj
-      .toISOString()
-      .split("T")[0]
-      .replace(/-/g, "/")
-    dateFilters.push(`before:${formattedEndDate}`)
+    const formattedEndDate = endDateObj.toISOString().split("T")[0]
+    dateFilters.push(`modifiedTime < '${formattedEndDate}'`)
   }
 
   let query = "trashed = false"
   if (dateFilters.length > 0) {
-    query = `${query} ${dateFilters.join(" ")}`
+    query = `${query} and ${dateFilters.join(" and ")}`
   }
 
   do {
@@ -2457,10 +2445,9 @@ export const ServiceAccountIngestMoreUsers = async (
   payload: IngestMoreGoogleServiceAccountUsersPayload & {
     startDate: string
     endDate: string
-    insertDrive: boolean
+    insertDriveAndContacts: boolean
     insertGmail: boolean
     insertCalendar: boolean
-    insertContacts: boolean
   },
   userId: number,
 ) => {
@@ -2469,14 +2456,13 @@ export const ServiceAccountIngestMoreUsers = async (
     emailsToIngest,
     startDate,
     endDate,
-    insertDrive,
+    insertDriveAndContacts,
     insertGmail,
     insertCalendar,
-    insertContacts,
   } = payload
   const Logger = getLogger(Subsystem.Integrations)
   Logger.info(
-    `ServiceAccountIngestMoreUsers called for connector externalId: ${connectorId} with emails: ${emailsToIngest.join(", ")} for userId: ${userId}. Date range: ${startDate} to ${endDate}. Services: Drive=${insertDrive}, Gmail=${insertGmail}, Calendar=${insertCalendar}, Contacts=${insertContacts}`,
+    `ServiceAccountIngestMoreUsers called for connector externalId: ${connectorId} with emails: ${emailsToIngest.join(", ")} for userId: ${userId}. Date range: ${startDate} to ${endDate}. Services: Drive & Contacts=${insertDriveAndContacts}, Gmail=${insertGmail}, Calendar=${insertCalendar}`,
   )
 
   let connector: SelectConnector | null = null
@@ -2547,50 +2533,61 @@ export const ServiceAccountIngestMoreUsers = async (
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
 
-        const [totalFiles, { messagesExcludingPromotions }] = await Promise.all(
-          [
-            countDriveFiles(jwtClient, startDate, endDate),
-            getGmailCounts(jwtClient, startDate, endDate),
-          ],
-        )
+        let totalFiles = 0
+        if (insertDriveAndContacts) {
+          totalFiles = await countDriveFiles(jwtClient, startDate, endDate)
+        }
+
+        let messagesExcludingPromotions = 0
+        if (insertGmail) {
+          const gmailCounts = await getGmailCounts(
+            jwtClient,
+            startDate,
+            endDate,
+          )
+          messagesExcludingPromotions = gmailCounts.messagesExcludingPromotions
+        }
+
         tracker.updateTotal(userEmail, {
           totalMail: messagesExcludingPromotions,
           totalDrive: totalFiles,
         })
 
-        // Only process contacts if insertContacts is true
-        let contactsToken = "",
-          otherContactsToken = ""
-        if (insertContacts) {
-          const {
-            contacts,
-            otherContacts,
-            contactsToken: ct,
-            otherContactsToken: oct,
-          } = await listAllContacts(jwtClient)
-          contactsToken = ct
-          otherContactsToken = oct
+        // Process Drive and Contacts if insertDriveAndContacts is true
+        let contactsToken = ""
+        let otherContactsToken = ""
+        let startPageToken = ""
+
+        if (insertDriveAndContacts) {
+          // Contacts processing
+          const contactData = await listAllContacts(jwtClient)
+          contactsToken = contactData.contactsToken
+          otherContactsToken = contactData.otherContactsToken
           await insertContactsToVespa(
-            contacts,
-            otherContacts,
+            contactData.contacts,
+            contactData.otherContacts,
             userEmail,
             tracker,
           )
-        }
 
-        // Only process Drive if insertDrive is true
-        let startPageToken = ""
-        if (insertDrive) {
-          const { startPageToken: spt }: drive_v3.Schema$StartPageToken = (
+          // Drive processing (token and files)
+          const driveStartPageTokenData =
             await driveClient.changes.getStartPageToken()
-          ).data
-          if (!spt) {
+          if (!driveStartPageTokenData.data.startPageToken) {
             throw new Error(
-              `Could not get start page token for user ${userEmail}`,
+              `Could not get start page token for Drive for user ${userEmail}`,
             )
           }
-          startPageToken = spt
-          await insertFilesForUser(jwtClient, userEmail, connector!, tracker)
+          startPageToken = driveStartPageTokenData.data.startPageToken
+
+          await insertFilesForUser(
+            jwtClient,
+            userEmail,
+            connector!,
+            tracker,
+            startDate,
+            endDate,
+          )
         }
 
         // Only process Gmail if insertGmail is true
@@ -2647,8 +2644,11 @@ export const ServiceAccountIngestMoreUsers = async (
         historyId: metaHistoryId,
         calendarEventsToken,
       } of ingestionMetadata) {
-        // Only create Drive sync job if Drive was processed
-        if (insertDrive && driveToken) {
+        // Create Drive & Contacts sync job if the combined flag was true and tokens were generated
+        if (
+          insertDriveAndContacts &&
+          (driveToken || contactsToken || otherContactsToken)
+        ) {
           await insertSyncJob(trx, {
             workspaceId: connector!.workspaceId,
             workspaceExternalId: connector!.workspaceExternalId,
@@ -2707,9 +2707,23 @@ export const ServiceAccountIngestMoreUsers = async (
         }
       }
     })
-    Logger.info(
-      `Successfully ingested additional users and created sync jobs for connectorId: ${connectorId}`,
-    )
+
+    const servicesProcessed: string[] = []
+    if (payload.insertDriveAndContacts)
+      servicesProcessed.push("Drive & Contacts")
+    if (payload.insertGmail) servicesProcessed.push("Gmail")
+    if (payload.insertCalendar) servicesProcessed.push("Calendar")
+
+    if (servicesProcessed.length > 0) {
+      Logger.info(
+        `Successfully ingested additional users for connectorId: ${connectorId}. Processed services: ${servicesProcessed.join(", ")}. Sync job creation/update attempted accordingly.`,
+      )
+    } else {
+      Logger.info(
+        `Successfully ingested additional users for connectorId: ${connectorId}. No specific services (Drive/Contacts, Gmail, Calendar) were selected for data processing or sync job creation.`,
+      )
+    }
+
     if (connector.externalId) {
       sendWebsocketMessage(
         JSON.stringify({

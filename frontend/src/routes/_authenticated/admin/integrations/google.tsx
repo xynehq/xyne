@@ -418,10 +418,9 @@ type IngestMoreSAFormData = {
   emails: string
   startDate: string
   endDate: string
-  insertDrive: boolean
+  insertDriveAndContacts: boolean
   insertGmail: boolean
   insertCalendar: boolean
-  insertContacts: boolean
 }
 
 const submitIngestMoreSAForm = async (
@@ -434,10 +433,9 @@ const submitIngestMoreSAForm = async (
       emailsToIngest: value.emailsList,
       startDate: value.startDate,
       endDate: value.endDate,
-      insertDrive: value.insertDrive,
+      insertDriveAndContacts: value.insertDriveAndContacts,
       insertGmail: value.insertGmail,
       insertCalendar: value.insertCalendar,
-      insertContacts: value.insertContacts,
     },
   })
   if (!response.ok) {
@@ -469,14 +467,11 @@ const IngestMoreUsersForm = ({
     defaultValues: {
       connectorId: connectorId,
       emails: "",
-      startDate: new Date(new Date().setFullYear(new Date().getFullYear() - 1))
-        .toISOString()
-        .split("T")[0],
-      endDate: new Date().toISOString().split("T")[0],
-      insertDrive: true,
+      startDate: "",
+      endDate: "",
+      insertDriveAndContacts: true,
       insertGmail: true,
       insertCalendar: true,
-      insertContacts: true,
     },
     onSubmit: async ({ value }) => {
       const emailsList = value.emails
@@ -493,7 +488,26 @@ const IngestMoreUsersForm = ({
       }
       setIsIngestingMore(true)
       try {
-        await submitIngestMoreSAForm({ ...value, emailsList }, navigate)
+        let submissionStartDate = value.startDate
+        let submissionEndDate = value.endDate
+
+        if (
+          submissionStartDate &&
+          submissionStartDate.trim() !== "" &&
+          (!submissionEndDate || submissionEndDate.trim() === "")
+        ) {
+          submissionEndDate = new Date().toISOString().split("T")[0]
+        }
+
+        await submitIngestMoreSAForm(
+          {
+            ...value,
+            emailsList,
+            startDate: submissionStartDate,
+            endDate: submissionEndDate,
+          },
+          navigate,
+        )
         toast({
           title: "Ingestion started for additional users",
           description: "Processing is underway. See progress updates.",
@@ -592,7 +606,7 @@ const IngestMoreUsersForm = ({
         <div className="grid grid-cols-2 gap-2 mt-2">
           <div className="flex items-center space-x-2">
             <form.Field
-              name="insertDrive"
+              name="insertDriveAndContacts"
               children={(field) => (
                 <input
                   type="checkbox"
@@ -602,7 +616,7 @@ const IngestMoreUsersForm = ({
                 />
               )}
             />
-            <Label>Google Drive</Label>
+            <Label>Drive & Contacts</Label>
           </div>
           <div className="flex items-center space-x-2">
             <form.Field
@@ -631,20 +645,6 @@ const IngestMoreUsersForm = ({
               )}
             />
             <Label>Calendar</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <form.Field
-              name="insertContacts"
-              children={(field) => (
-                <input
-                  type="checkbox"
-                  checked={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.checked)}
-                  className="h-4 w-4"
-                />
-              )}
-            />
-            <Label>Contacts</Label>
           </div>
         </div>
       </div>

@@ -627,7 +627,7 @@ export const ChatBox = ({
 
     if (newRef.app && newRef.entity) {
       const iconContainer = document.createElement("span")
-      iconContainer.style.alignSelf = "center";
+      iconContainer.style.alignSelf = "center"
       const iconNode = getIcon(newRef.app, newRef.entity, {
         w: 14,
         h: 14,

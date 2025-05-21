@@ -453,27 +453,50 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
     emailsToIngest: string[]
     startDate: string
     endDate: string
-    insertDrive: boolean
+    insertDriveAndContacts: boolean
     insertGmail: boolean
     insertCalendar: boolean
-    insertContacts: boolean
   }
 
-  // Validate date range
-  const startDate = new Date(payload.startDate)
-  const endDate = new Date(payload.endDate)
+  // Validate date range only if actual date strings are provided
+  if (payload.startDate && payload.endDate) {
+    // Both dates are non-empty strings
+    const startDateObj = new Date(payload.startDate)
+    const endDateObj = new Date(payload.endDate)
 
-  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-    throw new HTTPException(400, {
-      message: "Invalid date format. Please use YYYY-MM-DD format.",
-    })
+    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+      throw new HTTPException(400, {
+        message:
+          "Invalid date format. If dates are provided, please use YYYY-MM-DD format.",
+      })
+    }
+    if (endDateObj < startDateObj) {
+      throw new HTTPException(400, {
+        message: "End date must be after start date.",
+      })
+    }
+  } else if (payload.startDate && !payload.endDate) {
+    // Only startDate is non-empty
+    const startDateObj = new Date(payload.startDate)
+    if (isNaN(startDateObj.getTime())) {
+      throw new HTTPException(400, {
+        message: "Invalid start date format. Please use YYYY-MM-DD format.",
+      })
+    }
+    // Frontend defaults endDate to today in this case, so it should arrive as a valid date string or empty if not defaulted.
+    // If it arrives empty here, it means the frontend logic for defaulting didn't run or was bypassed.
+    // The core ServiceAccountIngestMoreUsers will handle empty endDate appropriately.
+  } else if (!payload.startDate && payload.endDate) {
+    // Only endDate is non-empty
+    const endDateObj = new Date(payload.endDate)
+    if (isNaN(endDateObj.getTime())) {
+      throw new HTTPException(400, {
+        message: "Invalid end date format. Please use YYYY-MM-DD format.",
+      })
+    }
   }
-
-  if (endDate < startDate) {
-    throw new HTTPException(400, {
-      message: "End date must be after start date.",
-    })
-  }
+  // If both payload.startDate and payload.endDate are empty strings, these validations are skipped,
+  // and the empty strings are passed to ServiceAccountIngestMoreUsers.
 
   // Correct way to get userId, following existing patterns in this file
   const { sub } = c.get(JwtPayloadKey) // Get email (sub) from JWT
@@ -490,7 +513,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   const userId = userInstance.id
 
   Logger.info(
-    `Attempting to ingest more users for SA connector: ${payload.connectorId} by user: ${userId}. Date range: ${payload.startDate} to ${payload.endDate}. Services: Drive=${payload.insertDrive}, Gmail=${payload.insertGmail}, Calendar=${payload.insertCalendar}, Contacts=${payload.insertContacts}`,
+    `Attempting to ingest more users for SA connector: ${payload.connectorId} by user: ${userId}. Date range: ${payload.startDate} to ${payload.endDate}. Services: Drive & Contacts=${payload.insertDriveAndContacts}, Gmail=${payload.insertGmail}, Calendar=${payload.insertCalendar}`,
   )
   try {
     // ServiceAccountIngestMoreUsers expects payload and a numeric userId

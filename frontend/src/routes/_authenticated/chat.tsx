@@ -83,7 +83,7 @@ interface ChatPageProps {
   workspace: PublicWorkspace
 }
 
-const REASONING_STATE_KEY = "isReasoningGlobalState";
+const REASONING_STATE_KEY = "isReasoningGlobalState"
 
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
@@ -350,15 +350,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
 
       // Set reasoning state from URL param if present
-      if (typeof chatParams.reasoning === 'boolean') {
+      if (typeof chatParams.reasoning === "boolean") {
         setIsReasoningActive(chatParams.reasoning)
       }
 
-      handleSend(
-        messageToSend,
-        referencesForHandleSend,
-        sourcesArray,
-      )
+      handleSend(messageToSend, referencesForHandleSend, sourcesArray)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -372,7 +368,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         replace: true,
       })
     }
-  }, [chatParams.q, chatParams.reasoning, chatParams.refs, chatParams.sources, router])
+  }, [
+    chatParams.q,
+    chatParams.reasoning,
+    chatParams.refs,
+    chatParams.sources,
+    router,
+  ])
 
   const handleSend = async (
     messageToSend: string,
@@ -419,8 +421,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     //     JSON.stringify(appEntities),
     //   )
     // }
-    if(isReasoningActive) {
-        url.searchParams.append("isReasoningEnabled", "true")
+    if (isReasoningActive) {
+      url.searchParams.append("isReasoningEnabled", "true")
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
@@ -1397,9 +1399,12 @@ const Sources = ({
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
-const renderMarkdownLink = ({ node, ...linkProps }: { node?: any; [key: string]: any }) => (
+const renderMarkdownLink = ({
+  node,
+  ...linkProps
+}: { node?: any; [key: string]: any }) => (
   <a {...linkProps} target="_blank" rel="noopener noreferrer" />
-);
+)
 
 const ChatMessage = ({
   message,
@@ -1484,7 +1489,7 @@ const ChatMessage = ({
                       color: "#627384",
                     }}
                     components={{
-                      a: renderMarkdownLink
+                      a: renderMarkdownLink,
                     }}
                   />
                 </div>

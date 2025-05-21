@@ -1939,7 +1939,10 @@ export const MessageApi = async (c: Context) => {
           const messagesWithNoErrResponse = messages
             .slice(0, messages.length - 1)
             .filter((msg) => !msg?.errorMessage)
-            .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+            .filter(
+              (msg) =>
+                !(msg.messageRole === MessageRole.Assistant && !msg.message),
+            ) // filter out assistant messages with no content
             .map((m) => ({
               role: m.messageRole as ConversationRole,
               content: [{ text: m.message }],
@@ -2558,7 +2561,12 @@ export const MessageRetryApi = async (c: Context) => {
           const convWithNoErrMsg = isUserMessage
             ? conversation
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message)) // filter out assistant messages with no content
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                ) // filter out assistant messages with no content
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
@@ -2566,7 +2574,12 @@ export const MessageRetryApi = async (c: Context) => {
             : conversation
                 .slice(0, conversation.length - 1)
                 .filter((con) => !con?.errorMessage)
-                .filter(msg => !(msg.messageRole === MessageRole.Assistant && !msg.message))
+                .filter(
+                  (msg) =>
+                    !(
+                      msg.messageRole === MessageRole.Assistant && !msg.message
+                    ),
+                )
                 .map((m) => ({
                   role: m.messageRole as ConversationRole,
                   content: [{ text: m.message }],
