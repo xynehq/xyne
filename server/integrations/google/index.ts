@@ -1252,7 +1252,7 @@ const googleSlidesVespa = async (
         `Error getting slides: ${error} ${(error as Error).stack}`,
         error,
       )
-      fileExtractionErrorsTotal.inc({file_id:presentation.id??"", mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", file_name:presentation.name??"",error_type:"PRESENTATION_EXTRACTION_FAILED_ERROR", file_type:"GOOGLE_DRIVE_SLIDE"})
+      fileExtractionErrorsTotal.inc({file_id:presentation.id??"", mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", file_name:presentation.name??"",error_type:"PRESENTATION_EXTRACTION_FAILED_ERROR", file_type:"GOOGLE_DRIVE_SLIDE", email:userEmail})
       continue
     }
   }
@@ -1722,7 +1722,7 @@ const googleSheetsVespa = async (
   for (const spreadsheet of spreadsheetsMetadata) {
     const sheetSize = spreadsheet.size ? parseInt(spreadsheet.size) : 0
 
-    contentFileSize.observe({file_id: spreadsheet.id??"", mime_type: spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_type:"GOOGLE_DRIVE_SHEET"}, sheetSize)
+    contentFileSize.observe({file_id: spreadsheet.id??"", mime_type: spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_type:"GOOGLE_DRIVE_SHEET", email: userEmail, file_name:spreadsheet.name??""}, sheetSize)
     try {
       const endSheetExtractionDuration = extractionDuration.startTimer({file_id: spreadsheet.id??"", mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_name:spreadsheet.name??"", email:userEmail,file_type:"GOOGLE_DRIVE_SHEET"})
       const sheetsListFromOneSpreadsheet =
@@ -1848,14 +1848,14 @@ export const googlePDFsVespa = async (
         return null
       }
       console.log(`PDF SIZE : `,pdfSizeInMB)
-      contentFileSize.observe({file_id:pdf.id??"", mime_type:pdf.mimeType??"google_pdf", file_name:pdf.name??"", file_type:"GOOGLE_DRIVE_PDF"}, pdf.size?parseInt(pdf.size):0)
+      contentFileSize.observe({file_id:pdf.id??"", mime_type:pdf.mimeType??"google_pdf", file_name:pdf.name??"", file_type:"GOOGLE_DRIVE_PDF", email:userEmail}, pdf.size?parseInt(pdf.size):0)
       const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
         Logger.debug(
           `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
         )
-        const endExtractionTimer = extractionDuration.startTimer({file_id: pdf.id??"", mime_type:pdf.mimeType??"google_pdf", file_name:pdfFileName??"", file_type:"GOOGLE_DRIVE_PDF"})
+        const endExtractionTimer = extractionDuration.startTimer({file_id: pdf.id??"", mime_type:pdf.mimeType??"google_pdf", file_name:pdfFileName??"", file_type:"GOOGLE_DRIVE_PDF", email:userEmail})
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
        
         const docs: Document[] = await safeLoadPDF(pdfPath)
@@ -1908,7 +1908,7 @@ export const googlePDFsVespa = async (
             // Logger.warn(`Could not delete PDF file ${pdfPath}: ${deleteError}`)
           }
         }
-        fileExtractionErrorsTotal.inc({file_id:pdf.id??"", error_type:"PDF_EXTRACTION_FAILED_ERROR", mime_type:pdf.mimeType??"google_pdf", file_name:pdf.name??pdfFileName, file_type:"GOOGLE_DRIVE_PDF"})
+        fileExtractionErrorsTotal.inc({file_id:pdf.id??"", error_type:"PDF_EXTRACTION_FAILED_ERROR", mime_type:pdf.mimeType??"google_pdf", file_name:pdf.name??pdfFileName, file_type:"GOOGLE_DRIVE_PDF",email:userEmail})
         // we cannot break the whole pdf pipeline for one error
         return null
       }
@@ -2250,7 +2250,7 @@ export const googleDocsVespa = async (
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
-      const endDownloadDuration = extractionDuration.startTimer({file_id:doc.id??"", mime_type: doc.mimeType??"application/vnd.google-apps.document", file_name:doc.name??"", file_type:"GOOGLE_DRIVE_DOC"})
+      const endDownloadDuration = extractionDuration.startTimer({file_id:doc.id??"", mime_type: doc.mimeType??"application/vnd.google-apps.document", file_name:doc.name??"", file_type:"GOOGLE_DRIVE_DOC", email:userEmail})
       try {
         const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
           await retryWithBackoff(
@@ -2285,6 +2285,9 @@ export const googleDocsVespa = async (
         contentFileSize.observe({
           file_id: doc.id ?? "",
           mime_type: doc.mimeType ?? "",
+          file_name:doc.name??"",
+          file_type:"GOOGLE_DRIVE_DOC",
+          email:userEmail
         }, sizeInBytes)
         const chunks = chunkDocument(cleanedTextContent)
 
@@ -2329,7 +2332,7 @@ export const googleDocsVespa = async (
           error,
           `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
         )
-        fileExtractionErrorsTotal.inc({file_id:doc.id??"",error_type:"DOCUMENT_EXTRACTION_FAILED_ERROR", mime_type:doc.mimeType??"", file_name:doc.name??"", file_type:"GOOGLE_DRIVE_DOC"})
+        fileExtractionErrorsTotal.inc({file_id:doc.id??"",error_type:"DOCUMENT_EXTRACTION_FAILED_ERROR", mime_type:doc.mimeType??"", file_name:doc.name??"", file_type:"GOOGLE_DRIVE_DOC", email:userEmail})
         return null
       }
     }),
