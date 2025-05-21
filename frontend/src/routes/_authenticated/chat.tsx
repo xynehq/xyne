@@ -1222,6 +1222,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
+                      isRetrying={message.isRetrying}
                       dots={message.isRetrying ? dots : ""}
                       onToggleSources={() => {
                         if (
@@ -1252,6 +1253,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
+                        isRetrying={message.isRetrying}
                         dots={message.isRetrying ? dots : ""}
                         onToggleSources={() => {
                           if (
@@ -1585,11 +1587,15 @@ const ChatMessage = ({
                   />
                 </div>
               )}
-              {message === "" ? (
+              {(!responseDone && message === "") ? (
                 <div className="flex-grow">
-                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                  {`Thinking${dots}`}
                 </div>
-              ) : (
+              ) : (responseDone && isRetrying && message === "") ? (
+                <div className="flex-grow">
+                  {`Thinking${dots}`}
+                </div>
+              ) : message !== "" ? (
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
@@ -1664,7 +1670,7 @@ const ChatMessage = ({
                     ),
                   }}
                 />
-              )}
+              ) : null}
             </div>
           </div>
           {responseDone && !isRetrying && (
