@@ -384,6 +384,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       currentRespRef.current = null
     }
     inputRef.current?.focus()
+    setShowSources(false)
+    setCurrentCitations([])
+    setCurrentMessageId(null)
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
