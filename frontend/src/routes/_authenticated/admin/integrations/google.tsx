@@ -416,6 +416,12 @@ export const deleteOauthConnector = async (connectorId: string) => {
 type IngestMoreSAFormData = {
   connectorId: string
   emails: string
+  startDate: string
+  endDate: string
+  insertDrive: boolean
+  insertGmail: boolean
+  insertCalendar: boolean
+  insertContacts: boolean
 }
 
 const submitIngestMoreSAForm = async (
@@ -426,6 +432,12 @@ const submitIngestMoreSAForm = async (
     json: {
       connectorId: value.connectorId,
       emailsToIngest: value.emailsList,
+      startDate: value.startDate,
+      endDate: value.endDate,
+      insertDrive: value.insertDrive,
+      insertGmail: value.insertGmail,
+      insertCalendar: value.insertCalendar,
+      insertContacts: value.insertContacts,
     },
   })
   if (!response.ok) {
@@ -457,6 +469,14 @@ const IngestMoreUsersForm = ({
     defaultValues: {
       connectorId: connectorId,
       emails: "",
+      startDate: new Date(new Date().setFullYear(new Date().getFullYear() - 1))
+        .toISOString()
+        .split("T")[0],
+      endDate: new Date().toISOString().split("T")[0],
+      insertDrive: true,
+      insertGmail: true,
+      insertCalendar: true,
+      insertContacts: true,
     },
     onSubmit: async ({ value }) => {
       const emailsList = value.emails
@@ -532,7 +552,104 @@ const IngestMoreUsersForm = ({
           </>
         )}
       />
-      <Button type="submit" disabled={form.state.isSubmitting}>
+
+      <div className="mt-4">
+        <Label>Date Range</Label>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="start-date">Start Date</Label>
+            <form.Field
+              name="startDate"
+              children={(field) => (
+                <Input
+                  id="start-date"
+                  type="date"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              )}
+            />
+          </div>
+          <div>
+            <Label htmlFor="end-date">End Date</Label>
+            <form.Field
+              name="endDate"
+              children={(field) => (
+                <Input
+                  id="end-date"
+                  type="date"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              )}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Label>Services to Sync</Label>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertDrive"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Google Drive</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertGmail"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Gmail</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertCalendar"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Calendar</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertContacts"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Contacts</Label>
+          </div>
+        </div>
+      </div>
+
+      <Button type="submit" disabled={form.state.isSubmitting} className="mt-4">
         {form.state.isSubmitting ? (
           <LoadingSpinner className="mr-2 h-4 w-4" />
         ) : null}

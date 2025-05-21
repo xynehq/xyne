@@ -451,6 +451,28 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   const payload = c.req.valid("json") as {
     connectorId: string
     emailsToIngest: string[]
+    startDate: string
+    endDate: string
+    insertDrive: boolean
+    insertGmail: boolean
+    insertCalendar: boolean
+    insertContacts: boolean
+  }
+
+  // Validate date range
+  const startDate = new Date(payload.startDate)
+  const endDate = new Date(payload.endDate)
+
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    throw new HTTPException(400, {
+      message: "Invalid date format. Please use YYYY-MM-DD format.",
+    })
+  }
+
+  if (endDate < startDate) {
+    throw new HTTPException(400, {
+      message: "End date must be after start date.",
+    })
   }
 
   // Correct way to get userId, following existing patterns in this file
@@ -468,7 +490,7 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   const userId = userInstance.id
 
   Logger.info(
-    `Attempting to ingest more users for SA connector: ${payload.connectorId} by user: ${userId}`,
+    `Attempting to ingest more users for SA connector: ${payload.connectorId} by user: ${userId}. Date range: ${payload.startDate} to ${payload.endDate}. Services: Drive=${payload.insertDrive}, Gmail=${payload.insertGmail}, Calendar=${payload.insertCalendar}, Contacts=${payload.insertContacts}`,
   )
   try {
     // ServiceAccountIngestMoreUsers expects payload and a numeric userId
