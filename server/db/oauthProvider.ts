@@ -5,9 +5,10 @@ import {
   type SelectOAuthProvider,
 } from "@/db/schema"
 import { createId } from "@paralleldrive/cuid2"
-import { type Apps } from "@/shared/types"
+import { Apps } from "@/shared/types"
 import { and, eq } from "drizzle-orm"
 import { getLogger } from "@/logger"
+
 
 const Logger = getLogger(Subsystem.Db).child({ module: "oauth_provider" })
 
@@ -63,5 +64,18 @@ export const getOAuthProviderByConnectorId = async (
     return res
   } else {
     throw new Error("Could not get the provider")
+  }
+}
+
+export const getGlobalOAuthProvider= async(trx:TxnOrClient,app:Apps)=>{
+  const res = await trx
+    .select()
+    .from(oauthProviders)
+    .where(and(eq(oauthProviders.app, app), eq(oauthProviders.isGlobal, true)))
+    .limit(1)
+  if (res.length) {
+    return res[0]
+  } else {
+    return null
   }
 }

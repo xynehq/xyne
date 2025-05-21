@@ -236,6 +236,9 @@ export class Tracker {
             this.serviceAccountProgress.totalUsers) *
             100,
         )
+      } else if (this.authType === AuthType.OAuth) {
+        if (this.oAuthProgress.total === 0) return 0;
+        return Math.floor((this.oAuthProgress.current / this.oAuthProgress.total) * 100);
       } else {
         return 0
       }

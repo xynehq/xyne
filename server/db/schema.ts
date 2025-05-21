@@ -225,6 +225,7 @@ export const oauthProviders = pgTable("oauth_providers", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
+    isGlobal: boolean("is_global").notNull().default(false),
 })
 
 export const syncJobEnum = pgEnum(

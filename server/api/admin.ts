@@ -21,7 +21,7 @@ import {
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
-import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
+import { createOAuthProvider, getOAuthProvider, getGlobalOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
@@ -60,6 +60,25 @@ const getAuthorizationUrl = async (
   let url: URL
   const state = generateState()
   const codeVerifier = generateCodeVerifier()
+
+  // Get date parameters from query
+  const startDate = c.req.query('startDate')
+  const endDate = c.req.query('endDate')
+  const insertDrive = c.req.query('insertDrive')
+  const insertGmail = c.req.query('insertGmail')
+  const insertCalendar = c.req.query('insertCalendar')
+  const insertContacts = c.req.query('insertContacts')
+  
+  console.log("[getAuthorizationUrl] Received parameters:", {
+    startDate,
+    endDate,
+    insertDrive,
+    insertGmail,
+    insertCalendar,
+    insertContacts,
+    query: c.req.query()
+  })
+
   // for google refresh token
   if (IsGoogleApp(app)) {
     const google = new Google(
@@ -70,13 +89,29 @@ const getAuthorizationUrl = async (
     Logger.info(`code verifier  ${codeVerifier}`)
 
     // adding some data to state
-    const newState = JSON.stringify({ app, random: state })
+    const newState = JSON.stringify({ 
+      app, 
+      random: state,
+      startDate,
+      endDate,
+      insertDrive: insertDrive === "true",
+      insertGmail: insertGmail === "true",
+      insertCalendar: insertCalendar === "true",
+      insertContacts: insertContacts === "true",
+    })
+    console.log("[getAuthorizationUrl] State object:", newState)
     url = google.createAuthorizationURL(newState, codeVerifier, oauthScopes)
     url.searchParams.set("access_type", "offline")
     url.searchParams.set("prompt", "consent")
   } else if (app === Apps.Slack) {
     // we are not using arctic as it would only go to oidc urls
-    const newState = JSON.stringify({ app, random: state })
+    const newState = JSON.stringify({ 
+      app, 
+      random: state,
+      startDate,
+      endDate,
+    })
+    console.log("[getAuthorizationUrl] State object for Slack:", newState)
     url = new URL("https://slack.com/oauth/v2/authorize")
     url.searchParams.set("client_id", clientId!)
     url.searchParams.set("redirect_uri", `${slackHost}/oauth/callback`)
@@ -137,16 +172,33 @@ export const CreateOAuthProvider = async (c: Context) => {
     throw new NoUserFound({})
   }
   const [user] = userRes
+  
   // @ts-ignore
   const form: OAuthProvider = c.req.valid("form")
+  console.log("form", form.isForm2)
   const clientId = form.clientId
   const clientSecret = form.clientSecret
   const scopes = form.scopes
   const app = form.app
-
+  const isForm2 = form.isForm2
+  console.log(form.startDate, form.endDate)
+  let globalProvider=null
+  // For form2 with Slack, check if global provider exists before creating connector
+  if (isForm2 && app === Apps.Slack) {
+    // First check if global provider exists
+    globalProvider = await getGlobalOAuthProvider(db, Apps.Slack)
+    if (!globalProvider) {
+      Logger.info("No global OAuth provider found for app", { app })
+      return c.json({ 
+        success: false,
+        error: "No global OAuth provider found for Slack. Please configure global credentials first." 
+      }, 404)
+    }
+  }
+  
   return await db.transaction(async (trx) => {
     const connector = await insertConnector(
-      trx, // Pass the transaction object
+      trx,
       user.workspaceId,
       user.id,
       user.workspaceExternalId,
@@ -164,6 +216,27 @@ export const CreateOAuthProvider = async (c: Context) => {
     if (!connector) {
       throw new ConnectorNotCreated({})
     }
+
+    // For form2 with Slack, use global provider credentials
+    if (isForm2 && app === Apps.Slack) {
+      
+      const provider = await createOAuthProvider(trx, {
+        clientId: globalProvider!.clientId,
+        clientSecret: globalProvider!.clientSecret,
+        oauthScopes: globalProvider!.oauthScopes,
+        workspaceId: user.workspaceId,
+        userId: user.id,
+        workspaceExternalId: user.workspaceExternalId,
+        connectorId: connector.id,
+        app,
+      })
+      return c.json({
+        success: true,
+        message: "Connection and Provider created using global credentials",
+      })
+    }
+
+    // Normal flow (form1)
     const provider = await createOAuthProvider(trx, {
       clientId,
       clientSecret,
@@ -173,6 +246,7 @@ export const CreateOAuthProvider = async (c: Context) => {
       workspaceExternalId: user.workspaceExternalId,
       connectorId: connector.id,
       app,
+      isGlobal: form.isGlobal,
     })
     return c.json({
       success: true,
@@ -232,9 +306,16 @@ export const AddServiceConnection = async (c: Context) => {
       externalId: connector.externalId,
       authType: connector.authType as AuthType,
       email: sub,
+      insertDrive: form.insertDrive,
+      insertGmail: form.insertGmail,
+      insertCalendar: form.insertCalendar,
+      insertContacts: form.insertContacts,
       // Conditionally add whiteListedEmails to the payload
       ...(whitelistedEmails &&
         whitelistedEmails.length > 0 && { whitelistedEmails }),
+      // Add date range if provided
+      ...(form.startDate && { startDate: form.startDate }),
+      ...(form.endDate && { endDate: form.endDate }),
     }
 
     if (IsGoogleApp(app)) {

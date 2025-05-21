@@ -145,7 +145,7 @@ interface SlackOAuthTabProps {
 }
 
 const submitSlackOAuth = async (
-  value: { clientId: string; clientSecret: string; scopes: string },
+  value: { clientId: string; clientSecret: string; scopes: string; isGlobal: boolean },
   navigate: ReturnType<typeof useNavigate>,
 ) => {
   const response = await api.admin.oauth.create.$post({
@@ -154,6 +154,7 @@ const submitSlackOAuth = async (
       clientSecret: value.clientSecret,
       scopes: value.scopes.split(",").map((s) => s.trim()),
       app: Apps.Slack,
+      isGlobal: Boolean(value.isGlobal),
     },
   })
   if (!response.ok) {
@@ -169,10 +170,37 @@ const submitSlackOAuth = async (
   return response.json()
 }
 
+export const submitSlackOAuthGlobal = async (navigate: ReturnType<typeof useNavigate>) => {
+  const response = await api.admin.oauth.create.$post({
+    form: {
+      isForm2: Boolean(true),
+      app: Apps.Slack,
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    if (response.status === 404) {
+      throw new Error("No global OAuth provider found for Slack. Please configure global credentials first.")
+    }
+    throw new Error(
+      `Failed to add Slack integration: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
+
 export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const form = useForm<{
+  const [formType, setFormType] = useState<'form1' | 'form2'>('form1')
+  const [makeGlobal, setMakeGlobal] = useState(false)
+
+  const form1 = useForm<{
     clientId: string
     clientSecret: string
     scopes: string
@@ -180,7 +208,7 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
     defaultValues: { clientId: "", clientSecret: "", scopes: "" },
     onSubmit: async ({ value }) => {
       try {
-        await submitSlackOAuth(value, navigate)
+        await submitSlackOAuth({ ...value, isGlobal: makeGlobal }, navigate)
         toast({
           title: "Slack integration added",
           description: "Bot token accepted. Updating status...",
@@ -196,81 +224,149 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
     },
   })
 
+  const form2 = useForm<{}>({
+    defaultValues: {},
+    onSubmit: async () => {
+      try {
+        await submitSlackOAuthGlobal(navigate)
+        toast({
+          title: "Slack integration added",
+          description: "Using global credentials. Updating status...",
+        })
+        onSuccess()
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        toast({
+          title: "Could not add Slack integration",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
+    },
+  })
+
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        form.handleSubmit()
-      }}
-      className="grid w-full max-w-sm items-center gap-1.5"
-    >
-      <Label htmlFor="clientId">Client Id</Label>
-      <form.Field
-        name="clientId"
-        validators={{
-          onChange: ({ value }) =>
-            !value ? "Client Id is required" : undefined,
-        }}
-        children={(field) => (
-          <>
-            <Input
-              id="clientId"
-              type="text"
-              value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter your Client Id"
+    <div className="space-y-4">
+      <div className="flex gap-4 mb-4">
+        <Button 
+          size="sm"
+          className="py-1 px-2 text-sm"
+          variant={formType === 'form1' ? "default" : "outline"}
+          onClick={() => setFormType('form1')}
+        >
+           Custom Credentials
+        </Button>
+        <Button 
+          size="sm"
+          className="py-1 px-2 text-sm"
+          variant={formType === 'form2' ? "default" : "outline"}
+          onClick={() => setFormType('form2')}
+        >
+           Global Credentials
+        </Button>
+      </div>
+
+      {formType === 'form1' ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            form1.handleSubmit()
+          }}
+          className="grid w-full max-w-sm items-center gap-1.5"
+        >
+          <Label htmlFor="clientId">Client Id</Label>
+          <form1.Field
+            name="clientId"
+            validators={{
+              onChange: ({ value }) =>
+                !value ? "Client Id is required" : undefined,
+            }}
+            children={(field) => (
+              <>
+                <Input
+                  id="clientId"
+                  type="text"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Enter your Client Id"
+                />
+                {field.state.meta.isTouched && field.state.meta.errors.length
+                  ? null
+                  : null}
+              </>
+            )}
+          />
+          <Label htmlFor="clientSecret">Client Secret</Label>
+          <form1.Field
+            name="clientSecret"
+            validators={{
+              onChange: ({ value }) =>
+                !value ? "Client secret is required" : undefined,
+            }}
+            children={(field) => (
+              <>
+                <Input
+                  id="clientSecret"
+                  type="text"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Enter your Client secret"
+                />
+                {field.state.meta.isTouched && field.state.meta.errors.length
+                  ? null
+                  : null}
+              </>
+            )}
+          />
+          <Label htmlFor="scopes">Scopes</Label>
+          <form1.Field
+            name="scopes"
+            validators={{
+              onChange: ({ value }) => (!value ? "scopes is required" : undefined),
+            }}
+            children={(field) => (
+              <>
+                <Input
+                  id="scopes"
+                  type="text"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Enter your scopes"
+                />
+                {field.state.meta.isTouched && field.state.meta.errors.length
+                  ? null
+                  : null}
+              </>
+            )}
+          />
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              id="makeGlobal"
+              type="checkbox"
+              checked={makeGlobal}
+              onChange={() => setMakeGlobal((prev) => !prev)}
             />
-            {field.state.meta.isTouched && field.state.meta.errors.length
-              ? null
-              : null}
-          </>
-        )}
-      />
-      <Label htmlFor="clientSecret">Client Secret</Label>
-      <form.Field
-        name="clientSecret"
-        validators={{
-          onChange: ({ value }) =>
-            !value ? "Client secret is required" : undefined,
-        }}
-        children={(field) => (
-          <>
-            <Input
-              id="clientSecret"
-              type="text"
-              value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter your Client secret"
-            />
-            {field.state.meta.isTouched && field.state.meta.errors.length
-              ? null
-              : null}
-          </>
-        )}
-      />
-      <Label htmlFor="scopes">Scopes</Label>
-      <form.Field
-        name="scopes"
-        validators={{
-          onChange: ({ value }) => (!value ? "scopes is required" : undefined),
-        }}
-        children={(field) => (
-          <>
-            <Input
-              id="scopes"
-              type="text"
-              value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter your scopes"
-            />
-            {field.state.meta.isTouched && field.state.meta.errors.length
-              ? null
-              : null}
-          </>
-        )}
-      />
-      <Button type="submit">Add</Button>
-    </form>
+            <Label htmlFor="makeGlobal">Make it Global Provider</Label>
+          </div>
+          <Button type="submit">Add</Button>
+        </form>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            form2.handleSubmit()
+          }}
+          className="grid w-full max-w-sm items-center gap-1.5"
+        >
+          <div className="text-center mb-4">
+            <p className="text-muted-foreground">
+              This will use the global Slack credentials configured in the system.
+            </p>
+          </div>
+          <Button type="submit">Use Global Credentials</Button>
+        </form>
+      )}
+    </div>
   )
 }
 

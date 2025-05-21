@@ -32,6 +32,8 @@ export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
   tracker: Tracker,
+  startDate?: Date,
+  endDate?: Date,
 ): Promise<string> => {
   const batchSize = 100
   const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
@@ -56,6 +58,19 @@ export const handleGmailIngestion = async (
     throw new Error("Could not get historyId from getProfile")
   }
 
+  // Build date range query if dates are provided
+  let dateQuery = "-in:promotions"
+  if (startDate || endDate) {
+    const dateFilters = []
+    if (startDate) {
+      dateFilters.push(`after:${Math.floor(startDate.getTime() / 1000)}`)
+    }
+    if (endDate) {
+      dateFilters.push(`before:${Math.floor(endDate.getTime() / 1000)}`)
+    }
+    dateQuery = `${dateFilters.join(" ")} ${dateQuery}`
+  }
+
   do {
     const resp = await retryWithBackoff(
       () =>
@@ -65,7 +80,7 @@ export const handleGmailIngestion = async (
           maxResults: batchSize,
           pageToken: nextPageToken,
           fields: "messages(id), nextPageToken",
-          q: "-in:promotions",
+          q: dateQuery,
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
       Apps.Gmail,

@@ -23,6 +23,12 @@ interface OAuthTabProps {
   setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
   updateStatus: string
   handleDelete: () => void
+  startDate?: Date
+  endDate?: Date
+  insertDrive: boolean
+  insertGmail: boolean
+  insertCalendar: boolean
+  insertContacts: boolean
 }
 
 const OAuthTab = ({
@@ -31,12 +37,26 @@ const OAuthTab = ({
   setOAuthIntegrationStatus,
   updateStatus,
   handleDelete,
+  startDate,
+  endDate,
+  insertDrive,
+  insertGmail,
+  insertCalendar,
+  insertContacts,
 }: OAuthTabProps) => {
   const [modalState, setModalState] = useState<{
     open: boolean
     title: string
     description: string
   }>({ open: false, title: "", description: "" })
+  const [selectedStartDate, setSelectedStartDate] = useState<Date | undefined>(startDate)
+  const [selectedEndDate, setSelectedEndDate] = useState<Date | undefined>(endDate)
+  const [selectedServices, setSelectedServices] = useState({
+    insertDrive: false,
+    insertGmail: false,
+    insertCalendar: false,
+    insertContacts: false
+  })
 
   const handleConfirmDelete = () => {
     handleDelete()
@@ -57,15 +77,36 @@ const OAuthTab = ({
     }))
   }
 
+  const handleOAuthSuccess = (
+    startDate?: Date, 
+    endDate?: Date,
+    services?: {
+      insertDrive: boolean,
+      insertGmail: boolean,
+      insertCalendar: boolean,
+      insertContacts: boolean
+    }
+  ) => {
+    console.log("[OAuthTab] Received form data:", { 
+      startDate, 
+      endDate,
+      services 
+    })
+    setSelectedStartDate(startDate)
+    setSelectedEndDate(endDate)
+    if (services) {
+      setSelectedServices(services)
+    }
+    setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+  }
+
   return (
     <TabsContent value="oauth">
       {isPending ? (
         <LoaderContent />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.Provider ? (
         <OAuthForm
-          onSuccess={() =>
-            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-          }
+          onSuccess={handleOAuthSuccess}
         />
       ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuth ? (
         <Card>
@@ -78,6 +119,12 @@ const OAuthTab = ({
               app={Apps.GoogleDrive}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               text="Connect with Google OAuth"
+              startDate={selectedStartDate}
+              endDate={selectedEndDate}
+              insertDrive={selectedServices.insertDrive}
+              insertGmail={selectedServices.insertGmail}
+              insertCalendar={selectedServices.insertCalendar}
+              insertContacts={selectedServices.insertContacts}
             />
           </CardContent>
         </Card>

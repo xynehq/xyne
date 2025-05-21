@@ -39,36 +39,72 @@ interface SlackOAuthResp {
 
 export const OAuthCallback = async (c: Context) => {
   try {
-    const { sub, workspaceId } = c.get(JwtPayloadKey)
-    const email = sub
-    const { state, code } = c.req.query()
+    const { state, code } = c.req.query() as { state: string; code: string }
     if (!state) {
-      throw new HTTPException(500)
+      throw new HTTPException(400, { message: "No state parameter" })
     }
-    const { app, random } = JSON.parse(state)
+
+    // Parse the state parameter to get app and date parameters
+    let stateData: { 
+      app: Apps; 
+      random: string; 
+      startDate?: string; 
+      endDate?: string;
+      insertDrive?: boolean;
+      insertGmail?: boolean;
+      insertCalendar?: boolean;
+      insertContacts?: boolean;
+    }
+    try {
+      const parsedState = JSON.parse(state)
+      console.log("[OAuthCallback] Parsed state data:", parsedState)
+      stateData = {
+        app: parsedState.app as Apps,
+        random: parsedState.random,
+        startDate: parsedState.startDate,
+        endDate: parsedState.endDate,
+        insertDrive: parsedState.insertDrive,
+        insertGmail: parsedState.insertGmail,
+        insertCalendar: parsedState.insertCalendar,
+        insertContacts: parsedState.insertContacts,
+      }
+    } catch (error) {
+      throw new HTTPException(400, { message: "Invalid state parameter" })
+    }
+
+    const { app, random } = stateData
     if (!app) {
-      throw new HTTPException(500)
+      throw new HTTPException(400, { message: "No app in state parameter" })
     }
+
     const stateInCookie = getCookie(c, `${app}-state`)
     if (random !== stateInCookie) {
-      throw new HTTPException(500, {
+      throw new HTTPException(400, {
         message: "Invalid state, potential CSRF attack.",
       })
     }
 
     const codeVerifier = getCookie(c, `${app}-code-verifier`)
     if (!codeVerifier && app === Apps.GoogleDrive) {
-      throw new HTTPException(500, { message: "Could not verify the code" })
+      throw new HTTPException(400, { message: "Could not verify the code" })
     }
-    let tokens: SlackOAuthResp | OAuthCredentials
 
-    const userRes = await getUserByEmail(db, sub)
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+    const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
-      Logger.error("Could not find user in OAuth Callback")
       throw new NoUserFound({})
     }
-    const provider = await getOAuthProvider(db, userRes[0].id, app)
+    const [user] = userRes
+
+    const provider = await getOAuthProvider(db, user.workspaceId, app)
+    if (!provider) {
+      throw new HTTPException(500, { message: "No OAuth provider found" })
+    }
+
     const { clientId, clientSecret } = provider
+    let tokens: OAuthCredentials | SlackOAuthResp
+
     if (app === Apps.Slack) {
       const response = await fetch("https://slack.com/api/oauth.v2.access", {
         method: "POST",
@@ -89,13 +125,11 @@ export const OAuthCallback = async (c: Context) => {
       }
 
       tokens = {
-        appId: tokenData.app_id,
-        userId: tokenData.authed_user.id,
-        accessToken: tokenData.authed_user.access_token,
-        tokenType: tokenData.authed_user.token_type,
-        teamName: tokenData.team.name,
-        teamId: tokenData.team.id,
-        scope: tokenData.authed_user.scope,
+        data: {
+          access_token: tokenData.authed_user.access_token,
+          refresh_token: tokenData.authed_user.refresh_token,
+          accessTokenExpiresAt: new Date(Date.now() + 3600000),
+        },
       }
     } else if (IsGoogleApp(app)) {
       const google = new Google(
@@ -124,11 +158,24 @@ export const OAuthCallback = async (c: Context) => {
       externalId: connector.externalId,
       authType: connector.authType as AuthType,
       email: sub,
+      // Add date range if provided in the state
+      ...(stateData.startDate && { startDate: stateData.startDate }),
+      ...(stateData.endDate && { endDate: stateData.endDate }),
     }
+
+    console.log("[OAuthCallback] Creating SaaS job with payload:", SaasJobPayload)
 
     if (IsGoogleApp(app)) {
       // Start ingestion in the background, but catch any errors it might throw later
-      handleGoogleOAuthIngestion(SaasJobPayload).catch((error) => {
+      handleGoogleOAuthIngestion(
+        SaasJobPayload,
+        SaasJobPayload.startDate ? new Date(SaasJobPayload.startDate) : undefined,
+        SaasJobPayload.endDate ? new Date(SaasJobPayload.endDate) : undefined,
+        stateData.insertDrive,
+        stateData.insertGmail,
+        stateData.insertCalendar,
+        stateData.insertContacts
+      ).catch((error) => {
         Logger.error(
           error,
           `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
@@ -145,30 +192,19 @@ export const OAuthCallback = async (c: Context) => {
         email: sub,
       })
     } else {
-      const SaasJobPayload: SaaSOAuthJob = {
-        connectorId: connector.id,
-        app,
-        externalId: connector.externalId,
-        authType: connector.authType as AuthType,
-        email: sub,
-      }
-      // Enqueue the background job within the same transaction
+      // Enqueue the background job
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-        expireInHours: JobExpiryHours,
+        singletonKey: connector.externalId,
+        priority: 1,
+        retryLimit: 0,
       })
-      Logger.info(`Job ${jobId} enqueued for connection ${connector.id}`)
+
+      console.log(`[OAuthCallback] Job ${jobId} enqueued for connector ${connector.id}`)
     }
 
-    // Commit the transaction if everything is successful
-    if (app === Apps.Slack) {
-      return c.redirect(`${slackHost}/oauth/success`)
-    }
-    return c.redirect(`${config.host}/oauth/success`)
+    return c.redirect("/oauth/success")
   } catch (error) {
-    Logger.error(
-      error,
-      `${new OAuthCallbackError({ cause: error as Error })} \n ${(error as Error).stack}`,
-    )
-    throw new HTTPException(500, { message: "Error in OAuthCallback" })
+    console.error("[OAuthCallback] Error:", error)
+    throw error
   }
 }

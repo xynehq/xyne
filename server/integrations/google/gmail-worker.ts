@@ -48,6 +48,8 @@ const jwtValue = z.object({
     client_email: z.string(),
     private_key: z.string(),
   }),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 })
 const messageTypes = z.discriminatedUnion("type", [jwtValue])
 
@@ -71,10 +73,15 @@ self.onmessage = async (event: MessageEvent<MessageType>) => {
     if (event.type === "message") {
       const msg = event.data
       if (msg.type === MessageTypes.JwtParams) {
-        const { userEmail, serviceAccountKey } = msg
+        const { userEmail, serviceAccountKey, startDate, endDate } = msg
         Logger.info(`Got the jwt params: ${userEmail}`)
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
-        const historyId = await handleGmailIngestion(jwtClient, userEmail)
+        const historyId = await handleGmailIngestion(
+          jwtClient, 
+          userEmail,
+          startDate ? new Date(startDate) : undefined,
+          endDate ? new Date(endDate) : undefined
+        )
         postMessage({
           type: WorkerResponseTypes.HistoryId,
           userEmail,
@@ -94,6 +101,8 @@ self.onerror = (error: ErrorEvent) => {
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
+  startDate?: Date,
+  endDate?: Date,
 ): Promise<string> => {
   const batchSize = 100
   const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
@@ -118,6 +127,19 @@ export const handleGmailIngestion = async (
     throw new Error("Could not get historyId from getProfile")
   }
 
+  // Build date range query if dates are provided
+  let dateQuery = "-in:promotions"
+  if (startDate || endDate) {
+    const dateFilters = []
+    if (startDate) {
+      dateFilters.push(`after:${Math.floor(startDate.getTime() / 1000)}`)
+    }
+    if (endDate) {
+      dateFilters.push(`before:${Math.floor(endDate.getTime() / 1000)}`)
+    }
+    dateQuery = `${dateFilters.join(" ")} ${dateQuery}`
+  }
+
   do {
     const resp = await retryWithBackoff(
       () =>
@@ -127,7 +149,7 @@ export const handleGmailIngestion = async (
           maxResults: batchSize,
           pageToken: nextPageToken,
           fields: "messages(id), nextPageToken",
-          q: "-in:promotions",
+          q: dateQuery,
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
       Apps.Gmail,

@@ -22,12 +22,36 @@ export class OAuthModal {
     this.height = height || 700
   }
 
-  public startAuth(app: Apps) {
+  public startAuth(
+    app: Apps, 
+    startDate?: Date, 
+    endDate?: Date,
+    insertDrive?: boolean,
+    insertGmail?: boolean,
+    insertCalendar?: boolean,
+    insertContacts?: boolean
+  ) {
     return new Promise((resolve, reject) => {
       try {
-        //clientLog({currentApp: app}, 'Starting OAuth')
-        this.logger.info({ currentApp: app }, "Starting OAuth")
-        this.openAuthWindow(`${authUrl}?app=${app}`)
+        console.log("[OAuthModal] Starting auth with dates and services:", {
+          startDate,
+          endDate,
+          startDateISO: startDate?.toISOString(),
+          endDateISO: endDate?.toISOString(),
+          insertDrive,
+          insertGmail,
+          insertCalendar,
+          insertContacts
+        })
+        const params = new URLSearchParams({ app })
+        if (startDate) params.append('startDate', startDate.toISOString())
+        if (endDate) params.append('endDate', endDate.toISOString())
+        if (insertDrive !== undefined) params.append('insertDrive', insertDrive.toString())
+        if (insertGmail !== undefined) params.append('insertGmail', insertGmail.toString())
+        if (insertCalendar !== undefined) params.append('insertCalendar', insertCalendar.toString())
+        if (insertContacts !== undefined) params.append('insertContacts', insertContacts.toString())
+        console.log("[OAuthModal] Final URL params:", params.toString())
+        this.openAuthWindow(`${authUrl}?${params.toString()}`)
         this.monitorWindow(resolve, reject)
       } catch (error) {
         this.logger.error(error, `Error starting OAuth: ${error}`)
@@ -100,7 +124,7 @@ export class OAuthModal {
         }
       }
 
-      // 3. If we can read the URL, check if it’s the success URL
+      // 3. If we can read the URL, check if it's the success URL
       if (currentUrl && currentUrl === successUrl) {
         // When the popup window reaches the success URL, stop monitoring
         window.clearInterval(this.intervalId!)

@@ -34,6 +34,7 @@ import OAuthTab from "@/components/OAuthTab"
 import { LoaderContent } from "@/lib/common"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 
 const logger = console
 
@@ -47,6 +48,12 @@ const submitServiceAccountForm = async (
       app: Apps.GoogleDrive,
       email: value.email,
       whitelistedEmails: value.whitelistedEmails,
+      startDate: value.startDate?.toISOString(),
+      endDate: value.endDate?.toISOString(),
+      insertDrive: value.insertDrive,
+      insertGmail: value.insertGmail,
+      insertCalendar: value.insertCalendar,
+      insertContacts: value.insertContacts,
     },
   })
   if (!response.ok) {
@@ -67,14 +74,34 @@ const submitOAuthForm = async (
   value: OAuthFormData,
   navigate: UseNavigateResult<string>,
 ) => {
+  console.log("[submitOAuthForm] Starting OAuth form submission with values:", {
+    clientId: value.clientId,
+    scopes: value.scopes,
+    startDate: value.startDate?.toISOString(),
+    endDate: value.endDate?.toISOString(),
+    insertDrive: value.insertDrive,
+    insertGmail: value.insertGmail,
+    insertCalendar: value.insertCalendar,
+    insertContacts: value.insertContacts
+  })
+
   const response = await api.admin.oauth.create.$post({
     form: {
       clientId: value.clientId,
       clientSecret: value.clientSecret,
       scopes: value.scopes,
       app: Apps.GoogleDrive,
+      startDate: value.startDate?.toISOString(),
+      endDate: value.endDate?.toISOString(),
+      insertDrive: value.insertDrive,
+      insertGmail: value.insertGmail,
+      insertCalendar: value.insertCalendar,
+      insertContacts: value.insertContacts
     },
   })
+
+  console.log("[submitOAuthForm] Server response status:", response.status)
+  
   if (!response.ok) {
     // If unauthorized or status code is 401, navigate to '/auth'
     if (response.status === 401) {
@@ -82,6 +109,7 @@ const submitOAuthForm = async (
       throw new Error("Unauthorized")
     }
     const errorText = await response.text()
+    console.error("[submitOAuthForm] Error response:", errorText)
     throw new Error(
       `Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`,
     )
@@ -93,12 +121,24 @@ type ServiceAccountFormData = {
   email: string
   file: any
   whitelistedEmails?: string
+  startDate?: Date | null
+  endDate?: Date | null
+  insertDrive: boolean
+  insertGmail: boolean
+  insertCalendar: boolean
+  insertContacts: boolean
 }
 
 type OAuthFormData = {
   clientId: string
   clientSecret: string
   scopes: string[]
+  startDate?: Date | null
+  endDate?: Date | null
+  insertDrive: boolean
+  insertGmail: boolean
+  insertCalendar: boolean
+  insertContacts: boolean
 }
 
 export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
@@ -109,15 +149,48 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
       clientId: "",
       clientSecret: "",
       scopes: [],
+      startDate: null,
+      endDate: null,
+      insertDrive: false,
+      insertGmail: false,
+      insertCalendar: false,
+      insertContacts: false,
     },
     onSubmit: async ({ value }) => {
+      // Validate that at least one service is selected
+      if (!value.insertDrive && !value.insertGmail && !value.insertCalendar && !value.insertContacts) {
+        toast({
+          title: "No services selected",
+          description: "Please select at least one service to ingest",
+          variant: "destructive",
+        })
+        return
+      }
+
       try {
+        console.log("[OAuthForm] Form submitted with dates and services:", {
+          startDate: value.startDate,
+          endDate: value.endDate,
+          insertDrive: value.insertDrive,
+          insertGmail: value.insertGmail,
+          insertCalendar: value.insertCalendar,
+          insertContacts: value.insertContacts
+        })
         await submitOAuthForm(value, navigate)
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
         })
-        onSuccess()
+        onSuccess(
+          value.startDate,
+          value.endDate,
+          {
+            insertDrive: value.insertDrive,
+            insertGmail: value.insertGmail,
+            insertCalendar: value.insertCalendar,
+            insertContacts: value.insertContacts
+          }
+        )
       } catch (error) {
         toast({
           title: "Could not create integration",
@@ -127,6 +200,25 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
       }
     },
   })
+
+  // Track if any service is selected using form state
+  const driveSelected = form.useField({ name: "insertDrive" }).state.value
+  const gmailSelected = form.useField({ name: "insertGmail" }).state.value
+  const calendarSelected = form.useField({ name: "insertCalendar" }).state.value
+  const contactsSelected = form.useField({ name: "insertContacts" }).state.value
+  const hasSelectedService = driveSelected || gmailSelected || calendarSelected || contactsSelected
+
+  // Log service selection changes
+  useEffect(() => {
+    console.log("[OAuthForm] Service selection changed:", {
+      driveSelected,
+      gmailSelected,
+      calendarSelected,
+      contactsSelected,
+      hasSelectedService
+    })
+  }, [driveSelected, gmailSelected, calendarSelected, hasSelectedService, contactsSelected])
+
   return (
     <form
       onSubmit={(e) => {
@@ -207,7 +299,111 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
         )}
       />
 
-      <Button type="submit">Create Integration</Button>
+      <Label>Services to Ingest</Label>
+      <div className="grid gap-2">
+        <form.Field
+          name="insertDrive"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertDrive"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertDrive">Google Drive</Label>
+            </div>
+          )}
+        />
+        <form.Field
+          name="insertGmail"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertGmail"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertGmail">Gmail</Label>
+            </div>
+          )}
+        />
+        <form.Field
+          name="insertCalendar"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertCalendar"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertCalendar">Google Calendar</Label>
+            </div>
+          )}
+        />
+        <form.Field
+          name="insertContacts"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertContacts"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertContacts">Google Contacts</Label>
+            </div>
+          )}
+        />
+      </div>
+      {!hasSelectedService && (
+        <p className="text-red-600 text-sm mt-1">
+          Please select at least one service to ingest
+        </p>
+      )}
+
+      <Label>Date Range (Optional)</Label>
+      <div className="grid gap-2">
+        <form.Field
+          name="startDate"
+          children={(field) => (
+            <form.Field
+              name="endDate"
+              children={(endDateField) => (
+                <DateRangePicker
+                  startDate={field.state.value || null}
+                  endDate={endDateField.state.value || null}
+                  onStartDateChange={(date: Date | null) => {
+                    field.handleChange(date)
+                    // If end date is before new start date, clear it
+                    if (endDateField.state.value && date && endDateField.state.value < date) {
+                      endDateField.handleChange(null)
+                    }
+                  }}
+                  onEndDateChange={(date: Date | null) => {
+                    endDateField.handleChange(date)
+                  }}
+                  className="mt-2"
+                />
+              )}
+            />
+          )}
+        />
+      </div>
+
+      <Button 
+        type="submit" 
+        disabled={!hasSelectedService}
+        className={!hasSelectedService ? "opacity-50 cursor-not-allowed" : ""}
+      >
+        Create Integration
+      </Button>
     </form>
   )
 }
@@ -229,8 +425,24 @@ export const ServiceAccountForm = ({
       email: "",
       file: null,
       whitelistedEmails: "",
+      startDate: null,
+      endDate: null,
+      insertDrive: false,
+      insertGmail: false,
+      insertCalendar: false,
+      insertContacts: false,
     },
     onSubmit: async ({ value }) => {
+      // Validate that at least one service is selected
+      if (!value.insertDrive && !value.insertGmail && !value.insertCalendar && !value.insertContacts) {
+        toast({
+          title: "No services selected",
+          description: "Please select at least one service to ingest",
+          variant: "destructive",
+        })
+        return
+      }
+
       if (!value.file) {
         toast({
           title: "No file selected",
@@ -241,7 +453,18 @@ export const ServiceAccountForm = ({
       }
 
       try {
-        await submitServiceAccountForm(value, navigate) // Call the async function
+        console.log("[ServiceAccountForm] Form submitted with values:", {
+          email: value.email,
+          whitelistedEmails: value.whitelistedEmails,
+          startDate: value.startDate?.toISOString(),
+          endDate: value.endDate?.toISOString(),
+          insertDrive: value.insertDrive,
+          insertGmail: value.insertGmail,
+          insertCalendar: value.insertCalendar,
+          insertContacts: value.insertContacts
+        })
+
+        await submitServiceAccountForm(value, navigate)
         await refetch()
         toast({
           title: "File uploaded successfully",
@@ -257,6 +480,24 @@ export const ServiceAccountForm = ({
       }
     },
   })
+
+  // Track if any service is selected using form state
+  const driveSelected = form.useField({ name: "insertDrive" }).state.value
+  const gmailSelected = form.useField({ name: "insertGmail" }).state.value
+  const calendarSelected = form.useField({ name: "insertCalendar" }).state.value
+  const contactsSelected = form.useField({ name: "insertContacts" }).state.value
+  const hasSelectedService = driveSelected || gmailSelected || calendarSelected || contactsSelected
+
+  // Log service selection changes
+  useEffect(() => {
+    console.log("[ServiceAccountForm] Service selection changed:", {
+      driveSelected,
+      gmailSelected,
+      calendarSelected,
+      contactsSelected,
+      hasSelectedService
+    })
+  }, [driveSelected, gmailSelected, calendarSelected, hasSelectedService, contactsSelected])
 
   return (
     <form
@@ -329,7 +570,111 @@ export const ServiceAccountForm = ({
         )}
       />
 
-      <Button type="submit">Upload</Button>
+      <Label>Services to Ingest</Label>
+      <div className="grid gap-2">
+        <form.Field
+          name="insertDrive"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertDrive"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertDrive">Google Drive</Label>
+            </div>
+          )}
+        />
+        <form.Field
+          name="insertGmail"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertGmail"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertGmail">Gmail</Label>
+            </div>
+          )}
+        />
+        <form.Field
+          name="insertCalendar"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertCalendar"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertCalendar">Google Calendar</Label>
+            </div>
+          )}
+        />
+        <form.Field
+          name="insertContacts"
+          children={(field) => (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="insertContacts"
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="insertContacts">Google Contacts</Label>
+            </div>
+          )}
+        />
+      </div>
+      {!hasSelectedService && (
+        <p className="text-red-600 text-sm mt-1">
+          Please select at least one service to ingest
+        </p>
+      )}
+
+      <Label>Date Range (Optional)</Label>
+      <div className="grid gap-2">
+        <form.Field
+          name="startDate"
+          children={(field) => (
+            <form.Field
+              name="endDate"
+              children={(endDateField) => (
+                <DateRangePicker
+                  startDate={field.state.value || null}
+                  endDate={endDateField.state.value || null}
+                  onStartDateChange={(date: Date | null) => {
+                    field.handleChange(date)
+                    // If end date is before new start date, clear it
+                    if (endDateField.state.value && date && endDateField.state.value < date) {
+                      endDateField.handleChange(null)
+                    }
+                  }}
+                  onEndDateChange={(date: Date | null) => {
+                    endDateField.handleChange(date)
+                  }}
+                  className="mt-2"
+                />
+              )}
+            />
+          )}
+        />
+      </div>
+
+      <Button 
+        type="submit" 
+        disabled={!hasSelectedService}
+        className={!hasSelectedService ? "opacity-50 cursor-not-allowed" : ""}
+      >
+        Upload
+      </Button>
     </form>
   )
 }
@@ -338,17 +683,41 @@ export const OAuthButton = ({
   app,
   text,
   setOAuthIntegrationStatus,
+  startDate,
+  endDate,
+  insertDrive,
+  insertGmail,
+  insertCalendar,
+  insertContacts,
 }: {
   app: Apps
   text: string
   setOAuthIntegrationStatus: any
+  startDate?: Date
+  endDate?: Date
+  insertDrive: boolean
+  insertGmail: boolean
+  insertCalendar: boolean
+  insertContacts: boolean
 }) => {
   const handleOAuth = async () => {
+    console.log("[OAuthButton] Starting OAuth with parameters:", {
+      app,
+      startDate: startDate?.toISOString(),
+      endDate: endDate?.toISOString(),
+      insertDrive,
+      insertGmail,
+      insertCalendar,
+      insertContacts
+    })
+
     const oauth = new OAuthModal()
     try {
-      await oauth.startAuth(app)
+      await oauth.startAuth(app, startDate, endDate, insertDrive, insertGmail, insertCalendar, insertContacts)
+      console.log("[OAuthButton] OAuth started successfully")
       setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
     } catch (error: any) {
+      console.error("[OAuthButton] OAuth error:", error)
       toast({
         title: "Could not finish oauth",
         description: `Error: ${error?.message}`,
@@ -721,6 +1090,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       if (connector?.status === ConnectorStatus.Connecting) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
+        console.log("[AdminLayout] Setting OAuth status to Connected")
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
@@ -895,6 +1265,10 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
               handleDelete={handleDelete}
+              insertDrive={true}
+              insertGmail={true}
+              insertCalendar={true}
+              insertContacts={true}
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (

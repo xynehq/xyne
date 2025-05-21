@@ -64,6 +64,12 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>
 
 export const oauthStartQuerySchema = z.object({
   app: z.nativeEnum(Apps),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  insertDrive: z.string().transform(val => val === "true").optional(),
+  insertGmail: z.string().transform(val => val === "true").optional(),
+  insertCalendar: z.string().transform(val => val === "true").optional(),
+  insertContacts: z.string().transform(val => val === "true").optional(),
 })
 
 export type SlackConfig = z.infer<typeof UpdatedAtValSchema>
@@ -75,6 +81,12 @@ export const addServiceConnectionSchema = z.object({
   app: z.nativeEnum(Apps),
   email: z.string().email(),
   whitelistedEmails: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  insertDrive: z.boolean().optional(),
+  insertGmail: z.boolean().optional(),
+  insertCalendar: z.boolean().optional(),
+  insertContacts: z.boolean().optional(),
 })
 
 export type ServiceAccountConnection = z.infer<
@@ -89,11 +101,29 @@ export const addApiKeyConnectorSchema = z.object({
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
 export const createOAuthProvider = z.object({
-  clientId: z.string(),
-  clientSecret: z.string(),
-  scopes: z.array(z.string()),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  isGlobal: z.union([
+    z.boolean(),
+    z.string().transform(val => val === "true")
+  ]).default(false),
+  isForm2: z.union([
+    z.boolean(),
+    z.string().transform(val => val === "true")
+  ]).optional(),
   app: z.nativeEnum(Apps),
-})
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+}).refine(
+  (data) =>
+    data.isForm2 === true ||
+    (data.clientId && data.clientSecret && data.scopes && data.scopes.length > 0),
+  {
+    message: "clientId, clientSecret, and scopes are required unless isForm2 is true",
+    path: ["clientId", "clientSecret", "scopes"],
+  }
+)
 
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
@@ -133,6 +163,12 @@ export type SaaSJob = {
   externalId: string
   authType: AuthType
   email: string
+  startDate?: string
+  endDate?: string
+  insertDrive?: boolean
+  insertGmail?: boolean
+  insertCalendar?: boolean
+  insertContacts?: boolean
   whiteListedEmails?: string[]
 }
 

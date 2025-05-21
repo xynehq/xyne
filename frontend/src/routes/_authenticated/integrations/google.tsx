@@ -165,6 +165,10 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
               handleDelete={handleDelete}
+              insertDrive={true}
+              insertGmail={true}
+              insertCalendar={true}
+              insertContacts={true}
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
