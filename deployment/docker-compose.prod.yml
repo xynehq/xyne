@@ -27,6 +27,7 @@ services:
     - "9090:9090"
     command:
       - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+    restart: always
     networks:
       - xyne
   grafana:
@@ -36,6 +37,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
     ports:
       - "3002:3000"
+    restart: always
     networks:
       - xyne
 
