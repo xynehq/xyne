@@ -63,7 +63,6 @@ interface SearchResult {
   photoLink?: string
 }
 
-
 interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void

@@ -459,20 +459,32 @@ const insertCalendarEvents = async (
   client: GoogleClient,
   userEmail: string,
   tracker: Tracker,
+  startDate?: string,
+  endDate?: string,
 ) => {
   let nextPageToken = ""
   let newSyncTokenCalendarEvents: string = ""
   let events: calendar_v3.Schema$Event[] = []
   const calendar = google.calendar({ version: "v3", auth: client })
 
-  const currentDateTime = new Date()
-  const nextYearDateTime = new Date(currentDateTime)
+  let timeMinForQuery: Date
+  let timeMaxForQuery: Date
 
-  // Set the date one year later
-  nextYearDateTime.setFullYear(currentDateTime.getFullYear() + 1)
+  if (startDate) {
+    timeMinForQuery = new Date(startDate)
+  } else {
+    // Default start date: 1 year ago from today
+    timeMinForQuery = new Date()
+    timeMinForQuery.setFullYear(timeMinForQuery.getFullYear() - 1)
+  }
 
-  // Fetch from one year back
-  currentDateTime.setFullYear(currentDateTime.getFullYear() - 1)
+  if (endDate) {
+    timeMaxForQuery = new Date(endDate)
+  } else {
+    // Default end date: 1 year from today
+    timeMaxForQuery = new Date()
+    timeMaxForQuery.setFullYear(timeMaxForQuery.getFullYear() + 1)
+  }
 
   try {
     do {
@@ -480,13 +492,13 @@ const insertCalendarEvents = async (
         () =>
           calendar.events.list({
             calendarId: "primary",
-            timeMin: currentDateTime.toISOString(),
-            timeMax: nextYearDateTime.toISOString(),
+            timeMin: timeMinForQuery.toISOString(),
+            timeMax: timeMaxForQuery.toISOString(),
             maxResults: maxCalendarEventResults,
             pageToken: nextPageToken,
             fields: eventFields,
           }),
-        `Fetching all calendar events`,
+        `Fetching calendar events from ${timeMinForQuery.toISOString()} to ${timeMaxForQuery.toISOString()}`,
         Apps.GoogleCalendar,
         0,
         client,
@@ -863,6 +875,8 @@ const setupGmailWorkerHandler = (tracker: Tracker) => {
 const handleGmailIngestionForServiceAccount = async (
   userEmail: string,
   serviceAccountKey: GoogleServiceAccount,
+  startDate?: string,
+  endDate?: string,
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     pendingRequests.set(userEmail, { resolve, reject })
@@ -870,6 +884,8 @@ const handleGmailIngestionForServiceAccount = async (
       type: MessageTypes.JwtParams,
       userEmail,
       serviceAccountKey,
+      startDate,
+      endDate,
     })
     Logger.info(`Sent message to worker for ${userEmail}`)
   })
@@ -1257,10 +1273,15 @@ const insertFilesForUser = async (
   userEmail: string,
   connector: SelectConnector,
   tracker: Tracker,
+  startDate?: string,
+  endDate?: string,
 ) => {
   try {
     let processedFiles = 0
-    const iterator = listFiles(googleClient)
+    const iterator = listFiles(googleClient, startDate, endDate)
+    const startTimestamp = startDate ? new Date(startDate).getTime() : undefined
+    const endTimestamp = endDate ? new Date(endDate).getTime() : undefined
+
     for await (let pageFiles of iterator) {
       // Check existence and timestamps for all files in this page right away
       const fileIds = pageFiles.map((file) => file.id!)
@@ -2118,23 +2139,38 @@ const insertContactsToVespa = async (
 
 export async function* listFiles(
   client: GoogleClient,
+  startDate?: string,
+  endDate?: string,
 ): AsyncIterableIterator<drive_v3.Schema$File[]> {
   const drive = google.drive({ version: "v3", auth: client })
   let nextPageToken = ""
+
+  // Build the query with date filters if provided
+  let query = "trashed = false"
+  const dateFilters: string[] = []
+
+  if (startDate) {
+    const startDateObj = new Date(startDate)
+    const formattedStartDate = startDateObj.toISOString().split("T")[0]
+    dateFilters.push(`modifiedTime >= '${formattedStartDate}'`)
+  }
+  if (endDate) {
+    const endDateObj = new Date(endDate) // e.g., 2024-05-20T00:00:00.000Z
+    endDateObj.setDate(endDateObj.getDate() + 1) // Becomes 2024-05-21T00:00:00.000Z
+    const formattedExclusiveEndDate = endDateObj.toISOString().split("T")[0] // "2024-05-21"
+    dateFilters.push(`modifiedTime < '${formattedExclusiveEndDate}'`) // Includes all of 2024-05-20
+  }
+
+  if (dateFilters.length > 0) {
+    query = `${query} and ${dateFilters.join(" and ")}`
+  }
+
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await retryWithBackoff(
         () =>
           drive.files.list({
-            // TODO: prevent Google AI studio from getting indexed or add limits
-            // that don't cause that issue.
-            // anyone who uses Google AI Studio, AI Studio creates a folder
-            // and all the pdf's they upload on it is part of this folder
-            // these can be quite large and for now we should just avoid it
-            // this does not guarantee that this folder is only created by AI studio
-            // so that edge case is not handled
-            // or just depend on the size limit of pdfs, we don't want to index books as of now
-            q: "trashed = false",
+            q: query,
             pageSize: 100,
             fields:
               "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
@@ -2269,38 +2305,72 @@ export const driveFilesToDoc = async (
   return results
 }
 
-export async function getGmailCounts(client: GoogleClient): Promise<{
+export async function getGmailCounts(
+  client: GoogleClient,
+  startDate?: string,
+  endDate?: string,
+): Promise<{
   messagesTotal: number
   messagesExcludingPromotions: number
 }> {
   const gmail = google.gmail({ version: "v1", auth: client })
 
-  // Get total messages from profile
-  const profile = await retryWithBackoff(
-    () => gmail.users.getProfile({ userId: "me", fields: "messagesTotal" }),
-    "Fetching Gmail profile for total count",
+  // Build query with date filters
+  let query = ""
+  const dateFilters: string[] = []
+
+  if (startDate) {
+    const startDateObj = new Date(startDate)
+    const formattedStartDate = startDateObj
+      .toISOString()
+      .split("T")[0]
+      .replace(/-/g, "/")
+    dateFilters.push(`after:${formattedStartDate}`)
+  }
+  if (endDate) {
+    const endDateObj = new Date(endDate)
+    const formattedEndDate = endDateObj
+      .toISOString()
+      .split("T")[0]
+      .replace(/-/g, "/")
+    dateFilters.push(`before:${formattedEndDate}`)
+  }
+
+  if (dateFilters.length > 0) {
+    query = dateFilters.join(" ")
+  }
+
+  // Get total messages with date filter if provided
+  const messages = await retryWithBackoff(
+    () =>
+      gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: 1,
+      }),
+    "Fetching Gmail messages count",
     Apps.Gmail,
     0,
     client,
   )
-  const messagesTotal = profile.data.messagesTotal ?? 0
+  const messagesTotal = messages.data.resultSizeEstimate ?? 0
 
   // Get Promotions category count
   let promotionMessages = 0
   try {
-    const promoLabel = await retryWithBackoff(
+    const promoMessages = await retryWithBackoff(
       () =>
-        gmail.users.labels.get({
+        gmail.users.messages.list({
           userId: "me",
-          id: "CATEGORY_PROMOTIONS",
-          fields: "messagesTotal",
+          q: `label:promotions ${query}`,
+          maxResults: 1,
         }),
-      "Fetching Promotions label count",
+      "Fetching Promotions messages count",
       Apps.Gmail,
       0,
       client,
     )
-    promotionMessages = promoLabel.data.messagesTotal ?? 0
+    promotionMessages = promoMessages.data.resultSizeEstimate ?? 0
   } catch (error: any) {
     if (error.code === 404) {
       Logger.warn("Promotions label not found, assuming 0 promotion messages")
@@ -2321,17 +2391,40 @@ export async function getGmailCounts(client: GoogleClient): Promise<{
 }
 
 // Count Drive Files
-export async function countDriveFiles(client: GoogleClient): Promise<number> {
+export async function countDriveFiles(
+  client: GoogleClient,
+  startDate?: string,
+  endDate?: string,
+): Promise<number> {
   const drive = google.drive({ version: "v3", auth: client })
   let fileCount = 0
   let nextPageToken: string | undefined
+
+  const dateFilters: string[] = []
+
+  if (startDate) {
+    const startDateObj = new Date(startDate)
+    const formattedStartDate = startDateObj.toISOString().split("T")[0]
+    dateFilters.push(`modifiedTime >= '${formattedStartDate}'`)
+  }
+  if (endDate) {
+    const endDateObj = new Date(endDate) // e.g., 2024-05-20T00:00:00.000Z
+    endDateObj.setDate(endDateObj.getDate() + 1) // Becomes 2024-05-21T00:00:00.000Z
+    const formattedExclusiveEndDate = endDateObj.toISOString().split("T")[0] // "2024-05-21"
+    dateFilters.push(`modifiedTime < '${formattedExclusiveEndDate}'`) // Includes all of 2024-05-20
+  }
+
+  let query = "trashed = false"
+  if (dateFilters.length > 0) {
+    query = `${query} and ${dateFilters.join(" and ")}`
+  }
 
   do {
     const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await retryWithBackoff(
         () =>
           drive.files.list({
-            q: "trashed = false",
+            q: query,
             pageSize: 1000,
             fields: "nextPageToken, files(id)",
             pageToken: nextPageToken,
@@ -2356,13 +2449,27 @@ export type IngestMoreGoogleServiceAccountUsersPayload = {
 
 // Add the new function as provided by the user
 export const ServiceAccountIngestMoreUsers = async (
-  payload: IngestMoreGoogleServiceAccountUsersPayload,
+  payload: IngestMoreGoogleServiceAccountUsersPayload & {
+    startDate: string
+    endDate: string
+    insertDriveAndContacts: boolean
+    insertGmail: boolean
+    insertCalendar: boolean
+  },
   userId: number,
 ) => {
-  const { connectorId, emailsToIngest } = payload
+  const {
+    connectorId,
+    emailsToIngest,
+    startDate,
+    endDate,
+    insertDriveAndContacts,
+    insertGmail,
+    insertCalendar,
+  } = payload
   const Logger = getLogger(Subsystem.Integrations)
   Logger.info(
-    `ServiceAccountIngestMoreUsers called for connector externalId: ${connectorId} with emails: ${emailsToIngest.join(", ")} for userId: ${userId}`,
+    `ServiceAccountIngestMoreUsers called for connector externalId: ${connectorId} with emails: ${emailsToIngest.join(", ")} for userId: ${userId}. Date range: ${startDate} to ${endDate}. Services: Drive & Contacts=${insertDriveAndContacts}, Gmail=${insertGmail}, Calendar=${insertCalendar}`,
   )
 
   let connector: SelectConnector | null = null
@@ -2433,33 +2540,86 @@ export const ServiceAccountIngestMoreUsers = async (
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
         const driveClient = google.drive({ version: "v3", auth: jwtClient })
 
-        const [totalFiles, { messagesExcludingPromotions }] = await Promise.all(
-          [countDriveFiles(jwtClient), getGmailCounts(jwtClient)],
-        )
+        let totalFiles = 0
+        if (insertDriveAndContacts) {
+          totalFiles = await countDriveFiles(jwtClient, startDate, endDate)
+        }
+
+        let messagesExcludingPromotions = 0
+        if (insertGmail) {
+          const gmailCounts = await getGmailCounts(
+            jwtClient,
+            startDate,
+            endDate,
+          )
+          messagesExcludingPromotions = gmailCounts.messagesExcludingPromotions
+        }
+
         tracker.updateTotal(userEmail, {
           totalMail: messagesExcludingPromotions,
           totalDrive: totalFiles,
         })
 
-        const { contacts, otherContacts, contactsToken, otherContactsToken } =
-          await listAllContacts(jwtClient)
-        await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
+        // Process Drive and Contacts if insertDriveAndContacts is true
+        let contactsToken = ""
+        let otherContactsToken = ""
+        let startPageToken = ""
 
-        const { startPageToken }: drive_v3.Schema$StartPageToken = (
-          await driveClient.changes.getStartPageToken()
-        ).data
-        if (!startPageToken) {
-          throw new Error(
-            `Could not get start page token for user ${userEmail}`,
+        if (insertDriveAndContacts) {
+          // Contacts processing
+          const contactData = await listAllContacts(jwtClient)
+          contactsToken = contactData.contactsToken
+          otherContactsToken = contactData.otherContactsToken
+          await insertContactsToVespa(
+            contactData.contacts,
+            contactData.otherContacts,
+            userEmail,
+            tracker,
+          )
+
+          // Drive processing (token and files)
+          const driveStartPageTokenData =
+            await driveClient.changes.getStartPageToken()
+          if (!driveStartPageTokenData.data.startPageToken) {
+            throw new Error(
+              `Could not get start page token for Drive for user ${userEmail}`,
+            )
+          }
+          startPageToken = driveStartPageTokenData.data.startPageToken
+
+          await insertFilesForUser(
+            jwtClient,
+            userEmail,
+            connector!,
+            tracker,
+            startDate,
+            endDate,
           )
         }
 
-        // Ensure historyIdValue is correctly typed if it's expected to be string for IngestionMetadata
-        const [_, historyIdValue, { calendarEventsToken }] = await Promise.all([
-          insertFilesForUser(jwtClient, userEmail, connector!, tracker),
-          handleGmailIngestionForServiceAccount(userEmail, serviceAccountKey),
-          insertCalendarEvents(jwtClient, userEmail, tracker),
-        ])
+        // Only process Gmail if insertGmail is true
+        let historyId = ""
+        if (insertGmail) {
+          historyId = await handleGmailIngestionForServiceAccount(
+            userEmail,
+            serviceAccountKey,
+            startDate,
+            endDate,
+          )
+        }
+
+        // Only process Calendar if insertCalendar is true
+        let calendarEventsToken = ""
+        if (insertCalendar) {
+          const { calendarEventsToken: cet } = await insertCalendarEvents(
+            jwtClient,
+            userEmail,
+            tracker,
+            startDate,
+            endDate,
+          )
+          calendarEventsToken = cet
+        }
 
         tracker.markUserComplete(userEmail)
         return {
@@ -2467,7 +2627,7 @@ export const ServiceAccountIngestMoreUsers = async (
           driveToken: startPageToken,
           contactsToken,
           otherContactsToken,
-          historyId: historyIdValue as string,
+          historyId,
           calendarEventsToken,
         } as IngestionMetadata
       }),
@@ -2491,58 +2651,86 @@ export const ServiceAccountIngestMoreUsers = async (
         historyId: metaHistoryId,
         calendarEventsToken,
       } of ingestionMetadata) {
-        await insertSyncJob(trx, {
-          workspaceId: connector!.workspaceId,
-          workspaceExternalId: connector!.workspaceExternalId,
-          app: Apps.GoogleDrive,
-          connectorId: connector!.id,
-          authType: AuthType.ServiceAccount,
-          config: {
-            driveToken,
-            contactsToken,
-            type: "googleDriveChangeToken",
-            otherContactsToken,
-            lastSyncedAt: new Date().toISOString(),
-          },
-          email,
-          type: SyncCron.ChangeToken,
-          status: SyncJobStatus.NotStarted,
-        })
-        await insertSyncJob(trx, {
-          workspaceId: connector!.workspaceId,
-          workspaceExternalId: connector!.workspaceExternalId,
-          app: Apps.Gmail,
-          connectorId: connector!.id,
-          authType: AuthType.ServiceAccount,
-          config: {
-            historyId: metaHistoryId,
-            type: "gmailChangeToken",
-            lastSyncedAt: new Date().toISOString(),
-          },
-          email,
-          type: SyncCron.ChangeToken,
-          status: SyncJobStatus.NotStarted,
-        })
-        await insertSyncJob(trx, {
-          workspaceId: connector!.workspaceId,
-          workspaceExternalId: connector!.workspaceExternalId,
-          app: Apps.GoogleCalendar,
-          connectorId: connector!.id,
-          authType: AuthType.ServiceAccount,
-          config: {
-            calendarEventsToken,
-            type: "calendarEventsChangeToken",
-            lastSyncedAt: new Date().toISOString(),
-          },
-          email,
-          type: SyncCron.ChangeToken,
-          status: SyncJobStatus.NotStarted,
-        })
+        // Create Drive & Contacts sync job if the combined flag was true and tokens were generated
+        if (
+          insertDriveAndContacts &&
+          (driveToken || contactsToken || otherContactsToken)
+        ) {
+          await insertSyncJob(trx, {
+            workspaceId: connector!.workspaceId,
+            workspaceExternalId: connector!.workspaceExternalId,
+            app: Apps.GoogleDrive,
+            connectorId: connector!.id,
+            authType: AuthType.ServiceAccount,
+            config: {
+              driveToken,
+              contactsToken,
+              type: "googleDriveChangeToken",
+              otherContactsToken,
+              lastSyncedAt: new Date().toISOString(),
+            },
+            email,
+            type: SyncCron.ChangeToken,
+            status: SyncJobStatus.NotStarted,
+          })
+        }
+
+        // Only create Gmail sync job if Gmail was processed
+        if (insertGmail && metaHistoryId) {
+          await insertSyncJob(trx, {
+            workspaceId: connector!.workspaceId,
+            workspaceExternalId: connector!.workspaceExternalId,
+            app: Apps.Gmail,
+            connectorId: connector!.id,
+            authType: AuthType.ServiceAccount,
+            config: {
+              historyId: metaHistoryId,
+              type: "gmailChangeToken",
+              lastSyncedAt: new Date().toISOString(),
+            },
+            email,
+            type: SyncCron.ChangeToken,
+            status: SyncJobStatus.NotStarted,
+          })
+        }
+
+        // Only create Calendar sync job if Calendar was processed
+        if (insertCalendar && calendarEventsToken) {
+          await insertSyncJob(trx, {
+            workspaceId: connector!.workspaceId,
+            workspaceExternalId: connector!.workspaceExternalId,
+            app: Apps.GoogleCalendar,
+            connectorId: connector!.id,
+            authType: AuthType.ServiceAccount,
+            config: {
+              calendarEventsToken,
+              type: "calendarEventsChangeToken",
+              lastSyncedAt: new Date().toISOString(),
+            },
+            email,
+            type: SyncCron.ChangeToken,
+            status: SyncJobStatus.NotStarted,
+          })
+        }
       }
     })
-    Logger.info(
-      `Successfully ingested additional users and created sync jobs for connectorId: ${connectorId}`,
-    )
+
+    const servicesProcessed: string[] = []
+    if (payload.insertDriveAndContacts)
+      servicesProcessed.push("Drive & Contacts")
+    if (payload.insertGmail) servicesProcessed.push("Gmail")
+    if (payload.insertCalendar) servicesProcessed.push("Calendar")
+
+    if (servicesProcessed.length > 0) {
+      Logger.info(
+        `Successfully ingested additional users for connectorId: ${connectorId}. Processed services: ${servicesProcessed.join(", ")}. Sync job creation/update attempted accordingly.`,
+      )
+    } else {
+      Logger.info(
+        `Successfully ingested additional users for connectorId: ${connectorId}. No specific services (Drive/Contacts, Gmail, Calendar) were selected for data processing or sync job creation.`,
+      )
+    }
+
     if (connector.externalId) {
       sendWebsocketMessage(
         JSON.stringify({
