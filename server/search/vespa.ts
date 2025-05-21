@@ -93,7 +93,7 @@ export const insertDocument = async (document: VespaFile) => {
 export const insertWithRetry = async (
   document: Inserts,
   schema: VespaSchema,
-  maxRetries = 5,
+  maxRetries = 8,
 ) => {
   let lastError: any
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -107,7 +107,7 @@ export const insertWithRetry = async (
         (error as Error).message.includes("429 Too Many Requests") &&
         attempt < maxRetries
       ) {
-        const delayMs = Math.min(Math.pow(2, attempt) * 1000, 10000) // Cap at 10s
+        const delayMs = Math.pow(2, attempt) * 2000
         Logger.warn(
           `Vespa 429 for ${document.docId}, retrying in ${delayMs}ms (attempt ${attempt + 1})`,
         )
@@ -258,6 +258,7 @@ export enum SearchModes {
   BM25 = "default_bm25",
   AI = "default_ai",
   Random = "default_random",
+  GlobalSorted = "global_sorted",
 }
 
 type YqlProfile = {
@@ -281,9 +282,10 @@ export const HybridDefaultProfile = (
   let userTimestamp = ""
   let eventTimestamp = ""
 
-  if (timestampRange && !timestampRange.from && !timestampRange.to) {
-    throw new Error("Invalid timestamp range")
-  }
+  // Commenting this out to allow searching by either "from" or "to" fields independently.
+  // if (timestampRange && !timestampRange.from && !timestampRange.to) {
+  //   throw new Error("Invalid timestamp range")
+  // }
 
   let fileTimestampConditions: string[] = []
   let mailTimestampConditions: string[] = []
@@ -567,7 +569,7 @@ type VespaQueryConfig = {
   limit: number
   offset: number
   alpha: number
-  timestampRange: { from: number; to: number } | null
+  timestampRange: { from: number | null; to: number | null } | null
   excludedIds: string[]
   notInMailLabels: string[]
   rankProfile: SearchModes
@@ -724,6 +726,19 @@ export const GetDocument = async (
       sources: schema,
       message: errMessage,
     })
+  }
+}
+
+export const GetDocumentsByDocIds = async (
+  docIds: string[],
+): Promise<VespaSearchResponse> => {
+  try {
+    const options = { namespace: NAMESPACE, docIds }
+    return vespa.getDocumentsByOnlyDocIds(options)
+  } catch (error) {
+    Logger.error(error, `Error fetching document docIds: ${docIds}`)
+    const errMessage = getErrorMessage(error)
+    throw new Error(errMessage)
   }
 }
 

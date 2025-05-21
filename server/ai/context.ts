@@ -32,7 +32,7 @@ const constructFileContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
@@ -52,12 +52,14 @@ const constructFileContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -98,7 +100,7 @@ const constructMailContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
@@ -118,12 +120,14 @@ const constructMailContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -175,7 +179,7 @@ const constructMailAttachmentContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
@@ -195,12 +199,14 @@ const constructMailAttachmentContext = (
   }
 
   let content = ""
-  if (isSelectedFiles) {
+  if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
