@@ -429,9 +429,9 @@ class VespaClient {
   }
 
   async getDocumentsByOnlyDocIds(
-    options: VespaConfigValues & { docIds: string[] },
+    options: VespaConfigValues & { docIds: string[]; generateAnswerSpan: Span },
   ): Promise<VespaSearchResponse> {
-    const { docIds } = options
+    const { docIds, generateAnswerSpan } = options
     const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
     const yqlQuery = `select * from sources * where (${yqlIds})`
     const url = `${this.vespaEndpoint}/search/`
@@ -442,6 +442,8 @@ class VespaClient {
         hits: docIds?.length,
         maxHits: docIds?.length,
       }
+
+      generateAnswerSpan.setAttribute("vespaPayload", JSON.stringify(payload))
 
       const response = await this.fetchWithRetry(url, {
         method: "POST",
