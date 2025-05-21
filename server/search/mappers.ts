@@ -32,6 +32,13 @@ import {
   type VespaChatMessageSearch,
   chatMessageSchema,
   ChatMessageResponseSchema,
+  DriveEntity,
+  MailEntity,
+  MailAttachmentEntity,
+  GooglePeopleEntity,
+  CalendarEntity,
+  Apps,
+  type VespaSchema,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -70,7 +77,7 @@ export const getSortedScoredChunks = (
   }
 
   if (
-    matchfeatures?.chunk_scores?.cells &&
+    !matchfeatures?.chunk_scores?.cells ||
     !Object.keys(matchfeatures?.chunk_scores?.cells).length
   ) {
     const mappedChunks = existingChunksSummary.map((v, index) => ({
@@ -355,4 +362,37 @@ export function handleVespaGroupResponse(
   }
 
   return appEntityCounts // Return the final map
+}
+
+export const entityToSchemaMapper = (
+  entityName?: string,
+  app?: string,
+): VespaSchema | null => {
+  const entitySchemaMap: Record<string, VespaSchema> = {
+    ...Object.fromEntries(
+      Object.values(DriveEntity).map((e) => [e, fileSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(MailEntity).map((e) => [e, mailSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(MailAttachmentEntity).map((e) => [e, mailAttachmentSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(GooglePeopleEntity).map((e) => [e, userSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(CalendarEntity).map((e) => [e, eventSchema]),
+    ),
+  }
+
+  // Handle cases where the same entity name exists in multiple schemas
+  if (entityName === "pdf") {
+    if (app === Apps.GoogleDrive) {
+      return fileSchema
+    } else if (app === Apps.Gmail) {
+      return mailAttachmentSchema
+    }
+  }
+  return entitySchemaMap[entityName || ""] || null
 }

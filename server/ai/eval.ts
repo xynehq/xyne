@@ -25,6 +25,7 @@ import {
   Models,
   type LLMProvider,
   type ModelParams,
+  type QueryRouterResponse,
   type TemporalClassifier,
   type TimeDirection,
 } from "./types"
@@ -188,7 +189,7 @@ const FactualityScorer = async (
   } else {
     provider = new OpenAIProvider(new OpenAI({ apiKey: openAiKey }))
     Logger.info("Evaluating with openai")
-    if (!params.modelId) params.modelId = Models.Gpt_4o_mini
+    params.modelId = Models.Gpt_4o_mini
   }
 
   params.systemPrompt = evaluateSystemPrompt(
@@ -523,7 +524,23 @@ const endToEndFlow = async (
   let answer = ""
   let citations = []
   let citationMap: Record<number, number> = {}
-  let parsed = { answer: "", queryRewrite: "", temporalDirection: null }
+  let queryFilters = {
+    app: "",
+    entity: "",
+    startTime: "",
+    endTime: "",
+    count: 0,
+  }
+  let parsed = {
+    answer: "",
+    queryRewrite: "",
+    temporalDirection: null,
+    filter_query: "",
+    filters: queryFilters,
+    type: "",
+    from: null,
+    to: null,
+  }
   let buffer = ""
   for await (const chunk of searchOrAnswerIterator) {
     if (chunk.text) {
@@ -552,10 +569,15 @@ const endToEndFlow = async (
       message = parsed.queryRewrite
     }
 
-    const classification: TemporalClassifier = {
+    const classification: TemporalClassifier & QueryRouterResponse = {
       direction: parsed.temporalDirection,
-      from: null,
-      to: null
+      type: parsed.type as any,
+      filter_query: parsed.filter_query,
+      filters: {
+        ...parsed.filters,
+        app: parsed.filters.app as any,
+        entity: parsed.filters.entity as any,
+      },
     }
 
     const tracer = getTracer("chat")
@@ -569,7 +591,6 @@ const endToEndFlow = async (
       classification,
       messages,
       0.5,
-      [],
       ragSpan,
     )
 

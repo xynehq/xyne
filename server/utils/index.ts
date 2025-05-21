@@ -2,12 +2,25 @@ import type { Cost } from "@/ai/types"
 
 export function getDateForAI() {
   const today = new Date()
-  const options: Intl.DateTimeFormatOptions = {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
+  const day = today.getDate()
+  const year = today.getFullYear()
+
+  const monthOptions: Intl.DateTimeFormatOptions = { month: "long" }
+  const monthName = today.toLocaleDateString("en-US", monthOptions) // "en-US" is common for full month names
+
+  let daySuffix = "th"
+  if (day === 1 || day === 21 || day === 31) {
+    daySuffix = "st"
+  } else if (day === 2 || day === 22) {
+    daySuffix = "nd"
+  } else if (day === 3 || day === 23) {
+    daySuffix = "rd"
   }
-  return today.toLocaleDateString("en-GB", options)
+
+  // Pad day with leading zero if it's a single digit
+  const dayFormatted = day < 10 ? `0${day}` : `${day}`
+
+  return `Current Date : ${dayFormatted}${daySuffix} ${monthName} ${year}`
 }
 
 export const calculateCost = (

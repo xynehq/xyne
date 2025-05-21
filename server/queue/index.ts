@@ -15,7 +15,7 @@ import { checkDownloadsFolder } from "@/integrations/google/utils"
 import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 import { handleSlackIngestion } from "@/integrations/slack"
-
+import { handleSlackChanges } from "@/integrations/slack/sync"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 
@@ -33,12 +33,14 @@ export const SyncOAuthSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.OAuth}`
 export const SyncServiceAccountSaaSQueue = `sync-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`
 export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.ServiceAccount}`
 export const CheckDownloadsFolderQueue = `check-downloads-folder`
+export const SyncSlackQueue = `sync-${Apps.Slack}-${AuthType.OAuth}`
 
 const Every10Minutes = `*/10 * * * *`
 const EveryHour = `0 * * * *`
 const Every6Hours = `0 */6 * * *`
 const EveryWeek = `0 0 */7 * *`
 const EveryMin = `*/1 * * * *`
+const Every15Minutes = `*/15 * * * *`
 
 export const init = async () => {
   Logger.info("Queue init")
@@ -48,6 +50,7 @@ export const init = async () => {
   await boss.createQueue(SyncServiceAccountSaaSQueue)
   await boss.createQueue(SyncGoogleWorkspace)
   await boss.createQueue(CheckDownloadsFolderQueue)
+  await boss.createQueue(SyncSlackQueue)
   await initWorkers()
 }
 
@@ -84,6 +87,12 @@ const initWorkers = async () => {
       jobData.authType === AuthType.OAuth
     ) {
       // await handleGoogleOAuthIngestion(boss, job)
+    } else if (
+      jobData.app === Apps.Slack &&
+      jobData.authType === AuthType.OAuth
+    ) {
+      Logger.info("Handling Slack Ingestion from Queue")
+      // await handleSlackIngestion(boss, job)
     } else {
       throw new Error("Unsupported job")
     }
@@ -99,6 +108,12 @@ const initWorkers = async () => {
   await boss.schedule(
     CheckDownloadsFolderQueue,
     EveryWeek,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
+  await boss.schedule(
+    SyncSlackQueue,
+    Every15Minutes,
     {},
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )
@@ -129,6 +144,17 @@ const initWorkers = async () => {
 
   await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
     await checkDownloadsFolder(boss, job)
+  })
+  await boss.work(SyncSlackQueue, async ([job]) => {
+    try {
+      await handleSlackChanges(boss, job)
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while syncing Slack ${errorMessage} ${(error as Error).stack}`,
+      )
+    }
   })
 }
 

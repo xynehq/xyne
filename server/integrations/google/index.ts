@@ -35,6 +35,7 @@ import {
   insertDocument,
   insertUser,
   UpdateEventCancelledInstances,
+  insertWithRetry,
 } from "@/search/vespa"
 import { SaaSQueue } from "@/queue"
 import type { WSContext } from "hono/ws"
@@ -72,6 +73,7 @@ import {
   eventSchema,
   type VespaEvent,
   type VespaFileWithDrivePermission,
+  fileSchema,
 } from "@/search/types"
 import {
   UserListingError,
@@ -563,7 +565,7 @@ const insertCalendarEvents = async (
       defaultStartTime: isDefaultStartTime,
     }
 
-    await insert(eventToBeIngested, eventSchema)
+    await insertWithRetry(eventToBeIngested, eventSchema)
     tracker.updateUserStats(userEmail, StatType.Events, 1)
   }
 
@@ -1336,7 +1338,7 @@ const insertFilesForUser = async (
       for (const doc of pdfs) {
         try{
                   processedFiles += 1
-        await insertDocument(doc)
+        await insertWithRetry(doc, fileSchema)
         totalIngestedFiles.inc({file_id: doc.docId??"", file_name:doc.title??"", mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"})
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
         }catch(error){
@@ -1387,9 +1389,8 @@ const insertFilesForUser = async (
       for (const doc of allFiles) {
         // determine the  file type here so we can insert in metrics data
        const fileType = (doc.mimeType===DriveMime.Docs)?"GOOGLE_DRIVE_DOC":(doc.mimeType===DriveMime.Sheets)?"GOOGLE_DRIVE_SHEET":(doc.mimeType===DriveMime.Slides)?"GOOGLE_DRIVE_SLIDE":"GOOGLE_DRIVE_FILE";
-       console.log(fileType)
        try{
-          await insertDocument(doc)
+          await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
           console.log(`Mime type: `,doc.mimeType)
           totalIngestedFiles.inc({file_id: doc.docId??"", file_name:doc.title??"", mime_type: doc.mimeType??"application/vnd.google-apps.file", status:"SUCCESS", email:userEmail, file_type:fileType })

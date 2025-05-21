@@ -45,3 +45,14 @@ export enum OAuthIntegrationStatus {
   OAuthConnected = "OAuthConnected",
   OAuthPaused = "OAuthPaused",
 }
+
+export interface Reference {
+  id: string;
+  title: string;
+  url?: string;
+  docId?: string;
+  app?: string;
+  entity?: string;
+  type: "citation" | "global";
+  photoLink?: string;
+}

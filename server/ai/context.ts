@@ -14,11 +14,13 @@ import {
   type VespaSearchResults,
   type VespaUser,
   type VespaChatMessageSearch,
+  type ScoredChunk,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
 import pc from "picocolors"
 import { getSortedScoredChunks } from "@/search/mappers"
+import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -30,24 +32,36 @@ const constructFileContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  const sortedChunks = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  )
+  let chunks: ScoredChunk[] = []
+  if (fields.matchfeatures) {
+    chunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    )
+  } else {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
 
   let content = ""
-  if (isSelectedFiles) {
-    content = sortedChunks
+  if (isSelectedFiles && fields?.matchfeatures) {
+    content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
-    content = sortedChunks
+    content = chunks
       .map((v) => v.chunk)
       .slice(0, maxSummaryChunks)
       .join("\n")
@@ -86,24 +100,36 @@ const constructMailContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  const sortedChunks = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  )
+  let chunks: ScoredChunk[] = []
+  if (fields.matchfeatures) {
+    chunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    )
+  } else {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
 
   let content = ""
-  if (isSelectedFiles) {
-    content = sortedChunks
+  if (isSelectedFiles && fields?.matchfeatures) {
+    content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
-    content = sortedChunks
+    content = chunks
       .map((v) => v.chunk)
       .slice(0, maxSummaryChunks)
       .join("\n")
@@ -153,24 +179,36 @@ const constructMailAttachmentContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
-  const sortedChunks = getSortedScoredChunks(
-    fields.matchfeatures,
-    fields.chunks_summary as string[],
-  )
+  let chunks: ScoredChunk[] = []
+  if (fields.matchfeatures) {
+    chunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    )
+  } else {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
 
   let content = ""
-  if (isSelectedFiles) {
-    content = sortedChunks
+  if (isSelectedFiles && fields?.matchfeatures) {
+    content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
       .map((v) => v.chunk)
       .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
   } else {
-    content = sortedChunks
+    content = chunks
       .map((v) => v.chunk)
       .slice(0, maxSummaryChunks)
       .join("\n")
@@ -198,6 +236,7 @@ Status: ${fields.status ? fields.status : "Status unknown"}
 Location: ${fields.location ? fields.location : "No location specified"}
 Created: ${getRelativeTime(fields.createdAt)}
 Updated: ${getRelativeTime(fields.updatedAt)}
+Today's Date: ${getDateForAI()}
 Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}
 End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
