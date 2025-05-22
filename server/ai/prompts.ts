@@ -504,10 +504,10 @@ You must respond in valid JSON format with the following structure:
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
-- If no clear answer is found in the retrieved context, set "answer" to "null" 
+- If no clear answer is found in the retrieved context, set "answer" to null 
 - For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
-If information is missing or unclear, or the query lacks context set "answer" as "null" 
+If information is missing or unclear, or the query lacks context set "answer" as null 
 `
 
 // Baseline Reasoing Prompt JSON
@@ -1141,12 +1141,12 @@ ${retrievedContext}
 2. Default Format - Only When No User Preference:
    - Apply default format only if no user preference is specified
    - Use a simple, scannable structure
-   - For each email, give the citation index value in square brackets after the subject line
+   - For each email, give the [Index] in square brackets after the subject line
 
 # Guidelines for Email Presentation
 1. Default Email Display Format:
    - Present each email in a concise, one-line-per-field format:
-      - Subject: [Subject line] [Citation Index Value]
+      - Subject: [Subject line] [Index]
 
       - From: [Sender Name] <sender@email.com>
 
@@ -1160,7 +1160,7 @@ ${retrievedContext}
 1. Main Email Listing:
    - Use this template for each email:
    
-   Subject: [SUBJECT LINE] [Citation Index Value]
+   Subject: [SUBJECT LINE] [Index]
 
    From: [Sender Name] <sender@email.com>
 
@@ -1175,10 +1175,10 @@ ${retrievedContext}
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 {
-  "answer": "null if no relevant data matches the query, otherwise a formatted response string with citations in [index] format"
+  "answer": <answer string or null>
 }
 
-If relevant email information matches the user's query, replace null with your formatted response string. If no relevant data is found or context is insufficient, return null.
+If no answer is found, set "answer" to null. If an answer is found, format it as a well-structured JSON string.
 `
 
 // Temporal Direction Prompt
@@ -1235,7 +1235,7 @@ ${retrievedContext}
 5. Final validation:
    - Recheck each item against temporal intent
    - Sort by appropriate chronology
-   - If no matching items: return {"answer": "null"}
+   - If no matching items: return {"answer": null}
 
 ## User Preference Override
 1. HIGHEST PRIORITY - User-Specified Format:
@@ -1252,7 +1252,7 @@ ${retrievedContext}
 1. Default Display Format:
    - Present each item with a blank line between each field:
       - For Emails:
-         - Subject: [Subject line] [Citation Index Value]
+         - Subject: [Subject line] [Index]
 
          - From: [Sender Name] <sender@email.com>
 
@@ -1261,7 +1261,7 @@ ${retrievedContext}
          - Brief summary of email content in simple text
 
       - For Events:
-         - Title: [Event name] [Citation Index Value]
+         - Title: [Event name] [Index]
 
          - Organizer: [Organizer Name] <organizer@email.com>
 
@@ -1270,7 +1270,7 @@ ${retrievedContext}
          - Brief summary of event in simple text
 
       - For Files:
-         - Title: [File title] [Citation Index Value]
+         - Title: [File title] [Index]
 
          - Owner: [Owner Name] <owner@email.com>
 
@@ -1279,7 +1279,7 @@ ${retrievedContext}
          - Brief summary of file content in simple text
 
       - For Users:
-         - Name: [User Name] [Citation Index Value]
+         - Name: [User Name] [Index]
 
          - Email: [User email]
 
@@ -1294,7 +1294,7 @@ ${retrievedContext}
    - Use the appropriate template for each item type:
    
    [For Emails]
-   Subject: [SUBJECT LINE] [Citation Index Value]
+   Subject: [SUBJECT LINE] [Index]
    
    From: [Sender Name] <sender@email.com>
    
@@ -1304,7 +1304,7 @@ ${retrievedContext}
    ---
    
    [For Events]
-   Title: [EVENT NAME] [Citation Index Value]
+   Title: [EVENT NAME] [Index]
    
    Organizer: [Organizer Name] <organizer@email.com>
    
@@ -1314,7 +1314,7 @@ ${retrievedContext}
    ---
    
    [For Files]
-   Title: [FILE TITLE] [Citation Index Value]
+   Title: [FILE TITLE] [Index]
    
    Owner: [Owner Name] <owner@email.com>
    
@@ -1324,7 +1324,7 @@ ${retrievedContext}
    ---
    
    [For Users]
-   Name: [USER NAME] [Citation Index Value]
+   Name: [USER NAME] [Index]
    
    Email: [User email]
    
@@ -1341,7 +1341,7 @@ ${retrievedContext}
 # FINAL OUTPUT REQUIREMENTS
 1. ONLY return the JSON object with a single "answer" key
 2. NO narrative text, explanations, or anything outside the JSON
-3. If no items match after filtering, return exactly {"answer": "null"}
+3. If no items match after filtering, return exactly {"answer": null}
 4. Format timestamps in user's timezone
 5. Never hallucinate data not in retrievedContext
 6. For completed meetings query, return only past events that have ended
@@ -1349,6 +1349,6 @@ ${retrievedContext}
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 {
-  "answer": "Formatted response string with citations or null if no relevant data is found"
+  "answer": <answer string or null>
 }
 `
