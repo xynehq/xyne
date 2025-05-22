@@ -23,8 +23,11 @@ jobs:
       - name: Install Dependencies (Server)
         working-directory: ./server
         run: bun install
+      - name: Install Dependencies (Frontend)
+        working-directory: ./frontend
+        run: bun install
       - name: Run tests
-        run: bun test
+        run: bun test 
         env:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           SERVICE_ACCOUNT_ENCRYPTION_KEY: ${{ secrets.SERVICE_ACCOUNT_ENCRYPTION_KEY }}
