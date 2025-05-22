@@ -1871,7 +1871,9 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", JSON.stringify(message))
   passedSpan?.setAttribute("alpha", alpha)
+  passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
   passedSpan?.setAttribute("fileIds_count", fileIds?.length)
+  passedSpan?.setAttribute("userRequestsReasoning", userRequestsReasoning || false)
 
   return yield* generateAnswerFromGivenContext(
     message,
@@ -2896,13 +2898,8 @@ export const MessageRetryApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-            const conversationSpan = streamSpan.startSpan("conversation_search")
-            conversationSpan.setAttribute("answer", answer)
-            conversationSpan.end()
 
-            const ragSpan = streamSpan.startSpan("rag_processing")
-
-            const understandSpan = ragSpan.startSpan("understand_message")
+            const understandSpan = streamSpan.startSpan("understand_message")
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -2979,7 +2976,7 @@ export const MessageRetryApi = async (c: Context) => {
               JSON.stringify(citationValues),
             )
             understandSpan.end()
-            const answerSpan = ragSpan.startSpan("process_final_answer")
+            const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
               processMessage(answer, citationMap),
@@ -2987,7 +2984,6 @@ export const MessageRetryApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
-            ragSpan.end()
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
