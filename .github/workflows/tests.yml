@@ -24,6 +24,7 @@ jobs:
         working-directory: ./server
         run: bun install
       - name: Run tests
+        working-directory: ./server # Added for server tests
         run: bun test tests
         env:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
@@ -32,6 +33,7 @@ jobs:
         working-directory: ./frontend
         run: bun install
       - name: Run tests
+        working-directory: ./frontend # Added for frontend tests
         run: bun run test 
         env:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
