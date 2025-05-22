@@ -1145,7 +1145,7 @@ ${retrievedContext}
 # Guidelines for Email Presentation
 1. Default Email Display Format:
    - Present each email in a concise, one-line-per-field format:
-      - Subject: [Subject line] [Citation]
+      - Subject: [Subject line] [Citation Index Value]
 
       - From: [Sender Name] <sender@email.com>
 
@@ -1159,7 +1159,7 @@ ${retrievedContext}
 1. Main Email Listing:
    - Use this template for each email:
    
-   Subject: [SUBJECT LINE] [Citation]
+   Subject: [SUBJECT LINE] [Citation Index Value]
 
    From: [Sender Name] <sender@email.com>
 
@@ -1251,7 +1251,7 @@ ${retrievedContext}
 1. Default Display Format:
    - Present each item with a blank line between each field:
       - For Emails:
-         - Subject: [Subject line] [Citation]
+         - Subject: [Subject line] [Citation Index Value]
 
          - From: [Sender Name] <sender@email.com>
 
@@ -1260,7 +1260,7 @@ ${retrievedContext}
          - Brief summary of email content in simple text
 
       - For Events:
-         - Title: [Event name] [Citation]
+         - Title: [Event name] [Citation Index Value]
 
          - Organizer: [Organizer Name] <organizer@email.com>
 
@@ -1269,7 +1269,7 @@ ${retrievedContext}
          - Brief summary of event in simple text
 
       - For Files:
-         - Title: [File title] [Citation]
+         - Title: [File title] [Citation Index Value]
 
          - Owner: [Owner Name] <owner@email.com>
 
@@ -1278,14 +1278,14 @@ ${retrievedContext}
          - Brief summary of file content in simple text
 
       - For Users:
-         - Name: [User Name] [Citation]
+         - Name: [User Name] [Citation Index Value]
 
          - Email: [User email]
 
          - Date: [Addition date, e.g., May 2, 2025]
 
          - Brief summary of user profile in simple text
-
+         
    - Separate items with a line breaker (e.g., ---)
 
 # Response Structure
@@ -1293,7 +1293,7 @@ ${retrievedContext}
    - Use the appropriate template for each item type:
    
    [For Emails]
-   Subject: [SUBJECT LINE] [Citation]
+   Subject: [SUBJECT LINE] [Citation Index Value]
    
    From: [Sender Name] <sender@email.com>
    
@@ -1303,7 +1303,7 @@ ${retrievedContext}
    ---
    
    [For Events]
-   Title: [EVENT NAME] [Citation]
+   Title: [EVENT NAME] [Citation Index Value]
    
    Organizer: [Organizer Name] <organizer@email.com>
    
@@ -1313,7 +1313,7 @@ ${retrievedContext}
    ---
    
    [For Files]
-   Title: [FILE TITLE] [Citation]
+   Title: [FILE TITLE] [Citation Index Value]
    
    Owner: [Owner Name] <owner@email.com>
    
@@ -1323,7 +1323,7 @@ ${retrievedContext}
    ---
    
    [For Users]
-   Name: [USER NAME] [Citation]
+   Name: [USER NAME] [Citation Index Value]
    
    Email: [User email]
    
