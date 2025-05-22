@@ -1141,6 +1141,7 @@ ${retrievedContext}
 2. Default Format - Only When No User Preference:
    - Apply default format only if no user preference is specified
    - Use a simple, scannable structure
+   - For each email, give the citation index value in square brackets after the subject line
 
 # Guidelines for Email Presentation
 1. Default Email Display Format:
@@ -1174,7 +1175,7 @@ ${retrievedContext}
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 {
-  "answer": null
+  "answer": "null if no relevant data matches the query, otherwise a formatted response string with citations in [index] format"
 }
 
 If relevant email information matches the user's query, replace null with your formatted response string. If no relevant data is found or context is insufficient, return null.
