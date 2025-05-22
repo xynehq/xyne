@@ -48,6 +48,8 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill" 
 import { Reference } from "@/types"
 
+export const THINKING_PLACEHOLDER = "Thinking";
+
 type CurrentResp = {
   resp: string
   chatId?: string
@@ -1499,7 +1501,7 @@ const renderMarkdownLink = ({ node, ...linkProps }: { node?: any; [key: string]:
   <a {...linkProps} target="_blank" rel="noopener noreferrer" />
 );
 
-const ChatMessage = ({
+export const ChatMessage = ({
   message,
   thinking,
   isUser,
@@ -1587,13 +1589,9 @@ const ChatMessage = ({
                   />
                 </div>
               )}
-              {(!responseDone && message === "") ? (
+              {((message === "") && (!responseDone || isRetrying)) ? (
                 <div className="flex-grow">
-                  {`Thinking${dots}`}
-                </div>
-              ) : (responseDone && isRetrying && message === "") ? (
-                <div className="flex-grow">
-                  {`Thinking${dots}`}
+                  {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
               ) : message !== "" ? (
                 <MarkdownPreview

@@ -1,4 +1,6 @@
-import { defineConfig, loadEnv } from "vite"
+/// <reference types="vitest" />
+import { defineConfig } from "vitest/config"
+import { loadEnv } from "vite"
 import path from "path"
 import react from "@vitejs/plugin-react"
 import svgr from "vite-plugin-svgr"
@@ -14,14 +16,21 @@ export default defineConfig(({ mode }) => {
       ? "default"
       : mode
   const env = loadEnv(actualMode, process.cwd(), "VITE")
-  // Merge loaded environment variables into process.env
-  process.env = {
-    NODE_ENV: process.env.NODE_ENV,
-    TZ: process.env.TZ,
-    ...env,
-  }
+  // process.env variables are available directly via the `env` object returned by loadEnv.
+  // Avoid reassigning process.env globally here.
   return {
-    plugins: [TanStackRouterVite(), react(), svgr()],
+    plugins: [
+      TanStackRouterVite({
+      routeFileIgnorePattern: '\\.test\\.(ts|tsx|js|jsx)$',
+    }),
+    react({
+      jsxRuntime: 'automatic'
+    }),
+    svgr()
+  ],
+    optimizeDeps: {
+      exclude: ['zod'],
+    },
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "./src"),
@@ -31,19 +40,28 @@ export default defineConfig(({ mode }) => {
           "../server/search/types",
         ),
         shared: path.resolve(import.meta.dirname, "../server/shared"),
+        'react': path.resolve(import.meta.dirname, './node_modules/react'),
       },
     },
     server: {
       proxy: {
         "/api": {
-          target: process.env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
           changeOrigin: true,
         },
         "/ws": {
-          target: process.env.VITE_WS_BASE_URL || "ws://localhost:3000",
+          target: env.VITE_WS_BASE_URL || "ws://localhost:3000",
           ws: true,
           rewriteWsOrigin: true,
         },
+      },
+    },
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      setupFiles: './src/Tests.ts',
+      deps: {
+        inline: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
       },
     },
   }
