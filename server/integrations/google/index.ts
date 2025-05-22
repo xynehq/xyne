@@ -2842,7 +2842,6 @@ export const ServiceAccountIngestMoreUsers = async (
       )
     }
 
-    // Log success stats
     try {
       const statsData = {
         ingestion_run_id: ingestionRunId,
