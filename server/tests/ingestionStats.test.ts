@@ -61,41 +61,66 @@ vi.mock("googleapis", () => ({
     auth: {
       OAuth2: vi.fn().mockImplementation(() => ({
         setCredentials: vi.fn(),
-        getRequestHeaders: vi.fn().mockResolvedValue({ Authorization: "Bearer test-token" }),
+        getRequestHeaders: vi
+          .fn()
+          .mockResolvedValue({ Authorization: "Bearer test-token" }),
       })),
     },
     drive: vi.fn(() => ({
       changes: {
-        getStartPageToken: vi.fn().mockResolvedValue({ data: { startPageToken: "test-token" } }),
+        getStartPageToken: vi
+          .fn()
+          .mockResolvedValue({ data: { startPageToken: "test-token" } }),
       },
       files: {
-        list: vi.fn().mockResolvedValue({ data: { files: [], nextPageToken: null } }), // Ensure it returns files array
+        list: vi
+          .fn()
+          .mockResolvedValue({ data: { files: [], nextPageToken: null } }), // Ensure it returns files array
       },
     })),
     people: vi.fn(() => ({
       people: {
         connections: {
-          list: vi.fn().mockResolvedValue({ data: { connections: [], nextPageToken: null, nextSyncToken: "contact-sync-token" } }),
+          list: vi.fn().mockResolvedValue({
+            data: {
+              connections: [],
+              nextPageToken: null,
+              nextSyncToken: "contact-sync-token",
+            },
+          }),
         },
       },
       otherContacts: {
-        list: vi.fn().mockResolvedValue({ data: { otherContacts: [], nextPageToken: null, nextSyncToken: "other-contact-sync-token" } }),
+        list: vi.fn().mockResolvedValue({
+          data: {
+            otherContacts: [],
+            nextPageToken: null,
+            nextSyncToken: "other-contact-sync-token",
+          },
+        }),
       },
     })),
     gmail: vi.fn(() => ({
       users: {
         messages: {
-          list: vi.fn().mockResolvedValue({ data: { messages: [], resultSizeEstimate: 0 } }),
+          list: vi.fn().mockResolvedValue({
+            data: { messages: [], resultSizeEstimate: 0 },
+          }),
         },
-        getProfile: vi.fn().mockResolvedValue({ data: { emailAddress: "test@example.com" } }),
+        getProfile: vi
+          .fn()
+          .mockResolvedValue({ data: { emailAddress: "test@example.com" } }),
       },
     })),
     calendar: vi.fn(() => ({
       events: {
-        list: vi.fn().mockResolvedValue({ data: { items: [], nextSyncToken: "calendar-sync-token" } }),
+        list: vi.fn().mockResolvedValue({
+          data: { items: [], nextSyncToken: "calendar-sync-token" },
+        }),
       },
     })),
-    admin: vi.fn(() => ({ // Mock for service account functions
+    admin: vi.fn(() => ({
+      // Mock for service account functions
       users: {
         list: vi.fn().mockResolvedValue({ data: { users: [] } }),
         get: vi.fn(),
@@ -135,7 +160,6 @@ vi.mock("node:worker_threads", () => ({
     terminate: vi.fn(),
   })),
 }))
-
 
 describe("Ingestion Tracker Stats Schemas", () => {
   const baseTime = new Date()
@@ -251,39 +275,39 @@ describe("Ingestion Tracker Stats Schemas", () => {
       }
     })
 
-     it("should allow error_message to be null for failure status (though unusual)", () => {
-        const data = {
-            ...validBaseData,
-            status: OperationStatus.Failure,
-            error_message: null,
-        };
-        const result = insertIngestionTrackerStatsSchema.safeParse(data);
-        expect(result.success).toBe(true);
-         if (result.success) {
-            expect(result.data.error_message).toBeNull();
-        }
-    });
+    it("should allow error_message to be null for failure status (though unusual)", () => {
+      const data = {
+        ...validBaseData,
+        status: OperationStatus.Failure,
+        error_message: null,
+      }
+      const result = insertIngestionTrackerStatsSchema.safeParse(data)
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.error_message).toBeNull()
+      }
+    })
 
     it("should fail if error_message is a non-null string for success status", () => {
-        // This tests the schema definition, not a refinement. Schema allows string | null.
-        // For a strict rule "error_message MUST be null if status is Success", a refine would be needed.
-        // The current schema does not enforce this, so this test as-is might pass if not refined.
-        // However, the task implies `error_message: null` for success in the previous subtask.
-        // Let's assume the schema is as-is and this test checks that a string is acceptable by Zod type.
-        // If a refinement was added to the Zod schema to enforce error_message:null on success, this test would fail.
-        const data = {
-            ...validBaseData,
-            status: OperationStatus.Success,
-            error_message: "An unexpected error message",
-        };
-        const result = insertIngestionTrackerStatsSchema.safeParse(data);
-        // Default schema behavior: text() / z.string().nullable() will accept string here.
-        // If the intent was for this to fail, the Zod schema would need a .refine()
-        expect(result.success).toBe(true);
-         if (result.success) {
-            expect(result.data.error_message).toBe("An unexpected error message");
-        }
-    });
+      // This tests the schema definition, not a refinement. Schema allows string | null.
+      // For a strict rule "error_message MUST be null if status is Success", a refine would be needed.
+      // The current schema does not enforce this, so this test as-is might pass if not refined.
+      // However, the task implies `error_message: null` for success in the previous subtask.
+      // Let's assume the schema is as-is and this test checks that a string is acceptable by Zod type.
+      // If a refinement was added to the Zod schema to enforce error_message:null on success, this test would fail.
+      const data = {
+        ...validBaseData,
+        status: OperationStatus.Success,
+        error_message: "An unexpected error message",
+      }
+      const result = insertIngestionTrackerStatsSchema.safeParse(data)
+      // Default schema behavior: text() / z.string().nullable() will accept string here.
+      // If the intent was for this to fail, the Zod schema would need a .refine()
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.error_message).toBe("An unexpected error message")
+      }
+    })
   })
 
   describe("selectIngestionTrackerStatsSchema", () => {
@@ -323,23 +347,26 @@ describe("Ingestion Tracker Stats Schemas", () => {
 // Phase 2: Testing Data Preparation and Saving Logic (Mocking DB)
 
 describe("Google Integration Stats Saving", () => {
-  let mockDbInsertValues:any;
+  let mockDbInsertValues: any
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset mocks before each test
     vi.clearAllMocks()
     // Setup the mock for db.insert().values() specifically
-    mockDbInsertValues = vi.fn().mockResolvedValue({});
-    db.insert = vi.fn(() => ({ values: mockDbInsertValues })) as any;
+    mockDbInsertValues = vi.fn().mockResolvedValue({})
+    db.insert = vi.fn(() => ({ values: mockDbInsertValues })) as any
 
     // Mock transaction to also use this mockDbInsertValues for consistency if needed
-    mockTrx.insert = vi.fn(() => ({ values: mockDbInsertValues })) as any;
-    db.transaction = vi.fn(async (callback) => callback(mockTrx)) as any;
-
+    mockTrx.insert = vi.fn(() => ({ values: mockDbInsertValues })) as any
+    db.transaction = vi.fn(async (callback) => callback(mockTrx)) as any
 
     // Setup default mock implementations for dependencies
-    const { getOAuthConnectorWithCredentials, getConnector } = await import("../db/connector")
-    const { getOAuthProviderByConnectorId } = await import("../db/oauthProvider")
+    const { getOAuthConnectorWithCredentials, getConnector } = await import(
+      "../db/connector"
+    )
+    const { getOAuthProviderByConnectorId } = await import(
+      "../db/oauthProvider"
+    )
 
     vi.mocked(getOAuthConnectorWithCredentials).mockResolvedValue({
       id: 1,
@@ -354,10 +381,17 @@ describe("Google Integration Stats Saving", () => {
       status: "connected",
       createdAt: new Date(),
       updatedAt: new Date(),
-      oauthCredentials: { data: { access_token: "at", refresh_token: "rt", accessTokenExpiresAt: new Date(Date.now() + 3600000) } },
+      oauthCredentials: {
+        data: {
+          access_token: "at",
+          refresh_token: "rt",
+          accessTokenExpiresAt: new Date(Date.now() + 3600000),
+        },
+      },
     } as any)
 
-    vi.mocked(getConnector).mockResolvedValue({ // For service account
+    vi.mocked(getConnector).mockResolvedValue({
+      // For service account
       id: 2,
       externalId: "google-sa-conn",
       workspaceId: 1,
@@ -367,38 +401,59 @@ describe("Google Integration Stats Saving", () => {
       app: Apps.GoogleWorkspace,
       authType: AuthType.ServiceAccount,
       config: {},
-      credentials: JSON.stringify({ client_email: "sa@example.com", private_key: "pk" }),
+      credentials: JSON.stringify({
+        client_email: "sa@example.com",
+        private_key: "pk",
+      }),
       subject: "admin@example.com",
       status: "connected",
       createdAt: new Date(),
       updatedAt: new Date(),
     } as any)
-    
-    vi.mocked(getOAuthProviderByConnectorId).mockResolvedValue([{
-      clientId: "test-client-id",
-      clientSecret: "test-client-secret",
-    } as any])
+
+    vi.mocked(getOAuthProviderByConnectorId).mockResolvedValue([
+      {
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+      } as any,
+    ])
 
     const { google } = await import("googleapis")
     vi.mocked(google.drive).mockReturnValue({
-      changes: { getStartPageToken: vi.fn().mockResolvedValue({ data: { startPageToken: "drive-sync-token" } }) },
-      files: { list: vi.fn().mockImplementation(() => ({ // Ensure it is a function
-        [Symbol.asyncIterator]: async function*() {
-          yield { files: [] }; // Yield some mock file page if needed, or just empty
-          return;
-        }
-      }))},
+      changes: {
+        getStartPageToken: vi
+          .fn()
+          .mockResolvedValue({ data: { startPageToken: "drive-sync-token" } }),
+      },
+      files: {
+        list: vi.fn().mockImplementation(() => ({
+          // Ensure it is a function
+          [Symbol.asyncIterator]: async function* () {
+            yield { files: [] } // Yield some mock file page if needed, or just empty
+            return
+          },
+        })),
+      },
     } as any)
-     vi.mocked(google.gmail).mockReturnValue({
-        users: {
-            messages: { list: vi.fn().mockResolvedValue({ data: { messages: [], resultSizeEstimate: 0 } }) },
-            getProfile: vi.fn().mockResolvedValue({ data: { emailAddress: 'test@example.com' } }),
+    vi.mocked(google.gmail).mockReturnValue({
+      users: {
+        messages: {
+          list: vi.fn().mockResolvedValue({
+            data: { messages: [], resultSizeEstimate: 0 },
+          }),
         },
-    } as any);
+        getProfile: vi
+          .fn()
+          .mockResolvedValue({ data: { emailAddress: "test@example.com" } }),
+      },
+    } as any)
     vi.mocked(google.calendar).mockReturnValue({
-        events: { list: vi.fn().mockResolvedValue({ data: { items: [], nextSyncToken: "calendar-sync-token" } }) },
-    } as any);
-
+      events: {
+        list: vi.fn().mockResolvedValue({
+          data: { items: [], nextSyncToken: "calendar-sync-token" },
+        }),
+      },
+    } as any)
   })
 
   describe("handleGoogleOAuthIngestion", () => {
@@ -413,10 +468,14 @@ describe("Google Integration Stats Saving", () => {
     it("should save success stats", async () => {
       // Mocks for successful path
       const { listAllContacts } = await import("googleapis") // This is wrong, it's a local function
-      vi.mocked(listAllContacts).mockResolvedValue({ // Assuming listAllContacts is a local, exported function
-          contacts: [], otherContacts: [], contactsToken: "ct", otherContactsToken: "oct"
-      } as any); // Mocking the local listAllContacts if it's separate
-      
+      vi.mocked(listAllContacts).mockResolvedValue({
+        // Assuming listAllContacts is a local, exported function
+        contacts: [],
+        otherContacts: [],
+        contactsToken: "ct",
+        otherContactsToken: "oct",
+      } as any) // Mocking the local listAllContacts if it's separate
+
       // If listAllContacts is part of the google.people mock, adjust there.
       // For now, assuming it's a local high-level function that got mocked via a general googleapis mock.
 
@@ -437,7 +496,9 @@ describe("Google Integration Stats Saving", () => {
         throw new Error("Simulated People API error")
       })
 
-      await expect(handleGoogleOAuthIngestion(mockJobData as any)).rejects.toThrow("Simulated People API error")
+      await expect(
+        handleGoogleOAuthIngestion(mockJobData as any),
+      ).rejects.toThrow("Simulated People API error")
 
       expect(mockDbInsertValues).toHaveBeenCalledTimes(1)
       const insertCallArg = mockDbInsertValues.mock.calls[0][0]
@@ -459,46 +520,51 @@ describe("Google Integration Stats Saving", () => {
       externalId: "connector-external-id",
       authType: AuthType.ServiceAccount,
       email: "", // For service account, email might be per-user or global admin
-    };
+    }
 
     it("should save success stats for service account ingestion", async () => {
       // Mock dependencies for success
-      const { getWorkspaceById } = await import("../db/workspace");
-      vi.mocked(getWorkspaceById).mockResolvedValue({ domain: "example.com" } as any);
+      const { getWorkspaceById } = await import("../db/workspace")
+      vi.mocked(getWorkspaceById).mockResolvedValue({
+        domain: "example.com",
+      } as any)
       // Ensure google.admin().users.list returns some users or empty array
-      const { google } = await import("googleapis");
+      const { google } = await import("googleapis")
       vi.mocked(google.admin).mockReturnValue({
-        users: { list: vi.fn().mockResolvedValue({ data: { users: [] } }) }
-      } as any);
+        users: { list: vi.fn().mockResolvedValue({ data: { users: [] } }) },
+      } as any)
 
+      await handleGoogleServiceAccountIngestion(mockServiceAccountJobData)
 
-      await handleGoogleServiceAccountIngestion(mockServiceAccountJobData);
-
-      expect(mockDbInsertValues).toHaveBeenCalledTimes(1);
-      const insertCallArg = mockDbInsertValues.mock.calls[0][0];
-      expect(insertCallArg.status).toBe(OperationStatus.Success);
-      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace);
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount);
-      expect(insertCallArg.error_message).toBeNull();
-    });
+      expect(mockDbInsertValues).toHaveBeenCalledTimes(1)
+      const insertCallArg = mockDbInsertValues.mock.calls[0][0]
+      expect(insertCallArg.status).toBe(OperationStatus.Success)
+      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace)
+      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
+      expect(insertCallArg.error_message).toBeNull()
+    })
 
     it("should save failure stats for service account ingestion", async () => {
       // Simulate failure
-      const { getWorkspaceById } = await import("../db/workspace");
+      const { getWorkspaceById } = await import("../db/workspace")
       vi.mocked(getWorkspaceById).mockImplementation(() => {
-        throw new Error("Simulated DB error getting workspace");
-      });
+        throw new Error("Simulated DB error getting workspace")
+      })
 
-      await expect(handleGoogleServiceAccountIngestion(mockServiceAccountJobData)).rejects.toThrow("Simulated DB error getting workspace");
-      
-      expect(mockDbInsertValues).toHaveBeenCalledTimes(1);
-      const insertCallArg = mockDbInsertValues.mock.calls[0][0];
-      expect(insertCallArg.status).toBe(OperationStatus.Failure);
-      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace);
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount);
-      expect(insertCallArg.error_message).toBe("Simulated DB error getting workspace");
-    });
-  });
+      await expect(
+        handleGoogleServiceAccountIngestion(mockServiceAccountJobData),
+      ).rejects.toThrow("Simulated DB error getting workspace")
+
+      expect(mockDbInsertValues).toHaveBeenCalledTimes(1)
+      const insertCallArg = mockDbInsertValues.mock.calls[0][0]
+      expect(insertCallArg.status).toBe(OperationStatus.Failure)
+      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace)
+      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
+      expect(insertCallArg.error_message).toBe(
+        "Simulated DB error getting workspace",
+      )
+    })
+  })
 
   // Placeholder for ServiceAccountIngestMoreUsers tests
   describe("ServiceAccountIngestMoreUsers", () => {
@@ -510,47 +576,75 @@ describe("Google Integration Stats Saving", () => {
       insertDriveAndContacts: true,
       insertGmail: true,
       insertCalendar: true,
-    };
-    const mockUserId = 1;
+    }
+    const mockUserId = 1
 
     it("should save success stats for ingest more users", async () => {
-        const { getConnectorByExternalId } = await import ("../db/connector");
-        vi.mocked(getConnectorByExternalId).mockResolvedValue({
-             id: 2, externalId: "google-sa-conn", workspaceId: 1, userId: 1,
-             name: "Test SA", app: Apps.GoogleWorkspace, authType: AuthType.ServiceAccount,
-             credentials: JSON.stringify({ client_email: "sa@example.com", private_key: "pk" }),
-             subject: "admin@example.com",
-        } as any);
-        const { google } = await import("googleapis");
-        vi.mocked(google.admin).mockReturnValue({
-             users: { get: vi.fn().mockResolvedValue({data: {primaryEmail: "user1@example.com", emails:[{address: "user1@example.com"}]}}), list: vi.fn().mockResolvedValue({data: {users: [{primaryEmail: "user1@example.com", emails:[{address: "user1@example.com"}]}]}})}
-        } as any);
+      const { getConnectorByExternalId } = await import("../db/connector")
+      vi.mocked(getConnectorByExternalId).mockResolvedValue({
+        id: 2,
+        externalId: "google-sa-conn",
+        workspaceId: 1,
+        userId: 1,
+        name: "Test SA",
+        app: Apps.GoogleWorkspace,
+        authType: AuthType.ServiceAccount,
+        credentials: JSON.stringify({
+          client_email: "sa@example.com",
+          private_key: "pk",
+        }),
+        subject: "admin@example.com",
+      } as any)
+      const { google } = await import("googleapis")
+      vi.mocked(google.admin).mockReturnValue({
+        users: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              primaryEmail: "user1@example.com",
+              emails: [{ address: "user1@example.com" }],
+            },
+          }),
+          list: vi.fn().mockResolvedValue({
+            data: {
+              users: [
+                {
+                  primaryEmail: "user1@example.com",
+                  emails: [{ address: "user1@example.com" }],
+                },
+              ],
+            },
+          }),
+        },
+      } as any)
 
+      await ServiceAccountIngestMoreUsers(mockIngestMoreData, mockUserId)
 
-      await ServiceAccountIngestMoreUsers(mockIngestMoreData, mockUserId);
-
-      expect(mockDbInsertValues).toHaveBeenCalledTimes(1);
-      const insertCallArg = mockDbInsertValues.mock.calls[0][0];
-      expect(insertCallArg.status).toBe(OperationStatus.Success);
-      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace);
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount);
-      expect(insertCallArg.error_message).toBeNull();
-    });
+      expect(mockDbInsertValues).toHaveBeenCalledTimes(1)
+      const insertCallArg = mockDbInsertValues.mock.calls[0][0]
+      expect(insertCallArg.status).toBe(OperationStatus.Success)
+      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace)
+      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
+      expect(insertCallArg.error_message).toBeNull()
+    })
 
     it("should save failure stats for ingest more users", async () => {
-      const { getConnectorByExternalId } = await import ("../db/connector");
+      const { getConnectorByExternalId } = await import("../db/connector")
       vi.mocked(getConnectorByExternalId).mockImplementation(() => {
-        throw new Error("Simulated error getting connector for ingest more");
-      });
-      
-      await expect(ServiceAccountIngestMoreUsers(mockIngestMoreData, mockUserId)).rejects.toThrow("Simulated error getting connector for ingest more");
+        throw new Error("Simulated error getting connector for ingest more")
+      })
 
-      expect(mockDbInsertValues).toHaveBeenCalledTimes(1);
-      const insertCallArg = mockDbInsertValues.mock.calls[0][0];
-      expect(insertCallArg.status).toBe(OperationStatus.Failure);
-      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace); // As tracker is initialized with this
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount);
-      expect(insertCallArg.error_message).toBe("Simulated error getting connector for ingest more");
-    });
-  });
+      await expect(
+        ServiceAccountIngestMoreUsers(mockIngestMoreData, mockUserId),
+      ).rejects.toThrow("Simulated error getting connector for ingest more")
+
+      expect(mockDbInsertValues).toHaveBeenCalledTimes(1)
+      const insertCallArg = mockDbInsertValues.mock.calls[0][0]
+      expect(insertCallArg.status).toBe(OperationStatus.Failure)
+      expect(insertCallArg.app).toBe(Apps.GoogleWorkspace) // As tracker is initialized with this
+      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
+      expect(insertCallArg.error_message).toBe(
+        "Simulated error getting connector for ingest more",
+      )
+    })
+  })
 })

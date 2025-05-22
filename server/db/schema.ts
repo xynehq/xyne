@@ -644,8 +644,9 @@ export type InsertIngestionTrackerStats = z.infer<
   typeof insertIngestionTrackerStatsSchema
 >
 
-export const selectIngestionTrackerStatsSchema =
-  createSelectSchema(ingestionTrackerStats)
+export const selectIngestionTrackerStatsSchema = createSelectSchema(
+  ingestionTrackerStats,
+)
 export type SelectIngestionTrackerStats = z.infer<
   typeof selectIngestionTrackerStatsSchema
 >
