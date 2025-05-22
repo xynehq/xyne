@@ -1457,7 +1457,9 @@ async function* processResultsForMetadata(
     span?.setAttribute("Google Drive chunk_size", chunksCount)
   }
 
-  span?.setAttribute("Document chunk size", "full_context")
+  // ToDo: we need to pass the full context here after calculating tokens to pass
+  chunksCount = 20
+  span?.setAttribute("Document chunk size", `full_context maxed to ${chunksCount}`)
   const context = buildContext(items, chunksCount)
   const streamOptions = {
     stream: true,
@@ -1635,7 +1637,7 @@ async function* generateMetadataQueryAnswer(
       `Retrieved documents length for ${QueryType.RetrieveUnspecificMetadata}`,
       items.length,
     )
-
+    Logger.info(`Retrieved documents length for ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`)
     // Early return if no documents found
     if (!items.length) {
       Logger.info("No documents found for unspecific metadata retrieval")
@@ -1700,6 +1702,7 @@ async function* generateMetadataQueryAnswer(
       )
       let chunksCount = undefined
 
+      Logger.info(`Retrieved documents length for ${QueryType.RetrieveMetadata} = ${items.length}`)
       if (!items.length) {
         Logger.info(
           `No documents found on iteration ${iteration}${hasValidTimeRange ? " within time range." : "falling back to iterative RAG"}`,
@@ -2628,11 +2631,11 @@ export const MessageApi = async (c: Context) => {
               })
               await stream.writeSSE({
                 event: ChatSSEvents.Error,
-                data: "Can you please make your query more specific?",
+                data: "Oops, something went wrong. Please try rephrasing your question or ask something else.",
               })
               await addErrMessageToMessage(
                 lastMessage,
-                "Can you please make your query more specific?",
+                "Oops, something went wrong. Please try rephrasing your question or ask something else.",
               )
 
               const traceJson = tracer.serializeToJson()
