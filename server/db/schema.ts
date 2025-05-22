@@ -14,7 +14,13 @@ import {
 } from "drizzle-orm/pg-core"
 import { encryptedText } from "./customType"
 import { Encryption } from "@/utils/encryption"
-import { ConnectorType, MessageRole, SyncConfigSchema, SyncCron } from "@/types"
+import {
+  ConnectorType,
+  MessageRole,
+  OperationStatus, // Added OperationStatus
+  SyncConfigSchema,
+  SyncCron,
+} from "@/types"
 import {
   Apps,
   AuthType,
@@ -234,6 +240,12 @@ export const syncJobEnum = pgEnum(
 export const syncJobStatusEnum = pgEnum(
   "sync_status",
   Object.values(SyncJobStatus) as [string, ...string[]],
+)
+
+// Added operationStatusEnum
+export const operationStatusEnum = pgEnum(
+  "operation_status",
+  Object.values(OperationStatus) as [string, ...string[]],
 )
 
 export const syncJobs = pgTable("sync_jobs", {
@@ -594,3 +606,47 @@ export const insertPersonalizationSchema = createInsertSchema(
 
 export type SelectPersonalization = z.infer<typeof selectPersonalizationSchema>
 export type InsertPersonalization = z.infer<typeof insertPersonalizationSchema>
+
+// Ingestion Tracker Stats Table
+export const ingestionTrackerStats = pgTable(
+  "ingestion_tracker_stats",
+  {
+    id: serial("id").notNull().primaryKey(),
+    ingestionRunId: text("ingestion_run_id").notNull().unique(),
+    app: appTypeEnum(AppEnumField).notNull(),
+    authType: authTypeEnum("auth_type").notNull(),
+    trackerData: jsonb("tracker_data").notNull(),
+    startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+    endTime: timestamp("end_time", { withTimezone: true }).notNull(),
+    status: operationStatusEnum("status").notNull(), // Use operationStatusEnum
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+  },
+  (table) => ({
+    ingestionRunIdIdx: uniqueIndex("ingestion_run_id_idx").on(
+      table.ingestionRunId,
+    ),
+    appIdx: index("ingestion_tracker_app_idx").on(table.app),
+    authTypeIdx: index("ingestion_tracker_auth_type_idx").on(table.authType),
+    statusIdx: index("ingestion_tracker_status_idx").on(table.status),
+  }),
+)
+
+export const insertIngestionTrackerStatsSchema = createInsertSchema(
+  ingestionTrackerStats,
+).omit({
+  id: true,
+  createdAt: true,
+})
+export type InsertIngestionTrackerStats = z.infer<
+  typeof insertIngestionTrackerStatsSchema
+>
+
+export const selectIngestionTrackerStatsSchema = createSelectSchema(
+  ingestionTrackerStats,
+)
+export type SelectIngestionTrackerStats = z.infer<
+  typeof selectIngestionTrackerStatsSchema
+>

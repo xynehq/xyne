@@ -24,6 +24,7 @@ import {
   type OAuthCredentials,
   type SaaSJob,
   type SaaSOAuthJob,
+  OperationStatus, // Added OperationStatus
 } from "@/types"
 import PgBoss from "pg-boss"
 import { hashPdfFilename } from "@/utils"
@@ -42,6 +43,8 @@ import type { WSContext } from "hono/ws"
 import { db } from "@/db/client"
 import {
   connectors,
+  ingestionTrackerStats, // Added ingestionTrackerStats
+  insertIngestionTrackerStatsSchema, // Added insertIngestionTrackerStatsSchema
   type SelectConnector,
   type SelectOAuthProvider,
 } from "@/db/schema"
@@ -114,6 +117,7 @@ import {
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
 import { getConnectorByExternalId } from "@/db/connector"
+import { randomUUID } from "node:crypto" // Added randomUUID
 
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
@@ -631,6 +635,10 @@ const insertCalendarEvents = async (
 export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
   // Logger.info("handleGoogleOauthIngestion", job.data)
   // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
+  const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth) // Moved tracker initialization up
+  const startTime = tracker.getStartTime() // Get startTime
+  const ingestionRunId = randomUUID() // Generate ingestionRunId
+
   try {
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
@@ -652,7 +660,7 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       redirectUri: `${config.host}/oauth/callback`,
     })
 
-    const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth)
+    // const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth) // Tracker already initialized
     tracker.setOAuthUser(userEmail)
 
     const interval = setInterval(() => {
@@ -761,10 +769,57 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       })
       // await boss.complete(SaaSQueue, job.id)
       Logger.info("job completed")
+
+      // Log success stats
+      try {
+        const statsData = {
+          ingestion_run_id: ingestionRunId,
+          app: tracker.app, // Use tracker.app
+          auth_type: tracker.authType, // Use tracker.authType
+          tracker_data: tracker.getOAuthProgress(),
+          start_time: new Date(startTime),
+          end_time: new Date(),
+          status: OperationStatus.Success,
+          error_message: null,
+          created_at: new Date(),
+        }
+        const validatedStatsData =
+          insertIngestionTrackerStatsSchema.parse(statsData)
+        await db.insert(ingestionTrackerStats).values(validatedStatsData)
+      } catch (statsError) {
+        Logger.error(
+          statsError,
+          "Failed to insert successful ingestion stats for Google OAuth",
+        )
+      }
+
       // wsConnections.get(connector.externalId)?.close(1000, "Job finished")
       closeWs(connector.externalId)
     })
   } catch (error) {
+    // Log failure stats
+    try {
+      const statsData = {
+        ingestion_run_id: ingestionRunId,
+        app: tracker.app, // Use tracker.app as primary, fallback to data.app if tracker not init
+        auth_type: AuthType.OAuth, // Explicitly AuthType.OAuth
+        tracker_data: tracker.getOAuthProgress(), // Tracker should be available
+        start_time: new Date(startTime),
+        end_time: new Date(),
+        status: OperationStatus.Failure,
+        error_message: getErrorMessage(error),
+        created_at: new Date(),
+      }
+      const validatedStatsData =
+        insertIngestionTrackerStatsSchema.parse(statsData)
+      await db.insert(ingestionTrackerStats).values(validatedStatsData)
+    } catch (statsError) {
+      Logger.error(
+        statsError,
+        "Failed to insert failure ingestion stats for Google OAuth",
+      )
+    }
+
     Logger.error(
       error,
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
@@ -800,6 +855,8 @@ type IngestionMetadata = {
 }
 
 import { z } from "zod"
+// db needed for stats insertion, already imported at the top if not present
+// import { db } from "@/db/client"
 import { closeWs, sendWebsocketMessage } from "@/integrations/metricStream"
 
 const stats = z.object({
@@ -895,13 +952,17 @@ const handleGmailIngestionForServiceAccount = async (
 // one for drive and one for google workspace
 export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
   Logger.info("handleGoogleServiceAccountIngestion", data)
+  const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount) // Moved up
+  const startTime = tracker.getStartTime()
+  const ingestionRunId = randomUUID()
+
   try {
     const connector = await getConnector(db, data.connectorId)
     const serviceAccountKey: GoogleServiceAccount = JSON.parse(
       connector.credentials as string,
     )
     const subject: string = connector.subject as string
-    const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
+    // const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount) // Already initialized
     setupGmailWorkerHandler(tracker)
     const adminJwtClient = createJwtClient(serviceAccountKey, subject)
     const admin = google.admin({
@@ -1073,9 +1134,55 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         .where(eq(connectors.id, connector.id))
       Logger.info("status updated")
       // await boss.complete(SaaSQueue, job.id)
+
+      // Log success stats
+      try {
+        const statsData = {
+          ingestion_run_id: ingestionRunId,
+          app: tracker.app,
+          auth_type: tracker.authType,
+          tracker_data: tracker.getServiceAccountProgress(),
+          start_time: new Date(startTime),
+          end_time: new Date(),
+          status: OperationStatus.Success,
+          error_message: null,
+          created_at: new Date(),
+        }
+        const validatedStatsData =
+          insertIngestionTrackerStatsSchema.parse(statsData)
+        await db.insert(ingestionTrackerStats).values(validatedStatsData)
+      } catch (statsError) {
+        Logger.error(
+          statsError,
+          "Failed to insert successful ingestion stats for Google Service Account (handleGoogleServiceAccountIngestion)",
+        )
+      }
       Logger.info("job completed")
     })
   } catch (error) {
+    // Log failure stats
+    try {
+      const statsData = {
+        ingestion_run_id: ingestionRunId,
+        app: tracker.app,
+        auth_type: tracker.authType,
+        tracker_data: tracker.getServiceAccountProgress(),
+        start_time: new Date(startTime),
+        end_time: new Date(),
+        status: OperationStatus.Failure,
+        error_message: getErrorMessage(error),
+        created_at: new Date(),
+      }
+      const validatedStatsData =
+        insertIngestionTrackerStatsSchema.parse(statsData)
+      await db.insert(ingestionTrackerStats).values(validatedStatsData)
+    } catch (statsError) {
+      Logger.error(
+        statsError,
+        "Failed to insert failure ingestion stats for Google Service Account (handleGoogleServiceAccountIngestion)",
+      )
+    }
+
     Logger.error(
       error,
       `could not finish job successfully: ${(error as Error).message} ${(error as Error).stack}`,
@@ -2473,6 +2580,10 @@ export const ServiceAccountIngestMoreUsers = async (
   )
 
   let connector: SelectConnector | null = null
+  const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount) // Moved up
+  const startTime = tracker.getStartTime()
+  const ingestionRunId = randomUUID()
+
   try {
     connector = await getConnectorByExternalId(db, connectorId, userId)
 
@@ -2486,7 +2597,7 @@ export const ServiceAccountIngestMoreUsers = async (
       connector.credentials as string,
     )
     const subject: string = connector.subject as string
-    const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount)
+    // const tracker = new Tracker(Apps.GoogleWorkspace, AuthType.ServiceAccount) // Already initialized
     setupGmailWorkerHandler(tracker)
 
     const adminJwtClient = createJwtClient(serviceAccountKey, subject)
@@ -2731,6 +2842,28 @@ export const ServiceAccountIngestMoreUsers = async (
       )
     }
 
+    try {
+      const statsData = {
+        ingestion_run_id: ingestionRunId,
+        app: tracker.app,
+        auth_type: tracker.authType,
+        tracker_data: tracker.getServiceAccountProgress(),
+        start_time: new Date(startTime),
+        end_time: new Date(),
+        status: OperationStatus.Success,
+        error_message: null,
+        created_at: new Date(),
+      }
+      const validatedStatsData =
+        insertIngestionTrackerStatsSchema.parse(statsData)
+      await db.insert(ingestionTrackerStats).values(validatedStatsData)
+    } catch (statsError) {
+      Logger.error(
+        statsError,
+        "Failed to insert successful ingestion stats for Google Service Account (ServiceAccountIngestMoreUsers)",
+      )
+    }
+
     if (connector.externalId) {
       sendWebsocketMessage(
         JSON.stringify({
@@ -2744,6 +2877,29 @@ export const ServiceAccountIngestMoreUsers = async (
       closeWs(connector.externalId)
     }
   } catch (error) {
+    // Log failure stats
+    try {
+      const statsData = {
+        ingestion_run_id: ingestionRunId,
+        app: tracker.app, // Tracker should be initialized
+        auth_type: AuthType.ServiceAccount, // Explicitly set
+        tracker_data: tracker.getServiceAccountProgress(), // Tracker should be available
+        start_time: new Date(startTime),
+        end_time: new Date(),
+        status: OperationStatus.Failure,
+        error_message: getErrorMessage(error),
+        created_at: new Date(),
+      }
+      const validatedStatsData =
+        insertIngestionTrackerStatsSchema.parse(statsData)
+      await db.insert(ingestionTrackerStats).values(validatedStatsData)
+    } catch (statsError) {
+      Logger.error(
+        statsError,
+        "Failed to insert failure ingestion stats for Google Service Account (ServiceAccountIngestMoreUsers)",
+      )
+    }
+
     Logger.error(
       error,
       `Could not finish ingesting more users for connectorId ${connectorId}: ${(error as Error).message} ${(error as Error).stack}`,
