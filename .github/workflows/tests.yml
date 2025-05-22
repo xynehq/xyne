@@ -24,7 +24,7 @@ jobs:
         working-directory: ./server
         run: bun install
       - name: Run tests
-        run: bun test
+        run: bun test tests
       - name: Install Dependencies (Frontend)
         working-directory: ./frontend
         run: bun install
