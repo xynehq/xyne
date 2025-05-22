@@ -954,8 +954,16 @@ export const searchQueryPrompt = (userContext: string): string => {
       * filter_query = "budget"
       * Since "document" maps to a single app (google-drive) and filter_query is not null, type MUST be RetrieveMetadata
 
-    7. Validation Checks (always perform these checks before finalizing classification)
-    - CRITICAL CHECK: If filter_query is null AND there is exactly one app or entity specified, the type MUST be RetrieveUnspecificMetadata
+    7. HARD-CODED VALIDATION CHECK - MANDATORY
+    *** ABSOLUTE RULE: IF filter_query IS NULL AND there is exactly one valid app OR entity specified, the type MUST BE RetrieveUnspecificMetadata ***
+    
+    This is a non-negotiable validation rule that must be applied before finalizing any classification:
+    - Check if filter_query is null
+    - Check if exactly one app or entity is specified (not multiple, not zero)
+    - If BOTH conditions are true, force type = "RetrieveUnspecificMetadata"
+    - This rule overrides any other classification logic
+    
+    Additional Validation Checks:
     - CRITICAL CHECK: If filter_query contains actual content keywords AND there is exactly one app or entity specified, the type MUST be RetrieveMetadata
     - REMEMBER: Terms like "summary", "details", "info", "information", "content" are NOT specific content keywords and should be removed when determining filter_query
     - REMEMBER: Quantity terms like "2", "three", "most", "all", "some", "few" are NOT specific content keywords and should be removed when determining filter_query
@@ -1143,6 +1151,14 @@ ${retrievedContext}
    - Use a simple, scannable structure
    - For each email, give the [Index] in square brackets after the subject line
 
+# MANDATORY INDEX REQUIREMENT
+**CRITICAL: The [Index] MUST ALWAYS be included for every email, regardless of format or user preference.**
+- Even if user specifies custom formatting, ALWAYS include the [Index]
+- Even in tables, lists, or any other format, the [Index] is NON-NEGOTIABLE
+- The [Index] should appear after the subject line in square brackets: [Index]
+- There is NO exception to this rule - every email MUST have its [Index] displayed
+- If displaying partial information, the [Index] is still mandatory
+
 # Guidelines for Email Presentation
 1. Default Email Display Format:
    - Present each email in a concise, one-line-per-field format:
@@ -1179,6 +1195,9 @@ YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 }
 
 If no answer is found, set "answer" to null. If an answer is found, format it as a well-structured JSON string.
+
+# FINAL VALIDATION CHECKPOINT
+Before responding, verify that EVERY email in your response includes the [Index]. If any email is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
 `
 
 // Temporal Direction Prompt
@@ -1202,6 +1221,21 @@ ${userContext}
 
 # Retrieved Context
 ${retrievedContext}
+
+# CRITICAL: STRICT CONTEXT VALIDATION
+BEFORE ANY PROCESSING, YOU MUST:
+1. **EXACT MATCH REQUIREMENT**: The query must have a direct, exact match in the retrieved context
+2. **NO ASSUMPTIONS**: If the specific data requested is not explicitly present in the retrieved context, return {"answer": null}
+3. **NO INFERENCE**: Do not infer, assume, or extrapolate any information not directly stated in the retrieved context
+4. **NO HALLUCINATION**: Only use data that is explicitly provided - treat yourself as having no knowledge beyond the retrieved context
+5. **CONTEXT MISMATCH**: If the query asks for information that doesn't exist in the retrieved context (even if similar), return {"answer": null}
+
+Examples of INVALID responses:
+- Query asks for "meetings with John" but context only has "meetings with Jonathan" → return null
+- Query asks for "last week's emails" but context only has emails from 2 weeks ago → return null  
+- Query asks for "PDF files" but context only shows "document files" without mime type → return null
+- Query asks for specific person but context has different person → return null
+- Query asks for specific person's attachments but context has different person's attachments → return null
 
 # Processing Instructions
 
@@ -1336,19 +1370,25 @@ ${retrievedContext}
    - Sort:
      - FUTURE: Chronological (earliest first)
      - PAST: Reverse chronological (most recent first)
-   - Use [index] format for citations, never group indices (e.g., [0] [1], not [0,1])
+   - Use [Index] format for citations, never group indices (e.g., [0] [1], not [0,1])
 
 # FINAL OUTPUT REQUIREMENTS
 1. ONLY return the JSON object with a single "answer" key
 2. NO narrative text, explanations, or anything outside the JSON
 3. If no items match after filtering, return exactly {"answer": null}
-4. Format timestamps in user's timezone
-5. Never hallucinate data not in retrievedContext
-6. For completed meetings query, return only past events that have ended
+4. If retrieved context doesn't contain the exact data requested, return exactly {"answer": null}
+5. Format timestamps in user's timezone
+6. Never hallucinate data not in retrievedContext
+7. For completed meetings query, return only past events that have ended
 
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 {
   "answer": <answer string or null>
 }
+
+If no answer is found, set "answer" to null. If an answer is found, format it as a well-structured JSON string.
+
+# FINAL VALIDATION CHECKPOINT
+Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
 `
