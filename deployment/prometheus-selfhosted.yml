@@ -14,4 +14,4 @@ scrape_configs:
   - job_name: 'google_drive_ingestion'
     metrics_path: /metrics  # default path in your Hono app
     static_configs:
-      - targets: ['192.168.0.101:3000'] #replace  with 'host.docker.internal:3000' for MAC Or your application's service name e.g. 'xyne-app:3000'
+      - targets: ['host.docker.internal:3000'] #replace  with your application's service name e.g. 'xyne-app:3000' or the host-name:port where your server is hosted
