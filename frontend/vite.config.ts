@@ -18,6 +18,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(actualMode, process.cwd(), "VITE")
   // process.env variables are available directly via the `env` object returned by loadEnv.
   // Avoid reassigning process.env globally here.
+  process.env = {
+    NODE_ENV: process.env.NODE_ENV,
+    TZ: process.env.TZ,
+    ...env,
+  }
   return {
     plugins: [
       TanStackRouterVite({
