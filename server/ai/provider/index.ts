@@ -923,13 +923,6 @@ export const baselineRAGJsonStream = (
       userCtx,
       indexToCitation(retrievedCtx),
     )
-    if (params.systemPrompt.length > 600_000) {
-      return (async function* (): AsyncIterableIterator<ConverseResponse> {
-        yield {
-          text: "Selected context is too large, please select smaller files",
-        }
-      })()
-    }
   } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
@@ -962,30 +955,7 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
 
-  const rawStream = getProviderByModel(params.modelId).converseStream(
-    messages,
-    params,
-  )
-
-  // wrap the raw stream in our own generator that catches throttling…
-  return (async function* () {
-    try {
-      for await (const chunk of rawStream) {
-        yield chunk
-      }
-    } catch (err: any) {
-      // AWS Bedrock ThrottlingException:
-      if (
-        err.name === "ThrottlingException" ||
-        err.$metadata?.httpStatusCode === 429
-      ) {
-        yield { text: "Too many tokens, please wait before trying again." }
-        return
-      }
-      // re‐throw anything else
-      throw err
-    }
-  })()
+  return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
 export const temporalPromptJsonStream = (

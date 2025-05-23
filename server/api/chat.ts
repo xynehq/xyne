@@ -1843,6 +1843,18 @@ const handleError = (error: any) => {
   } else if (error?.code === OpenAIError.InvalidAPIKey) {
     errorMessage =
       "Invalid API key provided. Please check your API key and ensure it is correct."
+  } else if (
+    error?.name === "ThrottlingException" ||
+    error?.message === "Too many tokens, please wait before trying again." ||
+    error?.$metadata?.httpStatusCode === 429
+  ) {
+    errorMessage = "Rate limit exceeded. Please try again later."
+  } else if (
+    error?.name === "ValidationException" ||
+    error?.message ===
+      "The model returned the following errors: Input is too long for requested model."
+  ) {
+    errorMessage = "Input context is too large."
   }
   return errorMessage
 }
