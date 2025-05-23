@@ -1170,8 +1170,6 @@ ${retrievedContext}
 
    **Date:** [Formatted Date and Time]
 
-   **Summary:** [Email Summary or Content Snippet]
-
    -----
    
    Example:
@@ -1181,8 +1179,6 @@ ${retrievedContext}
 
    **Date:** May 23, 2025 at 2:30 PM
 
-   **Summary:** [Email Summary or Content Snippet]
-
    -----
    
    **From:** alicia@deel.support [1]
@@ -1190,8 +1186,6 @@ ${retrievedContext}
    **Subject:** Contract Update
 
    **Date:** May 22, 2025 at 11:15 AM
-
-   **Summary:** [Email Summary or Content Snippet]
 
    -----
 
@@ -1243,13 +1237,15 @@ ${userContext}
 # Retrieved Context
 ${retrievedContext}
 
-# CRITICAL: STRICT CONTEXT VALIDATION
+# CRITICAL: ULTRA-STRICT CONTEXT VALIDATION
 BEFORE ANY PROCESSING, YOU MUST:
 1. **EXACT MATCH REQUIREMENT**: The query must have a direct, exact match in the retrieved context
 2. **NO ASSUMPTIONS**: If the specific data requested is not explicitly present in the retrieved context, return {"answer": null}
 3. **NO INFERENCE**: Do not infer, assume, or extrapolate any information not directly stated in the retrieved context
 4. **NO HALLUCINATION**: Only use data that is explicitly provided - treat yourself as having no knowledge beyond the retrieved context
 5. **CONTEXT MISMATCH**: If the query asks for information that doesn't exist in the retrieved context (even if similar), return {"answer": null}
+6. **STRICT MATCHING**: You MUST ONLY answer based on what is EXPLICITLY present in the Retrieved Context
+7. **NO HELPFUL ALTERNATIVES**: Do not provide suggestions or alternatives if context doesn't match
 
 Examples of INVALID responses:
 - Query asks for "meetings with John" but context only has "meetings with Jonathan" → return null
@@ -1301,114 +1297,94 @@ Examples of INVALID responses:
 
 2. Default Format - Only When No User Preference:
    - Apply default format only if no user preference is specified
-   - Use a simple, scannable structure
+   - Use a enhanced, professional structure
 
 # Guidelines for Presentation
-1. Default Display Format:
-   - Present each item with a blank line between each field:
-      - For Emails:
-         - Subject: [Subject line] [Index]
+1. Enhanced Display Format (use only if no user-specified format):
+   
+   For Emails:
+   **From:** [Sender Name] <sender@email.com> [Index]
 
-         - From: [Sender Name] <sender@email.com>
+   **Subject:** [Subject line]
 
-         - Date: [e.g., May 2, 2025]
+   **Date:** [Formatted Date and Time]
 
-         - Brief summary of email content in simple text
+   -----
+   
+   For Events:
+   **Title:** [Event name] [Index]
 
-      - For Events:
-         - Title: [Event name] [Index]
+   **Organizer:** [Organizer Name] <organizer@email.com>
 
-         - Organizer: [Organizer Name] <organizer@email.com>
+   **Date:** [Formatted Date and Time]
 
-         - Date: [e.g., May 2, 2025, at Time]
+   **Location:** [Location if available]
+  
+   -----
+   
+   For Files:
+   **Title:** [File title] [Index]
 
-         - Brief summary of event in simple text
+   **Owner:** [Owner Name] <owner@email.com>
 
-      - For Files:
-         - Title: [File title] [Index]
+   **Date:** [Last modified date]
 
-         - Owner: [Owner Name] <owner@email.com>
+   **Type:** [File type/mime type if available]
 
-         - Date: [Last modified, e.g., May 2, 2025]
+   -----
+   
+   For Users:
+   **Name:** [User Name] [Index]
 
-         - Brief summary of file content in simple text
+   **Email:** [User email]
 
-      - For Users:
-         - Name: [User Name] [Index]
+   **Title:** [Job title if available]
 
-         - Email: [User email]
+   **Department:** [Department if available]
 
-         - Date: [Addition date, e.g., May 2, 2025]
-
-         - Brief summary of user profile in simple text
-         
-   - Separate items with a line breaker (e.g., ---)
+   **Date Added:** [Addition date]
+  
+   -----
 
 # Response Structure
 1. Main Item Listing:
-   - Use the appropriate template for each item type:
-   
-   [For Emails]
-   Subject: [SUBJECT LINE] [Index]
-   
-   From: [Sender Name] <sender@email.com>
-   
-   Date: [Date]
-   
-   Brief summary of email content in simple text
-   ---
-   
-   [For Events]
-   Title: [EVENT NAME] [Index]
-   
-   Organizer: [Organizer Name] <organizer@email.com>
-   
-   Date: [Date, Time]
-   
-   Brief summary of event in simple text
-   ---
-   
-   [For Files]
-   Title: [FILE TITLE] [Index]
-   
-   Owner: [Owner Name] <owner@email.com>
-   
-   Date: [Last modified]
-   
-   Brief summary of file content in simple text
-   ---
-   
-   [For Users]
-   Name: [USER NAME] [Index]
-   
-   Email: [User email]
-   
-   Date: [Addition date]
-   
-   Brief summary of user profile in simple text
-   ---
-   
+   - Use the appropriate enhanced template for each item type
    - Sort:
      - FUTURE: Chronological (earliest first)
      - PAST: Reverse chronological (most recent first)
    - Use [Index] format for citations, never group indices (e.g., [0] [1], not [0,1])
+   - Add line breaks between items for readability
 
 # FINAL OUTPUT REQUIREMENTS
 1. ONLY return the JSON object with a single "answer" key
 2. NO narrative text, explanations, or anything outside the JSON
 3. If no items match after filtering, return exactly {"answer": null}
 4. If retrieved context doesn't contain the exact data requested, return exactly {"answer": null}
-5. Format timestamps in user's timezone
-6. Never hallucinate data not in retrievedContext
-7. For completed meetings query, return only past events that have ended
+5. If retrieved context doesn't match the query criteria, return exactly {"answer": null}
+6. Format timestamps in user's timezone
+7. Never hallucinate data not in retrievedContext
+8. For completed meetings query, return only past events that have ended
+9. DO NOT provide alternative suggestions or general responses if context doesn't match
 
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
+
+If relevant items are found in Retrieved Context that exactly match the query:
 {
-  "answer": <answer string or null>
+  "answer": "Formatted response string with citations following the specified format"
 }
 
-If no answer is found, set "answer" to null. If an answer is found, format it as a well-structured JSON string.
+If NO relevant items are found in Retrieved Context or context doesn't match query:
+{
+  "answer": null
+}
+
+REMEMBER: 
+- Your complete response must be ONLY a valid JSON object containing the single "answer" key
+- DO NOT explain your reasoning or state what you're doing
+- Return null if the Retrieved Context doesn't contain information that directly answers the query
+- DO NOT provide alternative suggestions or general responses
+- ONLY proceed if there are actual items in the Retrieved Context that exactly match the query criteria
 
 # FINAL VALIDATION CHECKPOINT
 Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
