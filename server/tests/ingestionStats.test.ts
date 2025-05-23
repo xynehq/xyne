@@ -164,10 +164,10 @@ vi.mock("node:worker_threads", () => ({
 describe("Ingestion Tracker Stats Schemas", () => {
   const baseTime = new Date()
   const validBaseData = {
-    ingestion_run_id: randomUUID(),
+    ingestionRunId: randomUUID(), // camelCase
     app: Apps.GoogleDrive,
-    auth_type: AuthType.OAuth,
-    tracker_data: {
+    authType: AuthType.OAuth, // camelCase
+    trackerData: { // camelCase
       oauthUser: "test@example.com",
       users: {
         "test@example.com": {
@@ -178,9 +178,10 @@ describe("Ingestion Tracker Stats Schemas", () => {
         },
       },
     },
-    start_time: baseTime,
-    end_time: new Date(baseTime.getTime() + 1000),
-    created_at: new Date(baseTime.getTime() + 2000), // Keep distinct for select test
+    startTime: baseTime, // camelCase
+    endTime: new Date(baseTime.getTime() + 1000), // camelCase
+    // created_at is removed as it's not part of the insert schema (omitted)
+    // and should not be in base data for insert tests.
   }
 
   describe("insertIngestionTrackerStatsSchema", () => {
@@ -188,12 +189,12 @@ describe("Ingestion Tracker Stats Schemas", () => {
       const data = {
         ...validBaseData,
         status: OperationStatus.Success,
-        error_message: null,
+        errorMessage: null, // camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.error_message).toBeNull()
+        expect(result.data.errorMessage).toBeNull()
       }
     })
 
@@ -201,12 +202,12 @@ describe("Ingestion Tracker Stats Schemas", () => {
       const data = {
         ...validBaseData,
         status: OperationStatus.Failure,
-        error_message: "Something went wrong",
+        errorMessage: "Something went wrong", // camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.error_message).toBe("Something went wrong")
+        expect(result.data.errorMessage).toBe("Something went wrong")
       }
     })
 
@@ -224,22 +225,22 @@ describe("Ingestion Tracker Stats Schemas", () => {
       const data = {
         ...validBaseData,
         status: OperationStatus.Success,
-        error_message: null,
-        start_time: "not-a-date",
+        errorMessage: null, // camelCase
+        startTime: "not-a-date", // incorrect type, camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0].path).toEqual(["start_time"])
+        expect(result.error.issues[0].path).toEqual(["startTime"])
       }
     })
 
     it("should fail for invalid enum values for app", () => {
       const data = {
         ...validBaseData,
-        app: "InvalidApp",
+        app: "InvalidApp", // incorrect enum value
         status: OperationStatus.Success,
-        error_message: null,
+        errorMessage: null, // camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
       expect(result.success).toBe(false)
@@ -248,25 +249,25 @@ describe("Ingestion Tracker Stats Schemas", () => {
       }
     })
 
-    it("should fail for invalid enum values for auth_type", () => {
+    it("should fail for invalid enum values for authType", () => {
       const data = {
         ...validBaseData,
-        auth_type: "InvalidAuthType",
+        authType: "InvalidAuthType", // incorrect enum value, camelCase
         status: OperationStatus.Success,
-        error_message: null,
+        errorMessage: null, // camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0].path).toEqual(["auth_type"])
+        expect(result.error.issues[0].path).toEqual(["authType"])
       }
     })
 
     it("should fail for invalid enum values for status", () => {
       const data = {
         ...validBaseData,
-        status: "InvalidStatus",
-        error_message: null,
+        status: "InvalidStatus", // incorrect enum value
+        errorMessage: null, // camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
       expect(result.success).toBe(false)
@@ -275,37 +276,33 @@ describe("Ingestion Tracker Stats Schemas", () => {
       }
     })
 
-    it("should allow error_message to be null for failure status (though unusual)", () => {
+    it("should allow errorMessage to be null for failure status (though unusual)", () => {
       const data = {
         ...validBaseData,
         status: OperationStatus.Failure,
-        error_message: null,
+        errorMessage: null, // camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.error_message).toBeNull()
+        expect(result.data.errorMessage).toBeNull()
       }
     })
 
-    it("should fail if error_message is a non-null string for success status", () => {
-      // This tests the schema definition, not a refinement. Schema allows string | null.
-      // For a strict rule "error_message MUST be null if status is Success", a refine would be needed.
-      // The current schema does not enforce this, so this test as-is might pass if not refined.
-      // However, the task implies `error_message: null` for success in the previous subtask.
-      // Let's assume the schema is as-is and this test checks that a string is acceptable by Zod type.
-      // If a refinement was added to the Zod schema to enforce error_message:null on success, this test would fail.
+    it("should allow errorMessage to be a non-null string for success status (as per current schema)", () => {
+      // The Zod schema `insertIngestionTrackerStatsSchema` does not have a refinement
+      // to enforce `errorMessage` must be null if `status` is `Success`.
+      // It only defines `errorMessage` as `z.string().nullable()`.
+      // Thus, this test confirms the current schema behavior.
       const data = {
         ...validBaseData,
         status: OperationStatus.Success,
-        error_message: "An unexpected error message",
+        errorMessage: "An unexpected error message", // camelCase
       }
       const result = insertIngestionTrackerStatsSchema.safeParse(data)
-      // Default schema behavior: text() / z.string().nullable() will accept string here.
-      // If the intent was for this to fail, the Zod schema would need a .refine()
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.error_message).toBe("An unexpected error message")
+        expect(result.data.errorMessage).toBe("An unexpected error message")
       }
     })
   })
@@ -314,31 +311,44 @@ describe("Ingestion Tracker Stats Schemas", () => {
     it("should parse valid data that mimics a database record", () => {
       const dataFromDb = {
         id: 123, // DB provides ID
-        ...validBaseData,
+        ingestionRunId: validBaseData.ingestionRunId,
+        app: validBaseData.app,
+        authType: validBaseData.authType,
+        trackerData: validBaseData.trackerData,
+        startTime: validBaseData.startTime,
+        endTime: validBaseData.endTime,
         status: OperationStatus.Success,
-        error_message: null,
-        // created_at is part of validBaseData
+        errorMessage: null, // camelCase
+        created_at: new Date(baseTime.getTime() + 2000), // Select schema includes created_at
       }
       const result = selectIngestionTrackerStatsSchema.safeParse(dataFromDb)
       expect(result.success).toBe(true)
       if (result.success) {
         expect(result.data.id).toBe(123)
         expect(result.data.app).toBe(Apps.GoogleDrive)
+        expect(result.data.created_at).toEqual(new Date(baseTime.getTime() + 2000))
       }
     })
 
     it("should also parse failure status correctly from DB format", () => {
       const dataFromDb = {
         id: 124,
-        ...validBaseData,
+        ingestionRunId: validBaseData.ingestionRunId,
+        app: validBaseData.app,
+        authType: validBaseData.authType,
+        trackerData: validBaseData.trackerData,
+        startTime: validBaseData.startTime,
+        endTime: validBaseData.endTime,
         status: OperationStatus.Failure,
-        error_message: "DB error message",
+        errorMessage: "DB error message", // camelCase
+        created_at: new Date(baseTime.getTime() + 3000),
       }
       const result = selectIngestionTrackerStatsSchema.safeParse(dataFromDb)
       expect(result.success).toBe(true)
       if (result.success) {
         expect(result.data.id).toBe(124)
-        expect(result.data.error_message).toBe("DB error message")
+        expect(result.data.errorMessage).toBe("DB error message")
+        expect(result.data.created_at).toEqual(new Date(baseTime.getTime() + 3000))
       }
     })
   })
@@ -467,17 +477,10 @@ describe("Google Integration Stats Saving", () => {
 
     it("should save success stats", async () => {
       // Mocks for successful path
-      const { listAllContacts } = await import("googleapis") // This is wrong, it's a local function
-      vi.mocked(listAllContacts).mockResolvedValue({
-        // Assuming listAllContacts is a local, exported function
-        contacts: [],
-        otherContacts: [],
-        contactsToken: "ct",
-        otherContactsToken: "oct",
-      } as any) // Mocking the local listAllContacts if it's separate
-
-      // If listAllContacts is part of the google.people mock, adjust there.
-      // For now, assuming it's a local high-level function that got mocked via a general googleapis mock.
+      // The incorrect direct mock of listAllContacts has been removed.
+      // The test will now rely on the vi.mock("googleapis", ...) setup,
+      // which correctly mocks people.connections.list and otherContacts.list
+      // to return nextSyncToken, allowing the actual listAllContacts to work.
 
       await handleGoogleOAuthIngestion(mockJobData as any)
 
@@ -485,8 +488,8 @@ describe("Google Integration Stats Saving", () => {
       const insertCallArg = mockDbInsertValues.mock.calls[0][0]
       expect(insertCallArg.status).toBe(OperationStatus.Success)
       expect(insertCallArg.app).toBe(Apps.GoogleDrive) // Tracker is initialized with GoogleDrive
-      expect(insertCallArg.auth_type).toBe(AuthType.OAuth)
-      expect(insertCallArg.error_message).toBeNull()
+      expect(insertCallArg.authType).toBe(AuthType.OAuth) // Ensure this matches camelCase
+      expect(insertCallArg.errorMessage).toBeNull() // Ensure this matches camelCase
     })
 
     it("should save failure stats", async () => {
@@ -504,8 +507,8 @@ describe("Google Integration Stats Saving", () => {
       const insertCallArg = mockDbInsertValues.mock.calls[0][0]
       expect(insertCallArg.status).toBe(OperationStatus.Failure)
       expect(insertCallArg.app).toBe(Apps.GoogleDrive)
-      expect(insertCallArg.auth_type).toBe(AuthType.OAuth)
-      expect(insertCallArg.error_message).toBe("Simulated People API error")
+      expect(insertCallArg.authType).toBe(AuthType.OAuth) // Ensure this matches camelCase
+      expect(insertCallArg.errorMessage).toBe("Simulated People API error") // Ensure this matches camelCase
     })
   })
 
@@ -540,8 +543,8 @@ describe("Google Integration Stats Saving", () => {
       const insertCallArg = mockDbInsertValues.mock.calls[0][0]
       expect(insertCallArg.status).toBe(OperationStatus.Success)
       expect(insertCallArg.app).toBe(Apps.GoogleWorkspace)
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
-      expect(insertCallArg.error_message).toBeNull()
+      expect(insertCallArg.authType).toBe(AuthType.ServiceAccount) // camelCase
+      expect(insertCallArg.errorMessage).toBeNull() // camelCase
     })
 
     it("should save failure stats for service account ingestion", async () => {
@@ -559,8 +562,8 @@ describe("Google Integration Stats Saving", () => {
       const insertCallArg = mockDbInsertValues.mock.calls[0][0]
       expect(insertCallArg.status).toBe(OperationStatus.Failure)
       expect(insertCallArg.app).toBe(Apps.GoogleWorkspace)
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
-      expect(insertCallArg.error_message).toBe(
+      expect(insertCallArg.authType).toBe(AuthType.ServiceAccount) // camelCase
+      expect(insertCallArg.errorMessage).toBe( // camelCase
         "Simulated DB error getting workspace",
       )
     })
@@ -623,8 +626,8 @@ describe("Google Integration Stats Saving", () => {
       const insertCallArg = mockDbInsertValues.mock.calls[0][0]
       expect(insertCallArg.status).toBe(OperationStatus.Success)
       expect(insertCallArg.app).toBe(Apps.GoogleWorkspace)
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
-      expect(insertCallArg.error_message).toBeNull()
+      expect(insertCallArg.authType).toBe(AuthType.ServiceAccount) // camelCase
+      expect(insertCallArg.errorMessage).toBeNull() // camelCase
     })
 
     it("should save failure stats for ingest more users", async () => {
@@ -641,8 +644,8 @@ describe("Google Integration Stats Saving", () => {
       const insertCallArg = mockDbInsertValues.mock.calls[0][0]
       expect(insertCallArg.status).toBe(OperationStatus.Failure)
       expect(insertCallArg.app).toBe(Apps.GoogleWorkspace) // As tracker is initialized with this
-      expect(insertCallArg.auth_type).toBe(AuthType.ServiceAccount)
-      expect(insertCallArg.error_message).toBe(
+      expect(insertCallArg.authType).toBe(AuthType.ServiceAccount) // camelCase
+      expect(insertCallArg.errorMessage).toBe( // camelCase
         "Simulated error getting connector for ingest more",
       )
     })

@@ -269,4 +269,12 @@ export class Tracker {
   setTotal(total: number) {
     this.oAuthProgress.total = total
   }
+
+  public getApp(): Apps {
+    return this.app
+  }
+
+  public getAuthType(): AuthType {
+    return this.authType
+  }
 }

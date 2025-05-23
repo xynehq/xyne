@@ -773,15 +773,14 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
       // Log success stats
       try {
         const statsData = {
-          ingestion_run_id: ingestionRunId,
-          app: tracker.app, // Use tracker.app
-          auth_type: tracker.authType, // Use tracker.authType
-          tracker_data: tracker.getOAuthProgress(),
-          start_time: new Date(startTime),
-          end_time: new Date(),
+          ingestionRunId: ingestionRunId,
+          app: tracker.getApp(),
+          authType: tracker.getAuthType(),
+          trackerData: tracker.getOAuthProgress(),
+          startTime: new Date(startTime),
+          endTime: new Date(),
           status: OperationStatus.Success,
-          error_message: null,
-          created_at: new Date(),
+          errorMessage: null,
         }
         const validatedStatsData =
           insertIngestionTrackerStatsSchema.parse(statsData)
@@ -800,15 +799,14 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
     // Log failure stats
     try {
       const statsData = {
-        ingestion_run_id: ingestionRunId,
-        app: tracker.app, // Use tracker.app as primary, fallback to data.app if tracker not init
-        auth_type: AuthType.OAuth, // Explicitly AuthType.OAuth
-        tracker_data: tracker.getOAuthProgress(), // Tracker should be available
-        start_time: new Date(startTime),
-        end_time: new Date(),
+        ingestionRunId: ingestionRunId,
+        app: tracker.getApp(), 
+        authType: tracker.getAuthType(), // Tracker should be initialized, so its authType is reliable
+        trackerData: tracker.getOAuthProgress(), 
+        startTime: new Date(startTime),
+        endTime: new Date(),
         status: OperationStatus.Failure,
-        error_message: getErrorMessage(error),
-        created_at: new Date(),
+        errorMessage: getErrorMessage(error),
       }
       const validatedStatsData =
         insertIngestionTrackerStatsSchema.parse(statsData)
@@ -1138,15 +1136,14 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
       // Log success stats
       try {
         const statsData = {
-          ingestion_run_id: ingestionRunId,
-          app: tracker.app,
-          auth_type: tracker.authType,
-          tracker_data: tracker.getServiceAccountProgress(),
-          start_time: new Date(startTime),
-          end_time: new Date(),
+          ingestionRunId: ingestionRunId,
+          app: tracker.getApp(),
+          authType: tracker.getAuthType(),
+          trackerData: tracker.getServiceAccountProgress(),
+          startTime: new Date(startTime),
+          endTime: new Date(),
           status: OperationStatus.Success,
-          error_message: null,
-          created_at: new Date(),
+          errorMessage: null,
         }
         const validatedStatsData =
           insertIngestionTrackerStatsSchema.parse(statsData)
@@ -1163,15 +1160,14 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
     // Log failure stats
     try {
       const statsData = {
-        ingestion_run_id: ingestionRunId,
-        app: tracker.app,
-        auth_type: tracker.authType,
-        tracker_data: tracker.getServiceAccountProgress(),
-        start_time: new Date(startTime),
-        end_time: new Date(),
+        ingestionRunId: ingestionRunId,
+        app: tracker.getApp(),
+        authType: tracker.getAuthType(),
+        trackerData: tracker.getServiceAccountProgress(),
+        startTime: new Date(startTime),
+        endTime: new Date(),
         status: OperationStatus.Failure,
-        error_message: getErrorMessage(error),
-        created_at: new Date(),
+        errorMessage: getErrorMessage(error),
       }
       const validatedStatsData =
         insertIngestionTrackerStatsSchema.parse(statsData)
@@ -2842,17 +2838,17 @@ export const ServiceAccountIngestMoreUsers = async (
       )
     }
 
+    // Log success stats
     try {
       const statsData = {
-        ingestion_run_id: ingestionRunId,
-        app: tracker.app,
-        auth_type: tracker.authType,
-        tracker_data: tracker.getServiceAccountProgress(),
-        start_time: new Date(startTime),
-        end_time: new Date(),
+        ingestionRunId: ingestionRunId,
+        app: tracker.getApp(),
+        authType: tracker.getAuthType(),
+        trackerData: tracker.getServiceAccountProgress(),
+        startTime: new Date(startTime),
+        endTime: new Date(),
         status: OperationStatus.Success,
-        error_message: null,
-        created_at: new Date(),
+        errorMessage: null,
       }
       const validatedStatsData =
         insertIngestionTrackerStatsSchema.parse(statsData)
@@ -2880,15 +2876,14 @@ export const ServiceAccountIngestMoreUsers = async (
     // Log failure stats
     try {
       const statsData = {
-        ingestion_run_id: ingestionRunId,
-        app: tracker.app, // Tracker should be initialized
-        auth_type: AuthType.ServiceAccount, // Explicitly set
-        tracker_data: tracker.getServiceAccountProgress(), // Tracker should be available
-        start_time: new Date(startTime),
-        end_time: new Date(),
+        ingestionRunId: ingestionRunId,
+        app: tracker.getApp(), // Tracker should be initialized
+        authType: tracker.getAuthType(), // Tracker should be initialized, so its authType is reliable
+        trackerData: tracker.getServiceAccountProgress(), // Tracker should be available
+        startTime: new Date(startTime),
+        endTime: new Date(),
         status: OperationStatus.Failure,
-        error_message: getErrorMessage(error),
-        created_at: new Date(),
+        errorMessage: getErrorMessage(error),
       }
       const validatedStatsData =
         insertIngestionTrackerStatsSchema.parse(statsData)
