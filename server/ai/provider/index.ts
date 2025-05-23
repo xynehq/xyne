@@ -1117,7 +1117,11 @@ export function generateAnswerBasedOnToolOutput(
   toolOutput: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
-  params.systemPrompt = withToolQueryPrompt(userContext, toolContext, toolOutput)
+  params.systemPrompt = withToolQueryPrompt(
+    userContext,
+    toolContext,
+    toolOutput,
+  )
 
   const baseMessage = {
     role: ConversationRole.USER,

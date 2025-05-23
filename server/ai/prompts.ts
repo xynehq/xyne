@@ -788,8 +788,18 @@ export const searchQueryPrompt = (userContext: string, toolContext): string => {
     **User Context:** ${userContext}
 
     ${toolContext}
+    
+    Now, THIS IS VERY IMPORTANT, verify if the user query would require any of the above tool invocation then respond back with this schema:
 
-    Now, handle the query as follows only if no tool invocation is required to solve this query, if required just respond back with JSON output with respective schema:
+        { "tool": "ACTUAL_TOOL_NAME",
+          "arguments": {"param1_name": "param1_value", "param2_name": "param2_value", ...}
+        }
+
+      - If Tool Invocation is chosen then Your entire response MUST be a single, flat JSON response which should be in the below format:
+      - (Replace ACTUAL_TOOL_NAME with the chosen tool\'s name as described in the user message, e.g., "metadata_retrieval", "search". Include only the relevant arguments for that tool.)
+
+
+    Otherwise, Now, handle the query as follows:
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -970,18 +980,6 @@ export const searchQueryPrompt = (userContext: string, toolContext): string => {
      - contacts
 
     7. Output JSON should be one of the following structure based on whether its a tool invocation response of answer:
-
-      7.1)
-
-        { "tool": "ACTUAL_TOOL_NAME",
-          "arguments": {"param1_name": "param1_value", "param2_name": "param2_value", ...}
-        }
-
-      - If Tool Invocation is chosen then Your entire response MUST be a single, flat JSON response which should be in the below format:
-      - (Replace ACTUAL_TOOL_NAME with the chosen tool\'s name as described in the user message, e.g., "metadata_retrieval", "search". Include only the relevant arguments for that tool.)
-
-
-      7.2)
 
        {
          "answer": "<string or null>",

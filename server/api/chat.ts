@@ -3525,7 +3525,9 @@ AVAILABLE_TOOLS:\n\n`
                 const toolParams = potentialToolSelection.arguments
 
                 Logger.info(
-                  `Tool selection #${toolCallCount}: ${toolName} with params: ${JSON.stringify(toolParams)}`,
+                  `Tool selection #${toolCallCount}: ${toolName} with params: ${JSON.stringify(
+                    toolParams,
+                  )}`,
                 )
 
                 // Find the connector ID and client that has this tool
@@ -3543,7 +3545,7 @@ AVAILABLE_TOOLS:\n\n`
                     break
                   }
                 }
-                let toolOutput = null;
+                let toolOutput = null
 
                 if (!foundClient || !connectorId) {
                   Logger.error(
@@ -3593,8 +3595,7 @@ AVAILABLE_TOOLS:\n\n`
                       event: ChatSSEvents.Reasoning,
                       data: `Tool response:\n\`\`\`json\n${formattedToolResponse}\n\`\`\`\n\n`,
                     })
-                    toolOutput = formattedToolResponse;
-
+                    toolOutput = formattedToolResponse
                   } catch (error) {
                     const errMessage = (error as Error).message
                     Logger.error(
@@ -3660,6 +3661,7 @@ AVAILABLE_TOOLS:\n\n`
                     // We have a complete response that's not a tool call
                     finalAnswer = partialResponse.answer || buffer
                   }
+                  //TODO: handle more tool calls.
                 } catch {
                   Logger.error(`exception while getting tool output.`)
                 }
@@ -3874,7 +3876,11 @@ AVAILABLE_TOOLS:\n\n`
           conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
           conversationSpan.end()
 
-          if (!parsed.answer || parsed.answer === null || parsed.answer === "") {
+          if (
+            !parsed.answer ||
+            parsed.answer === null ||
+            parsed.answer === ""
+          ) {
             const ragSpan = streamSpan.startSpan("rag_processing")
             if (parsed.queryRewrite) {
               Logger.info(
