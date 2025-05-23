@@ -939,7 +939,6 @@ export const baselineRAGJsonStream = (
     )
   }
   params.json = true // Set to true to ensure JSON response
-  params.modelId = Models.Claude_3_7_Sonnet
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -954,7 +953,6 @@ export const baselineRAGJsonStream = (
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
-
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 

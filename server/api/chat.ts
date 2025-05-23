@@ -985,15 +985,9 @@ async function* generateAnswerFromGivenContext(
   )
 
   const selectedContext = isContextSelected(message)
-  console.log("selectedContext")
-  console.log(selectedContext)
-  console.log("selectedContext")
   const builtUserQuery = selectedContext
     ? buildUserQuery(selectedContext)
     : message
-  console.log("builtUserQuery")
-  console.log(builtUserQuery)
-  console.log("builtUserQuery")
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
     userCtx,
@@ -1019,9 +1013,6 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    console.log("searching in vespa with query")
-    console.log(builtUserQuery)
-    console.log("searching in vespa with query")
     let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
       limit: fileIds?.length,
       alpha: userAlpha,
@@ -1041,9 +1032,6 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
-    console.log("No answer found case AI request")
-    console.log(builtUserQuery)
-    console.log("No answer found case AI request")
     const iterator = baselineRAGJsonStream(
       builtUserQuery,
       userCtx,
@@ -1086,9 +1074,6 @@ async function* generateAnswerFromGivenContext(
 // Meaning if the query contains Pill info
 export const isContextSelected = (str: string) => {
   try {
-    console.log("str")
-    console.log(str)
-    console.log("str")
     if (str.startsWith("[{")) {
       return JSON.parse(str)
     } else {
