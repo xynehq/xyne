@@ -1305,6 +1305,9 @@ const insertFilesForUser = async (
     const endTimestamp = endDate ? new Date(endDate).getTime() : undefined
 
     for await (let pageFiles of iterator) {
+      Logger.info(
+        `Processing page of ${pageFiles.length} files for user ${userEmail}`,
+      )
       // Check existence and timestamps for all files in this page right away
       const fileIds = pageFiles.map((file) => file.id!)
       const existenceMap = await ifDocumentsExist(fileIds)
@@ -1408,6 +1411,9 @@ const insertFilesForUser = async (
 
       const totalIngestionDuration = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file", email:userEmail})
       for (const doc of allFiles) {
+        Logger.info(
+          `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
+        )
         // determine the  file type here so we can insert in metrics data
        const fileType = (doc.mimeType===DriveMime.Docs)?"GOOGLE_DRIVE_DOC":(doc.mimeType===DriveMime.Sheets)?"GOOGLE_DRIVE_SHEET":(doc.mimeType===DriveMime.Slides)?"GOOGLE_DRIVE_SLIDE":"GOOGLE_DRIVE_FILE";
        try{
@@ -1854,11 +1860,17 @@ export const googlePDFsVespa = async (
   userEmail: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   const drive = google.drive({ version: "v3", auth: client })
+  Logger.info(
+    `Starting PDF processing for ${pdfsMetadata.length} files for user ${userEmail}`,
+  )
   // a flag just for the error to know
   // if the file was downloaded or not
   const limit = pLimit(PDFProcessingConcurrency)
   const pdfPromises = pdfsMetadata.map((pdf) =>
     limit(async () => {
+      Logger.info(
+        `Processing PDF: ID: ${pdf.id}, Name: ${pdf.name} for user ${userEmail}`,
+      )
       const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
       // Ignore the PDF files larger than Max PDF Size
       if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
@@ -2276,6 +2288,9 @@ export const googleDocsVespa = async (
   connectorId: string,
   userEmail?:string
 ): Promise<VespaFileWithDrivePermission[]> => {
+  Logger.info(
+    `Starting Google Docs processing for ${docsMetadata.length} files. Connector ID: ${connectorId}`,
+  )
   // sendWebsocketMessage(
   //   `Scanning ${docsMetadata.length} Google Docs`,
   //   connectorId,
@@ -2286,6 +2301,9 @@ export const googleDocsVespa = async (
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
+      Logger.info(
+        `Processing Google Doc: ID: ${doc.id}, Name: ${doc.name}. Connector ID: ${connectorId}`,
+      )
       const endDownloadDuration = extractionDuration.startTimer({file_id:doc.id??"", mime_type: doc.mimeType??"application/vnd.google-apps.document", file_name:doc.name??"", file_type:"GOOGLE_DRIVE_DOC", email:userEmail})
       try {
         const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
