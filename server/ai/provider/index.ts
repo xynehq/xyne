@@ -961,7 +961,31 @@ export const baselineRAGJsonStream = (
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
-  return getProviderByModel(params.modelId).converseStream(messages, params)
+
+  const rawStream = getProviderByModel(params.modelId).converseStream(
+    messages,
+    params,
+  )
+
+  // wrap the raw stream in our own generator that catches throttling…
+  return (async function* () {
+    try {
+      for await (const chunk of rawStream) {
+        yield chunk
+      }
+    } catch (err: any) {
+      // AWS Bedrock ThrottlingException:
+      if (
+        err.name === "ThrottlingException" ||
+        err.$metadata?.httpStatusCode === 429
+      ) {
+        yield { text: "Too many tokens, please wait before trying again." }
+        return
+      }
+      // re‐throw anything else
+      throw err
+    }
+  })()
 }
 
 export const temporalPromptJsonStream = (

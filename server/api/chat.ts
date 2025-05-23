@@ -1034,7 +1034,7 @@ async function* generateAnswerFromGivenContext(
       results?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 5, true)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
         )
         ?.join("\n"),
     )
@@ -2221,7 +2221,9 @@ export const MessageApi = async (c: Context) => {
                 ) {
                   const orgMsg = msg.message
                   const selectedContext = isContextSelected(orgMsg)
-                  msg.message = selectedContext ? buildUserQuery(selectedContext) : orgMsg
+                  msg.message = selectedContext
+                    ? buildUserQuery(selectedContext)
+                    : orgMsg
                 }
                 return {
                   role: msg.messageRole as ConversationRole,
@@ -3090,7 +3092,9 @@ export const MessageRetryApi = async (c: Context) => {
                     ) {
                       const orgMsg = m.message
                       const selectedContext = isContextSelected(orgMsg)
-                      m.message = selectedContext ? buildUserQuery(selectedContext) : orgMsg
+                      m.message = selectedContext
+                        ? buildUserQuery(selectedContext)
+                        : orgMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,
@@ -3119,7 +3123,9 @@ export const MessageRetryApi = async (c: Context) => {
                     ) {
                       const orgMsg = m.message
                       const selectedContext = isContextSelected(orgMsg)
-                      m.message = selectedContext ? buildUserQuery(selectedContext) : orgMsg
+                      m.message = selectedContext
+                        ? buildUserQuery(selectedContext)
+                        : orgMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,
