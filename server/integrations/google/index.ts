@@ -1283,6 +1283,9 @@ const insertFilesForUser = async (
     const endTimestamp = endDate ? new Date(endDate).getTime() : undefined
 
     for await (let pageFiles of iterator) {
+      Logger.info(
+        `Processing page of ${pageFiles.length} files for user ${userEmail}`,
+      )
       // Check existence and timestamps for all files in this page right away
       const fileIds = pageFiles.map((file) => file.id!)
       const existenceMap = await ifDocumentsExist(fileIds)
@@ -1365,6 +1368,9 @@ const insertFilesForUser = async (
       })
 
       for (const doc of allFiles) {
+        Logger.info(
+          `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
+        )
         await insertWithRetry(doc, fileSchema)
         // do not update for Sheet as we will add the actual count later
         if (doc.mimeType !== DriveMime.Sheets) {
@@ -1374,7 +1380,9 @@ const insertFilesForUser = async (
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
 
-      Logger.info(`finished ${initialCount} files`)
+      Logger.info(
+        `Finished processing page of ${initialCount} files for user ${userEmail}. Total processed so far: ${processedFiles}`,
+      )
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -1790,11 +1798,17 @@ export const googlePDFsVespa = async (
   userEmail: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
   const drive = google.drive({ version: "v3", auth: client })
+  Logger.info(
+    `Starting PDF processing for ${pdfsMetadata.length} files for user ${userEmail}`,
+  )
   // a flag just for the error to know
   // if the file was downloaded or not
   const limit = pLimit(PDFProcessingConcurrency)
   const pdfPromises = pdfsMetadata.map((pdf) =>
     limit(async () => {
+      Logger.info(
+        `Processing PDF: ID: ${pdf.id}, Name: ${pdf.name} for user ${userEmail}`,
+      )
       const pdfSizeInMB = parseInt(pdf.size!) / (1024 * 1024)
       // Ignore the PDF files larger than Max PDF Size
       if (pdfSizeInMB > MAX_GD_PDF_SIZE) {
@@ -2201,6 +2215,9 @@ export const googleDocsVespa = async (
   docsMetadata: drive_v3.Schema$File[],
   connectorId: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
+  Logger.info(
+    `Starting Google Docs processing for ${docsMetadata.length} files. Connector ID: ${connectorId}`,
+  )
   // sendWebsocketMessage(
   //   `Scanning ${docsMetadata.length} Google Docs`,
   //   connectorId,
@@ -2211,6 +2228,9 @@ export const googleDocsVespa = async (
   const limit = pLimit(GoogleDocsConcurrency)
   const docsPromises = docsMetadata.map((doc) =>
     limit(async () => {
+      Logger.info(
+        `Processing Google Doc: ID: ${doc.id}, Name: ${doc.name}. Connector ID: ${connectorId}`,
+      )
       try {
         const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
           await retryWithBackoff(

@@ -69,9 +69,7 @@ const constructFileContext = (
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}
-Created: ${getRelativeTime(fields.createdAt)}
-Updated At: ${getRelativeTime(fields.updatedAt)}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
@@ -83,8 +81,7 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` 
 // TODO: tell if workspace that this is an employee
 const constructUserContext = (fields: VespaUser, relevance: number): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Added: ${getRelativeTime(fields.creationTime)}
+Entity: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\nAdded: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `Name: ${fields.name}` : ""}
 ${fields.email ? `Email: ${fields.email}` : ""}
 ${fields.gender ? `Gender: ${fields.gender}` : ""}
@@ -136,8 +133,7 @@ const constructMailContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Sent: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -167,8 +163,7 @@ const constructSlackMessageContext = (
     User: ${fields.name}
     Username: ${fields.username}
     Message: ${fields.text}
-    ${fields.threadId ? "it's a message thread" : ""}
-    Time: ${getRelativeTime(fields.createdAt)}
+    ${fields.threadId ? "it's a message thread" : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)}` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
 }
@@ -215,8 +210,7 @@ const constructMailAttachmentContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Sent: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
@@ -233,12 +227,8 @@ Event Name: ${fields.name ? `Name: ${fields.name}` : ""}
 Description: ${fields.description ? fields.description.substring(0, 50) : ""}
 Base URL: ${fields.baseUrl ? fields.baseUrl : "No base URL"}
 Status: ${fields.status ? fields.status : "Status unknown"}
-Location: ${fields.location ? fields.location : "No location specified"}
-Created: ${getRelativeTime(fields.createdAt)}
-Updated: ${getRelativeTime(fields.updatedAt)}
-Today's Date: ${getDateForAI()}
-Start Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}
-End Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}
+Location: ${fields.location ? fields.location : "No location specified"}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated: ${getRelativeTime(fields.updatedAt)}` : ""}
+Today's Date: ${getDateForAI()}${typeof fields.startTime === "number" && isFinite(fields.startTime) ? `\nStart Time: ${!fields.defaultStartTime ? new Date(fields.startTime).toUTCString() : `No start time specified but date is ${new Date(fields.startTime)}`}` : ""}${typeof fields.endTime === "number" && isFinite(fields.endTime) ? `\nEnd Time: ${!fields.defaultStartTime ? new Date(fields.endTime).toUTCString() : `No end time specified but date is ${new Date(fields.endTime)}`}` : ""}
 Organizer: ${fields.organizer ? fields.organizer.displayName : "No organizer specified"}
 Attendees: ${
     fields.attendees && fields.attendees.length
@@ -268,9 +258,7 @@ const constructFileMetadataContext = (
 ): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}
-Created: ${getRelativeTime(fields.createdAt)}
-Updated At: ${getRelativeTime(fields.updatedAt)}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
@@ -284,8 +272,7 @@ const constructUserMetadataContext = (
   relevance: number,
 ): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Added: ${getRelativeTime(fields.creationTime)}
+Entity: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\nAdded: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `Name: ${fields.name}` : ""}
 ${fields.email ? `Email: ${fields.email}` : ""}
 ${fields.gender ? `Gender: ${fields.gender}` : ""}
@@ -300,8 +287,7 @@ const constructMailMetadataContext = (
   relevance: number,
 ): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-Sent: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -316,8 +302,7 @@ const constructMailAttachmentMetadataContext = (
   relevance: number,
 ): string => {
   return `App: ${fields.app}
-Entity: ${fields.entity}
-timestamp: ${getRelativeTime(fields.timestamp)}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\ntimestamp: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.fileType ? `FileType: ${fields.fileType}` : ""}
@@ -330,9 +315,7 @@ const constructFileColoredContext = (
 ): string => {
   return `${pc.green("App")}: ${fields.app}
 ${pc.green("Entity")}: ${fields.entity}
-${fields.title ? `${pc.green("Title")}: ${fields.title}` : ""}
-${pc.green("Created")}: ${getRelativeTime(fields.createdAt)}
-${pc.green("Updated At")}: ${getRelativeTime(fields.updatedAt)}
+${fields.title ? `${pc.green("Title")}: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n${pc.green("Created")}: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\n${pc.green("Updated At")}: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.url ? `${pc.green("Link")}: ${pc.cyan(fields.url)}` : ""}
 ${fields.owner ? `${pc.green("Owner")}: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `${pc.green("Owner Email")}: ${fields.ownerEmail}` : ""}
@@ -347,8 +330,7 @@ const constructUserColoredContext = (
   relevance: number,
 ): string => {
   return `${pc.green("App")}: ${fields.app}
-${pc.green("Entity")}: ${fields.entity}
-${pc.green("Added")}: ${getRelativeTime(fields.creationTime)}
+${pc.green("Entity")}: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\n${pc.green("Added")}: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `${pc.green("Name")}: ${fields.name}` : ""}
 ${fields.email ? `${pc.green("Email")}: ${fields.email}` : ""}
 ${fields.gender ? `${pc.green("Gender")}: ${fields.gender}` : ""}
@@ -363,8 +345,7 @@ const constructMailColoredContext = (
   relevance: number,
 ): string => {
   return `${pc.green("App")}: ${fields.app}
-${pc.green("Entity")}: ${fields.entity}
-${pc.green("Sent")}: ${getRelativeTime(fields.timestamp)}
+${pc.green("Entity")}: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\n${pc.green("Sent")}: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `${pc.green("Subject")}: ${fields.subject}` : ""}
 ${fields.from ? `${pc.green("From")}: ${fields.from}` : ""}
 ${fields.to ? `${pc.green("To")}: ${fields.to.join(", ")}` : ""}
