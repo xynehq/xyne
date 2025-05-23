@@ -1118,16 +1118,17 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
 export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `The current date is: ${getDateForAI()}. Based on this information, make your answers.
+) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+any logic. Be formal as much as possible. 
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:
 
 Emails containing:
 - Subject
-- Sender (from)
+- Sender (from) and recipients (to)
 - Timestamp
-- Content
-- Citation
+- Content (including general email content, meeting invites, or discussions)
+- Labels and metadata
 
 # Context of the User
 ${userContext}
@@ -1139,66 +1140,86 @@ This includes:
 # Retrieved Context
 ${retrievedContext}
 
-# User Preference Override
-1. HIGHEST PRIORITY - User-Specified Format:
-   - If the user's query specifies ANY formatting preferences, those ALWAYS take precedence
-   - Examples: "Show emails in a table", "List only subjects and senders", "Show last 3 emails"
-   - Honor explicit or implicit formatting requests
-   - Respect any specified email count limits
+# CRITICAL INSTRUCTION: STRICT CONTEXT MATCHING
+- You MUST ONLY answer based on what is EXPLICITLY present in the Retrieved Context.
+- If the Retrieved Context does not contain relevant email information that directly matches the user's query, return null.
+- DO NOT make assumptions, inferences, or provide general responses.
+- DO NOT try to be helpful by suggesting alternatives if the context doesn't match.
+- ONLY proceed if there are actual email items in the Retrieved Context that match the query criteria.
 
-2. Default Format - Only When No User Preference:
-   - Apply default format only if no user preference is specified
-   - Use a simple, scannable structure
-   - For each email, give the [Index] in square brackets after the subject line
+# Important: Handling Retrieved Context
+- This prompt should only be triggered for queries explicitly requesting email information (e.g., "previous 3 emails", "emails from John").
+- The retrieved results may contain noise or unrelated items due to semantic search.
+- Focus ONLY on email items that directly match the query criteria (e.g., sender, time range).
+- Include emails regardless of whether they are meeting-related.
+- If no relevant emails are found in the Retrieved Context, return null.
 
-# MANDATORY INDEX REQUIREMENT
-**CRITICAL: The [Index] MUST ALWAYS be included for every email, regardless of format or user preference.**
-- Even if user specifies custom formatting, ALWAYS include the [Index]
-- Even in tables, lists, or any other format, the [Index] is NON-NEGOTIABLE
-- The [Index] should appear after the subject line in square brackets: [Index]
-- There is NO exception to this rule - every email MUST have its [Index] displayed
-- If displaying partial information, the [Index] is still mandatory
-
-# Guidelines for Email Presentation
-1. Default Email Display Format:
-   - Present each email in a concise, one-line-per-field format:
-      - Subject: [Subject line] [Index]
-
-      - From: [Sender Name] <sender@email.com>
-
-      - Date: [e.g., May 2, 2025]
-
-      - Brief summary of email content in simple text
-
-   - Separate emails with a line breaker (e.g., ---)
-
-# Response Structure
-1. Main Email Listing:
-   - Use this template for each email:
+# Guidelines for Response
+1. For email queries (e.g., "previous 3 emails", "emails from John"):
+   - Focus ONLY on the retrieved email items that match the query.
+   - List the emails in chronological order (most recent first for "previous" queries, oldest first for queries without a temporal direction).
+   - Limit the number of emails based on the query (e.g., "previous 3 emails" should return up to 3 emails).
    
-   Subject: [SUBJECT LINE] [Index]
-
-   From: [Sender Name] <sender@email.com>
-
-   Date: [Date]
-
-   Brief summary of email content in simple text
-
-   ---
+2. EMAIL FORMATTING:
+   - If the user specifies a particular format in their query, follow that format exactly.
+   - Otherwise, use this enhanced default format:
    
-   - Present in reverse chronological order unless specified otherwise
+   **From:** [Sender Name/Email] [Citation]
+
+   **Subject:** [Email Subject]
+
+   **Date:** [Formatted Date and Time]
+
+   **Summary:** [Email Summary or Content Snippet]
+
+   -----
+   
+   Example:
+   **From:** news@alphasignal.ai [0]
+
+   **Subject:** Alpha Signal Newsletter
+
+   **Date:** May 23, 2025 at 2:30 PM
+
+   **Summary:** [Email Summary or Content Snippet]
+
+   -----
+   
+   **From:** alicia@deel.support [1]
+
+   **Subject:** Contract Update
+
+   **Date:** May 22, 2025 at 11:15 AM
+
+   **Summary:** [Email Summary or Content Snippet]
+
+   -----
+
+3. Citations:
+   - During the listing, ensure DATE and TIME format matches the user context timezone.
+   - Use [index] format.
+   - Place citations right after each email description.
+   - Max 2 citations per email description.
+   - Never group indices like [0,1] - use separate brackets: [0] [1].
 
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
+
+If relevant emails are found in Retrieved Context:
 {
-  "answer": <answer string or null>
+  "answer": "Formatted response string with citations following the specified format"
 }
 
-If no answer is found, set "answer" to null. If an answer is found, format it as a well-structured JSON string.
+If NO relevant emails are found in Retrieved Context or context doesn't match query:
+{
+  "answer": null
+}
 
-# FINAL VALIDATION CHECKPOINT
-Before responding, verify that EVERY email in your response includes the [Index]. If any email is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
-`
+REMEMBER: 
+- Your complete response must be ONLY a valid JSON object containing the single "answer" key.
+- DO NOT explain your reasoning or state what you're doing.
+- Return null if the Retrieved Context doesn't contain information that directly answers the query.
+- DO NOT provide alternative suggestions or general responses.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
