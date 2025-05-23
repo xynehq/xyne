@@ -1,6 +1,5 @@
-import { google } from "googleapis";
 import { type Context } from "hono";
-import type { LogBulkTraceDataInput } from "@/api/search"; 
+import type { LogBulkTraceDataInput } from "@/api/search";
 import { getLogger } from "@/logger";
 import { Subsystem } from "@/types";
 
@@ -9,9 +8,6 @@ const Logger = getLogger(Subsystem.Server);
 // Remove Google Sheets constants
 // const SHEET_ID = "1E1O_Uvk-7Oo2jj8CPEXfM3CrI3JiS_h_kZg10Ehy8cE";
 // const SHEET_NAME = "Sheet1";
-// const SERVICE_ACCOUNT_KEY_PATH = "/Users/mayank.bansal/Desktop/xyne/server/xyneChatTraceLogs.json";
-// const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-
 // New handler for bulk logging
 export const LogBulkTraceDataApi = async (c: Context) => {
   // Note: We might need to apply the specific Context typing fix here too if needed
