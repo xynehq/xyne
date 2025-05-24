@@ -38,7 +38,6 @@ import type {
   ModelParams,
   QueryRouterResponse,
   TemporalClassifier,
-  UserQuery,
 } from "@/ai/types"
 import {
   QueryContextRank,
@@ -902,18 +901,6 @@ const indexToCitation = (text: string): string => {
   return text.replace(/Index (\d+)/g, "[$1]")
 }
 
-export const buildUserQuery = (userQuery: UserQuery) => {
-  let builtQuery = ""
-  userQuery?.map((obj) => {
-    if (obj?.type === "text") {
-      builtQuery += `${obj?.value} `
-    } else if (obj?.type === "pill") {
-      builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
-    }
-  })
-  return builtQuery
-}
-
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
@@ -936,13 +923,6 @@ export const baselineRAGJsonStream = (
       userCtx,
       indexToCitation(retrievedCtx),
     )
-    if (params.systemPrompt.length > 600_000) {
-      return (async function* (): AsyncIterableIterator<ConverseResponse> {
-        yield {
-          text: "Selected context is too large, please select smaller files",
-        }
-      })()
-    }
   } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
@@ -959,12 +939,12 @@ export const baselineRAGJsonStream = (
     )
   }
   params.json = true // Set to true to ensure JSON response
-  const parsed = safeParse(userQuery)
+
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
       {
-        text: parsed ? buildUserQuery(parsed) : userQuery,
+        text: `${userQuery}`,
       },
     ],
   }
@@ -974,14 +954,6 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
-}
-
-export const safeParse = (str: string) => {
-  try {
-    return JSON.parse(str)
-  } catch {
-    return null
-  }
 }
 
 export const temporalPromptJsonStream = (

@@ -8,8 +8,6 @@ import {
   mailPromptJsonStream,
   temporalPromptJsonStream,
   queryRewriter,
-  safeParse,
-  buildUserQuery,
 } from "@/ai/provider"
 import {
   Models,
@@ -17,6 +15,7 @@ import {
   type ConverseResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
+  type UserQuery,
 } from "@/ai/types"
 import config from "@/config"
 import {
@@ -985,8 +984,12 @@ async function* generateAnswerFromGivenContext(
     `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
   )
 
+  const selectedContext = isContextSelected(message)
+  const builtUserQuery = selectedContext
+    ? buildUserQuery(selectedContext)
+    : message
   const iterator = baselineRAGJsonStream(
-    input,
+    builtUserQuery,
     userCtx,
     initialContext,
     {
@@ -1010,9 +1013,7 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    const parsed = safeParse(message)
-    const msgToSearch = parsed ? buildUserQuery(parsed) : message
-    let results = await searchVespaInFiles(msgToSearch, email, fileIds, {
+    let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
       limit: fileIds?.length,
       alpha: userAlpha,
     })
@@ -1031,21 +1032,16 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
-    const iterator = withThrottlingBackoff(
-      () =>
-        baselineRAGJsonStream(
-          input,
-          userCtx,
-          initialContext,
-          {
-            stream: true,
-            modelId: defaultBestModel,
-            reasoning: config.isReasoning && userRequestsReasoning,
-          },
-          true,
-        ),
-      /* maxRetries: */ 5,
-      /* baseDelayMs: */ 2000,
+    const iterator = baselineRAGJsonStream(
+      builtUserQuery,
+      userCtx,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+      },
+      true,
     )
 
     const answer = yield* processIterator(
@@ -1074,43 +1070,30 @@ async function* generateAnswerFromGivenContext(
   }
 }
 
-export function withThrottlingBackoff<T>(
-  factory: () => AsyncIterable<T>,
-  maxRetries = 5,
-  baseDelayMs = 1000,
-) {
-  return (async function* retryingIterator() {
-    let attempt = 0
-    while (true) {
-      try {
-        // (re)create the iterator
-        for await (const item of factory()) {
-          yield item
-        }
-        return
-      } catch (err: any) {
-        const isThrottling =
-          err.name === "ThrottlingException" ||
-          err.type === "ThrottlingException" ||
-          err.message?.includes("ThrottlingException")
-        if (isThrottling && attempt < maxRetries) {
-          // compute 2^attempt * baseDelay + jitter
-          const backoff = Math.pow(2, attempt) * baseDelayMs
-          const jitter = Math.random() * 100
-          const waitTime = backoff + jitter
-          Logger.warn(
-            `[AI] ThrottlingException encountered. ` +
-              `Retrying in ${waitTime.toFixed(0)}ms ` +
-              `(${attempt + 1}/${maxRetries})`,
-          )
-          await delay(waitTime)
-          attempt++
-          continue // retry
-        }
-        throw err
-      }
+// Checks if the user has selected context
+// Meaning if the query contains Pill info
+export const isContextSelected = (str: string) => {
+  try {
+    if (str.startsWith("[{")) {
+      return JSON.parse(str)
+    } else {
+      return null
     }
-  })()
+  } catch {
+    return null
+  }
+}
+
+export const buildUserQuery = (userQuery: UserQuery) => {
+  let builtQuery = ""
+  userQuery?.map((obj) => {
+    if (obj?.type === "text") {
+      builtQuery += `${obj?.value} `
+    } else if (obj?.type === "pill") {
+      builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
+    }
+  })
+  return builtQuery
 }
 
 const getSearchRangeSummary = (
@@ -1845,6 +1828,18 @@ const handleError = (error: any) => {
   } else if (error?.code === OpenAIError.InvalidAPIKey) {
     errorMessage =
       "Invalid API key provided. Please check your API key and ensure it is correct."
+  } else if (
+    error?.name === "ThrottlingException" ||
+    error?.message === "Too many tokens, please wait before trying again." ||
+    error?.$metadata?.httpStatusCode === 429
+  ) {
+    errorMessage = "Rate limit exceeded. Please try again later."
+  } else if (
+    error?.name === "ValidationException" ||
+    error?.message ===
+      "The model returned the following errors: Input is too long for requested model."
+  ) {
+    errorMessage = "Input context is too large."
   }
   return errorMessage
 }
@@ -2221,9 +2216,11 @@ export const MessageApi = async (c: Context) => {
                   fileIds &&
                   fileIds.length > 0
                 ) {
-                  const orgMsg = msg.message
-                  const parsed = safeParse(orgMsg)
-                  msg.message = parsed ? buildUserQuery(parsed) : orgMsg
+                  const originalMsg = msg.message
+                  const selectedContext = isContextSelected(originalMsg)
+                  msg.message = selectedContext
+                    ? buildUserQuery(selectedContext)
+                    : originalMsg
                 }
                 return {
                   role: msg.messageRole as ConversationRole,
@@ -3090,9 +3087,11 @@ export const MessageRetryApi = async (c: Context) => {
                       fileIds &&
                       fileIds.length > 0
                     ) {
-                      const orgMsg = m.message
-                      const parsed = safeParse(orgMsg)
-                      m.message = parsed ? buildUserQuery(parsed) : orgMsg
+                      const originalMsg = m.message
+                      const selectedContext = isContextSelected(originalMsg)
+                      m.message = selectedContext
+                        ? buildUserQuery(selectedContext)
+                        : originalMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,
@@ -3119,9 +3118,11 @@ export const MessageRetryApi = async (c: Context) => {
                       fileIds &&
                       fileIds.length > 0
                     ) {
-                      const orgMsg = m.message
-                      const parsed = safeParse(orgMsg)
-                      m.message = parsed ? buildUserQuery(parsed) : orgMsg
+                      const originalMsg = m.message
+                      const selectedContext = isContextSelected(originalMsg)
+                      m.message = selectedContext
+                        ? buildUserQuery(selectedContext)
+                        : originalMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,
