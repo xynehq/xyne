@@ -75,11 +75,11 @@ export async function updateChatTrace(
     )
     .returning()
 
-  if (!updated || !updated.traceJson) return null;
+  if (!updated || !updated.traceJson) return null
 
-  return {
+return {
     ...updated,
-    traceJson: decompressTraceJson(updated.traceJson as Buffer),
+   traceJson: JSON.parse(decompressTraceJson(updated.traceJson as Buffer)),
   }
 }
 
