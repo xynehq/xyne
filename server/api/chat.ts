@@ -2216,11 +2216,11 @@ export const MessageApi = async (c: Context) => {
                   fileIds &&
                   fileIds.length > 0
                 ) {
-                  const orgMsg = msg.message
-                  const selectedContext = isContextSelected(orgMsg)
+                  const originalMsg = msg.message
+                  const selectedContext = isContextSelected(originalMsg)
                   msg.message = selectedContext
                     ? buildUserQuery(selectedContext)
-                    : orgMsg
+                    : originalMsg
                 }
                 return {
                   role: msg.messageRole as ConversationRole,
@@ -3087,11 +3087,11 @@ export const MessageRetryApi = async (c: Context) => {
                       fileIds &&
                       fileIds.length > 0
                     ) {
-                      const orgMsg = m.message
-                      const selectedContext = isContextSelected(orgMsg)
+                      const originalMsg = m.message
+                      const selectedContext = isContextSelected(originalMsg)
                       m.message = selectedContext
                         ? buildUserQuery(selectedContext)
-                        : orgMsg
+                        : originalMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,
@@ -3118,11 +3118,11 @@ export const MessageRetryApi = async (c: Context) => {
                       fileIds &&
                       fileIds.length > 0
                     ) {
-                      const orgMsg = m.message
-                      const selectedContext = isContextSelected(orgMsg)
+                      const originalMsg = m.message
+                      const selectedContext = isContextSelected(originalMsg)
                       m.message = selectedContext
                         ? buildUserQuery(selectedContext)
-                        : orgMsg
+                        : originalMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,
