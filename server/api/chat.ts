@@ -503,7 +503,7 @@ async function* processIterator(
       if (!reasoning) {
         buffer += chunk.text
         try {
-          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+          parsed = jsonParseLLMOutput(buffer)
           // If we have a null answer, break this inner loop and continue outer loop
           // seen some cases with just "}"
           if (parsed.answer === null || parsed.answer === "}") {
@@ -539,6 +539,7 @@ async function* processIterator(
       yield { cost: chunk.cost }
     }
   }
+  console.log(parsed.answer, "parsed answer")
   return parsed.answer
 }
 
@@ -1457,9 +1458,12 @@ async function* processResultsForMetadata(
     span?.setAttribute("Google Drive chunk_size", chunksCount)
   }
 
-  // ToDo: we need to pass the full context here after calculating tokens to pass
+  // TODO: Calculate the token count for the selected model's capacity and pass the full context accordingly.
   chunksCount = 20
-  span?.setAttribute("Document chunk size", `full_context maxed to ${chunksCount}`)
+  span?.setAttribute(
+    "Document chunk size",
+    `full_context maxed to ${chunksCount}`,
+  )
   const context = buildContext(items, chunksCount)
   const streamOptions = {
     stream: true,
@@ -1591,6 +1595,20 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
+
+      if (!items.length) {
+        Logger.info(
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
+        )
+
+        yield { text: "null" }
+        return
+      }
+
       let chunksCount = undefined
       const answer = yield* processResultsForMetadata(
         items,
@@ -1603,7 +1621,7 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
       )
 
-      if (!answer) {
+      if (answer == null) {
         Logger.info(`no answer found for iteration - ${iteration}`)
         continue
       } else {
@@ -1637,12 +1655,16 @@ async function* generateMetadataQueryAnswer(
       `Retrieved documents length for ${QueryType.RetrieveUnspecificMetadata}`,
       items.length,
     )
-    Logger.info(`Retrieved documents length for ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`)
+    Logger.info(
+      `Retrieved documents length for ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
+    )
     // Early return if no documents found
     if (!items.length) {
       Logger.info("No documents found for unspecific metadata retrieval")
-      return "no documents found"
+      yield { text: "no documents found" }
+      return
     }
+
     return yield* processResultsForMetadata(
       items,
       input,
@@ -1702,12 +1724,19 @@ async function* generateMetadataQueryAnswer(
       )
       let chunksCount = undefined
 
-      Logger.info(`Retrieved documents length for ${QueryType.RetrieveMetadata} = ${items.length}`)
+      Logger.info(
+        `Retrieved documents length for ${QueryType.RetrieveMetadata} - ${items.length}`,
+      )
       if (!items.length) {
         Logger.info(
-          `No documents found on iteration ${iteration}${hasValidTimeRange ? " within time range." : "falling back to iterative RAG"}`,
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
         )
-        return hasValidTimeRange ? "no documents found" : null
+        yield { text: "null" }
+        return
       }
 
       const answer = yield* processResultsForMetadata(
@@ -1721,9 +1750,10 @@ async function* generateMetadataQueryAnswer(
         userRequestsReasoning,
       )
 
-      if (!answer) {
-        if (hasValidTimeRange && maxIterations == iteration) {
-          return "no documents found"
+      if (answer == null) {
+        if (iteration == maxIterations - 1) {
+          yield { text: "null" }
+          return
         } else {
           Logger.info(`no answer found for iteration - ${iteration}`)
           continue
@@ -1734,7 +1764,8 @@ async function* generateMetadataQueryAnswer(
     }
   } else {
     // None of the conditions matched
-    return null
+    yield { text: "null" }
+    return
   }
 }
 
@@ -1829,8 +1860,9 @@ export async function* UnderstandMessageAndAnswer(
       "classification",
       JSON.stringify(classification),
     )
+
     const count = classification.filters.count || chatPageSize
-    const answer = yield* generateMetadataQueryAnswer(
+    const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
       email,
@@ -1843,23 +1875,24 @@ export async function* UnderstandMessageAndAnswer(
       metadataRagSpan,
     )
 
-    if (answer === "no documents found") {
-      metadataRagSpan?.end()
-
-      const fallbackMessage = fallbackText(classification)
-      return yield {
-        text: `I couldn't find any ${fallbackMessage}. Would you like to try a different search?`,
+    let hasYieldedAnswer = true
+    for await (const answer of answerIterator) {
+      if (answer.text === "no documents found") {
+        return yield {
+          text: `I couldn't find any ${fallbackText(classification)}. Would you like to try a different search?`,
+        }
+      } else if (answer.text === "null") {
+        Logger.info(
+          "No context found for metadata retrieval, moving to iterative RAG",
+        )
+        hasYieldedAnswer = false
+      } else {
+        yield answer
       }
     }
 
-    if (answer) {
-      metadataRagSpan?.end()
-      return yield* answer
-    }
     metadataRagSpan?.end()
-    Logger.info(
-      "No context found for metadata retrieval, moving to iterative RAG",
-    )
+    if (hasYieldedAnswer) return
   }
 
   if (classification.direction !== null) {
