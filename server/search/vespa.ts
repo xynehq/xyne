@@ -178,7 +178,7 @@ const AllSources = [
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
-  chatUserSchema,
+  // chatUserSchema,
   chatMessageSchema,
 ].join(", ")
 

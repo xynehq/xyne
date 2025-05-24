@@ -504,10 +504,10 @@ You must respond in valid JSON format with the following structure:
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
-- If no clear answer is found in the retrieved context, set "answer" to "null" 
+- If no clear answer is found in the retrieved context, set "answer" to null 
 - For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
-If information is missing or unclear, or the query lacks context set "answer" as "null" 
+If information is missing or unclear, or the query lacks context set "answer" as null 
 `
 
 // Baseline Reasoing Prompt JSON
@@ -650,6 +650,7 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
+- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -720,8 +721,7 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null
-If the query given by user is irrelevant to the given context, set "answer" to null`
+If information is missing or unclear: Set "answer" to null`
 
 export const queryRewritePromptJson = (
   userContext: string,
@@ -826,17 +826,17 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
     8. Extract the main intent or search keywords from the query to create a "filter_query" field:
-      - Focus on identifying the specific keywords that represent what the user is looking for
-      - Remove generic words like "find", "show", "get", "my", etc.
-      - Include subject matter terms, named entities, project identifiers, and descriptive terms
-      - Examples:
-        - "I want my recent uber receipts from last week" → filter_query: "uber receipts"
-        - "Show me emails about the marketing campaign" → filter_query: "marketing campaign"
-        - "Find documents related to project alpha" → filter_query: "project alpha"
-        - "Get my presentations about quarterly results" → filter_query: "quarterly results presentations"
-        - "Spreadsheets with budget information" → filter_query: "budget spreadsheets"
-      - Time-based terms like "recent", "latest", "last week" should NOT be included in the filter_query
-      - If there are no specific search keywords after removing generic and time-based terms, set filter_query to null
+      - STRICT CONTENT FILTERING: Only include keywords that represent SPECIFIC CONTENT the user is looking for
+      - Remove ALL of the following from consideration for filter_query:
+        a) Generic action words: "find", "show", "get", "search", "look", "give", etc.
+        b) Personal pronouns: "my", "your", "their", etc.
+        c) Time-related terms: "recent", "latest", "last week", "old", "new", etc.
+        d) Quantity terms: "most", "all", "some", "few", "2", "three", etc.
+        e) Format/structural words: "summary", "details", "info", "information", "content", etc.
+        f) Generic descriptors: "important", "urgent", "relevant", etc.
+        g) Generic item types when used without specific content descriptors: "files", "emails", "documents", etc.
+      - ONLY include subject matter terms, named entities, project identifiers, and content-specific descriptors
+      - If there are no specific content keywords after applying these strict filtering rules, set filter_query to null
 
     9. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
@@ -865,16 +865,13 @@ export const searchQueryPrompt = (userContext: string): string => {
     2. RetrieveMetadata
     - Applies to queries that MATCH ALL of these conditions:
       - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') OR specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
-      - Include at least one additional specific detail that meets ANY of these criteria:
-        a) Contains subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
-        b) Contains named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
-        c) Contains action verbs describing content (e.g., 'discussing', 'approved', 'rejected')
-        d) Contains project or task identifiers (e.g., 'Project Alpha', 'Q2 planning')
-      - Any time-based terms (e.g., "recent", "latest", "last week", "this month") MUST be accompanied by a non-empty filter_query to qualify for RetrieveMetadata
+      - MUST HAVE a non-null filter_query containing specific details like:
+        a) Subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
+        b) Named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
+        c) Action verbs describing content (e.g., 'discussing', 'approved', 'rejected')
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
       - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
-      - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
     - Examples:
       - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail', filter_query: "openai"
       - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf', filter_query: "vendor contract"
@@ -882,14 +879,13 @@ export const searchQueryPrompt = (userContext: string): string => {
       - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: "budget"
 
     3. RetrieveUnspecificMetadata
-    - Applies to queries that MATCH ANY of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive') or a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile') without any additional specific details
-      - Queries that contain only time-based terms (e.g., "recent", "latest", "oldest") along with app/entity but NO specific filter_query is NULL, only then we will classify as RetrieveUnspecificMetadata. DON'T set RetrieveUnspecificMetadata if filter_query is not null.
-      - Focus on listing or retrieving items based solely on app, entity, and possibly time indicators
+    - Applies to queries that MATCH ALL of these conditions:
+      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive') or a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
+      - Has a NULL filter_query (no specific subject matter keywords, named entities, or action verbs)
+      - May contain only time-based or generic terms but lacks specific content indicators
     - For such queries:
       - Set 'app' and 'entity' to the corresponding valid values from the enum lists
       - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
-      - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
     - Examples:
       - 'current emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
       - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event', filter_query: null
@@ -898,6 +894,7 @@ export const searchQueryPrompt = (userContext: string): string => {
       - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: null
       - 'most recent emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
       - 'latest documents' -> 'app': 'google-drive', 'entity': 'docs', filter_query: null
+      - 'give me 2 most recent emails and summary about them' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
 
     4. Strict Mapping Guidelines
     - Always apply these exact mappings for app terms:
@@ -922,29 +919,58 @@ export const searchQueryPrompt = (userContext: string): string => {
       - For Google Workspace app:
         - 'contact', 'contacts', 'person', 'people' -> 'contacts'
 
-    5. Query Processing Decision Tree
+    5. Query Processing Decision Tree - SIMPLIFIED AND CLARIFIED
     - First, identify all app and entity terms mentioned in the query using the strict mappings above
-    - THEN, extract filter_query by removing generic words and time-based terms
-    - THEN, evaluate classification:
-      IF multiple valid apps OR multiple valid entities are detected with or without filter_query and IF there is no time based matching:
+    - THEN, extract filter_query by applying the STRICT CONTENT FILTERING rules (see section 8)
+    - BE CAREFUL: For queries like "give me recent emails" or "show me 2 recent emails and summary", there is NO specific content, so filter_query MUST be null
+    - THEN, apply these classification rules IN THIS EXACT ORDER:
+      
+      IF multiple valid apps OR multiple valid entities are detected:
         THEN classify as RetrieveInformation, set app = null, entity = null
+      
       ELSE IF exactly one valid app OR exactly one valid entity is detected:
-        IF query contains specific details resulting in a non-null filter_query:
-          THEN classify as RetrieveMetadata, set app and entity accordingly
-        ELSE:
-          THEN classify as RetrieveUnspecificMetadata, set app and entity accordingly
-      ELSE:
+        IF filter_query is null (no specific content keywords remain after strict filtering):
+          THEN classify as RetrieveUnspecificMetadata
+        ELSE (filter_query contains actual content keywords):
+          THEN classify as RetrieveMetadata
+      
+      ELSE (no valid app or entity detected):
         THEN classify as RetrieveInformation, set app = null, entity = null
 
-    6. Validation Checks (always perform these checks before finalizing classification)
-    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'.
-    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query.
-    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null'.
-    - IMPORTANT: For time-based queries (containing terms like "recent", "latest", "last month", etc.):
-      - If filter_query is null (no specific content keywords), classify as 'RetrieveUnspecificMetadata'
-      - If filter_query is not null (has specific content keywords), classify as 'RetrieveMetadata'
-    - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
-      
+    6. CRITICAL FILTERING EXAMPLES - VERY IMPORTANT
+    These examples must be followed exactly:
+    - "give me 2 most recent emails and summary about them"
+      * After strict filtering: No subject matter terms remain
+      * filter_query MUST be null
+      * Since "emails" maps to a single app (gmail) and filter_query is null, type MUST be RetrieveUnspecificMetadata
+    
+    - "show me my recent emails about marketing project"
+      * After strict filtering: Only "marketing project" remains
+      * filter_query = "marketing project"
+      * Since "emails" maps to a single app (gmail) and filter_query is not null, type MUST be RetrieveMetadata
+    
+    - "find the latest document with budget information"
+      * After strict filtering: Only "budget" remains
+      * filter_query = "budget"
+      * Since "document" maps to a single app (google-drive) and filter_query is not null, type MUST be RetrieveMetadata
+
+    7. HARD-CODED VALIDATION CHECK - MANDATORY
+    *** ABSOLUTE RULE: IF filter_query IS NULL AND there is exactly one valid app OR entity specified, the type MUST BE RetrieveUnspecificMetadata ***
+    
+    This is a non-negotiable validation rule that must be applied before finalizing any classification:
+    - Check if filter_query is null
+    - Check if exactly one app or entity is specified (not multiple, not zero)
+    - If BOTH conditions are true, force type = "RetrieveUnspecificMetadata"
+    - This rule overrides any other classification logic
+    
+    Additional Validation Checks:
+    - CRITICAL CHECK: If filter_query contains actual content keywords AND there is exactly one app or entity specified, the type MUST be RetrieveMetadata
+    - REMEMBER: Terms like "summary", "details", "info", "information", "content" are NOT specific content keywords and should be removed when determining filter_query
+    - REMEMBER: Quantity terms like "2", "three", "most", "all", "some", "few" are NOT specific content keywords and should be removed when determining filter_query
+    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'
+    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query
+    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null'
+    - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null
 
     #### Enum Values for Valid Inputs
 
@@ -1095,7 +1121,7 @@ export const emailPromptJson = (
 ) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible. 
 
-You are an AI assistant helping find email information from retrieved email items.  You have access to:
+You are an AI assistant helping find email information from retrieved email items. You have access to:
 
 Emails containing:
 - Subject
@@ -1114,29 +1140,57 @@ This includes:
 # Retrieved Context
 ${retrievedContext}
 
+# CRITICAL INSTRUCTION: STRICT CONTEXT MATCHING
+- You MUST ONLY answer based on what is EXPLICITLY present in the Retrieved Context.
+- If the Retrieved Context does not contain relevant email information that directly matches the user's query, return null.
+- DO NOT make assumptions, inferences, or provide general responses.
+- DO NOT try to be helpful by suggesting alternatives if the context doesn't match.
+- ONLY proceed if there are actual email items in the Retrieved Context that match the query criteria.
+
 # Important: Handling Retrieved Context
 - This prompt should only be triggered for queries explicitly requesting email information (e.g., "previous 3 emails", "emails from John").
 - The retrieved results may contain noise or unrelated items due to semantic search.
-- Focus on email items that match the query criteria (e.g., sender, time range).
+- Focus ONLY on email items that directly match the query criteria (e.g., sender, time range).
 - Include emails regardless of whether they are meeting-related.
-- If no relevant emails are found, return "I couldn't find any emails matching your query".
+- If no relevant emails are found in the Retrieved Context, return null.
 
 # Guidelines for Response
 1. For email queries (e.g., "previous 3 emails", "emails from John"):
-   - Focus on the retrieved email items.
+   - Focus ONLY on the retrieved email items that match the query.
    - List the emails in chronological order (most recent first for "previous" queries, oldest first for queries without a temporal direction).
    - Limit the number of emails based on the query (e.g., "previous 3 emails" should return up to 3 emails).
-   - Example response:
-    1. Subject: Alpha Signal Newsletter, From: news@alphasignal.ai [0]
-    2. Subject: Contract Update, From: alicia@deel.support [1]
-    3. Subject: Earth Day, From: info@earthday.org [2]
-    ... (No mention of meetings or content summary.)
-   - Bad Example (do NOT do this):
-      "I don't see any information about meetings in the retrieved emails. While there are several emails in your inbox from sources like X, none of them contain meeting invitations, updates, or discussions about meetings you're participating in."
+   
+2. EMAIL FORMATTING:
+   - If the user specifies a particular format in their query, follow that format exactly.
+   - Otherwise, use this enhanced default format:
+   
+   **From:** [Sender Name/Email] [Citation]
 
+   **Subject:** [Email Subject]
 
-2. Citations:
-   - During the listing, don't make the mistake on the DATE and TIME format. It should match with the context.
+   **Date:** [Formatted Date and Time]
+
+   -----
+   
+   Example:
+   **From:** news@alphasignal.ai [0]
+
+   **Subject:** Alpha Signal Newsletter
+
+   **Date:** May 23, 2025 at 2:30 PM
+
+   -----
+   
+   **From:** alicia@deel.support [1]
+
+   **Subject:** Contract Update
+
+   **Date:** May 22, 2025 at 11:15 AM
+
+   -----
+
+3. Citations:
+   - During the listing, ensure DATE and TIME format matches the user context timezone.
    - Use [index] format.
    - Place citations right after each email description.
    - Max 2 citations per email description.
@@ -1144,11 +1198,22 @@ ${retrievedContext}
 
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
+
+If relevant emails are found in Retrieved Context:
 {
-  "answer": "Formatted response string with citations or "I couldn't find any emails matching your query" if no relevant data is found"
+  "answer": "Formatted response string with citations following the specified format"
 }
 
-REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
+If NO relevant emails are found in Retrieved Context or context doesn't match query:
+{
+  "answer": null
+}
+
+REMEMBER: 
+- Your complete response must be ONLY a valid JSON object containing the single "answer" key.
+- DO NOT explain your reasoning or state what you're doing.
+- Return null if the Retrieved Context doesn't contain information that directly answers the query.
+- DO NOT provide alternative suggestions or general responses.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
@@ -1171,6 +1236,23 @@ ${userContext}
 
 # Retrieved Context
 ${retrievedContext}
+
+# CRITICAL: ULTRA-STRICT CONTEXT VALIDATION
+BEFORE ANY PROCESSING, YOU MUST:
+1. **EXACT MATCH REQUIREMENT**: The query must have a direct, exact match in the retrieved context
+2. **NO ASSUMPTIONS**: If the specific data requested is not explicitly present in the retrieved context, return {"answer": null}
+3. **NO INFERENCE**: Do not infer, assume, or extrapolate any information not directly stated in the retrieved context
+4. **NO HALLUCINATION**: Only use data that is explicitly provided - treat yourself as having no knowledge beyond the retrieved context
+5. **CONTEXT MISMATCH**: If the query asks for information that doesn't exist in the retrieved context (even if similar), return {"answer": null}
+6. **STRICT MATCHING**: You MUST ONLY answer based on what is EXPLICITLY present in the Retrieved Context
+7. **NO HELPFUL ALTERNATIVES**: Do not provide suggestions or alternatives if context doesn't match
+
+Examples of INVALID responses:
+- Query asks for "meetings with John" but context only has "meetings with Jonathan" → return null
+- Query asks for "last week's emails" but context only has emails from 2 weeks ago → return null  
+- Query asks for "PDF files" but context only shows "document files" without mime type → return null
+- Query asks for specific person but context has different person → return null
+- Query asks for specific person's attachments but context has different person's attachments → return null
 
 # Processing Instructions
 
@@ -1204,36 +1286,106 @@ ${retrievedContext}
 5. Final validation:
    - Recheck each item against temporal intent
    - Sort by appropriate chronology
-   - If no matching items: return {"answer": "null"}
+   - If no matching items: return {"answer": null}
 
-## Output Formatting
-- Events: "{Date} at {Time}, {Title}, {Participants}, {Location/Link} [{Index}]"
-- Emails: "Subject: {Subject}, From: {Sender}, {Date} [{Index}]"
-- Files: "{Title}, {Type}, Last modified: {Date}, {Owner} [{Index}]"
-- Users: "{Name}, {Title}, {Department}, {Location} [{Index}]"
-- Sort:
-  - FUTURE: Chronological (earliest first)
-  - PAST: Reverse chronological (most recent first)
+## User Preference Override
+1. HIGHEST PRIORITY - User-Specified Format:
+   - If the user's query specifies ANY formatting preferences, those ALWAYS take precedence
+   - Examples: "Show events in a table", "List only file titles", "Show last 3 emails"
+   - Honor explicit or implicit formatting requests
+   - Respect any specified item count limits
 
-## Citation
-- Use [index] format after each item
-- NEVER group multiple indices: Use [0] [1] not [0,1]
-- Only cite information directly from context
+2. Default Format - Only When No User Preference:
+   - Apply default format only if no user preference is specified
+   - Use a enhanced, professional structure
+
+# Guidelines for Presentation
+1. Enhanced Display Format (use only if no user-specified format):
+   
+   For Emails:
+   **From:** [Sender Name] <sender@email.com> [Index]
+
+   **Subject:** [Subject line]
+
+   **Date:** [Formatted Date and Time]
+
+   -----
+   
+   For Events:
+   **Title:** [Event name] [Index]
+
+   **Organizer:** [Organizer Name] <organizer@email.com>
+
+   **Date:** [Formatted Date and Time]
+
+   **Location:** [Location if available]
+  
+   -----
+   
+   For Files:
+   **Title:** [File title] [Index]
+
+   **Owner:** [Owner Name] <owner@email.com>
+
+   **Date:** [Last modified date]
+
+   **Type:** [File type/mime type if available]
+
+   -----
+   
+   For Users:
+   **Name:** [User Name] [Index]
+
+   **Email:** [User email]
+
+   **Title:** [Job title if available]
+
+   **Department:** [Department if available]
+
+   **Date Added:** [Addition date]
+  
+   -----
+
+# Response Structure
+1. Main Item Listing:
+   - Use the appropriate enhanced template for each item type
+   - Sort:
+     - FUTURE: Chronological (earliest first)
+     - PAST: Reverse chronological (most recent first)
+   - Use [Index] format for citations, never group indices (e.g., [0] [1], not [0,1])
+   - Add line breaks between items for readability
 
 # FINAL OUTPUT REQUIREMENTS
 1. ONLY return the JSON object with a single "answer" key
 2. NO narrative text, explanations, or anything outside the JSON
-3. NO repetitive phrases about analyzing the context
-4. If no items match after filtering, return exactly {"answer": "null"}
-5. Format timestamps in user's timezone
-6. Use markdown only if it enhances clarity
+3. If no items match after filtering, return exactly {"answer": null}
+4. If retrieved context doesn't contain the exact data requested, return exactly {"answer": null}
+5. If retrieved context doesn't match the query criteria, return exactly {"answer": null}
+6. Format timestamps in user's timezone
 7. Never hallucinate data not in retrievedContext
 8. For completed meetings query, return only past events that have ended
+9. DO NOT provide alternative suggestions or general responses if context doesn't match
 
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
+
+If relevant items are found in Retrieved Context that exactly match the query:
 {
-  "answer": "Formatted response string with citations or 'null' if no relevant data is found"
+  "answer": "Formatted response string with citations following the specified format"
 }
 
-REMEMBER: Your complete response must be ONLY a valid JSON object containing the single "answer" key. DO NOT explain your reasoning. DO NOT state what you're doing.`
+If NO relevant items are found in Retrieved Context or context doesn't match query:
+{
+  "answer": null
+}
+
+REMEMBER: 
+- Your complete response must be ONLY a valid JSON object containing the single "answer" key
+- DO NOT explain your reasoning or state what you're doing
+- Return null if the Retrieved Context doesn't contain information that directly answers the query
+- DO NOT provide alternative suggestions or general responses
+- ONLY proceed if there are actual items in the Retrieved Context that exactly match the query criteria
+
+# FINAL VALIDATION CHECKPOINT
+Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
+`
