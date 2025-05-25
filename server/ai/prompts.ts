@@ -779,7 +779,7 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     **User Context:** ${userContext}
 
-    Now, handle the query as follows:
+    Now handle the query as follows:
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -826,151 +826,104 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
     8. Extract the main intent or search keywords from the query to create a "filter_query" field:
-      - STRICT CONTENT FILTERING: Only include keywords that represent SPECIFIC CONTENT the user is looking for
-      - Remove ALL of the following from consideration for filter_query:
-        a) Generic action words: "find", "show", "get", "search", "look", "give", etc.
-        b) Personal pronouns: "my", "your", "their", etc.
-        c) Time-related terms: "recent", "latest", "last week", "old", "new", etc.
-        d) Quantity terms: "most", "all", "some", "few", "2", "three", etc.
-        e) Format/structural words: "summary", "details", "info", "information", "content", etc.
-        f) Generic descriptors: "important", "urgent", "relevant", etc.
-        g) Generic item types when used without specific content descriptors: "files", "emails", "documents", etc.
-      - ONLY include subject matter terms, named entities, project identifiers, and content-specific descriptors
-      - If there are no specific content keywords after applying these strict filtering rules, set filter_query to null
+      
+      **SIMPLIFIED FILTER_QUERY EXTRACTION RULES:**
+      
+      Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
+      - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
+      - Person names (e.g., "John", "Sarah", "marketing team")
+      - Specific topics or subjects (e.g., "contract", "invoice", "receipt", "proposal")
+      - Company/organization names (e.g., "OpenAI", "Google", "Microsoft")
+      - Product names or specific identifiers
+      
+      Step 2: EXCLUDE these from filter_query consideration:
+      - Generic action words: "find", "show", "get", "search", "give", "recent", "latest", "last"
+      - Personal pronouns: "my", "your", "their"
+      - Time-related terms: "recent", "latest", "last week", "old", "new", "current", "previous"
+      - Quantity terms: "5", "10", "most", "all", "some", "few"
+      - Generic item types: "emails", "files", "documents", "meetings", "orders" (when used generically)
+      - Structural words: "summary", "details", "info", "information"
+      
+      Step 3: Apply the rule:
+      - IF specific content keywords remain after exclusion → set filter_query to those keywords
+      - IF no specific content keywords remain after exclusion → set filter_query to null
+      
+      **EXAMPLES:**
+      - "recent uber receipts" → filter_query: "uber receipts" (uber is specific content)
+      - "give me recent 5 zomato orders" → filter_query: "zomato orders" (zomato is specific content)  
+      - "recent emails" → filter_query: null (no specific content after removing generic terms)
+      - "previous 5 meetings" → filter_query: null (no specific content)
+      - "emails about marketing project" → filter_query: "marketing project" (specific content)
+      - "latest budget documents" → filter_query: "budget" (budget is specific content)
+      - "show me all files" → filter_query: null (no specific content)
 
     9. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
     b. RetrieveMetadata  
     c. RetrieveUnspecificMetadata
 
-    ### DETAILED CLASSIFICATION RULES
+    ### CLASSIFICATION RULES - FIXED AND SOLID
     
-    1. RetrieveInformation
-    - Applies to queries that MATCH ANY of these conditions:
-      - Involve multiple apps or entities. If this is the case, just set type to "RetrieveInformation". 
-      - Do not explicitly mention ANY single valid app or entity from the enum lists
-      - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list
-      - Ask a question about item content rather than retrieval (e.g., "what did John say about the project?")
-      - Use general terms without specifying app or entity (e.g., "document", "contract", "report" without specifying "email" or "drive")
-    - For such queries:
-      - Set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to 'null', as the query is generic.
-      - Include 'startTime' and 'endTime' in 'filters' only if the query explicitly specifies a temporal range; otherwise, set them to 'null'.
-    - Examples:
-      - 'signed copy of rent agreement' -> 'app': 'null', 'entity': 'null'
-      - 'give me details for my files' -> 'app': 'null', 'entity': 'null'
-      - 'contract from last year' -> 'app': 'null', 'entity': 'null'
-      - 'recent budget report' -> 'app': 'null', 'entity': 'null'
-      - 'what did Sarah say in our last discussion?' -> 'app': 'null', 'entity': 'null'
-
-    2. RetrieveMetadata
-    - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive') OR specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
-      - MUST HAVE a non-null filter_query containing specific details like:
-        a) Subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
-        b) Named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
-        c) Action verbs describing content (e.g., 'discussing', 'approved', 'rejected')
-    - For such queries:
-      - Set 'app' and 'entity' to the corresponding valid values from the enum lists
-      - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
-    - Examples:
-      - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail', filter_query: "openai"
-      - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf', filter_query: "vendor contract"
-      - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event', filter_query: "marketing team"
-      - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: "budget"
-
-    3. RetrieveUnspecificMetadata
-    - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive') or a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
-      - Has a NULL filter_query (no specific subject matter keywords, named entities, or action verbs)
-      - May contain only time-based or generic terms but lacks specific content indicators
-    - For such queries:
-      - Set 'app' and 'entity' to the corresponding valid values from the enum lists
-      - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
-    - Examples:
-      - 'current emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
-      - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event', filter_query: null
-      - 'recent files in Google Drive' -> 'app': 'google-drive', 'entity': 'driveFile', filter_query: null
-      - 'my PDFs in email' -> 'app': 'gmail', 'entity': 'pdf', filter_query: null
-      - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets', filter_query: null
-      - 'most recent emails' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
-      - 'latest documents' -> 'app': 'google-drive', 'entity': 'docs', filter_query: null
-      - 'give me 2 most recent emails and summary about them' -> 'app': 'gmail', 'entity': 'mail', filter_query: null
-
-    4. Strict Mapping Guidelines
-    - Always apply these exact mappings for app terms:
-      - 'email', 'mail', 'emails', 'gmail' -> 'gmail'
-      - 'calendar', 'meetings', 'events', 'schedule' -> 'google-calendar'
-      - 'drive', 'files', 'documents', 'folders' -> 'google-drive'
-      - 'contacts', 'people', 'address book' -> 'google-workspace'
+    **STEP 1: STRICT APP/ENTITY DETECTION**
     
-    - Always apply these exact mappings for entity terms:
-      - For Gmail app:
-        - 'email', 'emails', 'mail', 'message', 'messages' -> 'mail'
-        - 'pdf', 'pdfs', 'attachment', 'attachments' -> 'pdf'
-      - For Google Drive app:
-        - 'file', 'files' -> 'driveFile'
-        - 'document', 'documents', 'doc', 'docs' -> 'docs'
-        - 'spreadsheet', 'spreadsheets', 'sheet', 'sheets' -> 'sheets'
-        - 'presentation', 'presentations', 'slide', 'slides' -> 'slides'
-        - 'pdf', 'pdfs' -> 'pdf'
-        - 'folder', 'folders', 'directory', 'directories' -> 'folder'
-      - For Google Calendar app:
-        - 'event', 'events', 'meeting', 'meetings', 'appointment', 'appointments' -> 'event'
-      - For Google Workspace app:
-        - 'contact', 'contacts', 'person', 'people' -> 'contacts'
+    Valid app keywords that map to apps:
+    - 'email', 'mail', 'emails', 'gmail' → 'gmail'
+    - 'calendar', 'meetings', 'events', 'schedule' → 'google-calendar'  
+    - 'drive', 'files', 'documents', 'folders' → 'google-drive'
+    - 'contacts', 'people', 'address book' → 'google-workspace'
+    
+    Valid entity keywords that map to entities:
+    - For Gmail: 'email', 'emails', 'mail', 'message' → 'mail'; 'pdf', 'attachment' → 'pdf'
+    - For Drive: 'file', 'files' → 'driveFile'; 'document', 'doc' → 'docs'; 'spreadsheet', 'sheet' → 'sheets'; 'presentation', 'slide' → 'slides'; 'pdf' → 'pdf'; 'folder' → 'folder'
+    - For Calendar: 'event', 'meeting', 'appointment' → 'event'
+    - For Workspace: 'contact', 'person' → 'contacts'
+    
+    **CRITICAL:** A query ONLY has valid app/entity if it contains the EXACT keywords listed above. Words like "uber", "receipts", "orders", "budget", etc. are NOT valid app/entity terms - they are content keywords.
+    
+    **STEP 2: DETECT MULTIPLE APP/ENTITY REFERENCES**
+    
+    Set "multiple_app_entity" to true ONLY if the query contains keywords from multiple different apps/services from the valid lists above.
+    Examples:
+    - "email and calendar" → multiple_app_entity: true (contains both gmail and calendar keywords)
+    - "files and emails" → multiple_app_entity: true (contains both drive and gmail keywords)
+    - "recent uber receipts" → multiple_app_entity: false (no valid app/entity keywords)
+    - "budget documents" → multiple_app_entity: false (no valid app/entity keywords)
+    
+    **STEP 3: APPLY FIXED CLASSIFICATION LOGIC**
+    
+    1. **RetrieveInformation** - Use when:
+       - Multiple valid apps/entities are detected (multiple_app_entity is true), OR
+       - NO valid app/entity keywords are detected at all
+       - Examples: 
+         - "I want to check my email and events" (multiple apps)
+         - "recent uber receipts" (no valid app/entity keywords)
+         - "what did John say?" (no valid app/entity keywords)
+         - "budget reports" (no valid app/entity keywords)
+       - Set: app = null, entity = null
+    
+    2. **RetrieveMetadata** - Use when:
+       - Exactly ONE valid app/entity is detected, AND filter_query is NOT null
+       - Examples: 
+         - "emails about marketing project" (has 'emails' = gmail + filter_query)
+         - "budget spreadsheets in drive" (has 'drive' + filter_query)
+         - "meetings with John" (has 'meetings' = calendar + filter_query)
+       - Set: app and entity to detected values
+    
+    3. **RetrieveUnspecificMetadata** - Use when:
+       - Exactly ONE valid app/entity is detected, AND filter_query IS null
+       - Examples: 
+         - "recent emails" (has 'emails' = gmail but no specific content)
+         - "previous 5 meetings" (has 'meetings' = calendar but no specific content)
+         - "latest files in drive" (has 'drive' but no specific content)
+       - Set: app and entity to detected values
 
-    5. Query Processing Decision Tree - SIMPLIFIED AND CLARIFIED
-    - First, identify all app and entity terms mentioned in the query using the strict mappings above
-    - THEN, extract filter_query by applying the STRICT CONTENT FILTERING rules (see section 8)
-    - BE CAREFUL: For queries like "give me recent emails" or "show me 2 recent emails and summary", there is NO specific content, so filter_query MUST be null
-    - THEN, apply these classification rules IN THIS EXACT ORDER:
-      
-      IF multiple valid apps OR multiple valid entities are detected:
-        THEN classify as RetrieveInformation, set app = null, entity = null
-      
-      ELSE IF exactly one valid app OR exactly one valid entity is detected:
-        IF filter_query is null (no specific content keywords remain after strict filtering):
-          THEN classify as RetrieveUnspecificMetadata
-        ELSE (filter_query contains actual content keywords):
-          THEN classify as RetrieveMetadata
-      
-      ELSE (no valid app or entity detected):
-        THEN classify as RetrieveInformation, set app = null, entity = null
-
-    6. CRITICAL FILTERING EXAMPLES - VERY IMPORTANT
-    These examples must be followed exactly:
-    - "give me 2 most recent emails and summary about them"
-      * After strict filtering: No subject matter terms remain
-      * filter_query MUST be null
-      * Since "emails" maps to a single app (gmail) and filter_query is null, type MUST be RetrieveUnspecificMetadata
-    
-    - "show me my recent emails about marketing project"
-      * After strict filtering: Only "marketing project" remains
-      * filter_query = "marketing project"
-      * Since "emails" maps to a single app (gmail) and filter_query is not null, type MUST be RetrieveMetadata
-    
-    - "find the latest document with budget information"
-      * After strict filtering: Only "budget" remains
-      * filter_query = "budget"
-      * Since "document" maps to a single app (google-drive) and filter_query is not null, type MUST be RetrieveMetadata
-
-    7. HARD-CODED VALIDATION CHECK - MANDATORY
-    *** ABSOLUTE RULE: IF filter_query IS NULL AND there is exactly one valid app OR entity specified, the type MUST BE RetrieveUnspecificMetadata ***
-    
-    This is a non-negotiable validation rule that must be applied before finalizing any classification:
-    - Check if filter_query is null
-    - Check if exactly one app or entity is specified (not multiple, not zero)
-    - If BOTH conditions are true, force type = "RetrieveUnspecificMetadata"
-    - This rule overrides any other classification logic
-    
-    Additional Validation Checks:
-    - CRITICAL CHECK: If filter_query contains actual content keywords AND there is exactly one app or entity specified, the type MUST be RetrieveMetadata
-    - REMEMBER: Terms like "summary", "details", "info", "information", "content" are NOT specific content keywords and should be removed when determining filter_query
-    - REMEMBER: Quantity terms like "2", "three", "most", "all", "some", "few" are NOT specific content keywords and should be removed when determining filter_query
-    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrieveUnspecificMetadata'
-    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query
-    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null'
-    - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null
+    **VALIDATION EXAMPLES:**
+    - "recent uber receipts" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
+    - "zomato orders" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
+    - "budget documents" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
+    - "recent emails" → Has 'emails' (gmail) but no filter_query → RetrieveUnspecificMetadata
+    - "emails about uber" → Has 'emails' (gmail) and filter_query → RetrieveMetadata
+    - "files and emails" → Multiple valid apps → RetrieveInformation
 
     #### Enum Values for Valid Inputs
 
@@ -1004,7 +957,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     For Google-Workspace:
      - contacts
 
-    8. Output JSON in the following structure:
+    10. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
@@ -1018,19 +971,20 @@ export const searchQueryPrompt = (userContext: string): string => {
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
+           "multiple_app_entity": "<boolean>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
-       - "filter_query" contains the main search keywords or intent extracted from the user's query, focusing on the specific terms that represent what they're looking for. If no specific terms remain after removing generic and time-based words, set filter_query to null.
+       - "filter_query" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
-    9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    11. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+    12. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
