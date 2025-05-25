@@ -430,7 +430,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
           const startBraceIndex = withNewLines.indexOf("{")
           const keyIndex = withNewLines.indexOf(jsonKey)
           if(keyIndex > startBraceIndex) {
-            withNewLines = withNewLines.slice(0,startBrace+1) + withNewLines.slice(keyIndex)
+            withNewLines = withNewLines.slice(0,startBraceIndex+1) + withNewLines.slice(keyIndex)
           }
         }
         jsonVal = parse(withNewLines.trim())
