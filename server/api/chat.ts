@@ -1548,18 +1548,15 @@ async function* generateMetadataQueryAnswer(
 
   // Determine search strategy based on conditions
   if (
-    (!isValidAppAndEntity &&
+    !isValidAppAndEntity &&
     classification.filter_query &&
-    classification.filters?.sortDirection === "desc") ||
-
-    // For queries like "recent uber receipts"
-    (
-      !isValidAppAndEntity &&
-      classification.filter_query && 
-      classification.filters?.sortDirection === "desc"
-    )
-
+    classification.filters?.sortDirection === "desc"
   ) {
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
     Logger.info(
       "User requested recent metadata retrieval without specifying app or entity",
     )
@@ -1606,6 +1603,10 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
+      span?.setAttribute(
+        `iteration-${iteration} retrieved context`,
+        buildContext(items,20),
+      )
 
       if (!items.length) {
         Logger.info(
@@ -1633,8 +1634,13 @@ async function* generateMetadataQueryAnswer(
       )
 
       if (answer == null) {
-        Logger.info(`no answer found for iteration - ${iteration}`)
-        continue
+        if (iteration == maxIterations - 1) {
+          yield { text: "null" }
+          return
+        } else {
+          Logger.info(`no answer found for iteration - ${iteration}`)
+          continue
+        }
       } else {
         return answer
       }
@@ -1645,9 +1651,12 @@ async function* generateMetadataQueryAnswer(
   } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
     const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
     span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
-    Logger.info(
-      `Search Type : ${QueryType.RetrieveUnspecificMetadata}`,
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
     )
+    span?.setAttribute("modelId", defaultBestModel)
+    Logger.info(`Search Type : ${QueryType.RetrieveUnspecificMetadata}`)
 
     items =
       (
@@ -1666,7 +1675,13 @@ async function* generateMetadataQueryAnswer(
       `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata}`,
       items.length,
     )
-    Logger.info(`Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`)
+    span?.setAttribute(
+      `retrieved context`,
+      buildContext(items,20),
+    )
+    Logger.info(
+      `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
+    )
     // Early return if no documents found
     if (!items.length) {
       Logger.info("No documents found for unspecific metadata retrieval")
@@ -1691,6 +1706,11 @@ async function* generateMetadataQueryAnswer(
   ) {
     // Specific metadata retrieval
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
     Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
 
     const { filter_query } = classification
@@ -1722,7 +1742,7 @@ async function* generateMetadataQueryAnswer(
       Logger.info(`Rank Profile : ${rankProfile}`)
       span?.setAttribute("rank_profile", rankProfile)
       span?.setAttribute(
-        `iteration-${iteration} retrieved documents length`,
+        `iteration - ${iteration} retrieved documents length`,
         items.length,
       )
       span?.setAttribute(
@@ -1731,9 +1751,15 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
+      span?.setAttribute(
+        `iteration-${iteration} retrieved context`,
+        buildContext(items,20),
+      )
       let chunksCount = undefined
 
-      Logger.info(`Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`)
+      Logger.info(
+        `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
+      )
       if (!items.length) {
         Logger.info(
           `No documents found on iteration ${iteration}${hasValidTimeRange ? " within time range." : "Falling back to Iterative RAG"}`,
@@ -1854,7 +1880,11 @@ export async function* UnderstandMessageAndAnswer(
     classification.type == QueryType.RetrieveUnspecificMetadata
   const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
 
-  if (isMetadataRetrieval || isUnspecificMetadataRetrieval || !classification.filters.multiple_app_entity) {
+  if (
+    isMetadataRetrieval ||
+    isUnspecificMetadataRetrieval ||
+    !classification.filters.multiple_app_entity
+  ) {
     Logger.info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
@@ -1865,10 +1895,9 @@ export async function* UnderstandMessageAndAnswer(
     )
 
     const count =
-      classification.type === QueryType.RetrieveMetadata ||
-      classification.type === QueryType.RetrieveUnspecificMetadata
+      isMetadataRetrieval || isUnspecificMetadataRetrieval
         ? classification.filters.count || chatPageSize
-        : chatPageSize // Default to chatPageSize if count is not applicable
+        : chatPageSize
     const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
@@ -1904,9 +1933,7 @@ export async function* UnderstandMessageAndAnswer(
 
   if (classification.direction !== null) {
     // user is talking about an event
-    Logger.info(
-      `Direction : ${classification.direction}`,
-    )
+    Logger.info(`Direction : ${classification.direction}`)
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
     return yield* generatePointQueryTimeExpansion(
@@ -1922,9 +1949,7 @@ export async function* UnderstandMessageAndAnswer(
       eventRagSpan,
     )
   } else {
-    Logger.info(
-      "Iterative Rag : Query rewriting and time filtering",
-    )
+    Logger.info("Iterative Rag : Query rewriting and time filtering")
     const ragSpan = passedSpan?.startSpan("iterative_rag")
     ragSpan?.setAttribute("comment", "iterative rag")
     // default case
