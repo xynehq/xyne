@@ -412,11 +412,12 @@ export const processMessage = (
 // the Set is passed by reference so that singular object will get updated
 // but need to be kept in mind
 const checkAndYieldCitations = function* (
-  text: string,
+  textInput: string,
   yieldedCitations: Set<number>,
   results: any[],
   baseIndex: number = 0,
 ) {
+  const text = splitGroupedCitationsWithSpaces(textInput)
   let match
   while ((match = textToCitationIndex.exec(text)) !== null) {
     const citationIndex = parseInt(match[1], 10)
