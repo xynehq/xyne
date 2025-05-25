@@ -1407,7 +1407,7 @@ async function* generatePointQueryTimeExpansion(
   noAnswerSpan?.setAttribute("search_summary", searchSummary)
   noAnswerSpan?.setAttribute("total_cost", totalCost)
   yield {
-    text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
+    text: `I searched your database ${searchSummary} but couldn't find anything relevant. Please try rephrasing your query or check if the information is really available in your database.`,
     cost: totalCost,
   }
   noAnswerSpan?.end()
@@ -1453,8 +1453,8 @@ async function* processResultsForMetadata(
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = 100
-    Logger.info(`Using Google Drive, chunk size: ${chunksCount}`)
-    span?.setAttribute("Google Drive chunk_size", chunksCount)
+    Logger.info(`Google Drive, Chunk size: ${chunksCount}`)
+    span?.setAttribute("Google Drive, chunk_size", chunksCount)
   }
 
   // TODO: Calculate the token count for the selected model's capacity and pass the full context accordingly.
@@ -1539,7 +1539,7 @@ async function* generateMetadataQueryAnswer(
   const directionText = direction === "prev" ? "going back" : "up to"
 
   Logger.info(
-    `Searching for documents from app "${app}" and entity "${entity}"` +
+    `App : "${app}" , Entity : "${entity}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
 
@@ -1548,12 +1548,24 @@ async function* generateMetadataQueryAnswer(
 
   // Determine search strategy based on conditions
   if (
-    !isValidAppAndEntity &&
+    (!isValidAppAndEntity &&
     classification.filter_query &&
-    classification.filters?.sortDirection === "desc"
+    classification.filters?.sortDirection === "desc") ||
+
+    // For queries like "recent uber receipts"
+    (
+      !isValidAppAndEntity &&
+      classification.filter_query && 
+      classification.filters?.sortDirection === "desc"
+    )
+
   ) {
     Logger.info(
-      "User requested recent metadata retrieval without specifying app or entity.",
+      "User requested recent metadata retrieval without specifying app or entity",
+    )
+
+    Logger.info(
+      `Multiple App Entity - ${classification.filters.multiple_app_entity}`,
     )
     const searchOps = {
       limit: pageSize,
@@ -1565,7 +1577,7 @@ async function* generateMetadataQueryAnswer(
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
       Logger.info(
-        `metadata iteration - ${iteration} using ${SearchModes.GlobalSorted}`,
+        `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
       items =
         (
@@ -1629,12 +1641,12 @@ async function* generateMetadataQueryAnswer(
     }
 
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
-    Logger.info(`Using rank profile: ${SearchModes.GlobalSorted}`)
+    Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
   } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
     const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
     span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
     Logger.info(
-      `User requested metadata search: ${QueryType.RetrieveUnspecificMetadata}`,
+      `Search Type : ${QueryType.RetrieveUnspecificMetadata}`,
     )
 
     items =
@@ -1651,12 +1663,10 @@ async function* generateMetadataQueryAnswer(
       ).root.children || []
 
     span?.setAttribute(
-      `Retrieved documents length for ${QueryType.RetrieveUnspecificMetadata}`,
+      `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata}`,
       items.length,
     )
-    Logger.info(
-      `Retrieved documents length for ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
-    )
+    Logger.info(`Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`)
     // Early return if no documents found
     if (!items.length) {
       Logger.info("No documents found for unspecific metadata retrieval")
@@ -1681,7 +1691,7 @@ async function* generateMetadataQueryAnswer(
   ) {
     // Specific metadata retrieval
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
-    Logger.info(`User requested metadata search: ${QueryType.RetrieveMetadata}`)
+    Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
 
     const { filter_query } = classification
     const query = filter_query
@@ -1699,7 +1709,7 @@ async function* generateMetadataQueryAnswer(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      Logger.info(`metadata iteration - ${iteration} using ${rankProfile}`)
+      Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
 
       items =
         (
@@ -1709,7 +1719,7 @@ async function* generateMetadataQueryAnswer(
           })
         ).root.children || []
 
-      Logger.info(`Using rank profile: ${rankProfile}`)
+      Logger.info(`Rank Profile : ${rankProfile}`)
       span?.setAttribute("rank_profile", rankProfile)
       span?.setAttribute(
         `iteration-${iteration} retrieved documents length`,
@@ -1723,16 +1733,10 @@ async function* generateMetadataQueryAnswer(
       )
       let chunksCount = undefined
 
-      Logger.info(
-        `Retrieved documents length for ${QueryType.RetrieveMetadata} - ${items.length}`,
-      )
+      Logger.info(`Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`)
       if (!items.length) {
         Logger.info(
-          `No documents found on iteration ${iteration}${
-            hasValidTimeRange
-              ? " within time range."
-              : " falling back to iterative RAG"
-          }`,
+          `No documents found on iteration ${iteration}${hasValidTimeRange ? " within time range." : "Falling back to Iterative RAG"}`,
         )
         yield { text: "null" }
         return
@@ -1850,8 +1854,8 @@ export async function* UnderstandMessageAndAnswer(
     classification.type == QueryType.RetrieveUnspecificMetadata
   const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
 
-  if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
-    Logger.info("User is asking for metadata retrieval")
+  if (isMetadataRetrieval || isUnspecificMetadataRetrieval || !classification.filters.multiple_app_entity) {
+    Logger.info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
     metadataRagSpan?.setAttribute("comment", "metadata retrieval")
@@ -1860,7 +1864,11 @@ export async function* UnderstandMessageAndAnswer(
       JSON.stringify(classification),
     )
 
-    const count = classification.filters.count || chatPageSize
+    const count =
+      classification.type === QueryType.RetrieveMetadata ||
+      classification.type === QueryType.RetrieveUnspecificMetadata
+        ? classification.filters.count || chatPageSize
+        : chatPageSize // Default to chatPageSize if count is not applicable
     const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
@@ -1897,7 +1905,7 @@ export async function* UnderstandMessageAndAnswer(
   if (classification.direction !== null) {
     // user is talking about an event
     Logger.info(
-      `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
+      `Direction : ${classification.direction}`,
     )
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
@@ -1915,7 +1923,7 @@ export async function* UnderstandMessageAndAnswer(
     )
   } else {
     Logger.info(
-      "default case, trying to do iterative RAG with query rewriting and time filtering for answering users query",
+      "Iterative Rag : Query rewriting and time filtering",
     )
     const ragSpan = passedSpan?.startSpan("iterative_rag")
     ragSpan?.setAttribute("comment", "iterative rag")
