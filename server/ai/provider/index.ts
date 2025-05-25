@@ -374,6 +374,9 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
+    // edge case where ```json is prepended to the text
+    text = text.replace(/^```(json)?\s*/i, '');
+    text = text.trim();
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
       text = text.replaceAll(/[\n"}:`]/g, "")
@@ -419,10 +422,17 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       // returning an empty object when newlines are present in the content.
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
         // Replace newlines with \n in content between quotes
-        const withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
+        let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
         })
+        if(jsonKey && withNewLines.startsWith("{")) {
+          const startBraceIndex = withNewLines.indexOf("{")
+          const keyIndex = withNewLines.indexOf(jsonKey)
+          if(keyIndex > startBraceIndex) {
+            withNewLines = withNewLines.slice(0,startBraceIndex+1) + withNewLines.slice(keyIndex)
+          }
+        }
         jsonVal = parse(withNewLines.trim())
       }
 
