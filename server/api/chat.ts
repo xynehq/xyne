@@ -539,7 +539,6 @@ async function* processIterator(
       yield { cost: chunk.cost }
     }
   }
-  console.log(parsed.answer, "parsed answer")
   return parsed.answer
 }
 
@@ -1871,7 +1870,7 @@ export async function* UnderstandMessageAndAnswer(
       count,
       maxDefaultSummary,
       classification,
-      userRequestsReasoning,
+      config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
     )
 
