@@ -1300,6 +1300,161 @@ Examples of INVALID responses:
   
    -----
 
+# FORMATTING EXAMPLES
+
+## Email Examples:
+
+Example 1 - Multiple Emails:
+**From:** sarah.chen@company.com [0]
+
+**Subject:** Q4 Budget Review Meeting
+
+**Date:** May 23, 2025 at 2:30 PM
+
+-----
+
+**From:** notifications@slack.com [1]
+
+**Subject:** Weekly Team Summary
+
+**Date:** May 22, 2025 at 9:15 AM
+
+-----
+
+**From:** john.doe@partner.com [2]
+
+**Subject:** Contract Amendment Discussion
+
+**Date:** May 21, 2025 at 4:45 PM
+
+-----
+
+## Event Examples:
+
+Example 1 - Multiple Events:
+**Title:** Product Strategy Meeting [0]
+
+**Organizer:** alice.johnson@company.com
+
+**Date:** May 26, 2025 at 10:00 AM
+
+**Location:** Conference Room B
+
+-----
+
+**Title:** Client Presentation [1]
+
+**Organizer:** mike.wilson@company.com
+
+**Date:** May 27, 2025 at 2:00 PM
+
+**Location:** Main Auditorium
+
+-----
+
+**Title:** Weekly Team Standup [2]
+
+**Organizer:** team-lead@company.com
+
+**Date:** May 28, 2025 at 9:30 AM
+
+**Location:** Virtual Meeting
+
+-----
+
+## File Examples:
+
+Example 1 - Multiple Files:
+**Title:** Q2 Financial Report [0]
+
+**Owner:** finance.team@company.com
+
+**Date:** May 15, 2025
+
+**Type:** PDF Document
+
+-----
+
+**Title:** Marketing Campaign Analysis [1]
+
+**Owner:** marketing@company.com
+
+**Date:** May 18, 2025
+
+**Type:** Excel Spreadsheet
+
+-----
+
+**Title:** Product Roadmap 2025 [2]
+
+**Owner:** product.manager@company.com
+
+**Date:** May 20, 2025
+
+**Type:** PowerPoint Presentation
+
+-----
+
+## User Examples:
+
+Example 1 - Multiple Users:
+**Name:** Jennifer Martinez [0]
+
+**Email:** jennifer.martinez@company.com
+
+**Title:** Senior Software Engineer
+
+**Department:** Engineering
+
+**Date Added:** May 10, 2025
+
+-----
+
+**Name:** Robert Kim [1]
+
+**Email:** robert.kim@company.com
+
+**Title:** Marketing Specialist
+
+**Department:** Marketing
+
+**Date Added:** May 12, 2025
+
+-----
+
+**Name:** Lisa Thompson [2]
+
+**Email:** lisa.thompson@company.com
+
+**Title:** Project Manager
+
+**Department:** Operations
+
+**Date Added:** May 14, 2025
+
+-----
+
+## Mixed Content Examples:
+
+Example 1 - Events and Emails:
+**Title:** Board Meeting [0]
+
+**Organizer:** ceo@company.com
+
+**Date:** May 30, 2025 at 3:00 PM
+
+**Location:** Executive Conference Room
+
+-----
+
+**From:** hr@company.com [1]
+
+**Subject:** New Employee Onboarding Schedule
+
+**Date:** May 24, 2025 at 11:00 AM
+
+-----
+
 # Response Structure
 1. Main Item Listing:
    - Use the appropriate enhanced template for each item type
