@@ -503,7 +503,7 @@ async function* processIterator(
       if (!reasoning) {
         buffer += chunk.text
         try {
-          parsed = jsonParseLLMOutput(buffer)
+          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
           // If we have a null answer, break this inner loop and continue outer loop
           // seen some cases with just "}"
           if (parsed.answer === null || parsed.answer === "}") {
@@ -1605,7 +1605,7 @@ async function* generateMetadataQueryAnswer(
       )
       span?.setAttribute(
         `iteration-${iteration} retrieved context`,
-        buildContext(items,20),
+        buildContext(items, 20),
       )
 
       if (!items.length) {
@@ -1675,10 +1675,7 @@ async function* generateMetadataQueryAnswer(
       `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata}`,
       items.length,
     )
-    span?.setAttribute(
-      `retrieved context`,
-      buildContext(items,20),
-    )
+    span?.setAttribute(`retrieved context`, buildContext(items, 20))
     Logger.info(
       `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
     )
@@ -1753,7 +1750,7 @@ async function* generateMetadataQueryAnswer(
       )
       span?.setAttribute(
         `iteration-${iteration} retrieved context`,
-        buildContext(items,20),
+        buildContext(items, 20),
       )
       let chunksCount = undefined
 
