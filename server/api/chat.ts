@@ -1403,7 +1403,7 @@ async function* generatePointQueryTimeExpansion(
   noAnswerSpan?.setAttribute("search_summary", searchSummary)
   noAnswerSpan?.setAttribute("total_cost", totalCost)
   yield {
-    text: `I searched your database ${searchSummary} but couldn't find anything relevant. Please try rephrasing your query or check if the information is really available in your database.`,
+    text: `I searched your calendar events and emails ${searchSummary} but couldn't find any relevant meetings. Please try rephrasing your query.`,
     cost: totalCost,
   }
   noAnswerSpan?.end()
@@ -1558,7 +1558,7 @@ async function* generateMetadataQueryAnswer(
     )
 
     Logger.info(
-      `Multiple App Entity - ${classification.filters.multiple_app_entity}`,
+      `Multiple App Entity - ${classification.filters.multipleAppAndEntity}`,
     )
     const searchOps = {
       limit: pageSize,
@@ -1883,7 +1883,7 @@ export async function* UnderstandMessageAndAnswer(
   if (
     isMetadataRetrieval ||
     isUnspecificMetadataRetrieval ||
-    classification.filters.multiple_app_entity === false
+    classification.filters.multipleAppAndEntity === false
   ) {
     Logger.info("Metadata Retrieval")
 

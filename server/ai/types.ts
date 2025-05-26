@@ -130,7 +130,7 @@ export const FiltersSchema = z.object({
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
-  multiple_app_entity: z.boolean().optional(),
+  multipleAppAndEntity: z.boolean().optional(),
 })
 
 export const RetrievedUnspecificMetadataSchema = z.object({
