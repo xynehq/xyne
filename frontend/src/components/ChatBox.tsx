@@ -66,11 +66,7 @@ interface SearchResult {
 interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void
-  handleSend: (
-    messageToSend: string,
-    references: Reference[],
-    selectedSources?: string[],
-  ) => void
+  handleSend: (messageToSend: string, selectedSources?: string[]) => void
   isStreaming?: boolean
   handleStop?: () => void
   chatId?: string | null
@@ -213,7 +209,6 @@ export const ChatBox = ({
   )
   const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
   const [selectedRefIndex, setSelectedRefIndex] = useState(-1)
-  const [references, setReferences] = useState<Reference[]>([])
   const [selectedSources, setSelectedSources] = useState<
     Record<string, boolean>
   >({})
@@ -517,132 +512,57 @@ export const ChatBox = ({
     isGlobalLoading,
   ])
 
-  // Helper function to parse content and preserve existing pills as spans
-  const parseContentWithPills = (
-    text: string,
-    references: Reference[],
-    cursorPosition: number,
-    lastAtIndex: number,
-    newRef: Reference,
-    inputElement: HTMLDivElement | null,
-  ) => {
-    const nodes: (Node | HTMLElement)[] = []
-    let currentPos = 0
-
-    // Collect existing pills from the input DOM to preserve their properties
-    const existingPills: { node: HTMLElement; ref: Reference | null }[] = []
-    if (inputElement) {
-      const childNodes = Array.from(inputElement.childNodes)
-      childNodes.forEach((node) => {
-        if (
-          node.nodeType === Node.ELEMENT_NODE &&
-          (node as HTMLElement).classList.contains("reference-pill")
+  // Helper to find DOM node and offset from a character offset in textContent
+  const findBoundaryPosition = (
+    root: Node,
+    charOffset: number,
+  ): { container: Node; offset: number } | null => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null)
+    let currentAccumulatedOffset = 0
+    let node
+    while ((node = walker.nextNode())) {
+      const textNode = node as Text
+      const len = textNode.textContent?.length || 0
+      if (currentAccumulatedOffset + len >= charOffset) {
+        return {
+          container: textNode,
+          offset: charOffset - currentAccumulatedOffset,
+        }
+      }
+      currentAccumulatedOffset += len
+    }
+    // If charOffset is at the very end of the content (after all text nodes)
+    if (charOffset === currentAccumulatedOffset) {
+      // Find the last child of the root, or root itself, to place the cursor
+      let containerNode: Node = root
+      let containerOffset = root.childNodes.length
+      if (root.childNodes.length > 0) {
+        let lastChild = root.lastChild
+        while (
+          lastChild &&
+          lastChild.nodeType !== Node.TEXT_NODE &&
+          lastChild.lastChild
         ) {
-          const pillText = (node as HTMLElement).textContent || ""
-          const refId = (node as HTMLElement).dataset.referenceId
-          const ref = references.find(
-            (r) =>
-              r.id === refId ||
-              // getPillDisplayTitle is now in Pill.tsx, simplify matching here
-              r.title === pillText,
-          )
-          existingPills.push({ node: node as HTMLElement, ref: ref || null })
+          lastChild = lastChild.lastChild
         }
-      })
-    }
-
-    // Handle text before the @ mention
-    const beforeAt = text.slice(0, lastAtIndex)
-    if (beforeAt) {
-      let lastIndex = 0
-      let pillIndex = 0
-
-      // Process text and existing pills
-      while (lastIndex < beforeAt.length && pillIndex < existingPills.length) {
-        const pill = existingPills[pillIndex]
-        const pillText = pill.node.textContent || ""
-        const pillPos = beforeAt.indexOf(pillText, lastIndex)
-
-        if (pillPos === -1 || pillPos > lastIndex) {
-          // Add text before the next pill or end
-          const endIndex = pillPos === -1 ? beforeAt.length : pillPos
-          nodes.push(
-            document.createTextNode(beforeAt.slice(lastIndex, endIndex)),
-          )
-          lastIndex = endIndex
-        }
-
-        if (pillPos !== -1 && pillPos === lastIndex) {
-          // Re-use the existing pill node to preserve properties
-          nodes.push(pill.node.cloneNode(true))
-          lastIndex += pillText.length
-          pillIndex++
+        if (lastChild && lastChild.nodeType === Node.TEXT_NODE) {
+          containerNode = lastChild
+          containerOffset = lastChild.textContent?.length || 0
+        } else if (root.lastChild) {
+          // If last child is an element, place cursor after it in parent
+          containerNode = root
+          // Find index of lastChild + 1 for offset
+          containerOffset =
+            Array.from(root.childNodes).indexOf(root.lastChild) + 1
         }
       }
-
-      // Add any remaining text before the @ mention
-      if (lastIndex < beforeAt.length) {
-        nodes.push(document.createTextNode(beforeAt.slice(lastIndex)))
-      }
-      currentPos += beforeAt.length
+      return { container: containerNode, offset: containerOffset }
     }
-
-    // Add the new pill using Pill component
-    const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />)
-    const tempDiv = document.createElement("div")
-    tempDiv.innerHTML = pillHtmlString
-    const pillElement = tempDiv.firstChild as HTMLElement | null
-
-    if (pillElement) {
-      nodes.push(pillElement)
-    } else {
-      const fallbackText = document.createTextNode(`@[${newRef.title}]`)
-      nodes.push(fallbackText)
-      console.error("Failed to render Pill to DOM element.")
-    }
-
-    // Add a space after the new pill
-    const spaceNode = document.createTextNode("\u00A0")
-    nodes.push(spaceNode)
-
-    // Handle text after the @ mention
-    const afterAt = text.slice(cursorPosition)
-    if (afterAt) {
-      let lastIndex = 0
-      let pillIndex = existingPills.findIndex(
-        (p, i) =>
-          i >= existingPills.length ||
-          beforeAt.indexOf(p.node.textContent || "") === -1,
-      )
-
-      while (lastIndex < afterAt.length && pillIndex < existingPills.length) {
-        const pill = existingPills[pillIndex]
-        const pillText = pill.node.textContent || ""
-        const pillPos = afterAt.indexOf(pillText, lastIndex)
-
-        if (pillPos === -1 || pillPos > lastIndex) {
-          const endIndex = pillPos === -1 ? afterAt.length : pillPos
-          nodes.push(
-            document.createTextNode(afterAt.slice(lastIndex, endIndex)),
-          )
-          lastIndex = endIndex
-        }
-
-        if (pillPos !== -1 && pillPos === lastIndex) {
-          nodes.push(pill.node.cloneNode(true))
-          lastIndex += pillText.length
-          pillIndex++
-        }
-      }
-
-      // Add any remaining text after the last pill
-      if (lastIndex < afterAt.length) {
-        nodes.push(document.createTextNode(afterAt.slice(lastIndex)))
-      }
-    }
-
-    return { nodes, cursorNode: spaceNode, cursorOffset: 1 }
+    return null
   }
+
+  // Helper function to parse content and preserve existing pills as spans - THIS WILL BE REPLACED/REMOVED
+  // For now, keeping its signature for context, but its usage will be removed from handleAddReference/handleSelectGlobalResult
 
   const handleAddReference = (citation: Citation) => {
     const docId = citation.docId
@@ -656,42 +576,56 @@ export const ChatBox = ({
       type: "citation",
     }
 
-    setReferences((prev) => [...prev, newRef])
 
     const input = inputRef.current
-    if (!input) return
+    if (!input || activeAtMentionIndex === -1) {
+      setShowReferenceBox(false)
+      return
+    }
 
     const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) return
+    if (!selection) {
+      setShowReferenceBox(false)
+      return
+    }
 
-    const range = selection.getRangeAt(0)
-    // const cursorPosition = getCaretCharacterOffsetWithin(input) // Original line, can be unreliable on click
-    const textContent = input.textContent || ""
+    const mentionStartCharOffset = activeAtMentionIndex
+    // The @mention text effectively goes from activeAtMentionIndex up to the current caret position.
+    const mentionEndCharOffset = getCaretCharacterOffsetWithin(input)
 
-    let lastAtIndex = activeAtMentionIndex // Use activeAtMentionIndex directly
+    const startPos = findBoundaryPosition(input, mentionStartCharOffset)
+    const endPos = findBoundaryPosition(input, mentionEndCharOffset)
 
-    if (lastAtIndex !== -1) {
-      // Calculate effectiveCursorPosition assuming replacement from @ to end of input
-      const effectiveCursorPosition = textContent.length
+    if (startPos && endPos) {
+      const range = document.createRange()
+      range.setStart(startPos.container, startPos.offset)
+      range.setEnd(endPos.container, endPos.offset)
+      range.deleteContents()
 
-      const { nodes, cursorNode, cursorOffset } = parseContentWithPills(
-        textContent,
-        references, // These are references before newRef is included in this specific 'references' variable instance
-        effectiveCursorPosition, // Use calculated position
-        lastAtIndex,
-        newRef,
-        input, // Pass input element
-      )
+      const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />)
+      const tempDiv = document.createElement("div")
+      tempDiv.innerHTML = pillHtmlString
+      const pillElement = tempDiv.firstChild
 
-      input.innerHTML = ""
-      nodes.forEach((node) => input.appendChild(node))
+      if (pillElement) {
+        const clonedPill = pillElement.cloneNode(true)
+        range.insertNode(clonedPill)
+        const space = document.createTextNode("\u00A0")
 
-      range.setStart(cursorNode, cursorOffset)
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-
+        // Insert space after pill and set caret
+        range.setStartAfter(clonedPill)
+        range.insertNode(space)
+        range.setStart(space, space.length)
+        range.collapse(true)
+        selection.removeAllRanges()
+        selection.addRange(range)
+      }
       setQuery(input.textContent || "")
+    } else {
+      console.error(
+        "Could not determine range for @mention replacement in handleAddReference.",
+      )
+      // Fallback or error handling if positions can't be found
     }
 
     setShowReferenceBox(false)
@@ -741,42 +675,53 @@ export const ChatBox = ({
       photoLink: result.photoLink,
     }
 
-    setReferences((prev) => [...prev, newRef])
 
     const input = inputRef.current
-    if (!input) return
+    if (!input || activeAtMentionIndex === -1) {
+      setShowReferenceBox(false)
+      return
+    }
 
     const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) return
+    if (!selection) {
+      setShowReferenceBox(false)
+      return
+    }
 
-    const range = selection.getRangeAt(0)
-    // const cursorPosition = getCaretCharacterOffsetWithin(input) // Original line, can be unreliable on click
-    const textContent = input.textContent || ""
+    const mentionStartCharOffset = activeAtMentionIndex
+    const mentionEndCharOffset = getCaretCharacterOffsetWithin(input)
 
-    let lastAtIndex = activeAtMentionIndex // Use activeAtMentionIndex directly
+    const startPos = findBoundaryPosition(input, mentionStartCharOffset)
+    const endPos = findBoundaryPosition(input, mentionEndCharOffset)
 
-    if (lastAtIndex !== -1) {
-      // Calculate effectiveCursorPosition assuming replacement from @ to end of input
-      const effectiveCursorPosition = textContent.length
+    if (startPos && endPos) {
+      const range = document.createRange()
+      range.setStart(startPos.container, startPos.offset)
+      range.setEnd(endPos.container, endPos.offset)
+      range.deleteContents()
 
-      const { nodes, cursorNode, cursorOffset } = parseContentWithPills(
-        textContent,
-        references, // These are references before newRef is included in this specific 'references' variable instance
-        effectiveCursorPosition, // Use calculated position
-        lastAtIndex,
-        newRef,
-        input, // Pass input element
-      )
+      const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />)
+      const tempDiv = document.createElement("div")
+      tempDiv.innerHTML = pillHtmlString
+      const pillElement = tempDiv.firstChild
 
-      input.innerHTML = ""
-      nodes.forEach((node) => input.appendChild(node))
+      if (pillElement) {
+        const clonedPill = pillElement.cloneNode(true)
+        range.insertNode(clonedPill)
+        const space = document.createTextNode("\u00A0")
 
-      range.setStart(cursorNode, cursorOffset)
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-
+        range.setStartAfter(clonedPill)
+        range.insertNode(space)
+        range.setStart(space, space.length)
+        range.collapse(true)
+        selection.removeAllRanges()
+        selection.addRange(range)
+      }
       setQuery(input.textContent || "")
+    } else {
+      console.error(
+        "Could not determine range for @mention replacement in handleSelectGlobalResult.",
+      )
     }
 
     setShowReferenceBox(false)
@@ -880,25 +825,19 @@ export const ChatBox = ({
       .filter(([, isSelected]) => isSelected)
       .map(([id]) => id)
 
-    const htmlMessage = inputRef.current?.innerHTML || ""
-    // Ensure references are up-to-date before sending
-    if (inputRef.current) {
-      const currentPills = Array.from(inputRef.current.children).filter(
-        (child) => child.classList.contains("reference-pill"),
-      )
-      const currentPillIds = currentPills
-        .map((pill) => (pill as HTMLElement).dataset.referenceId)
-        .filter(Boolean) as string[]
+    let htmlMessage = inputRef.current?.innerHTML || ""
 
-      const updatedReferences = references.filter((ref) =>
-        currentPillIds.includes(ref.id),
-      )
-      handleSend(htmlMessage, [...updatedReferences], [...activeSourceIds]) // Pass only necessary args
-      setReferences([]) // Clear after sending potentially updated list
-    } else {
-      handleSend(htmlMessage, [...references], [...activeSourceIds]) // Pass only necessary args
-      setReferences([])
-    }
+    htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
+    htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "")
+    htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
+
+    // The `references` array is no longer passed to handleSend.
+    // Pills and links are part of htmlMessage.
+    handleSend(
+      htmlMessage,
+      activeSourceIds.length > 0 ? activeSourceIds : undefined,
+    )
+    // setReferences([]) // This state and its setter are removed.
 
     if (inputRef.current) {
       inputRef.current.innerHTML = ""
@@ -1149,27 +1088,103 @@ export const ChatBox = ({
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
-              const text = e.clipboardData?.getData("text/plain")
+              const pastedText = e.clipboardData?.getData("text/plain")
               const currentInput = inputRef.current
 
-              if (text && currentInput) {
+              if (pastedText && currentInput) {
                 const selection = window.getSelection()
                 if (!selection || !selection.rangeCount) return
 
                 const range = selection.getRangeAt(0)
-                range.deleteContents() // Remove selected text or collapsed cursor position
+                range.deleteContents() // Clear existing selection or cursor position
 
-                const textNode = document.createTextNode(text)
-                range.insertNode(textNode)
+                const segments = pastedText.split(/(\s+)/)
+                let lastNode: Node | null = null
 
-                // Move cursor to the end of pasted text
-                range.setStartAfter(textNode)
-                range.collapse(true)
-                selection.removeAllRanges() // Clear existing selection
-                selection.addRange(range) // Set new selection
+                segments.forEach((segment) => {
+                  if (segment.length === 0) return
+
+                  let nodeToInsert: Node
+                  let isLinkNode = false
+
+                  if (segment.match(/^\s+$/)) {
+                    // If the segment is just whitespace
+                    nodeToInsert = document.createTextNode(segment)
+                  } else {
+                    // Logic for non-whitespace segments
+                    let isPotentiallyLinkCandidate = false
+                    let urlToParseAttempt = segment
+
+                    if (segment.startsWith("www.")) {
+                      urlToParseAttempt = "http://" + segment
+                      isPotentiallyLinkCandidate = true
+                    } else if (
+                      segment.startsWith("http://") ||
+                      segment.startsWith("https://")
+                    ) {
+                      isPotentiallyLinkCandidate = true
+                    }
+
+                    if (isPotentiallyLinkCandidate) {
+                      try {
+                        const url = new URL(urlToParseAttempt)
+                        // Ensure it's an http or https link.
+                        if (
+                          url.protocol === "http:" ||
+                          url.protocol === "https:"
+                        ) {
+                          const anchor = document.createElement("a")
+                          anchor.href = url.href // Use the (potentially modified) href
+                          anchor.textContent = segment // Display the original segment
+                          anchor.target = "_blank"
+                          anchor.rel = "noopener noreferrer"
+                          anchor.className =
+                            "text-blue-600 underline hover:text-blue-800 cursor-pointer"
+                          nodeToInsert = anchor
+                          isLinkNode = true
+                        } else {
+                          // Parsed by new URL(), but not http/https. Treat as text.
+                          nodeToInsert = document.createTextNode(segment)
+                        }
+                      } catch (_) {
+                        // Failed to parse with new URL(). Treat as text.
+                        nodeToInsert = document.createTextNode(segment)
+                      }
+                    } else {
+                      // Not considered a potential link candidate. Treat as text.
+                      nodeToInsert = document.createTextNode(segment)
+                    }
+                  }
+
+                  range.insertNode(nodeToInsert)
+                  lastNode = nodeToInsert
+
+                  if (isLinkNode) {
+                    // If a link was just inserted, add a space after it
+                    const spaceNode = document.createTextNode("\u00A0")
+                    range.setStartAfter(nodeToInsert)
+                    range.insertNode(spaceNode)
+                    lastNode = spaceNode
+                  }
+
+                  // Always move the range to be after the last inserted node (content or space)
+                  if (lastNode) {
+                    // Ensure lastNode is not null
+                    range.setStartAfter(lastNode)
+                    range.collapse(true)
+                  }
+                })
+
+                // Ensure the cursor is at the very end of all pasted content.
+                if (lastNode) {
+                  range.setStartAfter(lastNode)
+                  range.collapse(true)
+                }
+
+                selection.removeAllRanges()
+                selection.addRange(range)
 
                 // Dispatch an 'input' event to trigger the onInput handler
-                // This ensures setQuery and @mention logic runs
                 currentInput.dispatchEvent(
                   new Event("input", { bubbles: true, cancelable: true }),
                 )
@@ -1186,23 +1201,9 @@ export const ChatBox = ({
                   document.activeElement !== currentInput,
               )
 
-              // Update references based on current pills in the input
-              const currentPills = Array.from(currentInput.children).filter(
-                (child) => child.classList.contains("reference-pill"),
-              )
-              const currentPillIds = currentPills
-                .map((pill) => (pill as HTMLElement).dataset.referenceId)
-                .filter(Boolean) as string[]
-
-              setReferences((prevRefs) => {
-                const newRefs = prevRefs.filter((ref) =>
-                  currentPillIds.includes(ref.id),
-                )
-                // If a pill was removed and it's not reflected in newRefs, it means it was deleted.
-                // If a pill was added, it would have been added to `references` state already by handleAddReference/handleSelectGlobalResult
-                // and then this filter ensures it's kept if the pill element is still in the DOM.
-                return newRefs
-              })
+              // The 'references' state and its update logic have been removed.
+              // Pill management is now primarily through direct DOM interaction
+              // and parsing the innerHTML when sending the message.
 
               const cursorPosition = getCaretCharacterOffsetWithin(
                 currentInput as Node,
@@ -1307,7 +1308,25 @@ export const ChatBox = ({
                 }
               }, 0)
             }}
-            onClick={() => {
+            onClick={(e) => {
+              const target = e.target as HTMLElement
+              const anchor = target.closest("a")
+
+              if (
+                anchor &&
+                anchor.href &&
+                anchor.closest('[contenteditable="true"]') === inputRef.current
+              ) {
+                // If it's an anchor with an href *inside our contentEditable div*,
+                // prevent default contentEditable behavior and open the link.
+                e.preventDefault()
+                window.open(anchor.href, "_blank", "noopener,noreferrer")
+                // Stop further processing to avoid @mention box logic if a link was clicked
+                return
+              }
+
+              // Original onClick logic for @mention box (if no link was clicked and handled)
+              // This part was the first onClick handler's body
               const cursorPosition = getCaretCharacterOffsetWithin(
                 inputRef.current as Node,
               )
