@@ -173,6 +173,7 @@ interface TextQueryItem {
 
 interface PillValue {
   title: string
+  docId: string
 }
 
 interface PillQueryItem {

@@ -1104,7 +1104,7 @@ export const buildUserQuery = (userQuery: UserQuery) => {
 
 const extractFileIdsFromMessage = (message: string): string[] => {
   const fileIds: string[] = []
-  const jsonMessage = JSON.parse(message)
+  const jsonMessage = JSON.parse(message) as UserQuery
   jsonMessage.map((obj) => {
     if (obj?.type === "pill") {
       fileIds.push(obj?.value?.docId)
