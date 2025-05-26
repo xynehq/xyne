@@ -11,6 +11,7 @@ import {
   Link,
   Search,
   RotateCcw,
+  Atom,
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
 import { Citation, Apps } from "shared/types"
@@ -32,6 +33,8 @@ import { getIcon } from "@/lib/common"
 import { DriveEntity } from "shared/types"
 import { api } from "@/api"
 import { Input } from "@/components/ui/input"
+import { Pill } from "./Pill"
+import { Reference } from "@/types"
 
 interface SourceItem {
   id: string
@@ -49,6 +52,7 @@ interface SearchResult {
   subject?: string
   name?: string
   title?: string
+  filename?: string
   from?: string
   timestamp?: number
   updatedAt?: number
@@ -56,17 +60,6 @@ interface SearchResult {
   url?: string
   type?: string
   email?: string
-  photoLink?: string
-}
-
-interface Reference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
   photoLink?: string
 }
 
@@ -82,6 +75,10 @@ interface ChatBoxProps {
   handleStop?: () => void
   chatId?: string | null
   allCitations: Map<string, Citation>
+  isReasoningActive: boolean
+  setIsReasoningActive: (
+    value: boolean | ((prevState: boolean) => boolean),
+  ) => void
 }
 
 const availableSources: SourceItem[] = [
@@ -140,11 +137,6 @@ const availableSources: SourceItem[] = [
   },
 ]
 
-const getPillDisplayTitle = (title: string): string => {
-  const truncatedTitle = title.length > 25 ? title.substring(0, 15) : title
-  return truncatedTitle
-}
-
 const getCaretCharacterOffsetWithin = (element: Node) => {
   let caretOffset = 0
   const doc = element.ownerDocument || (element as any).document
@@ -202,6 +194,8 @@ export const ChatBox = ({
   allCitations,
   handleStop,
   chatId,
+  isReasoningActive, // Use prop
+  setIsReasoningActive, // Use prop
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
@@ -230,8 +224,74 @@ export const ChatBox = ({
   const [totalCount, setTotalCount] = useState(0)
   const [activeAtMentionIndex, setActiveAtMentionIndex] = useState(-1)
   const [referenceSearchTerm, setReferenceSearchTerm] = useState("")
+  const [referenceBoxLeft, setReferenceBoxLeft] = useState(0)
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
+  // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+
+  const updateReferenceBoxPosition = (atIndex: number) => {
+    const inputElement = inputRef.current
+    if (!inputElement || atIndex < 0) {
+      const parentRect = inputElement
+        ?.closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect()
+      const inputRect = inputElement?.getBoundingClientRect()
+      if (parentRect && inputRect) {
+        setReferenceBoxLeft(inputRect.left - parentRect.left)
+      } else {
+        setReferenceBoxLeft(0)
+      }
+      return
+    }
+
+    const range = document.createRange()
+    let currentPos = 0
+    let targetNode: Node | null = null
+    let targetOffsetInNode = 0
+
+    function findDomPosition(node: Node, charIndex: number): boolean {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const textLength = node.textContent?.length || 0
+        if (currentPos <= charIndex && charIndex < currentPos + textLength) {
+          targetNode = node
+          targetOffsetInNode = charIndex - currentPos
+          return true
+        }
+        currentPos += textLength
+      } else {
+        for (const child of node.childNodes) {
+          if (findDomPosition(child, charIndex)) return true
+        }
+      }
+      return false
+    }
+
+    if (findDomPosition(inputElement, atIndex)) {
+      range.setStart(targetNode!, targetOffsetInNode)
+      range.setEnd(targetNode!, targetOffsetInNode + 1)
+      const rect = range.getBoundingClientRect()
+      const parentRect = inputElement
+        .closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect()
+
+      if (parentRect) {
+        setReferenceBoxLeft(rect.left - parentRect.left)
+      } else {
+        const inputRect = inputElement.getBoundingClientRect()
+        setReferenceBoxLeft(rect.left - inputRect.left)
+      }
+    } else {
+      const inputRect = inputElement.getBoundingClientRect()
+      const parentRect = inputElement
+        .closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect()
+      if (parentRect) {
+        setReferenceBoxLeft(inputRect.left - parentRect.left)
+      } else {
+        setReferenceBoxLeft(0)
+      }
+    }
+  }
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
@@ -482,10 +542,9 @@ export const ChatBox = ({
           const refId = (node as HTMLElement).dataset.referenceId
           const ref = references.find(
             (r) =>
-              r.id === refId || // Prefer ID matching
-              getPillDisplayTitle(r.title) === pillText ||
-              r.title === pillText ||
-              `@[${getPillDisplayTitle(r.title)}]` === pillText,
+              r.id === refId ||
+              // getPillDisplayTitle is now in Pill.tsx, simplify matching here
+              r.title === pillText,
           )
           existingPills.push({ node: node as HTMLElement, ref: ref || null })
         }
@@ -528,34 +587,19 @@ export const ChatBox = ({
       currentPos += beforeAt.length
     }
 
-    // Add the new pill
-    const newPill = document.createElement("span")
-    newPill.className =
-      "reference-pill bg-[#F1F5F9] text-[#374151] rounded-lg px-2 py-0.4 inline-flex items-center"
-    newPill.contentEditable = "false"
-    newPill.dataset.referenceId = newRef.id // Add data-reference-id
+    // Add the new pill using Pill component
+    const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />)
+    const tempDiv = document.createElement("div")
+    tempDiv.innerHTML = pillHtmlString
+    const pillElement = tempDiv.firstChild as HTMLElement | null
 
-    if (newRef.app && newRef.entity) {
-      const iconContainer = document.createElement("span")
-      const iconNode = getIcon(newRef.app, newRef.entity, {
-        w: 14,
-        h: 14,
-        mr: 4,
-      })
-
-      if (React.isValidElement(iconNode)) {
-        iconContainer.innerHTML = renderToStaticMarkup(iconNode)
-      } else if (typeof iconNode === "string") {
-        iconContainer.textContent = iconNode
-      } else {
-        iconContainer.textContent = "▫️"
-      }
-      newPill.appendChild(iconContainer)
+    if (pillElement) {
+      nodes.push(pillElement)
+    } else {
+      const fallbackText = document.createTextNode(`@[${newRef.title}]`)
+      nodes.push(fallbackText)
+      console.error("Failed to render Pill to DOM element.")
     }
-    newPill.appendChild(
-      document.createTextNode(getPillDisplayTitle(newRef.title)),
-    )
-    nodes.push(newPill)
 
     // Add a space after the new pill
     const spaceNode = document.createTextNode("\u00A0")
@@ -601,15 +645,14 @@ export const ChatBox = ({
   }
 
   const handleAddReference = (citation: Citation) => {
-    const citationApp = (citation as any).app
-    const citationEntity = (citation as any).entity
-
+    const docId = citation.docId
     const newRef: Reference = {
-      id: citation.url,
+      id: docId,
+      docId: docId,
       title: citation.title,
       url: citation.url,
-      app: typeof citationApp === "string" ? citationApp : undefined,
-      entity: typeof citationEntity === "string" ? citationEntity : undefined,
+      app: citation.app,
+      entity: citation.entity,
       type: "citation",
     }
 
@@ -674,6 +717,7 @@ export const ChatBox = ({
       result.name ||
       result.subject ||
       result.title ||
+      result.filename ||
       (result.type === "user" && result.email) ||
       "Untitled"
     const refId = result.docId || (result.type === "user" && result.email) || ""
@@ -849,10 +893,10 @@ export const ChatBox = ({
       const updatedReferences = references.filter((ref) =>
         currentPillIds.includes(ref.id),
       )
-      handleSend(htmlMessage, [...updatedReferences], [...activeSourceIds])
+      handleSend(htmlMessage, [...updatedReferences], [...activeSourceIds]) // Pass only necessary args
       setReferences([]) // Clear after sending potentially updated list
     } else {
-      handleSend(htmlMessage, [...references], [...activeSourceIds])
+      handleSend(htmlMessage, [...references], [...activeSourceIds]) // Pass only necessary args
       setReferences([])
     }
 
@@ -915,7 +959,10 @@ export const ChatBox = ({
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
-          className="absolute bottom-[calc(80%+8px)] left-0 bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          className="absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          style={{
+            left: activeAtMentionIndex !== -1 ? `${referenceBoxLeft}px` : "0px",
+          }}
         >
           {activeAtMentionIndex === -1 && (
             <div className="p-2 border-b border-gray-200 relative">
@@ -933,7 +980,7 @@ export const ChatBox = ({
           )}
           <div
             ref={scrollContainerRef}
-            className="max-h-[250px] overflow-y-auto p-1"
+            className="min-h-[40px] max-h-[250px] overflow-y-auto p-1"
           >
             {searchMode === "citations" && activeAtMentionIndex !== -1 && (
               <>
@@ -973,69 +1020,98 @@ export const ChatBox = ({
                       )
                     })}
                   </>
+                ) : derivedReferenceSearch.length > 0 ? (
+                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    No citations found for "{derivedReferenceSearch}".
+                  </p>
                 ) : (
-                  <p className="text-sm text-gray-500 px-2 py-1">
-                    search for your docs...
+                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    Start typing to search citations from this chat.
                   </p>
                 )}
               </>
             )}
             {searchMode === "global" && (
               <>
-                {isGlobalLoading && globalResults.length === 0 && (
-                  <p className="text-sm text-gray-500 px-2 py-1">Loading...</p>
-                )}
+                {isGlobalLoading &&
+                  globalResults.length === 0 &&
+                  !globalError && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      {currentSearchTerm
+                        ? `Searching for "${currentSearchTerm}"...`
+                        : "Searching..."}
+                    </p>
+                  )}
                 {globalError && (
-                  <p className="text-sm text-red-500 px-2 py-1">
+                  <p className="text-sm text-red-500 px-2 py-1 text-center">
                     {globalError}
                   </p>
                 )}
-                {globalResults.map((result, index) => {
-                  const displayTitle =
-                    result.name ||
-                    result.subject ||
-                    result.title ||
-                    (result.type === "user" && result.email) ||
-                    "Untitled"
-                  return (
-                    <div
-                      key={result.docId || result.email || index}
-                      ref={(el) => (referenceItemsRef.current[index] = el)}
-                      className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
-                        index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
-                      }`}
-                      onClick={() => handleSelectGlobalResult(result)}
-                      onMouseEnter={() => setSelectedRefIndex(index)}
-                    >
-                      <div className="flex items-center gap-2">
-                        {result.type === "user" && result.photoLink ? (
-                          <img
-                            src={result.photoLink}
-                            alt={displayTitle}
-                            className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          getIcon(result.app, result.entity, {
-                            w: 16,
-                            h: 16,
-                            mr: 0,
-                          })
-                        )}
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {displayTitle}
-                        </p>
-                      </div>
-                      {result.type !== "user" && (
-                        <p className="text-xs text-gray-500 truncate ml-6">
-                          {result.from ? `From: ${result.from} | ` : ""}
-                          {formatTimestamp(
-                            result.timestamp || result.updatedAt,
+                {!isGlobalLoading &&
+                  !globalError &&
+                  globalResults.length === 0 &&
+                  currentSearchTerm &&
+                  currentSearchTerm.length > 0 && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      No results found for "{currentSearchTerm}".
+                    </p>
+                  )}
+                {!isGlobalLoading &&
+                  !globalError &&
+                  globalResults.length === 0 &&
+                  (!currentSearchTerm || currentSearchTerm.length === 0) && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      Type to search for documents, messages, and more.
+                    </p>
+                  )}
+                {globalResults.length > 0 &&
+                  globalResults.map((result, index) => {
+                    const displayTitle =
+                      result.name ||
+                      result.subject ||
+                      result.title ||
+                      result.filename ||
+                      (result.type === "user" && result.email) ||
+                      "Untitled"
+                    return (
+                      <div
+                        key={result.docId || result.email || index}
+                        ref={(el) => (referenceItemsRef.current[index] = el)}
+                        className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
+                          index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
+                        }`}
+                        onClick={() => handleSelectGlobalResult(result)}
+                        onMouseEnter={() => setSelectedRefIndex(index)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {result.type === "user" && result.photoLink ? (
+                            <img
+                              src={result.photoLink}
+                              alt={displayTitle}
+                              className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            getIcon(result.app, result.entity, {
+                              w: 16,
+                              h: 16,
+                              mr: 0,
+                            })
                           )}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })}
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {displayTitle}
+                          </p>
+                        </div>
+                        {result.type !== "user" && (
+                          <p className="text-xs text-gray-500 truncate ml-6">
+                            {result.from ? `From: ${result.from} | ` : ""}
+                            {formatTimestamp(
+                              result.timestamp || result.updatedAt,
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
                 {!globalError &&
                   globalResults.length > 0 &&
                   globalResults.length < totalCount && (
@@ -1158,6 +1234,7 @@ export const ChatBox = ({
                   // It's a new trigger point or the box was closed. Activate for this '@'.
                   setActiveAtMentionIndex(newActiveMentionIndex)
                   setShowReferenceBox(true)
+                  updateReferenceBoxPosition(newActiveMentionIndex)
                   setReferenceSearchTerm("") // Clear search for new mention context
                   setGlobalResults([])
                   setGlobalError(null)
@@ -1256,31 +1333,34 @@ export const ChatBox = ({
               const input = inputRef.current
               if (!input) return
 
-              const currentText = input.textContent || ""
-              // Add "@" or " @" to ensure it's validly placed
+              const textContentBeforeAt = input.textContent || ""
+
               const textToAppend =
-                currentText.length === 0 ||
-                currentText.endsWith(" ") ||
-                currentText.endsWith("\n") ||
-                currentText.endsWith("\u00A0")
+                textContentBeforeAt.length === 0 ||
+                textContentBeforeAt.endsWith(" ") ||
+                textContentBeforeAt.endsWith("\n") ||
+                textContentBeforeAt.endsWith("\u00A0")
                   ? "@"
                   : " @"
-              const newValue = currentText + textToAppend
 
-              input.textContent = newValue
-              setQuery(newValue)
+              const atTextNode = document.createTextNode(textToAppend)
+
+              input.appendChild(atTextNode)
+
+              const newTextContent = input.textContent || ""
+              setQuery(newTextContent)
               setIsPlaceholderVisible(
-                newValue.length === 0 && document.activeElement !== input,
+                newTextContent.length === 0 && document.activeElement !== input,
               )
 
               const newAtSymbolIndex =
-                currentText.length + (textToAppend === "@" ? 0 : 1) // Index of the newly added @
-              setCaretPosition(input, newValue.length) // Move cursor to the end
+                textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
+              setCaretPosition(input, newTextContent.length)
 
-              // Since textToAppend ensures valid placement, directly activate the mention UI
               setActiveAtMentionIndex(newAtSymbolIndex)
               setReferenceSearchTerm("")
               setShowReferenceBox(true)
+              updateReferenceBoxPosition(newAtSymbolIndex)
               setSearchMode("citations")
               setGlobalResults([])
               setGlobalError(null)
@@ -1288,7 +1368,7 @@ export const ChatBox = ({
               setTotalCount(0)
               setSelectedRefIndex(-1)
 
-              input.focus() // Re-focus the input
+              input.focus()
             }}
           />
           {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
@@ -1396,8 +1476,22 @@ export const ChatBox = ({
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}{" "}
+          )}
           {/* Closing tag for the conditional render */}
+          <button
+            onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
+            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
+              // Changed text-xs to text-[11px]
+              isReasoningActive ? "text-green-600" : "text-[#464D53]" // Use prop for styling
+            }`}
+          >
+            <Atom
+              size={16}
+              className={isReasoningActive ? "text-green-600" : ""}
+            />{" "}
+            {/* Use prop for styling */}
+            <span>Reasoning</span>
+          </button>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}
