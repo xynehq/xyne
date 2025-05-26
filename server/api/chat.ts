@@ -69,6 +69,7 @@ import {
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
+  getDocumentOrNull,
 } from "@/search/vespa"
 import {
   Apps,
@@ -975,6 +976,32 @@ async function* generateAnswerFromGivenContext(
   if (!results.root.children) {
     results.root.children = []
   }
+  if (fileIds.length === 1 && results.root.children.length === 0) {
+    const fileId = fileIds[0]
+    const result = await getDocumentOrNull(fileSchema, `${fileIds[0]}_0`)
+    if (result) {
+      console.log("Spreadsheet result")
+      console.log(result)
+      console.log("Spreadsheet result")
+      const metadata = JSON.parse(result?.fields?.metadata)
+      const totalSheets = metadata.totalSheets
+      console.log("totalSheets")
+      console.log(totalSheets)
+      console.log("totalSheets")
+      const sheetIds = []
+      for (let i = 0; i < totalSheets; i++) {
+        sheetIds.push(`${fileId}_${i}`)
+      }
+      console.log("sheetIds")
+      console.log(sheetIds)
+      console.log("sheetIds")
+      const sheetsResults = await GetDocumentsByDocIds(sheetIds)
+      console.log("sheetsResults")
+      console.log(sheetsResults)
+      console.log("sheetsResults")
+      results.root.children = sheetsResults.root.children
+    }
+  }
   const startIndex = isReasoning ? previousResultsLength : 0
   const initialContext = cleanContext(
     results?.root?.children
@@ -990,7 +1017,7 @@ async function* generateAnswerFromGivenContext(
 
   const selectedContext = isContextSelected(message)
   const builtUserQuery = selectedContext
-    ? buildUserQuery(selectedContext, results?.root?.children)
+    ? buildUserQuery(selectedContext)
     : message
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
@@ -1088,7 +1115,7 @@ export const isContextSelected = (str: string) => {
   }
 }
 
-export const buildUserQuery = (userQuery: UserQuery, results?: any) => {
+export const buildUserQuery = (userQuery: UserQuery) => {
   let builtQuery = ""
   userQuery?.map((obj) => {
     if (obj?.type === "text") {
@@ -1096,26 +1123,11 @@ export const buildUserQuery = (userQuery: UserQuery, results?: any) => {
     } else if (obj?.type === "pill") {
       builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
     } else if (obj?.type === "link") {
-      builtQuery += `<User added a link ${
-        results?.length > 0
-          ? `of file with title "${getTitleFromFileLink(results, obj?.value)}" here`
-          : `with url "${obj?.value}" here`
-      } > `
+      builtQuery += `<User added a link with url "${obj?.value}" here> `
     }
   })
   console.log(builtQuery)
   return builtQuery
-}
-
-const getTitleFromFileLink = (results: any, link: string) => {
-  let title = ""
-  //@ts-ignore
-  results?.map((r) => {
-    if (r?.fields?.url === link) {
-      title = r?.fields?.title
-    }
-  })
-  return title
 }
 
 const extractFileIdsFromMessage = (message: string): string[] => {
@@ -1135,7 +1147,8 @@ const extractFileIdsFromMessage = (message: string): string[] => {
 }
 
 const getFileIdFromLink = (link: string) => {
-  const match = link?.match(/\/d\/([^/]+)/)
+  const regex = /(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]+)/
+  const match = link.match(regex)
   const fileId = match ? match[1] : null
   console.log("getFileId")
   console.log(fileId)
