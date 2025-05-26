@@ -1692,7 +1692,7 @@ async function* generateMetadataQueryAnswer(
     }
 
     span?.end()
-    return yield* processResultsForMetadata(
+    yield* processResultsForMetadata(
       items,
       input,
       userCtx,
@@ -1702,6 +1702,7 @@ async function* generateMetadataQueryAnswer(
       span,
       userRequestsReasoning,
     )
+    return
   } else if (
     isMetadataRetrieval &&
     isValidAppAndEntity &&
