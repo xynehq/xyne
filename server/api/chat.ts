@@ -970,37 +970,25 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const results = await GetDocumentsByDocIds(fileIds)
-  console.log("results")
-  console.log(results.root.children)
-  console.log("results")
-  if (!results.root.children) {
-    results.root.children = []
-  }
-  if (fileIds.length === 1 && results.root.children.length === 0) {
+
+  // Special case fora single Whole Spreadsheet
+  if (fileIds?.length === 1 && !results?.root?.children) {
     const fileId = fileIds[0]
     const result = await getDocumentOrNull(fileSchema, `${fileIds[0]}_0`)
     if (result) {
-      console.log("Spreadsheet result")
-      console.log(result)
-      console.log("Spreadsheet result")
+      //@ts-ignore
       const metadata = JSON.parse(result?.fields?.metadata)
       const totalSheets = metadata.totalSheets
-      console.log("totalSheets")
-      console.log(totalSheets)
-      console.log("totalSheets")
       const sheetIds = []
       for (let i = 0; i < totalSheets; i++) {
         sheetIds.push(`${fileId}_${i}`)
       }
-      console.log("sheetIds")
-      console.log(sheetIds)
-      console.log("sheetIds")
       const sheetsResults = await GetDocumentsByDocIds(sheetIds)
-      console.log("sheetsResults")
-      console.log(sheetsResults)
-      console.log("sheetsResults")
       results.root.children = sheetsResults.root.children
     }
+  }
+  if (!results.root.children) {
+    results.root.children = []
   }
   const startIndex = isReasoning ? previousResultsLength : 0
   const initialContext = cleanContext(
@@ -1126,14 +1114,13 @@ export const buildUserQuery = (userQuery: UserQuery) => {
       builtQuery += `<User added a link with url "${obj?.value}" here> `
     }
   })
-  console.log(builtQuery)
   return builtQuery
 }
 
 const extractFileIdsFromMessage = (message: string): string[] => {
   const fileIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
-  jsonMessage.map((obj) => {
+  jsonMessage?.map((obj) => {
     if (obj?.type === "pill") {
       fileIds.push(obj?.value?.docId)
     } else if (obj?.type === "link") {
@@ -1150,9 +1137,6 @@ const getFileIdFromLink = (link: string) => {
   const regex = /(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]+)/
   const match = link.match(regex)
   const fileId = match ? match[1] : null
-  console.log("getFileId")
-  console.log(fileId)
-  console.log("getFileId")
   return fileId
 }
 
@@ -1916,7 +1900,7 @@ const addErrMessageToMessage = async (
 }
 
 const isMessageWithContext = (message: string) => {
-  return message.startsWith("[{") && message.endsWith("}]")
+  return message?.startsWith("[{") && message?.endsWith("}]")
 }
 
 export const MessageApi = async (c: Context) => {
@@ -1948,9 +1932,6 @@ export const MessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
-    console.log("message")
-    console.log(message)
-    console.log("message")
     const isMsgWithContext = isMessageWithContext(message)
     const fileIds = isMsgWithContext ? extractFileIdsFromMessage(message) : []
 
@@ -2072,7 +2053,7 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          if (isMsgWithContext) {
+          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
