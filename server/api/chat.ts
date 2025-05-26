@@ -990,7 +990,7 @@ async function* generateAnswerFromGivenContext(
 
   const selectedContext = isContextSelected(message)
   const builtUserQuery = selectedContext
-    ? buildUserQuery(selectedContext, results.root.children)
+    ? buildUserQuery(selectedContext, results?.root?.children)
     : message
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
@@ -1098,10 +1098,8 @@ export const buildUserQuery = (userQuery: UserQuery, results?: any) => {
     } else if (obj?.type === "link") {
       builtQuery += `<User added a link ${
         results?.length > 0
-          ? `of file with title "${getTitleFromFileLink(results, obj.value)}" here`
-          : `
-      with url "${obj?.value}"
-      here`
+          ? `of file with title "${getTitleFromFileLink(results, obj?.value)}" here`
+          : `with url "${obj?.value}" here`
       } > `
     }
   })
@@ -1111,9 +1109,10 @@ export const buildUserQuery = (userQuery: UserQuery, results?: any) => {
 
 const getTitleFromFileLink = (results: any, link: string) => {
   let title = ""
-  results.map((r) => {
-    if (r.fields.url === link) {
-      title = r.fields.title
+  //@ts-ignore
+  results?.map((r) => {
+    if (r?.fields?.url === link) {
+      title = r?.fields?.title
     }
   })
   return title
