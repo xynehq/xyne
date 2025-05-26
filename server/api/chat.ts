@@ -1557,6 +1557,7 @@ async function* generateMetadataQueryAnswer(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const pageSpan = span?.startSpan(`metadata_iteration_${iteration}`)
       Logger.info(
         `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
@@ -1570,6 +1571,7 @@ async function* generateMetadataQueryAnswer(
             {
               ...searchOps,
               offset: pageSize * iteration,
+              span: pageSpan,
             },
           )
         ).root.children || []
@@ -1577,21 +1579,19 @@ async function* generateMetadataQueryAnswer(
       Logger.info(
         `iteration-${iteration} retrieved documents length - ${items.length}`,
       )
-      span?.setAttribute(
+      pageSpan?.setAttribute("offset", pageSize * iteration)
+      pageSpan?.setAttribute(
         `iteration-${iteration} retrieved documents length`,
         items.length,
       )
-      span?.setAttribute(
+      pageSpan?.setAttribute(
         `iteration-${iteration} retrieved documents id's`,
         JSON.stringify(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      span?.setAttribute(
-        `iteration-${iteration} retrieved context`,
-        buildContext(items, 20),
-      )
 
+      pageSpan?.setAttribute("context", buildContext(items, 20))
       if (!items.length) {
         Logger.info(
           `No documents found on iteration ${iteration}${
@@ -1600,7 +1600,7 @@ async function* generateMetadataQueryAnswer(
               : " falling back to iterative RAG"
           }`,
         )
-
+        pageSpan?.end()
         yield { text: "null" }
         return
       }
@@ -1618,7 +1618,9 @@ async function* generateMetadataQueryAnswer(
       )
 
       if (answer == null) {
+        pageSpan?.setAttribute("answer", null)
         if (iteration == maxIterations - 1) {
+          pageSpan?.end()
           yield { text: "null" }
           return
         } else {
@@ -1626,6 +1628,8 @@ async function* generateMetadataQueryAnswer(
           continue
         }
       } else {
+        pageSpan?.setAttribute("answer", answer)
+        pageSpan?.end()
         return answer
       }
     }
@@ -1655,21 +1659,28 @@ async function* generateMetadataQueryAnswer(
         })
       ).root.children || []
 
+    span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
-      `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata}`,
-      items.length,
+      `retrieved documents id's`,
+      JSON.stringify(
+        items.map((v: VespaSearchResult) => (v.fields as any).docId),
+      ),
     )
-    span?.setAttribute(`retrieved context`, buildContext(items, 20))
+
+    span?.setAttribute("context", buildContext(items, 20))
+    span?.end()
     Logger.info(
       `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
     )
     // Early return if no documents found
     if (!items.length) {
+      span?.end()
       Logger.info("No documents found for unspecific metadata retrieval")
       yield { text: "no documents found" }
       return
     }
 
+    span?.end()
     return yield* processResultsForMetadata(
       items,
       input,
@@ -1710,6 +1721,7 @@ async function* generateMetadataQueryAnswer(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const iterationSpan = span?.startSpan(`metadata_iteration_${iteration}`)
       Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
 
       items =
@@ -1720,22 +1732,25 @@ async function* generateMetadataQueryAnswer(
           })
         ).root.children || []
 
+      console.log(pageSize * iteration, pageSize, "offset")
       Logger.info(`Rank Profile : ${rankProfile}`)
-      span?.setAttribute("rank_profile", rankProfile)
-      span?.setAttribute(
+
+      iterationSpan?.setAttribute("offset", pageSize * iteration)
+      iterationSpan?.setAttribute("rank_profile", rankProfile)
+
+      iterationSpan?.setAttribute(
         `iteration - ${iteration} retrieved documents length`,
         items.length,
       )
-      span?.setAttribute(
+      iterationSpan?.setAttribute(
         `iteration-${iteration} retrieved documents id's`,
         JSON.stringify(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      span?.setAttribute(
-        `iteration-${iteration} retrieved context`,
-        buildContext(items, 20),
-      )
+      iterationSpan?.setAttribute(`context`, buildContext(items, 20))
+      iterationSpan?.end()
+
       let chunksCount = undefined
 
       Logger.info(
@@ -1745,6 +1760,7 @@ async function* generateMetadataQueryAnswer(
         Logger.info(
           `No documents found on iteration ${iteration}${hasValidTimeRange ? " within time range." : "Falling back to Iterative RAG"}`,
         )
+        iterationSpan?.end()
         yield { text: "null" }
         return
       }
@@ -1761,7 +1777,9 @@ async function* generateMetadataQueryAnswer(
       )
 
       if (answer == null) {
+        iterationSpan?.setAttribute("answer", null)
         if (iteration == maxIterations - 1) {
+          iterationSpan?.end()
           yield { text: "null" }
           return
         } else {
@@ -1769,6 +1787,7 @@ async function* generateMetadataQueryAnswer(
           continue
         }
       } else {
+        iterationSpan?.end()
         return answer
       }
     }

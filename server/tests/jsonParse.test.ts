@@ -144,25 +144,25 @@ describe("jsonParseLLMOutput", () => {
     const input = `{
   "answer": "kalp
 and for this one"}
-`;
-    const ANSWER_TOKEN = '"answer":';
-    const result = jsonParseLLMOutput(input, ANSWER_TOKEN);
-    expect(result).toEqual({ answer: "kalp\nand for this one" });
-  });
+`
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "kalp\nand for this one" })
+  })
 
   test("should handle ```json prefix without newline before JSON object", () => {
-    const input = '```json{"name": "direct"}';
-    const result = jsonParseLLMOutput(input);
-    expect(result).toEqual({ name: "direct" });
-  });
+    const input = '```json{"name": "direct"}'
+    const result = jsonParseLLMOutput(input)
+    expect(result).toEqual({ name: "direct" })
+  })
 
   test("should handle JSON with a full line comment before a key-value pair", () => {
     const input = `{
       // This is a full line comment explaining the answer
       "answer": "The value itself is simple."
-    }`;
-    const ANSWER_TOKEN = '"answer":';
-    const result = jsonParseLLMOutput(input, ANSWER_TOKEN);
-    expect(result).toEqual({ answer: "The value itself is simple." });
-  });
+    }`
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({ answer: "The value itself is simple." })
+  })
 })
