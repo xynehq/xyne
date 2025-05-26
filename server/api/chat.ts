@@ -1744,7 +1744,6 @@ async function* generateMetadataQueryAnswer(
           })
         ).root.children || []
 
-      console.log(pageSize * iteration, pageSize, "offset")
       Logger.info(`Rank Profile : ${rankProfile}`)
 
       iterationSpan?.setAttribute("offset", pageSize * iteration)
@@ -1768,14 +1767,6 @@ async function* generateMetadataQueryAnswer(
       Logger.info(
         `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
       )
-      if (!items.length) {
-        Logger.info(
-          `No documents found on iteration ${iteration}${hasValidTimeRange ? " within time range." : "Falling back to Iterative RAG"}`,
-        )
-        iterationSpan?.end()
-        yield { text: "null" }
-        return
-      }
 
       const answer = yield* processResultsForMetadata(
         items,
@@ -1923,7 +1914,7 @@ export async function* UnderstandMessageAndAnswer(
       metadataRagSpan,
     )
 
-    let hasYieldedAnswer = true
+    let hasYieldedAnswer = false
     for await (const answer of answerIterator) {
       if (answer.text === "no documents found") {
         return yield {
@@ -1935,6 +1926,7 @@ export async function* UnderstandMessageAndAnswer(
         )
         hasYieldedAnswer = false
       } else {
+        hasYieldedAnswer = true
         yield answer
       }
     }
