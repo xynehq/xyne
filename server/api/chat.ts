@@ -1617,14 +1617,13 @@ async function* generateMetadataQueryAnswer(
         return
       }
 
-      let chunksCount = undefined
       const answer = yield* processResultsForMetadata(
         items,
         input,
         userCtx,
         app as Apps,
         entity,
-        chunksCount,
+        undefined,
         span,
         userRequestsReasoning,
       )
@@ -1761,9 +1760,7 @@ async function* generateMetadataQueryAnswer(
       )
       iterationSpan?.setAttribute(`context`, buildContext(items, 20))
       iterationSpan?.end()
-
-      let chunksCount = undefined
-
+      
       Logger.info(
         `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
       )
@@ -1774,7 +1771,7 @@ async function* generateMetadataQueryAnswer(
         userCtx,
         app as Apps,
         entity,
-        chunksCount,
+        undefined,
         span,
         userRequestsReasoning,
       )

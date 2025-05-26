@@ -813,6 +813,7 @@ export const searchQueryPrompt = (userContext: string): string => {
     5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
       - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+      - For apps other than gmail and google-calendar "temporalDirection" strictly set to null
 
     6. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
       - This allows searching across all relevant items without a restrictive time range.
@@ -826,6 +827,7 @@ export const searchQueryPrompt = (userContext: string): string => {
       - Example queries and their sorting directions:
         - "Give me my latest emails" → sortDirection: "desc"
         - "Show me my oldest files in Drive" → sortDirection: "asc" 
+        - "previous emails / meetings" → sortDirection: "desc"
         - "Recent spreadsheets" → sortDirection: "desc"
         - "Earliest meetings with marketing team" → sortDirection: "asc"
         - "Documents from last month" → sortDirection: null (no clear direction specified)
@@ -982,7 +984,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
-       - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
+       - "temporalDirection" should be "next" if the query asks about upcoming events or emails, and "prev" if it refers to past ones. Use null if the query is unrelated to time, or if the valid apps is not  google-calendar or gmail.
        - "filter_query" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
