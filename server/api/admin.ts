@@ -2,6 +2,10 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import { syncConnectorTools, deleteToolsByConnectorId } from "@/db/tool"
 import {
   deleteConnector,
   getConnectorByExternalId,
@@ -16,6 +20,8 @@ import {
   type OAuthStartQuery,
   type SaaSJob,
   type ServiceAccountConnection,
+  type ApiKeyMCPConnector,
+  type StdioMCPConnector,
   Subsystem,
 } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
@@ -243,7 +249,9 @@ export const AddServiceConnection = async (c: Context) => {
         (error: any) => {
           Logger.error(
             error,
-            `Background Google Service Account ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+            `Background Google Service Account ingestion failed for connector ${
+              connector.id
+            }: ${getErrorMessage(error)}`,
           )
         },
       )
@@ -261,7 +269,9 @@ export const AddServiceConnection = async (c: Context) => {
     const errMessage = getErrorMessage(error)
     Logger.error(
       error,
-      `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
+      `${new AddServiceConnectionError({
+        cause: error as Error,
+      })} \n : ${errMessage} : ${(error as Error).stack}`,
     )
     // Rollback the transaction in case of any error
     throw new HTTPException(500, {
@@ -335,7 +345,9 @@ export const AddApiKeyConnector = async (c: Context) => {
       const errMessage = getErrorMessage(error)
       Logger.error(
         error,
-        `${new AddServiceConnectionError({ cause: error as Error })} \n : ${errMessage} : ${(error as Error).stack}`,
+        `${new AddServiceConnectionError({
+          cause: error as Error,
+        })} \n : ${errMessage} : ${(error as Error).stack}`,
       )
       throw new HTTPException(500, {
         message: "Error creating connection or enqueuing job",
@@ -354,8 +366,7 @@ export const UpdateConnectorStatus = async (c: Context) => {
   const [user] = userRes
   const {
     connectorId,
-    status,
-    // @ts-ignore
+    status, // @ts-ignore
   }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
   const connector = await getConnectorByExternalId(db, connectorId, user.id)
   if (!connector) {
@@ -369,7 +380,6 @@ export const UpdateConnectorStatus = async (c: Context) => {
     message: "connector updated",
   })
 }
-
 export const DeleteConnector = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   const email = sub
@@ -380,7 +390,34 @@ export const DeleteConnector = async (c: Context) => {
   const [user] = userRes
   // @ts-ignore
   const { connectorId }: { connectorId: string } = c.req.valid("form")
+
+  // Get connector details to check its type
+  const connector = await getConnectorByExternalId(db, connectorId, user.id)
+  if (!connector) {
+    Logger.warn(
+      { connectorId, userId: user.id },
+      "Connector not found for deletion",
+    )
+    throw new HTTPException(404, {
+      message: `Connector not found: ${connectorExternalId}`,
+    })
+  }
+
+  // Check if it's an MCP connector and delete tools first if needed
+  if (connector.type === ConnectorType.MCP) {
+    try {
+      // Delete all MCP tools associated with this connector
+      await deleteToolsByConnectorId(db, user.workspaceId, connector.id)
+      console.log(`Deleted MCP tools for connector ${connectorId}`)
+    } catch (error) {
+      console.error(`Error deleting MCP tools: ${error.message}`)
+      throw new Error(`Failed to delete MCP tools: ${error.message}`)
+    }
+  }
+
+  // Proceed with deleting the connector
   await deleteConnector(db, connectorId, user.id)
+
   return c.json({
     success: true,
     message: "Connector deleted",
@@ -440,7 +477,9 @@ export const DeleteOauthConnector = async (c: Context) => {
       throw error
     }
     throw new HTTPException(500, {
-      message: `Failed to delete connector ${connectorExternalId}: ${getErrorMessage(error)}`,
+      message: `Failed to delete connector ${connectorExternalId}: ${getErrorMessage(
+        error,
+      )}`,
       cause: error,
     })
   }
@@ -526,11 +565,192 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
   } catch (error) {
     Logger.error(
       error,
-      `Failed to ingest more users for service account: ${getErrorMessage(error)}`,
+      `Failed to ingest more users for service account: ${getErrorMessage(
+        error,
+      )}`,
     )
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
       message: `Failed to ingest more users: ${getErrorMessage(error)}`,
+    })
+  }
+}
+
+export const AddApiKeyMCPConnector = async (c: Context) => {
+  Logger.info("ApiKeyMCPConnector")
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: ApiKeyMCPConnector = c.req.valid("form")
+  const apiKey = form.apiKey
+  const url = form.url
+  const app = form.name
+  let status = ConnectorStatus.NotConnected
+  try {
+    // Insert the connection within the transaction
+    const connector = await insertConnector(
+      db,
+      user.workspaceId,
+      user.id,
+      user.workspaceExternalId,
+      app,
+      ConnectorType.MCP,
+      AuthType.ApiKey,
+      Apps.MCP,
+      { url: url, version: "0.1.0" },
+      null,
+      null,
+      null,
+      apiKey,
+    )
+    try {
+      const client = new Client({
+        name: `connector-${connector.externalId}`,
+        version: "0.1.0",
+      })
+      Logger.info(`invoking client initialize for url: ${new URL(url)}`)
+      await client.connect(new SSEClientTransport(new URL(url)))
+      status = ConnectorStatus.Connected
+
+      // Fetch all available tools from the client
+      // TODO: look in the DB. cache logic has to be discussed.
+      const clientTools = await client.listTools()
+      await client.close()
+
+      // Update tool definitions in the database for future use
+      await syncConnectorTools(
+        db,
+        user.workspaceId,
+        connector.id,
+        clientTools.tools.map((tool) => ({
+          toolName: tool.name,
+          toolSchema: JSON.stringify(tool),
+          description: tool.description,
+        })),
+      )
+    } catch (error) {
+      status = ConnectorStatus.Failed
+      Logger.error(`error occurred while connecting to connector ${error}`)
+    }
+    await updateConnector(db, connector.id, { status: status })
+    return c.json({
+      success: true,
+      message: "Connector added",
+      id: connector.externalId,
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      error,
+      `${new AddServiceConnectionError({
+        cause: error as Error,
+      })} \n : ${errMessage} : ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error creating connection or enqueuing job",
+    })
+  }
+}
+
+export const AddStdioMCPConnector = async (c: Context) => {
+  Logger.info("StdioMCPConnector")
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: StdioMCPConnector = c.req.valid("form")
+  const command = form.command
+  const args = form.args.join(" ")
+  const name = form.name
+  let app
+  let status = ConnectorStatus.NotConnected
+  Logger.info(`called with req body ${form} ${form.appType}`)
+  switch (form.appType) {
+    case "github":
+      app = Apps.GITHUB_MCP
+      break
+    default:
+      app = Apps.MCP
+  }
+
+  try {
+    // Insert the connection within the transaction
+    const connector = await insertConnector(
+      db,
+      user.workspaceId,
+      user.id,
+      user.workspaceExternalId,
+      app,
+      ConnectorType.MCP,
+      AuthType.Custom,
+      app,
+      { command: command, args: args, version: "0.1.0" },
+      null,
+      null,
+      null,
+      null,
+    )
+    try {
+      const config = connector.config as MCPClientStdioConfig
+      const client = new Client({
+        name: `connector-${connector.externalId}`,
+        version: config.version,
+      })
+      Logger.info(
+        `invoking stdio to ${config.command} with args: ${config.args}`,
+      )
+      await client.connect(
+        new StdioClientTransport({
+          command: config.command,
+          args: config.args.split(" "),
+        }),
+      )
+      status = ConnectorStatus.Connected
+      // Fetch all available tools from the client
+      // TODO: look in the DB. cache logic has to be discussed.
+      const clientTools = await client.listTools()
+      await client.close()
+
+      // Update tool definitions in the database for future use
+      await syncConnectorTools(
+        db,
+        user.workspaceId,
+        connector.id,
+        clientTools.tools.map((tool) => ({
+          toolName: tool.name,
+          toolSchema: JSON.stringify(tool),
+          description: tool.description,
+        })),
+      )
+    } catch (error) {
+      status = ConnectorStatus.Failed
+      Logger.error(`error occurred while connecting to connector ${error}`)
+    }
+    await updateConnector(db, connector.id, { status: status })
+    return c.json({
+      success: true,
+      message: "Connector added",
+      id: connector.externalId,
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    Logger.error(
+      error,
+      `${new AddServiceConnectionError({
+        cause: error as Error,
+      })} \n : ${errMessage} : ${(error as Error).stack}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error creating connection or enqueuing job",
     })
   }
 }

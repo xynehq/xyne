@@ -68,6 +68,7 @@ import {
   searchQueryReasoningPrompt,
   temporalDirectionJsonPrompt,
   userChatSystem,
+  withToolQueryPrompt,
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
@@ -563,6 +564,7 @@ export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
 ): Promise<{ title: string; cost: number }> => {
+  Logger.info("inside generateTitleUsingQuery")
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -573,6 +575,7 @@ export const generateTitleUsingQuery = async (
     }
 
     params.json = true
+    Logger.info("inside generateTitleUsingQuery")
 
     let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
@@ -587,6 +590,7 @@ export const generateTitleUsingQuery = async (
       ],
       params,
     )
+    Logger.info("after getProvider generateTitleUsingQuery")
     if (isReasoning && text?.includes(EndThinkingToken)) {
       text = text?.split(EndThinkingToken)[1]
     }
@@ -1106,6 +1110,7 @@ export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
   params: ModelParams,
+  toolContext: string,
 ): AsyncIterableIterator<ConverseResponse> {
   //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
@@ -1116,9 +1121,40 @@ export function generateSearchQueryOrAnswerFromConversation(
   }
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
+    params.systemPrompt += toolContext
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext)
+    params.systemPrompt = searchQueryPrompt(userContext, toolContext)
   }
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${currentMessage}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export function generateAnswerBasedOnToolOutput(
+  currentMessage: string,
+  userContext: string,
+  params: ModelParams,
+  toolContext: string,
+  toolOutput: string,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+  params.systemPrompt = withToolQueryPrompt(
+    userContext,
+    toolContext,
+    toolOutput,
+  )
 
   const baseMessage = {
     role: ConversationRole.USER,

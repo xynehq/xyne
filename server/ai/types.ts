@@ -123,6 +123,11 @@ export const SearchAnswerResponse = z.object({
   usefulIndex: z.array(z.number()),
 })
 
+export const ToolAnswerResponse = z.object({
+  tool: z.string(),
+  arguments: z.record(z.string(), z.any()).optional(),
+})
+
 // Zod schemas for filters
 export const FiltersSchema = z.object({
   app: z.nativeEnum(Apps).optional(),
@@ -161,8 +166,6 @@ export const QueryContextRank = z.object({
 })
 
 export type QueryContextRank = z.infer<typeof QueryContextRank>
-
-// export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
 
 export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>
 
