@@ -762,6 +762,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         contextSpan?.end()
 
         const ragSpan = querySpan?.startSpan("baseline_rag")
+
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
@@ -1202,8 +1203,14 @@ async function* generatePointQueryTimeExpansion(
 
   let previousResultsLength = 0
   const loopLimit = fromDate && toDate ? 2 : maxIterations
+  let starting_iteration_date = from
 
   for (let iteration = 0; iteration < loopLimit; iteration++) {
+    // Taking the starting iteration date in a variable
+    if (iteration == 0) {
+      starting_iteration_date = from
+    }
+
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
     iterationSpan?.setAttribute("iteration", iteration)
     const windowSize = (2 + iteration) * weekInMs
@@ -1386,7 +1393,12 @@ async function* generatePointQueryTimeExpansion(
   }
 
   const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
-  const searchSummary = getSearchRangeSummary(from, to, direction, noAnswerSpan)
+  const searchSummary = getSearchRangeSummary(
+    starting_iteration_date,
+    to,
+    direction,
+    noAnswerSpan,
+  )
   const totalCost = costArr.reduce((a, b) => a + b, 0)
   noAnswerSpan?.setAttribute("search_summary", searchSummary)
   noAnswerSpan?.setAttribute("total_cost", totalCost)
