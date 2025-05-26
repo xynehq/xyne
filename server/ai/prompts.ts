@@ -890,17 +890,17 @@ export const searchQueryPrompt = (userContext: string): string => {
     
     **STEP 2: DETECT MULTIPLE APP/ENTITY REFERENCES**
     
-    Set "multiple_app_entity" to true ONLY if the query contains keywords from multiple different apps/services from the valid lists above.
+    Set "multipleAppAndEntity" to true ONLY if the query contains keywords from multiple different apps/services from the valid lists above.
     Examples:
-    - "email and calendar" → multiple_app_entity: true (contains both gmail and calendar keywords)
-    - "files and emails" → multiple_app_entity: true (contains both drive and gmail keywords)
-    - "recent uber receipts" → multiple_app_entity: false (no valid app/entity keywords)
-    - "budget documents" → multiple_app_entity: false (no valid app/entity keywords)
+    - "email and calendar" → multipleAppAndEntity: true (contains both gmail and calendar keywords)
+    - "files and emails" → multipleAppAndEntity: true (contains both drive and gmail keywords)
+    - "recent uber receipts" → multipleAppAndEntity: false (no valid app/entity keywords)
+    - "budget documents" → multipleAppAndEntity: false (no valid app/entity keywords)
     
     **STEP 3: APPLY FIXED CLASSIFICATION LOGIC**
     
     1. **RetrieveInformation** - Use when:
-       - Multiple valid apps/entities are detected (multiple_app_entity is true), OR
+       - Multiple valid apps/entities are detected (multipleAppAndEntity is true), OR
        - NO valid app/entity keywords are detected at all
        - Examples: 
          - "I want to check my email and events" (multiple apps)
@@ -979,7 +979,7 @@ export const searchQueryPrompt = (userContext: string): string => {
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
-           "multiple_app_entity": "<boolean>"
+           "multipleAppAndEntity": "<boolean>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
