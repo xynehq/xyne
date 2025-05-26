@@ -375,8 +375,8 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   try {
     text = text.trim()
     // edge case where ```json is prepended to the text
-    text = text.replace(/^```(json)?\s*/i, '');
-    text = text.trim();
+    text = text.replace(/^```(json)?\s*/i, "")
+    text = text.trim()
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
       text = text.replaceAll(/[\n"}:`]/g, "")
@@ -426,11 +426,13 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
         })
-        if(jsonKey && withNewLines.startsWith("{")) {
+        if (jsonKey && withNewLines.startsWith("{")) {
           const startBraceIndex = withNewLines.indexOf("{")
           const keyIndex = withNewLines.indexOf(jsonKey)
-          if(keyIndex > startBraceIndex) {
-            withNewLines = withNewLines.slice(0,startBraceIndex+1) + withNewLines.slice(keyIndex)
+          if (keyIndex > startBraceIndex) {
+            withNewLines =
+              withNewLines.slice(0, startBraceIndex + 1) +
+              withNewLines.slice(keyIndex)
           }
         }
         jsonVal = parse(withNewLines.trim())
@@ -770,31 +772,6 @@ export const answerOrSearch = (
   }
 }
 
-// removing one op from prompt so we can figure out how to integrate this
-// otherwise it conflicts with our current search system if we start
-// talking about a single item
-
-// 3. **RetrieveMetadata**:
-//    - The user wants to retrieve metadata or details about a specific document, email, or item.
-//    - Example Queries:
-//      - "When was the file 'Budget.xlsx' last modified?"
-//      - "Who owns the document titled 'Meeting Notes'?"
-//    - **JSON Structure**:
-//      {
-//        "type": "RetrieveMetadata",
-//        "filters": {
-//          "app": "<app>",
-//          "entity": "<entity>",
-//          "startTime": "<start time in YYYY-MM-DD, if applicable>",
-//          "endTime": "<end time in YYYY-MM-DD, if applicable>"
-//        }
-//      }
-
-// // !this is under validation heading! not a prompt
-
-//  - Ensure 'app' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-//  - Ensure 'entity' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
@@ -929,6 +906,7 @@ export const baselineRAGJsonStream = (
   }
 
   if (specificFiles) {
+    Logger.info("Using baselineFilesContextPromptJson")
     params.systemPrompt = baselineFilesContextPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
@@ -938,11 +916,13 @@ export const baselineRAGJsonStream = (
     // clean retrieved context and turn Index <number> to just [<number>]
     // this is extra work because we just now set Index <number>
     // in future once the reasoning mode better supported we won't have to do this
+    Logger.info("Using baselineReasoningPromptJson")
     params.systemPrompt = baselineReasoningPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
   } else {
+    Logger.info("Using baselinePromptJson")
     params.systemPrompt = baselinePromptJson(
       userCtx,
       indexToCitation(retrievedCtx),

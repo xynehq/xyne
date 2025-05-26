@@ -108,7 +108,6 @@ import {
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
 import { entityToSchemaMapper } from "@/search/mappers"
-import { is } from "drizzle-orm"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -763,6 +762,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         contextSpan?.end()
 
         const ragSpan = querySpan?.startSpan("baseline_rag")
+
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
@@ -1203,8 +1203,14 @@ async function* generatePointQueryTimeExpansion(
 
   let previousResultsLength = 0
   const loopLimit = fromDate && toDate ? 2 : maxIterations
+  let starting_iteration_date = from
 
   for (let iteration = 0; iteration < loopLimit; iteration++) {
+    // Taking the starting iteration date in a variable
+    if (iteration == 0) {
+      starting_iteration_date = from
+    }
+
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
     iterationSpan?.setAttribute("iteration", iteration)
     const windowSize = (2 + iteration) * weekInMs
@@ -1387,7 +1393,12 @@ async function* generatePointQueryTimeExpansion(
   }
 
   const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
-  const searchSummary = getSearchRangeSummary(from, to, direction, noAnswerSpan)
+  const searchSummary = getSearchRangeSummary(
+    starting_iteration_date,
+    to,
+    direction,
+    noAnswerSpan,
+  )
   const totalCost = costArr.reduce((a, b) => a + b, 0)
   noAnswerSpan?.setAttribute("search_summary", searchSummary)
   noAnswerSpan?.setAttribute("total_cost", totalCost)
@@ -1426,6 +1437,52 @@ const formatTimeDuration = (from: number | null, to: number | null): string => {
   return readable.trim()
 }
 
+async function* processResultsForMetadata(
+  items: VespaSearchResult[],
+  input: string,
+  userCtx: string,
+  app: Apps,
+  entity: any,
+  chunksCount: number | undefined,
+  span?: Span,
+  userRequestsReasoning?: boolean,
+) {
+  if (app === Apps.GoogleDrive) {
+    chunksCount = 100
+    Logger.info(`Google Drive, Chunk size: ${chunksCount}`)
+    span?.setAttribute("Google Drive, chunk_size", chunksCount)
+  }
+
+  // TODO: Calculate the token count for the selected model's capacity and pass the full context accordingly.
+  chunksCount = 20
+  span?.setAttribute(
+    "Document chunk size",
+    `full_context maxed to ${chunksCount}`,
+  )
+  const context = buildContext(items, chunksCount)
+  const streamOptions = {
+    stream: true,
+    modelId: defaultBestModel,
+    reasoning: config.isReasoning && userRequestsReasoning,
+  }
+
+  let iterator: AsyncIterableIterator<ConverseResponse>
+  if (app === Apps.Gmail) {
+    Logger.info(`Using mailPromptJsonStream `)
+    iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
+  } else {
+    Logger.info(`Using baselineRAGJsonStream`)
+    iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
+  }
+
+  return yield* processIterator(
+    iterator,
+    items,
+    0,
+    config.isReasoning && userRequestsReasoning,
+  )
+}
+
 async function* generateMetadataQueryAnswer(
   input: string,
   messages: Message[],
@@ -1437,6 +1494,7 @@ async function* generateMetadataQueryAnswer(
   classification: TemporalClassifier & QueryRouterResponse,
   userRequestsReasoning?: boolean,
   span?: Span,
+  maxIterations = 5,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1477,7 +1535,7 @@ async function* generateMetadataQueryAnswer(
   const directionText = direction === "prev" ? "going back" : "up to"
 
   Logger.info(
-    `Searching for documents from app "${app}" and entity "${entity}"` +
+    `App : "${app}" , Entity : "${entity}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
 
@@ -1490,8 +1548,17 @@ async function* generateMetadataQueryAnswer(
     classification.filter_query &&
     classification.filters?.sortDirection === "desc"
   ) {
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
     Logger.info(
-      "User requested recent metadata retrieval without specifying app or entity.",
+      "User requested recent metadata retrieval without specifying app or entity",
+    )
+
+    Logger.info(
+      `Multiple App Entity - ${classification.filters.multipleAppAndEntity}`,
     )
     const searchOps = {
       limit: pageSize,
@@ -1501,26 +1568,94 @@ async function* generateMetadataQueryAnswer(
         timestampRange.to || timestampRange.from ? timestampRange : null,
     }
 
-    items =
-      (
-        await searchVespa(
-          classification.filter_query,
-          email,
-          null,
-          null,
-          searchOps,
-        )
-      ).root.children || []
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const pageSpan = span?.startSpan(`metadata_iteration_${iteration}`)
+      Logger.info(
+        `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
+      )
+      items =
+        (
+          await searchVespa(
+            classification.filter_query,
+            email,
+            app as Apps,
+            entity as any,
+            {
+              ...searchOps,
+              offset: pageSize * iteration,
+              span: pageSpan,
+            },
+          )
+        ).root.children || []
 
-    span?.setAttribute("metadata items found", items.length)
+      Logger.info(
+        `iteration-${iteration} retrieved documents length - ${items.length}`,
+      )
+      pageSpan?.setAttribute("offset", pageSize * iteration)
+      pageSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents length`,
+        items.length,
+      )
+      pageSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents id's`,
+        JSON.stringify(
+          items.map((v: VespaSearchResult) => (v.fields as any).docId),
+        ),
+      )
+
+      pageSpan?.setAttribute("context", buildContext(items, 20))
+      if (!items.length) {
+        Logger.info(
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
+        )
+        pageSpan?.end()
+        yield { text: "null" }
+        return
+      }
+
+      const answer = yield* processResultsForMetadata(
+        items,
+        input,
+        userCtx,
+        app as Apps,
+        entity,
+        undefined,
+        span,
+        userRequestsReasoning,
+      )
+
+      if (answer == null) {
+        pageSpan?.setAttribute("answer", null)
+        if (iteration == maxIterations - 1) {
+          pageSpan?.end()
+          yield { text: "null" }
+          return
+        } else {
+          Logger.info(`no answer found for iteration - ${iteration}`)
+          continue
+        }
+      } else {
+        pageSpan?.setAttribute("answer", answer)
+        pageSpan?.end()
+        return answer
+      }
+    }
+
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
-    Logger.info(`Using rank profile: ${SearchModes.GlobalSorted}`)
+    Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
   } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
     const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
     span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
-    Logger.info(
-      `User requested metadata search: ${QueryType.RetrieveUnspecificMetadata}`,
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
     )
+    span?.setAttribute("modelId", defaultBestModel)
+    Logger.info(`Search Type : ${QueryType.RetrieveUnspecificMetadata}`)
 
     items =
       (
@@ -1535,21 +1670,57 @@ async function* generateMetadataQueryAnswer(
         })
       ).root.children || []
 
-    span?.setAttribute("metadata items found", items.length)
+    span?.setAttribute(`retrieved documents length`, items.length)
+    span?.setAttribute(
+      `retrieved documents id's`,
+      JSON.stringify(
+        items.map((v: VespaSearchResult) => (v.fields as any).docId),
+      ),
+    )
 
+    span?.setAttribute("context", buildContext(items, 20))
+    span?.end()
+    Logger.info(
+      `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
+    )
     // Early return if no documents found
     if (!items.length) {
-      return "no documents found"
+      span?.end()
+      Logger.info("No documents found for unspecific metadata retrieval")
+      yield { text: "no documents found" }
+      return
     }
-  } else if (isMetadataRetrieval && isValidAppAndEntity) {
+
+    span?.end()
+    yield* processResultsForMetadata(
+      items,
+      input,
+      userCtx,
+      app as Apps,
+      entity,
+      maxSummaryCount,
+      span,
+      userRequestsReasoning,
+    )
+    return
+  } else if (
+    isMetadataRetrieval &&
+    isValidAppAndEntity &&
+    classification.filter_query
+  ) {
     // Specific metadata retrieval
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
-    Logger.info(`User requested metadata search: ${QueryType.RetrieveMetadata}`)
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
+    Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
 
     const { filter_query } = classification
-    const query = filter_query || input
+    const query = filter_query
     const rankProfile =
-      sortDirection === "desc" && filter_query
+      sortDirection === "desc"
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
@@ -1561,74 +1732,83 @@ async function* generateMetadataQueryAnswer(
         timestampRange.to || timestampRange.from ? timestampRange : null,
     }
 
-    items =
-      (
-        await searchVespa(
-          query,
-          email,
-          app as Apps,
-          entity as any,
-          searchOptions,
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const iterationSpan = span?.startSpan(`metadata_iteration_${iteration}`)
+      Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
+
+      items =
+        (
+          await searchVespa(query, email, app as Apps, entity as any, {
+            ...searchOptions,
+            offset: pageSize * iteration,
+          })
+        ).root.children || []
+
+      Logger.info(`Rank Profile : ${rankProfile}`)
+
+      iterationSpan?.setAttribute("offset", pageSize * iteration)
+      iterationSpan?.setAttribute("rank_profile", rankProfile)
+
+      iterationSpan?.setAttribute(
+        `iteration - ${iteration} retrieved documents length`,
+        items.length,
+      )
+      iterationSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents id's`,
+        JSON.stringify(
+          items.map((v: VespaSearchResult) => (v.fields as any).docId),
+        ),
+      )
+      iterationSpan?.setAttribute(`context`, buildContext(items, 20))
+      iterationSpan?.end()
+
+      Logger.info(
+        `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
+      )
+      if (!items.length) {
+        Logger.info(
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
         )
-      ).root.children || []
+        iterationSpan?.end()
+        yield { text: "null" }
+        return
+      }
 
-    Logger.info(`Using rank profile: ${rankProfile}`)
-    span?.setAttribute("rank_profile", rankProfile)
+      const answer = yield* processResultsForMetadata(
+        items,
+        input,
+        userCtx,
+        app as Apps,
+        entity,
+        undefined,
+        span,
+        userRequestsReasoning,
+      )
 
-    if (!items.length) {
-      return hasValidTimeRange ? "no documents found" : null
+      if (answer == null) {
+        iterationSpan?.setAttribute("answer", null)
+        if (iteration == maxIterations - 1) {
+          iterationSpan?.end()
+          yield { text: "null" }
+          return
+        } else {
+          Logger.info(`no answer found for iteration - ${iteration}`)
+          continue
+        }
+      } else {
+        iterationSpan?.end()
+        return answer
+      }
     }
   } else {
     // None of the conditions matched
-    return null
+    yield { text: "null" }
+    return
   }
-
-  Logger.info(`Found ${items.length} items for metadata retrieval`)
-  span?.setAttribute("metadata_items_found", items.length)
-  // Process results
-  const results = items.slice(0, pageSize)
-  let chunksCount = isMetadataRetrieval ? undefined : maxSummaryCount
-
-  if (app === Apps.GoogleDrive && isMetadataRetrieval) {
-    chunksCount = 100
-    Logger.info(`Using Google Drive, setting chunk size to ${chunksCount}`)
-    span?.setAttribute("Google Drive chunk_size", chunksCount)
-  } else {
-    Logger.info(`Sending full context`)
-  }
-
-  const initialContext = buildContext(results, chunksCount)
-  const streamOptions = {
-    stream: true,
-    modelId: defaultBestModel,
-    reasoning: config.isReasoning && userRequestsReasoning,
-  }
-
-  let iterator: AsyncIterableIterator<ConverseResponse>
-  if (app === Apps.Gmail) {
-    Logger.info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(
-      input,
-      userCtx,
-      initialContext,
-      streamOptions,
-    )
-  } else {
-    Logger.info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(
-      input,
-      userCtx,
-      initialContext,
-      streamOptions,
-    )
-  }
-
-  return yield* processIterator(
-    iterator,
-    results,
-    0,
-    config.isReasoning && userRequestsReasoning,
-  )
 }
 
 const fallbackText = (
@@ -1713,8 +1893,12 @@ export async function* UnderstandMessageAndAnswer(
     classification.type == QueryType.RetrieveUnspecificMetadata
   const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
 
-  if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
-    Logger.info("User is asking for metadata retrieval")
+  if (
+    isMetadataRetrieval ||
+    isUnspecificMetadataRetrieval ||
+    classification.filters.multipleAppAndEntity === false
+  ) {
+    Logger.info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
     metadataRagSpan?.setAttribute("comment", "metadata retrieval")
@@ -1722,8 +1906,12 @@ export async function* UnderstandMessageAndAnswer(
       "classification",
       JSON.stringify(classification),
     )
-    const count = classification.filters.count || chatPageSize
-    const answer = yield* generateMetadataQueryAnswer(
+
+    const count =
+      isMetadataRetrieval || isUnspecificMetadataRetrieval
+        ? classification.filters.count || chatPageSize
+        : chatPageSize
+    const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
       email,
@@ -1732,34 +1920,34 @@ export async function* UnderstandMessageAndAnswer(
       count,
       maxDefaultSummary,
       classification,
-      userRequestsReasoning,
+      config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
     )
 
-    if (answer === "no documents found") {
-      metadataRagSpan?.end()
-
-      const fallbackMessage = fallbackText(classification)
-      return yield {
-        text: `I couldn't find any ${fallbackMessage}. Would you like to try a different search?`,
+    let hasYieldedAnswer = false
+    for await (const answer of answerIterator) {
+      if (answer.text === "no documents found") {
+        return yield {
+          text: `I couldn't find any ${fallbackText(classification)}. Would you like to try a different search?`,
+        }
+      } else if (answer.text === "null") {
+        Logger.info(
+          "No context found for metadata retrieval, moving to iterative RAG",
+        )
+        hasYieldedAnswer = false
+      } else {
+        hasYieldedAnswer = true
+        yield answer
       }
     }
 
-    if (answer) {
-      metadataRagSpan?.end()
-      return yield* answer
-    }
     metadataRagSpan?.end()
-    Logger.info(
-      "No context found for metadata retrieval, moving to iterative RAG",
-    )
+    if (hasYieldedAnswer) return
   }
 
   if (classification.direction !== null) {
     // user is talking about an event
-    Logger.info(
-      `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
-    )
+    Logger.info(`Direction : ${classification.direction}`)
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
     return yield* generatePointQueryTimeExpansion(
@@ -1775,9 +1963,7 @@ export async function* UnderstandMessageAndAnswer(
       eventRagSpan,
     )
   } else {
-    Logger.info(
-      "default case, trying to do iterative RAG with query rewriting and time filtering for answering users query",
-    )
+    Logger.info("Iterative Rag : Query rewriting and time filtering")
     const ragSpan = passedSpan?.startSpan("iterative_rag")
     ragSpan?.setAttribute("comment", "iterative rag")
     // default case
@@ -2538,11 +2724,11 @@ export const MessageApi = async (c: Context) => {
               })
               await stream.writeSSE({
                 event: ChatSSEvents.Error,
-                data: "Can you please make your query more specific?",
+                data: "Oops, something went wrong. Please try rephrasing your question or ask something else.",
               })
               await addErrMessageToMessage(
                 lastMessage,
-                "Can you please make your query more specific?",
+                "Oops, something went wrong. Please try rephrasing your question or ask something else.",
               )
 
               const traceJson = tracer.serializeToJson()
