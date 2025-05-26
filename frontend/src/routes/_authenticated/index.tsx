@@ -19,7 +19,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
-import { Reference } from "@/types"
 
 enum Tabs {
   Search = "search",
@@ -119,27 +118,17 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (
-    messageToSend: string,
-    references: Reference[],
-    selectedSources?: string[],
-  ) => {
+  const handleAsk = (messageToSend: string, selectedSources?: string[]) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
         reasoning?: boolean
-        refs?: string
         sources?: string
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
       if (isReasoningActive) {
         searchParams.reasoning = true
-      }
-
-      if (references && references.length > 0) {
-        // Pass only reference IDs, stringified as JSON
-        searchParams.refs = JSON.stringify(references.map((ref) => ref.id))
       }
 
       if (selectedSources && selectedSources.length > 0) {
@@ -150,7 +139,6 @@ const Index = () => {
         to: "/chat",
         search: searchParams,
       })
-      // Log them to confirm they are received
     }
   }
 
