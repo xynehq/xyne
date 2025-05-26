@@ -38,7 +38,6 @@ import type {
   ModelParams,
   QueryRouterResponse,
   TemporalClassifier,
-  UserQuery,
 } from "@/ai/types"
 import {
   QueryContextRank,
@@ -375,6 +374,9 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
+    // edge case where ```json is prepended to the text
+    text = text.replace(/^```(json)?\s*/i, '');
+    text = text.trim();
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
       text = text.replaceAll(/[\n"}:`]/g, "")
@@ -420,10 +422,17 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       // returning an empty object when newlines are present in the content.
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
         // Replace newlines with \n in content between quotes
-        const withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
+        let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
         })
+        if(jsonKey && withNewLines.startsWith("{")) {
+          const startBraceIndex = withNewLines.indexOf("{")
+          const keyIndex = withNewLines.indexOf(jsonKey)
+          if(keyIndex > startBraceIndex) {
+            withNewLines = withNewLines.slice(0,startBraceIndex+1) + withNewLines.slice(keyIndex)
+          }
+        }
         jsonVal = parse(withNewLines.trim())
       }
 
@@ -877,18 +886,6 @@ const indexToCitation = (text: string): string => {
   return text.replace(/Index (\d+)/g, "[$1]")
 }
 
-export const buildUserQuery = (userQuery: UserQuery) => {
-  let builtQuery = ""
-  userQuery?.map((obj) => {
-    if (obj?.type === "text") {
-      builtQuery += `${obj?.value} `
-    } else if (obj?.type === "pill") {
-      builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
-    }
-  })
-  return builtQuery
-}
-
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
@@ -911,13 +908,6 @@ export const baselineRAGJsonStream = (
       userCtx,
       indexToCitation(retrievedCtx),
     )
-    if (params.systemPrompt.length > 600_000) {
-      return (async function* (): AsyncIterableIterator<ConverseResponse> {
-        yield {
-          text: "Selected context is too large, please select smaller files",
-        }
-      })()
-    }
   } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
@@ -934,12 +924,12 @@ export const baselineRAGJsonStream = (
     )
   }
   params.json = true // Set to true to ensure JSON response
-  const parsed = safeParse(userQuery)
+
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
       {
-        text: parsed ? buildUserQuery(parsed) : userQuery,
+        text: `${userQuery}`,
       },
     ],
   }
@@ -949,14 +939,6 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
-}
-
-export const safeParse = (str: string) => {
-  try {
-    return JSON.parse(str)
-  } catch {
-    return null
-  }
 }
 
 export const temporalPromptJsonStream = (

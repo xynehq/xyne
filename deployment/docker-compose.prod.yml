@@ -17,6 +17,33 @@ services:
   #   networks:
   #     - xyne
   #   restart: always
+  
+  prometheus:
+    image: "prom/prometheus"
+    container_name: xyne-prometheus
+    volumes:
+      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
+    ports:
+    - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+    restart: always
+    networks:
+      - xyne
+    extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana
+    container_name: xyne-grafana
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3002:3000"
+    restart: always
+    networks:
+      - xyne
+
   vespa:
     image: vespaengine/vespa
     container_name: vespa

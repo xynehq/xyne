@@ -45,7 +45,7 @@ import { toast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Pill } from "@/components/Pill" 
+import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
 
 type CurrentResp = {
@@ -164,7 +164,8 @@ const jsonToHtmlMessage = (jsonString: string): string => {
         htmlPart += " "
         return htmlPart
       })
-      .join("").trimEnd()
+      .join("")
+      .trimEnd()
   } catch (error) {
     return jsonString
   }
@@ -1496,9 +1497,12 @@ const Sources = ({
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
-const renderMarkdownLink = ({ node, ...linkProps }: { node?: any; [key: string]: any }) => (
+const renderMarkdownLink = ({
+  node,
+  ...linkProps
+}: { node?: any; [key: string]: any }) => (
   <a {...linkProps} target="_blank" rel="noopener noreferrer" />
-);
+)
 
 const ChatMessage = ({
   message,
@@ -1583,7 +1587,7 @@ const ChatMessage = ({
                       color: "#627384",
                     }}
                     components={{
-                      a: renderMarkdownLink
+                      a: renderMarkdownLink,
                     }}
                   />
                 </div>

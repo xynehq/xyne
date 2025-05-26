@@ -35,7 +35,10 @@ const Index = () => {
   })
 
   useEffect(() => {
-    localStorage.setItem("isReasoningGlobalState", JSON.stringify(isReasoningActive))
+    localStorage.setItem(
+      "isReasoningGlobalState",
+      JSON.stringify(isReasoningActive),
+    )
   }, [isReasoningActive])
 
   const [autocompleteResults, setAutocompleteResults] = useState<
@@ -119,10 +122,15 @@ const Index = () => {
   const handleAsk = (
     messageToSend: string,
     references: Reference[],
-    selectedSources?: string[]
+    selectedSources?: string[],
   ) => {
     if (messageToSend.trim()) {
-      const searchParams: { q: string; reasoning?: boolean; refs?: string; sources?: string } = {
+      const searchParams: {
+        q: string
+        reasoning?: boolean
+        refs?: string
+        sources?: string
+      } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
       if (isReasoningActive) {
