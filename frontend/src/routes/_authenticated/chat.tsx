@@ -88,6 +88,7 @@ type ParsedMessagePart =
         pillType?: "citation" | "global"
       }
     }
+  | { type: "link"; value: string }
 
 // Helper function to parse HTML message input
 const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
@@ -117,6 +118,12 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
             entity: el.dataset.entity,
           },
         })
+      } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
+        parts.push({
+          type: "link",
+          value: el.getAttribute("href") || "",
+        })
+        // Do not walk children of a link we've already processed as a "link" part
       } else {
         Array.from(el.childNodes).forEach(walk)
       }
@@ -160,8 +167,20 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
           )
+        } else if (part.type === "link" && typeof part.value === "string") {
+          const url = part.value
+          // Create a simple anchor tag string for links
+          // Ensure it has similar styling to how it's created in ChatBox
+          // The text of the link will be the URL itself
+          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800 cursor-pointer">${url}</a>`
         }
-        htmlPart += " "
+        // Add a space only if the part is not the last one, or if the next part is text.
+        // This avoids trailing spaces or double spaces between elements.
+        if (htmlPart.length > 0 && index < parts.length - 1) {
+          // Add space if current part is not empty and it's not the last part.
+          // More sophisticated logic might be needed if consecutive non-text elements occur.
+          htmlPart += " "
+        }
         return htmlPart
       })
       .join("")
@@ -400,33 +419,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     if (chatParams.q && !hasHandledQueryParam.current) {
       const messageToSend = decodeURIComponent(chatParams.q)
 
-      let refIdArray: string[] = []
-      // Process chatParams.refs safely
-      const _refs = chatParams.refs as string | string[] | undefined
-
-      if (Array.isArray(_refs)) {
-        refIdArray = _refs.filter((ref) => typeof ref === "string")
-      } else if (typeof _refs === "string") {
-        try {
-          const parsedRefs = JSON.parse(_refs)
-          if (
-            Array.isArray(parsedRefs) &&
-            parsedRefs.every((item) => typeof item === "string")
-          ) {
-            refIdArray = parsedRefs
-          }
-        } catch (e) {
-          console.error("Failed to parse chatParams.refs:", _refs, e)
-        }
-      }
-
-      const referencesForHandleSend: Reference[] = refIdArray.map((refId) => ({
-        id: refId,
-        title: `Document: ${refId}`,
-        docId: refId,
-        type: "global",
-      }))
-
       let sourcesArray: string[] = []
       // Process chatParams.sources safely
       const _sources = chatParams.sources as string | string[] | undefined
@@ -445,7 +437,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         setIsReasoningActive(chatParams.reasoning)
       }
 
-      handleSend(messageToSend, referencesForHandleSend, sourcesArray)
+      // Call handleSend without referencesForHandleSend, as it's no longer a parameter
+      handleSend(messageToSend, sourcesArray)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -453,24 +446,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           ...prev,
           q: undefined,
           reasoning: undefined,
-          refs: undefined,
           sources: undefined,
         }),
         replace: true,
       })
     }
-  }, [
-    chatParams.q,
-    chatParams.reasoning,
-    chatParams.refs,
-    chatParams.sources,
-    router,
-  ])
+  }, [chatParams.q, chatParams.reasoning, chatParams.sources, router])
 
   const handleSend = async (
     messageToSend: string,
-    // isReasoningEnabled?: boolean, // Removed: handleSend will use isReasoningActive state
-    addedReferences: Reference[] = [],
     selectedSources: string[] = [],
   ) => {
     if (!messageToSend || isStreaming) return
@@ -489,20 +473,29 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentResp({ resp: "", thinking: "" })
     currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
-    const fileIds = addedReferences
-      .filter((ref) => ref.docId)
-      .map((ref) => ref.docId!)
-
     // const appEntities = selectedSources
     //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
     //   .filter((item) => item !== undefined)
 
+    // Always parse the message input to a structured format
+    const parsedMessageParts = parseMessageInput(messageToSend)
+
+    // Determine if the message contains any pills or links
+    const hasRichContent = parsedMessageParts.some(
+      (part) => part.type === "pill" || part.type === "link",
+    )
+
     let finalMessagePayload: string
-    if (addedReferences.length === 0) {
-      finalMessagePayload = messageToSend
-    } else {
-      const parsedMessageParts = parseMessageInput(messageToSend)
+    if (hasRichContent) {
       finalMessagePayload = JSON.stringify(parsedMessageParts)
+    } else {
+      // If only text parts, send the original plain text message
+      // We extract the text content from parsedMessageParts to ensure it's just the text
+      // and not potentially an empty array string if messageToSend was empty.
+      finalMessagePayload = parsedMessageParts
+        .filter((part) => part.type === "text")
+        .map((part) => part.value)
+        .join("")
     }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
@@ -510,8 +503,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       url.searchParams.append("chatId", chatId)
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
-    url.searchParams.append("message", encodeURIComponent(finalMessagePayload))
-    url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
+    url.searchParams.append("message", finalMessagePayload)
 
     // if (appEntities.length > 0) {
     //   url.searchParams.append(

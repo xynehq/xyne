@@ -174,6 +174,7 @@ interface TextQueryItem {
 
 interface PillValue {
   title: string
+  docId: string
 }
 
 interface PillQueryItem {
@@ -181,6 +182,11 @@ interface PillQueryItem {
   value: PillValue
 }
 
-type UserQueryItem = TextQueryItem | PillQueryItem
+interface LinkQueryItem {
+  type: "link"
+  value: string
+}
+
+type UserQueryItem = TextQueryItem | PillQueryItem | LinkQueryItem
 
 export type UserQuery = UserQueryItem[]

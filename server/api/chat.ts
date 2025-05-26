@@ -69,6 +69,7 @@ import {
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
+  getDocumentOrNull,
 } from "@/search/vespa"
 import {
   Apps,
@@ -969,6 +970,23 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const results = await GetDocumentsByDocIds(fileIds)
+
+  // Special case fora single Whole Spreadsheet
+  if (fileIds?.length === 1 && !results?.root?.children) {
+    const fileId = fileIds[0]
+    const result = await getDocumentOrNull(fileSchema, `${fileIds[0]}_0`)
+    if (result) {
+      //@ts-ignore
+      const metadata = JSON.parse(result?.fields?.metadata)
+      const totalSheets = metadata.totalSheets
+      const sheetIds = []
+      for (let i = 0; i < totalSheets; i++) {
+        sheetIds.push(`${fileId}_${i}`)
+      }
+      const sheetsResults = await GetDocumentsByDocIds(sheetIds)
+      results.root.children = sheetsResults.root.children
+    }
+  }
   if (!results.root.children) {
     results.root.children = []
   }
@@ -1092,9 +1110,34 @@ export const buildUserQuery = (userQuery: UserQuery) => {
       builtQuery += `${obj?.value} `
     } else if (obj?.type === "pill") {
       builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
+    } else if (obj?.type === "link") {
+      builtQuery += `<User added a link with url "${obj?.value}" here> `
     }
   })
   return builtQuery
+}
+
+const extractFileIdsFromMessage = (message: string): string[] => {
+  const fileIds: string[] = []
+  const jsonMessage = JSON.parse(message) as UserQuery
+  jsonMessage?.map((obj) => {
+    if (obj?.type === "pill") {
+      fileIds.push(obj?.value?.docId)
+    } else if (obj?.type === "link") {
+      const fileId = getFileIdFromLink(obj?.value)
+      if (fileId) {
+        fileIds.push(fileId)
+      }
+    }
+  })
+  return fileIds
+}
+
+const getFileIdFromLink = (link: string) => {
+  const regex = /(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]+)/
+  const match = link.match(regex)
+  const fileId = match ? match[1] : null
+  return fileId
 }
 
 const getSearchRangeSummary = (
@@ -2042,6 +2085,10 @@ const addErrMessageToMessage = async (
   }
 }
 
+const isMessageWithContext = (message: string) => {
+  return message?.startsWith("[{") && message?.endsWith("}]")
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
@@ -2061,17 +2108,8 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let {
-      message,
-      chatId,
-      modelId,
-      stringifiedfileIds,
-      isReasoningEnabled,
-    }: MessageReqType = body
+    let { message, chatId, modelId, isReasoningEnabled }: MessageReqType = body
     const userRequestsReasoning = isReasoningEnabled
-    const fileIds: string[] = stringifiedfileIds
-      ? JSON.parse(stringifiedfileIds)
-      : []
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -2079,6 +2117,9 @@ export const MessageApi = async (c: Context) => {
     }
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
+
+    const isMsgWithContext = isMessageWithContext(message)
+    const fileIds = isMsgWithContext ? extractFileIdsFromMessage(message) : []
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2198,7 +2239,7 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          if (fileIds && fileIds.length > 0) {
+          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
