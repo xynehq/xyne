@@ -990,7 +990,7 @@ async function* generateAnswerFromGivenContext(
 
   const selectedContext = isContextSelected(message)
   const builtUserQuery = selectedContext
-    ? buildUserQuery(selectedContext)
+    ? buildUserQuery(selectedContext, results.root.children)
     : message
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
@@ -1088,7 +1088,7 @@ export const isContextSelected = (str: string) => {
   }
 }
 
-export const buildUserQuery = (userQuery: UserQuery) => {
+export const buildUserQuery = (userQuery: UserQuery, results?: any) => {
   let builtQuery = ""
   userQuery?.map((obj) => {
     if (obj?.type === "text") {
@@ -1096,10 +1096,27 @@ export const buildUserQuery = (userQuery: UserQuery) => {
     } else if (obj?.type === "pill") {
       builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
     } else if (obj?.type === "link") {
-      builtQuery += `<User added a link with url "${obj?.value}" here> `
+      builtQuery += `<User added a link ${
+        results?.length > 0
+          ? `of file with title "${getTitleFromFileLink(results, obj.value)}" here`
+          : `
+      with url "${obj?.value}"
+      here`
+      } > `
     }
   })
+  console.log(builtQuery)
   return builtQuery
+}
+
+const getTitleFromFileLink = (results: any, link: string) => {
+  let title = ""
+  results.map((r) => {
+    if (r.fields.url === link) {
+      title = r.fields.title
+    }
+  })
+  return title
 }
 
 const extractFileIdsFromMessage = (message: string): string[] => {
