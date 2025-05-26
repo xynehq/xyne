@@ -969,6 +969,9 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const results = await GetDocumentsByDocIds(fileIds)
+  console.log("results")
+  console.log(results.root.children)
+  console.log("results")
   if (!results.root.children) {
     results.root.children = []
   }
@@ -1092,9 +1095,36 @@ export const buildUserQuery = (userQuery: UserQuery) => {
       builtQuery += `${obj?.value} `
     } else if (obj?.type === "pill") {
       builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
+    } else if (obj?.type === "link") {
+      builtQuery += `<User added a link with url "${obj?.value}" here> `
     }
   })
   return builtQuery
+}
+
+const extractFileIdsFromMessage = (message: string): string[] => {
+  const fileIds: string[] = []
+  const jsonMessage = JSON.parse(message)
+  jsonMessage.map((obj) => {
+    if (obj?.type === "pill") {
+      fileIds.push(obj?.value?.docId)
+    } else if (obj?.type === "link") {
+      const fileId = getFileIdFromLink(obj?.value)
+      if (fileId) {
+        fileIds.push(fileId)
+      }
+    }
+  })
+  return fileIds
+}
+
+const getFileIdFromLink = (link: string) => {
+  const match = link?.match(/\/d\/([^/]+)/)
+  const fileId = match ? match[1] : null
+  console.log("getFileId")
+  console.log(fileId)
+  console.log("getFileId")
+  return fileId
 }
 
 const getSearchRangeSummary = (
@@ -1856,6 +1886,10 @@ const addErrMessageToMessage = async (
   }
 }
 
+const isMessageWithContext = (message: string) => {
+  return message.startsWith("[{") && message.endsWith("}]")
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
@@ -1875,17 +1909,8 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let {
-      message,
-      chatId,
-      modelId,
-      stringifiedfileIds,
-      isReasoningEnabled,
-    }: MessageReqType = body
+    let { message, chatId, modelId, isReasoningEnabled }: MessageReqType = body
     const userRequestsReasoning = isReasoningEnabled
-    const fileIds: string[] = stringifiedfileIds
-      ? JSON.parse(stringifiedfileIds)
-      : []
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1893,6 +1918,12 @@ export const MessageApi = async (c: Context) => {
     }
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
+
+    console.log("message")
+    console.log(message)
+    console.log("message")
+    const isMsgWithContext = isMessageWithContext(message)
+    const fileIds = isMsgWithContext ? extractFileIdsFromMessage(message) : []
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2012,7 +2043,7 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          if (fileIds && fileIds.length > 0) {
+          if (isMsgWithContext) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
