@@ -1760,7 +1760,7 @@ async function* generateMetadataQueryAnswer(
       )
       iterationSpan?.setAttribute(`context`, buildContext(items, 20))
       iterationSpan?.end()
-      
+
       Logger.info(
         `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
       )
@@ -1883,7 +1883,7 @@ export async function* UnderstandMessageAndAnswer(
   if (
     isMetadataRetrieval ||
     isUnspecificMetadataRetrieval ||
-    !classification.filters.multiple_app_entity
+    classification.filters.multiple_app_entity === false
   ) {
     Logger.info("Metadata Retrieval")
 
