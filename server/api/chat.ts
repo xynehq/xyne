@@ -1765,6 +1765,18 @@ async function* generateMetadataQueryAnswer(
       Logger.info(
         `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
       )
+      if (!items.length) {
+        Logger.info(
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
+        )
+        iterationSpan?.end()
+        yield { text: "null" }
+        return
+      }
 
       const answer = yield* processResultsForMetadata(
         items,
