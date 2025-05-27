@@ -156,3 +156,46 @@ const baseProps = {
   });
     });
   }); // Closes 'Thinking State Scenarios'
+
+// Define a simplified ParsedMessagePart type for testing purposes
+type TestParsedMessagePart =
+  | { type: "text"; value: string }
+  | {
+      type: "pill"
+      value: {
+        docId: string
+        url?: string | null
+        title?: string | null
+        app?: string
+        entity?: string
+        pillType?: "citation" | "global"
+      }
+    }
+  | { type: "link"; value: string }
+
+
+describe('User Message Rendering (Plain Text and JSON Structure)', () => {
+  test('renders plain text message correctly', () => {
+    const plainTextMessage = "Hello, this is a plain text message.";
+    render(<ChatMessage {...baseProps} isUser={true} message={plainTextMessage} />);
+    // jsonToHtmlMessage should return plain text as is if it's not valid JSON of ParsedMessagePart[]
+    // And ChatMessage uses dangerouslySetInnerHTML
+    const messageContainer = screen.getByText(plainTextMessage).parentElement; // Get the div from dangerouslySetInnerHTML
+    expect(messageContainer).toHaveTextContent(plainTextMessage);
+  });
+
+  test('renders JSON message with a link', () => {
+    const parts: TestParsedMessagePart[] = [
+      { type: "text", value: "Visit: " },
+      { type: "link", value: "http://example.com/link" },
+    ];
+    const jsonMessage = JSON.stringify(parts);
+    const { container } = render(<ChatMessage {...baseProps} isUser={true} message={jsonMessage} />);
+
+    expect(container).toHaveTextContent("Visit: ");
+    const linkElement = screen.getByRole('link', { name: "http://example.com/link" });
+    expect(linkElement).toBeInTheDocument();
+    expect(linkElement).toHaveAttribute('href', "http://example.com/link");
+    expect(linkElement).toHaveAttribute('target', '_blank');
+  });
+});

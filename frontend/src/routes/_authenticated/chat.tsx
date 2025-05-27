@@ -181,7 +181,6 @@ const jsonToHtmlMessage = (jsonString: string): string => {
         if (htmlPart.length > 0 && index < parts.length - 1) {
           // Add space if current part is not empty and it's not the last part.
           // More sophisticated logic might be needed if consecutive non-text elements occur.
-          htmlPart += " "
         }
         return htmlPart
       })
