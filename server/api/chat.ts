@@ -1111,9 +1111,6 @@ const extractFileIdsFromMessage = async (
 }> => {
   const fileIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
-  console.log("JsonMessage")
-  console.log(jsonMessage)
-  console.log("JsonMessage")
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
   for (const obj of jsonMessage) {
@@ -1121,9 +1118,6 @@ const extractFileIdsFromMessage = async (
       fileIds.push(obj?.value?.docId)
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
-      console.log("fileId")
-      console.log(fileId)
-      console.log("fileId")
       if (fileId) {
         // Check if it's a valid Drive File Id ingested in Vespa
         // Only works for fileSchema
@@ -1139,7 +1133,6 @@ const extractFileIdsFromMessage = async (
             fields?.app === Apps.GoogleDrive &&
             fields?.entity === DriveEntity.Sheets
           ) {
-            console.log("One Spreadsheet detected...")
             const sheetsMetadata = JSON.parse(fields?.metadata as string)
             const totalSheets = sheetsMetadata?.totalSheets
             for (let i = 0; i < totalSheets; i++) {
@@ -1153,12 +1146,6 @@ const extractFileIdsFromMessage = async (
       }
     }
   }
-  console.log("Final obj")
-  console.log({
-    totalValidFileIdsFromLinkCount,
-    fileIds,
-  })
-  console.log("Final obj")
   return { totalValidFileIdsFromLinkCount, fileIds }
 }
 
