@@ -262,6 +262,35 @@ describe("ChatBox @ Mention Behavior", () => {
       vi.fn(() => 0),
     )
     vi.stubGlobal("setCaretPosition", vi.fn())
+
+    // Mock getBoundingClientRect for range objects, as JSDOM doesn't implement it.
+    const mockGetBoundingClientRect = vi.fn(() => ({
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }));
+
+    const originalCreateRange = document.createRange;
+    vi.spyOn(document, 'createRange').mockImplementation(() => {
+      const range = originalCreateRange.call(document);
+      range.getBoundingClientRect = mockGetBoundingClientRect;
+      // Mock other range methods if they cause issues, e.g., selectNodeContents, setStart, setEnd, collapse, etc.
+      // For now, only getBoundingClientRect is known to be an issue.
+      // Add mocks for other properties/methods of Range if needed by the component's logic.
+      range.selectNodeContents = vi.fn();
+      range.setStart = vi.fn();
+      range.setEnd = vi.fn();
+      range.collapse = vi.fn();
+      // Add any other methods that might be called on the range object by the component
+      // and are not fully implemented or behave differently in JSDOM.
+      return range;
+    });
   })
 
   afterEach(() => {
