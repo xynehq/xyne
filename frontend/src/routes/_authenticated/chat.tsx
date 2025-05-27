@@ -1758,14 +1758,14 @@ export const ChatMessage = ({
                     <ThumbsUp
                       size={16}
                       stroke={feedbackStatus === 'like' ? "#10B981" : "#B2C3D4"}
-                      fill={feedbackStatus === 'like' ? "#BBF7D0" : "none"}
+                      fill="none"
                       className="ml-[18px] cursor-pointer"
                       onClick={() => onFeedback(messageId, 'like')}
                     />
                     <ThumbsDown
                       size={16}
                       stroke={feedbackStatus === 'dislike' ? "#EF4444" : "#B2C3D4"}
-                      fill={feedbackStatus === 'dislike' ? "#FECACA" : "none"}
+                      fill="none"
                       className="ml-[10px] cursor-pointer"
                       onClick={() => onFeedback(messageId, 'dislike')}
                     />
