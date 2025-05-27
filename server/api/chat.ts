@@ -1105,13 +1105,17 @@ export const buildUserQuery = (userQuery: UserQuery) => {
 
 const extractFileIdsFromMessage = async (
   message: string,
-): Promise<string[]> => {
+): Promise<{
+  totalValidFileIdsFromLinkCount: number
+  fileIds: string[]
+}> => {
   const fileIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
   console.log("JsonMessage")
   console.log(jsonMessage)
   console.log("JsonMessage")
   let validFileIdsFromLinkCount = 0
+  let totalValidFileIdsFromLinkCount = 0
   for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
       fileIds.push(obj?.value?.docId)
@@ -1125,6 +1129,7 @@ const extractFileIdsFromMessage = async (
         // Only works for fileSchema
         const validFile = await getDocumentOrSpreadsheet(fileId)
         if (validFile) {
+          totalValidFileIdsFromLinkCount++
           if (validFileIdsFromLinkCount >= maxValidLinks) {
             continue
           }
@@ -1147,10 +1152,13 @@ const extractFileIdsFromMessage = async (
       }
     }
   }
-  console.log("Final fileIds")
-  console.log(fileIds)
-  console.log("Final fileIds")
-  return fileIds
+  console.log("Final obj")
+  console.log({
+    totalValidFileIdsFromLinkCount,
+    fileIds,
+  })
+  console.log("Final obj")
+  return { totalValidFileIdsFromLinkCount, fileIds }
 }
 
 const getFileIdFromLink = (link: string) => {
@@ -2139,9 +2147,15 @@ export const MessageApi = async (c: Context) => {
     rootSpan.setAttribute("message", message)
 
     const isMsgWithContext = isMessageWithContext(message)
-    const fileIds = isMsgWithContext
+    const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
-      : []
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    const fileIds = extractedInfo?.fileIds
+    const totalValidFileIdsFromLinkCount =
+      extractedInfo?.totalValidFileIdsFromLinkCount
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2300,6 +2314,7 @@ export const MessageApi = async (c: Context) => {
             citations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
+            let count = 0
             for await (const chunk of iterator) {
               if (stream.closed) {
                 Logger.info(
@@ -2309,6 +2324,15 @@ export const MessageApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
+                if (
+                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  count === 0
+                ) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} valid link/s as it exceeds max limit of ${maxValidLinks}. `,
+                  })
+                }
                 if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
@@ -2344,6 +2368,7 @@ export const MessageApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
             understandSpan.setAttribute(
@@ -3055,12 +3080,22 @@ export const MessageRetryApi = async (c: Context) => {
     const fileIdsFromDB = JSON.parse(
       JSON.stringify(prevUserMessage?.fileIds || []),
     )
+    let totalValidFileIdsFromLinkCount = 0
     if (
       prevUserMessage.messageRole === "user" &&
       fileIdsFromDB &&
       fileIdsFromDB.length > 0
     ) {
       fileIds = fileIdsFromDB
+      const isMsgWithContext = isMessageWithContext(prevUserMessage.message)
+      const extractedInfo = isMsgWithContext
+        ? await extractFileIdsFromMessage(prevUserMessage.message)
+        : {
+            totalValidFileIdsFromLinkCount: 0,
+            fileIds: [],
+          }
+      totalValidFileIdsFromLinkCount =
+        extractedInfo?.totalValidFileIdsFromLinkCount
     }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
@@ -3130,6 +3165,7 @@ export const MessageRetryApi = async (c: Context) => {
             reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
+            let count = 0
             let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (stream.closed) {
@@ -3140,6 +3176,15 @@ export const MessageRetryApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
+                if (
+                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  count === 0
+                ) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} valid link/s as it exceeds max limit of ${maxValidLinks}. `,
+                  })
+                }
                 if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
@@ -3175,6 +3220,7 @@ export const MessageRetryApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
             understandSpan.setAttribute(
