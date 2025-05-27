@@ -1097,7 +1097,7 @@ export function generateSearchQueryOrAnswerFromConversation(
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext)
+    params.systemPrompt = searchQueryPrompt(userContext, currentMessage)
   }
 
   const baseMessage = {

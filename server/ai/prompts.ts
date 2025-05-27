@@ -775,7 +775,7 @@ export const queryRewritePromptJson = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string): string => {
+export const searchQueryPrompt = (userContext: string, current_query: string): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -786,6 +786,17 @@ export const searchQueryPrompt = (userContext: string): string => {
     **User Context:** ${userContext}
 
     Now handle the query as follows:
+
+    0. Determine if the current query is a follow-up to previous messages in the conversation:
+       - Check if the current query references, builds upon, or continues a topic from previous messages
+       - Look for indicators like:
+         - References to previously mentioned items ("that document", "those emails", "the meeting we discussed")
+         - Continuation of a search or request ("show me more", "what about...", "also find...")
+         - Questions about previous results ("when was that sent?", "who else was in that meeting?")
+         - Refinement of previous queries ("narrow it down to...", "exclude...", "only show...")
+         - Contextual dependencies that require previous conversation to understand
+       - Set "is_follow_up" to true if the query is clearly building on or referencing previous conversation context
+       - Set "is_follow_up" to false if the query is independent and can be understood without prior context
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -975,6 +986,7 @@ export const searchQueryPrompt = (userContext: string): string => {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
+         "is_follow_up": "<boolean>",
          "type": "<RetrieveInformation | RetrieveMetadata | RetrieveUnspecificMetadata>",
          "filter_query": "<string or null>",
          "filters": {
@@ -990,6 +1002,7 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
+       - "is_follow_up" should be true if the current query references, builds upon, or continues a topic from previous messages in the conversation. Set to false if the query is independent.
        - "filter_query" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
