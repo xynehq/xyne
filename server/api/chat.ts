@@ -1133,13 +1133,14 @@ const extractFileIdsFromMessage = async (
           if (validFileIdsFromLinkCount >= maxValidLinks) {
             continue
           }
+          const fields = validFile?.fields as VespaFile
           // If any of them happens to a spreadsheet, add all its subsheet ids also here
           if (
-            validFile?.fields?.app === Apps.GoogleDrive &&
-            validFile?.fields?.entity === DriveEntity.Sheets
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
           ) {
             console.log("One Spreadsheet detected...")
-            const sheetsMetadata = JSON.parse(validFile?.fields?.metadata)
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
             const totalSheets = sheetsMetadata?.totalSheets
             for (let i = 0; i < totalSheets; i++) {
               fileIds.push(`${fileId}_${i}`)
