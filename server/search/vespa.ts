@@ -47,6 +47,9 @@ import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 import pLimit from "p-limit"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
+import { AuthType } from "@/shared/types"
+import { db } from "@/db/client"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -178,7 +181,7 @@ const AllSources = [
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
-  // chatUserSchema,
+  chatUserSchema,
   chatMessageSchema,
 ].join(", ")
 
@@ -275,12 +278,22 @@ export const HybridDefaultProfile = (
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
+  excludedApps?: Apps[],
 ): YqlProfile => {
   let hasAppOrEntity = !!(app || entity)
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
   let eventTimestamp = ""
+
+  let newSources = AllSources
+  if(excludedApps && excludedApps.length > 0) {
+    if( excludedApps.includes(Apps.Slack) ) {
+       newSources = AllSources.split(", ")
+      .filter((s) => s !== chatMessageSchema && s !== chatUserSchema)
+      .join(", ")
+    }
+  }
 
   // Commenting this out to allow searching by either "from" or "to" fields independently.
   // if (timestampRange && !timestampRange.from && !timestampRange.to) {
@@ -336,7 +349,7 @@ export const HybridDefaultProfile = (
   return {
     profile: profile,
     yql: `
-    select * from sources ${AllSources}
+    select * from sources ${newSources}
         where (
           (
             (
@@ -451,7 +464,20 @@ const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
   notInMailLabels?: string[],
+  excludedApps?: Apps[]
 ): YqlProfile => {
+
+  let newSources = AllSources
+  if(excludedApps && excludedApps.length > 0) {
+    if( excludedApps.includes(Apps.Slack) ) {
+       newSources = AllSources.split(", ")
+      .filter((s) => s !== chatMessageSchema && s !== chatUserSchema)
+      .join(", ")
+    }
+  }
+
+
+
   let fileTimestamp = ""
   let mailTimestamp = ""
   let userTimestamp = ""
@@ -492,7 +518,7 @@ const HybridDefaultProfileAppEntityCounts = (
 
   return {
     profile: SearchModes.NativeRank,
-    yql: `select * from sources ${AllSources}
+    yql: `select * from sources ${newSources}
             where (
               (
                 (
@@ -543,9 +569,24 @@ export const groupVespaSearch = async (
   limit = config.page,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
+  let excludedApps: Apps[] = []
+  try {
+    const slackSyncJobs = await getAppSyncJobsByEmail(db, Apps.Slack, AuthType.OAuth, email)
+    Logger.info(email)
+    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+      excludedApps.push(Apps.Slack)
+    }
+  } catch (error) {
+    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    // If there's an error checking sync jobs, exclude Slack to be safe
+    excludedApps.push(Apps.Slack)
+  }
+  Logger.info(`Excluded Apps: ${excludedApps.join(", ")}`)
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
     timestampRange ?? null,
+    [], // notInMailLabels
+    excludedApps // excludedApps as fourth parameter
   )
 
   const hybridDefaultPayload = {
@@ -602,6 +643,19 @@ export const searchVespa = async (
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
+  // Check if Slack sync job exists for the user
+  let excludedApps: Apps[] = []
+  try {
+    const slackSyncJobs = await getAppSyncJobsByEmail(db, Apps.Slack, AuthType.OAuth, email)
+    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+      excludedApps.push(Apps.Slack)
+    }
+  } catch (error) {
+    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    // If there's an error checking sync jobs, exclude Slack to be safe
+    excludedApps.push(Apps.Slack)
+  }
+
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
@@ -610,6 +664,7 @@ export const searchVespa = async (
     timestampRange,
     excludedIds,
     notInMailLabels,
+    excludedApps,
   )
 
   const hybridDefaultPayload = {
