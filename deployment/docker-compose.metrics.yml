@@ -17,6 +17,7 @@ services:
     container_name: xyne-grafana
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-storage:/var/lib/grafana 
     ports:
       - "3002:3000"
     networks:
@@ -59,4 +60,5 @@ networks:
 volumes:
   vespa-data:
     driver: local
-
+  grafana-storage:  
+    driver: local
