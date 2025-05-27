@@ -69,7 +69,7 @@ export class BedrockProvider extends BaseProvider {
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
 
-    // Configure reasoning parameters only if reasoning is enabled AND using Claude 3.7
+    // Configure reasoning parameters only if reasoning is enabled AND using (Claude 4 or Claude 3.7)
     const reasoningModel = modelParams.modelId === Models.Claude_Sonnet_4 || modelParams.modelId === Models.Claude_3_7_Sonnet
     const isThinkingEnabled = params.reasoning
 
