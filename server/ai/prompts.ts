@@ -799,21 +799,19 @@ export const searchQueryPrompt = (userContext: string): string => {
        - what is the time in Japan
        If the query is conversational, respond naturally and appropriately. 
     3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
-    4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
+    4. Determine if the query is about tracking down a calendar event or meeting that either last occurred or will next occur.
       - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
-      - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev". 
+      - If asking about a past calendar event or meeting (e.g., "last meeting", "previous meeting"), set "temporalDirection" to "prev". 
       - Otherwise, set "temporalDirection" to null.
-      - For queries like "previous emails" or "next emails" or "previous meetings" or "next meetings" that lack a concrete time range:
+      - For queries like "previous meetings" or "next meetings" that lack a concrete time range:
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
-      - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
 
-    5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
-      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+    5. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
-      - For apps other than gmail and google-calendar "temporalDirection" strictly set to null
+      - For all other apps and queries, "temporalDirection" should be set to null
 
     6. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
       - This allows searching across all relevant items without a restrictive time range.
@@ -965,7 +963,14 @@ export const searchQueryPrompt = (userContext: string): string => {
     For Google-Workspace:
      - contacts
 
-    10. Output JSON in the following structure:
+    10. **IMPORTANT - TEMPORAL DIRECTION RULES:**
+        - "temporalDirection" should ONLY be set for calendar-related queries (meetings, events, appointments, schedule)
+        - For Gmail queries (emails, mail), always set "temporalDirection" to null
+        - For Google Drive queries (files, documents), always set "temporalDirection" to null  
+        - For Google Workspace queries (contacts), always set "temporalDirection" to null
+        - Only set "temporalDirection" to "next" or "prev" when the query is specifically about calendar events/meetings
+
+    11. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
@@ -984,15 +989,15 @@ export const searchQueryPrompt = (userContext: string): string => {
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
-       - "temporalDirection" should be "next" if the query asks about upcoming events or emails, and "prev" if it refers to past ones. Use null if the query is unrelated to time, or if the valid apps is not  google-calendar or gmail.
+       - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
        - "filter_query" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
-    11. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    12. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+    13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
