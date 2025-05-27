@@ -48,6 +48,8 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
 
+export const THINKING_PLACEHOLDER = "Thinking";
+
 type CurrentResp = {
   resp: string
   chatId?: string
@@ -1218,6 +1220,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
+                      isRetrying={message.isRetrying}
                       dots={message.isRetrying ? dots : ""}
                       onToggleSources={() => {
                         if (
@@ -1248,6 +1251,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
+                        isRetrying={message.isRetrying}
                         dots={message.isRetrying ? dots : ""}
                         onToggleSources={() => {
                           if (
@@ -1496,7 +1500,7 @@ const renderMarkdownLink = ({
   <a {...linkProps} target="_blank" rel="noopener noreferrer" />
 )
 
-const ChatMessage = ({
+export const ChatMessage = ({
   message,
   thinking,
   isUser,
@@ -1584,11 +1588,11 @@ const ChatMessage = ({
                   />
                 </div>
               )}
-              {message === "" ? (
+              {((message === "") && (!responseDone || isRetrying)) ? (
                 <div className="flex-grow">
-                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                  {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
-              ) : (
+              ) : message !== "" ? (
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
@@ -1663,7 +1667,7 @@ const ChatMessage = ({
                     ),
                   }}
                 />
-              )}
+              ) : null}
             </div>
           </div>
           {responseDone && !isRetrying && (
