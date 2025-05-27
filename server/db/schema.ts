@@ -342,6 +342,11 @@ export const messageRoleEnum = pgEnum(
   Object.values(MessageRole) as [string, ...string[]],
 )
 
+export const messageFeedbackEnum = pgEnum("message_feedback", [
+  "like",
+  "dislike",
+])
+
 export const messages = pgTable(
   "messages",
   {
@@ -372,6 +377,7 @@ export const messages = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     errorMessage: text("error_message").default(""),
+    feedback: messageFeedbackEnum("feedback"),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),

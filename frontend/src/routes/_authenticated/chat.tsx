@@ -8,7 +8,7 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown, ThumbsUp, ThumbsDown } from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
 import {
   ChatSSEvents,
@@ -256,6 +256,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   ) // State for all citations
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'like' | 'dislike' | null>>({});
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
@@ -401,6 +402,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setChatId((params as any).chatId || null)
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
+
+    // Populate feedbackMap from loaded messages
+    if (data?.messages) {
+      const initialFeedbackMap: Record<string, 'like' | 'dislike' | null> = {};
+      data.messages.forEach((msg: SelectPublicMessage) => {
+        if (msg.externalId && msg.feedback !== undefined) { // msg.feedback can be null
+          initialFeedbackMap[msg.externalId] = msg.feedback;
+        }
+      });
+      setFeedbackMap(initialFeedbackMap);
+    }
+
     if (!isStreaming && !hasHandledQueryParam.current) {
       setCurrentResp(null)
       currentRespRef.current = null
@@ -412,7 +425,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
-    data?.messages,
+    data?.messages, // This will re-run when messages data changes
     isWithChatId,
     params,
   ])
@@ -704,6 +717,38 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     setQuery("")
   }
+
+  const handleFeedback = async (messageId: string, feedback: 'like' | 'dislike') => {
+    if (!messageId) return;
+
+    setFeedbackMap(prev => {
+      const currentFeedback = prev[messageId];
+      return {
+        ...prev,
+        [messageId]: currentFeedback === feedback ? null : feedback, // Toggle if same, else set new
+      };
+    });
+
+    try {
+      const currentFeedbackInState = feedbackMap[messageId];
+      const newFeedbackStatus = currentFeedbackInState === feedback ? null : feedback;
+
+      await api.message.feedback.$post({ json: { messageId, feedback: newFeedbackStatus } });
+      toast({ title: "Success", description: "Feedback submitted." });
+    } catch (error) {
+      console.error("Failed to submit feedback", error);
+      // Revert UI update if API call fails
+      setFeedbackMap(prev => {
+        const originalFeedback = prev[messageId] === feedback ? null : prev[messageId]; // This logic might need adjustment if the initial state was different
+        return { ...prev, [messageId]: originalFeedback };
+      });
+      toast({
+        title: "Error",
+        description: "Could not submit feedback.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleStop = async () => {
     setUserStopped(true) // Indicate intentional stop before closing
@@ -1240,6 +1285,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       isStreaming={isStreaming}
                       isDebugMode={isDebugMode}
                       onShowRagTrace={handleShowRagTrace}
+                      feedbackStatus={feedbackMap[message.externalId!] || null}
+                      onFeedback={handleFeedback}
                     />
                     {userMessageWithErr && (
                       <ChatMessage
@@ -1271,6 +1318,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         isStreaming={isStreaming}
                         isDebugMode={isDebugMode}
                         onShowRagTrace={handleShowRagTrace}
+                        feedbackStatus={feedbackMap[message.externalId!] || null}
+                        onFeedback={handleFeedback}
                       />
                     )}
                   </Fragment>
@@ -1307,6 +1356,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   isStreaming={isStreaming}
                   isDebugMode={isDebugMode}
                   onShowRagTrace={handleShowRagTrace}
+                  // Feedback not applicable for streaming response, but props are needed
+                  feedbackStatus={null} 
+                  onFeedback={handleFeedback}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -1516,6 +1568,8 @@ export const ChatMessage = ({
   isStreaming = false,
   isDebugMode,
   onShowRagTrace,
+  feedbackStatus,
+  onFeedback,
 }: {
   message: string
   thinking: string
@@ -1532,6 +1586,8 @@ export const ChatMessage = ({
   isStreaming?: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
+  feedbackStatus?: 'like' | 'dislike' | null;
+  onFeedback?: (messageId: string, feedback: 'like' | 'dislike') => void;
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1692,10 +1748,29 @@ export const ChatMessage = ({
                   }
                 />
                 <img
-                  className={`ml-[18px] ${isStreaming ? "opacity-50" : "cursor-pointer"}`}
+                  className={`ml-[18px] ${isStreaming || !messageId ? "opacity-50" : "cursor-pointer"}`}
                   src={Retry}
-                  onClick={() => handleRetry(messageId!)}
+                  onClick={() => messageId && !isStreaming && handleRetry(messageId)}
+                  title="Retry"
                 />
+                {messageId && onFeedback && (
+                  <>
+                    <ThumbsUp
+                      size={16}
+                      stroke={feedbackStatus === 'like' ? "#10B981" : "#B2C3D4"}
+                      fill={feedbackStatus === 'like' ? "#BBF7D0" : "none"}
+                      className="ml-[18px] cursor-pointer"
+                      onClick={() => onFeedback(messageId, 'like')}
+                    />
+                    <ThumbsDown
+                      size={16}
+                      stroke={feedbackStatus === 'dislike' ? "#EF4444" : "#B2C3D4"}
+                      fill={feedbackStatus === 'dislike' ? "#FECACA" : "none"}
+                      className="ml-[10px] cursor-pointer"
+                      onClick={() => onFeedback(messageId, 'dislike')}
+                    />
+                  </>
+                )}
                 {!!citationUrls.length && (
                   <div className="ml-auto flex">
                     <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">

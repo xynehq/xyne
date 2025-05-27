@@ -40,6 +40,7 @@ import {
   selectPublicMessagesSchema,
   type SelectChat,
   type SelectMessage,
+  messageFeedbackEnum,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
@@ -3870,5 +3871,50 @@ export const StopStreamingApi = async (c: Context) => {
       `[StopStreamingApi] Unexpected Error: ${errMsg} ${(error as Error).stack}`,
     )
     throw new HTTPException(500, { message: "Could not stop streaming." })
+  }
+}
+
+export const messageFeedbackSchema = z.object({
+  messageId: z.string(),
+  feedback: z.enum(messageFeedbackEnum.enumValues).nullable(), // Allows 'like', 'dislike', or null
+})
+
+export const MessageFeedbackApi = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const Logger = getLogger(Subsystem.Chat)
+
+  try {
+    //@ts-ignore - Assuming validation middleware handles this
+    const { messageId, feedback } = await c.req.valid("json")
+
+    // Optional: Validate if the message exists and belongs to the user/workspace
+    const message = await getMessageByExternalId(db, messageId)
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+    if (message.email !== email || message.workspaceExternalId !== workspaceId) {
+      throw new HTTPException(403, { message: "Forbidden" })
+    }
+
+    await updateMessageByExternalId(db, messageId, {
+      feedback: feedback, // feedback can be 'like', 'dislike', or null
+      updatedAt: new Date(), // Update the updatedAt timestamp
+    })
+
+    Logger.info(
+      `Feedback ${feedback ? `'${feedback}'` : "removed"} for message ${messageId} by user ${email}`,
+    )
+    return c.json({ success: true, messageId, feedback })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(
+      error,
+      `Message Feedback Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not submit feedback",
+    })
   }
 }
