@@ -1204,10 +1204,7 @@ export const ChatBox = ({
 
               const newValue = currentInput.textContent || ""
               setQuery(newValue)
-              setIsPlaceholderVisible(
-                newValue.length === 0 &&
-                  document.activeElement !== currentInput,
-              )
+              setIsPlaceholderVisible(newValue.length === 0)
 
               // The 'references' state and its update logic have been removed.
               // Pill management is now primarily through direct DOM interaction
@@ -1377,9 +1374,7 @@ export const ChatBox = ({
 
               const newTextContent = input.textContent || ""
               setQuery(newTextContent)
-              setIsPlaceholderVisible(
-                newTextContent.length === 0 && document.activeElement !== input,
-              )
+              setIsPlaceholderVisible(newTextContent.length === 0)
 
               const newAtSymbolIndex =
                 textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
