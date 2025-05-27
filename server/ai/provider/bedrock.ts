@@ -70,11 +70,11 @@ export class BedrockProvider extends BaseProvider {
     const modelParams = this.getModelParams(params)
 
     // Configure reasoning parameters only if reasoning is enabled AND using Claude 3.7
-    const isClaude37 = modelParams.modelId === Models.Claude_3_7_Sonnet
+    const reasoningModel = modelParams.modelId === Models.Claude_Sonnet_4 || modelParams.modelId === Models.Claude_3_7_Sonnet
     const isThinkingEnabled = params.reasoning
 
     const reasoningConfig =
-      isThinkingEnabled && isClaude37
+      isThinkingEnabled && reasoningModel
         ? {
             thinking: {
               type: "enabled",
@@ -85,7 +85,7 @@ export class BedrockProvider extends BaseProvider {
 
     // When using thinking mode with Claude 3.7 Sonnet, temperature must be 1 and top_p must be unset
     const temperature =
-      isThinkingEnabled && isClaude37 ? 1 : modelParams.temperature || 0.6
+      isThinkingEnabled && reasoningModel ? 1 : modelParams.temperature || 0.6
 
     // Create the inferenceConfig based on whether thinking is enabled
     const inferenceConfig = isThinkingEnabled
