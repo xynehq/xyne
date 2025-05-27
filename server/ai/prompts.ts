@@ -775,7 +775,10 @@ export const queryRewritePromptJson = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string, current_query: string): string => {
+export const searchQueryPrompt = (
+  userContext: string,
+  current_query: string,
+): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -842,9 +845,9 @@ export const searchQueryPrompt = (userContext: string, current_query: string): s
         - "Documents from last month" → sortDirection: null (no clear direction specified)
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    8. Extract the main intent or search keywords from the query to create a "filter_query" field:
+    8. Extract the main intent or search keywords from the query to create a "filterQuery" field:
       
-      **SIMPLIFIED FILTER_QUERY EXTRACTION RULES:**
+      **SIMPLIFIED FILTERQUERY EXTRACTION RULES:**
       
       Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
       - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
@@ -853,7 +856,7 @@ export const searchQueryPrompt = (userContext: string, current_query: string): s
       - Company/organization names (e.g., "OpenAI", "Google", "Microsoft")
       - Product names or specific identifiers
       
-      Step 2: EXCLUDE these from filter_query consideration:
+      Step 2: EXCLUDE these from filterQuery consideration:
       - Generic action words: "find", "show", "get", "search", "give", "recent", "latest", "last"
       - Personal pronouns: "my", "your", "their"
       - Time-related terms: "recent", "latest", "last week", "old", "new", "current", "previous"
@@ -862,17 +865,17 @@ export const searchQueryPrompt = (userContext: string, current_query: string): s
       - Structural words: "summary", "details", "info", "information"
       
       Step 3: Apply the rule:
-      - IF specific content keywords remain after exclusion → set filter_query to those keywords
-      - IF no specific content keywords remain after exclusion → set filter_query to null
+      - IF specific content keywords remain after exclusion → set filterQuery to those keywords
+      - IF no specific content keywords remain after exclusion → set filterQuery to null
       
       **EXAMPLES:**
-      - "recent uber receipts" → filter_query: "uber receipts" (uber is specific content)
-      - "give me recent 5 zomato orders" → filter_query: "zomato orders" (zomato is specific content)  
-      - "recent emails" → filter_query: null (no specific content after removing generic terms)
-      - "previous 5 meetings" → filter_query: null (no specific content)
-      - "emails about marketing project" → filter_query: "marketing project" (specific content)
-      - "latest budget documents" → filter_query: "budget" (budget is specific content)
-      - "show me all files" → filter_query: null (no specific content)
+      - "recent uber receipts" → filterQuery: "uber receipts" (uber is specific content)
+      - "give me recent 5 zomato orders" → filterQuery: "zomato orders" (zomato is specific content)  
+      - "recent emails" → filterQuery: null (no specific content after removing generic terms)
+      - "previous 5 meetings" → filterQuery: null (no specific content)
+      - "emails about marketing project" → filterQuery: "marketing project" (specific content)
+      - "latest budget documents" → filterQuery: "budget" (budget is specific content)
+      - "show me all files" → filterQuery: null (no specific content)
 
     9. Now our task is to classify the user's query into one of the following categories:  
     a. RetrieveInformation  
@@ -919,15 +922,15 @@ export const searchQueryPrompt = (userContext: string, current_query: string): s
        - Set: app = null, entity = null
     
     2. **RetrieveMetadata** - Use when:
-       - Exactly ONE valid app/entity is detected, AND filter_query is NOT null
+       - Exactly ONE valid app/entity is detected, AND filterQuery is NOT null
        - Examples: 
-         - "emails about marketing project" (has 'emails' = gmail + filter_query)
-         - "budget spreadsheets in drive" (has 'drive' + filter_query)
-         - "meetings with John" (has 'meetings' = calendar + filter_query)
+         - "emails about marketing project" (has 'emails' = gmail + filterQuery)
+         - "budget spreadsheets in drive" (has 'drive' + filterQuery)
+         - "meetings with John" (has 'meetings' = calendar + filterQuery)
        - Set: app and entity to detected values
     
     3. **RetrieveUnspecificMetadata** - Use when:
-       - Exactly ONE valid app/entity is detected, AND filter_query IS null
+       - Exactly ONE valid app/entity is detected, AND filterQuery IS null
        - Examples: 
          - "recent emails" (has 'emails' = gmail but no specific content)
          - "previous 5 meetings" (has 'meetings' = calendar but no specific content)
@@ -938,8 +941,8 @@ export const searchQueryPrompt = (userContext: string, current_query: string): s
     - "recent uber receipts" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
     - "zomato orders" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
     - "budget documents" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
-    - "recent emails" → Has 'emails' (gmail) but no filter_query → RetrieveUnspecificMetadata
-    - "emails about uber" → Has 'emails' (gmail) and filter_query → RetrieveMetadata
+    - "recent emails" → Has 'emails' (gmail) but no filterQuery → RetrieveUnspecificMetadata
+    - "emails about uber" → Has 'emails' (gmail) and filterQuery → RetrieveMetadata
     - "files and emails" → Multiple valid apps → RetrieveInformation
 
     #### Enum Values for Valid Inputs
@@ -986,9 +989,9 @@ export const searchQueryPrompt = (userContext: string, current_query: string): s
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
-         "is_follow_up": "<boolean>",
+         "isFollowUp": "<boolean>",
          "type": "<RetrieveInformation | RetrieveMetadata | RetrieveUnspecificMetadata>",
-         "filter_query": "<string or null>",
+         "filterQuery": "<string or null>",
          "filters": {
            "app": "<app or null>",
            "entity": "<entity or null>",
@@ -1002,8 +1005,8 @@ export const searchQueryPrompt = (userContext: string, current_query: string): s
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
-       - "is_follow_up" should be true if the current query references, builds upon, or continues a topic from previous messages in the conversation. Set to false if the query is independent.
-       - "filter_query" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
+       - "isFollowUp" should be true if the current query references, builds upon, or continues a topic from previous messages in the conversation. Set to false if the query is independent.
+       - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.

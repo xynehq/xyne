@@ -60,7 +60,7 @@ export type Cost = {
 export type TimeDirection = "next" | "prev" | null
 export interface TemporalClassifier {
   direction: TimeDirection | null
-  filter_query: string | null
+  filterQuery: string | null
 }
 
 export interface ModelParams {

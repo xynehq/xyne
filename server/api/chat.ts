@@ -34,6 +34,8 @@ import {
   getMessageByExternalId,
   getChatMessagesBefore,
   updateMessage,
+  insertMessageMetadata,
+  getMessageMetadata,
 } from "@/db/message"
 import {
   selectPublicChatSchema,
@@ -1588,7 +1590,7 @@ async function* generateMetadataQueryAnswer(
   // Determine search strategy based on conditions
   if (
     !isValidAppAndEntity &&
-    classification.filter_query &&
+    classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
     span?.setAttribute(
@@ -1619,7 +1621,7 @@ async function* generateMetadataQueryAnswer(
       items =
         (
           await searchVespa(
-            classification.filter_query,
+            classification.filterQuery,
             email,
             app as Apps,
             entity as any,
@@ -1749,7 +1751,7 @@ async function* generateMetadataQueryAnswer(
   } else if (
     isMetadataRetrieval &&
     isValidAppAndEntity &&
-    classification.filter_query
+    classification.filterQuery
   ) {
     // Specific metadata retrieval
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
@@ -1760,8 +1762,8 @@ async function* generateMetadataQueryAnswer(
     span?.setAttribute("modelId", defaultBestModel)
     Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
 
-    const { filter_query } = classification
-    const query = filter_query
+    const { filterQuery } = classification
+    const query = filterQuery
     const rankProfile =
       sortDirection === "desc"
         ? SearchModes.GlobalSorted
@@ -2491,7 +2493,8 @@ export const MessageApi = async (c: Context) => {
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
-              filter_query: "",
+              filterQuery: "",
+              isFollowUp: false,
               type: "",
               filters: queryFilters,
             }
@@ -2579,6 +2582,7 @@ export const MessageApi = async (c: Context) => {
                   }
                 }
               }
+              console.log(buffer)
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
@@ -2603,15 +2607,41 @@ export const MessageApi = async (c: Context) => {
                   "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const classification: TemporalClassifier & QueryRouterResponse = {
+              let classification: TemporalClassifier & QueryRouterResponse = {
                 direction: parsed.temporalDirection,
                 type: parsed.type as QueryType,
-                filter_query: parsed.filter_query,
+                filterQuery: parsed.filterQuery,
                 filters: {
                   ...parsed.filters,
                   app: parsed.filters.app as Apps,
                   entity: parsed.filters.entity as any,
                 },
+              }
+
+              if (parsed.isFollowUp === false) {
+                await insertMessageMetadata(
+                  db,
+                  {
+                    chatId: chatId ?? chat.externalId,
+                    classificationMetadata: {
+                      ...classification,
+                      originalUserQuery: message,
+                    } as any,
+                  },
+                  chatId ?? chat.externalId,
+                )
+              }
+
+              if (parsed.isFollowUp === true) {
+                Logger.info("Classifying as follow up query")
+                const metadata = (await getMessageMetadata(
+                  db,
+                  chatId ?? chat.externalId,
+                )) as any
+                classification = metadata.classificationMetadata
+                  .classificationMetadata as TemporalClassifier &
+                  QueryRouterResponse
+                Logger.info("Follow up classification", classification)
               }
 
               Logger.info(
@@ -3389,7 +3419,7 @@ export const MessageRetryApi = async (c: Context) => {
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
-              filter_query: "",
+              filterQuery: "",
               type: "",
               filters: queryFilters,
             }
@@ -3499,7 +3529,7 @@ export const MessageRetryApi = async (c: Context) => {
               const classification: TemporalClassifier & QueryRouterResponse = {
                 direction: parsed.temporalDirection,
                 type: parsed.type as QueryType,
-                filter_query: parsed.filter_query,
+                filterQuery: parsed.filterQuery,
                 filters: {
                   ...parsed.filters,
                   app: parsed.filters.app as Apps,
