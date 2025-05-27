@@ -32,36 +32,47 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
     currentPill.addEventListener("click", handleClick)
 
     return () => {
-      currentPill.removeEventListener("click", handleClick)
-    }
-  }, [newRef.url])
-
-  const iconNode =
-    newRef.app && newRef.entity
-      ? getIcon(newRef.app, newRef.entity, {
-          w: 14,
-          h: 14,
-          mr: 4,
-        })
-      : null
+      currentPill.removeEventListener("click", handleClick);
+    };
+  }, [newRef.url]);
 
   let displayIcon: React.ReactNode = null
 
-  if (React.isValidElement(iconNode)) {
+  if (newRef.entity === "OtherContacts" && newRef.photoLink) {
     displayIcon = (
-      <span
-        className="self-center inline-flex items-center"
-        dangerouslySetInnerHTML={{ __html: renderToStaticMarkup(iconNode) }}
+      <img
+        src={newRef.photoLink}
+        alt="" // Alt text can be empty if decorative or title provides context
+        className="self-center inline-flex items-center w-[14px] h-[14px] mr-1 rounded-sm" // Added rounded-sm for consistency if images are square
       />
     )
-  } else if (
-    typeof iconNode === "string" &&
-    (iconNode as string).trim() !== ""
-  ) {
-    displayIcon = <span className="self-center mr-1">{iconNode}</span>
-  } else if (newRef.app && newRef.entity) {
-    displayIcon = <span className="self-center mr-1">▫️</span>
+  } else {
+    const iconNode =
+      newRef.app && newRef.entity
+        ? getIcon(newRef.app, newRef.entity, {
+            w: 14,
+            h: 14,
+            mr: 4,
+          })
+        : null
+
+    if (React.isValidElement(iconNode)) {
+      displayIcon = (
+        <span
+          className="self-center inline-flex items-center"
+          dangerouslySetInnerHTML={{ __html: renderToStaticMarkup(iconNode) }}
+        />
+      )
+    } else if (
+      typeof iconNode === "string" &&
+      (iconNode as string).trim() !== ""
+    ) {
+      displayIcon = <span className="self-center mr-1">{iconNode}</span>
+    } else if (newRef.app && newRef.entity) {
+      displayIcon = <span className="self-center mr-1">▫️</span>
+    }
   }
+
   return (
     <a
       ref={pillRef}
