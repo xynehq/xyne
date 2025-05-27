@@ -151,6 +151,6 @@ export default {
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
-  maxValidLinks: 2,
+  maxValidLinks: 15,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
 }
