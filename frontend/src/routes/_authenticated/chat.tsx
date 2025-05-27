@@ -367,6 +367,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     ?.flat()
     .find((item) => item.externalId === chatId)
 
+  // Added this effect to sync bookmark state with cache changes
+  useEffect(() => {
+  if (currentChat && typeof currentChat.isBookmarked === "boolean") {
+    setBookmark(currentChat.isBookmarked)
+  }
+}, [currentChat?.isBookmarked])
+
   useEffect(() => {
     if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
       setChatTitle(currentChat.title)
@@ -1055,17 +1062,55 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }
 
-  const handleBookmark = async () => {
-    if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
-      })
-      setBookmark(!bookmark)
-    }
+  const bookmarkMutation = useMutation<
+  { chatId: string; bookmark: boolean },
+  Error,
+  { chatId: string; bookmark: boolean }
+>({
+  mutationFn: ({ chatId, bookmark }) =>
+    api.chat.bookmark.$post({ json: { chatId, bookmark } }).then(() => ({ chatId, bookmark })),
+  onSuccess: ({ chatId, bookmark }) => {
+    setBookmark(bookmark)
+    // Update the cache so sidebar/history modal updates instantly
+    queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+      ["all-chats"],
+      (oldData) => {
+        if (!oldData) return oldData
+        const newPages = oldData.pages.map((page) =>
+          page.map((chat) =>
+            chat.externalId === chatId
+              ? { ...chat, isBookmarked: bookmark }
+              : chat,
+          ),
+        )
+        return { ...oldData, pages: newPages }
+      }
+    )
+  },
+  onError: (error) => {
+    // Optionally show a toast or error
+    console.error("Failed to update bookmark:", error)
+  },
+})
+
+// Replace handleBookmark with
+const handleBookmark = () => {
+  if (chatId) {
+    bookmarkMutation.mutate({ chatId, bookmark: !bookmark })
   }
+}
+
+  // const handleBookmark = async () => {
+  //   if (chatId) {
+  //     await api.chat.bookmark.$post({
+  //       json: {
+  //         chatId: chatId,
+  //         bookmark: !bookmark,
+  //       },
+  //     })
+  //     setBookmark(!bookmark)
+  //   }
+  // }
 
   const isScrolledToBottom = () => {
     const container = messagesContainerRef.current

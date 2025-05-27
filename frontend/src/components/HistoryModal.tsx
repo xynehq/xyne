@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
+import { Trash2, MoreHorizontal, X, Pencil, Bookmark, List } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useRef, useState } from "react"
 import { LoaderContent } from "@/lib/common"
+
 
 export const pageSize = 21
 
@@ -43,6 +44,15 @@ export const renameChat = async (
   return { chatId, title: newTitle }
 }
 
+// Add this mutation for toggling favourite
+const toggleFavourite = async (chatId: string, bookmark: boolean) => {
+  const res = await api.chat.bookmark.$post({
+    json: { chatId, bookmark },
+  })
+  if (!res.ok) throw new Error("Error updating favourite")
+  return { chatId, bookmark }
+}
+
 const HistoryModal = ({
   onClose,
   pathname,
@@ -56,6 +66,33 @@ const HistoryModal = ({
   const titleRef = useRef<HTMLInputElement | null>(null)
 
   const historyRef = useRef<HTMLDivElement | null>(null)
+
+  const favouriteMutation = useMutation<
+    { chatId: string; bookmark: boolean },
+    Error,
+    { chatId: string; bookmark: boolean }
+  >({
+    mutationFn: ({ chatId, bookmark }) => toggleFavourite(chatId, bookmark),
+    onSuccess: ({ chatId, bookmark }) => {
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
+          const newPages = oldData.pages.map((page) =>
+            page.map((chat) =>
+              chat.externalId === chatId
+                ? { ...chat, isBookmarked: bookmark }
+                : chat,
+            ),
+          )
+          return { ...oldData, pages: newPages }
+        },
+      )
+    },
+    onError: (error: Error) => {
+      console.error("Failed to update favourite:", error)
+    },
+  })
 
   const router = useRouter()
   const {
@@ -102,6 +139,11 @@ const HistoryModal = ({
 
   // Combine all pages of chats into a single array
   const chats = historyItems?.pages.flat() || []
+
+  // Split chats into favourites and others
+  const favouriteChats = chats.filter((chat) => chat.isBookmarked)
+  const otherChats = chats.filter((chat) => !chat.isBookmarked)
+
 
   let existingChatId = ""
   if (pathname.startsWith("/chat/")) {
@@ -205,6 +247,7 @@ const HistoryModal = ({
     },
   })
 
+
   const handleKeyDown = async (
     e: React.KeyboardEvent<HTMLInputElement>,
     item: SelectPublicChat,
@@ -264,10 +307,133 @@ const HistoryModal = ({
           <LoaderContent />
         ) : (
           <>
+            {/* Favourites Section */}
+            <div>
+              <div className="flex items-center gap-1 px-[16px] mt-2 mb-1">
+                <Bookmark size={14} className="text-[#929FBA]" />
+                <p className="text-[#929FBA] font-semibold text-[12px] tracking-[0.05em] uppercase">Favourites</p>
+              </div>
+
+              <ul>
+                {favouriteChats.length === 0 && (
+                  <li className="text-[13px] text-[#B2C3D4] px-[16px] py-[6px]">No favourite chats</li>
+                )}
+                {favouriteChats.map((item) => (
+                  <li
+                    key={`fav-${item.externalId}`}
+                    className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+                  >
+                    {isEditing && editedChatId === item.externalId ? (
+                      <input
+                        ref={titleRef}
+                        className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                        type="text"
+                        value={editedTitle}
+                        onChange={(e) => handleInput(e)}
+                        onBlur={() => handleBlur(item)}
+                        onKeyDown={(e) => handleKeyDown(e, item)}
+                        autoFocus
+                      />
+                    ) : (
+                      <span
+                        className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                        onClick={() => {
+                          router.navigate({
+                            to: "/chat/$chatId",
+                            params: { chatId: item.externalId },
+                          })
+                        }}
+                      >
+                        {item.title}
+                      </span>
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <MoreHorizontal
+                          size={16}
+                          className={
+                            "invisible group-hover:visible mr-[10px] cursor-pointer"
+                          }
+                        />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          key={"rename"}
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          onClick={() => {
+                            setEditedTitle(item.title)
+                            setEditedChatId(item.externalId)
+                            setIsEditing(true)
+                            setTimeout(() => {
+                              if (titleRef.current) {
+                                titleRef.current.focus()
+                              }
+                            }, 0)
+                          }}
+                        >
+                          <Pencil size={16} />
+                          <span>Rename</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          key={"delete"}
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          onClick={() => {
+                            mutation.mutate(item?.externalId)
+                          }}
+                        >
+                          <Trash2 size={16} className="text-red-500" />
+                          <span className="text-red-500">Delete</span>
+                        </DropdownMenuItem>
+                        {item.isBookmarked ? (
+                          <DropdownMenuItem
+                            key={"unmark-fav"}
+                            className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                            onClick={() => {
+                              favouriteMutation.mutate({
+                                chatId: item.externalId,
+                                bookmark: false,
+                              })
+                            }}
+                          >
+                            <Bookmark className="text-[#1C1D1F] fill-[#1C1D1F]" size={16} />
+                            <span>Unmark Favourite</span>
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            key={"mark-fav"}
+                            className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                            onClick={() => {
+                              favouriteMutation.mutate({
+                                chatId: item.externalId,
+                                bookmark: true,
+                              })
+                            }}
+                          >
+                            <Bookmark size={16} />
+                            <span>Mark Favourite</span>
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* All Chats Section */}
+            <div>
+              <div className="flex items-center gap-1 px-[16px] mt-4 mb-1">
+                <List size={14} className="text-[#929FBA]" />
+                <p className="text-[#929FBA] font-semibold text-[12px] tracking-[0.05em] uppercase">All Chats</p>
+              </div>
+            </div>
             <ul>
-              {chats.map((item, index) => (
+              {otherChats.length === 0 && (
+                <li className="text-[13px] text-[#B2C3D4] px-[16px] py-[6px]">No chats</li>
+              )}
+              {otherChats.map((item, index) => (
                 <li
-                  key={index}
+                  key={item.externalId}
                   className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
                 >
                   {isEditing && editedChatId === item.externalId ? (
@@ -331,6 +497,35 @@ const HistoryModal = ({
                         <Trash2 size={16} className="text-red-500" />
                         <span className="text-red-500">Delete</span>
                       </DropdownMenuItem>
+                      {item.isBookmarked ? (
+                        <DropdownMenuItem
+                          key={"unmark-fav"}
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          onClick={() => {
+                            favouriteMutation.mutate({
+                              chatId: item.externalId,
+                              bookmark: false,
+                            })
+                          }}
+                        >
+                          <Bookmark className="text-[#1C1D1F] fill-[#1C1D1F]" size={16} />
+                          <span>Unmark Favourite</span>
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          key={"mark-fav"}
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          onClick={() => {
+                            favouriteMutation.mutate({
+                              chatId: item.externalId,
+                              bookmark: true,
+                            })
+                          }}
+                        >
+                          <Bookmark size={16} />
+                          <span>Mark Favourite</span>
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </li>

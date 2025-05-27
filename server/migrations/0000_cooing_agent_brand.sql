@@ -1,5 +1,5 @@
 DO $$ BEGIN
- CREATE TYPE "public"."app_type" AS ENUM('google-workspace', 'google-drive', 'gmail', 'notion', 'google-calendar');
+ CREATE TYPE "public"."app_type" AS ENUM('google-workspace', 'google-drive', 'gmail', 'notion', 'google-calendar', 'slack');
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -23,7 +23,7 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- CREATE TYPE "public"."status" AS ENUM('connected', 'connecting', 'failed', 'not-connected');
+ CREATE TYPE "public"."status" AS ENUM('connected', 'connecting', 'paused', 'failed', 'not-connected');
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -45,6 +45,19 @@ DO $$ BEGIN
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "chat_trace" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"workspace_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"chat_id" integer NOT NULL,
+	"message_id" integer NOT NULL,
+	"chat_external_id" text NOT NULL,
+	"message_external_id" text NOT NULL,
+	"email" text NOT NULL,
+	"trace_json" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL
+);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "chats" (
 	"id" serial PRIMARY KEY NOT NULL,
@@ -76,7 +89,9 @@ CREATE TABLE IF NOT EXISTS "connectors" (
 	"credentials" text,
 	"subject" text,
 	"oauth_credentials" text,
+	"api_key" text,
 	"status" "status" DEFAULT 'connecting' NOT NULL,
+	"state" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT NOW() NOT NULL,
 	CONSTRAINT "connectors_external_id_unique" UNIQUE("external_id"),
@@ -96,6 +111,7 @@ CREATE TABLE IF NOT EXISTS "messages" (
 	"modelId" text NOT NULL,
 	"email" text NOT NULL,
 	"sources" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"fileIds" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT NOW() NOT NULL,
 	"deleted_at" timestamp with time zone,
@@ -109,7 +125,7 @@ CREATE TABLE IF NOT EXISTS "oauth_providers" (
 	"user_id" integer NOT NULL,
 	"external_id" text NOT NULL,
 	"workspace_external_id" text NOT NULL,
-	"container_id" integer NOT NULL,
+	"connector_id" integer NOT NULL,
 	"client_id" text,
 	"client_secret" text,
 	"oauth_scopes" text[] DEFAULT ARRAY[]::text[] NOT NULL,
@@ -160,6 +176,17 @@ CREATE TABLE IF NOT EXISTS "sync_jobs" (
 	CONSTRAINT "sync_jobs_external_id_unique" UNIQUE("external_id")
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "user_personalization" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"workspace_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"email" text NOT NULL,
+	"parameters" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT NOW() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT NOW() NOT NULL,
+	CONSTRAINT "user_personalization_user_id_unique" UNIQUE("user_id")
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "users" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"workspace_id" integer NOT NULL,
@@ -190,6 +217,30 @@ CREATE TABLE IF NOT EXISTS "workspaces" (
 	CONSTRAINT "workspaces_created_by_unique" UNIQUE("created_by"),
 	CONSTRAINT "workspaces_external_id_unique" UNIQUE("external_id")
 );
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "chat_trace" ADD CONSTRAINT "chat_trace_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "chat_trace" ADD CONSTRAINT "chat_trace_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "chat_trace" ADD CONSTRAINT "chat_trace_chat_id_chats_id_fk" FOREIGN KEY ("chat_id") REFERENCES "public"."chats"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "chat_trace" ADD CONSTRAINT "chat_trace_message_id_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."messages"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
 --> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "chats" ADD CONSTRAINT "chats_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;
@@ -240,7 +291,7 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "oauth_providers" ADD CONSTRAINT "oauth_providers_container_id_connectors_id_fk" FOREIGN KEY ("container_id") REFERENCES "public"."connectors"("id") ON DELETE no action ON UPDATE no action;
+ ALTER TABLE "oauth_providers" ADD CONSTRAINT "oauth_providers_connector_id_connectors_id_fk" FOREIGN KEY ("connector_id") REFERENCES "public"."connectors"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -264,11 +315,30 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
+ ALTER TABLE "user_personalization" ADD CONSTRAINT "user_personalization_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "user_personalization" ADD CONSTRAINT "user_personalization_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
  ALTER TABLE "users" ADD CONSTRAINT "users_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_trace_workspace_id_index" ON "chat_trace" USING btree ("workspace_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_trace_user_id_index" ON "chat_trace" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_trace_chat_external_id_index" ON "chat_trace" USING btree ("chat_external_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_trace_message_external_id_index" ON "chat_trace" USING btree ("message_external_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "is_bookmarked_index" ON "chats" USING btree ("is_bookmarked");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "chat_id_index" ON "messages" USING btree ("chat_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "user_personalization_user_idx" ON "user_personalization" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "user_personalization_email_idx" ON "user_personalization" USING btree ("email");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "user_personalization_workspace_idx" ON "user_personalization" USING btree ("workspace_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "email_unique_index" ON "users" USING btree (LOWER("email"));
