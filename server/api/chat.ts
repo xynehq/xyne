@@ -74,6 +74,7 @@ import {
 import {
   Apps,
   chatMessageSchema,
+  DriveEntity,
   entitySchema,
   eventSchema,
   fileSchema,
@@ -109,6 +110,7 @@ import {
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
 import { entityToSchemaMapper } from "@/search/mappers"
+import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -120,6 +122,7 @@ const {
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
+  maxValidLinks,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -970,23 +973,6 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const results = await GetDocumentsByDocIds(fileIds)
-
-  // Special case fora single Whole Spreadsheet
-  if (fileIds?.length === 1 && !results?.root?.children) {
-    const fileId = fileIds[0]
-    const result = await getDocumentOrNull(fileSchema, `${fileIds[0]}_0`)
-    if (result) {
-      //@ts-ignore
-      const metadata = JSON.parse(result?.fields?.metadata)
-      const totalSheets = metadata.totalSheets
-      const sheetIds = []
-      for (let i = 0; i < totalSheets; i++) {
-        sheetIds.push(`${fileId}_${i}`)
-      }
-      const sheetsResults = await GetDocumentsByDocIds(sheetIds)
-      results.root.children = sheetsResults.root.children
-    }
-  }
   if (!results.root.children) {
     results.root.children = []
   }
@@ -1111,25 +1097,59 @@ export const buildUserQuery = (userQuery: UserQuery) => {
     } else if (obj?.type === "pill") {
       builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
     } else if (obj?.type === "link") {
-      builtQuery += `<User added a link with url "${obj?.value}" here> `
+      builtQuery += `<User added a link with url here, this url's content is already available to you in the prompt> `
     }
   })
   return builtQuery
 }
 
-const extractFileIdsFromMessage = (message: string): string[] => {
+const extractFileIdsFromMessage = async (
+  message: string,
+): Promise<string[]> => {
   const fileIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
-  jsonMessage?.map((obj) => {
+  console.log("JsonMessage")
+  console.log(jsonMessage)
+  console.log("JsonMessage")
+  let validFileIdsFromLinkCount = 0
+  for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
       fileIds.push(obj?.value?.docId)
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
+      console.log("fileId")
+      console.log(fileId)
+      console.log("fileId")
       if (fileId) {
-        fileIds.push(fileId)
+        // Check if it's a valid Drive File Id ingested in Vespa
+        // Only works for fileSchema
+        const validFile = await getDocumentOrSpreadsheet(fileId)
+        if (validFile) {
+          if (validFileIdsFromLinkCount >= maxValidLinks) {
+            continue
+          }
+          // If any of them happens to a spreadsheet, add all its subsheet ids also here
+          if (
+            validFile?.fields?.app === Apps.GoogleDrive &&
+            validFile?.fields?.entity === DriveEntity.Sheets
+          ) {
+            console.log("One Spreadsheet detected...")
+            const sheetsMetadata = JSON.parse(validFile?.fields?.metadata)
+            const totalSheets = sheetsMetadata?.totalSheets
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${fileId}_${i}`)
+            }
+          } else {
+            fileIds.push(fileId)
+          }
+          validFileIdsFromLinkCount++
+        }
       }
     }
-  })
+  }
+  console.log("Final fileIds")
+  console.log(fileIds)
+  console.log("Final fileIds")
   return fileIds
 }
 
@@ -2119,7 +2139,9 @@ export const MessageApi = async (c: Context) => {
     rootSpan.setAttribute("message", message)
 
     const isMsgWithContext = isMessageWithContext(message)
-    const fileIds = isMsgWithContext ? extractFileIdsFromMessage(message) : []
+    const fileIds = isMsgWithContext
+      ? await extractFileIdsFromMessage(message)
+      : []
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
