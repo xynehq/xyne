@@ -42,8 +42,8 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
     displayIcon = (
       <img
         src={newRef.photoLink}
-        alt="" // Alt text can be empty if decorative or title provides context
-        className="self-center inline-flex items-center w-[14px] h-[14px] mr-1 rounded-sm" // Added rounded-sm for consistency if images are square
+        alt=""
+        className="self-center inline-flex items-center w-[14px] h-[14px] mr-1 rounded-sm"
       />
     )
   } else {
