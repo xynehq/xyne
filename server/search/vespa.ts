@@ -572,7 +572,6 @@ export const groupVespaSearch = async (
   let excludedApps: Apps[] = []
   try {
     const slackSyncJobs = await getAppSyncJobsByEmail(db, Apps.Slack, AuthType.OAuth, email)
-    Logger.info(email)
     if (!slackSyncJobs || slackSyncJobs.length === 0) {
       excludedApps.push(Apps.Slack)
     }
