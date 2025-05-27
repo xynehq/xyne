@@ -591,7 +591,9 @@ export const ChatBox = ({
 
     const mentionStartCharOffset = activeAtMentionIndex
     // The @mention text effectively goes from activeAtMentionIndex up to the current caret position.
-    const mentionEndCharOffset = getCaretCharacterOffsetWithin(input)
+    // When clicking a reference, getCaretCharacterOffsetWithin(input) might be unreliable if focus changes.
+    // Assuming the active mention always extends to the end of the current query content.
+    const mentionEndCharOffset = query.length
 
     const startPos = findBoundaryPosition(input, mentionStartCharOffset)
     const endPos = findBoundaryPosition(input, mentionEndCharOffset)
@@ -689,7 +691,9 @@ export const ChatBox = ({
     }
 
     const mentionStartCharOffset = activeAtMentionIndex
-    const mentionEndCharOffset = getCaretCharacterOffsetWithin(input)
+    // When clicking a reference, getCaretCharacterOffsetWithin(input) might be unreliable if focus changes.
+    // Assuming the active mention always extends to the end of the current query content.
+    const mentionEndCharOffset = query.length
 
     const startPos = findBoundaryPosition(input, mentionStartCharOffset)
     const endPos = findBoundaryPosition(input, mentionEndCharOffset)
