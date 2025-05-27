@@ -36,6 +36,24 @@ import { Input } from "@/components/ui/input"
 import { Pill } from "./Pill"
 import { Reference } from "@/types"
 
+// Utility function to determine if the input is visually empty
+const isInputVisuallyEmpty = (
+  textContent: string,
+  htmlContent: string,
+): boolean => {
+  const trimmedText = textContent.trim()
+  if (trimmedText === "") {
+    // If text is empty/whitespace, check if HTML structure is also visually empty
+    return (
+      htmlContent === "" ||
+      htmlContent === "<br>" ||
+      htmlContent === "<p></p>" ||
+      htmlContent === "<div></div>"
+    )
+  }
+  return false // If there's trimmed text, it's not visually empty
+}
+
 interface SourceItem {
   id: string
   name: string
@@ -227,30 +245,12 @@ export const ChatBox = ({
   useEffect(() => {
     // This effect synchronizes placeholder visibility with the query prop,
     // especially for initial mount or when the query is updated externally.
-    const trimmedQuery = query.trim()
-    if (trimmedQuery !== "") {
-      setIsPlaceholderVisible(false)
-    } else {
-      // If query prop is empty, check current innerHTML of the input if it's mounted.
-      // This handles cases where query might be "" but innerHTML is e.g. "<p><br></p>"
-      if (inputRef.current) {
-        const htmlContent = inputRef.current.innerHTML
-        if (
-          htmlContent === "" ||
-          htmlContent === "<br>" ||
-          htmlContent === "<p></p>" ||
-          htmlContent === "<div></div>"
-        ) {
-          setIsPlaceholderVisible(true)
-        } else {
-          setIsPlaceholderVisible(false)
-        }
-      } else {
-        // If inputRef is not yet available and query is empty, default to placeholder visible.
-        setIsPlaceholderVisible(true)
-      }
-    }
-  }, [query])
+    const currentHtmlContent = inputRef.current
+      ? inputRef.current.innerHTML
+      : ""
+    // The `query` prop acts as the textContent for this check.
+    setIsPlaceholderVisible(isInputVisuallyEmpty(query, currentHtmlContent))
+  }, [query, inputRef.current?.innerHTML]) // Re-run if query changes or underlying HTML changes (e.g. cleared by other means)
 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -1114,6 +1114,7 @@ export const ChatBox = ({
           <div
             ref={inputRef}
             contentEditable
+            data-testid="chat-input"
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
@@ -1223,35 +1224,12 @@ export const ChatBox = ({
               const currentInput = inputRef.current
               if (!currentInput) return
 
-              // const currentInput = inputRef.current; // Ensure we're using the ref <-- REMOVE REDUNDANT DECLARATION
-              // if (!currentInput) return; <-- REMOVE REDUNDANT CHECK
-
               const textContentValue = currentInput.textContent || ""
               setQuery(textContentValue)
-
-              const trimmedText = textContentValue.trim()
               const htmlContent = currentInput.innerHTML
-
-              if (trimmedText === "") {
-                // Text content is empty or only whitespace.
-                // Now, check the HTML structure.
-                // These specific HTML contents are considered "visually empty" for placeholder purposes.
-                if (
-                  htmlContent === "" ||
-                  htmlContent === "<br>" || // Firefox/Safari might use <br> in an empty contentEditable
-                  htmlContent === "<p></p>" || // Chrome might use <p></p>
-                  htmlContent === "<div></div>" // Some scenarios might result in an empty div
-                ) {
-                  setIsPlaceholderVisible(true)
-                } else {
-                  // Any other HTML (e.g., <p><br></p> for a newline, &nbsp; for a space)
-                  // means the input is not visually "empty" for placeholder purposes.
-                  setIsPlaceholderVisible(false)
-                }
-              } else {
-                // There is actual non-whitespace text. Placeholder should be hidden.
-                setIsPlaceholderVisible(false)
-              }
+              setIsPlaceholderVisible(
+                isInputVisuallyEmpty(textContentValue, htmlContent),
+              )
 
               // The 'references' state and its update logic have been removed.
               // Pill management is now primarily through direct DOM interaction

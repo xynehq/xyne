@@ -109,15 +109,13 @@ const defaultProps = {
 
 // Helper to get the contentEditable div
 const getContentEditable = (container: HTMLElement) => {
-  // The contentEditable div is identified by its class names and structure
-  // This selector might need adjustment if the class names change.
-  // It's the div that directly contains the placeholder.
-  const chatBoxDiv = container.querySelector("div.relative.flex.items-center")
-  if (!chatBoxDiv) throw new Error("ChatBox main input area not found")
-  const contentEditableDiv = chatBoxDiv.querySelector(
-    'div[contenteditable="true"]',
+  const contentEditableDiv = container.querySelector(
+    '[data-testid="chat-input"]',
   )
-  if (!contentEditableDiv) throw new Error("ContentEditable div not found")
+  if (!contentEditableDiv)
+    throw new Error(
+      "ContentEditable div with data-testid='chat-input' not found",
+    )
   return contentEditableDiv as HTMLDivElement
 }
 
@@ -139,59 +137,53 @@ describe("ChatBox Placeholder Behavior", () => {
   })
 
   test("placeholder hides when text is typed", () => {
-    const { container } = render(<ChatBox {...defaultProps} />)
+    const { container, rerender } = render(<ChatBox {...defaultProps} />) // Get rerender
     const inputDiv = getContentEditable(container)
 
     fireEvent.input(inputDiv, {
       target: { textContent: "Hello", innerHTML: "Hello" },
     })
-    // The component's onInput will call setQuery and update isPlaceholderVisible
-    // We need to re-render or check based on the updated state.
-    // For simplicity in this step, we'll assume the internal state update works.
-    // A more robust test might involve checking the absence of the placeholder.
-    // Let's re-render with the new query to simulate parent state update
-    render(<ChatBox {...defaultProps} query="Hello" />, { container }) // Re-render with updated query
+    // The component's onInput will call setQuery, which is mocked.
+    // To test the effect of the query prop changing (as if parent state updated), we use rerender.
+    rerender(<ChatBox {...defaultProps} query="Hello" />)
     expect(screen.queryByText(placeholderText)).not.toBeInTheDocument()
   })
 
   test("placeholder hides when only spaces are typed", () => {
-    const { container } = render(<ChatBox {...defaultProps} />)
+    const { container, rerender } = render(<ChatBox {...defaultProps} />) // Get rerender
     const inputDiv = getContentEditable(container)
 
-    // Simulate typing spaces
-    // Browsers often convert multiple spaces in contentEditable to &nbsp; or a single space
     fireEvent.input(inputDiv, {
       target: { textContent: "   ", innerHTML: "&nbsp; &nbsp;&nbsp;" },
     })
-    render(<ChatBox {...defaultProps} query="   " />, { container })
+    rerender(<ChatBox {...defaultProps} query="   " />)
     expect(screen.queryByText(placeholderText)).not.toBeInTheDocument()
   })
 
   test("placeholder hides when a newline is entered (simulating <p><br></p>)", () => {
-    const { container } = render(<ChatBox {...defaultProps} />)
+    const { container, rerender } = render(<ChatBox {...defaultProps} />) // Get rerender
     const inputDiv = getContentEditable(container)
 
-    // Simulate a newline, which might result in <p><br></p> or just <br> inside a div
-    // textContent would be empty or contain '\n' which trims to empty
     fireEvent.input(inputDiv, {
       target: { textContent: "", innerHTML: "<p><br></p>" },
     })
-    render(<ChatBox {...defaultProps} query="" />, { container }) // query is based on textContent
+    rerender(<ChatBox {...defaultProps} query="" />)
     expect(screen.queryByText(placeholderText)).not.toBeInTheDocument()
   })
 
   test("placeholder hides when a newline is entered (simulating <div><br></div>)", () => {
-    const { container } = render(<ChatBox {...defaultProps} />)
+    const { container, rerender } = render(<ChatBox {...defaultProps} />) // Get rerender
     const inputDiv = getContentEditable(container)
     fireEvent.input(inputDiv, {
       target: { textContent: "", innerHTML: "<div><br></div>" },
     })
-    render(<ChatBox {...defaultProps} query="" />, { container })
+    rerender(<ChatBox {...defaultProps} query="" />)
     expect(screen.queryByText(placeholderText)).not.toBeInTheDocument()
   })
 
   test("placeholder reappears when all content (text and newlines) is cleared", () => {
-    const { container } = render(
+    // Initial render with query="Not empty"
+    const { container, rerender } = render(
       <ChatBox {...defaultProps} query="Not empty" />,
     )
     expect(
@@ -200,9 +192,10 @@ describe("ChatBox Placeholder Behavior", () => {
     ).not.toBeInTheDocument()
 
     const inputDiv = getContentEditable(container)
-    // Simulate clearing the input
+    // Simulate clearing the input by user action
     fireEvent.input(inputDiv, { target: { textContent: "", innerHTML: "" } })
-    render(<ChatBox {...defaultProps} query="" />, { container }) // query is now empty
+    // Then, simulate parent state update reflecting the cleared query
+    rerender(<ChatBox {...defaultProps} query="" />)
     expect(
       screen.getByText(placeholderText),
       "Placeholder should be visible after clearing",
@@ -210,7 +203,8 @@ describe("ChatBox Placeholder Behavior", () => {
   })
 
   test("placeholder reappears when content is cleared to a single <br>", () => {
-    const { container } = render(
+    const { container, rerender } = render(
+      // Get rerender
       <ChatBox {...defaultProps} query="Not empty" />,
     )
     expect(
@@ -222,7 +216,7 @@ describe("ChatBox Placeholder Behavior", () => {
     fireEvent.input(inputDiv, {
       target: { textContent: "", innerHTML: "<br>" },
     })
-    render(<ChatBox {...defaultProps} query="" />, { container })
+    rerender(<ChatBox {...defaultProps} query="" />)
     expect(
       screen.getByText(placeholderText),
       "Placeholder should be visible with just <br>",
@@ -230,7 +224,8 @@ describe("ChatBox Placeholder Behavior", () => {
   })
 
   test("placeholder reappears when content is cleared to <p></p>", () => {
-    const { container } = render(
+    const { container, rerender } = render(
+      // Get rerender
       <ChatBox {...defaultProps} query="Not empty" />,
     )
     expect(
@@ -242,7 +237,7 @@ describe("ChatBox Placeholder Behavior", () => {
     fireEvent.input(inputDiv, {
       target: { textContent: "", innerHTML: "<p></p>" },
     })
-    render(<ChatBox {...defaultProps} query="" />, { container })
+    rerender(<ChatBox {...defaultProps} query="" />)
     expect(
       screen.getByText(placeholderText),
       "Placeholder should be visible with just <p></p>",
@@ -274,23 +269,23 @@ describe("ChatBox @ Mention Behavior", () => {
       x: 0,
       y: 0,
       toJSON: () => ({}),
-    }));
+    }))
 
-    const originalCreateRange = document.createRange;
-    vi.spyOn(document, 'createRange').mockImplementation(() => {
-      const range = originalCreateRange.call(document);
-      range.getBoundingClientRect = mockGetBoundingClientRect;
+    const originalCreateRange = document.createRange
+    vi.spyOn(document, "createRange").mockImplementation(() => {
+      const range = originalCreateRange.call(document)
+      range.getBoundingClientRect = mockGetBoundingClientRect
       // Mock other range methods if they cause issues, e.g., selectNodeContents, setStart, setEnd, collapse, etc.
       // For now, only getBoundingClientRect is known to be an issue.
       // Add mocks for other properties/methods of Range if needed by the component's logic.
-      range.selectNodeContents = vi.fn();
-      range.setStart = vi.fn();
-      range.setEnd = vi.fn();
-      range.collapse = vi.fn();
+      range.selectNodeContents = vi.fn()
+      range.setStart = vi.fn()
+      range.setEnd = vi.fn()
+      range.collapse = vi.fn()
       // Add any other methods that might be called on the range object by the component
       // and are not fully implemented or behave differently in JSDOM.
-      return range;
-    });
+      return range
+    })
   })
 
   afterEach(() => {
