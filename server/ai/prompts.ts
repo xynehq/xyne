@@ -788,225 +788,225 @@ export const searchQueryPrompt = (userContext: string, toolContext): string => {
     **User Context:** ${userContext}
 
     ${toolContext}
-    
-    Now, THIS IS VERY IMPORTANT, verify if the user query would require any of the above tool invocation then respond back with this schema:
 
-        { "tool": "ACTUAL_TOOL_NAME",
-          "arguments": {"param1_name": "param1_value", "param2_name": "param2_value", ...}
-        }
-
-      - If Tool Invocation is chosen then Your entire response MUST be a single, flat JSON response which should be in the below format:
+    THIS IS VERY IMPORTATNT, firstly evaluate if any of the above tool invocation is required for the given user query possibly including earlier conversations. If so then follow these rules:
+       - Always respond back with this schema:
+            { "tool": "ACTUAL_TOOL_NAME",
+              "arguments": {"param1_name": "param1_value", "param2_name": "param2_value", ...}
+            }
+      - If Tool Invocation is chosen then Your entire response MUST be a single, flat JSON response which should be in above format.
       - (Replace ACTUAL_TOOL_NAME with the chosen tool\'s name as described in the user message, e.g., "metadata_retrieval", "search". Include only the relevant arguments for that tool.)
 
 
-    Otherwise, Now, handle the query as follows:
+    Otherwise else:
+      handle the query as follows:
 
-    1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
-      a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
-      b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
-      - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
-      - If not ambiguous, leave the query as it is.
-    2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
-       - "Hi"
-       - "Hello"
-       - "Hey"
-       - what is the time in Japan
-       If the query is conversational, respond naturally and appropriately. 
-    3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
-    4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
-      - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
-      - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev". 
-      - Otherwise, set "temporalDirection" to null.
-      - For queries like "previous emails" or "next emails" or "previous meetings" or "next meetings" that lack a concrete time range:
-        - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
-      - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
-      - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+        1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
+          a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+          b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
+          - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
+          - If not ambiguous, leave the query as it is.
+        2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
+           - "Hi"
+           - "Hello"
+           - "Hey"
+           - what is the time in Japan
+           If the query is conversational, respond naturally and appropriately. 
+        3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
+        4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
+          - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
+          - If asking about a past calendar event (e.g., "last meeting") or email interaction (e.g., "last email", "latest email"), set "temporalDirection" to "prev". 
+          - Otherwise, set "temporalDirection" to null.
+          - For queries like "previous emails" or "next emails" or "previous meetings" or "next meetings" that lack a concrete time range:
+            - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+          - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
+          - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
+          - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
+          - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
 
-    5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
-      - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
-      - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+        5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
+          - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
+          - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
 
-    6. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
-      - This allows searching across all relevant items without a restrictive time range.
-      - Reference Examples:
-        - "when was my meeting with John" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
+        6. If the query refers to a time period that is ambiguous (e.g., "when was my meeting with John"), set 'startTime' and 'endTime' to null:
+          - This allows searching across all relevant items without a restrictive time range.
+          - Reference Examples:
+            - "when was my meeting with John" → Do not set a time range, set 'startTime' and 'endTime' to null, "temporalDirection": "prev".
 
-    7. Determine the appropriate sorting direction based on query terms:
-      - For ANY query about "latest", "recent", "newest", "current" items (emails, files, documents, meetings, etc.), set "sortDirection" to "desc" (newest/most recent first)
-      - For ANY query about "oldest", "earliest" items (emails, files, documents, meetings, etc.), set "sortDirection" to "asc" (oldest first)
-      - If no sorting preference is indicated or can be inferred, set "sortDirection" to null
-      - Example queries and their sorting directions:
-        - "Give me my latest emails" → sortDirection: "desc"
-        - "Show me my oldest files in Drive" → sortDirection: "asc"
-        - "Recent spreadsheets" → sortDirection: "desc"
-        - "Earliest meetings with marketing team" → sortDirection: "asc"
-        - "Documents from last month" → sortDirection: null (no clear sorting preference)
+        7. Determine the appropriate sorting direction based on query terms:
+          - For ANY query about "latest", "recent", "newest", "current" items (emails, files, documents, meetings, etc.), set "sortDirection" to "desc" (newest/most recent first)
+          - For ANY query about "oldest", "earliest" items (emails, files, documents, meetings, etc.), set "sortDirection" to "asc" (oldest first)
+          - If no sorting preference is indicated or can be inferred, set "sortDirection" to null
+          - Example queries and their sorting directions:
+            - "Give me my latest emails" → sortDirection: "desc"
+            - "Show me my oldest files in Drive" → sortDirection: "asc"
+            - "Recent spreadsheets" → sortDirection: "desc"
+            - "Earliest meetings with marketing team" → sortDirection: "asc"
+            - "Documents from last month" → sortDirection: null (no clear sorting preference)
 
-    8. Now our task is to classify the user's query into one of the following categories:  
-    a. RetrieveInformation  
-    b. RetrieveMetadata  
-    c. RetrievedUnspecificMetadata
+        8. Now our task is to classify the user's query into one of the following categories:  
+        a. RetrieveInformation  
+        b. RetrieveMetadata  
+        c. RetrievedUnspecificMetadata
 
-    ### DETAILED CLASSIFICATION RULES
-    
-    1. RetrieveInformation
-    - Applies to queries that MATCH ANY of these conditions:
-      - Involve multiple apps or entities
-      - Do not explicitly mention ANY single valid app or entity from the enum lists
-      - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list
-      - Ask a question about item content rather than retrieval (e.g., "what did John say about the project?")
-      - Use general terms without specifying app or entity (e.g., "document", "contract", "report" without specifying "email" or "drive")
-    - For such queries:
-      - Set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to 'null', as the query is generic.
-      - Include 'startTime' and 'endTime' in 'filters' only if the query explicitly specifies a temporal range; otherwise, set them to 'null'.
-    - Examples:
-      - 'signed copy of rent agreement' -> 'app': 'null', 'entity': 'null'
-      - 'give me details for my files' -> 'app': 'null', 'entity': 'null'
-      - 'contract from last year' -> 'app': 'null', 'entity': 'null'
-      - 'recent budget report' -> 'app': 'null', 'entity': 'null'
-      - 'what did Sarah say in our last discussion?' -> 'app': 'null', 'entity': 'null'
+        ### DETAILED CLASSIFICATION RULES
+        
+        1. RetrieveInformation
+        - Applies to queries that MATCH ANY of these conditions:
+          - Involve multiple apps or entities
+          - Do not explicitly mention ANY single valid app or entity from the enum lists
+          - Are open-ended, seeking contextual information, summaries, or discussions not tied to a specific item or list
+          - Ask a question about item content rather than retrieval (e.g., "what did John say about the project?")
+          - Use general terms without specifying app or entity (e.g., "document", "contract", "report" without specifying "email" or "drive")
+        - For such queries:
+          - Set all filters ('app', 'entity', 'count', 'startTime', 'endTime') to 'null', as the query is generic.
+          - Include 'startTime' and 'endTime' in 'filters' only if the query explicitly specifies a temporal range; otherwise, set them to 'null'.
+        - Examples:
+          - 'signed copy of rent agreement' -> 'app': 'null', 'entity': 'null'
+          - 'give me details for my files' -> 'app': 'null', 'entity': 'null'
+          - 'contract from last year' -> 'app': 'null', 'entity': 'null'
+          - 'recent budget report' -> 'app': 'null', 'entity': 'null'
+          - 'what did Sarah say in our last discussion?' -> 'app': 'null', 'entity': 'null'
 
-    2. RetrieveMetadata
-    - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive')
-      - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
-      - Include at least one additional specific detail that meets ANY of these criteria:
-        a) Contains subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
-        b) Contains named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
-        c) Contains action verbs describing content (e.g., 'discussing', 'approved', 'rejected')
-        d) Contains project or task identifiers (e.g., 'Project Alpha', 'Q2 planning')
-    - For such queries:
-      - Set 'app' and 'entity' to the corresponding valid values from the enum lists
-      - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
-      - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
-    - Examples:
-      - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail'
-      - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf'
-      - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event'
-      - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets'
+        2. RetrieveMetadata
+        - Applies to queries that MATCH ALL of these conditions:
+          - Explicitly specify a SINGLE valid 'app' (e.g., 'email' -> 'gmail', 'meeting' -> 'google-calendar', 'gmail', 'google-drive')
+          - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
+          - Include at least one additional specific detail that meets ANY of these criteria:
+            a) Contains subject matter keywords (e.g., 'marketing', 'budget', 'proposal')
+            b) Contains named entities (e.g., people, organizations like 'John', 'OpenAI', 'Marketing Team')
+            c) Contains action verbs describing content (e.g., 'discussing', 'approved', 'rejected')
+            d) Contains project or task identifiers (e.g., 'Project Alpha', 'Q2 planning')
+        - For such queries:
+          - Set 'app' and 'entity' to the corresponding valid values from the enum lists
+          - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
+          - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
+        - Examples:
+          - 'emails about openai from last year' -> 'app': 'gmail', 'entity': 'mail'
+          - 'PDF in email about vendor contract' -> 'app': 'gmail', 'entity': 'pdf'
+          - 'meetings with marketing team last year' -> 'app': 'google-calendar', 'entity': 'event'
+          - 'budget spreadsheets in drive' -> 'app': 'google-drive', 'entity': 'sheets'
 
-    3. RetrievedUnspecificMetadata
-    - Applies to queries that MATCH ALL of these conditions:
-      - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive')
-      - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
-      - DO NOT include any additional specific details beyond app, entity, and possibly time indicators
-      - Focus on listing or retrieving items based solely on app, entity, and possibly time indicators
-    - For such queries:
-      - Set 'app' and 'entity' to the corresponding valid values from the enum lists
-      - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
-      - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
-    - Examples:
-      - 'current emails' -> 'app': 'gmail', 'entity': 'mail'
-      - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event'
-      - 'recent files in Google Drive' -> 'app': 'google-drive', 'entity': 'driveFile'
-      - 'my PDFs in email' -> 'app': 'gmail', 'entity': 'pdf'
-      - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets'
+        3. RetrievedUnspecificMetadata
+        - Applies to queries that MATCH ALL of these conditions:
+          - Explicitly specify a SINGLE valid 'app' (e.g., 'emails' -> 'gmail', 'meetings' -> 'google-calendar', 'files' -> 'google-drive')
+          - Explicitly specify a SINGLE valid 'entity' (e.g., 'mail', 'pdf', 'event', 'driveFile')
+          - DO NOT include any additional specific details beyond app, entity, and possibly time indicators
+          - Focus on listing or retrieving items based solely on app, entity, and possibly time indicators
+        - For such queries:
+          - Set 'app' and 'entity' to the corresponding valid values from the enum lists
+          - Include temporal filters if specified, otherwise set 'startTime' and 'endTime' to null
+          - Don't set 'app' and 'entity' if they are not explicitly mentioned, set them to 'null'
+        - Examples:
+          - 'current emails' -> 'app': 'gmail', 'entity': 'mail'
+          - 'previous meetings' -> 'app': 'google-calendar', 'entity': 'event'
+          - 'recent files in Google Drive' -> 'app': 'google-drive', 'entity': 'driveFile'
+          - 'my PDFs in email' -> 'app': 'gmail', 'entity': 'pdf'
+          - 'all my spreadsheets' -> 'app': 'google-drive', 'entity': 'sheets'
 
-    4. Strict Mapping Guidelines
-    - Always apply these exact mappings for app terms:
-      - 'email', 'mail', 'emails', 'gmail' -> 'gmail'
-      - 'calendar', 'meetings', 'events', 'schedule' -> 'google-calendar'
-      - 'drive', 'files', 'documents', 'folders' -> 'google-drive'
-      - 'contacts', 'people', 'address book' -> 'google-workspace'
-    
-    - Always apply these exact mappings for entity terms:
-      - For Gmail app:
-        - 'email', 'emails', 'mail', 'message', 'messages' -> 'mail'
-        - 'pdf', 'pdfs', 'attachment', 'attachments' -> 'pdf'
-      - For Google Drive app:
-        - 'file', 'files' -> 'driveFile'
-        - 'document', 'documents', 'doc', 'docs' -> 'docs'
-        - 'spreadsheet', 'spreadsheets', 'sheet', 'sheets' -> 'sheets'
-        - 'presentation', 'presentations', 'slide', 'slides' -> 'slides'
-        - 'pdf', 'pdfs' -> 'pdf'
-        - 'folder', 'folders', 'directory', 'directories' -> 'folder'
-      - For Google Calendar app:
-        - 'event', 'events', 'meeting', 'meetings', 'appointment', 'appointments' -> 'event'
-      - For Google Workspace app:
-        - 'contact', 'contacts', 'person', 'people' -> 'contacts'
+        4. Strict Mapping Guidelines
+        - Always apply these exact mappings for app terms:
+          - 'email', 'mail', 'emails', 'gmail' -> 'gmail'
+          - 'calendar', 'meetings', 'events', 'schedule' -> 'google-calendar'
+          - 'drive', 'files', 'documents', 'folders' -> 'google-drive'
+          - 'contacts', 'people', 'address book' -> 'google-workspace'
+        
+        - Always apply these exact mappings for entity terms:
+          - For Gmail app:
+            - 'email', 'emails', 'mail', 'message', 'messages' -> 'mail'
+            - 'pdf', 'pdfs', 'attachment', 'attachments' -> 'pdf'
+          - For Google Drive app:
+            - 'file', 'files' -> 'driveFile'
+            - 'document', 'documents', 'doc', 'docs' -> 'docs'
+            - 'spreadsheet', 'spreadsheets', 'sheet', 'sheets' -> 'sheets'
+            - 'presentation', 'presentations', 'slide', 'slides' -> 'slides'
+            - 'pdf', 'pdfs' -> 'pdf'
+            - 'folder', 'folders', 'directory', 'directories' -> 'folder'
+          - For Google Calendar app:
+            - 'event', 'events', 'meeting', 'meetings', 'appointment', 'appointments' -> 'event'
+          - For Google Workspace app:
+            - 'contact', 'contacts', 'person', 'people' -> 'contacts'
 
-    5. Query Processing Decision Tree
-    - First, identify all app and entity terms mentioned in the query using the strict mappings above
-    - IF multiple valid apps OR multiple valid entities are detected:
-      THEN classify as RetrieveInformation, set app = null, entity = null
-    - ELSE IF exactly one valid app AND exactly one valid entity are detected:
-      IF query contains specific details (subject matter, named entities, action verbs, project identifiers):
-        THEN classify as RetrieveMetadata, set app and entity accordingly
-      ELSE:
-        THEN classify as RetrievedUnspecificMetadata, set app and entity accordingly
-    - ELSE:
-      THEN classify as RetrieveInformation, set app = null, entity = null
+        5. Query Processing Decision Tree
+        - First, identify all app and entity terms mentioned in the query using the strict mappings above
+        - IF multiple valid apps OR multiple valid entities are detected:
+          THEN classify as RetrieveInformation, set app = null, entity = null
+        - ELSE IF exactly one valid app AND exactly one valid entity are detected:
+          IF query contains specific details (subject matter, named entities, action verbs, project identifiers):
+            THEN classify as RetrieveMetadata, set app and entity accordingly
+          ELSE:
+            THEN classify as RetrievedUnspecificMetadata, set app and entity accordingly
+        - ELSE:
+          THEN classify as RetrieveInformation, set app = null, entity = null
 
-    6. Validation Checks (always perform these checks before finalizing classification)
-    - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrievedUnspecificMetadata'.
-    - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query for 'RetrieveMetadata' or 'RetrievedUnspecificMetadata'.
-    - If 'app' or 'entity' is not explicitly mentioned, set them to 'null' and classify as 'RetrieveInformation'.
-    - For queries classified as 'RetrieveMetadata' or 'RetrievedUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
-    - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
-      
+        6. Validation Checks (always perform these checks before finalizing classification)
+        - Ensure 'type' is one of: 'RetrieveInformation', 'RetrieveMetadata', 'RetrievedUnspecificMetadata'.
+        - Ensure 'app' and 'entity' are set to valid values only when explicitly mentioned in the query for 'RetrieveMetadata' or 'RetrievedUnspecificMetadata'.
+        - If 'app' or 'entity' is not explicitly mentioned, set them to 'null' and classify as 'RetrieveInformation'.
+        - For queries classified as 'RetrieveMetadata' or 'RetrievedUnspecificMetadata', verify that both 'app' and 'entity' are non-null.
+        - If there is any uncertainty or ambiguity, default to 'RetrieveInformation' with app = null, entity = null.
+          
 
-    #### Enum Values for Valid Inputs
+        #### Enum Values for Valid Inputs
 
-    type (Query Types):  
-    - RetrieveInformation  
-    - RetrieveMetadata  
-    - RetrievedUnspecificMetadata
+        type (Query Types):  
+        - RetrieveInformation  
+        - RetrieveMetadata  
+        - RetrievedUnspecificMetadata
 
-    app (Valid Apps):  
-    - google-drive  
-    - gmail  
-    - google-calendar  
-    - google-workspace
+        app (Valid Apps):  
+        - google-drive  
+        - gmail  
+        - google-calendar  
+        - google-workspace
 
-    entity (Valid Entities):  
-    For Gmail:  
-    - mail  
-    - pdf (for attachments)  
+        entity (Valid Entities):  
+        For Gmail:  
+        - mail  
+        - pdf (for attachments)  
 
-    For Drive:  
-    - driveFile  
-    - docs  
-    - sheets  
-    - slides  
-    - pdf  
-    - folder  
+        For Drive:  
+        - driveFile  
+        - docs  
+        - sheets  
+        - slides  
+        - pdf  
+        - folder  
 
-    For Calendar:  
-    - event
+        For Calendar:  
+        - event
 
-    For Google-Workspace:
-     - contacts
+        For Google-Workspace:
+         - contacts
 
-    7. Output JSON should be one of the following structure based on whether its a tool invocation response of answer:
+        7. Output JSON should be one of the following structure based on whether its a tool invocation response of answer:
 
-       {
-         "answer": "<string or null>",
-         "queryRewrite": "<string or null>",
-         "temporalDirection": "next" | "prev" | null,
-         "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
-         "filters": {
-           "app": "<app or null>",
-           "entity": "<entity or null>",
-           "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "sortDirection": "<'asc' | 'desc' | null>"
-         }
-       }
-       - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
-       - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
-       - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
-       - "type" and "filters" are used for routing and fetching data.
-       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
-       - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
-       - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
+           {
+             "answer": "<string or null>",
+             "queryRewrite": "<string or null>",
+             "temporalDirection": "next" | "prev" | null,
+             "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
+             "filters": {
+               "app": "<app or null>",
+               "entity": "<entity or null>",
+               "count": "<number of items to retrieve or null>",
+               "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+               "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+               "sortDirection": "<'asc' | 'desc' | null>"
+             }
+           }
+           - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
+           - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
+           - "temporalDirection" indicates if the query refers to an upcoming ("next") or past ("prev") event or email, or null if unrelated.
+           - "type" and "filters" are used for routing and fetching data.
+           - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
+           - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
+           - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
-       - If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-       - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+           - If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+           - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
 
-    Make sure you always comply with these steps and only produce the JSON output described.
+      Make sure you always comply with these steps and only produce the JSON output described.
   `
 }
 
