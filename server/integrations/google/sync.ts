@@ -22,6 +22,7 @@ import {
   UpdateDocumentPermissions,
   UpdateEventCancelledInstances,
   insertWithRetry,
+  ifMailDocumentsExist,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -218,7 +219,7 @@ const deleteWholeSpreadsheet = async (
   }
 }
 
-const handleGoogleDriveChange = async (
+export const handleGoogleDriveChange = async (
   change: drive_v3.Schema$Change,
   client: GoogleClient,
   email: string,
@@ -398,7 +399,7 @@ const contactKeys = [
   "userDefined",
 ]
 
-const getDriveChanges = async (
+export const getDriveChanges = async (
   driveClient: drive_v3.Drive,
   config: GoogleChangeToken,
   oauth2Client: GoogleClient,
@@ -1167,12 +1168,17 @@ const handleGmailChanges = async (
                   client,
                 )
 
-                await insert(
-                  await parseMail(msgResp.data, gmail, userEmail, client!),
-                  mailSchema,
+                const { mailData, exist } = await parseMail(
+                  msgResp.data,
+                  gmail,
+                  userEmail,
+                  client!,
                 )
-                stats.added += 1
-                changesExist = true
+                if (!exist) {
+                  await insert(mailData, mailSchema)
+                  stats.added += 1
+                  changesExist = true
+                }
               } catch (error) {
                 // Handle errors if the message no longer exists
                 Logger.error(

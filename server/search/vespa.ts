@@ -863,6 +863,16 @@ export const ifDocumentsExist = async (
   }
 }
 
+export const ifMailDocumentsExist = async (
+  docIds: string[],
+): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
+  try {
+    return await vespa.ifMailDocumentsExist(docIds)
+  } catch (error) {
+    throw error
+  }
+}
+
 export const ifDocumentsExistInChatContainer = async (
   docIds: string[],
 ): Promise<

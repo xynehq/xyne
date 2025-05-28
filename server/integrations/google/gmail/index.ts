@@ -12,7 +12,7 @@ import {
   type MailAttachment,
   type VespaMailAttachment,
 } from "@/search/types"
-import { insert } from "@/search/vespa"
+import { ifMailDocumentsExist, insert } from "@/search/vespa"
 import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
@@ -93,12 +93,19 @@ export const handleGmailIngestion = async (
               0,
               client,
             )
-            await insert(
-              await parseMail(msgResp.data, gmail, email, client, tracker),
-              mailSchema,
+            const { mailData, exist } = await parseMail(
+              msgResp.data,
+              gmail,
+              email,
+              client,
+              tracker,
             )
+            if (!exist) {
+              await insert(mailData, mailSchema)
+              
             totalIngestedMails.inc({mail_id:message.id??"", mail_title:message.payload?.filename??"", mime_type:message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"OAUTH_ACCOUNT"}, 1)
-            tracker.updateUserStats(email, StatType.Gmail, 1)
+              tracker.updateUserStats(email, StatType.Gmail, 1)
+            }
           } catch (error) {
             Logger.error(
               error,
@@ -160,7 +167,7 @@ export const parseMail = async (
   userEmail: string,
   client: GoogleClient,
   tracker?: Tracker,
-): Promise<Mail> => {
+): Promise<{ mailData: Mail; exist: boolean }> => {
   const messageId = email.id
   const threadId = email.threadId
   let timestamp = parseInt(email.internalDate ?? "", 10)
@@ -191,7 +198,13 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-
+  const mailId =
+    getHeader("Message-Id")?.replace(/<(.*?)>/, "$1") || messageId || undefined
+  let exist = false
+  const res = await ifMailDocumentsExist([mailId!])
+  if (res[mailId!].exists) {
+    exist = true
+  }
   // Handle timestamp from Date header if available
   const dateHeader = getHeader("Date")
   if (dateHeader) {
@@ -223,7 +236,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload) {
+  if (payload && !exist) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
@@ -294,6 +307,7 @@ export const parseMail = async (
   const emailData: Mail = {
     docId: messageId,
     threadId: threadId,
+    mailId: mailId,
     subject: subject,
     chunks: chunks,
     timestamp: timestamp,
@@ -310,7 +324,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return emailData
+  return { mailData: emailData, exist: exist }
 }
 
 const getBody = (payload: any): string => {
