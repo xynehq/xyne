@@ -988,7 +988,10 @@ async function* generateAnswerFromGivenContext(
       for (let i = 0; i < totalSheets; i++) {
         sheetIds.push(`${fileId}_${i}`)
       }
-      const sheetsResults = await GetDocumentsByDocIds(sheetIds)
+      const sheetsResults = await GetDocumentsByDocIds(
+        sheetIds,
+        generateAnswerSpan!,
+      )
       results.root.children = sheetsResults.root.children
     }
   }
@@ -1059,7 +1062,7 @@ async function* generateAnswerFromGivenContext(
 
     const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
     searchVespaSpan?.setAttribute("parsed_message", JSON.stringify(message))
-    searchVespaSpan?.setAttribute("msgToSearch", msgToSearch)
+    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
     searchVespaSpan?.setAttribute("limit", fileIds?.length)
     searchVespaSpan?.setAttribute(
       "results length",
@@ -1133,43 +1136,55 @@ async function* generateAnswerFromGivenContext(
   generateAnswerSpan?.end()
 }
 
-export function withThrottlingBackoff<T>(
-  factory: () => AsyncIterable<T>,
-  maxRetries = 5,
-  baseDelayMs = 1000,
-) {
-  return (async function* retryingIterator() {
-    let attempt = 0
-    while (true) {
-      try {
-        // (re)create the iterator
-        for await (const item of factory()) {
-          yield item
-        }
-        return
-      } catch (err: any) {
-        const isThrottling =
-          err.name === "ThrottlingException" ||
-          err.type === "ThrottlingException" ||
-          err.message?.includes("ThrottlingException")
-        if (isThrottling && attempt < maxRetries) {
-          // compute 2^attempt * baseDelay + jitter
-          const backoff = Math.pow(2, attempt) * baseDelayMs
-          const jitter = Math.random() * 100
-          const waitTime = backoff + jitter
-          Logger.warn(
-            `[AI] ThrottlingException encountered. ` +
-              `Retrying in ${waitTime.toFixed(0)}ms ` +
-              `(${attempt + 1}/${maxRetries})`,
-          )
-          await delay(waitTime)
-          attempt++
-          continue // retry
-        }
-        throw err
+// Checks if the user has selected context
+// Meaning if the query contains Pill info
+export const isContextSelected = (str: string) => {
+  try {
+    if (str.startsWith("[{")) {
+      return JSON.parse(str)
+    } else {
+      return null
+    }
+  } catch {
+    return null
+  }
+}
+
+export const buildUserQuery = (userQuery: UserQuery) => {
+  let builtQuery = ""
+  userQuery?.map((obj) => {
+    if (obj?.type === "text") {
+      builtQuery += `${obj?.value} `
+    } else if (obj?.type === "pill") {
+      builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
+    } else if (obj?.type === "link") {
+      builtQuery += `<User added a link with url "${obj?.value}" here> `
+    }
+  })
+  return builtQuery
+}
+
+const extractFileIdsFromMessage = (message: string): string[] => {
+  const fileIds: string[] = []
+  const jsonMessage = JSON.parse(message) as UserQuery
+  jsonMessage?.map((obj) => {
+    if (obj?.type === "pill") {
+      fileIds.push(obj?.value?.docId)
+    } else if (obj?.type === "link") {
+      const fileId = getFileIdFromLink(obj?.value)
+      if (fileId) {
+        fileIds.push(fileId)
       }
     }
-  })()
+  })
+  return fileIds
+}
+
+const getFileIdFromLink = (link: string) => {
+  const regex = /(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]+)/
+  const match = link.match(regex)
+  const fileId = match ? match[1] : null
+  return fileId
 }
 
 const getSearchRangeSummary = (
