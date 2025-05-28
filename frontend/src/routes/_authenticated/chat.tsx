@@ -1584,7 +1584,6 @@ export const ChatMessage = ({
                       backgroundColor: "transparent",
                       color: "#627384",
                       maxWidth: "100%", 
-                      wordWrap: "break-word",
                       overflowWrap: "break-word",
                     }}
                     components={{
@@ -1608,7 +1607,6 @@ export const ChatMessage = ({
                     backgroundColor: "transparent",
                     color: "#1C1D1F",
                     maxWidth: "100%",
-                    wordWrap: "break-word",
                     overflowWrap: "break-word",
                   }}
                   components={{
@@ -1636,7 +1634,6 @@ export const ChatMessage = ({
                           padding: "4px 8px",
                           textAlign: "left",
                           overflowWrap: "break-word",
-                          wordWrap: "break-word",
                         }}
                         {...props}
                       />
@@ -1648,7 +1645,6 @@ export const ChatMessage = ({
                           borderTop: "1px solid #e5e7eb",
                           padding: "4px 8px",
                           overflowWrap: "break-word",
-                          wordWrap: "break-word",
                         }}
                         {...props}
                       />

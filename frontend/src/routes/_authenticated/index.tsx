@@ -219,8 +219,7 @@ const Index = () => {
                   handleAnswer={() => {}}
                   ref={autocompleteRef}
                   hasSearched={false}
-                  filter={filter}
-                  // autocompleteRef={autocompleteRef}
+                  filter={filter}                
                 />
               </div>
             )}
