@@ -2463,7 +2463,7 @@ export const MessageApi = async (c: Context) => {
             )
             const lastUserMessage = messages[messages.length - 3]
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
+              generateSearchQueryOrAnswerFromConversation(message,lastUserMessage.message, ctx, {
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
                 stream: true,
@@ -3393,8 +3393,9 @@ export const MessageRetryApi = async (c: Context) => {
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
             const searchSpan = streamSpan.startSpan("conversation_search")
+            const lastUserMessage = conversation[conversation.length - 3]
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message, ctx, {
+              generateSearchQueryOrAnswerFromConversation(message,lastUserMessage.message, ctx, {
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
                 stream: true,
