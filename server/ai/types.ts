@@ -135,6 +135,7 @@ export const FiltersSchema = z.object({
 
 export const RetrievedUnspecificMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveUnspecificMetadata),
+  isFollowUp: z.boolean().optional(),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   }),
@@ -142,6 +143,7 @@ export const RetrievedUnspecificMetadataSchema = z.object({
 
 export const RetrieveMetadataSchema = z.object({
   type: z.literal(QueryType.RetrieveMetadata),
+  isFollowUp: z.boolean().optional(),
   filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   }),
@@ -150,6 +152,7 @@ export const RetrieveMetadataSchema = z.object({
 export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(QueryType.RetrieveInformation),
+    isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
   }),
   RetrieveMetadataSchema,

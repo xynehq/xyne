@@ -1084,7 +1084,8 @@ export const temporalEventClassification = async (
 
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
-  prevMessage: string,
+  prevUserMessage: string,
+  prevAssistanceResponse: string,
   userContext: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> {
@@ -1098,7 +1099,12 @@ export function generateSearchQueryOrAnswerFromConversation(
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext, currentMessage,prevMessage)
+    params.systemPrompt = searchQueryPrompt(
+      userContext,
+      currentMessage,
+      prevUserMessage,
+      prevAssistanceResponse,
+    )
   }
 
   const baseMessage = {

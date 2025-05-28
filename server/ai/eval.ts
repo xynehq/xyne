@@ -512,6 +512,7 @@ const endToEndFlow = async (
   const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
     message,
     "",
+    "",
     ctx,
     {
       modelId,

@@ -775,7 +775,12 @@ export const queryRewritePromptJson = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string, current_query: string, prevMessage: string): string => {
+export const searchQueryPrompt = (
+  userContext: string,
+  currentQuery: string,
+  prevMessage: string,
+  prevAssistanceResponse: string,
+): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
