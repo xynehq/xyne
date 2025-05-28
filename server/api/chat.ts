@@ -1937,11 +1937,15 @@ export async function* UnderstandMessageAndAnswer(
   const isUnspecificMetadataRetrieval =
     classification.type == QueryType.RetrieveUnspecificMetadata
   const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
+  const isRecencyRetrieval =
+    classification.filters.multipleAppAndEntity === false &&
+    classification.filterQuery &&
+    classification.filters.sortDirection === "desc"
 
   if (
     isMetadataRetrieval ||
     isUnspecificMetadataRetrieval ||
-    classification.filters.multipleAppAndEntity === false
+    isRecencyRetrieval
   ) {
     Logger.info("Metadata Retrieval")
 
@@ -2481,7 +2485,7 @@ export const MessageApi = async (c: Context) => {
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
             const { lastUserMessage, lastAssistanceMessage } =
-              getLatestMessages(messages.slice(0, messages.length - 1))
+              getLatestMessages(messages.slice(0, messages.length - 1)) // execpt current message
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(
                 message,
@@ -2516,6 +2520,7 @@ export const MessageApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
+              multipleAppAndEntity: false,
             }
             let parsed = {
               isFollowUp: false,
@@ -2620,8 +2625,8 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.setAttribute("answer", answer)
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             conversationSpan.end()
-            let classification: TemporalClassifier & QueryRouterResponse =
-              {} as TemporalClassifier & QueryRouterResponse
+            let classification
+
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
               if (parsed.queryRewrite) {
@@ -2636,33 +2641,53 @@ export const MessageApi = async (c: Context) => {
                   "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
+              const {
+                app,
+                count,
+                endTime,
+                entity,
+                sortDirection,
+                startTime,
+                multipleAppAndEntity,
+              } = parsed?.filters
               classification = {
                 direction: parsed.temporalDirection,
-                type: parsed.type as QueryType,
+                type: parsed.type,
                 filterQuery: parsed.filterQuery,
                 isFollowUp: parsed.isFollowUp,
                 filters: {
-                  ...parsed.filters,
-                  app: parsed.filters.app as Apps,
-                  entity: parsed.filters.entity as any,
+                  app: app as Apps,
+                  entity: entity as any,
+                  multipleAppAndEntity,
+                  endTime,
+                  sortDirection,
+                  startTime,
+                  count,
                 },
-              }
-
-              if (classification.isFollowUp) {
-                if (messages.length >= 2) {
-                  const queryRouterClassification =
-                    messages[messages.length - 3]?.queryRouterClassification
-                  console.log(messages[messages.length - 3])
-
-                  classification = queryRouterClassification
-                    ? queryRouterClassification
-                    : (classification as any)
-                }
-              }
+              } as TemporalClassifier & QueryRouterResponse
 
               Logger.info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
+
+              if (classification.isFollowUp) {
+                if (messages.length >= 3) {
+                  const lastUserMessage = messages[messages.length - 3]
+                  if (lastUserMessage?.queryRouterClassification) {
+                    Logger.info(
+                      `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                    )
+
+                    classification =
+                      lastUserMessage.queryRouterClassification as any
+                  } else {
+                    Logger.info(
+                      "Follow-up query detected, but no classification found in previous message.",
+                    )
+                  }
+                }
+              }
+
               const understandSpan = ragSpan.startSpan("understand_message")
               const iterator = UnderstandMessageAndAnswer(
                 email,
@@ -2752,15 +2777,24 @@ export const MessageApi = async (c: Context) => {
             } else if (parsed.answer) {
               answer = parsed.answer
             }
-            const userMessages =
-            getLatestMessages(messages)
+            const userMessages = getLatestMessages(messages)
 
-          if (userMessages.lastUserMessage && answer) {
-            console.log("update queryRouter for user message")
-            await updateMessage(db, userMessages.lastUserMessage?.externalId, {
-              queryRouterClassification: classification.isFollowUp ? messages[messages.length - 3].queryRouterClassification : JSON.stringify(classification),
-            })
-          }
+            if (userMessages.lastUserMessage && answer) {
+              const isFollowUp = parsed?.isFollowUp
+              const lastMessageIndex = messages.length - 1
+              const referenceIndex = lastMessageIndex - 2 // -1 is current, -2 is previous
+
+              const queryRouterClassification = isFollowUp
+                ? messages[referenceIndex]?.queryRouterClassification
+                : JSON.stringify(classification)
+              Logger.info(
+                `Updating queryRouter classification for last user message: ${JSON.stringify(queryRouterClassification)}`,
+              )
+
+              await updateMessage(db, userMessages.lastUserMessage.externalId, {
+                queryRouterClassification,
+              })
+            }
 
             if (answer || wasStreamClosedPrematurely) {
               // Determine if a message (even partial) should be saved
