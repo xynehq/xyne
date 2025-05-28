@@ -2619,7 +2619,6 @@ export const MessageApi = async (c: Context) => {
                 costArr.push(chunk.cost)
               }
             }
-            console.log(buffer)
 
             conversationSpan.setAttribute("answer_found", parsed.answer)
             conversationSpan.setAttribute("answer", answer)
