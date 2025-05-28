@@ -1588,7 +1588,7 @@ async function* generateMetadataQueryAnswer(
   // Determine search strategy based on conditions
   if (
     !isValidAppAndEntity &&
-    classification.filter_query &&
+    classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
     span?.setAttribute(
@@ -1619,7 +1619,7 @@ async function* generateMetadataQueryAnswer(
       items =
         (
           await searchVespa(
-            classification.filter_query,
+            classification.filterQuery,
             email,
             app as Apps,
             entity as any,
@@ -1749,7 +1749,7 @@ async function* generateMetadataQueryAnswer(
   } else if (
     isMetadataRetrieval &&
     isValidAppAndEntity &&
-    classification.filter_query
+    classification.filterQuery
   ) {
     // Specific metadata retrieval
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
@@ -1760,8 +1760,8 @@ async function* generateMetadataQueryAnswer(
     span?.setAttribute("modelId", defaultBestModel)
     Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
 
-    const { filter_query } = classification
-    const query = filter_query
+    const { filterQuery } = classification
+    const query = filterQuery
     const rankProfile =
       sortDirection === "desc"
         ? SearchModes.GlobalSorted
@@ -2087,6 +2087,25 @@ const addErrMessageToMessage = async (
 
 const isMessageWithContext = (message: string) => {
   return message?.startsWith("[{") && message?.endsWith("}]")
+}
+function getLatestMessages(messages: SelectMessage[]) {
+  let lastUserMessage = null
+  let lastAssistanceMessage = null
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (!lastAssistanceMessage && msg.messageRole === MessageRole.Assistant) {
+      lastAssistanceMessage = msg
+    } else if (!lastUserMessage && msg.messageRole === MessageRole.User) {
+      lastUserMessage = msg
+    }
+
+    if (lastUserMessage && lastAssistanceMessage) {
+      break
+    }
+  }
+
+  return { lastUserMessage, lastAssistanceMessage }
 }
 
 export const MessageApi = async (c: Context) => {
@@ -2459,18 +2478,27 @@ export const MessageApi = async (c: Context) => {
             Logger.info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
-            const lastUserMessage = messages[messages.length - 3]
+            const { lastUserMessage, lastAssistanceMessage } =
+              getLatestMessages(messages.slice(0, messages.length - 1))
+            console.log(lastUserMessage, lastAssistanceMessage)
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message,lastUserMessage.message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: messagesWithNoErrResponse,
-              })
+              generateSearchQueryOrAnswerFromConversation(
+                message,
+                lastUserMessage?.message ?? "",
+                lastAssistanceMessage?.message ?? "",
+                ctx,
+                {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: true,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: messagesWithNoErrResponse,
+                },
+              )
 
             // TODO: for now if the answer is from the conversation itself we don't
             // add any citations for it, we can refer to the original message for citations
@@ -2489,10 +2517,11 @@ export const MessageApi = async (c: Context) => {
               sortDirection: "",
             }
             let parsed = {
+              isFollowUp: false,
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
-              filter_query: "",
+              filterQuery: "",
               type: "",
               filters: queryFilters,
             }
@@ -2589,7 +2618,8 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.setAttribute("answer", answer)
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             conversationSpan.end()
-
+            let classification: TemporalClassifier & QueryRouterResponse =
+              {} as TemporalClassifier & QueryRouterResponse
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
               if (parsed.queryRewrite) {
@@ -2604,16 +2634,35 @@ export const MessageApi = async (c: Context) => {
                   "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const classification: TemporalClassifier & QueryRouterResponse = {
+              classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type as QueryType,
-                filter_query: parsed.filter_query,
+                filterQuery: parsed.filterQuery,
+                isFollowUp: parsed.isFollowUp,
                 filters: {
                   ...parsed.filters,
                   app: parsed.filters.app as Apps,
                   entity: parsed.filters.entity as any,
                 },
               }
+              console.log(classification, "classification")
+              if (classification.isFollowUp) {
+                console.log(messages, "message lenght")
+                if (messages.length >= 2) {
+                  const queryRouterClassification =
+                    messages[messages.length - 2].queryRouterClassification
+                  console.log(
+                    queryRouterClassification,
+                    "queryRouterClassification",
+                  )
+                  if (typeof queryRouterClassification === "string") {
+                    classification = JSON.parse(
+                      queryRouterClassification,
+                    ) as TemporalClassifier & QueryRouterResponse
+                  }
+                }
+              }
+              // classification = chat.queryRouterClassification
 
               Logger.info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
@@ -2714,7 +2763,10 @@ export const MessageApi = async (c: Context) => {
               // to one of the citations what do we do?
               // somehow hide that citation and change
               // the answer to reflect that
-
+              console.log(
+                JSON.stringify(classification),
+                "classification to be inserted",
+              )
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
@@ -2725,6 +2777,7 @@ export const MessageApi = async (c: Context) => {
                 sources: citations,
                 message: processMessage(answer, citationMap),
                 thinking: thinking,
+                queryRouterClassification: JSON.stringify(classification),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
@@ -3363,18 +3416,26 @@ export const MessageRetryApi = async (c: Context) => {
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
             const searchSpan = streamSpan.startSpan("conversation_search")
-            const lastUserMessage = conversation[conversation.length - 3]
+            const { lastUserMessage, lastAssistanceMessage } =
+              getLatestMessages(conversation)
             const searchOrAnswerIterator =
-              generateSearchQueryOrAnswerFromConversation(message,lastUserMessage.message, ctx, {
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                stream: true,
-                json: true,
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: convWithNoErrMsg,
-              })
+              generateSearchQueryOrAnswerFromConversation(
+                message,
+                lastUserMessage?.message ?? "",
+                lastAssistanceMessage?.message ?? "",
+                ctx,
+                {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: true,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: convWithNoErrMsg,
+                },
+              )
             let currentAnswer = ""
             let answer = ""
             let citations: Citation[] = [] // Changed to Citation[] for consistency
@@ -3391,7 +3452,7 @@ export const MessageRetryApi = async (c: Context) => {
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
-              filter_query: "",
+              filterQuery: "",
               type: "",
               filters: queryFilters,
             }
@@ -3501,7 +3562,7 @@ export const MessageRetryApi = async (c: Context) => {
               const classification: TemporalClassifier & QueryRouterResponse = {
                 direction: parsed.temporalDirection,
                 type: parsed.type as QueryType,
-                filter_query: parsed.filter_query,
+                filterQuery: parsed.filterQuery,
                 filters: {
                   ...parsed.filters,
                   app: parsed.filters.app as Apps,

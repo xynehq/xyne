@@ -1046,7 +1046,7 @@ export const queryRewriter = async (
 export const temporalEventClassification = async (
   userQuery: string,
   params: ModelParams,
-): Promise<Omit<TemporalClassifier, "filter_query"> & { cost: number }> => {
+): Promise<Omit<TemporalClassifier, "filterQuery"> & { cost: number }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
@@ -1084,7 +1084,8 @@ export const temporalEventClassification = async (
 
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
-  prevMessage: string,
+  prevUserMessage: string,
+  prevAssistanceResponse: string,
   userContext: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> {
@@ -1098,7 +1099,12 @@ export function generateSearchQueryOrAnswerFromConversation(
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext, currentMessage,prevMessage)
+    params.systemPrompt = searchQueryPrompt(
+      userContext,
+      currentMessage,
+      prevUserMessage,
+      prevAssistanceResponse,
+    )
   }
 
   const baseMessage = {
