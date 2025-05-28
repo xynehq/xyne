@@ -47,6 +47,8 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
+import { updateChatBookmarkInCache } from "@/lib/chatCacheUtils"
+
 
 type CurrentResp = {
   resp: string
@@ -1073,23 +1075,17 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setBookmark(bookmark)
     // Update the cache so sidebar/history modal updates instantly
     queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
-      ["all-chats"],
-      (oldData) => {
-        if (!oldData) return oldData
-        const newPages = oldData.pages.map((page) =>
-          page.map((chat) =>
-            chat.externalId === chatId
-              ? { ...chat, isBookmarked: bookmark }
-              : chat,
-          ),
-        )
-        return { ...oldData, pages: newPages }
-      }
+         ["all-chats"],
+      (oldData) => updateChatBookmarkInCache(oldData, chatId, bookmark)
     )
   },
   onError: (error) => {
-    // Optionally show a toast or error
-    console.error("Failed to update bookmark:", error)
+       toast({
+      title: "Failed to update bookmark",
+      description: "Could not update bookmark. Please try again.",
+      variant: "destructive",
+      duration: 2000,
+    })
   },
 })
 

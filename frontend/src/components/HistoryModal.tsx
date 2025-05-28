@@ -1,4 +1,5 @@
 import { api } from "@/api"
+import ChatItem from "@/components/ChatItem"
 import {
   InfiniteData,
   useInfiniteQuery,
@@ -6,17 +7,13 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X, Pencil, Bookmark, List } from "lucide-react"
+import { X, Bookmark, List } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu"
+
 import { useEffect, useRef, useState } from "react"
 import { LoaderContent } from "@/lib/common"
-
+import { toast } from "@/hooks/use-toast"
+import { updateChatBookmarkInCache } from "@/lib/chatCacheUtils"
 
 export const pageSize = 21
 
@@ -40,7 +37,7 @@ export const renameChat = async (
   const res = await api.chat.rename.$post({
     json: { chatId, title: newTitle },
   })
-  if (!res.ok) throw new Error("Error renaming chat")
+  if (!res.ok) throw new Error(`Error renaming chat: ${res.status}`)
   return { chatId, title: newTitle }
 }
 
@@ -49,7 +46,7 @@ const toggleFavourite = async (chatId: string, bookmark: boolean) => {
   const res = await api.chat.bookmark.$post({
     json: { chatId, bookmark },
   })
-  if (!res.ok) throw new Error("Error updating favourite")
+    if (!res.ok) throw new Error(`Error updating favourite: ${res.status}`)
   return { chatId, bookmark }
 }
 
@@ -75,22 +72,17 @@ const HistoryModal = ({
     mutationFn: ({ chatId, bookmark }) => toggleFavourite(chatId, bookmark),
     onSuccess: ({ chatId, bookmark }) => {
       queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
-        ["all-chats"],
-        (oldData) => {
-          if (!oldData) return oldData
-          const newPages = oldData.pages.map((page) =>
-            page.map((chat) =>
-              chat.externalId === chatId
-                ? { ...chat, isBookmarked: bookmark }
-                : chat,
-            ),
-          )
-          return { ...oldData, pages: newPages }
-        },
-      )
-    },
-    onError: (error: Error) => {
-      console.error("Failed to update favourite:", error)
+         ["all-chats"],
+      (oldData) => updateChatBookmarkInCache(oldData, chatId, bookmark)
+    )
+  },
+   onError: (error: Error) => {
+      toast({
+        title: "Failed to update favourite",
+        description: "Could not update favourite. Please try again.",
+        variant: "destructive",
+        duration: 2000,
+      })
     },
   })
 
@@ -192,7 +184,12 @@ const HistoryModal = ({
       }
     },
     onError: (error: Error) => {
-      console.error("Failed to delete chat:", error)
+      toast({
+        title: "Failed to delete chat",
+        description: "Could not delete chat. Please try again.",
+        variant: "destructive",
+        duration: 2000,
+      })
     },
   })
 
@@ -241,10 +238,15 @@ const HistoryModal = ({
       )
       setIsEditing(false)
     },
-    onError: (error: Error) => {
-      setIsEditing(false)
-      console.error("Failed to rename chat:", error)
-    },
+  onError: (error: Error) => {
+    setIsEditing(false)
+    toast({
+      title: "Failed to rename chat",
+      description: "Could not rename chat. Please try again.",
+      variant: "destructive",
+      duration: 2000,
+    })
+  },
   })
 
 
@@ -319,103 +321,24 @@ const HistoryModal = ({
                   <li className="text-[13px] text-[#B2C3D4] px-[16px] py-[6px]">No favourite chats</li>
                 )}
                 {favouriteChats.map((item) => (
-                  <li
-                    key={`fav-${item.externalId}`}
-                    className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
-                  >
-                    {isEditing && editedChatId === item.externalId ? (
-                      <input
-                        ref={titleRef}
-                        className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
-                        type="text"
-                        value={editedTitle}
-                        onChange={(e) => handleInput(e)}
-                        onBlur={() => handleBlur(item)}
-                        onKeyDown={(e) => handleKeyDown(e, item)}
-                        autoFocus
-                      />
-                    ) : (
-                      <span
-                        className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
-                        onClick={() => {
-                          router.navigate({
-                            to: "/chat/$chatId",
-                            params: { chatId: item.externalId },
-                          })
-                        }}
-                      >
-                        {item.title}
-                      </span>
-                    )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <MoreHorizontal
-                          size={16}
-                          className={
-                            "invisible group-hover:visible mr-[10px] cursor-pointer"
-                          }
-                        />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem
-                          key={"rename"}
-                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                          onClick={() => {
-                            setEditedTitle(item.title)
-                            setEditedChatId(item.externalId)
-                            setIsEditing(true)
-                            setTimeout(() => {
-                              if (titleRef.current) {
-                                titleRef.current.focus()
-                              }
-                            }, 0)
-                          }}
-                        >
-                          <Pencil size={16} />
-                          <span>Rename</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          key={"delete"}
-                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                          onClick={() => {
-                            mutation.mutate(item?.externalId)
-                          }}
-                        >
-                          <Trash2 size={16} className="text-red-500" />
-                          <span className="text-red-500">Delete</span>
-                        </DropdownMenuItem>
-                        {item.isBookmarked ? (
-                          <DropdownMenuItem
-                            key={"unmark-fav"}
-                            className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                            onClick={() => {
-                              favouriteMutation.mutate({
-                                chatId: item.externalId,
-                                bookmark: false,
-                              })
-                            }}
-                          >
-                            <Bookmark className="text-[#1C1D1F] fill-[#1C1D1F]" size={16} />
-                            <span>Unmark Favourite</span>
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            key={"mark-fav"}
-                            className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                            onClick={() => {
-                              favouriteMutation.mutate({
-                                chatId: item.externalId,
-                                bookmark: true,
-                              })
-                            }}
-                          >
-                            <Bookmark size={16} />
-                            <span>Mark Favourite</span>
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </li>
+                  <ChatItem 
+                    key={`fav-${item.externalId}`} 
+                    item={item} 
+                    existingChatId={existingChatId} 
+                    isEditing={isEditing} 
+                    editedChatId={editedChatId} 
+                    editedTitle={editedTitle} 
+                    setEditedTitle={setEditedTitle} 
+                    setEditedChatId={setEditedChatId} 
+                    setIsEditing={setIsEditing} 
+                    handleInput={handleInput} 
+                    handleBlur={handleBlur} 
+                    handleKeyDown={handleKeyDown} 
+                    mutation={mutation} 
+                    favouriteMutation={favouriteMutation} 
+                    router={router} 
+                    titleRef={titleRef} 
+                  />
                 ))}
               </ul>
             </div>
@@ -431,104 +354,25 @@ const HistoryModal = ({
               {otherChats.length === 0 && (
                 <li className="text-[13px] text-[#B2C3D4] px-[16px] py-[6px]">No chats</li>
               )}
-              {otherChats.map((item, index) => (
-                <li
-                  key={item.externalId}
-                  className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
-                >
-                  {isEditing && editedChatId === item.externalId ? (
-                    <input
-                      ref={titleRef}
-                      className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
-                      type="text"
-                      value={editedTitle}
-                      onChange={(e) => handleInput(e)}
-                      onBlur={() => handleBlur(item)}
-                      onKeyDown={(e) => handleKeyDown(e, item)}
-                      autoFocus
-                    />
-                  ) : (
-                    <span
-                      className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
-                      onClick={() => {
-                        router.navigate({
-                          to: "/chat/$chatId",
-                          params: { chatId: item.externalId },
-                        })
-                      }}
-                    >
-                      {item.title}
-                    </span>
-                  )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <MoreHorizontal
-                        size={16}
-                        className={
-                          "invisible group-hover:visible mr-[10px] cursor-pointer"
-                        }
-                      />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem
-                        key={"rename"}
-                        className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                        onClick={() => {
-                          setEditedTitle(item.title) // Set the current title for editing
-                          setEditedChatId(item.externalId) // Track the chat being edited
-                          setIsEditing(true)
-                          setTimeout(() => {
-                            if (titleRef.current) {
-                              titleRef.current.focus()
-                            }
-                          }, 0)
-                        }}
-                      >
-                        <Pencil size={16} />
-                        <span>Rename</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        key={"delete"}
-                        className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                        onClick={() => {
-                          mutation.mutate(item?.externalId)
-                        }}
-                      >
-                        <Trash2 size={16} className="text-red-500" />
-                        <span className="text-red-500">Delete</span>
-                      </DropdownMenuItem>
-                      {item.isBookmarked ? (
-                        <DropdownMenuItem
-                          key={"unmark-fav"}
-                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                          onClick={() => {
-                            favouriteMutation.mutate({
-                              chatId: item.externalId,
-                              bookmark: false,
-                            })
-                          }}
-                        >
-                          <Bookmark className="text-[#1C1D1F] fill-[#1C1D1F]" size={16} />
-                          <span>Unmark Favourite</span>
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem
-                          key={"mark-fav"}
-                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                          onClick={() => {
-                            favouriteMutation.mutate({
-                              chatId: item.externalId,
-                              bookmark: true,
-                            })
-                          }}
-                        >
-                          <Bookmark size={16} />
-                          <span>Mark Favourite</span>
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </li>
+              {otherChats.map((item) => (
+                <ChatItem 
+                  key={item.externalId} 
+                  item={item} 
+                  existingChatId={existingChatId} 
+                  isEditing={isEditing} 
+                  editedChatId={editedChatId} 
+                  editedTitle={editedTitle} 
+                  setEditedTitle={setEditedTitle} 
+                  setEditedChatId={setEditedChatId} 
+                  setIsEditing={setIsEditing} 
+                  handleInput={handleInput} 
+                  handleBlur={handleBlur} 
+                  handleKeyDown={handleKeyDown} 
+                  mutation={mutation} 
+                  favouriteMutation={favouriteMutation} 
+                  router={router} 
+                  titleRef={titleRef} 
+                />
               ))}
             </ul>
             {isFetchingNextPage && <LoaderContent />}
