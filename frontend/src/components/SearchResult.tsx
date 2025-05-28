@@ -5,15 +5,15 @@ import { Mail } from "lucide-react"
 
 const trimmedSubject = (subject: string): string => {
   if (subject.length > 60) {
-    return subject.substring(0, 60) + "...";
+    return subject.substring(0, 60) + "..."
   }
-  return subject;
-};
+  return subject
+}
 
 const newLineToSpace = (text: string | undefined | null): string => {
-  if (!text) return "";
-  return text.replace(/\n/g, " ").replace(/\s\s+/g, " ").trim();
-};
+  if (!text) return ""
+  return text.replace(/\n/g, " ").replace(/\s\s+/g, " ").trim()
+}
 
 const formatDisplayDate = (
   dateInput: string | number | Date | undefined,
@@ -148,7 +148,10 @@ export const SearchResult = ({
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={newLineToSpace(summary.chunk)} />
+            <HighlightedText
+              key={idx}
+              chunk_summary={newLineToSpace(summary.chunk)}
+            />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -238,7 +241,10 @@ export const SearchResult = ({
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={newLineToSpace(summary.chunk)} />
+            <HighlightedText
+              key={idx}
+              chunk_summary={newLineToSpace(summary.chunk)}
+            />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -290,7 +296,10 @@ export const SearchResult = ({
           {Array.isArray(result.chunks_summary) &&
             !!result.chunks_summary.length &&
             result.chunks_summary.map((summary, idx) => (
-              <HighlightedText chunk_summary={newLineToSpace(summary)} key={idx} />
+              <HighlightedText
+                chunk_summary={newLineToSpace(summary)}
+                key={idx}
+              />
             ))}
         </p>
         {/* Debug Info Display (Features Only) */}
@@ -331,7 +340,10 @@ export const SearchResult = ({
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={newLineToSpace(summary.chunk)} />
+            <HighlightedText
+              key={idx}
+              chunk_summary={newLineToSpace(summary.chunk)}
+            />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -384,7 +396,9 @@ export const SearchResult = ({
             </p>
           </a>
         </div>
-        {result.text && <HighlightedText chunk_summary={newLineToSpace(result.text)} />}
+        {result.text && (
+          <HighlightedText chunk_summary={newLineToSpace(result.text)} />
+        )}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">

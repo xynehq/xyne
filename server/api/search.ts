@@ -110,20 +110,25 @@ export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
   modelId: z.string().min(1),
-  stringifiedfileIds: z.string(),
-  isReasoningEnabled: z.string().optional().transform((val) => {
-    if (!val) return false;
-    return val.toLowerCase() === "true";
-  }),
+  isReasoningEnabled: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
-  isReasoningEnabled: z.string().optional().transform((val) => {
-    if (!val) return false;
-    return val.toLowerCase() === "true";
-  }),
+  isReasoningEnabled: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
