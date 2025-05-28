@@ -789,19 +789,35 @@ export const searchQueryPrompt = (
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
+    **Current Query:** ${currentQuery}
+    **Previous Message:** ${prevMessage}
+    **Previous Assistant Output:** ${prevAssistanceResponse}
 
     Now handle the query as follows:
 
-    0. Determine if the current query is a follow-up to previous messages in the conversation:
-       - Check if the current query references, builds upon, or continues a topic from previous messages
-       - Look for indicators like:
-         - References to previously mentioned items ("that document", "those emails", "the meeting we discussed")
-         - Continuation of a search or request ("show me more", "what about...", "also find...")
-         - Questions about previous results ("when was that sent?", "who else was in that meeting?")
-         - Refinement of previous queries ("narrow it down to...", "exclude...", "only show...")
-         - Contextual dependencies that require previous conversation to understand
-       - Set "is_follow_up" to true if the query is clearly building on or referencing previous conversation context
-       - Set "is_follow_up" to false if the query is independent and can be understood without prior context
+    0. **Follow-Up Detection:** HIGHEST PRIORITY
+
+      **Evaluation Scope Restriction:**
+      For follow-up detection, evaluate the current query ONLY against the "Previous Message" (the immediately preceding query) and its "Previous Assistant Output" (the system’s response to that query). Do NOT consider any other messages, queries, or outputs in the conversation history, even if they are available in the user context or other parameters. Restrict analysis strictly to the provided Previous Message and Previous Assistant Output.
+
+      Set "isFollowUp" to true if and only if the current query contains clear, direct, and unambiguous linguistic evidence that it depends on the immediately preceding query AND its assistant output, such that it cannot be fully understood or answered without the specific context provided by the assistant’s output. This requires one of the following:
+      - Direct references to specific entities, results, or context explicitly mentioned in the previous assistant output using unambiguous language, such as pronouns or phrases referring to items directly stated in the output.
+      - Explicit continuation language that unmistakably indicates a follow-up by directly referencing content in the assistant output. The continuation MUST be tied to a specific item or context in the assistant output.
+      - Questions or requests that directly and explicitly reference content from the previous assistant output, such as asking for details about a specific item or result stated in the output.
+
+      Set "isFollowUp" to false if any of the following apply:
+      - The current query is similar to the previous one but changes a core parameter like time range; in such cases, isFollowUp will be false.
+      - The current query is fully self-contained and can be understood and answered independently, without requiring the context of the previous message or its assistant output.
+      - The current query lacks clear, direct, and unambiguous language that ties it to specific content explicitly stated in the previous assistant output.
+      - The current query introduces a new scope, context, or topic that is not mentioned in the previous assistant output, even if it shares a broad category or entities with the previous query or output.
+      - The current query would be interpreted by a human as a new, independent request based on the absence of explicit dependency language referencing the previous assistant output.
+      - The current query uses continuation language but does not reference any specific content from the previous assistant output, such as requesting information about a new topic not mentioned in the output.
+
+      **Strict Rules to Prevent Assumptions:**
+      - Do not assume any connection between queries based on shared topics, shared entities, or structural similarity.
+      - Do not consider earlier queries, their outputs, or any other conversation history beyond the immediately preceding query (Previous Message) and its output (Previous Assistant Output), even if such information is available in the user context or other parameters.
+      - Dependency must be explicitly and directly stated in the query language, and the referenced content must be present in the previous assistant output, not just the previous query text.
+      - If the scope or focus of the current query differs from the content of the previous assistant output, such as shifting from one topic to a completely unrelated topic not mentioned in the output, treat it as a new request unless there is explicit dependency language tying it to the previous output.
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -1007,7 +1023,6 @@ export const searchQueryPrompt = (
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
-       - "isFollowUp" should be true if the current query references, builds upon, or continues a topic from previous messages in the conversation. Set to false if the query is independent.
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
