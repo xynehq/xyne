@@ -1497,7 +1497,7 @@ const renderMarkdownLink = ({
   node,
   ...linkProps
 }: { node?: any; [key: string]: any }) => (
-  <a {...linkProps} target="_blank" rel="noopener noreferrer" />
+  <a {...linkProps} target="_blank" rel="noopener noreferrer" style={{ wordBreak: "break-all" }} />
 )
 
 export const ChatMessage = ({
@@ -1611,7 +1611,7 @@ export const ChatMessage = ({
                           style={{
                             borderCollapse: "collapse",
                             borderStyle: "hidden",
-                            tableLayout: "fixed",
+                            tableLayout: "auto",
                             width: "100%",
                           }}
                           className="min-w-full"
@@ -1626,6 +1626,7 @@ export const ChatMessage = ({
                           padding: "4px 8px",
                           textAlign: "left",
                           overflowWrap: "break-word",
+                          minWidth: "150px",
                         }}
                         {...props}
                       />
@@ -1636,7 +1637,9 @@ export const ChatMessage = ({
                           border: "none",
                           borderTop: "1px solid #e5e7eb",
                           padding: "4px 8px",
-                          overflowWrap: "break-word",
+                          minWidth: "150px",
+                          overflowWrap: "normal",
+                          wordBreak: "normal",
                         }}
                         {...props}
                       />
