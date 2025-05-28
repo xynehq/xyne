@@ -2461,6 +2461,7 @@ export const MessageApi = async (c: Context) => {
             Logger.info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
+            const lastUserMessage = messages[messages.length - 3]
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(message, ctx, {
                 modelId:
