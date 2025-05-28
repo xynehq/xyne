@@ -2482,7 +2482,6 @@ export const MessageApi = async (c: Context) => {
             )
             const { lastUserMessage, lastAssistanceMessage } =
               getLatestMessages(messages.slice(0, messages.length - 1))
-            console.log(lastUserMessage, lastAssistanceMessage)
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(
                 message,
@@ -2611,11 +2610,11 @@ export const MessageApi = async (c: Context) => {
                   }
                 }
               }
-              console.log(buffer)
               if (chunk.cost) {
                 costArr.push(chunk.cost)
               }
             }
+            console.log(buffer)
 
             conversationSpan.setAttribute("answer_found", parsed.answer)
             conversationSpan.setAttribute("answer", answer)
@@ -2648,24 +2647,18 @@ export const MessageApi = async (c: Context) => {
                   entity: parsed.filters.entity as any,
                 },
               }
-              console.log(classification, "classification")
+
               if (classification.isFollowUp) {
-                console.log(messages, "message lenght")
                 if (messages.length >= 2) {
                   const queryRouterClassification =
-                    messages[messages.length - 2].queryRouterClassification
-                  console.log(
-                    queryRouterClassification,
-                    "queryRouterClassification",
-                  )
-                  if (typeof queryRouterClassification === "string") {
-                    classification = JSON.parse(
-                      queryRouterClassification,
-                    ) as TemporalClassifier & QueryRouterResponse
-                  }
+                    messages[messages.length - 3]?.queryRouterClassification
+                  console.log(messages[messages.length - 3])
+
+                  classification = queryRouterClassification
+                    ? queryRouterClassification
+                    : (classification as any)
                 }
               }
-              // classification = chat.queryRouterClassification
 
               Logger.info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
@@ -2759,6 +2752,15 @@ export const MessageApi = async (c: Context) => {
             } else if (parsed.answer) {
               answer = parsed.answer
             }
+            const userMessages =
+            getLatestMessages(messages)
+
+          if (userMessages.lastUserMessage && answer) {
+            console.log("update queryRouter for user message")
+            await updateMessage(db, userMessages.lastUserMessage?.externalId, {
+              queryRouterClassification: classification.isFollowUp ? messages[messages.length - 3].queryRouterClassification : JSON.stringify(classification),
+            })
+          }
 
             if (answer || wasStreamClosedPrematurely) {
               // Determine if a message (even partial) should be saved
@@ -2766,10 +2768,6 @@ export const MessageApi = async (c: Context) => {
               // to one of the citations what do we do?
               // somehow hide that citation and change
               // the answer to reflect that
-              console.log(
-                JSON.stringify(classification),
-                "classification to be inserted",
-              )
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
@@ -2780,7 +2778,6 @@ export const MessageApi = async (c: Context) => {
                 sources: citations,
                 message: processMessage(answer, citationMap),
                 thinking: thinking,
-                queryRouterClassification: JSON.stringify(classification),
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               })
