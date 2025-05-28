@@ -198,13 +198,22 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-  const mailId =
-    getHeader("Message-Id")?.replace(/<(.*?)>/, "$1") || messageId || undefined
+  const mailId = getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let exist = false
-  const res = await ifMailDocumentsExist([mailId!])
-  if (res[mailId!].exists) {
-    exist = true
-  }
+  if (mailId) {
+    try {
+        const res = await ifMailDocumentsExist([mailId])
+        if (res[mailId]?.exists) {
+           exist = true
+          }
+        } catch (error) {
+          Logger.warn(
+            error,
+            `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`
+          )
+          exist = false
+        }
+      }
   // Handle timestamp from Date header if available
   const dateHeader = getHeader("Date")
   if (dateHeader) {

@@ -793,7 +793,7 @@ class VespaClient {
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
     const yqlIds = mailIds.map((id) => `"${id}"`).join(", ")
-    const yqlQuery = `select mailId, updatedAt from sources * where mailId in (${yqlIds})`
+    const yqlQuery = `select mailId, updatedAt from sources mail where mailId in (${yqlIds})`
     const url = `${this.vespaEndpoint}/search/`
 
     try {
