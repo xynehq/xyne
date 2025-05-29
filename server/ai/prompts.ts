@@ -791,25 +791,20 @@ export const searchQueryPrompt = (
 
     Now handle the query as follows:
 
-    0. Follow-Up Detection: HIGHEST PRIORITY
-      Evaluation Scope:
-      For follow-up detection, evaluate the current query against the ENTIRE conversation history provided in the userContext.
+    **Follow-Up Detection: HIGHEST PRIORITY**
+    A query is a follow-up if:
+    a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
+    b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
 
-      Set "isFollowUp" to true if the current query contains ANY linguistic indicators that it depends on previous conversation context, including but not limited to:
+    A query is not a follow-up if:
+    a) It contains the different user persona in the query.
+    b) It is a simple question that does not require any prior context to understand.
+    c) It is an independent question that does not refer to any previous conversation or context.
 
-      * Pronoun/Reference Dependencies: Any pronouns or demonstrative words that refer back to entities, results, or content from previous messages in the conversation.
-      * Implicit Reference Language: Queries that use contextually dependent language where the object being referenced is not explicitly named but was mentioned or returned in previous conversation.
-      * Action-based References: Queries that request actions (list, show, display, expand, etc.) on previously mentioned or returned content without explicitly re-identifying that content.
-      * Continuation Language: Any language that clearly indicates the query is building upon or continuing from previous conversation content.
-      * Context-dependent Questions: Questions that only make sense in relation to previous conversation content and would be unclear or unanswerable without that context.
-      * Comparative or Relational References: Language that compares to, relates to, or references previous results or content.
-      
-      **Critical Principle**: If a human reader would need to look at the previous conversation to fully understand what the current query is asking for, then it should be marked as a follow-up.
+    - If follow-up according to either (a) or (b), set 'isFollowUp' to 'true'
+    - If not a follow-up, set 'isFollowUp' to 'false'
 
-      Set "isFollowUp" to false ONLY if:
-      - The current query is completely self-contained and can be fully understood without any conversation history
-      - The query introduces entirely new scope without any referential language connecting it to previous content
-      - A human could answer the query without knowing anything about the previous conversation.
+    **Simple Test**: Would a human need to read the previous conversation to understand what this query is asking for? If YES = follow-up. If NO = not a follow-up.
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -1157,9 +1152,14 @@ Use structured formatting ONLY when the user's query contains ANY of these expli
 - "show me in format" OR "format them" OR "present structured"
 - Any similar phrasing that explicitly requests structured, organized, or formatted output
 
-**STRUCTURED FORMAT TEMPLATE:**
-When structured format is required, use EXACTLY this format:
+**FORMAT PRIORITY:**
+- **IF** user specifies a particular format (e.g., "tabular format", "bullet points", "numbered list", "table", etc.):
+  - Follow the user's specified format
+- **ELSE** (if user requests structured format but doesn't specify which format):
+  - Use the default structured format template below
 
+**DEFAULT STRUCTURED FORMAT TEMPLATE:**
+When structured format is required and no specific format is mentioned, use EXACTLY this format:
 From: [Sender Name/Email] [Citation Index]
 
 Subject: [Email Subject]
