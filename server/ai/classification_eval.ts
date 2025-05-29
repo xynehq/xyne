@@ -1,8 +1,11 @@
 import {
   Apps,
   CalendarEntity,
+  DriveEntity,
   eventSchema,
   fileSchema,
+  GooglePeopleEntity,
+  MailAttachmentEntity,
   MailEntity,
   mailSchema,
   userSchema,
@@ -63,9 +66,14 @@ if (!workspaceId) {
 }
 
 type TClassification = TemporalClassifier & { type: QueryType } & {
-  filters: Omit<QueryRouterResponse["filters"], "count" | "sortDirection"> & {
+  filters: {
     count: number | null
     sortDirection: string | null
+    app: Apps | null
+    entity: any
+    startTime: string | null
+    endTime: string | null
+    multipleAppAndEntity: boolean | null
   }
 }
 type Data = {
@@ -73,42 +81,7 @@ type Data = {
   expected: TClassification
 }
 
-const data: Data[] = [
-  {
-    input: "what is kalp's email",
-    expected: {
-      direction: null,
-      type: QueryType.RetrieveMetadata,
-      filter_query: "kalp",
-      filters: {
-        app: Apps.Gmail,
-        entity: MailEntity.Email,
-        startTime: null,
-        endTime: null,
-        count: null,
-        sortDirection: null,
-        multipleAppAndEntity: false,
-      },
-    },
-  },
-  {
-    input: "list recent emails",
-    expected: {
-      direction: null,
-      type: QueryType.RetrieveUnspecificMetadata,
-      filter_query: null,
-      filters: {
-        app: Apps.Gmail,
-        entity: MailEntity.Email,
-        startTime: null,
-        endTime: null,
-        count: null,
-        sortDirection: "desc",
-        multipleAppAndEntity: false,
-      },
-    },
-  }
-]
+const data: Data[] = []
 
 if (!data.length) {
   throw new Error("Data is not set for the evals")
@@ -325,6 +298,7 @@ for await (const item of data) {
     endTime: "",
     count: 0,
     sortDirection: "",
+    multipleAppAndEntity: false,
   }
   let parsed = {
     answer: "",
