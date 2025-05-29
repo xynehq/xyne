@@ -2683,6 +2683,7 @@ export const MessageApi = async (c: Context) => {
               if (messages.length < 2) {
                 classification.isFollowUp = false // First message or not enough history to be a follow-up
               } else if (classification.isFollowUp) {
+                ragSpan.setAttribute("isFollowUp", classification.isFollowUp)
                 // If it's marked as a follow-up, try to reuse the last user message's classification
                 const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
 
