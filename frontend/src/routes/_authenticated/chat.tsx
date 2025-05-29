@@ -14,6 +14,7 @@ import {
   ChatSSEvents,
   SelectPublicMessage,
   Citation,
+  MessageFeedback,
   // Apps,
   // DriveEntity,
 } from "shared/types"
@@ -256,7 +257,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   ) // State for all citations
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
-  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'like' | 'dislike' | null>>({});
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, MessageFeedback | null>>({});
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
@@ -405,10 +406,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     // Populate feedbackMap from loaded messages
     if (data?.messages) {
-      const initialFeedbackMap: Record<string, 'like' | 'dislike' | null> = {};
+      const initialFeedbackMap: Record<string, MessageFeedback | null> = {};
       data.messages.forEach((msg: SelectPublicMessage) => {
         if (msg.externalId && msg.feedback !== undefined) { // msg.feedback can be null
-          initialFeedbackMap[msg.externalId] = msg.feedback;
+          initialFeedbackMap[msg.externalId] = msg.feedback as MessageFeedback | null;
         }
       });
       setFeedbackMap(initialFeedbackMap);
@@ -718,7 +719,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setQuery("")
   }
 
-  const handleFeedback = async (messageId: string, feedback: 'like' | 'dislike') => {
+  const handleFeedback = async (messageId: string, feedback: MessageFeedback) => {
     if (!messageId) return;
 
     setFeedbackMap(prev => {
@@ -1587,8 +1588,8 @@ export const ChatMessage = ({
   isStreaming?: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
-  feedbackStatus?: 'like' | 'dislike' | null;
-  onFeedback?: (messageId: string, feedback: 'like' | 'dislike') => void;
+  feedbackStatus?: MessageFeedback | null;
+  onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1758,17 +1759,17 @@ export const ChatMessage = ({
                   <>
                     <ThumbsUp
                       size={16}
-                      stroke={feedbackStatus === 'like' ? "#10B981" : "#B2C3D4"}
+                      stroke={feedbackStatus === MessageFeedback.Like ? "#10B981" : "#B2C3D4"}
                       fill="none"
                       className="ml-[18px] cursor-pointer"
-                      onClick={() => onFeedback(messageId, 'like')}
+                      onClick={() => onFeedback(messageId, MessageFeedback.Like)}
                     />
                     <ThumbsDown
                       size={16}
-                      stroke={feedbackStatus === 'dislike' ? "#EF4444" : "#B2C3D4"}
+                      stroke={feedbackStatus === MessageFeedback.Dislike ? "#EF4444" : "#B2C3D4"}
                       fill="none"
                       className="ml-[10px] cursor-pointer"
-                      onClick={() => onFeedback(messageId, 'dislike')}
+                      onClick={() => onFeedback(messageId, MessageFeedback.Dislike)}
                     />
                   </>
                 )}

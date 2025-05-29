@@ -311,3 +311,8 @@ export enum UserRole {
   Admin = "Admin", // Service account related changes
   SuperAdmin = "SuperAdmin", // Admin level changes
 }
+
+export enum MessageFeedback {
+  Like = "like",
+  Dislike = "dislike",
+}

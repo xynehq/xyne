@@ -21,6 +21,7 @@ import {
   ConnectorStatus,
   SyncJobStatus,
   UserRole,
+  MessageFeedback,
 } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -342,10 +343,10 @@ export const messageRoleEnum = pgEnum(
   Object.values(MessageRole) as [string, ...string[]],
 )
 
-export const messageFeedbackEnum = pgEnum("message_feedback", [
-  "like",
-  "dislike",
-])
+export const messageFeedbackEnum = pgEnum(
+  "message_feedback",
+  Object.values(MessageFeedback) as [string, ...string[]],
+)
 
 export const messages = pgTable(
   "messages",
