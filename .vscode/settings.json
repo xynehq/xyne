@@ -6,5 +6,8 @@
   "biome.lspBin": "./server/node_modules/@biomejs/biome/bin/biome",
   "[xml]": {
     "editor.defaultFormatter": "redhat.vscode-xml"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
   }
 }

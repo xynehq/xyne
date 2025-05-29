@@ -1,1 +1,0 @@
-ALTER TYPE "status" ADD VALUE 'paused';

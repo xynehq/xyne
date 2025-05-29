@@ -47,6 +47,8 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
+import { updateChatBookmarkInCache } from "@/lib/chatCacheUtils"
+
 
 export const THINKING_PLACEHOLDER = "Thinking";
 
@@ -368,6 +370,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const currentChat = historyItems?.pages
     ?.flat()
     .find((item) => item.externalId === chatId)
+
+  // Added this effect to sync bookmark state with cache changes
+  useEffect(() => {
+  if (currentChat && typeof currentChat.isBookmarked === "boolean") {
+    setBookmark(currentChat.isBookmarked)
+  }
+}, [currentChat?.isBookmarked])
 
   useEffect(() => {
     if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
@@ -1057,17 +1066,49 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }
 
-  const handleBookmark = async () => {
-    if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
-      })
-      setBookmark(!bookmark)
-    }
+  const bookmarkMutation = useMutation<
+  { chatId: string; bookmark: boolean },
+  Error,
+  { chatId: string; bookmark: boolean }
+>({
+  mutationFn: ({ chatId, bookmark }) =>
+    api.chat.bookmark.$post({ json: { chatId, bookmark } }).then(() => ({ chatId, bookmark })),
+  onSuccess: ({ chatId, bookmark }) => {
+    setBookmark(bookmark)
+    // Update the cache so sidebar/history modal updates instantly
+    queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+         ["all-chats"],
+      (oldData) => updateChatBookmarkInCache(oldData, chatId, bookmark)
+    )
+  },
+  onError: (error) => {
+       toast({
+      title: "Failed to update bookmark",
+      description: "Could not update bookmark. Please try again.",
+      variant: "destructive",
+      duration: 2000,
+    })
+  },
+})
+
+// Replace handleBookmark with
+const handleBookmark = () => {
+  if (chatId) {
+    bookmarkMutation.mutate({ chatId, bookmark: !bookmark })
   }
+}
+
+  // const handleBookmark = async () => {
+  //   if (chatId) {
+  //     await api.chat.bookmark.$post({
+  //       json: {
+  //         chatId: chatId,
+  //         bookmark: !bookmark,
+  //       },
+  //     })
+  //     setBookmark(!bookmark)
+  //   }
+  // }
 
   const isScrolledToBottom = () => {
     const container = messagesContainerRef.current
