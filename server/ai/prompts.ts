@@ -791,20 +791,41 @@ export const searchQueryPrompt = (
 
     Now handle the query as follows:
 
-    **Follow-Up Detection: HIGHEST PRIORITY**
-    A query is a follow-up if:
-    a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
-    b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
+    0. **Follow-Up Detection:** HIGHEST PRIORITY
+       **Evaluation Scope:**
+       For follow-up detection, evaluate the current query against the ENTIRE conversation history provided in the userContext, not just the immediately preceding message.
 
-    A query is not a follow-up if:
-    a) It contains the different user persona in the query.
-    b) It is a simple question that does not require any prior context to understand.
-    c) It is an independent question that does not refer to any previous conversation or context.
+       Set "isFollowUp" to true if and only if the current query contains clear, direct, and unambiguous linguistic evidence that it depends on ANY part of the conversation history, such that it cannot be fully understood or answered without the specific context provided by previous messages or assistant outputs. This requires one of the following:
 
-    - If follow-up according to either (a) or (b), set 'isFollowUp' to 'true'
-    - If not a follow-up, set 'isFollowUp' to 'false'
+       - **Pronoun/Reference Dependencies:** Direct references using pronouns ("it", "that", "this", "they", "them") or demonstrative phrases ("the one", "those results", "that document") that refer to specific entities, results, or content explicitly mentioned in ANY previous assistant output in the conversation history.
 
-    **Simple Test**: Would a human need to read the previous conversation to understand what this query is asking for? If YES = follow-up. If NO = not a follow-up.
+       - **Explicit Continuation Language:** Clear continuation phrases that unmistakably indicate a follow-up by directly referencing content from ANY previous assistant output, such as:
+         - "tell me more about..."
+         - "can you elaborate on..."
+         - "what about the other..."
+         - "show me details for..."
+         - "expand on that..."
+
+       - **Direct Content References:** Questions or requests that directly and explicitly reference specific content, entities, or results from ANY previous assistant output in the conversation history, such as asking for details about a specific item, document, person, or result that was mentioned in a previous response.
+
+       - **Contextual Dependencies:** Queries that use context-dependent language that only makes sense in relation to previous conversation content, such as:
+         - "the second one"
+         - "from those results"
+         - "that person you mentioned"
+         - "the document we discussed"
+
+       Set "isFollowUp" to false if any of the following apply:
+       - The current query is fully self-contained and can be understood and answered independently, without requiring ANY context from the conversation history.
+       - The current query lacks clear, direct, and unambiguous language that ties it to specific content explicitly stated in ANY previous assistant output in the conversation history.
+       - The current query introduces a completely new scope, context, or topic that has never been mentioned in ANY previous assistant output, even if it shares broad categories or entities with previous queries.
+       - The current query would be interpreted by a human as a new, independent request based on the absence of explicit dependency language referencing previous conversation content.
+       - The current query is similar to a previous one but changes core parameters (like time range, person names, specific topics) - treat these as new independent queries unless there's explicit reference language.
+
+       **Strict Rules to Prevent False Positives:**
+       - Do not assume any connection between queries based solely on shared topics, shared entities, or structural similarity without explicit referential language.
+       - Dependency must be explicitly and directly stated in the query language through pronouns, demonstratives, or continuation phrases that reference specific content from previous assistant outputs.
+       - If the current query can stand alone and be understood by someone without access to the conversation history, it is NOT a follow-up.
+       - Repetitive queries on similar topics are NOT follow-ups unless they contain explicit referential language.
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR

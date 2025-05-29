@@ -2096,29 +2096,23 @@ const isMessageWithContext = (message: string) => {
 function formatMessagesForLLM(
   msgs: SelectMessage[],
 ): { role: ConversationRole; content: { text: string }[] }[] {
-  return msgs
-    .slice(0, msgs.length - 1)
-    .filter((msg) => !msg?.errorMessage)
-    .filter(
-      (msg) => !(msg.messageRole === MessageRole.Assistant && !msg.message),
-    ) // filter out assistant messages with no content
-    .map((msg) => {
-      // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
-      // then we should not give that exact stringified message as history
-      // We convert it into a AI friendly string only for giving it to LLM
-      const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []))
-      if (msg.messageRole === "user" && fileIds && fileIds.length > 0) {
-        const originalMsg = msg.message
-        const selectedContext = isContextSelected(originalMsg)
-        msg.message = selectedContext
-          ? buildUserQuery(selectedContext)
-          : originalMsg
-      }
-      return {
-        role: msg.messageRole as ConversationRole,
-        content: [{ text: msg.message }],
-      }
-    })
+  return msgs.map((msg) => {
+    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
+    // then we should not give that exact stringified message as history
+    // We convert it into a AI friendly string only for giving it to LLM
+    const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []))
+    if (msg.messageRole === "user" && fileIds && fileIds.length > 0) {
+      const originalMsg = msg.message
+      const selectedContext = isContextSelected(originalMsg)
+      msg.message = selectedContext
+        ? buildUserQuery(selectedContext)
+        : originalMsg
+    }
+    return {
+      role: msg.messageRole as ConversationRole,
+      content: [{ text: msg.message }],
+    }
+  })
 }
 
 function buildTopicConversationThread(
@@ -2493,17 +2487,23 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const messagesWithNoErrResponse = formatMessagesForLLM(messages)
+            const filteredMessages = messages
+              .slice(0, messages.length - 1)
+              .filter((msg) => !msg?.errorMessage)
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              )
 
             Logger.info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
 
             const topicConversationThread = buildTopicConversationThread(
-              messages,
-              messages.length - 1,
+              filteredMessages,
+              filteredMessages.length - 1,
             )
-            const convertToMessages: Message[] = formatMessagesForLLM(
+            const llmFormattedMessages: Message[] = formatMessagesForLLM(
               topicConversationThread,
             )
 
@@ -2516,7 +2516,7 @@ export const MessageApi = async (c: Context) => {
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: convertToMessages,
+                messages: llmFormattedMessages,
               })
 
             // TODO: for now if the answer is from the conversation itself we don't
@@ -2708,7 +2708,7 @@ export const MessageApi = async (c: Context) => {
                 ctx,
                 message,
                 classification,
-                messagesWithNoErrResponse,
+                llmFormattedMessages,
                 0.5,
                 understandSpan,
                 userRequestsReasoning,
@@ -3402,69 +3402,37 @@ export const MessageRetryApi = async (c: Context) => {
               traceJson,
             )
           } else {
-            const convWithNoErrMsg = isUserMessage
-              ? conversation
-                  .filter((con) => !con?.errorMessage)
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  ) // filter out assistant messages with no content
-                  .map((m) => {
-                    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
-                    // then we should not give that exact stringified message as history
-                    // We convert it into a AI friendly string only for giving it to LLM
-                    const fileIds = JSON.parse(JSON.stringify(m?.fileIds || []))
-                    if (
-                      m.messageRole === "user" &&
-                      fileIds &&
-                      fileIds.length > 0
-                    ) {
-                      const originalMsg = m.message
-                      const selectedContext = isContextSelected(originalMsg)
-                      m.message = selectedContext
-                        ? buildUserQuery(selectedContext)
-                        : originalMsg
-                    }
-                    return {
-                      role: m.messageRole as ConversationRole,
-                      content: [{ text: m.message }],
-                    }
-                  })
-              : conversation
-                  .slice(0, conversation.length - 1)
-                  .filter((con) => !con?.errorMessage)
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  )
-                  .map((m) => {
-                    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
-                    // then we should not give that exact stringified message as history
-                    // We convert it into a AI friendly string only for giving it to LLM
-                    const fileIds = JSON.parse(JSON.stringify(m?.fileIds || []))
-                    if (
-                      m.messageRole === "user" &&
-                      fileIds &&
-                      fileIds.length > 0
-                    ) {
-                      const originalMsg = m.message
-                      const selectedContext = isContextSelected(originalMsg)
-                      m.message = selectedContext
-                        ? buildUserQuery(selectedContext)
-                        : originalMsg
-                    }
-                    return {
-                      role: m.messageRole as ConversationRole,
-                      content: [{ text: m.message }],
-                    }
-                  })
+            const topicConversationThread = buildTopicConversationThread(
+              conversation,
+              conversation.length - 1,
+            )
 
+            const convWithNoErrMsg = isUserMessage
+              ? formatMessagesForLLM(
+                  topicConversationThread
+                    .filter((con) => !con?.errorMessage)
+                    .filter(
+                      (msg) =>
+                        !(
+                          (
+                            msg.messageRole === MessageRole.Assistant &&
+                            !msg.message
+                          ) // filter out assistant messages with no content
+                        ),
+                    ),
+                )
+              : formatMessagesForLLM(
+                  topicConversationThread
+                    .slice(0, topicConversationThread.length - 1)
+                    .filter((con) => !con?.errorMessage)
+                    .filter(
+                      (msg) =>
+                        !(
+                          msg.messageRole === MessageRole.Assistant &&
+                          !msg.message
+                        ),
+                    ),
+                )
             Logger.info(
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
@@ -3478,7 +3446,7 @@ export const MessageRetryApi = async (c: Context) => {
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: convWithNoErrMsg,
+                messages: formatMessagesForLLM(topicConversationThread),
               })
             let currentAnswer = ""
             let answer = ""
@@ -3491,8 +3459,10 @@ export const MessageRetryApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
+              multipleAppAndEntity: false,
             }
             let parsed = {
+              isFollowUp: false,
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
@@ -3589,7 +3559,7 @@ export const MessageRetryApi = async (c: Context) => {
             searchSpan.setAttribute("answer", answer)
             searchSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             searchSpan.end()
-
+            let classification
             if (parsed.answer === null) {
               const ragSpan = streamSpan.startSpan("rag_processing")
               if (parsed.queryRewrite) {
@@ -3603,16 +3573,53 @@ export const MessageRetryApi = async (c: Context) => {
                   "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const classification: TemporalClassifier & QueryRouterResponse = {
+              const {
+                app,
+                count,
+                endTime,
+                entity,
+                sortDirection,
+                startTime,
+                multipleAppAndEntity,
+              } = parsed?.filters
+              classification = {
                 direction: parsed.temporalDirection,
-                type: parsed.type as QueryType,
+                type: parsed.type,
                 filterQuery: parsed.filterQuery,
+                isFollowUp: parsed.isFollowUp,
                 filters: {
-                  ...parsed.filters,
-                  app: parsed.filters.app as Apps,
-                  entity: parsed.filters.entity as any,
+                  app: app as Apps,
+                  entity: entity as any,
+                  multipleAppAndEntity,
+                  endTime,
+                  sortDirection,
+                  startTime,
+                  count,
                 },
+              } as TemporalClassifier & QueryRouterResponse
+
+              Logger.info(
+                `Classifying the query as:, ${JSON.stringify(classification)}`,
+              )
+
+              if (classification.isFollowUp) {
+                if (conversation.length >= 3) {
+                  const lastUserMessage = conversation[conversation.length - 3]
+                  if (lastUserMessage?.queryRouterClassification) {
+                    Logger.info(
+                      `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                    )
+
+                    classification =
+                      lastUserMessage.queryRouterClassification as any
+                  } else {
+                    Logger.info(
+                      "Follow-up query detected, but no classification found in previous message.",
+                    )
+                  }
+                }
               }
+
               const understandSpan = ragSpan.startSpan("understand_message")
               const iterator = UnderstandMessageAndAnswer(
                 email,
