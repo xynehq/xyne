@@ -737,9 +737,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       toast({ title: "Success", description: "Feedback submitted." });
     } catch (error) {
       console.error("Failed to submit feedback", error);
-      // Revert UI update if API call fails
       setFeedbackMap(prev => {
-        const originalFeedback = prev[messageId] === feedback ? null : prev[messageId]; // This logic might need adjustment if the initial state was different
+        // Get the current state after optimistic update
+        const currentState = prev[messageId];
+        const originalFeedback = currentState === null ? feedback : (currentState === feedback ? feedbackMap[messageId] : null);
         return { ...prev, [messageId]: originalFeedback };
       });
       toast({

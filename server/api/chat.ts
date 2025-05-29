@@ -3888,7 +3888,6 @@ export const MessageFeedbackApi = async (c: Context) => {
     //@ts-ignore - Assuming validation middleware handles this
     const { messageId, feedback } = await c.req.valid("json")
 
-    // Optional: Validate if the message exists and belongs to the user/workspace
     const message = await getMessageByExternalId(db, messageId)
     if (!message) {
       throw new HTTPException(404, { message: "Message not found" })
