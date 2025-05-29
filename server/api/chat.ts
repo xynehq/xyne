@@ -2318,7 +2318,7 @@ export const MessageApi = async (c: Context) => {
                 ) {
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
-                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} valid link/s as it exceeds max limit of ${maxValidLinks}. `,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} links as it exceeds max limit of ${maxValidLinks}. `,
                   })
                 }
                 if (reasoning && chunk.reasoning) {
