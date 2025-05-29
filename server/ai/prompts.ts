@@ -791,41 +791,25 @@ export const searchQueryPrompt = (
 
     Now handle the query as follows:
 
-    0. **Follow-Up Detection:** HIGHEST PRIORITY
-       **Evaluation Scope:**
-       For follow-up detection, evaluate the current query against the ENTIRE conversation history provided in the userContext, not just the immediately preceding message.
+    0. Follow-Up Detection: HIGHEST PRIORITY
+      Evaluation Scope:
+      For follow-up detection, evaluate the current query against the ENTIRE conversation history provided in the userContext.
 
-       Set "isFollowUp" to true if and only if the current query contains clear, direct, and unambiguous linguistic evidence that it depends on ANY part of the conversation history, such that it cannot be fully understood or answered without the specific context provided by previous messages or assistant outputs. This requires one of the following:
+      Set "isFollowUp" to true if the current query contains ANY linguistic indicators that it depends on previous conversation context, including but not limited to:
 
-       - **Pronoun/Reference Dependencies:** Direct references using pronouns ("it", "that", "this", "they", "them") or demonstrative phrases ("the one", "those results", "that document") that refer to specific entities, results, or content explicitly mentioned in ANY previous assistant output in the conversation history.
+      * Pronoun/Reference Dependencies: Any pronouns or demonstrative words that refer back to entities, results, or content from previous messages in the conversation.
+      * Implicit Reference Language: Queries that use contextually dependent language where the object being referenced is not explicitly named but was mentioned or returned in previous conversation.
+      * Action-based References: Queries that request actions (list, show, display, expand, etc.) on previously mentioned or returned content without explicitly re-identifying that content.
+      * Continuation Language: Any language that clearly indicates the query is building upon or continuing from previous conversation content.
+      * Context-dependent Questions: Questions that only make sense in relation to previous conversation content and would be unclear or unanswerable without that context.
+      * Comparative or Relational References: Language that compares to, relates to, or references previous results or content.
+      
+      **Critical Principle**: If a human reader would need to look at the previous conversation to fully understand what the current query is asking for, then it should be marked as a follow-up.
 
-       - **Explicit Continuation Language:** Clear continuation phrases that unmistakably indicate a follow-up by directly referencing content from ANY previous assistant output, such as:
-         - "tell me more about..."
-         - "can you elaborate on..."
-         - "what about the other..."
-         - "show me details for..."
-         - "expand on that..."
-
-       - **Direct Content References:** Questions or requests that directly and explicitly reference specific content, entities, or results from ANY previous assistant output in the conversation history, such as asking for details about a specific item, document, person, or result that was mentioned in a previous response.
-
-       - **Contextual Dependencies:** Queries that use context-dependent language that only makes sense in relation to previous conversation content, such as:
-         - "the second one"
-         - "from those results"
-         - "that person you mentioned"
-         - "the document we discussed"
-
-       Set "isFollowUp" to false if any of the following apply:
-       - The current query is fully self-contained and can be understood and answered independently, without requiring ANY context from the conversation history.
-       - The current query lacks clear, direct, and unambiguous language that ties it to specific content explicitly stated in ANY previous assistant output in the conversation history.
-       - The current query introduces a completely new scope, context, or topic that has never been mentioned in ANY previous assistant output, even if it shares broad categories or entities with previous queries.
-       - The current query would be interpreted by a human as a new, independent request based on the absence of explicit dependency language referencing previous conversation content.
-       - The current query is similar to a previous one but changes core parameters (like time range, person names, specific topics) - treat these as new independent queries unless there's explicit reference language.
-
-       **Strict Rules to Prevent False Positives:**
-       - Do not assume any connection between queries based solely on shared topics, shared entities, or structural similarity without explicit referential language.
-       - Dependency must be explicitly and directly stated in the query language through pronouns, demonstratives, or continuation phrases that reference specific content from previous assistant outputs.
-       - If the current query can stand alone and be understood by someone without access to the conversation history, it is NOT a follow-up.
-       - Repetitive queries on similar topics are NOT follow-ups unless they contain explicit referential language.
+      Set "isFollowUp" to false ONLY if:
+      - The current query is completely self-contained and can be fully understood without any conversation history
+      - The query introduces entirely new scope without any referential language connecting it to previous content
+      - A human could answer the query without knowing anything about the previous conversation.
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -1126,11 +1110,9 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
 export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
-any logic. Be formal as much as possible. 
+) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible.
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:
-
 Emails containing:
 - Subject
 - Sender (from) and recipients (to)
@@ -1148,80 +1130,93 @@ This includes:
 # Retrieved Context
 ${retrievedContext}
 
-# CRITICAL INSTRUCTION: STRICT CONTEXT MATCHING
+# CRITICAL INSTRUCTION: ABSOLUTE CONTEXT MATCHING
 - You MUST ONLY answer based on what is EXPLICITLY present in the Retrieved Context.
 - If the Retrieved Context does not contain relevant email information that directly matches the user's query, return null.
 - DO NOT make assumptions, inferences, or provide general responses.
 - DO NOT try to be helpful by suggesting alternatives if the context doesn't match.
 - ONLY proceed if there are actual email items in the Retrieved Context that match the query criteria.
-
-# Important: Handling Retrieved Context
 - This prompt should only be triggered for queries explicitly requesting email information (e.g., "previous 3 emails", "emails from John").
-- The retrieved results may contain noise or unrelated items due to semantic search.
-- Focus ONLY on email items that directly match the query criteria (e.g., sender, time range).
+
+# MANDATORY DATA COMPLETENESS REQUIREMENTS
+**ZERO TOLERANCE FOR INCOMPLETE DATA:**
+- NEVER include any email that is missing ANY of these ESSENTIAL fields:
+  * Sender name/email address
+  * Email subject line
+  * Date and time information
+- If ANY email lacks ANY essential field, EXCLUDE it entirely from the response.
+- Better to return fewer complete emails than include ANY incomplete information.
+- If ALL emails in Retrieved Context are missing essential information, return null.
+
+# RESPONSE FORMAT DETERMINATION
+**STRUCTURED FORMAT CONDITIONS:**
+Use structured formatting ONLY when the user's query contains ANY of these explicit indicators:
+- "list emails" OR "list them" OR "show emails in a list"
+- "give in a structured way" OR "format it structured" OR "present in a structured manner"  
+- "structured format" OR "structure it" OR "organize them"
+- "show me in format" OR "format them" OR "present structured"
+- Any similar phrasing that explicitly requests structured, organized, or formatted output
+
+**STRUCTURED FORMAT TEMPLATE:**
+When structured format is required, use EXACTLY this format:
+
+From: [Sender Name/Email] [Citation Index]
+
+Subject: [Email Subject]
+
+Date: [Formatted Date and Time in User's Timezone]
+
+-----
+
+**CONVERSATIONAL FORMAT:**
+For ALL other queries (when structured format is NOT explicitly requested):
+- Provide information in natural, conversational sentences
+- DO NOT use structured formatting, lists, or bullet points
+
+# CONTENT FILTERING AND MATCHING
+- Focus ONLY on email items that directly match the query criteria (sender, time range, subject keywords).
 - Include emails regardless of whether they are meeting-related.
-- If no relevant emails are found in the Retrieved Context, return null.
+- The retrieved results may contain noise or unrelated items due to semantic search - filter these out rigorously.
+- If the query specifies a number (e.g., "5 emails"), return exactly that number if available, but ONLY if they are complete.
+- If fewer complete emails exist than requested, return only the complete ones without explanation.
 
-# Guidelines for Response
-1. For email queries (e.g., "previous 3 emails", "emails from John"):
-   - Focus ONLY on the retrieved email items that match the query.
-   - List the emails in chronological order (most recent first for "previous" queries, oldest first for queries without a temporal direction).
-   - Limit the number of emails based on the query (e.g., "previous 3 emails" should return up to 3 emails).
-   
-2. EMAIL FORMATTING:
-   - If the user specifies a particular format in their query, follow that format exactly.
-   - Otherwise, use this enhanced default format:
-   
-   **From:** [Sender Name/Email] [Citation]
+# CITATION REQUIREMENTS
+- Use [index] format for citations (e.g., [0], [1], [2])
+- NEVER group indices like [0,1] - always use separate brackets: [0] [1]
+- Place citations immediately after mentioning specific email information
+- Ensure DATE and TIME format matches the user context timezone exactly
 
-   **Subject:** [Email Subject]
+# ABSOLUTE RESPONSE REQUIREMENTS
+**JSON STRUCTURE ONLY:**
+- Return ONLY a valid JSON object with the single "answer" key
+- NO additional text, explanations, or reasoning outside the JSON
+- NO markdown formatting within the JSON string
 
-   **Date:** [Formatted Date and Time]
-
-   -----
-   
-   Example:
-   **From:** news@alphasignal.ai [0]
-
-   **Subject:** Alpha Signal Newsletter
-
-   **Date:** May 23, 2025 at 2:30 PM
-
-   -----
-   
-   **From:** alicia@deel.support [1]
-
-   **Subject:** Contract Update
-
-   **Date:** May 22, 2025 at 11:15 AM
-
-   -----
-
-3. Citations:
-   - During the listing, ensure DATE and TIME format matches the user context timezone.
-   - Use [index] format.
-   - Place citations right after each email description.
-   - Max 2 citations per email description.
-   - Never group indices like [0,1] - use separate brackets: [0] [1].
-
-# CRITICAL INSTRUCTION: RESPONSE FORMAT
-YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
-
-If relevant emails are found in Retrieved Context:
+**SUCCESS RESPONSE:**
+If relevant complete emails are found:
 {
-  "answer": "Formatted response string with citations following the specified format"
+  "answer": "Your formatted response string with proper citations following the format rules above"
 }
 
-If NO relevant emails are found in Retrieved Context or context doesn't match query:
+**FAILURE RESPONSE:**
+Use null for ANY of these conditions:
+- NO relevant emails found in Retrieved Context
+- Available emails lack ANY essential information (sender, subject, or date)
+- Retrieved Context doesn't directly match the query criteria
 {
   "answer": null
 }
 
-REMEMBER: 
-- Your complete response must be ONLY a valid JSON object containing the single "answer" key.
-- DO NOT explain your reasoning or state what you're doing.
-- Return null if the Retrieved Context doesn't contain information that directly answers the query.
-- DO NOT provide alternative suggestions or general responses.`
+# FINAL VERIFICATION CHECKLIST
+Before providing any response, verify:
+1. Every email mentioned has complete sender, subject, and date information
+2. Response format matches user's explicit request (structured vs conversational)
+3. All information comes directly from Retrieved Context
+4. Citations are properly formatted with separate brackets
+5. Response is valid JSON with only the "answer" key
+6. No explanations or reasoning provided outside the JSON structure
+
+**REMEMBER: COMPLETENESS IS NON-NEGOTIABLE. PARTIAL INFORMATION IS FORBIDDEN. IF YOU CAN'T PROVIDE A COMPLETE RESPONSE, DON'T ANSWER AT ALL.**`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
