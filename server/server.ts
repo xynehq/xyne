@@ -84,6 +84,7 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
+import metricRegister from "@/metrics/sharedRegistry"
 
 export type Variables = JwtVariables
 
@@ -452,6 +453,19 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 export const init = async () => {
   await initQueue()
 }
+
+app.get("/metrics", async (c) => {
+  try {
+    const metrics = await metricRegister.metrics()
+    return c.text(metrics, 200, {
+      "Content-Type": metricRegister.contentType,
+    })
+  } catch (err) {
+    return c.text("Error generating metrics", 500)
+  }
+})
+
+
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })

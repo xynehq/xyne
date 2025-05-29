@@ -25,21 +25,20 @@ enum Tabs {
   Ask = "ask",
 }
 
-// Define a local Reference type matching the expected structure from ChatBox
-interface LocalReference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
-}
-
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
+  const [isReasoningActive, setIsReasoningActive] = useState(() => {
+    const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
+    return storedValue ? JSON.parse(storedValue) : false
+  })
+
+  useEffect(() => {
+    localStorage.setItem(
+      "isReasoningGlobalState",
+      JSON.stringify(isReasoningActive),
+    )
+  }, [isReasoningActive])
 
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
@@ -119,20 +118,17 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (
-    messageToSend: string,
-    references?: LocalReference[], // Use LocalReference here
-    selectedSources?: string[], // Add selectedSources parameter (make it optional or provide a default)
-  ) => {
+  const handleAsk = (messageToSend: string, selectedSources?: string[]) => {
     if (messageToSend.trim()) {
-      // Use messageToSend here instead of query
-      const searchParams: { q: string; refs?: string; sources?: string } = {
+      const searchParams: {
+        q: string
+        reasoning?: boolean
+        sources?: string
+      } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
-
-      if (references && references.length > 0) {
-        // Pass only reference IDs, stringified as JSON
-        searchParams.refs = JSON.stringify(references.map((ref) => ref.id))
+      if (isReasoningActive) {
+        searchParams.reasoning = true
       }
 
       if (selectedSources && selectedSources.length > 0) {
@@ -143,7 +139,6 @@ const Index = () => {
         to: "/chat",
         search: searchParams,
       })
-      // Log them to confirm they are received
     }
   }
 
@@ -236,6 +231,8 @@ const Index = () => {
                   setQuery={setQuery}
                   handleSend={handleAsk}
                   allCitations={new Map()} // Change this line
+                  isReasoningActive={isReasoningActive}
+                  setIsReasoningActive={setIsReasoningActive}
                 />
               </div>
             )}

@@ -1,5 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react" // Ensure React is imported
-import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"; // Ensure React is imported
+import { renderToStaticMarkup } from "react-dom/server"; // For rendering ReactNode to HTML string
 import {
   ArrowRight,
   Globe,
@@ -11,9 +17,10 @@ import {
   Link,
   Search,
   RotateCcw,
-} from "lucide-react"
-import Attach from "@/assets/attach.svg?react"
-import { Citation, Apps } from "shared/types"
+  Atom,
+} from "lucide-react";
+import Attach from "@/assets/attach.svg?react";
+import { Citation, Apps } from "shared/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,67 +28,59 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { getIcon } from "@/lib/common"
-import { DriveEntity } from "shared/types"
-import { api } from "@/api"
-import { Input } from "@/components/ui/input"
+} from "@/components/ui/tooltip";
+import { getIcon } from "@/lib/common";
+import { DriveEntity } from "shared/types";
+import { api } from "@/api";
+import { Input } from "@/components/ui/input";
+import { Pill } from "./Pill";
+import { Reference } from "@/types";
 
 interface SourceItem {
-  id: string
-  name: string
-  app: Apps | string
-  entity: string
-  icon: React.ReactNode
+  id: string;
+  name: string;
+  app: Apps | string;
+  entity: string;
+  icon: React.ReactNode;
 }
 
 interface SearchResult {
-  docId: string
-  threadId: string
-  app: string
-  entity: string
-  subject?: string
-  name?: string
-  title?: string
-  from?: string
-  timestamp?: number
-  updatedAt?: number
-  relevance: number
-  url?: string
-  type?: string
-  email?: string
-  photoLink?: string
-}
-
-interface Reference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
+  docId: string;
+  threadId: string;
+  app: string;
+  entity: string;
+  subject?: string;
+  name?: string;
+  title?: string;
+  filename?: string;
+  from?: string;
+  timestamp?: number;
+  updatedAt?: number;
+  relevance: number;
+  url?: string;
+  type?: string;
+  email?: string;
+  photoLink?: string;
 }
 
 interface ChatBoxProps {
-  query: string
-  setQuery: (query: string) => void
-  handleSend: (
-    messageToSend: string,
-    references: Reference[],
-    selectedSources?: string[],
-  ) => void
-  isStreaming?: boolean
-  handleStop?: () => void
-  chatId?: string | null
-  allCitations: Map<string, Citation>
+  query: string;
+  setQuery: (query: string) => void;
+  handleSend: (messageToSend: string, selectedSources?: string[]) => void;
+  isStreaming?: boolean;
+  handleStop?: () => void;
+  chatId?: string | null;
+  allCitations: Map<string, Citation>;
+  isReasoningActive: boolean;
+  setIsReasoningActive: (
+    value: boolean | ((prevState: boolean) => boolean),
+  ) => void;
 }
 
 const availableSources: SourceItem[] = [
@@ -138,61 +137,56 @@ const availableSources: SourceItem[] = [
     entity: "pdf_default",
     icon: getIcon("pdf", "pdf_default", { w: 16, h: 16, mr: 8 }),
   },
-]
-
-const getPillDisplayTitle = (title: string): string => {
-  const truncatedTitle = title.length > 25 ? title.substring(0, 15) : title
-  return truncatedTitle
-}
+];
 
 const getCaretCharacterOffsetWithin = (element: Node) => {
-  let caretOffset = 0
-  const doc = element.ownerDocument || (element as any).document
+  let caretOffset = 0;
+  const doc = element.ownerDocument || (element as any).document;
   if (doc.getSelection) {
-    const selection = doc.getSelection()
+    const selection = doc.getSelection();
     if (selection && selection.rangeCount) {
-      const range = selection.getRangeAt(0)
-      const preCaretRange = range.cloneRange()
-      preCaretRange.selectNodeContents(element)
-      preCaretRange.setEnd(range.endContainer, range.endOffset)
-      caretOffset = preCaretRange.toString().length
+      const range = selection.getRangeAt(0);
+      const preCaretRange = range.cloneRange();
+      preCaretRange.selectNodeContents(element);
+      preCaretRange.setEnd(range.endContainer, range.endOffset);
+      caretOffset = preCaretRange.toString().length;
     }
   }
-  return caretOffset
-}
+  return caretOffset;
+};
 
 const setCaretPosition = (element: Node, position: number) => {
-  const range = document.createRange()
-  const sel = window.getSelection()!
-  let currentPosition = 0
-  let targetNode: Node | null = null
-  let targetOffset = 0
+  const range = document.createRange();
+  const sel = window.getSelection()!;
+  let currentPosition = 0;
+  let targetNode: Node | null = null;
+  let targetOffset = 0;
 
   const traverseNodes = (node: Node) => {
-    if (currentPosition >= position) return
+    if (currentPosition >= position) return;
     if (node.nodeType === Node.TEXT_NODE) {
-      const textLength = node.textContent?.length || 0
+      const textLength = node.textContent?.length || 0;
       if (currentPosition + textLength >= position) {
-        targetNode = node
-        targetOffset = position - currentPosition
+        targetNode = node;
+        targetOffset = position - currentPosition;
       }
-      currentPosition += textLength
+      currentPosition += textLength;
     } else {
       for (const child of node.childNodes) {
-        traverseNodes(child)
-        if (targetNode) break
+        traverseNodes(child);
+        if (targetNode) break;
       }
     }
-  }
+  };
 
-  traverseNodes(element)
+  traverseNodes(element);
   if (targetNode) {
-    range.setStart(targetNode, targetOffset)
-    range.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(range)
+    range.setStart(targetNode, targetOffset);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
-}
+};
 
 export const ChatBox = ({
   query,
@@ -202,99 +196,178 @@ export const ChatBox = ({
   allCitations,
   handleStop,
   chatId,
+  isReasoningActive, // Use prop
+  setIsReasoningActive, // Use prop
 }: ChatBoxProps) => {
-  const inputRef = useRef<HTMLDivElement | null>(null)
-  const referenceBoxRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLDivElement | null>(null);
+  const referenceBoxRef = useRef<HTMLDivElement | null>(null);
   const referenceItemsRef = useRef<
     (HTMLDivElement | HTMLButtonElement | null)[]
-  >([])
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
-  const referenceSearchInputRef = useRef<HTMLInputElement | null>(null)
-  const debounceTimeout = useRef<NodeJS.Timeout | null>(null)
-  const scrollPositionRef = useRef<number>(0)
+  >([]);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const referenceSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+  const scrollPositionRef = useRef<number>(0);
 
-  const [showReferenceBox, setShowReferenceBox] = useState(false)
+  const [showReferenceBox, setShowReferenceBox] = useState(false);
   const [searchMode, setSearchMode] = useState<"citations" | "global">(
     "citations",
-  )
-  const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
-  const [selectedRefIndex, setSelectedRefIndex] = useState(-1)
-  const [references, setReferences] = useState<Reference[]>([])
+  );
+  const [globalResults, setGlobalResults] = useState<SearchResult[]>([]);
+  const [selectedRefIndex, setSelectedRefIndex] = useState(-1);
   const [selectedSources, setSelectedSources] = useState<
     Record<string, boolean>
-  >({})
-  const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false)
-  const [isGlobalLoading, setIsGlobalLoading] = useState(false)
-  const [globalError, setGlobalError] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
-  const [activeAtMentionIndex, setActiveAtMentionIndex] = useState(-1)
-  const [referenceSearchTerm, setReferenceSearchTerm] = useState("")
-  const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
-  const [showSourcesButton, _] = useState(false) // Added this line
+  >({});
+  const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false);
+  const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [activeAtMentionIndex, setActiveAtMentionIndex] = useState(-1);
+  const [referenceSearchTerm, setReferenceSearchTerm] = useState("");
+  const [referenceBoxLeft, setReferenceBoxLeft] = useState(0);
+  const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true);
+  const [showSourcesButton, _] = useState(false); // Added this line
+  // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+
+  const adjustInputHeight = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+      const scrollHeight = inputRef.current.scrollHeight;
+      const minHeight = 52;
+      const maxHeight = 320;
+      const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight));
+      inputRef.current.style.height = `${newHeight}px`;
+    }
+  }, []);
+
+  const updateReferenceBoxPosition = (atIndex: number) => {
+    const inputElement = inputRef.current;
+    if (!inputElement || atIndex < 0) {
+      const parentRect = inputElement
+        ?.closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect();
+      const inputRect = inputElement?.getBoundingClientRect();
+      if (parentRect && inputRect) {
+        setReferenceBoxLeft(inputRect.left - parentRect.left);
+      } else {
+        setReferenceBoxLeft(0);
+      }
+      return;
+    }
+
+    const range = document.createRange();
+    let currentPos = 0;
+    let targetNode: Node | null = null;
+    let targetOffsetInNode = 0;
+
+    function findDomPosition(node: Node, charIndex: number): boolean {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const textLength = node.textContent?.length || 0;
+        if (currentPos <= charIndex && charIndex < currentPos + textLength) {
+          targetNode = node;
+          targetOffsetInNode = charIndex - currentPos;
+          return true;
+        }
+        currentPos += textLength;
+      } else {
+        for (const child of node.childNodes) {
+          if (findDomPosition(child, charIndex)) return true;
+        }
+      }
+      return false;
+    }
+
+    if (findDomPosition(inputElement, atIndex)) {
+      range.setStart(targetNode!, targetOffsetInNode);
+      range.setEnd(targetNode!, targetOffsetInNode + 1);
+      const rect = range.getBoundingClientRect();
+      const parentRect = inputElement
+        .closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect();
+
+      if (parentRect) {
+        setReferenceBoxLeft(rect.left - parentRect.left);
+      } else {
+        const inputRect = inputElement.getBoundingClientRect();
+        setReferenceBoxLeft(rect.left - inputRect.left);
+      }
+    } else {
+      const inputRect = inputElement.getBoundingClientRect();
+      const parentRect = inputElement
+        .closest(".relative.flex.flex-col")
+        ?.getBoundingClientRect();
+      if (parentRect) {
+        setReferenceBoxLeft(inputRect.left - parentRect.left);
+      } else {
+        setReferenceBoxLeft(0);
+      }
+    }
+  };
 
   const derivedReferenceSearch = useMemo(() => {
     if (activeAtMentionIndex === -1 || !showReferenceBox) {
-      return ""
+      return "";
     }
     if (
       activeAtMentionIndex >= query.length ||
       query[activeAtMentionIndex] !== "@"
     ) {
-      return ""
+      return "";
     }
-    return query.substring(activeAtMentionIndex + 1).trimStart()
-  }, [query, showReferenceBox, activeAtMentionIndex])
+    return query.substring(activeAtMentionIndex + 1).trimStart();
+  }, [query, showReferenceBox, activeAtMentionIndex]);
 
   const currentSearchTerm = useMemo(() => {
     if (activeAtMentionIndex === -1 && showReferenceBox) {
-      return referenceSearchTerm
+      return referenceSearchTerm;
     }
-    return derivedReferenceSearch
+    return derivedReferenceSearch;
   }, [
     activeAtMentionIndex,
     showReferenceBox,
     referenceSearchTerm,
     derivedReferenceSearch,
-  ])
+  ]);
 
   useEffect(() => {
     if (showReferenceBox && activeAtMentionIndex !== -1) {
-      const newMode = derivedReferenceSearch.length > 0 ? "global" : "citations"
+      const newMode =
+        derivedReferenceSearch.length > 0 ? "global" : "citations";
       if (newMode !== searchMode) {
-        setSearchMode(newMode)
-        setSelectedRefIndex(-1)
+        setSearchMode(newMode);
+        setSelectedRefIndex(-1);
         if (newMode === "citations") {
-          setGlobalResults([])
-          setGlobalError(null)
-          setPage(1)
-          setTotalCount(0)
+          setGlobalResults([]);
+          setGlobalError(null);
+          setPage(1);
+          setTotalCount(0);
         }
       }
     } else if (!showReferenceBox) {
-      setSelectedRefIndex(-1)
+      setSelectedRefIndex(-1);
     }
   }, [
     derivedReferenceSearch,
     showReferenceBox,
     searchMode,
     activeAtMentionIndex,
-  ])
+  ]);
 
   const selectedSourceItems = useMemo(() => {
-    return availableSources.filter((source) => selectedSources[source.id])
-  }, [selectedSources])
+    return availableSources.filter((source) => selectedSources[source.id]);
+  }, [selectedSources]);
 
-  const selectedSourcesCount = selectedSourceItems.length
+  const selectedSourcesCount = selectedSourceItems.length;
 
   const formatTimestamp = (time: number | undefined) => {
-    if (!time) return "Unknown Date"
+    if (!time) return "Unknown Date";
     return new Date(time).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
-    })
-  }
+    });
+  };
 
   const displayedCitations = useMemo(() => {
     if (
@@ -303,62 +376,62 @@ export const ChatBox = ({
       searchMode !== "citations" ||
       activeAtMentionIndex === -1
     ) {
-      return []
+      return [];
     }
-    const searchValue = derivedReferenceSearch.toLowerCase()
+    const searchValue = derivedReferenceSearch.toLowerCase();
     return Array.from(allCitations.values()).filter((citation) =>
       citation.title.toLowerCase().includes(searchValue),
-    )
+    );
   }, [
     allCitations,
     derivedReferenceSearch,
     searchMode,
     showReferenceBox,
     activeAtMentionIndex,
-  ])
+  ]);
 
   const fetchResults = async (
     searchTermForFetch: string,
     pageToFetch: number,
     append: boolean = false,
   ) => {
-    if (!searchTermForFetch || searchTermForFetch.length < 1) return
+    if (!searchTermForFetch || searchTermForFetch.length < 1) return;
     if (
       isGlobalLoading ||
       (append && globalResults.length >= totalCount && totalCount > 0)
     )
-      return
+      return;
 
-    setIsGlobalLoading(true)
+    setIsGlobalLoading(true);
     if (!append) {
-      setGlobalError(null)
+      setGlobalError(null);
     }
 
     try {
-      const limit = 10
-      const offset = (pageToFetch - 1) * limit
+      const limit = 10;
+      const offset = (pageToFetch - 1) * limit;
       const params: Record<string, string | string[]> = {
         query: searchTermForFetch,
         limit: limit.toString(),
         offset: offset.toString(),
-      }
+      };
       const response = await api.search.$get({
         query: params,
         credentials: "include",
-      })
-      const data = await response.json()
-      const fetchedTotalCount = data.count || 0
-      setTotalCount(fetchedTotalCount)
+      });
+      const data = await response.json();
+      const fetchedTotalCount = data.count || 0;
+      setTotalCount(fetchedTotalCount);
 
-      const results: SearchResult[] = data.results || []
+      const results: SearchResult[] = data.results || [];
 
       setGlobalResults((prev) => {
         if (currentSearchTerm !== searchTermForFetch) {
-          return append ? prev : []
+          return append ? prev : [];
         }
-        const existingIds = new Set(prev.map((r) => r.docId))
-        const newResults = results.filter((r) => !existingIds.has(r.docId))
-        const updatedResults = append ? [...prev, ...newResults] : newResults
+        const existingIds = new Set(prev.map((r) => r.docId));
+        const newResults = results.filter((r) => !existingIds.has(r.docId));
+        const updatedResults = append ? [...prev, ...newResults] : newResults;
 
         if (
           !append &&
@@ -366,26 +439,26 @@ export const ChatBox = ({
           updatedResults.length < fetchedTotalCount
         ) {
           setTimeout(() => {
-            fetchResults(searchTermForFetch, pageToFetch + 1, true)
-          }, 0)
+            fetchResults(searchTermForFetch, pageToFetch + 1, true);
+          }, 0);
         }
 
-        return updatedResults
-      })
+        return updatedResults;
+      });
 
-      setPage(pageToFetch)
-      setGlobalError(null)
+      setPage(pageToFetch);
+      setGlobalError(null);
     } catch (error) {
       if (currentSearchTerm === searchTermForFetch) {
-        setGlobalError("Failed to fetch global results. Please try again.")
-        if (!append) setGlobalResults([])
+        setGlobalError("Failed to fetch global results. Please try again.");
+        if (!append) setGlobalResults([]);
       }
     } finally {
       if (currentSearchTerm === searchTermForFetch) {
-        setIsGlobalLoading(false)
+        setIsGlobalLoading(false);
       }
     }
-  }
+  };
 
   useEffect(() => {
     if (
@@ -394,58 +467,58 @@ export const ChatBox = ({
       currentSearchTerm.length < 1
     ) {
       if (!isGlobalLoading) {
-        setGlobalResults([])
-        setGlobalError(null)
-        setPage(1)
-        setTotalCount(0)
+        setGlobalResults([]);
+        setGlobalError(null);
+        setPage(1);
+        setTotalCount(0);
       }
-      return
+      return;
     }
 
-    if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
 
-    const termToFetch = currentSearchTerm
+    const termToFetch = currentSearchTerm;
     debounceTimeout.current = setTimeout(() => {
-      setPage(1)
-      setGlobalResults([])
-      fetchResults(termToFetch, 1, false)
-    }, 300)
+      setPage(1);
+      setGlobalResults([]);
+      fetchResults(termToFetch, 1, false);
+    }, 300);
 
     return () => {
-      if (debounceTimeout.current) clearTimeout(debounceTimeout.current)
-    }
-  }, [currentSearchTerm, searchMode])
+      if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
+    };
+  }, [currentSearchTerm, searchMode]);
 
   useEffect(() => {
     if (scrollContainerRef.current && scrollPositionRef.current > 0) {
-      scrollContainerRef.current.scrollTop = scrollPositionRef.current
-      scrollPositionRef.current = 0
+      scrollContainerRef.current.scrollTop = scrollPositionRef.current;
+      scrollPositionRef.current = 0;
     }
-  }, [globalResults])
+  }, [globalResults]);
 
   useEffect(() => {
     if (!showReferenceBox) {
-      setSelectedRefIndex(-1)
-      return
+      setSelectedRefIndex(-1);
+      return;
     }
 
     const items =
-      searchMode === "citations" ? displayedCitations : globalResults
+      searchMode === "citations" ? displayedCitations : globalResults;
     const canLoadMore =
       searchMode === "global" &&
       globalResults.length < totalCount &&
-      !isGlobalLoading
+      !isGlobalLoading;
     if (selectedRefIndex === -1) {
-      setSelectedRefIndex(items.length > 0 ? 0 : -1)
+      setSelectedRefIndex(items.length > 0 ? 0 : -1);
     } else {
       const currentMaxIndex =
         searchMode === "citations"
           ? displayedCitations.length - 1
           : canLoadMore
             ? globalResults.length
-            : globalResults.length - 1
+            : globalResults.length - 1;
       if (selectedRefIndex > currentMaxIndex) {
-        setSelectedRefIndex(currentMaxIndex)
+        setSelectedRefIndex(currentMaxIndex);
       }
     }
   }, [
@@ -455,218 +528,141 @@ export const ChatBox = ({
     showReferenceBox,
     totalCount,
     isGlobalLoading,
-  ])
+  ]);
 
-  // Helper function to parse content and preserve existing pills as spans
-  const parseContentWithPills = (
-    text: string,
-    references: Reference[],
-    cursorPosition: number,
-    lastAtIndex: number,
-    newRef: Reference,
-    inputElement: HTMLDivElement | null,
-  ) => {
-    const nodes: (Node | HTMLElement)[] = []
-    let currentPos = 0
-
-    // Collect existing pills from the input DOM to preserve their properties
-    const existingPills: { node: HTMLElement; ref: Reference | null }[] = []
-    if (inputElement) {
-      const childNodes = Array.from(inputElement.childNodes)
-      childNodes.forEach((node) => {
-        if (
-          node.nodeType === Node.ELEMENT_NODE &&
-          (node as HTMLElement).classList.contains("reference-pill")
+  // Helper to find DOM node and offset from a character offset in textContent
+  const findBoundaryPosition = (
+    root: Node,
+    charOffset: number,
+  ): { container: Node; offset: number } | null => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    let currentAccumulatedOffset = 0;
+    let node;
+    while ((node = walker.nextNode())) {
+      const textNode = node as Text;
+      const len = textNode.textContent?.length || 0;
+      if (currentAccumulatedOffset + len >= charOffset) {
+        return {
+          container: textNode,
+          offset: charOffset - currentAccumulatedOffset,
+        };
+      }
+      currentAccumulatedOffset += len;
+    }
+    // If charOffset is at the very end of the content (after all text nodes)
+    if (charOffset === currentAccumulatedOffset) {
+      // Find the last child of the root, or root itself, to place the cursor
+      let containerNode: Node = root;
+      let containerOffset = root.childNodes.length;
+      if (root.childNodes.length > 0) {
+        let lastChild = root.lastChild;
+        while (
+          lastChild &&
+          lastChild.nodeType !== Node.TEXT_NODE &&
+          lastChild.lastChild
         ) {
-          const pillText = (node as HTMLElement).textContent || ""
-          const refId = (node as HTMLElement).dataset.referenceId
-          const ref = references.find(
-            (r) =>
-              r.id === refId || // Prefer ID matching
-              getPillDisplayTitle(r.title) === pillText ||
-              r.title === pillText ||
-              `@[${getPillDisplayTitle(r.title)}]` === pillText,
-          )
-          existingPills.push({ node: node as HTMLElement, ref: ref || null })
+          lastChild = lastChild.lastChild;
         }
-      })
+        if (lastChild && lastChild.nodeType === Node.TEXT_NODE) {
+          containerNode = lastChild;
+          containerOffset = lastChild.textContent?.length || 0;
+        } else if (root.lastChild) {
+          // If last child is an element, place cursor after it in parent
+          containerNode = root;
+          // Find index of lastChild + 1 for offset
+          containerOffset =
+            Array.from(root.childNodes).indexOf(root.lastChild) + 1;
+        }
+      }
+      return { container: containerNode, offset: containerOffset };
     }
+    return null;
+  };
 
-    // Handle text before the @ mention
-    const beforeAt = text.slice(0, lastAtIndex)
-    if (beforeAt) {
-      let lastIndex = 0
-      let pillIndex = 0
-
-      // Process text and existing pills
-      while (lastIndex < beforeAt.length && pillIndex < existingPills.length) {
-        const pill = existingPills[pillIndex]
-        const pillText = pill.node.textContent || ""
-        const pillPos = beforeAt.indexOf(pillText, lastIndex)
-
-        if (pillPos === -1 || pillPos > lastIndex) {
-          // Add text before the next pill or end
-          const endIndex = pillPos === -1 ? beforeAt.length : pillPos
-          nodes.push(
-            document.createTextNode(beforeAt.slice(lastIndex, endIndex)),
-          )
-          lastIndex = endIndex
-        }
-
-        if (pillPos !== -1 && pillPos === lastIndex) {
-          // Re-use the existing pill node to preserve properties
-          nodes.push(pill.node.cloneNode(true))
-          lastIndex += pillText.length
-          pillIndex++
-        }
-      }
-
-      // Add any remaining text before the @ mention
-      if (lastIndex < beforeAt.length) {
-        nodes.push(document.createTextNode(beforeAt.slice(lastIndex)))
-      }
-      currentPos += beforeAt.length
-    }
-
-    // Add the new pill
-    const newPill = document.createElement("span")
-    newPill.className =
-      "reference-pill bg-[#F1F5F9] text-[#374151] rounded-lg px-2 py-0.4 inline-flex items-center"
-    newPill.contentEditable = "false"
-    newPill.dataset.referenceId = newRef.id // Add data-reference-id
-
-    if (newRef.app && newRef.entity) {
-      const iconContainer = document.createElement("span")
-      const iconNode = getIcon(newRef.app, newRef.entity, {
-        w: 14,
-        h: 14,
-        mr: 4,
-      })
-
-      if (React.isValidElement(iconNode)) {
-        iconContainer.innerHTML = renderToStaticMarkup(iconNode)
-      } else if (typeof iconNode === "string") {
-        iconContainer.textContent = iconNode
-      } else {
-        iconContainer.textContent = "▫️"
-      }
-      newPill.appendChild(iconContainer)
-    }
-    newPill.appendChild(
-      document.createTextNode(getPillDisplayTitle(newRef.title)),
-    )
-    nodes.push(newPill)
-
-    // Add a space after the new pill
-    const spaceNode = document.createTextNode("\u00A0")
-    nodes.push(spaceNode)
-
-    // Handle text after the @ mention
-    const afterAt = text.slice(cursorPosition)
-    if (afterAt) {
-      let lastIndex = 0
-      let pillIndex = existingPills.findIndex(
-        (p, i) =>
-          i >= existingPills.length ||
-          beforeAt.indexOf(p.node.textContent || "") === -1,
-      )
-
-      while (lastIndex < afterAt.length && pillIndex < existingPills.length) {
-        const pill = existingPills[pillIndex]
-        const pillText = pill.node.textContent || ""
-        const pillPos = afterAt.indexOf(pillText, lastIndex)
-
-        if (pillPos === -1 || pillPos > lastIndex) {
-          const endIndex = pillPos === -1 ? afterAt.length : pillPos
-          nodes.push(
-            document.createTextNode(afterAt.slice(lastIndex, endIndex)),
-          )
-          lastIndex = endIndex
-        }
-
-        if (pillPos !== -1 && pillPos === lastIndex) {
-          nodes.push(pill.node.cloneNode(true))
-          lastIndex += pillText.length
-          pillIndex++
-        }
-      }
-
-      // Add any remaining text after the last pill
-      if (lastIndex < afterAt.length) {
-        nodes.push(document.createTextNode(afterAt.slice(lastIndex)))
-      }
-    }
-
-    return { nodes, cursorNode: spaceNode, cursorOffset: 1 }
-  }
+  // Helper function to parse content and preserve existing pills as spans - THIS WILL BE REPLACED/REMOVED
+  // For now, keeping its signature for context, but its usage will be removed from handleAddReference/handleSelectGlobalResult
 
   const handleAddReference = (citation: Citation) => {
-    const citationApp = (citation as any).app
-    const citationEntity = (citation as any).entity
-
+    const docId = citation.docId;
     const newRef: Reference = {
-      id: citation.url,
+      id: docId,
+      docId: docId,
       title: citation.title,
       url: citation.url,
-      app: typeof citationApp === "string" ? citationApp : undefined,
-      entity: typeof citationEntity === "string" ? citationEntity : undefined,
+      app: citation.app,
+      entity: citation.entity,
       type: "citation",
+    };
+
+    const input = inputRef.current;
+    if (!input || activeAtMentionIndex === -1) {
+      setShowReferenceBox(false);
+      return;
     }
 
-    setReferences((prev) => [...prev, newRef])
-
-    const input = inputRef.current
-    if (!input) return
-
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) return
-
-    const range = selection.getRangeAt(0)
-    // const cursorPosition = getCaretCharacterOffsetWithin(input) // Original line, can be unreliable on click
-    const textContent = input.textContent || ""
-
-    let lastAtIndex = activeAtMentionIndex // Use activeAtMentionIndex directly
-
-    if (lastAtIndex !== -1) {
-      // Calculate effectiveCursorPosition assuming replacement from @ to end of input
-      const effectiveCursorPosition = textContent.length
-
-      const { nodes, cursorNode, cursorOffset } = parseContentWithPills(
-        textContent,
-        references, // These are references before newRef is included in this specific 'references' variable instance
-        effectiveCursorPosition, // Use calculated position
-        lastAtIndex,
-        newRef,
-        input, // Pass input element
-      )
-
-      input.innerHTML = ""
-      nodes.forEach((node) => input.appendChild(node))
-
-      range.setStart(cursorNode, cursorOffset)
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-
-      setQuery(input.textContent || "")
+    const selection = window.getSelection();
+    if (!selection) {
+      setShowReferenceBox(false);
+      return;
     }
 
-    setShowReferenceBox(false)
-    setActiveAtMentionIndex(-1)
-    setReferenceSearchTerm("")
-    setGlobalResults([])
-    setGlobalError(null)
-    setPage(1)
-    setTotalCount(0)
-    setSelectedRefIndex(-1)
-  }
+    const mentionStartCharOffset = activeAtMentionIndex;
+    // The @mention text effectively goes from activeAtMentionIndex up to the current caret position.
+    // When clicking a reference, getCaretCharacterOffsetWithin(input) might be unreliable if focus changes.
+    // Assuming the active mention always extends to the end of the current query content.
+    const mentionEndCharOffset = query.length;
+
+    const startPos = findBoundaryPosition(input, mentionStartCharOffset);
+    const endPos = findBoundaryPosition(input, mentionEndCharOffset);
+
+    if (startPos && endPos) {
+      const range = document.createRange();
+      range.setStart(startPos.container, startPos.offset);
+      range.setEnd(endPos.container, endPos.offset);
+      range.deleteContents();
+
+      const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />);
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = pillHtmlString;
+      const pillElement = tempDiv.firstChild;
+
+      if (pillElement) {
+        const clonedPill = pillElement.cloneNode(true);
+        range.insertNode(clonedPill);
+        const space = document.createTextNode("\u00A0");
+
+        // Insert space after pill and set caret
+        range.setStartAfter(clonedPill);
+        range.insertNode(space);
+        range.setStart(space, space.length);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      setQuery(input.textContent || "");
+    } else {
+      console.error(
+        "Could not determine range for @mention replacement in handleAddReference.",
+      );
+      // Fallback or error handling if positions can't be found
+    }
+
+    setShowReferenceBox(false);
+    setActiveAtMentionIndex(-1);
+    setReferenceSearchTerm("");
+    setGlobalResults([]);
+    setGlobalError(null);
+    setPage(1);
+    setTotalCount(0);
+    setSelectedRefIndex(-1);
+  };
 
   const handleSelectGlobalResult = (result: SearchResult) => {
-    let resultUrl = result.url
+    let resultUrl = result.url;
     if (!resultUrl && result.app === Apps.Gmail) {
-      const identifier = result.threadId || result.docId
+      const identifier = result.threadId || result.docId;
       if (identifier) {
-        resultUrl = `https://mail.google.com/mail/u/0/#inbox/${identifier}`
+        resultUrl = `https://mail.google.com/mail/u/0/#inbox/${identifier}`;
       }
     }
 
@@ -674,16 +670,18 @@ export const ChatBox = ({
       result.name ||
       result.subject ||
       result.title ||
+      result.filename ||
       (result.type === "user" && result.email) ||
-      "Untitled"
-    const refId = result.docId || (result.type === "user" && result.email) || ""
+      "Untitled";
+    const refId =
+      result.docId || (result.type === "user" && result.email) || "";
 
     if (!refId) {
-      console.error("Cannot add reference without a valid ID.", result)
-      setShowReferenceBox(false)
-      setActiveAtMentionIndex(-1)
-      setReferenceSearchTerm("")
-      return
+      console.error("Cannot add reference without a valid ID.", result);
+      setShowReferenceBox(false);
+      setActiveAtMentionIndex(-1);
+      setReferenceSearchTerm("");
+      return;
     }
 
     const newRef: Reference = {
@@ -695,94 +693,106 @@ export const ChatBox = ({
       entity: result.entity,
       type: "global",
       photoLink: result.photoLink,
+    };
+
+    const input = inputRef.current;
+    if (!input || activeAtMentionIndex === -1) {
+      setShowReferenceBox(false);
+      return;
     }
 
-    setReferences((prev) => [...prev, newRef])
-
-    const input = inputRef.current
-    if (!input) return
-
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) return
-
-    const range = selection.getRangeAt(0)
-    // const cursorPosition = getCaretCharacterOffsetWithin(input) // Original line, can be unreliable on click
-    const textContent = input.textContent || ""
-
-    let lastAtIndex = activeAtMentionIndex // Use activeAtMentionIndex directly
-
-    if (lastAtIndex !== -1) {
-      // Calculate effectiveCursorPosition assuming replacement from @ to end of input
-      const effectiveCursorPosition = textContent.length
-
-      const { nodes, cursorNode, cursorOffset } = parseContentWithPills(
-        textContent,
-        references, // These are references before newRef is included in this specific 'references' variable instance
-        effectiveCursorPosition, // Use calculated position
-        lastAtIndex,
-        newRef,
-        input, // Pass input element
-      )
-
-      input.innerHTML = ""
-      nodes.forEach((node) => input.appendChild(node))
-
-      range.setStart(cursorNode, cursorOffset)
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-
-      setQuery(input.textContent || "")
+    const selection = window.getSelection();
+    if (!selection) {
+      setShowReferenceBox(false);
+      return;
     }
 
-    setShowReferenceBox(false)
-    setActiveAtMentionIndex(-1)
-    setReferenceSearchTerm("")
-    setGlobalResults([])
-    setGlobalError(null)
-    setPage(1)
-    setTotalCount(0)
-    setSelectedRefIndex(-1)
-  }
+    const mentionStartCharOffset = activeAtMentionIndex;
+    // When clicking a reference, getCaretCharacterOffsetWithin(input) might be unreliable if focus changes.
+    // Assuming the active mention always extends to the end of the current query content.
+    const mentionEndCharOffset = query.length;
+
+    const startPos = findBoundaryPosition(input, mentionStartCharOffset);
+    const endPos = findBoundaryPosition(input, mentionEndCharOffset);
+
+    if (startPos && endPos) {
+      const range = document.createRange();
+      range.setStart(startPos.container, startPos.offset);
+      range.setEnd(endPos.container, endPos.offset);
+      range.deleteContents();
+
+      const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />);
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = pillHtmlString;
+      const pillElement = tempDiv.firstChild;
+
+      if (pillElement) {
+        const clonedPill = pillElement.cloneNode(true);
+        range.insertNode(clonedPill);
+        const space = document.createTextNode("\u00A0");
+
+        range.setStartAfter(clonedPill);
+        range.insertNode(space);
+        range.setStart(space, space.length);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      setQuery(input.textContent || "");
+    } else {
+      console.error(
+        "Could not determine range for @mention replacement in handleSelectGlobalResult.",
+      );
+    }
+
+    setShowReferenceBox(false);
+    setActiveAtMentionIndex(-1);
+    setReferenceSearchTerm("");
+    setGlobalResults([]);
+    setGlobalError(null);
+    setPage(1);
+    setTotalCount(0);
+    setSelectedRefIndex(-1);
+  };
 
   const handleReferenceKeyDown = (
     e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
   ) => {
-    if (!showReferenceBox) return
+    if (!showReferenceBox) return;
 
     const items =
-      searchMode === "citations" ? displayedCitations : globalResults
-    const totalItemsCount = items.length
+      searchMode === "citations" ? displayedCitations : globalResults;
+    const totalItemsCount = items.length;
     const canLoadMore =
       searchMode === "global" &&
       globalResults.length < totalCount &&
-      !isGlobalLoading
-    const loadMoreIndex = globalResults.length
+      !isGlobalLoading;
+    const loadMoreIndex = globalResults.length;
 
     if (e.key === "ArrowDown") {
-      e.preventDefault()
-      const maxIndex = canLoadMore ? loadMoreIndex : totalItemsCount - 1
+      e.preventDefault();
+      const maxIndex = canLoadMore ? loadMoreIndex : totalItemsCount - 1;
       setSelectedRefIndex((prev) => {
-        const nextIndex = Math.min(prev + 1, maxIndex)
-        if (prev === -1 && items.length > 0) return 0
-        return nextIndex
-      })
+        const nextIndex = Math.min(prev + 1, maxIndex);
+        if (prev === -1 && items.length > 0) return 0;
+        return nextIndex;
+      });
     } else if (e.key === "ArrowUp") {
-      e.preventDefault()
+      e.preventDefault();
       setSelectedRefIndex((prev) => {
-        const nextIndex = Math.max(prev - 1, 0)
-        return nextIndex
-      })
+        const nextIndex = Math.max(prev - 1, 0);
+        return nextIndex;
+      });
     } else if (e.key === "Enter") {
-      e.preventDefault()
+      e.preventDefault();
       if (selectedRefIndex >= 0 && selectedRefIndex < totalItemsCount) {
         if (searchMode === "citations") {
           if (displayedCitations[selectedRefIndex]) {
-            handleAddReference(displayedCitations[selectedRefIndex])
+            handleAddReference(displayedCitations[selectedRefIndex]);
           }
         } else {
           if (globalResults[selectedRefIndex]) {
-            handleSelectGlobalResult(globalResults[selectedRefIndex])
+            handleSelectGlobalResult(globalResults[selectedRefIndex]);
           }
         }
       } else if (
@@ -790,29 +800,29 @@ export const ChatBox = ({
         selectedRefIndex === loadMoreIndex &&
         canLoadMore
       ) {
-        handleLoadMore()
+        handleLoadMore();
       }
     } else if (e.key === "Escape") {
-      e.preventDefault()
-      setShowReferenceBox(false)
-      setActiveAtMentionIndex(-1)
-      setReferenceSearchTerm("")
-      setSelectedRefIndex(-1)
+      e.preventDefault();
+      setShowReferenceBox(false);
+      setActiveAtMentionIndex(-1);
+      setReferenceSearchTerm("");
+      setSelectedRefIndex(-1);
     }
-  }
+  };
 
   useEffect(() => {
     if (selectedRefIndex >= 0 && referenceItemsRef.current[selectedRefIndex]) {
       referenceItemsRef.current[selectedRefIndex]?.scrollIntoView({
         behavior: "smooth",
         block: "nearest",
-      })
+      });
     }
-  }, [selectedRefIndex])
+  }, [selectedRefIndex]);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node
+      const target = event.target as Node;
       if (
         showReferenceBox &&
         referenceBoxRef.current &&
@@ -821,73 +831,67 @@ export const ChatBox = ({
         !inputRef.current.contains(target) &&
         !(event.target as HTMLElement).closest(".reference-trigger")
       ) {
-        setShowReferenceBox(false)
-        setActiveAtMentionIndex(-1)
-        setReferenceSearchTerm("")
+        setShowReferenceBox(false);
+        setActiveAtMentionIndex(-1);
+        setReferenceSearchTerm("");
       }
-    }
+    };
 
-    document.addEventListener("mousedown", handleOutsideClick)
-    return () => document.removeEventListener("mousedown", handleOutsideClick)
-  }, [showReferenceBox])
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [showReferenceBox]);
 
   const handleSendMessage = () => {
     const activeSourceIds = Object.entries(selectedSources)
       .filter(([, isSelected]) => isSelected)
-      .map(([id]) => id)
+      .map(([id]) => id);
 
-    const htmlMessage = inputRef.current?.innerHTML || ""
-    // Ensure references are up-to-date before sending
-    if (inputRef.current) {
-      const currentPills = Array.from(inputRef.current.children).filter(
-        (child) => child.classList.contains("reference-pill"),
-      )
-      const currentPillIds = currentPills
-        .map((pill) => (pill as HTMLElement).dataset.referenceId)
-        .filter(Boolean) as string[]
+    let htmlMessage = inputRef.current?.innerHTML || "";
 
-      const updatedReferences = references.filter((ref) =>
-        currentPillIds.includes(ref.id),
-      )
-      handleSend(htmlMessage, [...updatedReferences], [...activeSourceIds])
-      setReferences([]) // Clear after sending potentially updated list
-    } else {
-      handleSend(htmlMessage, [...references], [...activeSourceIds])
-      setReferences([])
-    }
+    htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "");
+    htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "");
+    htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "");
+
+    // The `references` array is no longer passed to handleSend.
+    // Pills and links are part of htmlMessage.
+    handleSend(
+      htmlMessage,
+      activeSourceIds.length > 0 ? activeSourceIds : undefined,
+    );
+    // setReferences([]) // This state and its setter are removed.
 
     if (inputRef.current) {
-      inputRef.current.innerHTML = ""
+      inputRef.current.innerHTML = "";
     }
-    setQuery("")
-  }
+    setQuery("");
+  };
 
   const handleSourceSelectionChange = (sourceId: string, checked: boolean) => {
     setSelectedSources((prev) => ({
       ...prev,
       [sourceId]: checked,
-    }))
-    setPage(1)
-    setGlobalResults([])
-  }
+    }));
+    setPage(1);
+    setGlobalResults([]);
+  };
 
   const handleClearAllSources = () => {
-    const clearedSources: Record<string, boolean> = {}
+    const clearedSources: Record<string, boolean> = {};
     availableSources.forEach((source) => {
-      clearedSources[source.id] = false
-    })
-    setSelectedSources(clearedSources)
-    setPage(1)
-    setGlobalResults([])
-  }
+      clearedSources[source.id] = false;
+    });
+    setSelectedSources(clearedSources);
+    setPage(1);
+    setGlobalResults([]);
+  };
 
   const handleLoadMore = () => {
     if (scrollContainerRef.current) {
-      scrollPositionRef.current = scrollContainerRef.current.scrollTop
+      scrollPositionRef.current = scrollContainerRef.current.scrollTop;
     }
-    const nextPage = page + 1
-    fetchResults(currentSearchTerm, nextPage, true)
-  }
+    const nextPage = page + 1;
+    fetchResults(currentSearchTerm, nextPage, true);
+  };
 
   useEffect(() => {
     if (
@@ -895,27 +899,23 @@ export const ChatBox = ({
       activeAtMentionIndex === -1 &&
       referenceSearchInputRef.current
     ) {
-      referenceSearchInputRef.current.focus()
+      referenceSearchInputRef.current.focus();
     }
-  }, [showReferenceBox, activeAtMentionIndex])
+  }, [showReferenceBox, activeAtMentionIndex]);
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto" // Reset height to allow scrollHeight to be calculated correctly
-      const scrollHeight = inputRef.current.scrollHeight
-      const minHeight = 52 // As per inline style
-      const maxHeight = 320 // As per inline style
-      const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight))
-      inputRef.current.style.height = `${newHeight}px`
-    }
-  }, [query])
+    adjustInputHeight();
+  }, [query, adjustInputHeight]);
 
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
-          className="absolute bottom-[calc(80%+8px)] left-0 bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          className="absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          style={{
+            left: activeAtMentionIndex !== -1 ? `${referenceBoxLeft}px` : "0px",
+          }}
         >
           {activeAtMentionIndex === -1 && (
             <div className="p-2 border-b border-gray-200 relative">
@@ -933,15 +933,15 @@ export const ChatBox = ({
           )}
           <div
             ref={scrollContainerRef}
-            className="max-h-[250px] overflow-y-auto p-1"
+            className="min-h-[40px] max-h-[250px] overflow-y-auto p-1"
           >
             {searchMode === "citations" && activeAtMentionIndex !== -1 && (
               <>
                 {displayedCitations.length > 0 ? (
                   <>
                     {displayedCitations.map((citation: Citation, index) => {
-                      const citationApp = (citation as any).app
-                      const citationEntity = (citation as any).entity
+                      const citationApp = (citation as any).app;
+                      const citationEntity = (citation as any).entity;
                       return (
                         <div
                           key={citation.url}
@@ -970,72 +970,101 @@ export const ChatBox = ({
                             {citation.url}
                           </p>
                         </div>
-                      )
+                      );
                     })}
                   </>
+                ) : derivedReferenceSearch.length > 0 ? (
+                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    No citations found for "{derivedReferenceSearch}".
+                  </p>
                 ) : (
-                  <p className="text-sm text-gray-500 px-2 py-1">
-                    search for your docs...
+                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    Start typing to search citations from this chat.
                   </p>
                 )}
               </>
             )}
             {searchMode === "global" && (
               <>
-                {isGlobalLoading && globalResults.length === 0 && (
-                  <p className="text-sm text-gray-500 px-2 py-1">Loading...</p>
-                )}
+                {isGlobalLoading &&
+                  globalResults.length === 0 &&
+                  !globalError && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      {currentSearchTerm
+                        ? `Searching for "${currentSearchTerm}"...`
+                        : "Searching..."}
+                    </p>
+                  )}
                 {globalError && (
-                  <p className="text-sm text-red-500 px-2 py-1">
+                  <p className="text-sm text-red-500 px-2 py-1 text-center">
                     {globalError}
                   </p>
                 )}
-                {globalResults.map((result, index) => {
-                  const displayTitle =
-                    result.name ||
-                    result.subject ||
-                    result.title ||
-                    (result.type === "user" && result.email) ||
-                    "Untitled"
-                  return (
-                    <div
-                      key={result.docId || result.email || index}
-                      ref={(el) => (referenceItemsRef.current[index] = el)}
-                      className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
-                        index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
-                      }`}
-                      onClick={() => handleSelectGlobalResult(result)}
-                      onMouseEnter={() => setSelectedRefIndex(index)}
-                    >
-                      <div className="flex items-center gap-2">
-                        {result.type === "user" && result.photoLink ? (
-                          <img
-                            src={result.photoLink}
-                            alt={displayTitle}
-                            className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          getIcon(result.app, result.entity, {
-                            w: 16,
-                            h: 16,
-                            mr: 0,
-                          })
-                        )}
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {displayTitle}
-                        </p>
-                      </div>
-                      {result.type !== "user" && (
-                        <p className="text-xs text-gray-500 truncate ml-6">
-                          {result.from ? `From: ${result.from} | ` : ""}
-                          {formatTimestamp(
-                            result.timestamp || result.updatedAt,
+                {!isGlobalLoading &&
+                  !globalError &&
+                  globalResults.length === 0 &&
+                  currentSearchTerm &&
+                  currentSearchTerm.length > 0 && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      No results found for "{currentSearchTerm}".
+                    </p>
+                  )}
+                {!isGlobalLoading &&
+                  !globalError &&
+                  globalResults.length === 0 &&
+                  (!currentSearchTerm || currentSearchTerm.length === 0) && (
+                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                      Type to search for documents, messages, and more.
+                    </p>
+                  )}
+                {globalResults.length > 0 &&
+                  globalResults.map((result, index) => {
+                    const displayTitle =
+                      result.name ||
+                      result.subject ||
+                      result.title ||
+                      result.filename ||
+                      (result.type === "user" && result.email) ||
+                      "Untitled";
+                    return (
+                      <div
+                        key={result.docId || result.email || index}
+                        ref={(el) => (referenceItemsRef.current[index] = el)}
+                        className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
+                          index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
+                        }`}
+                        onClick={() => handleSelectGlobalResult(result)}
+                        onMouseEnter={() => setSelectedRefIndex(index)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {result.type === "user" && result.photoLink ? (
+                            <img
+                              src={result.photoLink}
+                              alt={displayTitle}
+                              className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            getIcon(result.app, result.entity, {
+                              w: 16,
+                              h: 16,
+                              mr: 0,
+                            })
                           )}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })}
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {displayTitle}
+                          </p>
+                        </div>
+                        {result.type !== "user" && (
+                          <p className="text-xs text-gray-500 truncate ml-6">
+                            {result.from ? `From: ${result.from} | ` : ""}
+                            {formatTimestamp(
+                              result.timestamp || result.updatedAt,
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 {!globalError &&
                   globalResults.length > 0 &&
                   globalResults.length < totalCount && (
@@ -1072,80 +1101,139 @@ export const ChatBox = ({
             contentEditable
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
-              e.preventDefault()
-              const text = e.clipboardData?.getData("text/plain")
-              const currentInput = inputRef.current
+              e.preventDefault();
+              const pastedText = e.clipboardData?.getData("text/plain");
+              const currentInput = inputRef.current;
 
-              if (text && currentInput) {
-                const selection = window.getSelection()
-                if (!selection || !selection.rangeCount) return
+              if (pastedText && currentInput) {
+                const selection = window.getSelection();
+                if (!selection || !selection.rangeCount) return;
 
-                const range = selection.getRangeAt(0)
-                range.deleteContents() // Remove selected text or collapsed cursor position
+                const range = selection.getRangeAt(0);
+                range.deleteContents(); // Clear existing selection or cursor position
 
-                const textNode = document.createTextNode(text)
-                range.insertNode(textNode)
+                const segments = pastedText.split(/(\s+)/);
+                let lastNode: Node | null = null;
 
-                // Move cursor to the end of pasted text
-                range.setStartAfter(textNode)
-                range.collapse(true)
-                selection.removeAllRanges() // Clear existing selection
-                selection.addRange(range) // Set new selection
+                segments.forEach((segment) => {
+                  if (segment.length === 0) return;
+
+                  let nodeToInsert: Node;
+                  let isLinkNode = false;
+
+                  if (segment.match(/^\s+$/)) {
+                    // If the segment is just whitespace
+                    nodeToInsert = document.createTextNode(segment);
+                  } else {
+                    // Logic for non-whitespace segments
+                    let isPotentiallyLinkCandidate = false;
+                    let urlToParseAttempt = segment;
+
+                    if (segment.startsWith("www.")) {
+                      urlToParseAttempt = "http://" + segment;
+                      isPotentiallyLinkCandidate = true;
+                    } else if (
+                      segment.startsWith("http://") ||
+                      segment.startsWith("https://")
+                    ) {
+                      isPotentiallyLinkCandidate = true;
+                    }
+
+                    if (isPotentiallyLinkCandidate) {
+                      try {
+                        const url = new URL(urlToParseAttempt);
+                        // Ensure it's an http or https link.
+                        if (
+                          url.protocol === "http:" ||
+                          url.protocol === "https:"
+                        ) {
+                          const anchor = document.createElement("a");
+                          anchor.href = url.href; // Use the (potentially modified) href
+                          anchor.textContent = segment; // Display the original segment
+                          anchor.target = "_blank";
+                          anchor.rel = "noopener noreferrer";
+                          anchor.className =
+                            "text-blue-600 underline hover:text-blue-800 cursor-pointer";
+                          nodeToInsert = anchor;
+                          isLinkNode = true;
+                        } else {
+                          // Parsed by new URL(), but not http/https. Treat as text.
+                          nodeToInsert = document.createTextNode(segment);
+                        }
+                      } catch (_) {
+                        // Failed to parse with new URL(). Treat as text.
+                        nodeToInsert = document.createTextNode(segment);
+                      }
+                    } else {
+                      // Not considered a potential link candidate. Treat as text.
+                      nodeToInsert = document.createTextNode(segment);
+                    }
+                  }
+
+                  range.insertNode(nodeToInsert);
+                  lastNode = nodeToInsert;
+
+                  if (isLinkNode) {
+                    // If a link was just inserted, add a space after it
+                    const spaceNode = document.createTextNode("\u00A0");
+                    range.setStartAfter(nodeToInsert);
+                    range.insertNode(spaceNode);
+                    lastNode = spaceNode;
+                  }
+
+                  // Always move the range to be after the last inserted node (content or space)
+                  if (lastNode) {
+                    // Ensure lastNode is not null
+                    range.setStartAfter(lastNode);
+                    range.collapse(true);
+                  }
+                });
+
+                // Ensure the cursor is at the very end of all pasted content.
+                if (lastNode) {
+                  range.setStartAfter(lastNode);
+                  range.collapse(true);
+                }
+
+                selection.removeAllRanges();
+                selection.addRange(range);
 
                 // Dispatch an 'input' event to trigger the onInput handler
-                // This ensures setQuery and @mention logic runs
                 currentInput.dispatchEvent(
                   new Event("input", { bubbles: true, cancelable: true }),
-                )
+                );
               }
             }}
             onInput={(e) => {
-              const currentInput = inputRef.current
-              if (!currentInput) return
+              const currentInput = inputRef.current;
+              if (!currentInput) return;
 
-              const newValue = currentInput.textContent || ""
-              setQuery(newValue)
-              setIsPlaceholderVisible(
-                newValue.length === 0 &&
-                  document.activeElement !== currentInput,
-              )
+              const newValue = currentInput.textContent || "";
+              setQuery(newValue);
+              setIsPlaceholderVisible(newValue.length === 0);
 
-              // Update references based on current pills in the input
-              const currentPills = Array.from(currentInput.children).filter(
-                (child) => child.classList.contains("reference-pill"),
-              )
-              const currentPillIds = currentPills
-                .map((pill) => (pill as HTMLElement).dataset.referenceId)
-                .filter(Boolean) as string[]
-
-              setReferences((prevRefs) => {
-                const newRefs = prevRefs.filter((ref) =>
-                  currentPillIds.includes(ref.id),
-                )
-                // If a pill was removed and it's not reflected in newRefs, it means it was deleted.
-                // If a pill was added, it would have been added to `references` state already by handleAddReference/handleSelectGlobalResult
-                // and then this filter ensures it's kept if the pill element is still in the DOM.
-                return newRefs
-              })
+              // The 'references' state and its update logic have been removed.
+              // Pill management is now primarily through direct DOM interaction
+              // and parsing the innerHTML when sending the message.
 
               const cursorPosition = getCaretCharacterOffsetWithin(
                 currentInput as Node,
-              )
+              );
 
-              let shouldTriggerBox = false
-              let newActiveMentionIndex = -1
+              let shouldTriggerBox = false;
+              let newActiveMentionIndex = -1;
 
               // Check if the character right before the cursor is an '@' and if it's validly placed
-              const atCharIndex = cursorPosition - 1
+              const atCharIndex = cursorPosition - 1;
               if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
-                const isFirstCharacter = atCharIndex === 0
+                const isFirstCharacter = atCharIndex === 0;
                 const isPrecededBySpace =
                   atCharIndex > 0 &&
                   (newValue[atCharIndex - 1] === " " ||
-                    newValue[atCharIndex - 1] === "\u00A0")
+                    newValue[atCharIndex - 1] === "\u00A0");
                 if (isFirstCharacter || isPrecededBySpace) {
-                  shouldTriggerBox = true
-                  newActiveMentionIndex = atCharIndex
+                  shouldTriggerBox = true;
+                  newActiveMentionIndex = atCharIndex;
                 }
               }
 
@@ -1156,15 +1244,16 @@ export const ChatBox = ({
                   !showReferenceBox
                 ) {
                   // It's a new trigger point or the box was closed. Activate for this '@'.
-                  setActiveAtMentionIndex(newActiveMentionIndex)
-                  setShowReferenceBox(true)
-                  setReferenceSearchTerm("") // Clear search for new mention context
-                  setGlobalResults([])
-                  setGlobalError(null)
-                  setPage(1)
-                  setTotalCount(0)
-                  setSelectedRefIndex(-1)
-                  setSearchMode("citations") // Default to citations
+                  setActiveAtMentionIndex(newActiveMentionIndex);
+                  setShowReferenceBox(true);
+                  updateReferenceBoxPosition(newActiveMentionIndex);
+                  setReferenceSearchTerm(""); // Clear search for new mention context
+                  setGlobalResults([]);
+                  setGlobalError(null);
+                  setPage(1);
+                  setTotalCount(0);
+                  setSelectedRefIndex(-1);
+                  setSearchMode("citations"); // Default to citations
                 }
                 // If activeAtMentionIndex === newActiveMentionIndex and showReferenceBox is true,
                 // the box is already open for this exact '@'. derivedReferenceSearch will handle query updates.
@@ -1174,16 +1263,16 @@ export const ChatBox = ({
                 if (showReferenceBox && activeAtMentionIndex !== -1) {
                   // Check if the previously active mention (at activeAtMentionIndex) is still valid
                   // and if the cursor is still actively engaged with it (i.e., after it).
-                  const charAtOldActiveMention = newValue[activeAtMentionIndex]
+                  const charAtOldActiveMention = newValue[activeAtMentionIndex];
                   const oldActiveMentionStillIsAt =
-                    charAtOldActiveMention === "@"
-                  const oldActiveMentionIsFirst = activeAtMentionIndex === 0
+                    charAtOldActiveMention === "@";
+                  const oldActiveMentionIsFirst = activeAtMentionIndex === 0;
                   const oldActiveMentionPrecededBySpace =
                     activeAtMentionIndex > 0 &&
                     (newValue[activeAtMentionIndex - 1] === " " ||
-                      newValue[activeAtMentionIndex - 1] === "\u00A0")
+                      newValue[activeAtMentionIndex - 1] === "\u00A0");
                   const oldActiveMentionStillValidlyPlaced =
-                    oldActiveMentionIsFirst || oldActiveMentionPrecededBySpace
+                    oldActiveMentionIsFirst || oldActiveMentionPrecededBySpace;
 
                   // Close the box if:
                   // 1. Cursor has moved to or before the previously active '@'.
@@ -1194,13 +1283,14 @@ export const ChatBox = ({
                     !oldActiveMentionStillIsAt ||
                     !oldActiveMentionStillValidlyPlaced
                   ) {
-                    setShowReferenceBox(false)
-                    setActiveAtMentionIndex(-1)
-                    setReferenceSearchTerm("") // Clear search term when box closes
+                    setShowReferenceBox(false);
+                    setActiveAtMentionIndex(-1);
+                    setReferenceSearchTerm(""); // Clear search term when box closes
                   }
                   // Otherwise, the box remains open (e.g., user is typing after a valid '@').
                 }
               }
+              adjustInputHeight();
             }}
             onKeyDown={(e) => {
               if (showReferenceBox) {
@@ -1208,13 +1298,13 @@ export const ChatBox = ({
                   e as React.KeyboardEvent<
                     HTMLTextAreaElement | HTMLInputElement
                   >,
-                )
-                if (e.defaultPrevented) return
+                );
+                if (e.defaultPrevented) return;
               }
 
               if (e.key === "Enter" && !e.shiftKey && query.trim().length > 0) {
-                e.preventDefault()
-                handleSendMessage()
+                e.preventDefault();
+                handleSendMessage();
               }
             }}
             style={{
@@ -1222,26 +1312,44 @@ export const ChatBox = ({
               maxHeight: "320px",
             }}
             onFocus={(e) => {
-              const target = e.target
+              const target = e.target;
               setTimeout(() => {
                 if (document.activeElement === target) {
-                  const len = target.textContent?.length || 0
-                  setCaretPosition(inputRef.current as Node, len)
+                  const len = target.textContent?.length || 0;
+                  setCaretPosition(inputRef.current as Node, len);
                 }
-              }, 0)
+              }, 0);
             }}
-            onClick={() => {
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              const anchor = target.closest("a");
+
+              if (
+                anchor &&
+                anchor.href &&
+                anchor.closest('[contenteditable="true"]') === inputRef.current
+              ) {
+                // If it's an anchor with an href *inside our contentEditable div*,
+                // prevent default contentEditable behavior and open the link.
+                e.preventDefault();
+                window.open(anchor.href, "_blank", "noopener,noreferrer");
+                // Stop further processing to avoid @mention box logic if a link was clicked
+                return;
+              }
+
+              // Original onClick logic for @mention box (if no link was clicked and handled)
+              // This part was the first onClick handler's body
               const cursorPosition = getCaretCharacterOffsetWithin(
                 inputRef.current as Node,
-              )
+              );
               if (
                 showReferenceBox &&
                 activeAtMentionIndex !== -1 &&
                 cursorPosition <= activeAtMentionIndex
               ) {
-                setShowReferenceBox(false)
-                setActiveAtMentionIndex(-1)
-                setReferenceSearchTerm("")
+                setShowReferenceBox(false);
+                setActiveAtMentionIndex(-1);
+                setReferenceSearchTerm("");
               }
             }}
           />
@@ -1253,42 +1361,43 @@ export const ChatBox = ({
             size={16}
             className="text-[#464D53] cursor-pointer reference-trigger"
             onClick={() => {
-              const input = inputRef.current
-              if (!input) return
+              const input = inputRef.current;
+              if (!input) return;
 
-              const currentText = input.textContent || ""
-              // Add "@" or " @" to ensure it's validly placed
+              const textContentBeforeAt = input.textContent || "";
+
               const textToAppend =
-                currentText.length === 0 ||
-                currentText.endsWith(" ") ||
-                currentText.endsWith("\n") ||
-                currentText.endsWith("\u00A0")
+                textContentBeforeAt.length === 0 ||
+                textContentBeforeAt.endsWith(" ") ||
+                textContentBeforeAt.endsWith("\n") ||
+                textContentBeforeAt.endsWith("\u00A0")
                   ? "@"
-                  : " @"
-              const newValue = currentText + textToAppend
+                  : " @";
 
-              input.textContent = newValue
-              setQuery(newValue)
-              setIsPlaceholderVisible(
-                newValue.length === 0 && document.activeElement !== input,
-              )
+              const atTextNode = document.createTextNode(textToAppend);
+
+              input.appendChild(atTextNode);
+
+              const newTextContent = input.textContent || "";
+              setQuery(newTextContent);
+              setIsPlaceholderVisible(newTextContent.length === 0);
 
               const newAtSymbolIndex =
-                currentText.length + (textToAppend === "@" ? 0 : 1) // Index of the newly added @
-              setCaretPosition(input, newValue.length) // Move cursor to the end
+                textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0);
+              setCaretPosition(input, newTextContent.length);
 
-              // Since textToAppend ensures valid placement, directly activate the mention UI
-              setActiveAtMentionIndex(newAtSymbolIndex)
-              setReferenceSearchTerm("")
-              setShowReferenceBox(true)
-              setSearchMode("citations")
-              setGlobalResults([])
-              setGlobalError(null)
-              setPage(1)
-              setTotalCount(0)
-              setSelectedRefIndex(-1)
+              setActiveAtMentionIndex(newAtSymbolIndex);
+              setReferenceSearchTerm("");
+              setShowReferenceBox(true);
+              updateReferenceBoxPosition(newAtSymbolIndex);
+              setSearchMode("citations");
+              setGlobalResults([]);
+              setGlobalError(null);
+              setPage(1);
+              setTotalCount(0);
+              setSelectedRefIndex(-1);
 
-              input.focus() // Re-focus the input
+              input.focus();
             }}
           />
           {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
@@ -1364,7 +1473,7 @@ export const ChatBox = ({
                 </div>
                 <DropdownMenuSeparator />
                 {availableSources.map((source) => {
-                  const isChecked = selectedSources[source.id] || false
+                  const isChecked = selectedSources[source.id] || false;
                   return (
                     <DropdownMenuItem
                       key={source.id}
@@ -1392,12 +1501,26 @@ export const ChatBox = ({
                         {isChecked && <Check className="h-4 w-4 text-white" />}
                       </div>
                     </DropdownMenuItem>
-                  )
+                  );
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}{" "}
+          )}
           {/* Closing tag for the conditional render */}
+          <button
+            onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
+            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
+              // Changed text-xs to text-[11px]
+              isReasoningActive ? "text-green-600" : "text-[#464D53]" // Use prop for styling
+            }`}
+          >
+            <Atom
+              size={16}
+              className={isReasoningActive ? "text-green-600" : ""}
+            />{" "}
+            {/* Use prop for styling */}
+            <span>Reasoning</span>
+          </button>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}
@@ -1419,5 +1542,5 @@ export const ChatBox = ({
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
