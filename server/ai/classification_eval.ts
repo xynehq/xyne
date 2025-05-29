@@ -62,10 +62,17 @@ if (!workspaceId) {
   throw new Error("Please add the workspaceId")
 }
 
+type TClassification = TemporalClassifier & { type: QueryType } & {
+  filters: Omit<QueryRouterResponse["filters"], "count" | "sortDirection"> & {
+    count: number | null
+    sortDirection: boolean | null
+  }
+}
 type Data = {
   input: string
-  expected: TemporalClassifier & QueryRouterResponse
+  expected: TClassification
 }
+
 const data: Data[] = [
   {
     input: "what is kalp's email",
@@ -76,10 +83,10 @@ const data: Data[] = [
       filters: {
         app: Apps.Gmail,
         entity: MailEntity.Email,
-        count: 0,
         startTime: null,
         endTime: null,
-        sortDirection: undefined,
+        count: null,
+        sortDirection: null,
         multipleAppAndEntity: false,
       },
     },
@@ -121,8 +128,8 @@ const FactualityScorer = async (
   params: ModelParams,
   args: {
     input: string
-    expected: TemporalClassifier & QueryRouterResponse
-    output: TemporalClassifier & QueryRouterResponse
+    expected: TClassification
+    output: TClassification
   },
 ) => {
   const openAiKey = process.env.OPENAI_API_KEY
@@ -161,8 +168,8 @@ const FactualityScorer = async (
 
 const customFactualityScorer = async (params: {
   input: string
-  output: TemporalClassifier & QueryRouterResponse
-  expected: TemporalClassifier & QueryRouterResponse
+  output: TClassification
+  expected: TClassification
 }) => {
   const { input, output, expected } = params
 
@@ -213,10 +220,10 @@ function strictClassificationScorer({
   expected,
 }: {
   input: string
-  output: TemporalClassifier & QueryRouterResponse
-  expected: TemporalClassifier & QueryRouterResponse
+  output: TClassification
+  expected: TClassification
 }) {
-  const scoreFields: (keyof (TemporalClassifier & QueryRouterResponse))[] = [
+  const scoreFields: (keyof TClassification)[] = [
     "type",
     "filter_query",
     "direction",
@@ -270,7 +277,7 @@ function strictClassificationScorer({
 const factualityScorer = strictClassificationScorer
 
 const result: (Data & {
-  output: TemporalClassifier & QueryRouterResponse
+  output: TClassification
   score: number
 })[] = []
 for (const item of data) {
@@ -299,7 +306,7 @@ for (const item of data) {
     startTime: "",
     endTime: "",
     count: 0,
-    sortDirection: "",
+    sortDirection: false,
   }
   let parsed = {
     answer: "",
@@ -324,7 +331,7 @@ for (const item of data) {
   }
 
   if (Object.keys(parsed).length) {
-    const classification: TemporalClassifier & QueryRouterResponse = {
+    const classification: TClassification = {
       direction: parsed.temporalDirection,
       type: parsed.type as QueryType,
       filter_query: parsed.filter_query,
