@@ -46,11 +46,11 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_Sonnet_4
 } else if (process.env["OPENAI_API_KEY"]) {
-  if (process.env["BASE_URL"]) {
-    if (!isURLValid(process.env["BASE_URL"])) {
+  if (process.env["PROVIDER_BASE_URL"]) {
+    if (!isURLValid(process.env["PROVIDER_BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)
     } else {
-      aiProviderBaseUrl = process.env["BASE_URL"]
+      aiProviderBaseUrl = process.env["PROVIDER_BASE_URL"]
     }
   }
   OpenAIKey = process.env["OPENAI_API_KEY"]
@@ -69,11 +69,11 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
   defaultBestModel = TogetherAIModel as Models
-  if (process.env["BASE_URL"]) {
-    if (!isURLValid(process.env["BASE_URL"])) {
+  if (process.env["PROVIDER_BASE_URL"]) {
+    if (!isURLValid(process.env["PROVIDER_BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)
     } else {
-      aiProviderBaseUrl = process.env["BASE_URL"]
+      aiProviderBaseUrl = process.env["PROVIDER_BASE_URL"]
     }
   }
 } else if (process.env["FIREWORKS_MODEL"] && process.env["FIREWORKS_API_KEY"]) {

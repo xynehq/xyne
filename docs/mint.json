@@ -62,7 +62,8 @@
       "pages": [
         "ingestion/ingestion",
         "ingestion/oauth-ingest",
-        "ingestion/service-ingest"
+        "ingestion/service-ingest",
+        "ingestion/slack-ingest"
       ]
     },
     {
