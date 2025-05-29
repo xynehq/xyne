@@ -3,5 +3,5 @@ DO $$ BEGIN
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
---> statement-breakpoint
-ALTER TABLE "messages" ADD COLUMN "feedback" "message_feedback";
+ALTER TABLE "messages"
+ADD COLUMN IF NOT EXISTS "feedback" "message_feedback";
