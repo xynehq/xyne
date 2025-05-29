@@ -1940,11 +1940,7 @@ export async function* UnderstandMessageAndAnswer(
     classification.filterQuery &&
     classification.filters.sortDirection === "desc"
 
-  if (
-    isMetadataRetrieval ||
-    isUnspecificMetadataRetrieval ||
-    isRecencyRetrieval
-  ) {
+  if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
     Logger.info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
@@ -2120,7 +2116,7 @@ function buildTopicConversationThread(
   currentMessageIndex: number,
 ) {
   const conversationThread = []
-  let index = currentMessageIndex - 1
+  let index = currentMessageIndex
 
   while (index >= 0) {
     const message = messages[index]
@@ -2640,6 +2636,30 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             conversationSpan.end()
             let classification
+            const {
+              app,
+              count,
+              endTime,
+              entity,
+              sortDirection,
+              startTime,
+              multipleAppAndEntity,
+            } = parsed?.filters
+            classification = {
+              direction: parsed.temporalDirection,
+              type: parsed.type,
+              filterQuery: parsed.filterQuery,
+              isFollowUp: parsed.isFollowUp,
+              filters: {
+                app: app as Apps,
+                entity: entity as any,
+                multipleAppAndEntity,
+                endTime,
+                sortDirection,
+                startTime,
+                count,
+              },
+            } as TemporalClassifier & QueryRouterResponse
 
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
@@ -2655,30 +2675,6 @@ export const MessageApi = async (c: Context) => {
                   "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const {
-                app,
-                count,
-                endTime,
-                entity,
-                sortDirection,
-                startTime,
-                multipleAppAndEntity,
-              } = parsed?.filters
-              classification = {
-                direction: parsed.temporalDirection,
-                type: parsed.type,
-                filterQuery: parsed.filterQuery,
-                isFollowUp: parsed.isFollowUp,
-                filters: {
-                  app: app as Apps,
-                  entity: entity as any,
-                  multipleAppAndEntity,
-                  endTime,
-                  sortDirection,
-                  startTime,
-                  count,
-                },
-              } as TemporalClassifier & QueryRouterResponse
 
               Logger.info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
@@ -2798,23 +2794,35 @@ export const MessageApi = async (c: Context) => {
             if (latestUserMessage && answer) {
               const isFollowUp = parsed?.isFollowUp
               const lastMessageIndex = messages.length - 1
-              const referenceIndex = lastMessageIndex - 2 // -1 is current, -2 is previous
+              const referenceIndex = lastMessageIndex - 2
 
-              const queryRouterClassification = isFollowUp
-                ? {
-                    ...Object(
-                      messages[referenceIndex]?.queryRouterClassification,
-                    ),
-                    isFollowUp,
-                  }
-                : JSON.stringify(classification)
-              Logger.info(
-                `Updating queryRouter classification for last user message: ${JSON.stringify(queryRouterClassification)}`,
-              )
+              const previousClassification = messages[referenceIndex]
+                ?.queryRouterClassification as Record<string, any> | undefined
 
-              await updateMessage(db, latestUserMessage.externalId, {
-                queryRouterClassification,
-              })
+              let queryRouterClassification: Record<string, any> | undefined
+
+              if (isFollowUp && previousClassification) {
+                queryRouterClassification = {
+                  ...previousClassification,
+                  isFollowUp,
+                }
+              } else if (classification) {
+                queryRouterClassification = classification
+              }
+
+              if (queryRouterClassification) {
+                Logger.info(
+                  `Updating queryRouter classification for last user message: ${JSON.stringify(queryRouterClassification)}`,
+                )
+
+                await updateMessage(db, latestUserMessage.externalId, {
+                  queryRouterClassification,
+                })
+              } else {
+                Logger.warn(
+                  "queryRouterClassification is undefined, skipping update.",
+                )
+              }
             }
 
             if (answer || wasStreamClosedPrematurely) {
@@ -3561,7 +3569,7 @@ export const MessageRetryApi = async (c: Context) => {
             searchSpan.setAttribute("answer", answer)
             searchSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             searchSpan.end()
-            let classification
+            let classification: TemporalClassifier & QueryRouterResponse
             if (parsed.answer === null) {
               const ragSpan = streamSpan.startSpan("rag_processing")
               if (parsed.queryRewrite) {
@@ -3731,6 +3739,7 @@ export const MessageRetryApi = async (c: Context) => {
                     email: user.email,
                     sources: citations,
                     message: processMessage(answer, citationMap),
+                    queryRouterClassification: JSON.stringify(classification),
                     thinking,
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
@@ -3765,6 +3774,7 @@ export const MessageRetryApi = async (c: Context) => {
                       email: user.email,
                       sources: citations,
                       message: processMessage(answer, citationMap),
+                      queryRouterClassification: JSON.stringify(classification),
                       thinking,
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
