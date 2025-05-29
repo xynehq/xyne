@@ -2684,21 +2684,23 @@ export const MessageApi = async (c: Context) => {
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
 
-              if (classification.isFollowUp) {
-                if (messages.length >= 3) {
-                  const lastUserMessage = messages[messages.length - 3]
-                  if (lastUserMessage?.queryRouterClassification) {
-                    Logger.info(
-                      `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
-                    )
+              if (messages.length < 2) {
+                classification.isFollowUp = false // First message or not enough history to be a follow-up
+              } else if (classification.isFollowUp) {
+                // If it's marked as a follow-up, try to reuse the last user message's classification
+                const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
 
-                    classification =
-                      lastUserMessage.queryRouterClassification as any
-                  } else {
-                    Logger.info(
-                      "Follow-up query detected, but no classification found in previous message.",
-                    )
-                  }
+                if (lastUserMessage?.queryRouterClassification) {
+                  Logger.info(
+                    `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                  )
+
+                  classification =
+                    lastUserMessage.queryRouterClassification as any
+                } else {
+                  Logger.info(
+                    "Follow-up query detected, but no classification found in previous message.",
+                  )
                 }
               }
 
@@ -3602,21 +3604,23 @@ export const MessageRetryApi = async (c: Context) => {
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
 
-              if (classification.isFollowUp) {
-                if (conversation.length >= 3) {
-                  const lastUserMessage = conversation[conversation.length - 3]
-                  if (lastUserMessage?.queryRouterClassification) {
-                    Logger.info(
-                      `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
-                    )
+              if (conversation.length < 2) {
+                classification.isFollowUp = false // First message or not enough history to be a follow-up
+              } else if (classification.isFollowUp) {
+                // If it's marked as a follow-up, try to reuse the last user message's classification
+                const lastUserMessage = conversation[conversation.length - 3] // Assistant is at -2, last user is at -3
 
-                    classification =
-                      lastUserMessage.queryRouterClassification as any
-                  } else {
-                    Logger.info(
-                      "Follow-up query detected, but no classification found in previous message.",
-                    )
-                  }
+                if (lastUserMessage?.queryRouterClassification) {
+                  Logger.info(
+                    `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                  )
+
+                  classification =
+                    lastUserMessage.queryRouterClassification as any
+                } else {
+                  Logger.info(
+                    "Follow-up query detected, but no classification found in previous message.",
+                  )
                 }
               }
 
