@@ -778,8 +778,6 @@ export const queryRewritePromptJson = (
 export const searchQueryPrompt = (
   userContext: string,
   currentQuery: string,
-  prevMessage: string,
-  prevAssistanceResponse: string,
 ): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -790,34 +788,44 @@ export const searchQueryPrompt = (
 
     **User Context:** ${userContext}
     **Current Query:** ${currentQuery}
-    **Previous Message:** ${prevMessage}
-    **Previous Assistant Output:** ${prevAssistanceResponse}
 
     Now handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
+       **Evaluation Scope:**
+       For follow-up detection, evaluate the current query against the ENTIRE conversation history provided in the userContext, not just the immediately preceding message.
 
-      **Evaluation Scope Restriction:**
-      For follow-up detection, evaluate the current query ONLY against the "Previous Message" (the immediately preceding query) and its "Previous Assistant Output" (the system’s response to that query). Do NOT consider any other messages, queries, or outputs in the conversation history, even if they are available in the user context or other parameters. Restrict analysis strictly to the provided Previous Message and Previous Assistant Output.
+       Set "isFollowUp" to true if and only if the current query contains clear, direct, and unambiguous linguistic evidence that it depends on ANY part of the conversation history, such that it cannot be fully understood or answered without the specific context provided by previous messages or assistant outputs. This requires one of the following:
 
-      Set "isFollowUp" to true if and only if the current query contains clear, direct, and unambiguous linguistic evidence that it depends on the immediately preceding query AND its assistant output, such that it cannot be fully understood or answered without the specific context provided by the assistant’s output. This requires one of the following:
-      - Direct references to specific entities, results, or context explicitly mentioned in the previous assistant output using unambiguous language, such as pronouns or phrases referring to items directly stated in the output.
-      - Explicit continuation language that unmistakably indicates a follow-up by directly referencing content in the assistant output. The continuation MUST be tied to a specific item or context in the assistant output.
-      - Questions or requests that directly and explicitly reference content from the previous assistant output, such as asking for details about a specific item or result stated in the output.
+       - **Pronoun/Reference Dependencies:** Direct references using pronouns ("it", "that", "this", "they", "them") or demonstrative phrases ("the one", "those results", "that document") that refer to specific entities, results, or content explicitly mentioned in ANY previous assistant output in the conversation history.
 
-      Set "isFollowUp" to false if any of the following apply:
-      - The current query is similar to the previous one but changes a core parameter like time range; in such cases, isFollowUp will be false.
-      - The current query is fully self-contained and can be understood and answered independently, without requiring the context of the previous message or its assistant output.
-      - The current query lacks clear, direct, and unambiguous language that ties it to specific content explicitly stated in the previous assistant output.
-      - The current query introduces a new scope, context, or topic that is not mentioned in the previous assistant output, even if it shares a broad category or entities with the previous query or output.
-      - The current query would be interpreted by a human as a new, independent request based on the absence of explicit dependency language referencing the previous assistant output.
-      - The current query uses continuation language but does not reference any specific content from the previous assistant output, such as requesting information about a new topic not mentioned in the output.
+       - **Explicit Continuation Language:** Clear continuation phrases that unmistakably indicate a follow-up by directly referencing content from ANY previous assistant output, such as:
+         - "tell me more about..."
+         - "can you elaborate on..."
+         - "what about the other..."
+         - "show me details for..."
+         - "expand on that..."
 
-      **Strict Rules to Prevent Assumptions:**
-      - Do not assume any connection between queries based on shared topics, shared entities, or structural similarity.
-      - Do not consider earlier queries, their outputs, or any other conversation history beyond the immediately preceding query (Previous Message) and its output (Previous Assistant Output), even if such information is available in the user context or other parameters.
-      - Dependency must be explicitly and directly stated in the query language, and the referenced content must be present in the previous assistant output, not just the previous query text.
-      - If the scope or focus of the current query differs from the content of the previous assistant output, such as shifting from one topic to a completely unrelated topic not mentioned in the output, treat it as a new request unless there is explicit dependency language tying it to the previous output.
+       - **Direct Content References:** Questions or requests that directly and explicitly reference specific content, entities, or results from ANY previous assistant output in the conversation history, such as asking for details about a specific item, document, person, or result that was mentioned in a previous response.
+
+       - **Contextual Dependencies:** Queries that use context-dependent language that only makes sense in relation to previous conversation content, such as:
+         - "the second one"
+         - "from those results"
+         - "that person you mentioned"
+         - "the document we discussed"
+
+       Set "isFollowUp" to false if any of the following apply:
+       - The current query is fully self-contained and can be understood and answered independently, without requiring ANY context from the conversation history.
+       - The current query lacks clear, direct, and unambiguous language that ties it to specific content explicitly stated in ANY previous assistant output in the conversation history.
+       - The current query introduces a completely new scope, context, or topic that has never been mentioned in ANY previous assistant output, even if it shares broad categories or entities with previous queries.
+       - The current query would be interpreted by a human as a new, independent request based on the absence of explicit dependency language referencing previous conversation content.
+       - The current query is similar to a previous one but changes core parameters (like time range, person names, specific topics) - treat these as new independent queries unless there's explicit reference language.
+
+       **Strict Rules to Prevent False Positives:**
+       - Do not assume any connection between queries based solely on shared topics, shared entities, or structural similarity without explicit referential language.
+       - Dependency must be explicitly and directly stated in the query language through pronouns, demonstratives, or continuation phrases that reference specific content from previous assistant outputs.
+       - If the current query can stand alone and be understood by someone without access to the conversation history, it is NOT a follow-up.
+       - Repetitive queries on similar topics are NOT follow-ups unless they contain explicit referential language.
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR

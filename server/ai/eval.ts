@@ -511,8 +511,6 @@ const endToEndFlow = async (
   const email = myEmail
   const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
     message,
-    "",
-    "",
     ctx,
     {
       modelId,
