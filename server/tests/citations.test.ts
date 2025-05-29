@@ -80,6 +80,18 @@ describe("Grouped Citation Splitting", () => {
     expect(result).toBe("Good [1] [2] bad [a,b] ok [3] [4]")
   })
 
+  test("should correctly split grouped citations with spaces and multiple digits", () => {
+    const text = "This is a test [3, 20, 22] for citations."
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("This is a test [3] [20] [22] for citations.")
+  })
+
+  test("should correctly split grouped citations with no spaces and multiple digits", () => {
+    const text = "This is a test [3,20,22] for citations."
+    const result = splitGroupedCitationsWithSpaces(text)
+    expect(result).toBe("This is a test [3] [20] [22] for citations.")
+  })
+
   // this fails for now
   test.skip("should handle mixed valid and invalid citations", () => {
     const text = "Mixed [1,2.5,3] and [a,2,b] citations"

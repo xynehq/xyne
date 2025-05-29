@@ -44,7 +44,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
-  defaultBestModel = Models.Claude_3_7_Sonnet
+  defaultBestModel = Models.Claude_Sonnet_4
 } else if (process.env["OPENAI_API_KEY"]) {
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
@@ -151,5 +151,6 @@ export default {
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
+  maxValidLinks: 15,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
 }

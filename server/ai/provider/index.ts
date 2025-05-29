@@ -38,7 +38,6 @@ import type {
   ModelParams,
   QueryRouterResponse,
   TemporalClassifier,
-  UserQuery,
 } from "@/ai/types"
 import {
   QueryContextRank,
@@ -375,6 +374,9 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
+    // edge case where ```json is prepended to the text
+    text = text.replace(/^```(json)?\s*/i, "")
+    text = text.trim()
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
       text = text.replaceAll(/[\n"}:`]/g, "")
@@ -420,10 +422,19 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       // returning an empty object when newlines are present in the content.
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
         // Replace newlines with \n in content between quotes
-        const withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
+        let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
         })
+        if (jsonKey && withNewLines.startsWith("{")) {
+          const startBraceIndex = withNewLines.indexOf("{")
+          const keyIndex = withNewLines.indexOf(jsonKey)
+          if (keyIndex > startBraceIndex) {
+            withNewLines =
+              withNewLines.slice(0, startBraceIndex + 1) +
+              withNewLines.slice(keyIndex)
+          }
+        }
         jsonVal = parse(withNewLines.trim())
       }
 
@@ -761,31 +772,6 @@ export const answerOrSearch = (
   }
 }
 
-// removing one op from prompt so we can figure out how to integrate this
-// otherwise it conflicts with our current search system if we start
-// talking about a single item
-
-// 3. **RetrieveMetadata**:
-//    - The user wants to retrieve metadata or details about a specific document, email, or item.
-//    - Example Queries:
-//      - "When was the file 'Budget.xlsx' last modified?"
-//      - "Who owns the document titled 'Meeting Notes'?"
-//    - **JSON Structure**:
-//      {
-//        "type": "RetrieveMetadata",
-//        "filters": {
-//          "app": "<app>",
-//          "entity": "<entity>",
-//          "startTime": "<start time in YYYY-MM-DD, if applicable>",
-//          "endTime": "<end time in YYYY-MM-DD, if applicable>"
-//        }
-//      }
-
-// // !this is under validation heading! not a prompt
-
-//  - Ensure 'app' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-//  - Ensure 'entity' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
@@ -902,18 +888,6 @@ const indexToCitation = (text: string): string => {
   return text.replace(/Index (\d+)/g, "[$1]")
 }
 
-export const buildUserQuery = (userQuery: UserQuery) => {
-  let builtQuery = ""
-  userQuery?.map((obj) => {
-    if (obj?.type === "text") {
-      builtQuery += `${obj?.value} `
-    } else if (obj?.type === "pill") {
-      builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
-    }
-  })
-  return builtQuery
-}
-
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
@@ -932,39 +906,35 @@ export const baselineRAGJsonStream = (
   }
 
   if (specificFiles) {
+    Logger.info("Using baselineFilesContextPromptJson")
     params.systemPrompt = baselineFilesContextPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
-    if (params.systemPrompt.length > 600_000) {
-      return (async function* (): AsyncIterableIterator<ConverseResponse> {
-        yield {
-          text: "Selected context is too large, please select smaller files",
-        }
-      })()
-    }
   } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
     // this is extra work because we just now set Index <number>
     // in future once the reasoning mode better supported we won't have to do this
+    Logger.info("Using baselineReasoningPromptJson")
     params.systemPrompt = baselineReasoningPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
   } else {
+    Logger.info("Using baselinePromptJson")
     params.systemPrompt = baselinePromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
   }
   params.json = true // Set to true to ensure JSON response
-  const parsed = safeParse(userQuery)
+
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
       {
-        text: parsed ? buildUserQuery(parsed) : userQuery,
+        text: `${userQuery}`,
       },
     ],
   }
@@ -974,14 +944,6 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
-}
-
-export const safeParse = (str: string) => {
-  try {
-    return JSON.parse(str)
-  } catch {
-    return null
-  }
 }
 
 export const temporalPromptJsonStream = (

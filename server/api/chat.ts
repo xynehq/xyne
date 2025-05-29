@@ -8,8 +8,6 @@ import {
   mailPromptJsonStream,
   temporalPromptJsonStream,
   queryRewriter,
-  safeParse,
-  buildUserQuery,
 } from "@/ai/provider"
 import {
   Models,
@@ -17,6 +15,7 @@ import {
   type ConverseResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
+  type UserQuery,
 } from "@/ai/types"
 import config from "@/config"
 import {
@@ -70,10 +69,12 @@ import {
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
+  getDocumentOrNull,
 } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
+  DriveEntity,
   entitySchema,
   eventSchema,
   fileSchema,
@@ -109,7 +110,7 @@ import {
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
 import { entityToSchemaMapper } from "@/search/mappers"
-import { is } from "drizzle-orm"
+import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -121,6 +122,7 @@ const {
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
+  maxValidLinks,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -413,11 +415,12 @@ export const processMessage = (
 // the Set is passed by reference so that singular object will get updated
 // but need to be kept in mind
 const checkAndYieldCitations = function* (
-  text: string,
+  textInput: string,
   yieldedCitations: Set<number>,
   results: any[],
   baseIndex: number = 0,
 ) {
+  const text = splitGroupedCitationsWithSpaces(textInput)
   let match
   while ((match = textToCitationIndex.exec(text)) !== null) {
     const citationIndex = parseInt(match[1], 10)
@@ -763,6 +766,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         contextSpan?.end()
 
         const ragSpan = querySpan?.startSpan("baseline_rag")
+
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
@@ -985,8 +989,12 @@ async function* generateAnswerFromGivenContext(
     `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
   )
 
+  const selectedContext = isContextSelected(message)
+  const builtUserQuery = selectedContext
+    ? buildUserQuery(selectedContext)
+    : message
   const iterator = baselineRAGJsonStream(
-    input,
+    builtUserQuery,
     userCtx,
     initialContext,
     {
@@ -1010,9 +1018,7 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
     )
-    const parsed = safeParse(message)
-    const msgToSearch = parsed ? buildUserQuery(parsed) : message
-    let results = await searchVespaInFiles(msgToSearch, email, fileIds, {
+    let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
       limit: fileIds?.length,
       alpha: userAlpha,
     })
@@ -1031,21 +1037,16 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
-    const iterator = withThrottlingBackoff(
-      () =>
-        baselineRAGJsonStream(
-          input,
-          userCtx,
-          initialContext,
-          {
-            stream: true,
-            modelId: defaultBestModel,
-            reasoning: config.isReasoning && userRequestsReasoning,
-          },
-          true,
-        ),
-      /* maxRetries: */ 5,
-      /* baseDelayMs: */ 2000,
+    const iterator = baselineRAGJsonStream(
+      builtUserQuery,
+      userCtx,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+      },
+      true,
     )
 
     const answer = yield* processIterator(
@@ -1074,43 +1075,85 @@ async function* generateAnswerFromGivenContext(
   }
 }
 
-export function withThrottlingBackoff<T>(
-  factory: () => AsyncIterable<T>,
-  maxRetries = 5,
-  baseDelayMs = 1000,
-) {
-  return (async function* retryingIterator() {
-    let attempt = 0
-    while (true) {
-      try {
-        // (re)create the iterator
-        for await (const item of factory()) {
-          yield item
+// Checks if the user has selected context
+// Meaning if the query contains Pill info
+export const isContextSelected = (str: string) => {
+  try {
+    if (str.startsWith("[{")) {
+      return JSON.parse(str)
+    } else {
+      return null
+    }
+  } catch {
+    return null
+  }
+}
+
+export const buildUserQuery = (userQuery: UserQuery) => {
+  let builtQuery = ""
+  userQuery?.map((obj) => {
+    if (obj?.type === "text") {
+      builtQuery += `${obj?.value} `
+    } else if (obj?.type === "pill") {
+      builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
+    } else if (obj?.type === "link") {
+      builtQuery += `<User added a link with url here, this url's content is already available to you in the prompt> `
+    }
+  })
+  return builtQuery
+}
+
+const extractFileIdsFromMessage = async (
+  message: string,
+): Promise<{
+  totalValidFileIdsFromLinkCount: number
+  fileIds: string[]
+}> => {
+  const fileIds: string[] = []
+  const jsonMessage = JSON.parse(message) as UserQuery
+  let validFileIdsFromLinkCount = 0
+  let totalValidFileIdsFromLinkCount = 0
+  for (const obj of jsonMessage) {
+    if (obj?.type === "pill") {
+      fileIds.push(obj?.value?.docId)
+    } else if (obj?.type === "link") {
+      const fileId = getFileIdFromLink(obj?.value)
+      if (fileId) {
+        // Check if it's a valid Drive File Id ingested in Vespa
+        // Only works for fileSchema
+        const validFile = await getDocumentOrSpreadsheet(fileId)
+        if (validFile) {
+          totalValidFileIdsFromLinkCount++
+          if (validFileIdsFromLinkCount >= maxValidLinks) {
+            continue
+          }
+          const fields = validFile?.fields as VespaFile
+          // If any of them happens to a spreadsheet, add all its subsheet ids also here
+          if (
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
+          ) {
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
+            const totalSheets = sheetsMetadata?.totalSheets
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${fileId}_${i}`)
+            }
+          } else {
+            fileIds.push(fileId)
+          }
+          validFileIdsFromLinkCount++
         }
-        return
-      } catch (err: any) {
-        const isThrottling =
-          err.name === "ThrottlingException" ||
-          err.type === "ThrottlingException" ||
-          err.message?.includes("ThrottlingException")
-        if (isThrottling && attempt < maxRetries) {
-          // compute 2^attempt * baseDelay + jitter
-          const backoff = Math.pow(2, attempt) * baseDelayMs
-          const jitter = Math.random() * 100
-          const waitTime = backoff + jitter
-          Logger.warn(
-            `[AI] ThrottlingException encountered. ` +
-              `Retrying in ${waitTime.toFixed(0)}ms ` +
-              `(${attempt + 1}/${maxRetries})`,
-          )
-          await delay(waitTime)
-          attempt++
-          continue // retry
-        }
-        throw err
       }
     }
-  })()
+  }
+  return { totalValidFileIdsFromLinkCount, fileIds }
+}
+
+const getFileIdFromLink = (link: string) => {
+  const regex = /(?:\/d\/|[?&]id=)([a-zA-Z0-9_-]+)/
+  const match = link.match(regex)
+  const fileId = match ? match[1] : null
+  return fileId
 }
 
 const getSearchRangeSummary = (
@@ -1219,8 +1262,14 @@ async function* generatePointQueryTimeExpansion(
 
   let previousResultsLength = 0
   const loopLimit = fromDate && toDate ? 2 : maxIterations
+  let starting_iteration_date = from
 
   for (let iteration = 0; iteration < loopLimit; iteration++) {
+    // Taking the starting iteration date in a variable
+    if (iteration == 0) {
+      starting_iteration_date = from
+    }
+
     const iterationSpan = rootSpan?.startSpan(`iteration_${iteration}`)
     iterationSpan?.setAttribute("iteration", iteration)
     const windowSize = (2 + iteration) * weekInMs
@@ -1403,7 +1452,12 @@ async function* generatePointQueryTimeExpansion(
   }
 
   const noAnswerSpan = rootSpan?.startSpan("no_answer_response")
-  const searchSummary = getSearchRangeSummary(from, to, direction, noAnswerSpan)
+  const searchSummary = getSearchRangeSummary(
+    starting_iteration_date,
+    to,
+    direction,
+    noAnswerSpan,
+  )
   const totalCost = costArr.reduce((a, b) => a + b, 0)
   noAnswerSpan?.setAttribute("search_summary", searchSummary)
   noAnswerSpan?.setAttribute("total_cost", totalCost)
@@ -1442,6 +1496,52 @@ const formatTimeDuration = (from: number | null, to: number | null): string => {
   return readable.trim()
 }
 
+async function* processResultsForMetadata(
+  items: VespaSearchResult[],
+  input: string,
+  userCtx: string,
+  app: Apps,
+  entity: any,
+  chunksCount: number | undefined,
+  span?: Span,
+  userRequestsReasoning?: boolean,
+) {
+  if (app === Apps.GoogleDrive) {
+    chunksCount = 100
+    Logger.info(`Google Drive, Chunk size: ${chunksCount}`)
+    span?.setAttribute("Google Drive, chunk_size", chunksCount)
+  }
+
+  // TODO: Calculate the token count for the selected model's capacity and pass the full context accordingly.
+  chunksCount = 20
+  span?.setAttribute(
+    "Document chunk size",
+    `full_context maxed to ${chunksCount}`,
+  )
+  const context = buildContext(items, chunksCount)
+  const streamOptions = {
+    stream: true,
+    modelId: defaultBestModel,
+    reasoning: config.isReasoning && userRequestsReasoning,
+  }
+
+  let iterator: AsyncIterableIterator<ConverseResponse>
+  if (app === Apps.Gmail) {
+    Logger.info(`Using mailPromptJsonStream `)
+    iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
+  } else {
+    Logger.info(`Using baselineRAGJsonStream`)
+    iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
+  }
+
+  return yield* processIterator(
+    iterator,
+    items,
+    0,
+    config.isReasoning && userRequestsReasoning,
+  )
+}
+
 async function* generateMetadataQueryAnswer(
   input: string,
   messages: Message[],
@@ -1453,6 +1553,7 @@ async function* generateMetadataQueryAnswer(
   classification: TemporalClassifier & QueryRouterResponse,
   userRequestsReasoning?: boolean,
   span?: Span,
+  maxIterations = 5,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1493,7 +1594,7 @@ async function* generateMetadataQueryAnswer(
   const directionText = direction === "prev" ? "going back" : "up to"
 
   Logger.info(
-    `Searching for documents from app "${app}" and entity "${entity}"` +
+    `App : "${app}" , Entity : "${entity}"` +
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
 
@@ -1506,8 +1607,17 @@ async function* generateMetadataQueryAnswer(
     classification.filter_query &&
     classification.filters?.sortDirection === "desc"
   ) {
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
     Logger.info(
-      "User requested recent metadata retrieval without specifying app or entity.",
+      "User requested recent metadata retrieval without specifying app or entity",
+    )
+
+    Logger.info(
+      `Multiple App Entity - ${classification.filters.multipleAppAndEntity}`,
     )
     const searchOps = {
       limit: pageSize,
@@ -1517,26 +1627,94 @@ async function* generateMetadataQueryAnswer(
         timestampRange.to || timestampRange.from ? timestampRange : null,
     }
 
-    items =
-      (
-        await searchVespa(
-          classification.filter_query,
-          email,
-          null,
-          null,
-          searchOps,
-        )
-      ).root.children || []
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const pageSpan = span?.startSpan(`metadata_iteration_${iteration}`)
+      Logger.info(
+        `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
+      )
+      items =
+        (
+          await searchVespa(
+            classification.filter_query,
+            email,
+            app as Apps,
+            entity as any,
+            {
+              ...searchOps,
+              offset: pageSize * iteration,
+              span: pageSpan,
+            },
+          )
+        ).root.children || []
 
-    span?.setAttribute("metadata items found", items.length)
+      Logger.info(
+        `iteration-${iteration} retrieved documents length - ${items.length}`,
+      )
+      pageSpan?.setAttribute("offset", pageSize * iteration)
+      pageSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents length`,
+        items.length,
+      )
+      pageSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents id's`,
+        JSON.stringify(
+          items.map((v: VespaSearchResult) => (v.fields as any).docId),
+        ),
+      )
+
+      pageSpan?.setAttribute("context", buildContext(items, 20))
+      if (!items.length) {
+        Logger.info(
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
+        )
+        pageSpan?.end()
+        yield { text: "null" }
+        return
+      }
+
+      const answer = yield* processResultsForMetadata(
+        items,
+        input,
+        userCtx,
+        app as Apps,
+        entity,
+        undefined,
+        span,
+        userRequestsReasoning,
+      )
+
+      if (answer == null) {
+        pageSpan?.setAttribute("answer", null)
+        if (iteration == maxIterations - 1) {
+          pageSpan?.end()
+          yield { text: "null" }
+          return
+        } else {
+          Logger.info(`no answer found for iteration - ${iteration}`)
+          continue
+        }
+      } else {
+        pageSpan?.setAttribute("answer", answer)
+        pageSpan?.end()
+        return answer
+      }
+    }
+
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
-    Logger.info(`Using rank profile: ${SearchModes.GlobalSorted}`)
+    Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
   } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
     const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
     span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
-    Logger.info(
-      `User requested metadata search: ${QueryType.RetrieveUnspecificMetadata}`,
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
     )
+    span?.setAttribute("modelId", defaultBestModel)
+    Logger.info(`Search Type : ${QueryType.RetrieveUnspecificMetadata}`)
 
     items =
       (
@@ -1551,21 +1729,57 @@ async function* generateMetadataQueryAnswer(
         })
       ).root.children || []
 
-    span?.setAttribute("metadata items found", items.length)
+    span?.setAttribute(`retrieved documents length`, items.length)
+    span?.setAttribute(
+      `retrieved documents id's`,
+      JSON.stringify(
+        items.map((v: VespaSearchResult) => (v.fields as any).docId),
+      ),
+    )
 
+    span?.setAttribute("context", buildContext(items, 20))
+    span?.end()
+    Logger.info(
+      `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
+    )
     // Early return if no documents found
     if (!items.length) {
-      return "no documents found"
+      span?.end()
+      Logger.info("No documents found for unspecific metadata retrieval")
+      yield { text: "no documents found" }
+      return
     }
-  } else if (isMetadataRetrieval && isValidAppAndEntity) {
+
+    span?.end()
+    yield* processResultsForMetadata(
+      items,
+      input,
+      userCtx,
+      app as Apps,
+      entity,
+      maxSummaryCount,
+      span,
+      userRequestsReasoning,
+    )
+    return
+  } else if (
+    isMetadataRetrieval &&
+    isValidAppAndEntity &&
+    classification.filter_query
+  ) {
     // Specific metadata retrieval
     span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
-    Logger.info(`User requested metadata search: ${QueryType.RetrieveMetadata}`)
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
+    Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
 
     const { filter_query } = classification
-    const query = filter_query || input
+    const query = filter_query
     const rankProfile =
-      sortDirection === "desc" && filter_query
+      sortDirection === "desc"
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
@@ -1577,74 +1791,83 @@ async function* generateMetadataQueryAnswer(
         timestampRange.to || timestampRange.from ? timestampRange : null,
     }
 
-    items =
-      (
-        await searchVespa(
-          query,
-          email,
-          app as Apps,
-          entity as any,
-          searchOptions,
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const iterationSpan = span?.startSpan(`metadata_iteration_${iteration}`)
+      Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
+
+      items =
+        (
+          await searchVespa(query, email, app as Apps, entity as any, {
+            ...searchOptions,
+            offset: pageSize * iteration,
+          })
+        ).root.children || []
+
+      Logger.info(`Rank Profile : ${rankProfile}`)
+
+      iterationSpan?.setAttribute("offset", pageSize * iteration)
+      iterationSpan?.setAttribute("rank_profile", rankProfile)
+
+      iterationSpan?.setAttribute(
+        `iteration - ${iteration} retrieved documents length`,
+        items.length,
+      )
+      iterationSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents id's`,
+        JSON.stringify(
+          items.map((v: VespaSearchResult) => (v.fields as any).docId),
+        ),
+      )
+      iterationSpan?.setAttribute(`context`, buildContext(items, 20))
+      iterationSpan?.end()
+
+      Logger.info(
+        `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
+      )
+      if (!items.length) {
+        Logger.info(
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
         )
-      ).root.children || []
+        iterationSpan?.end()
+        yield { text: "null" }
+        return
+      }
 
-    Logger.info(`Using rank profile: ${rankProfile}`)
-    span?.setAttribute("rank_profile", rankProfile)
+      const answer = yield* processResultsForMetadata(
+        items,
+        input,
+        userCtx,
+        app as Apps,
+        entity,
+        undefined,
+        span,
+        userRequestsReasoning,
+      )
 
-    if (!items.length) {
-      return hasValidTimeRange ? "no documents found" : null
+      if (answer == null) {
+        iterationSpan?.setAttribute("answer", null)
+        if (iteration == maxIterations - 1) {
+          iterationSpan?.end()
+          yield { text: "null" }
+          return
+        } else {
+          Logger.info(`no answer found for iteration - ${iteration}`)
+          continue
+        }
+      } else {
+        iterationSpan?.end()
+        return answer
+      }
     }
   } else {
     // None of the conditions matched
-    return null
+    yield { text: "null" }
+    return
   }
-
-  Logger.info(`Found ${items.length} items for metadata retrieval`)
-  span?.setAttribute("metadata_items_found", items.length)
-  // Process results
-  const results = items.slice(0, pageSize)
-  let chunksCount = isMetadataRetrieval ? undefined : maxSummaryCount
-
-  if (app === Apps.GoogleDrive && isMetadataRetrieval) {
-    chunksCount = 100
-    Logger.info(`Using Google Drive, setting chunk size to ${chunksCount}`)
-    span?.setAttribute("Google Drive chunk_size", chunksCount)
-  } else {
-    Logger.info(`Sending full context`)
-  }
-
-  const initialContext = buildContext(results, chunksCount)
-  const streamOptions = {
-    stream: true,
-    modelId: defaultBestModel,
-    reasoning: config.isReasoning && userRequestsReasoning,
-  }
-
-  let iterator: AsyncIterableIterator<ConverseResponse>
-  if (app === Apps.Gmail) {
-    Logger.info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(
-      input,
-      userCtx,
-      initialContext,
-      streamOptions,
-    )
-  } else {
-    Logger.info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(
-      input,
-      userCtx,
-      initialContext,
-      streamOptions,
-    )
-  }
-
-  return yield* processIterator(
-    iterator,
-    results,
-    0,
-    config.isReasoning && userRequestsReasoning,
-  )
 }
 
 const fallbackText = (
@@ -1729,8 +1952,12 @@ export async function* UnderstandMessageAndAnswer(
     classification.type == QueryType.RetrieveUnspecificMetadata
   const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
 
-  if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
-    Logger.info("User is asking for metadata retrieval")
+  if (
+    isMetadataRetrieval ||
+    isUnspecificMetadataRetrieval ||
+    classification.filters.multipleAppAndEntity === false
+  ) {
+    Logger.info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
     metadataRagSpan?.setAttribute("comment", "metadata retrieval")
@@ -1738,8 +1965,12 @@ export async function* UnderstandMessageAndAnswer(
       "classification",
       JSON.stringify(classification),
     )
-    const count = classification.filters.count || chatPageSize
-    const answer = yield* generateMetadataQueryAnswer(
+
+    const count =
+      isMetadataRetrieval || isUnspecificMetadataRetrieval
+        ? classification.filters.count || chatPageSize
+        : chatPageSize
+    const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
       email,
@@ -1748,34 +1979,34 @@ export async function* UnderstandMessageAndAnswer(
       count,
       maxDefaultSummary,
       classification,
-      userRequestsReasoning,
+      config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
     )
 
-    if (answer === "no documents found") {
-      metadataRagSpan?.end()
-
-      const fallbackMessage = fallbackText(classification)
-      return yield {
-        text: `I couldn't find any ${fallbackMessage}. Would you like to try a different search?`,
+    let hasYieldedAnswer = false
+    for await (const answer of answerIterator) {
+      if (answer.text === "no documents found") {
+        return yield {
+          text: `I couldn't find any ${fallbackText(classification)}. Would you like to try a different search?`,
+        }
+      } else if (answer.text === "null") {
+        Logger.info(
+          "No context found for metadata retrieval, moving to iterative RAG",
+        )
+        hasYieldedAnswer = false
+      } else {
+        hasYieldedAnswer = true
+        yield answer
       }
     }
 
-    if (answer) {
-      metadataRagSpan?.end()
-      return yield* answer
-    }
     metadataRagSpan?.end()
-    Logger.info(
-      "No context found for metadata retrieval, moving to iterative RAG",
-    )
+    if (hasYieldedAnswer) return
   }
 
   if (classification.direction !== null) {
     // user is talking about an event
-    Logger.info(
-      `User is talking about an event in calendar, so going to look at calendar with direction: ${classification.direction}`,
-    )
+    Logger.info(`Direction : ${classification.direction}`)
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
     return yield* generatePointQueryTimeExpansion(
@@ -1791,9 +2022,7 @@ export async function* UnderstandMessageAndAnswer(
       eventRagSpan,
     )
   } else {
-    Logger.info(
-      "default case, trying to do iterative RAG with query rewriting and time filtering for answering users query",
-    )
+    Logger.info("Iterative Rag : Query rewriting and time filtering")
     const ragSpan = passedSpan?.startSpan("iterative_rag")
     ragSpan?.setAttribute("comment", "iterative rag")
     // default case
@@ -1845,6 +2074,18 @@ const handleError = (error: any) => {
   } else if (error?.code === OpenAIError.InvalidAPIKey) {
     errorMessage =
       "Invalid API key provided. Please check your API key and ensure it is correct."
+  } else if (
+    error?.name === "ThrottlingException" ||
+    error?.message === "Too many tokens, please wait before trying again." ||
+    error?.$metadata?.httpStatusCode === 429
+  ) {
+    errorMessage = "Rate limit exceeded. Please try again later."
+  } else if (
+    error?.name === "ValidationException" ||
+    error?.message ===
+      "The model returned the following errors: Input is too long for requested model."
+  ) {
+    errorMessage = "Input context is too large."
   }
   return errorMessage
 }
@@ -1858,6 +2099,10 @@ const addErrMessageToMessage = async (
       errorMessage,
     })
   }
+}
+
+const isMessageWithContext = (message: string) => {
+  return message?.startsWith("[{") && message?.endsWith("}]")
 }
 
 export const MessageApi = async (c: Context) => {
@@ -1879,17 +2124,8 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let {
-      message,
-      chatId,
-      modelId,
-      stringifiedfileIds,
-      isReasoningEnabled,
-    }: MessageReqType = body
+    let { message, chatId, modelId, isReasoningEnabled }: MessageReqType = body
     const userRequestsReasoning = isReasoningEnabled
-    const fileIds: string[] = stringifiedfileIds
-      ? JSON.parse(stringifiedfileIds)
-      : []
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1897,6 +2133,17 @@ export const MessageApi = async (c: Context) => {
     }
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
+
+    const isMsgWithContext = isMessageWithContext(message)
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    const fileIds = extractedInfo?.fileIds
+    const totalValidFileIdsFromLinkCount =
+      extractedInfo?.totalValidFileIdsFromLinkCount
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2016,7 +2263,7 @@ export const MessageApi = async (c: Context) => {
             }),
           })
 
-          if (fileIds && fileIds.length > 0) {
+          if (isMsgWithContext && fileIds && fileIds?.length > 0) {
             Logger.info(
               "User has selected some context with query, answering only based on that given context",
             )
@@ -2055,6 +2302,7 @@ export const MessageApi = async (c: Context) => {
             citations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
+            let count = 0
             for await (const chunk of iterator) {
               if (stream.closed) {
                 Logger.info(
@@ -2064,6 +2312,15 @@ export const MessageApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
+                if (
+                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  count === 0
+                ) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} links as it exceeds max limit of ${maxValidLinks}. `,
+                  })
+                }
                 if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
@@ -2099,6 +2356,7 @@ export const MessageApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
             understandSpan.setAttribute(
@@ -2221,9 +2479,11 @@ export const MessageApi = async (c: Context) => {
                   fileIds &&
                   fileIds.length > 0
                 ) {
-                  const orgMsg = msg.message
-                  const parsed = safeParse(orgMsg)
-                  msg.message = parsed ? buildUserQuery(parsed) : orgMsg
+                  const originalMsg = msg.message
+                  const selectedContext = isContextSelected(originalMsg)
+                  msg.message = selectedContext
+                    ? buildUserQuery(selectedContext)
+                    : originalMsg
                 }
                 return {
                   role: msg.messageRole as ConversationRole,
@@ -2540,11 +2800,11 @@ export const MessageApi = async (c: Context) => {
               })
               await stream.writeSSE({
                 event: ChatSSEvents.Error,
-                data: "Can you please make your query more specific?",
+                data: "Oops, something went wrong. Please try rephrasing your question or ask something else.",
               })
               await addErrMessageToMessage(
                 lastMessage,
-                "Can you please make your query more specific?",
+                "Oops, something went wrong. Please try rephrasing your question or ask something else.",
               )
 
               const traceJson = tracer.serializeToJson()
@@ -2808,12 +3068,22 @@ export const MessageRetryApi = async (c: Context) => {
     const fileIdsFromDB = JSON.parse(
       JSON.stringify(prevUserMessage?.fileIds || []),
     )
+    let totalValidFileIdsFromLinkCount = 0
     if (
       prevUserMessage.messageRole === "user" &&
       fileIdsFromDB &&
       fileIdsFromDB.length > 0
     ) {
       fileIds = fileIdsFromDB
+      const isMsgWithContext = isMessageWithContext(prevUserMessage.message)
+      const extractedInfo = isMsgWithContext
+        ? await extractFileIdsFromMessage(prevUserMessage.message)
+        : {
+            totalValidFileIdsFromLinkCount: 0,
+            fileIds: [],
+          }
+      totalValidFileIdsFromLinkCount =
+        extractedInfo?.totalValidFileIdsFromLinkCount
     }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
@@ -2883,6 +3153,7 @@ export const MessageRetryApi = async (c: Context) => {
             reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
+            let count = 0
             let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (stream.closed) {
@@ -2893,6 +3164,15 @@ export const MessageRetryApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
+                if (
+                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  count === 0
+                ) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} valid link/s as it exceeds max limit of ${maxValidLinks}. `,
+                  })
+                }
                 if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
@@ -2928,6 +3208,7 @@ export const MessageRetryApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
             understandSpan.setAttribute(
@@ -3090,9 +3371,11 @@ export const MessageRetryApi = async (c: Context) => {
                       fileIds &&
                       fileIds.length > 0
                     ) {
-                      const orgMsg = m.message
-                      const parsed = safeParse(orgMsg)
-                      m.message = parsed ? buildUserQuery(parsed) : orgMsg
+                      const originalMsg = m.message
+                      const selectedContext = isContextSelected(originalMsg)
+                      m.message = selectedContext
+                        ? buildUserQuery(selectedContext)
+                        : originalMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,
@@ -3119,9 +3402,11 @@ export const MessageRetryApi = async (c: Context) => {
                       fileIds &&
                       fileIds.length > 0
                     ) {
-                      const orgMsg = m.message
-                      const parsed = safeParse(orgMsg)
-                      m.message = parsed ? buildUserQuery(parsed) : orgMsg
+                      const originalMsg = m.message
+                      const selectedContext = isContextSelected(originalMsg)
+                      m.message = selectedContext
+                        ? buildUserQuery(selectedContext)
+                        : originalMsg
                     }
                     return {
                       role: m.messageRole as ConversationRole,

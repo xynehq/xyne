@@ -110,7 +110,6 @@ export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
   modelId: z.string().min(1),
-  stringifiedfileIds: z.string(),
   isReasoningEnabled: z
     .string()
     .optional()
