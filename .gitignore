@@ -194,7 +194,9 @@ server/vespa/models/
 .mjs
 
 # downloads like pdfs
-server/downloads
+
 build
-server/eval-results
 server/.venv/*
+server/eval/results/
+server/eval/data/
+server/eval/datasets/
