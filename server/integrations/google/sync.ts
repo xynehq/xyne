@@ -22,7 +22,6 @@ import {
   UpdateDocumentPermissions,
   UpdateEventCancelledInstances,
   insertWithRetry,
-  ifMailDocumentsExist,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {

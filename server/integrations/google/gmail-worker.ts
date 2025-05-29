@@ -176,11 +176,8 @@ export const handleGmailIngestion = async (
       let insertedMessagesInBatch = 0 // Counter for successful messages
       let insertedPdfAttachmentsInBatch = 0 // Counter for successful PDFs in this batch
 
-      const messageIds = messageBatch.map((msg) => msg.id!)
-
       let batchRequests = messageBatch.map((message) =>
         limit(async () => {
-          const messageId = message.id!
           let msgResp
           try {
             msgResp = await retryWithBackoff(
