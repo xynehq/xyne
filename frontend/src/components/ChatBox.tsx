@@ -36,6 +36,24 @@ import { Input } from "@/components/ui/input"
 import { Pill } from "./Pill"
 import { Reference } from "@/types"
 
+// Utility function to determine if the input is visually empty
+const isInputVisuallyEmpty = (
+  textContent: string,
+  htmlContent: string,
+): boolean => {
+  const trimmedText = textContent.trim()
+  if (trimmedText === "") {
+    // If text is empty/whitespace, check if HTML structure is also visually empty
+    return (
+      htmlContent === "" ||
+      htmlContent === "<br>" ||
+      htmlContent === "<p></p>" ||
+      htmlContent === "<div></div>"
+    )
+  }
+  return false // If there's trimmed text, it's not visually empty
+}
+
 interface SourceItem {
   id: string
   name: string
@@ -223,6 +241,16 @@ export const ChatBox = ({
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
   // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+
+  useEffect(() => {
+    // This effect synchronizes placeholder visibility with the query prop,
+    // especially for initial mount or when the query is updated externally.
+    const currentHtmlContent = inputRef.current
+      ? inputRef.current.innerHTML
+      : ""
+    // The `query` prop acts as the textContent for this check.
+    setIsPlaceholderVisible(isInputVisuallyEmpty(query, currentHtmlContent))
+  }, [query, inputRef.current?.innerHTML]) // Re-run if query changes or underlying HTML changes (e.g. cleared by other means)
 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -587,7 +615,6 @@ export const ChatBox = ({
       type: "citation",
     }
 
-
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {
       setShowReferenceBox(false)
@@ -687,7 +714,6 @@ export const ChatBox = ({
       type: "global",
       photoLink: result.photoLink,
     }
-
 
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {
@@ -944,7 +970,6 @@ export const ChatBox = ({
                             index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
                           }`}
                           onClick={() => handleAddReference(citation)}
-                          onMouseEnter={() => setSelectedRefIndex(index)}
                         >
                           <div className="flex items-center gap-2">
                             {citationApp && citationEntity ? (
@@ -1028,7 +1053,6 @@ export const ChatBox = ({
                           index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
                         }`}
                         onClick={() => handleSelectGlobalResult(result)}
-                        onMouseEnter={() => setSelectedRefIndex(index)}
                       >
                         <div className="flex items-center gap-2">
                           {result.type === "user" && result.photoLink ? (
@@ -1069,9 +1093,6 @@ export const ChatBox = ({
                       onClick={handleLoadMore}
                       className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 bg-gray-50 hover:bg-[#EDF2F7] rounded-md border border-gray-200 ${selectedRefIndex === globalResults.length ? "bg-[#EDF2F7] ring-1 ring-blue-300" : ""}`}
                       disabled={isGlobalLoading}
-                      onMouseEnter={() =>
-                        setSelectedRefIndex(globalResults.length)
-                      }
                     >
                       {isGlobalLoading
                         ? "Loading..."
@@ -1093,6 +1114,7 @@ export const ChatBox = ({
           <div
             ref={inputRef}
             contentEditable
+            data-testid="chat-input"
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
@@ -1202,9 +1224,12 @@ export const ChatBox = ({
               const currentInput = inputRef.current
               if (!currentInput) return
 
-              const newValue = currentInput.textContent || ""
-              setQuery(newValue)
-              setIsPlaceholderVisible(newValue.length === 0)
+              const textContentValue = currentInput.textContent || ""
+              setQuery(textContentValue)
+              const htmlContent = currentInput.innerHTML
+              setIsPlaceholderVisible(
+                isInputVisuallyEmpty(textContentValue, htmlContent),
+              )
 
               // The 'references' state and its update logic have been removed.
               // Pill management is now primarily through direct DOM interaction
@@ -1219,12 +1244,12 @@ export const ChatBox = ({
 
               // Check if the character right before the cursor is an '@' and if it's validly placed
               const atCharIndex = cursorPosition - 1
-              if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
+              if (atCharIndex >= 0 && textContentValue[atCharIndex] === "@") {
                 const isFirstCharacter = atCharIndex === 0
                 const isPrecededBySpace =
                   atCharIndex > 0 &&
-                  (newValue[atCharIndex - 1] === " " ||
-                    newValue[atCharIndex - 1] === "\u00A0")
+                  (textContentValue[atCharIndex - 1] === " " ||
+                    textContentValue[atCharIndex - 1] === "\u00A0")
                 if (isFirstCharacter || isPrecededBySpace) {
                   shouldTriggerBox = true
                   newActiveMentionIndex = atCharIndex
@@ -1257,14 +1282,15 @@ export const ChatBox = ({
                 if (showReferenceBox && activeAtMentionIndex !== -1) {
                   // Check if the previously active mention (at activeAtMentionIndex) is still valid
                   // and if the cursor is still actively engaged with it (i.e., after it).
-                  const charAtOldActiveMention = newValue[activeAtMentionIndex]
+                  const charAtOldActiveMention =
+                    textContentValue[activeAtMentionIndex]
                   const oldActiveMentionStillIsAt =
                     charAtOldActiveMention === "@"
                   const oldActiveMentionIsFirst = activeAtMentionIndex === 0
                   const oldActiveMentionPrecededBySpace =
                     activeAtMentionIndex > 0 &&
-                    (newValue[activeAtMentionIndex - 1] === " " ||
-                      newValue[activeAtMentionIndex - 1] === "\u00A0")
+                    (textContentValue[activeAtMentionIndex - 1] === " " ||
+                      textContentValue[activeAtMentionIndex - 1] === "\u00A0")
                   const oldActiveMentionStillValidlyPlaced =
                     oldActiveMentionIsFirst || oldActiveMentionPrecededBySpace
 
@@ -1284,7 +1310,7 @@ export const ChatBox = ({
                   // Otherwise, the box remains open (e.g., user is typing after a valid '@').
                 }
               }
-              adjustInputHeight() 
+              adjustInputHeight()
             }}
             onKeyDown={(e) => {
               if (showReferenceBox) {
