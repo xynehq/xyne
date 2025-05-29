@@ -49,10 +49,10 @@ const modelId = defaultFastModel || Models.Claude_3_5_Haiku
 
 // for permission aware Evals
 // add this value to run
-const myEmail = "junaid.s@xynehq.com" // Add your email here
+const myEmail = "user@ai.com" // Add your email here
 
 // workspace external Id : Adding the workspace id for the evals
-const workspaceId = "orq3jslp9udetix9912ueb6s" // Add your workspace id here
+const workspaceId = "or***" // Add your workspace id here
 
 if (!myEmail) {
   throw new Error("Please set the email")
@@ -65,7 +65,7 @@ if (!workspaceId) {
 type TClassification = TemporalClassifier & { type: QueryType } & {
   filters: Omit<QueryRouterResponse["filters"], "count" | "sortDirection"> & {
     count: number | null
-    sortDirection: boolean | null
+    sortDirection: string | null
   }
 }
 type Data = {
@@ -91,6 +91,23 @@ const data: Data[] = [
       },
     },
   },
+  {
+    input: "list recent emails",
+    expected: {
+      direction: null,
+      type: QueryType.RetrieveUnspecificMetadata,
+      filter_query: null,
+      filters: {
+        app: Apps.Gmail,
+        entity: MailEntity.Email,
+        startTime: null,
+        endTime: null,
+        count: null,
+        sortDirection: "desc",
+        multipleAppAndEntity: false,
+      },
+    },
+  }
 ]
 
 if (!data.length) {
@@ -280,7 +297,8 @@ const result: (Data & {
   output: TClassification
   score: number
 })[] = []
-for (const item of data) {
+
+for await (const item of data) {
   const email = myEmail
   const userAndWorkspace = await getUserAndWorkspaceByEmail(
     db,
@@ -306,7 +324,7 @@ for (const item of data) {
     startTime: "",
     endTime: "",
     count: 0,
-    sortDirection: false,
+    sortDirection: "",
   }
   let parsed = {
     answer: "",
