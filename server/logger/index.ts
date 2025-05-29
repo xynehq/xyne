@@ -122,7 +122,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
    
     requestResponseLatency.observe({
       app_endpoint: c.req.routePath,
-      app_response_status: String(c.res.status)
+      app_response_status: String(c.res.status),
     }, duration)
     logRequest(logger, c, c_reqId, start, c.res.status)
 

@@ -1,5 +1,5 @@
 import metricRegister from "@/metrics/sharedRegistry";
-import { Counter, Histogram } from "prom-client";
+import { Counter, Histogram, Summary } from "prom-client";
 
 export const appRequest = new Counter({
     name: "app_request_count",
@@ -16,11 +16,11 @@ export const appResponse = new Counter({
 
 metricRegister.registerMetric(appResponse)
 
-export const requestResponseLatency = new Histogram({
-  name: "app_request_response_latency",
-  help: "Duration between request and response",
-  labelNames: ["app_endpoint", "app_response_status"],
-  buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 20, 25] // in seconds
+
+export const requestResponseLatency = new Summary({
+  name: "app_request_response_duration_seconds",
+  help: "Observed request durations in seconds",
+  labelNames: ["app_endpoint", "app_response_status"]
 })
 
 metricRegister.registerMetric(requestResponseLatency)
