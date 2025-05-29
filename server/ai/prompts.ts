@@ -791,16 +791,8 @@ export const searchQueryPrompt = (
 
     Now handle the query as follows:
 
-      0. **Follow-Up Detection:** HIGHEST PRIORITY
-      **Evaluation Scope:**
-      For follow-up detection, evaluate the current query against the ENTIRE conversation history provided in the userContext.
-
-      **CRITICAL: First Message Rule**
-      If this is the very first message in the conversation (no previous assistant responses exist), ALWAYS set "isFollowUp" to false, regardless of query content.
-
-      **For subsequent messages only:**
-      Set "isFollowUp" to true if and only if the current query contains explicit, unambiguous linguistic markers that create a direct dependency on specific content from ANY previous assistant response in the conversation history. The query must be incomprehensible or unanswerable without that specific prior context.
-
+    0. **Follow-Up Detection:** HIGHEST PRIORITY
+      For follow-up detection, evaluate the current query against the ENTIRE conversation history.
       **Required Evidence for Follow-Up Classification:**
 
       - **Anaphoric References:** Pronouns or demonstratives that refer back to specific entities mentioned in previous assistant responses:
@@ -825,7 +817,6 @@ export const searchQueryPrompt = (
       4. Removing the conversation history would make the query ambiguous or unanswerable
 
       **Always set isFollowUp = false when:**
-      - This is the first message in the conversation
       - The query is fully self-contained and interpretable without conversation history
       - The query introduces new topics/entities not previously mentioned by the assistant
       - The query lacks explicit referential markers, even if topically related to previous messages
