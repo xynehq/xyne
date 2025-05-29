@@ -105,7 +105,7 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     const start = Date.now()
 
     appRequest.inc({
-      app_endpoint: c.req.routePath,
+      app_endpoint: getPath(c.req.raw),
       app_request_time: new Date(start).toISOString(),
       app_request_process_status: "received"
     }, 1)
