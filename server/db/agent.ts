@@ -7,6 +7,7 @@ import {
   type SelectAgent,
   type SelectPublicAgent,
 } from "./schema"
+export type { SelectAgent }; // Re-export SelectAgent
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"

@@ -439,8 +439,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         setIsReasoningActive(chatParams.reasoning)
       }
 
-      // Call handleSend without referencesForHandleSend, as it's no longer a parameter
-      handleSend(messageToSend, sourcesArray)
+      // Call handleSend, passing agentId from chatParams if available
+      handleSend(messageToSend, sourcesArray, chatParams.agentId)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -449,15 +449,17 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           q: undefined,
           reasoning: undefined,
           sources: undefined,
+          agentId: undefined, // Clear agentId from URL after processing
         }),
         replace: true,
       })
     }
-  }, [chatParams.q, chatParams.reasoning, chatParams.sources, router])
+  }, [chatParams.q, chatParams.reasoning, chatParams.sources, chatParams.agentId, router])
 
   const handleSend = async (
     messageToSend: string,
     selectedSources: string[] = [],
+    agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
   ) => {
     if (!messageToSend || isStreaming) return
 
@@ -515,6 +517,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     // }
     if (isReasoningActive) {
       url.searchParams.append("isReasoningEnabled", "true")
+    }
+
+    // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
+    const agentIdToUse = agentIdFromChatBox || chatParams.agentId;
+    console.log("Using agentId:", agentIdToUse)
+    if (agentIdToUse) {
+      url.searchParams.append("agentId", agentIdToUse);
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
@@ -1756,6 +1765,7 @@ const chatParams = z.object({
     .string()
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
+  agentId: z.string().optional(), // Added agentId to Zod schema
 })
 
 type XyneChat = z.infer<typeof chatParams>
