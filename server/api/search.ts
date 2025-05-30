@@ -15,6 +15,8 @@ import {
   updateUserQueryHistory,
   SearchModes,
   fetchAllDocumentsFromSchema,
+  DeleteDocument,
+  ifDocumentsExistInTranscript
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -406,6 +408,46 @@ export const getAllDocs = async (c: Context)=>{
   catch(error){
     return c.json({
       message: "Error fetching documents",
+      error: getErrorMessage(error),
+    }, 500)
+    }
+}
+
+export const deleteDocument = async (c: Context) => {
+  try{
+    const {sub} = c.get(JwtPayloadKey)
+    const email = sub
+    // @ts-ignore
+    const {docId}: { docId: string } = c.req.valid("form")
+    if (!docId) {
+      return c.json({
+        message: "Document ID is required",
+      }, 400)
+    }
+    // first we will check if the documebt exists 
+    // but having the uploadedBy field is same as email
+    const existanceMap = await ifDocumentsExistInTranscript(docId,email)
+    if(existanceMap[docId].exists){
+      try{
+    const res = await DeleteDocument(docId, "transcript")
+      }
+      catch(error){
+        return c.json({
+          message:" Error deleting document",
+          error: getErrorMessage(error),
+        }, 500)
+        }
+      }
+      else{
+      return c.json({
+        message: "Document does not exist or you do not have permission to delete it",
+      })
+    }
+
+  }
+  catch(error){
+    return c.json({
+      message: "Error deleting document",
       error: getErrorMessage(error),
     }, 500)
     }

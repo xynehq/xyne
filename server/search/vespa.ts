@@ -930,6 +930,18 @@ export const ifDocumentsExist = async (
     throw error
   }
 }
+export const ifDocumentsExistInTranscript = async (
+  docIds: string[]|string,
+  email: string
+)=>
+{
+  try{
+    return await vespa.ifDocumentsExistInTranscript(docIds, email)
+  }
+  catch(error){
+    throw error
+  }
+}
 
 export const ifDocumentsExistInChatContainer = async (
   docIds: string[],
