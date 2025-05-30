@@ -118,6 +118,7 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
+  agentPrompt: z.string().optional(),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
