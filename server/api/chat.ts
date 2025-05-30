@@ -2842,6 +2842,7 @@ export const MessageApi = async (c: Context) => {
                 workspaceExternalId: workspace.externalId,
                 chatExternalId: chat.externalId,
                 messageRole: MessageRole.Assistant,
+                queryRouterClassification: JSON.stringify(classification),
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap),

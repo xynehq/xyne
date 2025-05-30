@@ -1044,13 +1044,13 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
-       - if user haven't explicitly added <app> or <entity> please don't assume any just set it null
+       - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
-    14. If query is a follow up query then isFollowUp must be true.
+    14. If query is a follow up query then "isFollowUp" must be true.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
