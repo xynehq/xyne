@@ -1363,7 +1363,7 @@ const insertFilesForUser = async (
         try{
                   processedFiles += 1
         await insertWithRetry(doc, fileSchema)
-        totalIngestedFiles.inc({file_id: doc.docId??"", file_name:doc.title??"", mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"})
+        totalIngestedFiles.inc({file_id: doc.docId??"", file_name:doc.title??"", mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"},1)
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
         }catch(error){
           ingestionErrorsTotal.inc({file_id:doc.docId??"", file_name: doc.title??"",file_type:"GOOGLE_DRIVE_PDF", mime_type:doc.mimeType??"google_pdf",email:doc.ownerEmail??userEmail, error_type:`ERROR_INGESTING_GOOGLE_DRIVE_PDF`, status:"FAILED"}, 1)
