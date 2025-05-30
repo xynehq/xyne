@@ -13,6 +13,7 @@ import {
   messageSchema,
   SearchApi,
   chatStopSchema,
+  getAllDocs,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -80,7 +81,7 @@ import {
   DeleteDatasetHandler,
 } from "@/api/tuning"
 import metricRegister from "@/metrics/sharedRegistry"
-
+import {handleFileUpload} from "@/api/files"
 export type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -167,6 +168,8 @@ export const AppRoutes = app
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
+  .post("files/upload",handleFileUpload)
+  .post("getAllFiles",getAllDocs)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",

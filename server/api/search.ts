@@ -14,6 +14,7 @@ import {
   UpdateDocument,
   updateUserQueryHistory,
   SearchModes,
+  fetchAllDocumentsFromSchema,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -382,4 +383,29 @@ export const AnswerApi = async (c: Context) => {
       Logger.error("SSE stream aborted")
     })
   })
+}
+
+
+export const getAllDocs = async (c: Context)=>{
+  try{
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+    let res= []
+    try{
+      res= await fetchAllDocumentsFromSchema("transcript",3,email)
+    }
+    catch{
+      Logger.info("failed to fetch from transcript schema")
+    }
+    return c.json({
+      message: "Documents fetched successfully",
+      documents: res,
+    }, 200)
+    }
+  catch(error){
+    return c.json({
+      message: "Error fetching documents",
+      error: getErrorMessage(error),
+    }, 500)
+    }
 }

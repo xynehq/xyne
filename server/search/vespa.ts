@@ -11,6 +11,7 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  transcriptSchema
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -47,6 +48,7 @@ import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 import pLimit from "p-limit"
+import { VespaSearchResponseToSearchResult } from "./mappers"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -447,6 +449,32 @@ export const HybridDefaultProfileInFiles = (
   }
 }
 
+export const HybridDefaultProfileInTranscript = (
+  hits: number,
+  profile: SearchModes = SearchModes.NativeRank,
+): YqlProfile => {
+  if (hits <= 0) {
+    throw new Error("Hits parameter must be greater than 0")
+  }
+
+  return {
+    profile: profile,
+    yql: `
+        select * from sources transcript
+        where ((
+          (
+            (
+              ({targetHits:${hits}}userInput(@query))
+              or
+              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+            )
+            and uploadedBy contains @email 
+          )
+        )
+      )`,
+  }
+}
+
 const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
@@ -584,7 +612,7 @@ export const searchVespa = async (
   email: string,
   app: Apps | null,
   entity: Entity | null,
-  {
+    {
     alpha = 0.5,
     limit = config.page,
     offset = 0,
@@ -693,22 +721,62 @@ export const searchVespaInFiles = async (
   }
 }
 
-/**
- * Retrieves the total count of documents in the specified schema, namespace, and cluster.
- */
-const getDocumentCount = async () => {
+export const searchVespaInTranscript = async (
+  query: string,
+  email: string,
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+  }: Partial<VespaQueryConfig>,
+): Promise<VespaSearchResponse> => {
+  if (!query?.trim()) {
+    throw new Error("Query cannot be empty")
+  }
+
+  if (!email?.trim()) {
+    throw new Error("Email cannot be empty")
+  }
+
+  const isDebugMode = config.isDebugMode || requestDebug || false
+
+  let { yql, profile } = HybridDefaultProfileInTranscript(
+    limit,
+    rankProfile,
+  )
+
+  const hybridDefaultPayload = {
+    yql,
+    query,
+    email,
+    "ranking.profile": profile,
+    "input.query(e)": "embed(@query)",
+    "input.query(alpha)": alpha,
+    maxHits,
+    hits: limit,
+    ...(offset
+      ? {
+          offset,
+        }
+      : {}),
+    ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+  }
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.getDocumentCount(fileSchema, {
-      namespace: NAMESPACE,
-      cluster: CLUSTER,
-    })
+    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
-    throw new ErrorRetrievingDocuments({
+    throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: "file",
+      sources: "transcript",  // Changed from AllSources to just "transcript"
     })
   }
 }
+
+
 
 export const GetDocument = async (
   schema: VespaSchema,
@@ -1205,6 +1273,7 @@ export const getItems = async (
 export const fetchAllDocumentsFromSchema = async (
   schema: VespaSchema,
   concurrency: number = 3,
+  email:string
 ): Promise<any[]> => {
   try {
     const options = {
@@ -1218,6 +1287,7 @@ export const fetchAllDocumentsFromSchema = async (
       schema,
       options,
       concurrency,
+      email,
     )
 
     Logger.info(
