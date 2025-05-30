@@ -86,7 +86,9 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                       if (trimmedQuery) {
                         setOffset(0)
                         navigateToSearch()
-                        setFilter({}) // Use empty object instead of null
+                        setFilter((prevFilter: { lastUpdated?: string }) => ({
+                          lastUpdated: prevFilter.lastUpdated || "anytime",
+                        }))
                         // we only want to look for answer if at least
                         // 3 words are there in the query
                       }

@@ -10,12 +10,17 @@ import {
 } from "@tanstack/react-router"
 import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
-import { ChatSSEvents, SelectPublicMessage, Citation } from "shared/types"
+import {
+  ChatSSEvents,
+  SelectPublicMessage,
+  Citation,
+  // Apps,
+  // DriveEntity,
+} from "shared/types"
 import AssistantLogo from "@/assets/assistant-logo.svg"
 import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
-import { ChatBox } from "@/components/ChatBox"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter"
@@ -36,6 +41,14 @@ import {
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
+import { toast } from "@/hooks/use-toast"
+import { ChatBox } from "@/components/ChatBox"
+import React from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { Pill } from "@/components/Pill"
+import { Reference } from "@/types"
+
+export const THINKING_PLACEHOLDER = "Thinking";
 
 type CurrentResp = {
   resp: string
@@ -46,10 +59,140 @@ type CurrentResp = {
   thinking?: string
 }
 
+// Mapping from source ID to app/entity object
+// const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
+//   {
+//     googledrive: { app: Apps.GoogleDrive, entity: "file" },
+//     googledocs: { app: Apps.GoogleDrive, entity: DriveEntity.Docs },
+//     slack: { app: Apps.Slack, entity: "message" },
+//     gmail: { app: Apps.Gmail, entity: "mail" }, // Assuming MailEntity.Email maps to "mail"
+//     googlecalendar: { app: Apps.GoogleCalendar, entity: "event" },
+//     pdf: { app: "pdf", entity: "pdf_default" }, // Assuming DriveEntity.PDF maps to "pdf_default"
+//     event: { app: "event", entity: "event_default" },
+//   }
+
 interface ChatPageProps {
   user: PublicUser
   workspace: PublicWorkspace
 }
+
+// Define the structure for parsed message parts, including app, entity, and pillType for pills
+type ParsedMessagePart =
+  | { type: "text"; value: string }
+  | {
+      type: "pill"
+      value: {
+        docId: string
+        url: string | null
+        title: string | null
+        app?: string
+        entity?: string
+        pillType?: "citation" | "global"
+      }
+    }
+  | { type: "link"; value: string }
+
+// Helper function to parse HTML message input
+const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
+  const container = document.createElement("div")
+  container.innerHTML = htmlString
+  const parts: Array<ParsedMessagePart> = []
+
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) {
+        parts.push({ type: "text", value: node.textContent })
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement
+      if (
+        el.tagName.toLowerCase() === "a" &&
+        el.classList.contains("reference-pill") &&
+        el.dataset.docId
+      ) {
+        parts.push({
+          type: "pill",
+          value: {
+            docId: el.dataset.docId,
+            url: el.getAttribute("href"),
+            title: el.getAttribute("title"),
+            app: el.dataset.app,
+            entity: el.dataset.entity,
+          },
+        })
+      } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
+        parts.push({
+          type: "link",
+          value: el.getAttribute("href") || "",
+        })
+        // Do not walk children of a link we've already processed as a "link" part
+      } else {
+        Array.from(el.childNodes).forEach(walk)
+      }
+    }
+  }
+
+  Array.from(container.childNodes).forEach(walk)
+  return parts
+}
+
+// Helper function to convert JSON message parts back to HTML using Pill component
+const jsonToHtmlMessage = (jsonString: string): string => {
+  try {
+    const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
+    if (!Array.isArray(parts)) {
+      // If not our specific JSON structure, treat as plain HTML/text string
+      return jsonString
+    }
+
+    return parts
+      .map((part, index) => {
+        let htmlPart = ""
+        if (part.type === "text") {
+          htmlPart = part.value
+        } else if (
+          part.type === "pill" &&
+          part.value &&
+          typeof part.value === "object"
+        ) {
+          const { docId, url, title, app, entity, pillType } = part.value
+
+          const referenceForPill: Reference = {
+            id: docId,
+            docId: docId,
+            title: title || docId,
+            url: url || undefined,
+            app: app,
+            entity: entity,
+            type: pillType || "global",
+          }
+          htmlPart = renderToStaticMarkup(
+            React.createElement(Pill, { newRef: referenceForPill }),
+          )
+        } else if (part.type === "link" && typeof part.value === "string") {
+          const url = part.value
+          // Create a simple anchor tag string for links
+          // Ensure it has similar styling to how it's created in ChatBox
+          // The text of the link will be the URL itself
+          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800 cursor-pointer">${url}</a>`
+        }
+        // Add a space only if the part is not the last one, or if the next part is text.
+        // This avoids trailing spaces or double spaces between elements.
+        if (htmlPart.length > 0 && index < parts.length - 1) {
+          // Add space if current part is not empty and it's not the last part.
+          // More sophisticated logic might be needed if consecutive non-text elements occur.
+          htmlPart += " "
+        }
+        return htmlPart
+      })
+      .join("")
+      .trimEnd()
+  } catch (error) {
+    return jsonString
+  }
+}
+
+const REASONING_STATE_KEY = "isReasoningGlobalState"
 
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const params = Route.useParams()
@@ -88,6 +231,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   )
   const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
   const [showRagTrace, setShowRagTrace] = useState(false) // Added state
+  const [stopMsg, setStopMsg] = useState<boolean>(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
   ) // Added state
@@ -107,6 +251,20 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [isEditing, setIsEditing] = useState<boolean>(false)
   const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
   const titleRef = useRef<HTMLInputElement | null>(null)
+  const [allCitations, setAllCitations] = useState<Map<string, Citation>>(
+    new Map(),
+  ) // State for all citations
+  const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
+  const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
+
+  const [isReasoningActive, setIsReasoningActive] = useState(() => {
+    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
+    return storedValue ? JSON.parse(storedValue) : false
+  })
+
+  useEffect(() => {
+    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
+  }, [isReasoningActive])
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -157,6 +315,32 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       console.error("Failed to rename chat:", error)
     },
   })
+
+  // Effect to aggregate citations from messages
+  useEffect(() => {
+    const newCitations = new Map(allCitations)
+    let changed = false
+    messages.forEach((msg) => {
+      if (msg.messageRole === "assistant" && msg.sources) {
+        // Add explicit type for citation
+        msg.sources.forEach((citation: Citation) => {
+          // Use URL as unique key, ensure title exists for display
+          if (
+            citation.url &&
+            citation.title &&
+            !newCitations.has(citation.url)
+          ) {
+            newCitations.set(citation.url, citation)
+            changed = true
+          }
+        })
+      }
+    })
+    // Only update state if the map actually changed
+    if (changed) {
+      setAllCitations(newCitations)
+    }
+  }, [messages, allCitations]) // Dependency array includes allCitations
 
   useEffect(() => {
     if (inputRef.current) {
@@ -222,7 +406,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       currentRespRef.current = null
     }
     inputRef.current?.focus()
-    setQuery("")
+    setShowSources(false)
+    setCurrentCitations([])
+    setCurrentMessageId(null)
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
@@ -233,19 +419,52 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   useEffect(() => {
     if (chatParams.q && !hasHandledQueryParam.current) {
-      handleSend(decodeURIComponent(chatParams.q))
+      const messageToSend = decodeURIComponent(chatParams.q)
+
+      let sourcesArray: string[] = []
+      // Process chatParams.sources safely
+      const _sources = chatParams.sources as string | string[] | undefined
+
+      if (Array.isArray(_sources)) {
+        sourcesArray = _sources.filter((s) => typeof s === "string")
+      } else if (typeof _sources === "string") {
+        sourcesArray = _sources
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+      }
+
+      // Set reasoning state from URL param if present
+      if (typeof chatParams.reasoning === "boolean") {
+        setIsReasoningActive(chatParams.reasoning)
+      }
+
+      // Call handleSend without referencesForHandleSend, as it's no longer a parameter
+      handleSend(messageToSend, sourcesArray)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
-        search: (prev) => ({ ...prev, q: undefined }),
+        search: (prev) => ({
+          ...prev,
+          q: undefined,
+          reasoning: undefined,
+          sources: undefined,
+        }),
         replace: true,
       })
     }
-  }, [chatParams.q])
+  }, [chatParams.q, chatParams.reasoning, chatParams.sources, router])
 
-  const handleSend = async (messageToSend: string) => {
+  const handleSend = async (
+    messageToSend: string,
+    selectedSources: string[] = [],
+  ) => {
     if (!messageToSend || isStreaming) return
 
+    // Reset userHasScrolled to false when a new message is sent.
+    // This ensures that the view will scroll down automatically as the new message streams in,
+    // unless the user manually scrolls up during the streaming.
+    setUserHasScrolled(false)
     setQuery("")
     setMessages((prevMessages) => [
       ...prevMessages,
@@ -256,93 +475,149 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentResp({ resp: "", thinking: "" })
     currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
+    // const appEntities = selectedSources
+    //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
+    //   .filter((item) => item !== undefined)
+
+    // Always parse the message input to a structured format
+    const parsedMessageParts = parseMessageInput(messageToSend)
+
+    // Determine if the message contains any pills or links
+    const hasRichContent = parsedMessageParts.some(
+      (part) => part.type === "pill" || part.type === "link",
+    )
+
+    let finalMessagePayload: string
+    if (hasRichContent) {
+      finalMessagePayload = JSON.stringify(parsedMessageParts)
+    } else {
+      // If only text parts, send the original plain text message
+      // We extract the text content from parsedMessageParts to ensure it's just the text
+      // and not potentially an empty array string if messageToSend was empty.
+      finalMessagePayload = parsedMessageParts
+        .filter((part) => part.type === "text")
+        .map((part) => part.value)
+        .join("")
+    }
+
     const url = new URL(`/api/v1/message/create`, window.location.origin)
     if (chatId) {
       url.searchParams.append("chatId", chatId)
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
-    url.searchParams.append("message", encodeURIComponent(messageToSend))
+    url.searchParams.append("message", finalMessagePayload)
 
-    const eventSource = new EventSource(url.toString(), {
+    // if (appEntities.length > 0) {
+    //   url.searchParams.append(
+    //     "stringifiedAppEntity",
+    //     JSON.stringify(appEntities),
+    //   )
+    // }
+    if (isReasoningActive) {
+      url.searchParams.append("isReasoningEnabled", "true")
+    }
+
+    eventSourceRef.current = new EventSource(url.toString(), {
+      // Store EventSource
       withCredentials: true,
     })
 
-    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      if (currentRespRef.current) {
-        currentRespRef.current.sources = contextChunks
-        currentRespRef.current.citationMap = citationMap
-        setCurrentResp((prevResp) => ({
-          ...prevResp,
-          resp: prevResp?.resp || "",
-          sources: contextChunks,
-          citationMap,
-        }))
-      }
-    })
+    // ... (rest of the eventSource listeners remain the same) ...
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.CitationsUpdate,
+      (event) => {
+        // Use ref
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        if (currentRespRef.current) {
+          currentRespRef.current.sources = contextChunks
+          currentRespRef.current.citationMap = citationMap
+          // Add explicit type for prevResp
+          setCurrentResp((prevResp: CurrentResp | null) => ({
+            ...(prevResp || { resp: "", thinking: "" }), // Ensure proper default structure
+            resp: prevResp?.resp || "",
+            sources: contextChunks,
+            citationMap,
+          }))
+        }
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-      setCurrentResp((prevResp) => ({
+    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      setCurrentResp((prevResp: CurrentResp | null) => ({
         ...(prevResp || { resp: "", thinking: event.data || "" }),
         thinking: (prevResp?.thinking || "") + event.data,
       }))
     })
 
-    eventSource.addEventListener(ChatSSEvents.Start, (event) => {})
+    eventSourceRef.current.addEventListener(ChatSSEvents.Start, (event) => {})
 
-    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      setCurrentResp((prevResp) => {
-        const updatedResp = prevResp
-          ? { ...prevResp, resp: prevResp.resp + event.data }
-          : { resp: event.data }
-        currentRespRef.current = updatedResp
-        return updatedResp
-      })
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseUpdate,
+      (event) => {
+        setCurrentResp((prevResp: CurrentResp | null) => {
+          const updatedResp = prevResp
+            ? { ...prevResp, resp: prevResp.resp + event.data }
+            : { resp: event.data, thinking: "", sources: [], citationMap: {} }
+          currentRespRef.current = updatedResp
+          return updatedResp
+        })
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-      const { chatId, messageId } = JSON.parse(event.data)
-      setChatId(chatId)
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseMetadata,
+      (event) => {
+        // Use ref
+        const { chatId, messageId } = JSON.parse(event.data)
+        setChatId(chatId)
+        if (chatId) {
+          setTimeout(() => {
+            router.navigate({
+              to: "/chat/$chatId",
+              params: { chatId },
+              search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
+            })
+          }, 1000)
 
-      if (chatId) {
-        setTimeout(() => {
-          router.navigate({
-            to: "/chat/$chatId",
-            params: { chatId },
-            search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
-          })
-        }, 1000)
-      }
-
-      if (messageId) {
-        if (currentRespRef.current) {
-          setCurrentResp((resp) => {
-            const updatedResp = resp || { resp: "" }
-            updatedResp.chatId = chatId
-            updatedResp.messageId = messageId
-            currentRespRef.current = updatedResp
-            return updatedResp
-          })
-        } else {
-          setMessages((prevMessages) => {
-            const lastMessage = prevMessages[prevMessages.length - 1]
-            if (lastMessage.messageRole === "assistant") {
-              return [
-                ...prevMessages.slice(0, -1),
-                { ...lastMessage, externalId: messageId },
-              ]
-            }
-            return prevMessages
-          })
+          if (!stopMsg) {
+            setStopMsg(true)
+          }
         }
-      }
-    })
+        if (messageId) {
+          if (currentRespRef.current) {
+            setCurrentResp((resp: CurrentResp | null) => {
+              const updatedResp = resp || { resp: "", thinking: "" }
+              updatedResp.chatId = chatId
+              updatedResp.messageId = messageId
+              currentRespRef.current = updatedResp
+              return updatedResp
+            })
+          } else {
+            setMessages((prevMessages) => {
+              const lastMessage = prevMessages[prevMessages.length - 1]
+              if (lastMessage.messageRole === "assistant") {
+                return [
+                  ...prevMessages.slice(0, -1),
+                  { ...lastMessage, externalId: messageId },
+                ]
+              }
+              return prevMessages
+            })
+          }
+        }
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.ChatTitleUpdate, (event) => {
-      setChatTitle(event.data)
-    })
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ChatTitleUpdate,
+      (event) => {
+        // Use ref
+        setChatTitle(event.data)
+      },
+    )
 
-    eventSource.addEventListener(ChatSSEvents.End, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
+      // Use ref
       const currentResp = currentRespRef.current
       if (currentResp) {
         setMessages((prevMessages) => [
@@ -359,11 +634,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
       setIsStreaming(false)
     })
 
-    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
+      // Use ref
       console.error("Error with SSE:", event.data)
       const currentResp = currentRespRef.current
       if (currentResp) {
@@ -381,11 +659,30 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
       setIsStreaming(false)
     })
 
-    eventSource.onerror = (error) => {
+    eventSourceRef.current.onerror = (error) => {
+      // Use ref
+      // Check if the stop was intentional
+      if (userStopped) {
+        setUserStopped(false) // Reset the flag
+        // Clean up state, similar to handleStop or End event
+        setCurrentResp(null)
+        currentRespRef.current = null
+        setStopMsg(false)
+        setIsStreaming(false)
+        // Close again just in case, and clear ref
+        eventSourceRef.current?.close()
+        eventSourceRef.current = null
+        // Do NOT add an error message in this case
+        return
+      }
+
+      // If it wasn't a user stop, proceed with error handling as before
       console.error("Error with SSE:", error)
       const currentResp = currentRespRef.current
       if (currentResp) {
@@ -399,11 +696,70 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
       setCurrentResp(null)
       currentRespRef.current = null
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
+      setStopMsg(false)
       setIsStreaming(false)
     }
 
     setQuery("")
+  }
+
+  const handleStop = async () => {
+    setUserStopped(true) // Indicate intentional stop before closing
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null // Clear the ref
+    }
+
+    setIsStreaming(false)
+
+    // 4. Attempt to send stop request to backend if IDs are available
+    if (chatId && isStreaming) {
+      // This `isStreaming` check might be redundant now, but let's keep it for safety
+      try {
+        await api.chat.stop.$post({
+          json: {
+            chatId: chatId,
+          },
+        })
+      } catch (error) {
+        console.error("Failed to send stop request to backend:", error)
+        toast({
+          title: "Error",
+          description: "Could not stop streaming.",
+          variant: "destructive",
+          duration: 1000,
+        })
+        // Backend stop failed, but client-side is already stopped
+      }
+    }
+
+    // 5. Add partial response to messages if available
+    if (currentRespRef.current && currentRespRef.current.resp) {
+      // Use currentRespRef.current directly
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+          messageRole: "assistant",
+          message: currentRespRef.current?.resp || " ", // Use currentRespRef.current
+          externalId: currentRespRef.current?.messageId, // Use currentRespRef.current
+          sources: currentRespRef.current?.sources, // Use currentRespRef.current
+          citationMap: currentRespRef.current?.citationMap, // Use currentRespRef.current
+          thinking: currentRespRef.current?.thinking, // Use currentRespRef.current
+        },
+      ])
+    }
+
+    // 6. Clear streaming-related state *after* backend request and message handling
+    setCurrentResp(null)
+    currentRespRef.current = null
+    setStopMsg(false)
+    // 7. Invalidate router state after a short delay to refetch loader data
+    setTimeout(() => {
+      router.invalidate()
+    }, 1000) // Delay for 500ms
   }
 
   const handleRetry = async (messageId: string) => {
@@ -456,41 +812,49 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     const url = new URL(`/api/v1/message/retry`, window.location.origin)
     url.searchParams.append("messageId", encodeURIComponent(messageId))
-    const eventSource = new EventSource(url.toString(), {
+    url.searchParams.append("isReasoningEnabled", `${isReasoningActive}`)
+    setStopMsg(true) // Ensure stop message can be sent for retries
+    eventSourceRef.current = new EventSource(url.toString(), {
+      // Store EventSource
       withCredentials: true,
     })
 
-    eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-      if (userMsgWithErr) {
-        setMessages((prevMessages) => {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseUpdate,
+      (event) => {
+        // Use ref
+        if (userMsgWithErr) {
+          setMessages((prevMessages) => {
+            const index = prevMessages.findIndex(
+              (msg) => msg.externalId === messageId,
+            )
+
+            if (index === -1 || index + 1 >= prevMessages.length) {
+              return prevMessages
+            }
+
+            const newMessages = [...prevMessages]
+            newMessages[index + 1] = {
+              ...newMessages[index + 1],
+              message: newMessages[index + 1].message + event.data,
+            }
+
+            return newMessages
+          })
+        } else {
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg.externalId === messageId && msg.isRetrying
+                ? { ...msg, message: msg.message + event.data }
+                : msg,
+            ),
           )
+        }
+      },
+    )
 
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
-          }
-
-          const newMessages = [...prevMessages]
-          newMessages[index + 1] = {
-            ...newMessages[index + 1],
-            message: newMessages[index + 1].message + event.data,
-          }
-
-          return newMessages
-        })
-      } else {
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, message: msg.message + event.data }
-              : msg,
-          ),
-        )
-      }
-    })
-
-    eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.Reasoning, (event) => {
+      // Use ref
       if (userMsgWithErr) {
         setMessages((prevMessages) => {
           const index = prevMessages.findIndex(
@@ -520,15 +884,45 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       }
     })
 
-    eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-      const userMessage = messages.find(
-        (msg) => msg.externalId === messageId && msg.messageRole === "user",
-      )
-      if (userMessage) {
-        const { messageId: newMessageId } = JSON.parse(event.data)
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.ResponseMetadata,
+      (event) => {
+        // Use ref
+        const userMessage = messages.find(
+          (msg) => msg.externalId === messageId && msg.messageRole === "user",
+        )
+        if (userMessage) {
+          const { messageId: newMessageId } = JSON.parse(event.data)
 
-        if (newMessageId) {
-          setMessages((prevMessages) => {
+          if (newMessageId) {
+            setMessages((prevMessages) => {
+              const index = prevMessages.findIndex(
+                (msg) => msg.externalId === messageId,
+              )
+
+              if (index === -1 || index + 1 >= prevMessages.length) {
+                return prevMessages
+              }
+
+              const newMessages = [...prevMessages]
+              newMessages[index + 1] = {
+                ...newMessages[index + 1],
+                externalId: newMessageId,
+              }
+              return newMessages
+            })
+          }
+        }
+      },
+    )
+
+    eventSourceRef.current.addEventListener(
+      ChatSSEvents.CitationsUpdate,
+      (event) => {
+        // Use ref
+        const { contextChunks, citationMap } = JSON.parse(event.data)
+        setMessages((prevMessages) => {
+          if (userMsgWithErr) {
             const index = prevMessages.findIndex(
               (msg) => msg.externalId === messageId,
             )
@@ -538,50 +932,29 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             }
 
             const newMessages = [...prevMessages]
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              externalId: newMessageId,
+
+            if (newMessages[index + 1].isRetrying) {
+              newMessages[index + 1] = {
+                ...newMessages[index + 1],
+                sources: contextChunks,
+                citationMap,
+              }
             }
+
             return newMessages
-          })
-        }
-      }
-    })
-
-    eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-      const { contextChunks, citationMap } = JSON.parse(event.data)
-      setMessages((prevMessages) => {
-        if (userMsgWithErr) {
-          const index = prevMessages.findIndex(
-            (msg) => msg.externalId === messageId,
-          )
-
-          if (index === -1 || index + 1 >= prevMessages.length) {
-            return prevMessages
+          } else {
+            return prevMessages.map((msg) =>
+              msg.externalId === messageId && msg.isRetrying
+                ? { ...msg, sources: contextChunks, citationMap }
+                : msg,
+            )
           }
+        })
+      },
+    )
 
-          const newMessages = [...prevMessages]
-
-          if (newMessages[index + 1].isRetrying) {
-            newMessages[index + 1] = {
-              ...newMessages[index + 1],
-              sources: contextChunks,
-              citationMap,
-            }
-          }
-
-          return newMessages
-        } else {
-          return prevMessages.map((msg) =>
-            msg.externalId === messageId && msg.isRetrying
-              ? { ...msg, sources: contextChunks, citationMap }
-              : msg,
-          )
-        }
-      })
-    })
-
-    eventSource.addEventListener(ChatSSEvents.End, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.End, (event) => {
+      // Use ref
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
           const index = prevMessages.findIndex(
@@ -610,11 +983,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
       setIsStreaming(false)
     })
 
-    eventSource.addEventListener(ChatSSEvents.Error, (event) => {
+    eventSourceRef.current.addEventListener(ChatSSEvents.Error, (event) => {
+      // Use ref
       console.error("Retry Error with SSE:", event.data)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -644,11 +1019,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
       setIsStreaming(false)
     })
 
-    eventSource.onerror = (error) => {
+    eventSourceRef.current.onerror = (error) => {
+      // Use ref
       console.error("Retry SSE Error:", error)
       setMessages((prevMessages) => {
         if (userMsgWithErr) {
@@ -674,7 +1051,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           )
         }
       })
-      eventSource.close()
+      eventSourceRef.current?.close() // Use ref
+      eventSourceRef.current = null // Clear ref
       setIsStreaming(false)
     }
   }
@@ -704,11 +1082,16 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleScroll = () => {
     const isAtBottom = isScrolledToBottom()
+    // Set userHasScrolled to true if the user scrolls up from the bottom.
+    // This will prevent the automatic scrolling behavior while the user is manually scrolling.
     setUserHasScrolled(!isAtBottom)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
+    // Only scroll to the bottom if the container exists and the user has not manually scrolled up.
+    // This prevents the view from jumping to the bottom if the user is trying to read previous messages
+    // while a new message is streaming in.
     if (!container || userHasScrolled) return
 
     container.scrollTop = container.scrollHeight
@@ -810,15 +1193,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           </div>
         </div>
 
+        {/* The onScroll event handler is attached to this div because it's the scrollable container for messages. */}
+        {/* This ensures that scroll events are captured correctly to manage the auto-scroll behavior. */}
         <div
           className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
           ref={messagesContainerRef}
+          onScroll={handleScroll}
         >
           <div className={`w-full h-full flex flex-col items-center`}>
-            <div
-              onScroll={handleScroll}
-              className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]"
-            >
+            <div className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]">
               {messages.map((message, index) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
@@ -837,6 +1220,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
+                      isRetrying={message.isRetrying}
                       dots={message.isRetrying ? dots : ""}
                       onToggleSources={() => {
                         if (
@@ -867,6 +1251,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
+                        isRetrying={message.isRetrying}
                         dots={message.isRetrying ? dots : ""}
                         onToggleSources={() => {
                           if (
@@ -941,8 +1326,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
             <ChatBox
               query={query}
               setQuery={setQuery}
-              handleSend={handleSend}
+              handleSend={handleSend} // handleSend function is passed here
+              handleStop={handleStop}
               isStreaming={isStreaming}
+              allCitations={allCitations}
+              chatId={chatId}
+              isReasoningActive={isReasoningActive}
+              setIsReasoningActive={setIsReasoningActive}
             />
           </div>
           <Sources
@@ -1103,7 +1493,14 @@ const Sources = ({
 
 export const textToCitationIndex = /\[(\d+)\]/g
 
-const ChatMessage = ({
+const renderMarkdownLink = ({
+  node,
+  ...linkProps
+}: { node?: any; [key: string]: any }) => (
+  <a {...linkProps} target="_blank" rel="noopener noreferrer" />
+)
+
+export const ChatMessage = ({
   message,
   thinking,
   isUser,
@@ -1162,7 +1559,7 @@ const ChatMessage = ({
       className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
     >
       {isUser ? (
-        message
+        <div dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
       ) : (
         <div
           className={`flex flex-col mt-[40px] ${citationUrls.length ? "mb-[35px]" : ""}`}
@@ -1185,14 +1582,17 @@ const ChatMessage = ({
                       backgroundColor: "transparent",
                       color: "#627384",
                     }}
+                    components={{
+                      a: renderMarkdownLink,
+                    }}
                   />
                 </div>
               )}
-              {message === "" ? (
+              {((message === "") && (!responseDone || isRetrying)) ? (
                 <div className="flex-grow">
-                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                  {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
-              ) : (
+              ) : message !== "" ? (
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
@@ -1204,6 +1604,49 @@ const ChatMessage = ({
                     color: "#1C1D1F",
                   }}
                   components={{
+                    a: renderMarkdownLink,
+                    table: ({ node, ...props }) => (
+                      <div className="overflow-x-auto w-[720px] my-2">
+                        <table
+                          style={{
+                            borderCollapse: "collapse",
+                            borderStyle: "hidden",
+                            tableLayout: "fixed",
+                            width: "100%",
+                          }}
+                          className="min-w-full"
+                          {...props}
+                        />
+                      </div>
+                    ),
+                    th: ({ node, ...props }) => (
+                      <th
+                        style={{
+                          border: "none",
+                          padding: "4px 8px",
+                          textAlign: "left",
+                          overflowWrap: "break-word",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    td: ({ node, ...props }) => (
+                      <td
+                        style={{
+                          border: "none",
+                          borderTop: "1px solid #e5e7eb",
+                          padding: "4px 8px",
+                          overflowWrap: "break-word",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    tr: ({ node, ...props }) => (
+                      <tr
+                        style={{ backgroundColor: "#ffffff", border: "none" }}
+                        {...props}
+                      />
+                    ),
                     h1: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "1.6em" }} {...props} />
                     ),
@@ -1224,7 +1667,7 @@ const ChatMessage = ({
                     ),
                   }}
                 />
-              )}
+              ) : null}
             </div>
           </div>
           {responseDone && !isRetrying && (
@@ -1293,6 +1736,26 @@ const chatParams = z.object({
     .transform((val) => val === "true")
     .optional()
     .default("false"),
+  reasoning: z.boolean().optional(),
+  refs: z // Changed from docId to refs, expects a JSON string array
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return undefined
+      try {
+        const parsed = JSON.parse(val)
+        return Array.isArray(parsed) &&
+          parsed.every((item) => typeof item === "string")
+          ? parsed
+          : undefined
+      } catch (e) {
+        return undefined // Invalid JSON
+      }
+    }),
+  sources: z // Changed from sourceIds to sources, expects comma-separated string
+    .string()
+    .optional()
+    .transform((val) => (val ? val.split(",") : undefined)),
 })
 
 type XyneChat = z.infer<typeof chatParams>

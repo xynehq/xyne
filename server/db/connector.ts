@@ -224,10 +224,11 @@ export const getOAuthConnectorWithCredentials = async (
 }
 
 export const getConnectorByExternalId = async (
+  trx: TxnOrClient,
   connectorId: string,
   userId: number,
-) => {
-  const res = await db
+): Promise<SelectConnector> => {
+  const res = await trx
     .select()
     .from(connectors)
     .where(
@@ -238,11 +239,22 @@ export const getConnectorByExternalId = async (
     )
     .limit(1)
   if (res.length) {
-    return res[0]
+    const parsedRes = selectConnectorSchema.safeParse(res[0])
+    if (!parsedRes.success) {
+      Logger.error(
+        `Failed to parse connector data for externalId ${connectorId}: ${parsedRes.error.toString()}`,
+      )
+      throw new NoConnectorsFound({
+        message: `Could not parse connector data for externalId: ${connectorId}`,
+      })
+    }
+    return parsedRes.data
   } else {
-    Logger.error(`Connector not found for external ID ${connectorId}`)
+    Logger.error(
+      `Connector not found for external ID ${connectorId} and user ID ${userId}`,
+    )
     throw new NoConnectorsFound({
-      message: `Could not get the connector with id: ${connectorId}`,
+      message: `Connector not found for external ID ${connectorId} and user ID ${userId}`,
     })
   }
 }
@@ -286,7 +298,9 @@ export const deleteOauthConnector = async (
   trx: TxnOrClient,
   connectorId: number,
 ): Promise<void> => {
-  Logger.info(`Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`)
+  Logger.info(
+    `Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`,
+  )
   try {
     await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
     Logger.debug(`Deleted sync jobs for connector ID: ${connectorId}`)
@@ -294,10 +308,9 @@ export const deleteOauthConnector = async (
     await trx
       .delete(oauthProviders)
       .where(eq(oauthProviders.connectorId, connectorId))
-     Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
+    Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
 
     await trx.delete(connectors).where(eq(connectors.id, connectorId))
-
   } catch (error) {
     Logger.error(
       { error, connectorId },

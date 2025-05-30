@@ -28,6 +28,17 @@ enum Tabs {
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
+  const [isReasoningActive, setIsReasoningActive] = useState(() => {
+    const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
+    return storedValue ? JSON.parse(storedValue) : false
+  })
+
+  useEffect(() => {
+    localStorage.setItem(
+      "isReasoningGlobalState",
+      JSON.stringify(isReasoningActive),
+    )
+  }, [isReasoningActive])
 
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
@@ -107,14 +118,30 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (messageToSend: string) => {
-    if (query.trim()) {
+  const handleAsk = (messageToSend: string, selectedSources?: string[]) => {
+    if (messageToSend.trim()) {
+      const searchParams: {
+        q: string
+        reasoning?: boolean
+        sources?: string
+      } = {
+        q: encodeURIComponent(messageToSend.trim()),
+      }
+      if (isReasoningActive) {
+        searchParams.reasoning = true
+      }
+
+      if (selectedSources && selectedSources.length > 0) {
+        searchParams.sources = selectedSources.join(",")
+      }
+
       navigate({
         to: "/chat",
-        search: { q: encodeURIComponent(messageToSend.trim()) },
+        search: searchParams,
       })
     }
   }
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Tab") {
@@ -203,6 +230,9 @@ const Index = () => {
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}
+                  allCitations={new Map()} // Change this line
+                  isReasoningActive={isReasoningActive}
+                  setIsReasoningActive={setIsReasoningActive}
                 />
               </div>
             )}

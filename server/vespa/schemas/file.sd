@@ -59,6 +59,7 @@ schema file {
       attribute: fast-search
     }
 
+
     field updatedAt type long {
       indexing: attribute | summary
       attribute: fast-search
@@ -101,6 +102,7 @@ schema file {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
+      query(recency_decay_rate) double
     }
 
     constants {
@@ -115,13 +117,13 @@ schema file {
     }
 
     function document_age() {
-      # Default document age assuming to 3 months when no updateAt timestamp is present
+      # Default document age assuming to 3 months when no updatedAt timestamp is present
       expression: max(if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(updatedAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
     }
 
     # Document score decays min to 0.5
     function doc_recency() {
-      expression: max(1 / (1 + 0.5 * document_age), MAX_DOC_DECAY)
+        expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
     }
 
     function vector_score() {
@@ -160,7 +162,7 @@ schema file {
         (
           (query(alpha) * vector_score) + 
           ((1 - query(alpha)) *  combined_nativeRank)
-        )
+        ) * doc_recency
       }
       rerank-count: 1000
     }
@@ -173,6 +175,79 @@ schema file {
       nativeRank(chunks)
       chunk_scores
       doc_recency
+    }
+  }
+
+  # New rank profile designed for sorting: implements recency binning with hybrid scoring within bins.
+  rank-profile global_sorted inherits initial {
+    # No global-phase section to allow sorting by first-phase score directly.
+
+    # Query inputs specific to this rank profile
+    inputs { # query(e) and query(alpha) are inherited from 'initial'
+      query(bin_size_days_gs) double: 1.0 # Default bin size is 1 day. Send with query: ?ranking.features.query(bin_size_days_gs)=7 for weekly bins
+    }
+
+    # Constants for recency binning within global_sorted
+    constants {
+      ONE_DAY_IN_SECONDS_GS: 86400.0         # 60 * 60 * 24
+      RECENCY_BIN_MULTIPLIER_GS: 10000.0     # Must be > max value of normalized_hybrid_relevance_gs. Adjust if needed.
+      MAX_SCORE_BASE_GS: 1000000000.0      # Large base score to ensure positive scores and separation.
+    }
+
+    # Helper Functions for recency binning specific to global_sorted
+
+    # Calculate document age in days.
+    # Uses THREE_MONTHS_IN_SECONDS from 'initial' profile as default age if updatedAt is missing.
+    function document_age_days_gs() {
+      expression: max(0.0, if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS / ONE_DAY_IN_SECONDS_GS, (now() - (attribute(updatedAt) / 1000)) / ONE_DAY_IN_SECONDS_GS))
+    }
+
+    # Assign document to a recency bin index (0=today/newest, 1=yesterday, etc.)
+    function recency_bin_index_gs() {
+      expression: floor(document_age_days_gs() / query(bin_size_days_gs))
+    }
+
+    # Calculate a large score based purely on the recency bin.
+    # Newer bins (lower index) get significantly higher scores.
+    function recency_bin_score_gs() {
+      expression: MAX_SCORE_BASE_GS - (recency_bin_index_gs() * RECENCY_BIN_MULTIPLIER_GS)
+    }
+
+    # Calculate a hybrid relevance score, combining vector and text relevance.
+    # vector_score() and combined_nativeRank are inherited from 'initial'.
+    # query(alpha) is inherited from 'initial'.
+    function hybrid_relevance_score_gs() {
+      expression: (query(alpha) * vector_score()) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    # Calculate a normalized version of the hybrid relevance score.
+    # The divisor (e.g., 10.0) should be tuned based on typical combined_nativeRank values
+    # to ensure this score component is smaller than RECENCY_BIN_MULTIPLIER_GS.
+    function normalized_hybrid_relevance_gs() {
+      expression: max(0.0, min(hybrid_relevance_score_gs() / 10.0, RECENCY_BIN_MULTIPLIER_GS - 1.0))
+    }
+
+    # --- Ranking Expression ---
+    first-phase {
+      # Final score = Huge score from recency bin + smaller normalized hybrid relevance score.
+      # This guarantees sorting by recency bin first, then by hybrid relevance within the bin.
+      expression: recency_bin_score_gs() + normalized_hybrid_relevance_gs()
+    }
+
+    match-features {
+      query(alpha)
+      vector_score
+      matchedFieldCount
+      combined_nativeRank        
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      document_age_days_gs
+      query(bin_size_days_gs)  
+      recency_bin_index_gs
+      recency_bin_score_gs
+      hybrid_relevance_score_gs 
+      normalized_hybrid_relevance_gs 
     }
   }
 

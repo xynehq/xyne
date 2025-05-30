@@ -28,6 +28,8 @@ export enum Models {
   Claude_3_7_Sonnet = "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
   Claude_3_5_Sonnet = "anthropic.claude-3-5-sonnet-20240620-v1:0",
   Claude_3_5_Haiku = "anthropic.claude-3-5-haiku-20241022-v1:0",
+  Claude_Opus_4 = "us.anthropic.claude-opus-4-20250514-v1:0",
+  Claude_Sonnet_4 = "us.anthropic.claude-sonnet-4-20250514-v1:0",
   Amazon_Nova_Micro = "amazon.nova-micro-v1:0",
   Amazon_Nova_Lite = "amazon.nova-lite-v1:0",
   Amazon_Nova_Pro = "amazon.nova-pro-v1:0",
@@ -46,8 +48,8 @@ export enum QueryCategory {
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
-  ListItems = "ListItems",
-  // RetrieveMetadata = "RetrieveMetadata",
+  RetrieveUnspecificMetadata = "RetrieveUnspecificMetadata",
+  RetrieveMetadata = "RetrieveMetadata",
 }
 
 export type Cost = {
@@ -55,9 +57,10 @@ export type Cost = {
   pricePerThousandOutputTokens: number
 }
 
-export type TimeDirection = "next" | "prev"
+export type TimeDirection = "next" | "prev" | null
 export interface TemporalClassifier {
   direction: TimeDirection | null
+  filter_query: string | null
 }
 
 export interface ModelParams {
@@ -126,13 +129,20 @@ export const FiltersSchema = z.object({
   entity: entitySchema.optional(),
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
+  sortDirection: z.string().optional(),
+  multipleAppAndEntity: z.boolean().optional(),
 })
 
-export const listItemsSchema = z.object({
-  type: z.literal(QueryType.ListItems),
+export const RetrievedUnspecificMetadataSchema = z.object({
+  type: z.literal(QueryType.RetrieveUnspecificMetadata),
   filters: FiltersSchema.extend({
-    app: z.nativeEnum(Apps),
-    entity: entitySchema,
+    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
+  }),
+})
+
+export const RetrieveMetadataSchema = z.object({
+  type: z.literal(QueryType.RetrieveMetadata),
+  filters: FiltersSchema.extend({
     count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   }),
 })
@@ -140,19 +150,10 @@ export const listItemsSchema = z.object({
 export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(QueryType.RetrieveInformation),
-    filters: z.object({
-      startTime: z.string().nullable().optional(),
-      endTime: z.string().nullable().optional(),
-    }),
+    filters: FiltersSchema,
   }),
-  listItemsSchema,
-  // z.object({
-  //   type: z.literal(QueryType.RetrieveMetadata),
-  //   filters: FiltersSchema.extend({
-  //     app: z.nativeEnum(Apps),
-  //     entity: entitySchema,
-  //   }),
-  // }),
+  RetrieveMetadataSchema,
+  RetrievedUnspecificMetadataSchema,
 ])
 
 export const QueryContextRank = z.object({
@@ -162,6 +163,30 @@ export const QueryContextRank = z.object({
 
 export type QueryContextRank = z.infer<typeof QueryContextRank>
 
-export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
+// export type ListItemRouterResponse = z.infer<typeof listItemsSchema>
 
 export type QueryRouterResponse = z.infer<typeof QueryRouterResponseSchema>
+
+interface TextQueryItem {
+  type: "text"
+  value: string
+}
+
+interface PillValue {
+  title: string
+  docId: string
+}
+
+interface PillQueryItem {
+  type: "pill"
+  value: PillValue
+}
+
+interface LinkQueryItem {
+  type: "link"
+  value: string
+}
+
+type UserQueryItem = TextQueryItem | PillQueryItem | LinkQueryItem
+
+export type UserQuery = UserQueryItem[]

@@ -51,22 +51,22 @@ import {
   analyzeInitialResultsOrRewriteV2SystemPrompt,
   AnalyzeUserQuerySystemPrompt,
   askQuestionUserPrompt,
+  baselineFilesContextPromptJson,
   baselinePrompt,
   baselinePromptJson,
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
+  emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
-  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
   queryRewritePromptJson,
-  queryRouterPrompt,
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
-  temporalEventClassifier,
+  temporalDirectionJsonPrompt,
   userChatSystem,
 } from "@/ai/prompts"
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -374,9 +374,12 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
+    // edge case where ```json is prepended to the text
+    text = text.replace(/^```(json)?\s*/i, "")
+    text = text.trim()
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
-      text = text.replaceAll(/[\n"}:]/g, "");
+      text = text.replaceAll(/[\n"}:`]/g, "")
     }
     // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
@@ -401,8 +404,12 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     }
     // we only want to do this if enough text has accumulated
     // we don't want to do case where just `json` comes and we wrap it as answer
-    if (startBrace === -1 && jsonKey && text.length > 10) {
-      text = `{${jsonKey} "${text}"`
+    if (startBrace === -1 && jsonKey && text.trim() !== "json") {
+      if (text.trim() === "answer null" && jsonKey) {
+        text = `{${jsonKey} null}`
+      } else {
+        text = `{${jsonKey} "${text}"`
+      }
     }
 
     if (!text.trim()) {
@@ -415,12 +422,43 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       // returning an empty object when newlines are present in the content.
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
         // Replace newlines with \n in content between quotes
-        const withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
+        let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
         })
+        if (jsonKey && withNewLines.startsWith("{")) {
+          const startBraceIndex = withNewLines.indexOf("{")
+          const keyIndex = withNewLines.indexOf(jsonKey)
+          if (keyIndex > startBraceIndex) {
+            withNewLines =
+              withNewLines.slice(0, startBraceIndex + 1) +
+              withNewLines.slice(keyIndex)
+          }
+        }
         jsonVal = parse(withNewLines.trim())
       }
+
+      /* Edge case: If the last two characters are \\", Json.parse replaces \\ with ". We need to remove the last " from the value.
+          Example:
+          Input text: '{"answer": "Prasad \\""}'
+          After JSON.parse: { answer: 'Prasad "' }  // Note the extra quote at the end
+          After this fix: { answer: 'Prasad' }     // Extra quote removed
+          
+          This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
+      */
+      if (
+        jsonKey &&
+        text.slice(-2) === `\\"` &&
+        jsonVal[jsonKey.slice(1, -2)][
+          jsonVal[jsonKey.slice(1, -2)].length - 1
+        ] === `"`
+      ) {
+        jsonVal[jsonKey.slice(1, -2)] = jsonVal[jsonKey.slice(1, -2)].slice(
+          0,
+          -1,
+        )
+      }
+
       // edge case "null\n}
       if (jsonKey) {
         const key = jsonKey.slice(0, -1).replaceAll('"', "")
@@ -443,6 +481,9 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         .replace(/\r/g, "\\r")
         .trim()
       if (!text) {
+        return {}
+      }
+      if (text === "}") {
         return {}
       }
       jsonVal = parse(text)
@@ -731,76 +772,11 @@ export const answerOrSearch = (
   }
 }
 
-// removing one op from prompt so we can figure out how to integrate this
-// otherwise it conflicts with our current search system if we start
-// talking about a single item
-
-// 3. **RetrieveMetadata**:
-//    - The user wants to retrieve metadata or details about a specific document, email, or item.
-//    - Example Queries:
-//      - "When was the file 'Budget.xlsx' last modified?"
-//      - "Who owns the document titled 'Meeting Notes'?"
-//    - **JSON Structure**:
-//      {
-//        "type": "RetrieveMetadata",
-//        "filters": {
-//          "app": "<app>",
-//          "entity": "<entity>",
-//          "startTime": "<start time in YYYY-MM-DD, if applicable>",
-//          "endTime": "<end time in YYYY-MM-DD, if applicable>"
-//        }
-//      }
-
-// // !this is under validation heading! not a prompt
-
-//  - Ensure 'app' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-//  - Ensure 'entity' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
   ListItems = "ListItems",
   // RetrieveMetadata = "RetrieveMetadata",
-}
-
-export const routeQuery = async (
-  userQuery: string,
-  params: ModelParams,
-): Promise<{ result: QueryRouterResponse; cost: number }> => {
-  if (!params.modelId) {
-    params.modelId = defaultFastModel
-  }
-  params.systemPrompt = queryRouterPrompt
-  params.json = true
-
-  const baseMessage = {
-    role: ConversationRole.USER,
-    content: [
-      {
-        text: `User Query: "${userQuery}"`,
-      },
-    ],
-  }
-
-  params.messages = []
-  const messages: Message[] = params.messages
-    ? [...params.messages, baseMessage]
-    : [baseMessage]
-
-  const { text, cost } = await getProviderByModel(params.modelId).converse(
-    messages,
-    params,
-  )
-
-  if (text) {
-    const parsedResponse = jsonParseLLMOutput(text)
-    return {
-      result: QueryRouterResponseSchema.parse(parsedResponse),
-      cost: cost!,
-    }
-  } else {
-    throw new Error("No response from LLM")
-  }
 }
 
 export const listItems = (
@@ -917,6 +893,7 @@ export const baselineRAGJsonStream = (
   userCtx: string,
   retrievedCtx: string,
   params: ModelParams,
+  specificFiles?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -927,22 +904,32 @@ export const baselineRAGJsonStream = (
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
-  if (defaultReasoning) {
+
+  if (specificFiles) {
+    Logger.info("Using baselineFilesContextPromptJson")
+    params.systemPrompt = baselineFilesContextPromptJson(
+      userCtx,
+      indexToCitation(retrievedCtx),
+    )
+  } else if (defaultReasoning) {
     // TODO: replace with reasoning specific prompt
     // clean retrieved context and turn Index <number> to just [<number>]
     // this is extra work because we just now set Index <number>
     // in future once the reasoning mode better supported we won't have to do this
+    Logger.info("Using baselineReasoningPromptJson")
     params.systemPrompt = baselineReasoningPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
   } else {
+    Logger.info("Using baselinePromptJson")
     params.systemPrompt = baselinePromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
   }
   params.json = true // Set to true to ensure JSON response
+
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
@@ -959,7 +946,7 @@ export const baselineRAGJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
-export const meetingPromptJsonStream = (
+export const temporalPromptJsonStream = (
   userQuery: string,
   userCtx: string,
   retrievedCtx: string,
@@ -968,7 +955,33 @@ export const meetingPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const mailPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1033,11 +1046,11 @@ export const queryRewriter = async (
 export const temporalEventClassification = async (
   userQuery: string,
   params: ModelParams,
-): Promise<TemporalClassifier & { cost: number }> => {
+): Promise<Omit<TemporalClassifier, "filter_query"> & { cost: number }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = temporalEventClassifier(userQuery)
+  // params.systemPrompt = temporalEventClassifier(userQuery)
   params.json = true
 
   const baseMessage = {

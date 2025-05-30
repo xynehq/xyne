@@ -8,6 +8,7 @@ import { stopwords as englishStopwords } from "@orama/stopwords/english"
 import { Apps } from "@/search/types"
 import type { OAuth2Client } from "google-auth-library"
 import crypto from "node:crypto"
+import type { QueryRouterResponse, TemporalClassifier } from "@/ai/types"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -95,7 +96,8 @@ export const getRelativeTime = (oldTimestamp: number) => {
 
 const MAX_RETRIES = 10
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+export const delay = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Retry logic with exponential backoff and jitter.
@@ -238,4 +240,14 @@ export const hashPdfFilename = (filename: string): string => {
   const newFilename = hash
   Logger.info(`Filename hashed: ${filename} -> ${newFilename}`)
   return newFilename
+}
+
+export const interpretDateFromReturnedTemporalValue = (
+  value: QueryRouterResponse["filters"],
+) => {
+  // Convert UTC timestamps to local time zone
+  const from = value.startTime ? new Date(value.startTime) : null
+  const to = value.endTime ? new Date(value.endTime) : null
+
+  return { fromDate: from, toDate: to }
 }

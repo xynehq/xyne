@@ -1,6 +1,101 @@
 import HighlightedText from "@/components/Highlight"
 import { getIcon } from "@/lib/common"
 import { SearchResultDiscriminatedUnion } from "@/server/shared/types"
+import { Mail } from "lucide-react"
+
+const trimmedSubject = (subject: string): string => {
+  if (subject.length > 60) {
+    return subject.substring(0, 60) + "..."
+  }
+  return subject
+}
+
+const newLineToSpace = (text: string | undefined | null): string => {
+  if (!text) return ""
+  return text.replace(/\n/g, " ").replace(/\s\s+/g, " ").trim()
+}
+
+const formatDisplayDate = (
+  dateInput: string | number | Date | undefined,
+): string => {
+  if (!dateInput) return ""
+  const now = new Date()
+  const dateToFormat = new Date(dateInput)
+
+  const oneYearAgo = new Date(now)
+  oneYearAgo.setFullYear(now.getFullYear() - 1)
+
+  const isToday =
+    now.getDate() === dateToFormat.getDate() &&
+    now.getMonth() === dateToFormat.getMonth() &&
+    now.getFullYear() === dateToFormat.getFullYear()
+  const isYesterday =
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).valueOf() ===
+    new Date(
+      dateToFormat.getFullYear(),
+      dateToFormat.getMonth(),
+      dateToFormat.getDate(),
+    ).valueOf()
+
+  if (isToday) return "Today"
+  if (isYesterday) return "Yesterday"
+
+  if (dateToFormat < oneYearAgo) {
+    return dateToFormat.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
+  } else {
+    return dateToFormat.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+    })
+  }
+}
+
+const formatEmailDisplay = (fromString: string) => {
+  let emailPart = ""
+  let fallbackDisplay = fromString // Default to the full 'from' string
+
+  const emailMatch = fromString.match(/<([^>]+)>/)
+  if (emailMatch && emailMatch[1]) {
+    // Format "Name <email@example.com>"
+    emailPart = emailMatch[1]
+  } else if (
+    fromString.includes("@") &&
+    !fromString.includes(" ") &&
+    !fromString.includes("<")
+  ) {
+    // Format "email@example.com"
+    emailPart = fromString
+  }
+  // If fromString is just "Name", emailPart remains "", fallbackDisplay is "Name".
+
+  const textToDisplay = emailPart || fallbackDisplay
+  const linkHref = emailPart ? `mailto:${emailPart}` : undefined
+
+  if (linkHref) {
+    return (
+      <a
+        target="_blank"
+        className="text-[#2067F5]"
+        rel="noopener noreferrer"
+        href={linkHref}
+      >
+        <p className="text-left text-sm text-[#464B53] leading-5">
+          {textToDisplay}
+        </p>
+      </a>
+    )
+  } else {
+    return (
+      <p className="text-left text-sm text-[#464B53] leading-5">
+        {textToDisplay}
+      </p>
+    )
+  }
+}
 
 export const SearchResult = ({
   result,
@@ -32,22 +127,31 @@ export const SearchResult = ({
             referrerPolicy="no-referrer"
             className="mr-2 w-[16px] h-[16px] rounded-full"
             src={result.photoLink ?? ""}
-          ></img>
-          <a
-            target="_blank"
-            className="text-[#2067F5]"
-            rel="noopener noreferrer"
-            href={`https://contacts.google.com/${result.ownerEmail}`}
-          >
-            <p className="text-left text-sm pt-1 text-[#464B53]">
-              {result.owner}
-            </p>
-          </a>
+          />
+          <div className="flex items-center">
+            <a
+              target="_blank"
+              className="text-[#2067F5]"
+              rel="noopener noreferrer"
+              href={`https://contacts.google.com/${result.ownerEmail}`}
+            >
+              <p className="text-left text-sm text-[#464B53] leading-5">
+                {result.owner}
+              </p>
+            </a>
+            <span className="text-[#999] mx-1.5">•</span>
+            <span className="text-sm text-gray-600 leading-5">
+              {formatDisplayDate(result.updatedAt)}
+            </span>
+          </div>
         </div>
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={summary.chunk} />
+            <HighlightedText
+              key={idx}
+              chunk_summary={newLineToSpace(summary.chunk)}
+            />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -121,19 +225,26 @@ export const SearchResult = ({
             rel="noopener noreferrer"
             className="flex items-center text-[#2067F5]"
           >
-            {/* TODO: if photoLink doesn't exist then show icon */}
-            {/* <img
-              referrerPolicy="no-referrer"
-              className="mr-2 w-[16px] h-[16px] rounded-full"
-              src={result.photoLink}
-            ></img> */}
-            {result.subject}
+            {trimmedSubject(result.subject)}
           </a>
+        </div>
+        <div className="flex flex-row items-center mt-1 ml-[44px]">
+          <Mail className="mr-2 w-[16px] h-[16px] text-gray-500" />
+          <div className="flex items-center">
+            {formatEmailDisplay(result.from)}
+            <span className="text-[#999] mx-1.5">•</span>
+            <span className="text-sm text-gray-600 leading-5">
+              {formatDisplayDate(result.timestamp)}
+            </span>
+          </div>
         </div>
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={summary.chunk} />
+            <HighlightedText
+              key={idx}
+              chunk_summary={newLineToSpace(summary.chunk)}
+            />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -167,20 +278,28 @@ export const SearchResult = ({
             rel="noopener noreferrer"
             className="flex items-center text-[#2067F5]"
           >
-            {/* TODO: if photoLink doesn't exist then show icon */}
-            {/* <img
-              referrerPolicy="no-referrer"
-              className="mr-2 w-[16px] h-[16px] rounded-full"
-              src={result.photoLink}
-            ></img> */}
             {result.name}
           </a>
         </div>
-        <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden">
+        <div className="flex flex-row items-center mt-1 ml-[44px]">
+          {/* Placeholder for event owner/creator if available in the future */}
+          {/* <img referrerPolicy="no-referrer" className="mr-2 w-[16px] h-[16px] rounded-full" src={""} /> */}
+          {/* <div className="flex items-center"> */}
+          {/*   <p className="text-left text-sm text-[#464B53] leading-5">Event Creator</p> */}
+          {/*   <span className="text-[#999] mx-1.5">•</span> */}
+          {/* </div> */}
+          <span className="text-sm text-gray-600 leading-5">
+            {formatDisplayDate(result.updatedAt)}
+          </span>
+        </div>
+        <p className="text-left text-sm mt-1 text-[#464B53] line-clamp-[2.5] text-ellipsis overflow-hidden ml-[44px]">
           {Array.isArray(result.chunks_summary) &&
             !!result.chunks_summary.length &&
             result.chunks_summary.map((summary, idx) => (
-              <HighlightedText chunk_summary={summary} key={idx} />
+              <HighlightedText
+                chunk_summary={newLineToSpace(summary)}
+                key={idx}
+              />
             ))}
         </p>
         {/* Debug Info Display (Features Only) */}
@@ -221,7 +340,10 @@ export const SearchResult = ({
         {Array.isArray(result.chunks_summary) &&
           result.chunks_summary.length > 0 &&
           result.chunks_summary.map((summary, idx) => (
-            <HighlightedText key={idx} chunk_summary={summary.chunk} />
+            <HighlightedText
+              key={idx}
+              chunk_summary={newLineToSpace(summary.chunk)}
+            />
           ))}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
@@ -274,7 +396,9 @@ export const SearchResult = ({
             </p>
           </a>
         </div>
-        {result.text && <HighlightedText chunk_summary={result.text} />}
+        {result.text && (
+          <HighlightedText chunk_summary={newLineToSpace(result.text)} />
+        )}
         {/* Debug Info Display (Features Only) */}
         {showDebugInfo && (result.matchfeatures || result.rankfeatures) && (
           <details className="mt-2 ml-[44px] text-xs">

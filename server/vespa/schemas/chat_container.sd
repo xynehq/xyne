@@ -61,11 +61,16 @@ schema chat_container {
             attribute: fast-search
         }
 
+        field lastSyncedAt type long {
+            indexing: attribute | summary
+            attribute: fast-search
+        }
+
         field topic type string {
             indexing: index | attribute | summary
             index: enable-bm25
         }
-
+    
         field description type string {
             indexing: index | attribute | summary
             index: enable-bm25
