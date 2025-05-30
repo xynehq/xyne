@@ -1,0 +1,415 @@
+import type React from "react"
+import { useState, useRef, useCallback } from "react"
+import { Upload, Folder, File, X, Trash2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { useToast } from "@/hooks/use-toast"
+
+interface SelectedFile {
+  file: File
+  id: string
+  preview?: string
+}
+
+export default function FileUpload() {
+  const { toast } = useToast()
+  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const generateId = () => Math.random().toString(36).substring(2, 9)
+
+  const isTxtFile = (file: File) => {
+    return file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')
+  }
+
+  const showToast = useCallback((title: string, description: string, isError = false) => {
+    const { dismiss } = toast({
+      title,
+      description,
+      variant: isError ? "destructive" : "default",
+      duration: 2000, // Auto dismiss after 2 seconds
+      action: (
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={(e) => {
+            e.stopPropagation();
+            dismiss();
+          }}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      ),
+    });
+  }, [toast])
+
+  // Original processFiles function without path handling
+  const processFiles = useCallback((files: FileList | File[]) => {
+    const fileArray = Array.from(files)
+    const txtFiles = fileArray.filter(isTxtFile)
+    const invalidFiles = fileArray.length - txtFiles.length
+    
+    if (invalidFiles > 0) {
+      showToast(
+        "Invalid file type",
+        `${invalidFiles} file(s) ignored. Only .txt files are allowed.`,
+        true
+      )
+    }
+    
+    if (txtFiles.length === 0) return
+    
+    // Create a map to track files by name for deduplication
+    const fileMap = new Map<string, File>()
+    let duplicateCount = 0
+    
+    // Keep only the first occurrence of each filename
+    txtFiles.forEach(file => {
+      if (!fileMap.has(file.name)) {
+        fileMap.set(file.name, file)
+      } else {
+        duplicateCount++
+      }
+    })
+    
+    // Notify about duplicates if any were found
+    if (duplicateCount > 0) {
+      showToast(
+        "Duplicate files",
+        `${duplicateCount} duplicate file(s) were ignored.`,
+        false
+      )
+    }
+    
+    // Create selected file objects from unique files
+    const uniqueFiles = Array.from(fileMap.values())
+    const newFiles: SelectedFile[] = uniqueFiles.map((file) => ({
+      file,
+      id: generateId(),
+      preview: undefined,
+    }))
+
+    // Check if any files with the same name already exist in selectedFiles
+    setSelectedFiles((prev) => {
+      const existingFileNames = new Set(prev.map(f => f.file.name))
+      const filteredNewFiles = newFiles.filter(f => !existingFileNames.has(f.file.name))
+      
+      // If we filtered any files due to existing names, notify the user
+      const filteredCount = newFiles.length - filteredNewFiles.length
+      if (filteredCount > 0) {
+        showToast(
+          "Files already selected",
+          `${filteredCount} file(s) were already selected and skipped.`,
+          false
+        )
+      }
+      
+      return [...prev, ...filteredNewFiles]
+    })
+  }, [showToast])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+
+      const items = Array.from(e.dataTransfer.items)
+      const files: File[] = []
+      let totalItems = 0
+      
+      // Process files from drop event
+      const processEntry = async (entry: FileSystemEntry) => {
+        totalItems++
+        
+        if (entry.isFile) {
+          const fileEntry = entry as FileSystemFileEntry
+          return new Promise<void>((resolve) => {
+            fileEntry.file((file) => {
+              if (isTxtFile(file)) {
+                files.push(file)
+              }
+              resolve()
+            })
+          })
+        } else if (entry.isDirectory) {
+          const dirEntry = entry as FileSystemDirectoryEntry
+          const reader = dirEntry.createReader()
+          return new Promise<void>((resolve) => {
+            reader.readEntries(async (entries) => {
+              await Promise.all(entries.map(processEntry))
+              resolve()
+            })
+          })
+        }
+      }
+
+      Promise.all(
+        items.map((item) => {
+          const entry = item.webkitGetAsEntry()
+          return entry ? processEntry(entry) : Promise.resolve()
+        }),
+      ).then(() => {
+        if (files.length > 0) {
+          processFiles(files)
+        }
+        
+        // Show warning if any non-txt files were ignored
+        if (files.length === 0 && totalItems > 0) {
+          showToast(
+            "No valid files found",
+            "Only .txt files are allowed. All other file types were ignored.",
+            true
+          )
+        }
+      })
+    },
+    [processFiles, showToast, isTxtFile],
+  )
+
+  const handleFolderSelect = useCallback(() => {
+    folderInputRef.current?.click()
+  }, [])
+
+  const handleFileSelect = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files
+      if (files && files.length > 0) {
+        processFiles(files)
+      }
+      // Reset the input value so the same file can be selected again
+      e.target.value = ""
+    },
+    [processFiles],
+  )
+
+  const handleFolderChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files
+      if (files && files.length > 0) {
+        processFiles(files)
+      }
+      // Reset the input value so the same folder can be selected again
+      e.target.value = ""
+    },
+    [processFiles],
+  )
+
+  const removeFile = useCallback((id: string) => {
+    setSelectedFiles((prev) => {
+      const updated = prev.filter((f) => f.id !== id)
+      return updated
+    })
+  }, [])
+
+  const removeAllFiles = useCallback(() => {
+    setSelectedFiles([]);
+  }, []);
+
+  //  handleSubmit to extract only filenames 
+  const handleSubmit = useCallback(async () => {
+    if (selectedFiles.length === 0) return
+
+    setIsUploading(true)
+
+    try {
+      const formData = new FormData()
+      selectedFiles.forEach((selectedFile) => {
+        // Extract just the base filename without folder path
+        const fileName = selectedFile.file.name.split('/').pop()?.split('\\').pop() || selectedFile.file.name
+        
+        // Instead of creating a new File object, just use the original file
+        // and add it to formData with the simplified filename
+        formData.append("file", selectedFile.file, fileName)
+      })
+
+      const response = await fetch("/api/v1/files/upload", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        showToast(
+          "Success",
+          result.message || `${selectedFiles.length} file(s) uploaded successfully to downloads folder`
+        )
+        setSelectedFiles([])
+      } else {
+        const error = await response.json()
+        showToast(
+          "Upload failed",
+          error.message || "Please try again",
+          true
+        )
+      }
+    } catch (error) {
+      console.error("Upload error:", error)
+      showToast(
+        "Upload failed",
+        "An unexpected error occurred. Please try again.",
+        true
+      )
+    } finally {
+      setIsUploading(false)
+    }
+  }, [selectedFiles, showToast])
+
+  return (
+    <div className="w-full max-w-4xl mx-auto p-6">
+      <div className="text-center mb-4">
+        <h2 className="text-xl font-semibold text-gray-700">Upload Text Files</h2>
+        <p className="text-sm text-gray-500 mt-1">Only .txt files are supported</p>
+      </div>
+
+      <div
+        className="relative transition-colors flex flex-col items-center justify-center"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div
+          className="border-2 border-dashed border-gray-200 rounded-lg p-8 w-full mx-auto h-72 min-h-72 cursor-pointer flex flex-col items-center justify-center transition-colors hover:border-gray-400 relative bg-gray-50"
+          onClick={handleFileSelect}
+          style={{ width: '800px' }}
+        >
+          
+          {selectedFiles.length > 0 && (
+            <Button 
+              onClick={(e) => {
+                e.stopPropagation(); 
+                removeAllFiles();
+              }} 
+              className="absolute top-2 right-5 flex items-center space-x-1 bg-gray-800 hover:bg-gray-900 text-white h-9 px-3"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Clear All</span>
+            </Button>
+          )}
+
+          <div className="flex flex-col items-center justify-center w-full h-full">
+            {selectedFiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full w-full">
+                <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-700 mb-2">Drag-drop or click here to select</h3>
+              </div>
+            ) : (
+              <div className="h-full w-full flex flex-col items-center justify-center">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 w-full overflow-y-auto p-4 h-full" style={{ maxHeight: 'calc(100% - 60px)' }}>
+                  {selectedFiles.map((selectedFile) => (
+                    <div key={selectedFile.id} className="relative group">
+                      <div className="border border-gray-200 rounded-lg p-1.5 bg-white hover:bg-gray-50 transition-colors hover:shadow-sm flex flex-col items-center justify-between min-h-[70px]">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeFile(selectedFile.id)
+                          }}
+                          className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black"
+                          title="Remove file"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+
+                        <div className="flex flex-col items-center justify-center w-full">
+                          <File className="w-6 h-6 text-gray-500" />
+                          <div className="w-full text-center mt-1">
+                            <p
+                              className="text-xs font-medium text-gray-700 truncate max-w-full px-1"
+                              title={selectedFile.file.name}
+                            >
+                              {selectedFile.file.name.length > 16
+                                ? `${selectedFile.file.name.substring(0, 13)}...`
+                                : selectedFile.file.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {Math.round(selectedFile.file.size / 1024)} KB
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-between items-center w-full mt-4 px-2 absolute bottom-4 left-0 right-0">
+            <div className="flex items-center space-x-2 ml-4">
+              <Button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFolderSelect();
+                }} 
+                variant="outline" 
+                className="flex items-center space-x-2 text-gray-700 border-gray-300"
+              >
+                <Folder className="w-4 h-4" />
+                <span>Select Folder</span>
+              </Button>
+            </div>
+            
+            {selectedFiles.length > 0 && (
+              <div className="text-sm text-gray-600">
+                {selectedFiles.length} file{selectedFiles.length !== 1 ? "s" : ""} selected
+              </div>
+            )}
+            
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSubmit();
+              }}
+              disabled={selectedFiles.length === 0 || isUploading}
+              className="flex items-center space-x-2 mr-4 bg-gray-800 hover:bg-gray-900 h-9 px-4"
+            >
+              {isUploading ? (
+                <>
+                  <span className="animate-spin mr-1">⟳</span>
+                  <span>Uploading...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  <span>Upload</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Hidden inputs for file selection - keep these unchanged */}
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          // @ts-ignore - webkitdirectory is a non-standard attribute
+          webkitdirectory=""
+          directory=""
+          className="hidden"
+          onChange={handleFolderChange}
+          accept=".txt,text/plain"
+        />
+        <input 
+          ref={fileInputRef} 
+          type="file" 
+          multiple 
+          className="hidden" 
+          onChange={handleFileChange}
+          accept=".txt,text/plain" 
+        />
+      </div>
+    </div>
+  )
+}
