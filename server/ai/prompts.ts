@@ -833,13 +833,16 @@ export const searchQueryPrompt = (
       b) It's an instruction or command that doesn't have any CONCRETE REFERENCE.
       - If ambiguous according to either (a) or (b), rewrite the query to resolve the dependency. For case (a), substitute pronouns/references. For case (b), incorporate the essence of the previous assistant response into the query. Store the rewritten query in "queryRewrite".
       - If not ambiguous, leave the query as it is.
+
     2. Determine if the user's query is conversational or a basic calculation. Examples include greetings like:
        - "Hi"
        - "Hello"
        - "Hey"
        - what is the time in Japan
        If the query is conversational, respond naturally and appropriately. 
+
     3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
+
     4. Determine if the query is about tracking down a calendar event or meeting that either last occurred or will next occur.
       - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
       - If asking about a past calendar event or meeting (e.g., "last meeting", "previous meeting"), set "temporalDirection" to "prev". 
@@ -912,10 +915,10 @@ export const searchQueryPrompt = (
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     
     Valid entity keywords that map to entities:
-    - For Gmail: 'email', 'emails', 'mail', 'message' → 'mail'; 'pdf', 'attachment' → 'pdf'
-    - For Drive: 'file', 'files' → 'driveFile'; 'document', 'doc' → 'docs'; 'spreadsheet', 'sheet' → 'sheets'; 'presentation', 'slide' → 'slides'; 'pdf' → 'pdf'; 'folder' → 'folder'
-    - For Calendar: 'event', 'meeting', 'appointment' → 'event'
-    - For Workspace: 'contact', 'person' → 'contacts'
+    - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
+    - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
+    - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
+    - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
     
     **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
     ### Query Types:
@@ -1045,6 +1048,7 @@ export const searchQueryPrompt = (
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
+       - if user haven't explicitly added <app> or <entity> please don't assume any just set it null
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
