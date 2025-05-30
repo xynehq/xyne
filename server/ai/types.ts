@@ -130,7 +130,6 @@ export const FiltersSchema = z.object({
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
-  multipleAppAndEntity: z.boolean().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
 })
 

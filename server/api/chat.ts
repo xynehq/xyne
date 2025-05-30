@@ -147,7 +147,7 @@ const ragPipelineConfig = {
     reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerOrSearch]: {
-    modelId: defaultFastModel, //defaultBestModel,
+    modelId: defaultBestModel, //defaultBestModel,
     reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerWithList]: {
@@ -1615,9 +1615,6 @@ async function* generateMetadataQueryAnswer(
       "User requested recent metadata retrieval without specifying app or entity",
     )
 
-    Logger.info(
-      `Multiple App Entity - ${classification.filters.multipleAppAndEntity}`,
-    )
     const searchOps = {
       limit: pageSize,
       alpha: userAlpha,
@@ -1949,7 +1946,6 @@ export async function* UnderstandMessageAndAnswer(
     classification.type == QueryType.GetItems
   const isMetadataRetrieval = classification.type == QueryType.SearchWithFilters
   const isRecencyRetrieval =
-    classification.filters.multipleAppAndEntity === false &&
     classification.filterQuery &&
     classification.filters.sortDirection === "desc"
 
@@ -1963,10 +1959,7 @@ export async function* UnderstandMessageAndAnswer(
       JSON.stringify(classification),
     )
 
-    const count =
-      isMetadataRetrieval || isUnspecificMetadataRetrieval
-        ? classification.filters.count || chatPageSize
-        : chatPageSize
+    const count = classification.filters.count || chatPageSize
     const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
@@ -2546,7 +2539,6 @@ export const MessageApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
-              multipleAppAndEntity: false,
             }
             let parsed = {
               isFollowUp: false,
@@ -2659,7 +2651,6 @@ export const MessageApi = async (c: Context) => {
               entity,
               sortDirection,
               startTime,
-              multipleAppAndEntity,
             } = parsed?.filters
             classification = {
               direction: parsed.temporalDirection,
@@ -2669,7 +2660,6 @@ export const MessageApi = async (c: Context) => {
               filters: {
                 app: app as Apps,
                 entity: entity as any,
-                multipleAppAndEntity,
                 endTime,
                 sortDirection,
                 startTime,
@@ -3486,7 +3476,6 @@ export const MessageRetryApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
-              multipleAppAndEntity: false,
             }
             let parsed = {
               isFollowUp: false,
@@ -3607,7 +3596,6 @@ export const MessageRetryApi = async (c: Context) => {
                 entity,
                 sortDirection,
                 startTime,
-                multipleAppAndEntity,
               } = parsed?.filters
               classification = {
                 direction: parsed.temporalDirection,
@@ -3617,7 +3605,6 @@ export const MessageRetryApi = async (c: Context) => {
                 filters: {
                   app: app as Apps,
                   entity: entity as any,
-                  multipleAppAndEntity,
                   endTime,
                   sortDirection,
                   startTime,

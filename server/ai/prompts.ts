@@ -786,7 +786,6 @@ export const queryRewritePromptJson = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (
   userContext: string,
-  currentQuery: string,
 ): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
@@ -943,8 +942,8 @@ export const searchQueryPrompt = (
         }
 
     2. **${QueryType.GetItems}**:
-      - The is referring single <app> or <entity> and doesn't added any specific keywords. please don't consider <app> or <entity> as keywords
-      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity.
+      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
       - This can be only classified when <app> and <entity> present
       - Example Queries:
         - "Show me all emails from last week."
@@ -1039,7 +1038,6 @@ export const searchQueryPrompt = (
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
-           "multipleAppAndEntity": "<boolean>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
