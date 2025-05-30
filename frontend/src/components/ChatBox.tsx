@@ -12,9 +12,10 @@ import {
   Search,
   RotateCcw,
   Atom,
+  Bot, // Import Bot icon
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
-import { Citation, Apps } from "shared/types"
+import { Citation, Apps, SelectPublicAgent } from "shared/types" // Add SelectPublicAgent
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,7 +67,7 @@ interface SearchResult {
 interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void
-  handleSend: (messageToSend: string, selectedSources?: string[]) => void
+  handleSend: (messageToSend: string, selectedSources?: string[], agentForChat?: SelectPublicAgent | null) => void // Modified to accept agent
   isStreaming?: boolean
   handleStop?: () => void
   chatId?: string | null
@@ -75,6 +76,7 @@ interface ChatBoxProps {
   setIsReasoningActive: (
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
+  // agentIdForDisplay prop is removed, will be read from URL
 }
 
 const availableSources: SourceItem[] = [
@@ -190,8 +192,8 @@ export const ChatBox = ({
   allCitations,
   handleStop,
   chatId,
-  isReasoningActive, // Use prop
-  setIsReasoningActive, // Use prop
+  isReasoningActive,
+  setIsReasoningActive,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
@@ -222,8 +224,53 @@ export const ChatBox = ({
   const [referenceBoxLeft, setReferenceBoxLeft] = useState(0)
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
-  // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+  const [fetchedAgentForChat, setFetchedAgentForChat] = useState<SelectPublicAgent | null>(null); // State for the full agent object
+  const [displayAgentName, setDisplayAgentName] = useState<string | null>(null);
 
+
+  // Effect to fetch agent data if agentId is present in the URL
+  useEffect(() => {
+    const fetchAgentData = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const agentIdFromUrl = searchParams.get('agentId');
+
+      if (agentIdFromUrl) {
+        try {
+          const response = await api.agents.$get(); // Fetch all agents
+          if (response.ok) {
+            const allAgents = await response.json() as SelectPublicAgent[];
+            const currentAgent = allAgents.find(agent => agent.externalId === agentIdFromUrl);
+            if (currentAgent) {
+              setFetchedAgentForChat(currentAgent);
+              setDisplayAgentName(currentAgent.name);
+            } else {
+              console.error(`Agent with ID ${agentIdFromUrl} not found.`);
+              setFetchedAgentForChat(null);
+              setDisplayAgentName(null);
+            }
+          } else {
+            console.error("Failed to load agents for chat.");
+            setFetchedAgentForChat(null);
+            setDisplayAgentName(null);
+          }
+        } catch (error) {
+          console.error("Error fetching agents for chat:", error);
+          setFetchedAgentForChat(null);
+          setDisplayAgentName(null);
+        }
+      } else {
+        setFetchedAgentForChat(null);
+        setDisplayAgentName(null);
+      }
+    };
+
+    fetchAgentData();
+    // Listen for popstate events to refetch if the user navigates with browser buttons
+    window.addEventListener('popstate', fetchAgentData);
+    return () => {
+      window.removeEventListener('popstate', fetchAgentData);
+    };
+  }, []); 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
       inputRef.current.style.height = "auto"
@@ -848,9 +895,11 @@ export const ChatBox = ({
 
     // The `references` array is no longer passed to handleSend.
     // Pills and links are part of htmlMessage.
+    // console.log("Sending message:", fetchedAgentForChat)
     handleSend(
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
+      fetchedAgentForChat // Pass the fetched agent data
     )
     // setReferences([]) // This state and its setter are removed.
 
@@ -1501,20 +1550,26 @@ export const ChatBox = ({
             </DropdownMenu>
           )}
           {/* Closing tag for the conditional render */}
-          <button
-            onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-              // Changed text-xs to text-[11px]
-              isReasoningActive ? "text-green-600" : "text-[#464D53]" // Use prop for styling
-            }`}
-          >
-            <Atom
-              size={16}
-              className={isReasoningActive ? "text-green-600" : ""}
-            />{" "}
-            {/* Use prop for styling */}
-            <span>Reasoning</span>
-          </button>
+          <div className="flex items-center">
+            <button
+              onClick={() => setIsReasoningActive(!isReasoningActive)}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
+                isReasoningActive ? "text-green-600" : "text-[#464D53]"
+              }`}
+            >
+              <Atom
+                size={16}
+                className={isReasoningActive ? "text-green-600" : ""}
+              />
+              <span>Reasoning</span>
+            </button>
+            {true && (
+              <div className="flex items-center text-xs text-slate-600 ml-2 px-1 py-0.5 cursor-default">
+                <Bot size={16} className="mr-1 text-slate-500" />
+                <span className="font-medium">{displayAgentName}</span>
+              </div>
+            )}
+          </div>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}

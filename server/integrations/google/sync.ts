@@ -85,7 +85,7 @@ type ChangeStats = {
   summary: string
 }
 
-const getDocumentOrSpreadsheet = async (docId: string) => {
+export const getDocumentOrSpreadsheet = async (docId: string) => {
   try {
     const doc = await getDocumentOrNull(fileSchema, docId)
     if (!doc) {
