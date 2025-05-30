@@ -57,6 +57,13 @@
       "when": 1748503775670,
       "tag": "0007_overconfident_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1748596968639,
+      "tag": "0008_smiling_pride",
+      "breakpoints": true
     }
   ]
 }

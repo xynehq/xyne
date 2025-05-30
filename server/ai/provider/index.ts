@@ -1227,7 +1227,7 @@ export function generateSearchQueryOrAnswerFromConversation(
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
   } else if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentSearchQueryPrompt")
+    console.log("Using agentSearchQueryPrompt", params.agentPrompt)
     params.systemPrompt = agentSearchQueryPrompt(userContext, parseAgentPrompt(params.agentPrompt))
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
