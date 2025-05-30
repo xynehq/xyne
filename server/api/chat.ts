@@ -8,6 +8,7 @@ import {
   mailPromptJsonStream,
   temporalPromptJsonStream,
   queryRewriter,
+  meetingPromptJsonStream,
 } from "@/ai/provider"
 import {
   Models,
@@ -83,6 +84,7 @@ import {
   mailAttachmentSchema,
   mailSchema,
   userSchema,
+  type Entity,
   type VespaChatMessage,
   type VespaEvent,
   type VespaEventSearch,
@@ -1416,7 +1418,7 @@ async function* generatePointQueryTimeExpansion(
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
     Logger.info("Using temporalPromptJsonStream")
-    const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
+    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
@@ -1505,7 +1507,7 @@ async function* processResultsForMetadata(
   userRequestsReasoning?: boolean,
 ) {
   if (app === Apps.GoogleDrive) {
-    chunksCount = 100
+    chunksCount = 50
     Logger.info(`Google Drive, Chunk size: ${chunksCount}`)
     span?.setAttribute("Google Drive, chunk_size", chunksCount)
   }
@@ -1557,15 +1559,13 @@ async function* generateMetadataQueryAnswer(
 > {
   const { app, entity, startTime, endTime, sortDirection } =
     classification.filters
-  const count =
-    "count" in classification.filters ? classification.filters.count : undefined
+  const count = classification.filters.count
   const direction = classification.direction as string
-  const isUnspecificMetadataRetrieval =
-    classification.type === QueryType.GetItems
-  const isMetadataRetrieval =
+  const isGenericItemFetch = classification.type === QueryType.GetItems
+  const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
   const isValidAppAndEntity =
-    isValidApp(app as Apps) && isValidEntity(entity as any)
+    isValidApp(app as Apps) && isValidEntity(entity as Entity)
 
   // Process timestamp
   const from = startTime ? new Date(startTime).getTime() : null
@@ -1624,9 +1624,9 @@ async function* generateMetadataQueryAnswer(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const pageSpan = span?.startSpan(`metadata_iteration_${iteration}`)
+      const pageSpan = span?.startSpan(`search_iteration_${iteration}`)
       Logger.info(
-        `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
+        `Search Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
       items =
         (
@@ -1634,7 +1634,7 @@ async function* generateMetadataQueryAnswer(
             classification.filterQuery,
             email,
             app as Apps,
-            entity as any,
+            entity as Entity,
             {
               ...searchOps,
               offset: pageSize * iteration,
@@ -1702,9 +1702,9 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
     Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
-  } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
+  } else if (isGenericItemFetch && isValidAppAndEntity) {
     const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
-    span?.setAttribute("metadata_type", QueryType.GetItems)
+    span?.setAttribute("Search_Type", QueryType.GetItems)
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
@@ -1757,12 +1757,12 @@ async function* generateMetadataQueryAnswer(
     )
     return
   } else if (
-    isMetadataRetrieval &&
+    isFilteredItemSearch &&
     isValidAppAndEntity &&
     classification.filterQuery
   ) {
     // Specific metadata retrieval
-    span?.setAttribute("metadata_type", QueryType.SearchWithFilters)
+    span?.setAttribute("Search_Type", QueryType.SearchWithFilters)
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
@@ -1786,8 +1786,10 @@ async function* generateMetadataQueryAnswer(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const iterationSpan = span?.startSpan(`metadata_iteration_${iteration}`)
-      Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
+      const iterationSpan = span?.startSpan(`search_iteration_${iteration}`)
+      Logger.info(
+        `Search ${QueryType.SearchWithFilters} Iteration - ${iteration} : ${rankProfile}`,
+      )
 
       items =
         (
@@ -1941,15 +1943,14 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
-
-  const isUnspecificMetadataRetrieval =
-    classification.type == QueryType.GetItems
-  const isMetadataRetrieval = classification.type == QueryType.SearchWithFilters
-  const isRecencyRetrieval =
+  const isGenericItemFetch = classification.type === QueryType.GetItems
+  const isFilteredItemSearch =
+    classification.type === QueryType.SearchWithFilters
+  const isFilteredSearchSortedByRecency =
     classification.filterQuery &&
     classification.filters.sortDirection === "desc"
 
-  if (isMetadataRetrieval || isUnspecificMetadataRetrieval) {
+  if (isGenericItemFetch || isFilteredItemSearch) {
     Logger.info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
@@ -2644,14 +2645,8 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             conversationSpan.end()
             let classification
-            const {
-              app,
-              count,
-              endTime,
-              entity,
-              sortDirection,
-              startTime,
-            } = parsed?.filters
+            const { app, count, endTime, entity, sortDirection, startTime } =
+              parsed?.filters
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -2659,7 +2654,7 @@ export const MessageApi = async (c: Context) => {
               isFollowUp: parsed.isFollowUp,
               filters: {
                 app: app as Apps,
-                entity: entity as any,
+                entity: entity as Entity,
                 endTime,
                 sortDirection,
                 startTime,
@@ -2686,7 +2681,10 @@ export const MessageApi = async (c: Context) => {
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
 
-              ragSpan.setAttribute("isFollowUp", classification.isFollowUp ?? false)
+              ragSpan.setAttribute(
+                "isFollowUp",
+                classification.isFollowUp ?? false,
+              )
               if (messages.length < 2) {
                 classification.isFollowUp = false // First message or not enough history to be a follow-up
               } else if (classification.isFollowUp) {
@@ -3589,14 +3587,8 @@ export const MessageRetryApi = async (c: Context) => {
                   "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const {
-                app,
-                count,
-                endTime,
-                entity,
-                sortDirection,
-                startTime,
-              } = parsed?.filters
+              const { app, count, endTime, entity, sortDirection, startTime } =
+                parsed?.filters
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
@@ -3604,7 +3596,7 @@ export const MessageRetryApi = async (c: Context) => {
                 isFollowUp: parsed.isFollowUp,
                 filters: {
                   app: app as Apps,
-                  entity: entity as any,
+                  entity: entity as Entity,
                   endTime,
                   sortDirection,
                   startTime,
