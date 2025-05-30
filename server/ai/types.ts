@@ -69,12 +69,13 @@ export interface ModelParams {
   temperature?: number
   modelId: Models
   systemPrompt?: string
-  prompt?: string
   userCtx?: string
   stream: boolean
   json?: boolean
   messages?: Message[]
   reasoning?: boolean
+  prompt?: string
+  agentPrompt?: string
 }
 
 export interface ConverseResponse {

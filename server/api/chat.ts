@@ -573,6 +573,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   classification: TemporalClassifier & QueryRouterResponse,
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -691,6 +692,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
         modelId: defaultFastModel, //defaultBestModel,
         stream: false,
+        agentPrompt,
       })
       const queries = queryResp.queries
       queryRewriteSpan?.setAttribute("query_count", queries.length)
@@ -775,6 +777,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             modelId: defaultBestModel,
             messages,
             reasoning: config.isReasoning && userRequestsReasoning,
+            agentPrompt,
           },
         )
 
@@ -892,6 +895,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
+      agentPrompt,
     })
 
     const answer = yield* processIterator(
@@ -932,6 +936,7 @@ async function* generateAnswerFromGivenContext(
   alpha: number = 0.5,
   fileIds: string[],
   userRequestsReasoning?: boolean,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1015,6 +1020,7 @@ async function* generateAnswerFromGivenContext(
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
+      agentPrompt,
     },
     true,
   )
@@ -1216,6 +1222,7 @@ async function* generatePointQueryTimeExpansion(
   maxSummaryCount: number | undefined,
   userRequestsReasoning?: boolean,
   eventRagSpan?: Span,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1399,13 +1406,13 @@ async function* generatePointQueryTimeExpansion(
     )
     contextSpan?.end()
 
-    // Stream LLM response
-    const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
-    Logger.info("Using temporalPromptJsonStream")
-    const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
+  // Stream LLM response
+  const ragSpan = iterationSpan?.startSpan("temporal_prompt_stream") // Corrected span name for clarity
+  const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
+      agentPrompt,
     })
 
     const answer = yield* processIterator(
@@ -1537,6 +1544,7 @@ async function* generateMetadataQueryAnswer(
   classification: TemporalClassifier & QueryRouterResponse,
   userRequestsReasoning?: boolean,
   span?: Span,
+  agentPrompt?: string,
   maxIterations = 5,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1920,6 +1928,7 @@ export async function* UnderstandMessageAndAnswer(
   alpha: number,
   passedSpan?: Span,
   userRequestsReasoning?: boolean,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1965,6 +1974,7 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
+      agentPrompt,
     )
 
     let hasYieldedAnswer = false
@@ -2004,6 +2014,7 @@ export async function* UnderstandMessageAndAnswer(
       maxDefaultSummary,
       userRequestsReasoning,
       eventRagSpan,
+      agentPrompt,
     )
   } else {
     Logger.info("Iterative Rag : Query rewriting and time filtering")
@@ -2022,6 +2033,7 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       userRequestsReasoning,
       ragSpan,
+      agentPrompt, // Pass agentPrompt to generateIterativeTimeFilterAndQueryRewrite
     )
   }
 }
@@ -2108,7 +2120,14 @@ export const MessageApi = async (c: Context) => {
 
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId, modelId, isReasoningEnabled }: MessageReqType = body
+    let {
+      message,
+      chatId,
+      modelId,
+      isReasoningEnabled,
+      agentPrompt: rawAgentPrompt,
+    }: MessageReqType = body
+    const agentPrompt = rawAgentPrompt || ""; 
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {
       throw new HTTPException(400, {
@@ -2469,6 +2488,7 @@ export const MessageApi = async (c: Context) => {
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: messagesWithNoErrResponse,
+                agentPrompt,
               })
 
             // TODO: for now if the answer is from the conversation itself we don't
@@ -2627,6 +2647,7 @@ export const MessageApi = async (c: Context) => {
                 0.5,
                 understandSpan,
                 userRequestsReasoning,
+                agentPrompt,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,

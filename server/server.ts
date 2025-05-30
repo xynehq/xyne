@@ -79,6 +79,15 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
+import {
+  CreateAgentApi,
+  ListAgentsApi,
+  UpdateAgentApi,
+  DeleteAgentApi,
+  createAgentSchema,
+  listAgentsSchema,
+  updateAgentSchema,
+} from "@/api/agent"
 import metricRegister from "@/metrics/sharedRegistry"
 
 export type Variables = JwtVariables
@@ -198,6 +207,12 @@ export const AppRoutes = app
   )
   .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
   .get("/tuning/ws/:jobId", TuningWsRoute)
+  // Agent Routes
+  .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .put("/agent/:agentExternalId", zValidator("json", updateAgentSchema), UpdateAgentApi)
+  .delete("/agent/:agentExternalId", DeleteAgentApi)
+  // Admin Routes
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema
