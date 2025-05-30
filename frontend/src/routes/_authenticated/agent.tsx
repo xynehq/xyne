@@ -1,4 +1,4 @@
-import { createFileRoute, useRouterState, useNavigate, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useRouterState, useNavigate } from '@tanstack/react-router'
 import { z } from 'zod'
 import { Sidebar } from "@/components/Sidebar"
 import { Button } from '@/components/ui/button'
