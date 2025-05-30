@@ -121,7 +121,7 @@ class VespaClient {
     offset: number,
     email: string,
   ): Promise<any[]> {
-    const yqlQuery = `select docId,title,createdAt,fileSize from sources ${schema} where uploadedBy contains '${email}' `
+    const yqlQuery = `select * from sources ${schema} where true`
     const searchPayload = {
       yql: yqlQuery,
       hits: limit,

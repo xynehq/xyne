@@ -16,7 +16,7 @@ import {
   SearchModes,
   fetchAllDocumentsFromSchema,
   DeleteDocument,
-  ifDocumentsExistInTranscript
+  ifDocumentsExistInTranscript,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
