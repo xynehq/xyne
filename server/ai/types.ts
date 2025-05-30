@@ -131,22 +131,19 @@ export const FiltersSchema = z.object({
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
   multipleAppAndEntity: z.boolean().optional(),
+  count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
 })
 
 export const RetrievedUnspecificMetadataSchema = z.object({
   type: z.literal(QueryType.GetItems),
   isFollowUp: z.boolean().optional(),
-  filters: FiltersSchema.extend({
-    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-  }),
+  filters: FiltersSchema,
 })
 
 export const RetrieveMetadataSchema = z.object({
   type: z.literal(QueryType.SearchWithFilters),
   isFollowUp: z.boolean().optional(),
-  filters: FiltersSchema.extend({
-    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-  }),
+  filters: FiltersSchema,
 })
 
 export const QueryRouterResponseSchema = z.discriminatedUnion("type", [

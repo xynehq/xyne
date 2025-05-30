@@ -590,7 +590,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("maxPageNumber", maxPageNumber)
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
 
-  const message = input
+  let message = input
 
   let userAlpha = alpha
   try {
@@ -626,13 +626,27 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   const initialSearchSpan = rootSpan?.startSpan("latestResults_search")
 
   const monthInMs = 30 * 24 * 60 * 60 * 1000
-  const timestampRange = {
+  let timestampRange = {
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
   }
+  const { startTime, endTime } = classification.filters
+
+  if (startTime && endTime) {
+    timestampRange.from = new Date(startTime).getTime()
+    timestampRange.to = new Date(endTime).getTime()
+  }
+  let userSpecifiedCount = pageSize
+  if (classification.filters.count) {
+    rootSpan?.setAttribute("userSpecifiedCount", classification.filters.count)
+    userSpecifiedCount = Math.min(classification.filters.count, 50)
+  }
+  if (classification.filterQuery) {
+    message = classification.filterQuery
+  }
   const latestResults = (
     await searchVespa(message, email, null, null, {
-      limit: pageSize,
+      limit: userSpecifiedCount,
       alpha: userAlpha,
       timestampRange,
       span: initialSearchSpan,
@@ -807,8 +821,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         "vespa_search_with_excluded_ids",
       )
       results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
+        limit: userSpecifiedCount,
+        offset: pageNumber * userSpecifiedCount,
         alpha: userAlpha,
         excludedIds: latestIds,
         span: searchSpan,
@@ -835,8 +849,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     } else {
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
       results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
+        limit: userSpecifiedCount,
+        offset: pageNumber * userSpecifiedCount,
         alpha: userAlpha,
         span: searchSpan,
       })
@@ -1987,7 +2001,10 @@ export async function* UnderstandMessageAndAnswer(
     if (hasYieldedAnswer) return
   }
 
-  if (classification.direction !== null) {
+  if (
+    classification.direction !== null &&
+    classification.filters.app === Apps.GoogleCalendar
+  ) {
     // user is talking about an event
     Logger.info(`Direction : ${classification.direction}`)
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
@@ -2679,10 +2696,10 @@ export const MessageApi = async (c: Context) => {
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
 
+              ragSpan.setAttribute("isFollowUp", classification.isFollowUp ?? false)
               if (messages.length < 2) {
                 classification.isFollowUp = false // First message or not enough history to be a follow-up
               } else if (classification.isFollowUp) {
-                ragSpan.setAttribute("isFollowUp", classification.isFollowUp)
                 // If it's marked as a follow-up, try to reuse the last user message's classification
                 const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
 
