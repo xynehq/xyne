@@ -1,4 +1,13 @@
 import { getDateForAI } from "@/utils/index"
+import { QueryType } from "./types"
+import {
+  Apps,
+  CalendarEntity,
+  DriveEntity,
+  GooglePeopleEntity,
+  MailAttachmentEntity,
+  MailEntity,
+} from "@/search/types"
 
 export const askQuestionSelfCleanupPrompt = (
   query: string,
@@ -787,12 +796,10 @@ export const searchQueryPrompt = (
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
-    **Current Query:** ${currentQuery}
-
     Now handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
-      For follow-up detection, evaluate the current query against the ENTIRE conversation history.
+      For follow-up detection, if the users latest query against the ENTIRE conversation history.
       **Required Evidence for Follow-Up Classification:**
 
       - **Anaphoric References:** Pronouns or demonstratives that refer back to specific entities mentioned in previous assistant responses:
@@ -810,18 +817,16 @@ export const searchQueryPrompt = (
 
       - **Context-Dependent Ordinals/Selectors:** Language that only makes sense with prior context:
 
-      **Mandatory Conditions for isFollowUp = true:**
-      1. Conversation history must contain at least one previous assistant response
-      2. The current query must contain explicit referential language (as defined above)
-      3. The referential language must point to specific, identifiable content in a previous assistant response
-      4. Removing the conversation history would make the query ambiguous or unanswerable
+      **Mandatory Conditions for "isFollowUp": true:**
+      1. The current query must contain explicit referential language (as defined above)
+      2. The referential language must point to specific, identifiable content in a previous assistant response
 
-      **Always set isFollowUp = false when:**
-      - The query is fully self-contained and interpretable without conversation history
-      - The query introduces new topics/entities not previously mentioned by the assistant
-      - The query lacks explicit referential markers, even if topically related to previous messages
-      - The query repeats or rephrases previous requests without explicit back-reference language
-      - Shared keywords or topics exist but no direct linguistic dependency is present
+      **Always set "isFollowUp": false when:**
+      1. The query is fully self-contained and interpretable without conversation history
+      2. The query introduces new topics/entities not previously mentioned by the assistant
+      3. The query lacks explicit referential markers, even if topically related to previous messages
+      4. The query repeats or rephrases previous requests without explicit back-reference language
+      5. Shared keywords or topics exist but no direct linguistic dependency is present
 
     1. Check if the user's latest query is ambiguous. THIS IS VERY IMPORTANT. A query is ambiguous if
       a) It contains pronouns or references (e.g. "he", "she", "they", "it", "the project", "the design doc") that cannot be understood without prior context, OR
@@ -890,29 +895,21 @@ export const searchQueryPrompt = (
       - IF specific content keywords remain after exclusion → set filterQuery to those keywords
       - IF no specific content keywords remain after exclusion → set filterQuery to null
       
-      **EXAMPLES:**
-      - "recent uber receipts" → filterQuery: "uber receipts" (uber is specific content)
-      - "give me recent 5 zomato orders" → filterQuery: "zomato orders" (zomato is specific content)  
-      - "recent emails" → filterQuery: null (no specific content after removing generic terms)
-      - "previous 5 meetings" → filterQuery: null (no specific content)
-      - "emails about marketing project" → filterQuery: "marketing project" (specific content)
-      - "latest budget documents" → filterQuery: "budget" (budget is specific content)
-      - "show me all files" → filterQuery: null (no specific content)
 
     9. Now our task is to classify the user's query into one of the following categories:  
-    a. RetrieveInformation  
-    b. RetrieveMetadata  
-    c. RetrieveUnspecificMetadata
+      a. ${QueryType.SearchWithoutFilters}
+      b. ${QueryType.SearchWithFilters}  
+      c. ${QueryType.GetItems}
 
     ### CLASSIFICATION RULES - FIXED AND SOLID
     
     **STEP 1: STRICT APP/ENTITY DETECTION**
     
     Valid app keywords that map to apps:
-    - 'email', 'mail', 'emails', 'gmail' → 'gmail'
-    - 'calendar', 'meetings', 'events', 'schedule' → 'google-calendar'  
-    - 'drive', 'files', 'documents', 'folders' → 'google-drive'
-    - 'contacts', 'people', 'address book' → 'google-workspace'
+    - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
+    - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
+    - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
+    - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     
     Valid entity keywords that map to entities:
     - For Gmail: 'email', 'emails', 'mail', 'message' → 'mail'; 'pdf', 'attachment' → 'pdf'
@@ -920,84 +917,102 @@ export const searchQueryPrompt = (
     - For Calendar: 'event', 'meeting', 'appointment' → 'event'
     - For Workspace: 'contact', 'person' → 'contacts'
     
-    **CRITICAL:** A query ONLY has valid app/entity if it contains the EXACT keywords listed above. Words like "uber", "receipts", "orders", "budget", etc. are NOT valid app/entity terms - they are content keywords.
-    
-    **STEP 2: DETECT MULTIPLE APP/ENTITY REFERENCES**
-    
-    Set "multipleAppAndEntity" to true ONLY if the query contains keywords from multiple different apps/services from the valid lists above.
-    Examples:
-    - "email and calendar" → multipleAppAndEntity: true (contains both gmail and calendar keywords)
-    - "files and emails" → multipleAppAndEntity: true (contains both drive and gmail keywords)
-    - "recent uber receipts" → multipleAppAndEntity: false (no valid app/entity keywords)
-    - "budget documents" → multipleAppAndEntity: false (no valid app/entity keywords)
-    
-    **STEP 3: APPLY FIXED CLASSIFICATION LOGIC**
-    
-    1. **RetrieveInformation** - Use when:
-       - Multiple valid apps/entities are detected (multipleAppAndEntity is true), OR
-       - NO valid app/entity keywords are detected at all
-       - Examples: 
-         - "I want to check my email and events" (multiple apps)
-         - "recent uber receipts" (no valid app/entity keywords)
-         - "what did John say?" (no valid app/entity keywords)
-         - "budget reports" (no valid app/entity keywords)
-       - Set: app = null, entity = null
-    
-    2. **RetrieveMetadata** - Use when:
-       - Exactly ONE valid app/entity is detected, AND filterQuery is NOT null
-       - Examples: 
-         - "emails about marketing project" (has 'emails' = gmail + filterQuery)
-         - "budget spreadsheets in drive" (has 'drive' + filterQuery)
-         - "meetings with John" (has 'meetings' = calendar + filterQuery)
-       - Set: app and entity to detected values
-    
-    3. **RetrieveUnspecificMetadata** - Use when:
-       - Exactly ONE valid app/entity is detected, AND filterQuery IS null
-       - Examples: 
-         - "recent emails" (has 'emails' = gmail but no specific content)
-         - "previous 5 meetings" (has 'meetings' = calendar but no specific content)
-         - "latest files in drive" (has 'drive' but no specific content)
-       - Set: app and entity to detected values
+    **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
+    ### Query Types:
+    1. **${QueryType.SearchWithoutFilters}**:
+      - The user is referring multiple <app> or <entity>
+      - The user wants to search or look up contextual information.
+      - These are open-ended queries where only time filters might apply.
+      - user is asking for a sort of summary or discussion, it could be to summarize emails or files
+      - Example Queries:
+        - "What is the company's leave policy?"
+        - "Explain the project plan from last quarter."
+        - "What was my disucssion with Jesse"
+        - **JSON Structure**:
+        {
+          "type": "${QueryType.SearchWithoutFilters}",
+          "filters": {
+            "count": "<number of items to list>" or null,
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "sortDirection": <boolean> or null
+          }
+        }
 
-    **VALIDATION EXAMPLES:**
-    - "recent uber receipts" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
-    - "zomato orders" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
-    - "budget documents" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
-    - "recent emails" → Has 'emails' (gmail) but no filterQuery → RetrieveUnspecificMetadata
-    - "emails about uber" → Has 'emails' (gmail) and filterQuery → RetrieveMetadata
-    - "files and emails" → Multiple valid apps → RetrieveInformation
+    2. **${QueryType.GetItems}**:
+      - The is referring single <app> or <entity> and doesn't added any specific keywords. please don't consider <app> or <entity> as keywords
+      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity.
+      - This can be only classified when <app> and <entity> present
+      - Example Queries:
+        - "Show me all emails from last week."
+        - "List all Google Docs modified in October."
+        - **JSON Structure**:
+        {
+          "type": "${QueryType.GetItems}",
+          "filters": {
+            "app": "<app>",
+            "entity": "<entity>",
+            "sortDirection": <boolean if applicable otherwise null>
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+          }
+        }
+
+    3. **${QueryType.SearchWithFilters}**:
+      - The is referring single <app> or <entity> and also have specify some keywords
+      - Exactly ONE valid app/entity is detected, AND filterQuery is NOT null
+      - Examples Queries: 
+        - "emails about marketing project" (has 'emails' = gmail + filterQuery)
+        - "budget spreadsheets in drive" (has 'drive' + filterQuery)
+
+       - **JSON Structure**:
+        {
+          "type": "${QueryType.GetItems}",
+          "filters": {
+            "app": "<app>",
+            "entity": "<entity>",
+            "count": "<number of items to list>",
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
+            "sortDirection": <boolean or null>,
+            "filterQuery": "<extracted keywords>"
+          }
+        }
+
+    ---
 
     #### Enum Values for Valid Inputs
 
     type (Query Types):  
-    - RetrieveInformation  
-    - RetrieveMetadata  
-    - RetrieveUnspecificMetadata
+    - ${QueryType.SearchWithoutFilters}  
+    - ${QueryType.GetItems}    
+    - ${QueryType.SearchWithFilters}  
 
     app (Valid Apps):  
-    - google-drive  
-    - gmail  
-    - google-calendar  
-    - google-workspace
+    - ${Apps.GoogleDrive} 
+    - ${Apps.Gmail}  
+    - ${Apps.GoogleCalendar} 
+    - ${Apps.GoogleWorkspace}
 
     entity (Valid Entities):  
-    For Gmail:  
-    - mail  
-    - pdf (for attachments)  
+    For ${Apps.Gmail}:  
+    - ${MailEntity.Email}  
+    - ${MailAttachmentEntity.PDF} (for attachments)  
 
     For Drive:  
-    - driveFile  
-    - docs  
-    - sheets  
-    - slides  
-    - pdf  
-    - folder  
+    - ${DriveEntity.WordDocument}  
+    - ${DriveEntity.Docs}  
+    - ${DriveEntity.Sheets}  
+    - ${DriveEntity.Slides}  
+    - ${DriveEntity.PDF}  
+    - ${DriveEntity.Folder}  
 
     For Calendar:  
-    - event
+    - ${CalendarEntity.Event}
 
     For Google-Workspace:
-     - contacts
+     - ${GooglePeopleEntity.Contacts} or 
+     - ${GooglePeopleEntity.OtherContacts}
 
     10. **IMPORTANT - TEMPORAL DIRECTION RULES:**
         - "temporalDirection" should ONLY be set for calendar-related queries (meetings, events, appointments, schedule)
@@ -1012,7 +1027,7 @@ export const searchQueryPrompt = (
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
          "isFollowUp": "<boolean>",
-         "type": "<RetrieveInformation | RetrieveMetadata | RetrieveUnspecificMetadata>",
+         "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
          "filterQuery": "<string or null>",
          "filters": {
            "app": "<app or null>",
@@ -1035,6 +1050,7 @@ export const searchQueryPrompt = (
 
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    14. If query is a follow up query then isFollowUp must be true.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 

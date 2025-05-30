@@ -1547,8 +1547,9 @@ async function* generateMetadataQueryAnswer(
     "count" in classification.filters ? classification.filters.count : undefined
   const direction = classification.direction as string
   const isUnspecificMetadataRetrieval =
-    classification.type === QueryType.RetrieveUnspecificMetadata
-  const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
+    classification.type === QueryType.GetItems
+  const isMetadataRetrieval =
+    classification.type === QueryType.SearchWithFilters
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
 
@@ -1692,13 +1693,13 @@ async function* generateMetadataQueryAnswer(
     Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
   } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
     const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
-    span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
+    span?.setAttribute("metadata_type", QueryType.GetItems)
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
     )
     span?.setAttribute("modelId", defaultBestModel)
-    Logger.info(`Search Type : ${QueryType.RetrieveUnspecificMetadata}`)
+    Logger.info(`Search Type : ${QueryType.GetItems}`)
 
     items =
       (
@@ -1723,9 +1724,7 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute("context", buildContext(items, 20))
     span?.end()
-    Logger.info(
-      `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
-    )
+    Logger.info(`Retrieved Documents : ${QueryType.GetItems} - ${items.length}`)
     // Early return if no documents found
     if (!items.length) {
       span?.end()
@@ -1752,13 +1751,13 @@ async function* generateMetadataQueryAnswer(
     classification.filterQuery
   ) {
     // Specific metadata retrieval
-    span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
+    span?.setAttribute("metadata_type", QueryType.SearchWithFilters)
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
     )
     span?.setAttribute("modelId", defaultBestModel)
-    Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
+    Logger.info(`Search Type : ${QueryType.SearchWithFilters}`)
 
     const { filterQuery } = classification
     const query = filterQuery
@@ -1806,7 +1805,7 @@ async function* generateMetadataQueryAnswer(
       iterationSpan?.end()
 
       Logger.info(
-        `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
+        `Number of documents for ${QueryType.SearchWithFilters} = ${items.length}`,
       )
       if (!items.length) {
         Logger.info(
@@ -1933,8 +1932,8 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?.setAttribute("message_count", messages.length)
 
   const isUnspecificMetadataRetrieval =
-    classification.type == QueryType.RetrieveUnspecificMetadata
-  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
+    classification.type == QueryType.GetItems
+  const isMetadataRetrieval = classification.type == QueryType.SearchWithFilters
   const isRecencyRetrieval =
     classification.filters.multipleAppAndEntity === false &&
     classification.filterQuery &&
