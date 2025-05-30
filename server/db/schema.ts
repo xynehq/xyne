@@ -323,6 +323,7 @@ export const chats = pgTable(
     // metadata for any file that is uploaded as
     // attachment for that chat
     attachments: jsonb("attachments").notNull(),
+    agentId: text("agent_id"), // Added agentId field
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
@@ -531,7 +532,9 @@ export type InternalUserWorkspace = {
   workspace: SelectWorkspace
 }
 
-export const insertChatSchema = createInsertSchema(chats).omit({
+export const insertChatSchema = createInsertSchema(chats, {
+  agentId: z.string().optional(), // Make agentId optional in the Zod schema
+}).omit({
   id: true,
 })
 export type InsertChat = z.infer<typeof insertChatSchema>

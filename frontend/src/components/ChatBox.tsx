@@ -67,16 +67,15 @@ interface SearchResult {
 interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void
-  handleSend: (messageToSend: string, selectedSources?: string[], agentForChat?: SelectPublicAgent | null) => void // Modified to accept agent
+  handleSend: (messageToSend: string, selectedSources?: string[], agentId?: string | null) => void // Expects agentId string
   isStreaming?: boolean
   handleStop?: () => void
-  chatId?: string | null
+  chatId?: string | null // Current chat ID
   allCitations: Map<string, Citation>
   isReasoningActive: boolean
   setIsReasoningActive: (
     value: boolean | ((prevState: boolean) => boolean),
   ) => void
-  // agentIdForDisplay prop is removed, will be read from URL
 }
 
 const availableSources: SourceItem[] = [
@@ -224,53 +223,54 @@ export const ChatBox = ({
   const [referenceBoxLeft, setReferenceBoxLeft] = useState(0)
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
-  const [fetchedAgentForChat, setFetchedAgentForChat] = useState<SelectPublicAgent | null>(null); // State for the full agent object
+  const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null);
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null);
 
-
-  // Effect to fetch agent data if agentId is present in the URL
+  // Effect to initialize and update persistedAgentId from URL, primarily on chatId changes
   useEffect(() => {
-    const fetchAgentData = async () => {
-      const searchParams = new URLSearchParams(window.location.search);
-      const agentIdFromUrl = searchParams.get('agentId');
+    const searchParams = new URLSearchParams(window.location.search);
+    const agentIdFromUrl = searchParams.get('agentId');
 
-      if (agentIdFromUrl) {
+    if (agentIdFromUrl) {
+      setPersistedAgentId(agentIdFromUrl);
+    } else if (!chatId) { // If it's a new chat (no chatId) and no agentId in URL, clear persisted.
+      setPersistedAgentId(null);
+    }
+    // This effect should run when chatId changes, as that might indicate a new context
+    // or when the component initially loads.
+  }, [chatId]);
+
+  // Effect to fetch agent details for display when persistedAgentId is set
+  useEffect(() => {
+    const fetchAgentDetails = async () => {
+      if (persistedAgentId) {
         try {
           const response = await api.agents.$get(); // Fetch all agents
           if (response.ok) {
             const allAgents = await response.json() as SelectPublicAgent[];
-            const currentAgent = allAgents.find(agent => agent.externalId === agentIdFromUrl);
+            const currentAgent = allAgents.find(agent => agent.externalId === persistedAgentId);
             if (currentAgent) {
-              setFetchedAgentForChat(currentAgent);
               setDisplayAgentName(currentAgent.name);
             } else {
-              console.error(`Agent with ID ${agentIdFromUrl} not found.`);
-              setFetchedAgentForChat(null);
+              console.error(`Agent with ID ${persistedAgentId} not found for display.`);
               setDisplayAgentName(null);
             }
           } else {
-            console.error("Failed to load agents for chat.");
-            setFetchedAgentForChat(null);
+            console.error("Failed to load agents for display.");
             setDisplayAgentName(null);
           }
         } catch (error) {
-          console.error("Error fetching agents for chat:", error);
-          setFetchedAgentForChat(null);
+          console.error("Error fetching agent details for display:", error);
           setDisplayAgentName(null);
         }
       } else {
-        setFetchedAgentForChat(null);
-        setDisplayAgentName(null);
+        setDisplayAgentName(null); // Clear display name if no persistedAgentId
       }
     };
 
-    fetchAgentData();
-    // Listen for popstate events to refetch if the user navigates with browser buttons
-    window.addEventListener('popstate', fetchAgentData);
-    return () => {
-      window.removeEventListener('popstate', fetchAgentData);
-    };
-  }, []); 
+    fetchAgentDetails();
+  }, [persistedAgentId]); // Depend on persistedAgentId
+
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
       inputRef.current.style.height = "auto"
@@ -895,11 +895,11 @@ export const ChatBox = ({
 
     // The `references` array is no longer passed to handleSend.
     // Pills and links are part of htmlMessage.
-    // console.log("Sending message:", fetchedAgentForChat)
+    // Use the persistedAgentId from state when calling handleSend
     handleSend(
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
-      fetchedAgentForChat // Pass the fetched agent data
+      persistedAgentId
     )
     // setReferences([]) // This state and its setter are removed.
 
@@ -1563,9 +1563,9 @@ export const ChatBox = ({
               />
               <span>Reasoning</span>
             </button>
-            {true && (
-              <div className="flex items-center text-xs text-slate-600 ml-2 px-1 py-0.5 cursor-default">
-                <Bot size={16} className="mr-1 text-slate-500" />
+            {displayAgentName && (
+              <div className="flex items-center text-xs text-[#464D53] ml-2 px-1 py-0.5 cursor-default">
+                <Bot size={16} className="mr-1 text-[#464D53]" />
                 <span className="font-medium">{displayAgentName}</span>
               </div>
             )}

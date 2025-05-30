@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter" // Re-added for MessageCitationList styling
-import { Apps, ChatSSEvents, SelectPublicMessage, Citation, PublicUser, SelectPublicAgent } from "shared/types"
+import { Apps, ChatSSEvents, SelectPublicMessage, Citation, PublicUser, SelectPublicAgent, DriveEntity } from "shared/types"
 import { ChevronDown, X as LucideX, Check, RotateCcw, PlusCircle, Copy, ArrowLeft, Edit3, Trash2 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
 import MarkdownPreview from "@uiw/react-markdown-preview"
@@ -78,9 +78,67 @@ interface IntegrationSource {
 }
 
 // Updated to only include Transcripts
-const availableIntegrationsList: IntegrationSource[] = [
-  { id: 'transcripts', name: 'Transcripts', app: 'custom', entity: 'transcript', icon: getIcon('file-text', "file", { w: 12, h: 12 , mr: 0.5 }) } // Icon size 12x12, further reduced margin
-];
+const availableIntegrationsList : IntegrationSource[] = [
+  { id: 'transcripts',
+   name: 'Transcripts',
+   app: 'custom',
+   entity: 'transcript',
+   icon: getIcon('file-text', "file", { w: 16, h: 16 , mr: 8 }) 
+  },
+  {
+    id: "googledrive",
+    name: "Google Drive",
+    app: Apps.GoogleDrive,
+    entity: "file",
+    icon: getIcon(Apps.GoogleDrive, "file", { w: 16, h: 16, mr: 8 }),
+  },
+  {
+    id: "googledocs",
+    name: "Google Docs",
+    app: Apps.GoogleDrive,
+    entity: DriveEntity.Docs,
+    icon: getIcon(Apps.GoogleDrive, DriveEntity.Docs, { w: 16, h: 16, mr: 8 }),
+  },
+  {
+    id: "googlesheets",
+    name: "Google Sheets",
+    app: Apps.GoogleDrive,
+    entity: DriveEntity.Sheets,
+    icon: getIcon(Apps.GoogleDrive, DriveEntity.Sheets, {
+      w: 16,
+      h: 16,
+      mr: 8,
+    }),
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    app: Apps.Slack,
+    entity: "message",
+    icon: getIcon(Apps.Slack, "message", { w: 16, h: 16, mr: 8 }),
+  },
+  {
+    id: "gmail",
+    name: "Gmail",
+    app: Apps.Gmail,
+    entity: "mail",
+    icon: getIcon(Apps.Gmail, "mail", { w: 16, h: 16, mr: 8 }),
+  },
+  {
+    id: "googlecalendar",
+    name: "Calendar",
+    app: Apps.GoogleCalendar,
+    entity: "event",
+    icon: getIcon(Apps.GoogleCalendar, "event", { w: 16, h: 16, mr: 8 }),
+  },
+  {
+    id: "pdf",
+    name: "PDF",
+    app: "pdf",
+    entity: "pdf_default",
+    icon: getIcon("pdf", "pdf_default", { w: 16, h: 16, mr: 8 }),
+  },
+]
 
 function AgentComponent() {
   const { agentId } = Route.useSearch();
