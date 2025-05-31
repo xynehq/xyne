@@ -1,0 +1,16 @@
+# ./grafana/provisioning/dashboards/default-dashboards-provider.yml
+apiVersion: 1
+
+providers:
+- name: 'xyne-dashboards'   # A unique name for this dashboard provider
+  orgId: 1                 # Usually 1 for the default organization
+  folder: ''               # Optional: Scopes dashboards to a folder in Grafana UI.
+                           # Leave empty to put them in the 'General' folder.
+  type: file
+  disableDeletion: false   # If true, dashboards are not deleted from Grafana if their file is removed
+  editable: false           # If true, dashboards can be edited in the UI. Changes won't save back to JSON by default.
+  options:
+    path: /etc/grafana/provisioning/dashboards # This MUST be the path INSIDE the container
+    # You can add 'foldersFromFilesStructure: true' if you want to organize dashboards
+    # into subfolders within ./grafana/provisioning/dashboards/ and have that
+    # reflected in Grafana's UI.

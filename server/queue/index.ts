@@ -3,7 +3,7 @@ import {
   handleGoogleServiceAccountIngestion,
   syncGoogleWorkspace,
 } from "@/integrations/google"
-import { ConnectorType, Subsystem, type SaaSJob } from "@/types"
+import { ConnectorType, metricAccountType, metricNames, Subsystem, type SaaSJob } from "@/types"
 import PgBoss from "pg-boss"
 import config from "@/config"
 import { Apps, AuthType } from "@/shared/types"
@@ -16,6 +16,7 @@ import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 import { handleSlackIngestion } from "@/integrations/slack"
 import { handleSlackChanges } from "@/integrations/slack/sync"
+import { syncJobDuration, syncJobError, syncJobSuccess } from "@/metrics/sync/sync-metrics"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 
@@ -121,39 +122,76 @@ const initWorkers = async () => {
   await setupServiceAccountCronjobs()
 
   await boss.work(SyncOAuthSaaSQueue, async ([job]) => {
+    const startTime = Date.now()
     try {
       await handleGoogleOAuthChanges(boss, job)
+      const endTime = Date.now();
+      syncJobSuccess.inc({sync_job_name:metricNames.syncOauthAccountChanges, sync_job_auth_type:metricAccountType.oauth, sync_job_start_time:startTime, sync_job_end_time:endTime}, 1)
+      syncJobDuration.observe({sync_job_name:metricNames.syncOauthAccountChanges, sync_job_auth_type:metricAccountType.oauth, sync_job_start_time:startTime}, (endTime-startTime))
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
         `Unhandled Error while syncing OAuth SaaS ${errorMessage} ${(error as Error).stack}`,
       )
+      syncJobError.inc({sync_job_name:metricNames.syncOauthAccountChanges, sync_job_auth_type:metricAccountType.oauth,sync_job_start_time:startTime, sync_job_end_time:Date.now(),sync_job_error_type:`${errorMessage}`}, 1)
     }
   })
 
   // Any Service account related SaaS jobs
   await boss.work(SyncServiceAccountSaaSQueue, async ([job]) => {
     // call all the service account handlers in parallel
-    await handleGoogleServiceAccountChanges(boss, job)
+    const startTime = Date.now()
+   try{
+     await handleGoogleServiceAccountChanges(boss, job)
+     const endTime = Date.now();
+      syncJobSuccess.inc({sync_job_name:metricNames.syncServiceAccountChanges, sync_job_auth_type:metricAccountType.service, sync_job_start_time:startTime, sync_job_end_time:endTime}, 1)
+      syncJobDuration.observe({sync_job_name:metricNames.syncServiceAccountChanges, sync_job_auth_type:metricAccountType.service, sync_job_start_time:startTime}, (endTime-startTime))
+   }catch(error){
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while syncing Service Account Changes: Error :\n ${errorMessage} ${(error as Error).stack}`,
+      )
+        syncJobError.inc({sync_job_name:metricNames.syncServiceAccountChanges, sync_job_auth_type:metricAccountType.service,sync_job_start_time:startTime, sync_job_end_time:Date.now(),sync_job_error_type:`${errorMessage}`}, 1)
+   }
   })
 
   await boss.work(SyncGoogleWorkspace, async ([job]) => {
-    await syncGoogleWorkspace(boss, job)
+    const startTime = Date.now()
+    try {
+      await syncGoogleWorkspace(boss, job)
+      const endTime = Date.now()
+      syncJobSuccess.inc({sync_job_name:metricNames.syncGoogleWorkspaceChange, sync_job_auth_type:metricAccountType.service, sync_job_start_time:startTime, sync_job_end_time:endTime}, 1)
+      syncJobDuration.observe({sync_job_name:metricNames.syncGoogleWorkspaceChange, sync_job_auth_type:metricAccountType.service, sync_job_start_time:startTime}, (endTime-startTime))
+    }catch(error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while syncing Google Workspace ${errorMessage} ${(error as Error).stack}`,
+      )
+      syncJobError.inc({sync_job_name:metricNames.syncGoogleWorkspaceChange, sync_job_auth_type:metricAccountType.service,sync_job_start_time:startTime, sync_job_end_time:Date.now(),sync_job_error_type:`${errorMessage}`}, 1)
+    }
   })
 
   await boss.work(CheckDownloadsFolderQueue, async ([job]) => {
     await checkDownloadsFolder(boss, job)
   })
   await boss.work(SyncSlackQueue, async ([job]) => {
+    const startTime = Date.now()
     try {
       await handleSlackChanges(boss, job)
+      const endTime = Date.now()
+      syncJobSuccess.inc({sync_job_name:metricNames.syncSlackChanges, sync_job_auth_type:metricAccountType.slackUser, sync_job_start_time:startTime, sync_job_end_time:endTime}, 1)
+      syncJobDuration.observe({sync_job_name:metricNames.syncSlackChanges, sync_job_auth_type:metricAccountType.slackUser, sync_job_start_time:startTime}, (endTime-startTime))
+    
     } catch (error) {
       const errorMessage = getErrorMessage(error)
       Logger.error(
         error,
         `Unhandled Error while syncing Slack ${errorMessage} ${(error as Error).stack}`,
       )
+      syncJobError.inc({sync_job_name:metricNames.syncSlackChanges, sync_job_auth_type:metricAccountType.slackUser,sync_job_start_time:startTime, sync_job_end_time:Date.now(),sync_job_error_type:`${errorMessage}`}, 1)
     }
   })
 }
