@@ -39,6 +39,7 @@ import {
   CalendarEntity,
   Apps,
   type VespaSchema,
+  SlackEntity,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -383,6 +384,9 @@ export const entityToSchemaMapper = (
     ),
     ...Object.fromEntries(
       Object.values(CalendarEntity).map((e) => [e, eventSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(SlackEntity).map((e) => [e, chatMessageSchema]),
     ),
   }
 

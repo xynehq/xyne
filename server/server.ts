@@ -443,7 +443,6 @@ app.get("/metrics", async (c) => {
   }
 })
 
-
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })

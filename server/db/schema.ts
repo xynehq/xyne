@@ -372,6 +372,9 @@ export const messages = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     errorMessage: text("error_message").default(""),
+    queryRouterClassification: jsonb("queryRouterClassification")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),
@@ -542,6 +545,7 @@ export type SelectChat = z.infer<typeof selectChatSchema>
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
 })
+
 export type InsertMessage = z.infer<typeof insertMessageSchema>
 
 // Select schema for messages

@@ -320,23 +320,6 @@ schema chat_message {
     }
   }
 
- rank-profile unranked inherits default {
-    # Simple constant expression - returns same score for all documents
-    first-phase {
-      expression: 0
-    }
-    # Skip second phase ranking completely
-    second-phase {
-      expression: 0
-    }
-    # Skip global phase
-    global-phase {
-      expression: 0
-    }
-    # No need to calculate features for unranked results
-    match-features {}
-  }
-
   document-summary default {
     summary text {
       bolding: on

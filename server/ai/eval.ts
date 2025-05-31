@@ -535,7 +535,7 @@ const endToEndFlow = async (
     answer: "",
     queryRewrite: "",
     temporalDirection: null,
-    filter_query: "",
+    filterQuery: "",
     filters: queryFilters,
     type: "",
     from: null,
@@ -572,7 +572,7 @@ const endToEndFlow = async (
     const classification: TemporalClassifier & QueryRouterResponse = {
       direction: parsed.temporalDirection,
       type: parsed.type as any,
-      filter_query: parsed.filter_query,
+      filterQuery: parsed.filterQuery,
       filters: {
         ...parsed.filters,
         app: parsed.filters.app as any,
