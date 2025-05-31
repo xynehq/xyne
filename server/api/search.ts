@@ -414,41 +414,55 @@ export const getAllDocs = async (c: Context)=>{
 }
 
 export const deleteDocument = async (c: Context) => {
-  try{
+  try {
     const {sub} = c.get(JwtPayloadKey)
     const email = sub
-    // @ts-ignore
-    const {docId}: { docId: string } = c.req.valid("form")
+    let bodyRaw;
+    try {
+      bodyRaw = await c.req.json();
+      // Logger.info(`Raw request body: ${JSON.stringify(bodyRaw)}`);
+    } catch (e) {
+      Logger.info(`Failed to parse raw json: ${getErrorMessage(e)}`);
+    }
+    
+    let docId;
+    docId = bodyRaw?.docId;
+    
     if (!docId) {
+      Logger.error('Document ID is missing from request')
       return c.json({
         message: "Document ID is required",
       }, 400)
     }
-    // first we will check if the documebt exists 
-    // but having the uploadedBy field is same as email
-    const existanceMap = await ifDocumentsExistInTranscript(docId,email)
-    if(existanceMap[docId].exists){
-      try{
-    const res = await DeleteDocument(docId, "transcript")
-      }
-      catch(error){
+    
+
+    const existanceMap = await ifDocumentsExistInTranscript(docId, email)
+    console.log("Existance Map:", existanceMap)
+    if (existanceMap[docId]?.exists) {
+      try {
+        const res = await DeleteDocument(docId, "transcript")
         return c.json({
-          message:" Error deleting document",
+          message: "Document deleted successfully",
+          docId
+        }, 200)
+      } catch (error) {
+        Logger.error(`Error while deleting document: ${getErrorMessage(error)}`)
+        return c.json({
+          message: "Error deleting document",
           error: getErrorMessage(error),
         }, 500)
-        }
       }
-      else{
+    } else {
+      Logger.info(`Document does not exist or user does not have permission: ${docId}`)
       return c.json({
         message: "Document does not exist or you do not have permission to delete it",
-      })
+      }, 404)
     }
-
-  }
-  catch(error){
+  } catch (error) {
+    Logger.error(`Unhandled error in deleteDocument: ${getErrorMessage(error)}`)
     return c.json({
-      message: "Error deleting document",
+      message: "Error processing delete document request",
       error: getErrorMessage(error),
     }, 500)
-    }
+  }
 }

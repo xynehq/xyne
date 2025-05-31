@@ -70,6 +70,9 @@ import {
   getItems,
   GetDocumentsByDocIds,
   getDocumentOrNull,
+  searchVespaThroughAgent,
+  searchVespaAgent,
+  
 } from "@/search/vespa"
 import {
   Apps,
@@ -596,6 +599,33 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("pageSize", pageSize)
   rootSpan?.setAttribute("maxPageNumber", maxPageNumber)
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
+  let agentApps:any=[]
+  let agentPromptData: { appIntegrations?: string[] } = {};
+    try {
+      agentPromptData = JSON.parse(agentPrompt!);
+    } catch (error) {
+      Logger.warn("Failed to parse agentPrompt JSON");
+    }
+
+    // Convert appIntegrations to Apps enum values
+   agentApps = agentPromptData.appIntegrations?.map((integration: string): Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack | null => {
+      switch(integration.toLowerCase()) {
+        case 'googledrive':
+          return Apps.GoogleDrive;
+        case 'transcripts':
+          return Apps.Transcript;
+        case 'googlesheets':
+          return Apps.GoogleDrive;
+        case 'gmail':
+          return Apps.Gmail;
+        case 'googlecalendar':
+          return Apps.GoogleCalendar;
+        case 'slack':
+          return Apps.Slack;
+        default:
+          return null;
+      }
+    }).filter((app): app is Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack => app !== null);
 
   const message = input
 
@@ -637,14 +667,25 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
   }
-  const latestResults = (
-    await searchVespa(message, email, null, null, {
+  let searchResults;
+  if (!agentPrompt) {
+    searchResults = await searchVespa(message, email, null, null, {
       limit: pageSize,
       alpha: userAlpha,
       timestampRange,
       span: initialSearchSpan,
-    })
-  ).root.children
+    });
+  } else {
+    
+    searchResults = await searchVespaAgent(message, email,null,null,agentApps, {
+      limit: pageSize,
+      alpha: userAlpha,
+      timestampRange,
+      span: initialSearchSpan,
+    });
+  }
+
+  const latestResults = searchResults.root.children;
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
   initialSearchSpan?.setAttribute(
     "result_ids",
@@ -670,11 +711,22 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
-      let results = await searchVespa(message, email, null, null, {
+      let results;
+      if(!agentPrompt){
+      results = await searchVespa(message, email, null, null, {
         limit: pageSize,
         alpha: userAlpha,
         span: vespaSearchSpan,
       })
+    }
+    else{
+    results = await searchVespaAgent(message, email,null,null,agentApps, {
+      limit: pageSize,
+      alpha: userAlpha,
+      span: vespaSearchSpan,
+    })
+
+    }
       vespaSearchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -713,16 +765,22 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
         const latestSearchSpan = querySpan?.startSpan("latest_results_search")
         const latestResults: VespaSearchResult[] = (
-          await searchVespa(query, email, null, null, {
-            limit: pageSize,
-            alpha: userAlpha,
-            timestampRange: {
-              from: new Date().getTime() - 4 * monthInMs,
-              to: new Date().getTime(),
-            },
-            span: latestSearchSpan,
-          })
-        )?.root?.children
+          await (!agentPrompt
+            ? searchVespa(query, email, null, null, {
+                limit: pageSize,
+                alpha: userAlpha,
+                timestampRange,
+                span: latestSearchSpan,
+              })
+            : (async () => {
+                return searchVespaAgent(query, email, null, null,agentApps, {
+                  limit: pageSize,
+                  alpha: userAlpha,
+                  timestampRange,
+                  span: latestSearchSpan,
+                });
+              })())
+        ).root.children || [];
         latestSearchSpan?.setAttribute(
           "result_count",
           latestResults?.length || 0,
@@ -737,13 +795,34 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         latestSearchSpan?.end()
 
-        let results = await searchVespa(query, email, null, null, {
-          limit: pageSize,
-          alpha: userAlpha,
-          excludedIds: latestResults
+        // let results = await searchVespa(query, email, null, null, {
+        //   limit: pageSize,
+        //   alpha: userAlpha,
+        //   excludedIds: latestResults
+        //     ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+        //     ?.filter((v) => !!v),
+        // })
+      let results;
+      if(!agentPrompt){
+      results = await searchVespa(query, email, null, null, {
+        limit: pageSize,
+        alpha: userAlpha,
+        excludedIds: latestResults
             ?.map((v: VespaSearchResult) => (v.fields as any).docId)
             ?.filter((v) => !!v),
-        })
+      })
+    }
+    else{
+    results = await searchVespaAgent(query, email, null, null,agentApps, {
+      limit: pageSize,
+      alpha: userAlpha,
+      excludedIds: latestResults
+          ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+          ?.filter((v) => !!v),
+    })
+
+    }
+
         const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
           latestResults || [],
@@ -815,6 +894,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const searchSpan = pageSearchSpan?.startSpan(
         "vespa_search_with_excluded_ids",
       )
+      if(!agentPrompt){
       results = await searchVespa(message, email, null, null, {
         limit: pageSize,
         offset: pageNumber * pageSize,
@@ -822,6 +902,17 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         excludedIds: latestIds,
         span: searchSpan,
       })
+    }
+    else{
+    results =  await searchVespaAgent(message, email, null, null, agentApps,{
+      limit: pageSize,
+      offset: pageNumber * pageSize,
+      alpha: userAlpha,
+      excludedIds: latestIds,
+      span: searchSpan,
+    })
+
+    }
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -843,12 +934,24 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     } else {
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
+      if(!agentPrompt){
       results = await searchVespa(message, email, null, null, {
         limit: pageSize,
         offset: pageNumber * pageSize,
         alpha: userAlpha,
         span: searchSpan,
       })
+    }
+    else{
+    results = await searchVespaAgent(message, email, null, null, agentApps,{
+      limit: pageSize,
+      offset: pageNumber * pageSize,
+      alpha: userAlpha,
+      span: searchSpan,
+    })
+
+    }
+
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -1254,6 +1357,35 @@ async function* generatePointQueryTimeExpansion(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   rootSpan?.setAttribute("direction", classification.direction || "unknown")
 
+  let agentApps:any=[]
+  let agentPromptData: { appIntegrations?: string[] } = {};
+    try {
+      agentPromptData = JSON.parse(agentPrompt!);
+    } catch (error) {
+      Logger.warn("Failed to parse agentPrompt JSON");
+    }
+
+    // Convert appIntegrations to Apps enum values
+   agentApps = agentPromptData.appIntegrations?.map((integration: string): Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack | null => {
+      switch(integration.toLowerCase()) {
+        case 'googledrive':
+          return Apps.GoogleDrive;
+        case 'transcripts':
+          return Apps.Transcript;
+        case 'googlesheets':
+          return Apps.GoogleDrive;
+        case 'gmail':
+          return Apps.Gmail;
+        case 'googlecalendar':
+          return Apps.GoogleCalendar;
+        case 'slack':
+          return Apps.Slack;
+        default:
+          return null;
+      }
+    }).filter((app): app is Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack => app !== null);
+
+  
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
   const direction = classification.direction as string
 
@@ -1323,21 +1455,81 @@ async function* generatePointQueryTimeExpansion(
     // emailSearchSpan?.setAttribute(`promise.all[eventResults, results]-${iteration}`, true)
 
     const calenderSearchSpan = searchSpan?.startSpan("calender_search")
-    const [eventResults, results] = await Promise.all([
-      searchVespa(message, email, Apps.GoogleCalendar, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        timestampRange: { from, to },
-        span: calenderSearchSpan,
-      }),
-      searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        timestampRange: { to, from },
-        notInMailLabels: ["CATEGORY_PROMOTIONS"],
-        span: emailSearchSpan,
-      }),
-    ])
+    let results: VespaSearchResponse = {
+      root: {
+        id: "",
+        relevance: 0,
+        coverage: {
+          coverage: 0,
+          documents: 0,
+          full: false,
+          nodes: 0,
+          results: 0,
+          resultsFull: 0
+        },
+        children: []
+      },
+      trace: undefined
+    };
+    let eventResults: VespaSearchResponse = {
+      root: {
+        id: "",
+        relevance: 0,
+        coverage: {
+          coverage: 0,
+          documents: 0,
+          full: false,
+          nodes: 0,
+          results: 0,
+          resultsFull: 0
+        },
+        children: []
+      },
+      trace: undefined
+    };
+    if(!agentPrompt){
+      [results, eventResults] = await Promise.all([
+        searchVespa(message, email, Apps.GoogleCalendar, null, {
+          limit: pageSize,
+          alpha: userAlpha,
+          timestampRange: { from, to },
+          span: calenderSearchSpan,
+        }),
+        searchVespa(message, email, null, null, {
+          limit: pageSize,
+          alpha: userAlpha,
+          timestampRange: { to, from },
+          notInMailLabels: ["CATEGORY_PROMOTIONS"],
+          span: emailSearchSpan,
+        }),
+      ])
+    }
+
+    // Handle agent prompt if present
+    if (agentPrompt) {
+      if (agentApps) {
+        const [agentResults, agentEventResults] = await Promise.all([
+          searchVespaAgent(message, email, Apps.GoogleCalendar, null,agentApps, {
+          limit: pageSize,
+          alpha: userAlpha,
+          timestampRange: { from, to },
+          span: calenderSearchSpan,
+        }),
+        searchVespaAgent(message, email, null, null,agentApps,{
+          limit: pageSize,
+          alpha: userAlpha,
+          timestampRange: { to, from },
+          notInMailLabels: ["CATEGORY_PROMOTIONS"],
+          span: emailSearchSpan,
+        }),
+        ]);
+        
+        // Merge results with agent results
+        results.root.children = [...(results.root.children || []), ...(agentResults.root.children || [])];
+        eventResults.root.children = [...(eventResults.root.children || []), ...(agentEventResults.root.children || [])];
+      }
+    }
+
     emailSearchSpan?.setAttribute(
       "result_count",
       results?.root?.children?.length || 0,
@@ -1578,7 +1770,34 @@ async function* generateMetadataQueryAnswer(
   const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
-
+    let agentApps:any=[]
+    let agentPromptData: { appIntegrations?: string[] } = {};
+      try {
+        agentPromptData = JSON.parse(agentPrompt!);
+      } catch (error) {
+        Logger.warn("Failed to parse agentPrompt JSON");
+      }
+  
+      // Convert appIntegrations to Apps enum values
+     agentApps = agentPromptData.appIntegrations?.map((integration: string): Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack | null => {
+        switch(integration.toLowerCase()) {
+          case 'googledrive':
+            return Apps.GoogleDrive;
+          case 'transcripts':
+            return Apps.Transcript;
+          case 'googlesheets':
+            return Apps.GoogleDrive;
+          case 'gmail':
+            return Apps.Gmail;
+          case 'googlecalendar':
+            return Apps.GoogleCalendar;
+          case 'slack':
+            return Apps.Slack;
+          default:
+            return null;
+        }
+      }).filter((app): app is Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack => app !== null);
+  
   // Process timestamp
   const from = startTime ? new Date(startTime).getTime() : null
   const to = endTime ? new Date(endTime).getTime() : null
@@ -1643,20 +1862,36 @@ async function* generateMetadataQueryAnswer(
       Logger.info(
         `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
-      items =
-        (
-          await searchVespa(
-            classification.filter_query,
-            email,
-            app as Apps,
-            entity as any,
-            {
-              ...searchOps,
-              offset: pageSize * iteration,
-              span: pageSpan,
-            },
-          )
-        ).root.children || []
+      
+      let searchResults;
+      if (!agentPrompt) {
+        searchResults = await searchVespa(
+          classification.filter_query,
+          email,
+          app as Apps,
+          entity as any,
+          {
+            ...searchOps,
+            offset: pageSize * iteration,
+            span: pageSpan,
+          },
+        );
+      } else {
+        searchResults = await searchVespaAgent(
+          classification.filter_query,
+          email,
+          app as Apps,
+          entity as any,
+          agentApps,
+          {
+            ...searchOps,
+            offset: pageSize * iteration,
+            span: pageSpan,
+          },
+        );
+      }
+      
+      items = searchResults.root.children || [];
 
       Logger.info(
         `iteration-${iteration} retrieved documents length - ${items.length}`,
@@ -1727,18 +1962,20 @@ async function* generateMetadataQueryAnswer(
     span?.setAttribute("modelId", defaultBestModel)
     Logger.info(`Search Type : ${QueryType.RetrieveUnspecificMetadata}`)
 
-    items =
-      (
-        await getItems({
-          email,
-          schema,
-          app,
-          entity,
-          timestampRange,
-          limit: userSpecifiedCountLimit,
-          asc: sortDirection === "asc",
-        })
-      ).root.children || []
+    let searchResults;
+   
+      searchResults = await getItems({
+        email,
+        schema,
+        app,
+        entity,
+        timestampRange,
+        limit: userSpecifiedCountLimit,
+        asc: sortDirection === "asc",
+      });
+      
+
+    items = searchResults.root.children || [];
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
@@ -1806,13 +2043,20 @@ async function* generateMetadataQueryAnswer(
       const iterationSpan = span?.startSpan(`metadata_iteration_${iteration}`)
       Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
 
-      items =
-        (
-          await searchVespa(query, email, app as Apps, entity as any, {
-            ...searchOptions,
-            offset: pageSize * iteration,
-          })
-        ).root.children || []
+      let searchResults;
+      if (!agentPrompt) {
+        searchResults = await searchVespa(query, email, app as Apps, entity as any, {
+          ...searchOptions,
+          offset: pageSize * iteration,
+        });
+      } else {
+        searchResults = await searchVespaAgent(query, email, app as Apps, entity as any,agentApps, {
+          ...searchOptions,
+          offset: pageSize * iteration,
+        });
+      }
+
+      items = searchResults.root.children || [];
 
       Logger.info(`Rank Profile : ${rankProfile}`)
 
@@ -2174,6 +2418,7 @@ export const AgentMessageApi = async (c: Context) => {
         message: "Message is required",
       })
     }
+    // Truncate table chats,connectors,nessages;
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
@@ -2328,6 +2573,7 @@ export const AgentMessageApi = async (c: Context) => {
               fileIds,
               understandSpan,
               userRequestsReasoning,
+              
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3435,7 +3681,7 @@ export const MessageApi = async (c: Context) => {
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
                 messages: messagesWithNoErrResponse,
-                agentPrompt,
+                agentPrompt: agentPrompt,
               })
 
             // TODO: for now if the answer is from the conversation itself we don't

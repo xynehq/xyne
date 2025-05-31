@@ -14,6 +14,7 @@ import {
   SearchApi,
   chatStopSchema,
   getAllDocs,
+  deleteDocument,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -179,6 +180,7 @@ export const AppRoutes = app
   )
   .post("files/upload",handleFileUpload)
   .post("getAllFiles",getAllDocs)
+  .post("deleteDocument",deleteDocument)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",

@@ -11,7 +11,8 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
-  transcriptSchema
+  transcriptSchema,
+
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -176,7 +177,7 @@ export const deduplicateAutocomplete = (
 
 const AllSources = [
   fileSchema,
-  userSchema,
+   userSchema,
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
@@ -379,10 +380,189 @@ export const HybridDefaultProfile = (
               and owner contains @email
               ${timestampRange ? `and ${userTimestamp}` : ""}
               ${appOrEntityFilter}
-            )
+            ) 
           )
           ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
         )
+    `,
+  }
+}
+
+
+
+export const HybridDefaultProfileForAgent = (
+  hits: number,
+  app: Apps | null,
+  entity: Entity | null,
+  profile: SearchModes = SearchModes.NativeRank,
+  timestampRange?: { to: number | null; from: number | null } | null,
+  excludedIds?: string[],
+  notInMailLabels?: string[],
+  AllowedApps: Apps[] | null = null,
+): YqlProfile => {
+
+  console.log("HybridDefaultProfile1 called with AllowedApps:", AllowedApps)
+  const newSources = []
+  const transcriptSources = []
+  const otherSources = []
+  
+  // Fix: Only add transcriptSchema if explicitly allowed or if no AllowedApps specified
+  if (AllowedApps && AllowedApps.length > 0) {
+    for (const app of AllowedApps) {
+      switch (app) {
+        case Apps.GoogleWorkspace:
+          otherSources.push(userSchema)
+          break
+        case Apps.Gmail:
+          otherSources.push(mailSchema)
+          break
+        case Apps.GoogleDrive:
+          otherSources.push(fileSchema)
+          break
+        case Apps.GoogleCalendar:
+          otherSources.push(eventSchema)
+          break;
+        case Apps.Slack:
+          otherSources.push(chatUserSchema)
+          break
+      }
+    }
+  } 
+
+  // Join all sources with commas
+  const sourcesString = [ ...otherSources].join(", ")
+
+  let hasAppOrEntity = !!(app || entity)
+  let fileTimestamp = ""
+  let mailTimestamp = ""
+  let userTimestamp = ""
+  let eventTimestamp = ""
+  let transcriptTimestamp = ""
+
+  // Commenting this out to allow searching by either "from" or "to" fields independently.
+  // if (timestampRange && !timestampRange.from && !timestampRange.to) {
+  //   throw new Error("Invalid timestamp range")
+  // }
+
+  let fileTimestampConditions: string[] = []
+  let mailTimestampConditions: string[] = []
+  let userTimestampConditions: string[] = []
+  let eventTimestampConditions: string[] = []
+  
+
+  if (timestampRange && timestampRange.from) {
+    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
+    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
+    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
+    eventTimestampConditions.push(`startTime >= ${timestampRange.from}`) // Using startTime for events
+    
+  }
+  if (timestampRange && timestampRange.to) {
+    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
+    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
+    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
+    eventTimestampConditions.push(`startTime <= ${timestampRange.to}`)
+    
+  }
+
+  if (timestampRange && timestampRange.from && timestampRange.to) {
+    fileTimestamp = fileTimestampConditions.join(" and ")
+    mailTimestamp = mailTimestampConditions.join(" and ")
+    userTimestamp = userTimestampConditions.join(" and ")
+    eventTimestamp = eventTimestampConditions.join(" and ")
+    
+  } else {
+    fileTimestamp = fileTimestampConditions.join("")
+    mailTimestamp = mailTimestampConditions.join("")
+    userTimestamp = userTimestampConditions.join("")
+    eventTimestamp = eventTimestampConditions.join("")
+    
+  }
+
+  let appOrEntityFilter =
+    `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+
+  let exclusionCondition = ""
+  if (excludedIds && excludedIds.length > 0) {
+    exclusionCondition = excludedIds
+      .map((id) => `docId contains '${id}'`)
+      .join(" or ")
+  }
+
+  let mailLabelQuery = ""
+  if (notInMailLabels && notInMailLabels.length > 0) {
+    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
+  console.log("sourcesting", sourcesString)
+
+  // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
+  return {
+    profile: profile,
+    yql: `
+    select *
+from sources ${AllSources}, transcript
+where
+(
+  (
+    (
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
+        and permissions contains @email
+        ${mailLabelQuery}
+        ${appOrEntityFilter}
+      )
+      or
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+        )
+        ${appOrEntityFilter}
+        ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
+        and permissions contains @email
+      )
+      or
+      (
+        ({targetHits:${hits}} userInput(@query))
+        ${timestampRange ? `and (${userTimestamp})` : ""}
+        ${
+          !hasAppOrEntity
+            ? `and app contains "${Apps.GoogleWorkspace}"`
+            : `${appOrEntityFilter} and permissions contains @email`
+        }
+      )
+      or
+      (
+        ({targetHits:${hits}} userInput(@query))
+        and owner contains @email
+        ${timestampRange ? `and ${userTimestamp}` : ""}
+        ${appOrEntityFilter}
+      )
+    )
+    ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
+  )
+)
+or
+(
+  (
+    ({targetHits:${hits}} userInput(@query))
+    or
+    ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+  )
+  and uploadedBy contains @email
+  ${timestampRange
+    ? `and (updatedAt >= ${timestampRange.from} and updatedAt <= ${timestampRange.to})`
+    : ""}
+  ${appOrEntityFilter}
+)
+;
     `,
   }
 }
@@ -443,32 +623,6 @@ export const HybridDefaultProfileInFiles = (
             ({targetHits:${hits}}userInput(@query))
             and owner contains @email
             ${specificContextQuery}
-          )
-        )
-      )`,
-  }
-}
-
-export const HybridDefaultProfileInTranscript = (
-  hits: number,
-  profile: SearchModes = SearchModes.NativeRank,
-): YqlProfile => {
-  if (hits <= 0) {
-    throw new Error("Hits parameter must be greater than 0")
-  }
-
-  return {
-    profile: profile,
-    yql: `
-        select * from sources transcript
-        where ((
-          (
-            (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-            )
-            and uploadedBy contains @email 
           )
         )
       )`,
@@ -721,9 +875,10 @@ export const searchVespaInFiles = async (
   }
 }
 
-export const searchVespaInTranscript = async (
+export const searchVespaThroughAgent = async (
   query: string,
   email: string,
+  apps: Apps[] | null,
   {
     alpha = 0.5,
     limit = config.page,
@@ -741,12 +896,42 @@ export const searchVespaInTranscript = async (
   if (!email?.trim()) {
     throw new Error("Email cannot be empty")
   }
+  return {} as VespaSearchResponse
+}
 
+export const searchVespaAgent = async (
+  query: string,
+  email: string,
+  app: Apps | null,
+  entity: Entity | null,
+  Apps: Apps[] | null,
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    timestampRange = null,
+    excludedIds = [],
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+    recencyDecayRate = 0.02,
+  }: Partial<VespaQueryConfig>,
+): Promise<VespaSearchResponse> => {
+  // Determine the timestamp cutoff based on lastUpdated
+  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
-  let { yql, profile } = HybridDefaultProfileInTranscript(
+  let { yql, profile } = HybridDefaultProfileForAgent(
     limit,
+    app,
+    entity,
     rankProfile,
+    timestampRange,
+    excludedIds,
+    notInMailLabels,
+    Apps
   )
 
   const hybridDefaultPayload = {
@@ -756,6 +941,7 @@ export const searchVespaInTranscript = async (
     "ranking.profile": profile,
     "input.query(e)": "embed(@query)",
     "input.query(alpha)": alpha,
+    "input.query(recency_decay_rate)": recencyDecayRate,
     maxHits,
     hits: limit,
     ...(offset
@@ -763,6 +949,8 @@ export const searchVespaInTranscript = async (
           offset,
         }
       : {}),
+    ...(app ? { app } : {}),
+    ...(entity ? { entity } : {}),
     ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
   }
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
@@ -771,12 +959,10 @@ export const searchVespaInTranscript = async (
   } catch (error) {
     throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: "transcript",  // Changed from AllSources to just "transcript"
+      sources: AllSources,
     })
   }
 }
-
-
 
 export const GetDocument = async (
   schema: VespaSchema,

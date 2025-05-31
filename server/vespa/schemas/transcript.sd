@@ -1,43 +1,38 @@
 schema transcript {
   document transcript {
+
     field docId type string {
       indexing: attribute | summary
     }
-    
+
     field title type string {
       indexing: index | summary | attribute
-      index {
-        enable-bm25
-      }
+      index { enable-bm25 }
     }
 
     field description type string {
       indexing: index | summary | attribute
-      index {
-        enable-bm25
-      }
+      index { enable-bm25 }
     }
-    
+
     field app type string {
       indexing: attribute | summary
       attribute: fast-search
       match: exact
     }
 
-    # Original filename of the uploaded transcript
     field fileName type string {
       indexing: attribute | summary
       attribute: fast-search
     }
 
-    # Size of the file in bytes
     field fileSize type long {
       indexing: attribute | summary
     }
 
     field chunks type array<string> {
       indexing: index | summary
-      index: enable-bm25
+      index { enable-bm25 }
     }
 
     field uploadedBy type string {
@@ -45,12 +40,10 @@ schema transcript {
       attribute: fast-search
     }
 
-    # Duration of the transcript in seconds
     field duration type long {
       indexing: attribute | summary
     }
 
-    # MIME type of original file
     field mimeType type string {
       indexing: attribute | summary
     }
@@ -65,46 +58,35 @@ schema transcript {
       attribute: fast-search
     }
 
-    # Additional metadata as JSON string
     field metadata type string {
       indexing: attribute | summary
     }
   }
 
-  # Vector embeddings for semantic search
+  # Vector embeddings
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
     indexing: input chunks | embed | attribute | index
-    attribute {
-      distance-metric: angular
-    }
+    attribute { distance-metric: angular }
   }
 
-  # Fuzzy search for titles
+  # Fuzzy title
   field title_fuzzy type string {
     indexing: input title | index
-    index {
-      enable-bm25
-    }
-    match {
-      gram
-      gram-size: 3
-    }
+    index { enable-bm25 }
+    match { gram gram-size: 3 }
   }
 
-  fieldset default {
-    fields: title, description, chunks, uploadedBy, fileName
-  }
 
-  fieldset autocomplete {
-    fields: title, fileName, uploadedBy
-  }
+  fieldset default      { fields: title, description, chunks, uploadedBy, fileName }
+  fieldset autocomplete { fields: title, fileName, uploadedBy }
+  fieldset search       { fields: title, description, chunks, fileName, uploadedBy }
 
-  fieldset search {
-    fields: title, description, chunks, fileName, uploadedBy
-  }
-
-  # Base ranking profile with common functions
   rank-profile base_ranking {
+
+    function matchedFieldCount() {
+      expression: matches(title) + matches(description) + matches(chunks)
+    }
+
     function combined_bm25() {
       expression: bm25(title) + bm25(description) + bm25(chunks)
     }
@@ -112,35 +94,27 @@ schema transcript {
     function combined_nativeRank() {
       expression: (nativeRank(title) + nativeRank(description) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
-
-    function matchedFieldCount() {
-      expression: matches(title) + matches(description) + matches(chunks)
-    }
   }
 
   rank-profile default inherits base_ranking {
+
     inputs {
-      query(e) tensor<bfloat16>(v[DIMS])
-      query(alpha) double: 0.5
+      query(e)                 tensor<bfloat16>(v[DIMS])
+      query(alpha)             double: 0.5
       query(recency_decay_rate) double: 0.1
     }
 
-    constants {
-      THREE_MONTHS_IN_SECONDS: 7890000
-      ONE_YEAR_IN_SECONDS: 31536000
-      MAX_DOC_DECAY: 0.5
-    }
-
+   
     function scale(val) {
-      expression: 2*atan(val/4)/(3.14159)
+      expression: 2 * atan(val / 4) / 3.14159
     }
 
     function document_age() {
-      expression: max(if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(updatedAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
+      expression: max( if(isNan(attribute(updatedAt)) == 1, 7890000, now() - (attribute(updatedAt) / 1000)) / 31536000, 0 )
     }
 
     function doc_recency() {
-      expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
+      expression: max( 1 / (1 + query(recency_decay_rate) * sqrt(document_age)), 0.5 )
     }
 
     function vector_score() {
@@ -151,18 +125,11 @@ schema transcript {
       expression: if(attribute(duration) > 0, log10(attribute(duration) + 1), 0)
     }
 
-    first-phase {
-      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
-    }
 
-    global-phase {
-      expression {
-        (
-          (query(alpha) * vector_score) + 
-          ((1 - query(alpha)) * combined_nativeRank)
-        ) * doc_recency
-      }
-      rerank-count: 1000
+    first-phase  { expression: query(alpha) * vector_score + (1 - query(alpha)) * combined_nativeRank }
+    global-phase { 
+      expression: (query(alpha) * vector_score + (1 - query(alpha)) * combined_nativeRank) * doc_recency
+      rerank-count: 1000 
     }
 
     match-features {
@@ -177,30 +144,27 @@ schema transcript {
     }
   }
 
-  # Rank profile for sorting by upload date with hybrid scoring within time bins
+  # Alias so "default_native" always resolves
+  rank-profile default_native inherits default { }
+
   rank-profile recent_uploads inherits base_ranking {
+
     inputs {
-      query(e) tensor<bfloat16>(v[DIMS])
-      query(alpha) double: 0.5
+      query(e)             tensor<bfloat16>(v[DIMS])
+      query(alpha)         double: 0.5
       query(bin_size_days) double: 1.0
     }
 
-    constants {
-      ONE_DAY_IN_SECONDS: 86400.0
-      RECENCY_BIN_MULTIPLIER: 10000.0
-      MAX_SCORE_BASE: 1000000000.0
-    }
-
     function document_age_days() {
-      expression: max(0.0, if(isNan(attribute(createdAt)) == 1, 90.0, (now() - (attribute(createdAt) / 1000)) / ONE_DAY_IN_SECONDS))
+      expression: max(0.0, if(isNan(attribute(createdAt)) == 1, 90.0, (now() - (attribute(createdAt) / 1000)) / 86400))
     }
 
     function recency_bin_index() {
-      expression: floor(document_age_days() / query(bin_size_days))
+      expression: floor(document_age_days / query(bin_size_days))
     }
 
     function recency_bin_score() {
-      expression: MAX_SCORE_BASE - (recency_bin_index() * RECENCY_BIN_MULTIPLIER)
+      expression: 1000000000 - (recency_bin_index * 10000)
     }
 
     function vector_score() {
@@ -208,16 +172,14 @@ schema transcript {
     }
 
     function hybrid_relevance_score() {
-      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+      expression: query(alpha) * vector_score + (1 - query(alpha)) * combined_nativeRank
     }
 
     function normalized_hybrid_relevance() {
-      expression: max(0.0, min(hybrid_relevance_score() / 10.0, RECENCY_BIN_MULTIPLIER - 1.0))
+      expression: max(0.0, min(hybrid_relevance_score / 10.0, 9999))
     }
 
-    first-phase {
-      expression: recency_bin_score() + normalized_hybrid_relevance()
-    }
+    first-phase { expression: recency_bin_score + normalized_hybrid_relevance }
 
     match-features {
       vector_score
@@ -229,41 +191,19 @@ schema transcript {
     }
   }
 
-  # Rank profile for user-specific searches
   rank-profile by_uploader inherits base_ranking {
-    first-phase {
-      expression: if(matches(uploadedBy), 100.0 + combined_bm25, combined_bm25)
-    }
-
-    match-features {
-      combined_bm25
-      matches(uploadedBy)
-    }
+    first-phase { expression: if(matches(uploadedBy), 100 + combined_bm25, combined_bm25) }
+    match-features { combined_bm25 matches(uploadedBy) }
   }
 
-  # Autocomplete rank profile
   rank-profile autocomplete {
-    first-phase {
-      expression: bm25(title_fuzzy) + if(matches(uploadedBy), 50.0, 0.0)
-    }
-    
-    match-features {
-      bm25(title_fuzzy)
-      matches(uploadedBy)
-    }
+    first-phase { expression: bm25(title_fuzzy) + if(matches(uploadedBy), 50, 0) }
+    match-features { bm25(title_fuzzy) matches(uploadedBy) }
   }
 
-  # Unranked profile for simple queries
-  rank-profile unranked {
-    first-phase {
-      expression: 1
-    }
-  }
+  rank-profile unranked { first-phase { expression: 1 } }
 
   document-summary default {
-    summary chunks_summary {
-      bolding: on
-      source: chunks
-    }
+    summary chunks_summary { bolding: on  source: chunks }
   }
 }
