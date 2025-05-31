@@ -7,6 +7,7 @@ import {
   GooglePeopleEntity,
   MailAttachmentEntity,
   MailEntity,
+  SlackEntity,
 } from "@/search/types"
 
 export const askQuestionSelfCleanupPrompt = (
@@ -422,6 +423,7 @@ You are an AI assistant with access to internal workspace data. You have access 
 2. User profiles
 3. Emails
 4. Calendar events
+5. Slack messages
 The context provided will be formatted with specific fields for each type:
 ## File Context Format
 - App and Entity type
@@ -457,6 +459,12 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
+- Relevance score
+## Slack Message Context Format
+- App and Entity type
+- Username
+- Message
+- teamName (User is part of Workspace)
 - Relevance score
 # Context of the user talking to you
 ${userContext}
@@ -910,12 +918,14 @@ export const searchQueryPrompt = (userContext: string): string => {
     - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
+    - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
     Valid entity keywords that map to entities:
     - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
     - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
     - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
+    - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
     
     **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
     ### Query Types:

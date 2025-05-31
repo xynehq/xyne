@@ -133,13 +133,13 @@ export const FiltersSchema = z.object({
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
 })
 
-export const RetrievedUnspecificMetadataSchema = z.object({
+export const GetItems = z.object({
   type: z.literal(QueryType.GetItems),
   isFollowUp: z.boolean().optional(),
   filters: FiltersSchema,
 })
 
-export const RetrieveMetadataSchema = z.object({
+export const SearchWithFilters = z.object({
   type: z.literal(QueryType.SearchWithFilters),
   isFollowUp: z.boolean().optional(),
   filters: FiltersSchema,
@@ -151,8 +151,8 @@ export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
     isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
   }),
-  RetrieveMetadataSchema,
-  RetrievedUnspecificMetadataSchema,
+  SearchWithFilters,
+  GetItems,
 ])
 
 export const QueryContextRank = z.object({

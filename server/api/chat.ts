@@ -635,13 +635,26 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   const { startTime, endTime } = classification.filters
 
   if (startTime && endTime) {
-    timestampRange.from = new Date(startTime).getTime()
-    timestampRange.to = new Date(endTime).getTime()
+    const fromMs = new Date(startTime).getTime()
+    const toMs = new Date(endTime).getTime()
+    if (!isNaN(fromMs) && !isNaN(toMs) && fromMs <= toMs) {
+      timestampRange.from = fromMs
+      timestampRange.to = toMs
+    } else {
+      rootSpan?.setAttribute(
+        "invalidTimestampRange",
+        JSON.stringify({ startTime, endTime }),
+      )
+    }
   }
+
   let userSpecifiedCount = pageSize
   if (classification.filters.count) {
     rootSpan?.setAttribute("userSpecifiedCount", classification.filters.count)
-    userSpecifiedCount = Math.min(classification.filters.count, config.maxUserRequestCount)
+    userSpecifiedCount = Math.min(
+      classification.filters.count,
+      config.maxUserRequestCount,
+    )
   }
   if (classification.filterQuery) {
     message = classification.filterQuery
@@ -1417,7 +1430,7 @@ async function* generatePointQueryTimeExpansion(
 
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
-    Logger.info("Using temporalPromptJsonStream")
+    Logger.info("Using meetingPromptJsonStream")
     const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
@@ -1703,7 +1716,9 @@ async function* generateMetadataQueryAnswer(
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
     Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
   } else if (isGenericItemFetch && isValidAppAndEntity) {
-    const userSpecifiedCountLimit = count ? Math.min(count, config.maxUserRequestCount) : 5
+    const userSpecifiedCountLimit = count
+      ? Math.min(count, config.maxUserRequestCount)
+      : 5
     span?.setAttribute("Search_Type", QueryType.GetItems)
     span?.setAttribute(
       "isReasoning",
