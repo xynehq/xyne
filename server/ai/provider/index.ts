@@ -87,48 +87,75 @@ const Logger = getLogger(Subsystem.AI)
 
 // Interface for structured agent prompt data
 interface AgentPromptData {
+  name: string;
+  description: string;
   prompt: string;
-  sources: any[]; // Using any[] as the specific structure of sources isn't detailed
+  sources: any[]; // Corresponds to appIntegrations from the new structure or sources from old
+}
+
+// Minimal interface for type-checking parsed JSON during agent prompt parsing
+interface ParsedPromptCandidate {
+  name?: unknown;
+  description?: unknown;
+  prompt?: unknown;
+  appIntegrations?: unknown; // For new structure
+  sources?: unknown;         // For old structure
+  // id is no longer checked
 }
 
 // Helper function to parse agentPrompt string into AgentPromptData object
 function parseAgentPrompt(agentPromptString: string | undefined): AgentPromptData {
+  const defaults: AgentPromptData = { name: "", description: "", prompt: "", sources: [] };
+
   if (!agentPromptString) {
-    return { prompt: "", sources: [] };
+    return defaults;
   }
 
   try {
-    const parsed = JSON.parse(agentPromptString);
+    const parsed = JSON.parse(agentPromptString) as ParsedPromptCandidate;
+
+    // Check for new AgentProfile structure (heuristic: has 'name', 'description', 'prompt', 'appIntegrations')
+    if (
+      typeof parsed.name === 'string' &&
+      typeof parsed.description === 'string' &&
+      typeof parsed.prompt === 'string' &&
+      Array.isArray(parsed.appIntegrations)
+    ) {
+      return {
+        name: parsed.name,
+        description: parsed.description,
+        prompt: parsed.prompt,
+        sources: parsed.appIntegrations as any[],
+      };
+    }
+
+    // Check for old simple structure { prompt: string, sources: array }
     if (typeof parsed.prompt === 'string' && Array.isArray(parsed.sources)) {
       return {
+        ...defaults, // Use defaults for name and description
         prompt: parsed.prompt,
         sources: parsed.sources,
       };
     }
-    Logger.warn(`Agent prompt string did not match expected structure (prompt: string, sources: array). Treating as literal prompt: '${agentPromptString}'`);
-    return { prompt: agentPromptString, sources: [] };
+
+    // Parsed as JSON, but not a recognized structure. Treat original string as literal prompt.
+    Logger.warn(`Agent prompt string is valid JSON but did not match expected structures. Treating as literal prompt: '${agentPromptString}'`);
+    return { ...defaults, prompt: agentPromptString }; // sources will be default empty array
+
   } catch (error) {
-    Logger.info(`Agent prompt string is not valid JSON. Treating as literal prompt: '${agentPromptString}'`);
-    return { prompt: agentPromptString, sources: [] };
+    // Not valid JSON (or empty string which also errors). Treat as literal prompt.
+    Logger.info(`Agent prompt string is not valid JSON or is empty. Treating as literal prompt: '${agentPromptString}'`);
+    return { ...defaults, prompt: agentPromptString }; // sources will be default empty array
   }
 }
 
 // Helper function to check if the agent prompt string indicates empty prompt and sources
 function isAgentPromptEmpty(agentPromptString: string | undefined): boolean {
-  if (!agentPromptString || typeof agentPromptString !== 'string') {
-    return false; // Or handle as an error, depending on expected behavior
-  }
-  try {
-    const agentPromptObject = JSON.parse(agentPromptString);
-    return (
-      agentPromptObject.prompt === "" &&
-      Array.isArray(agentPromptObject.sources) &&
-      agentPromptObject.sources.length === 0
-    );
-  } catch (error) {
-    Logger.error("Failed to parse agentPrompt JSON string in isAgentPromptEmpty:", error);
-    return false; // Treat parse error as "not empty" or handle error appropriately
-  }
+  const { prompt, sources } = parseAgentPrompt(agentPromptString);
+  // An agent prompt is considered "empty" for the purpose of system prompt selection
+  // if its core 'prompt' string is empty and it has no 'sources'.
+  // The 'name' and 'description' fields don't make it "non-empty" in this context.
+  return prompt === "" && Array.isArray(sources) && sources.length === 0;
 }
 
 const askQuestionSystemPrompt =
@@ -1227,7 +1254,7 @@ export function generateSearchQueryOrAnswerFromConversation(
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
   } else if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentSearchQueryPrompt", params.agentPrompt)
+    console.log("Using agentSearchQueryPrompt", parseAgentPrompt(params.agentPrompt))
     params.systemPrompt = agentSearchQueryPrompt(userContext, parseAgentPrompt(params.agentPrompt))
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)

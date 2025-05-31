@@ -71,6 +71,7 @@ interface ChatBoxProps {
   isStreaming?: boolean
   handleStop?: () => void
   chatId?: string | null // Current chat ID
+  agentIdFromChatData?: string | null; // New prop for agentId from chat data
   allCitations: Map<string, Citation>
   isReasoningActive: boolean
   setIsReasoningActive: (
@@ -191,6 +192,7 @@ export const ChatBox = ({
   allCitations,
   handleStop,
   chatId,
+  agentIdFromChatData, // Destructure new prop
   isReasoningActive,
   setIsReasoningActive,
 }: ChatBoxProps) => {
@@ -226,19 +228,22 @@ export const ChatBox = ({
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null);
   const [displayAgentName, setDisplayAgentName] = useState<string | null>(null);
 
-  // Effect to initialize and update persistedAgentId from URL, primarily on chatId changes
+  // Effect to initialize and update persistedAgentId
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const agentIdFromUrl = searchParams.get('agentId');
 
     if (agentIdFromUrl) {
       setPersistedAgentId(agentIdFromUrl);
-    } else if (!chatId) { // If it's a new chat (no chatId) and no agentId in URL, clear persisted.
+    } else if (agentIdFromChatData) {
+      setPersistedAgentId(agentIdFromChatData);
+    } else {
       setPersistedAgentId(null);
     }
-    // This effect should run when chatId changes, as that might indicate a new context
+    // This effect should run when chatId changes (indicating a new chat context),
+    // when agentIdFromChatData changes (new chat data loaded),
     // or when the component initially loads.
-  }, [chatId]);
+  }, [chatId, agentIdFromChatData]);
 
   // Effect to fetch agent details for display when persistedAgentId is set
   useEffect(() => {

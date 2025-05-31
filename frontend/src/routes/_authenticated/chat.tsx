@@ -1340,6 +1340,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               isStreaming={isStreaming}
               allCitations={allCitations}
               chatId={chatId}
+              agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
               isReasoningActive={isReasoningActive}
               setIsReasoningActive={setIsReasoningActive}
             />

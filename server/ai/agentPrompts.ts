@@ -2,8 +2,10 @@ import { getDateForAI } from "@/utils/index";
 
 // Interface for structured agent prompt data
 interface AgentPromptData {
+  name: string;
+  description: string;
   prompt: string;
-  sources: any[]; // Using any[] as the specific structure of sources isn't detailed
+  sources: any[]; // Corresponds to appIntegrations from the new structure or sources from old
 }
 
 export const agentAskQuestionSelfCleanupPrompt = (
@@ -102,7 +104,9 @@ export const agentUserChatSystem = (
   agentPromptData: AgentPromptData,
 ): string => `
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -125,10 +129,12 @@ export const agentGenerateTitleSystemPrompt = `
 export const agentChatWithCitationsSystemPrompt = (userCtx?: string, agentPromptData?: AgentPromptData) => `
 
 # Context of the agent {priority}
-${agentPromptData?.prompt || ""}
+Name: ${agentPromptData?.name || "Not specified"}
+Description: ${agentPromptData?.description || "Not specified"}
+Prompt: ${agentPromptData?.prompt || ""}
 
 # Agent Sources
-${agentPromptData && agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
+${agentPromptData && agentPromptData.sources && agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
 this is the context of the agent, it is very important to follow this.
 
 You are an assistant that answers questions based on the provided context. Your answer should be in Markdown format with selective inline numeric citations like [0], [1], etc.
@@ -159,7 +165,9 @@ export const agentAnalyzeInitialResultsOrRewriteSystemPrompt = (
 ) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
 
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -211,7 +219,9 @@ export const agentAnalyzeInitialResultsOrRewriteV2SystemPrompt = (
 ) => `You are an assistant tasked with evaluating search results from a database of documents, users, and emails, and answering questions based on the provided context.
 
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -269,7 +279,9 @@ You are a permission aware retrieval-augmented generation (RAG) system and a wor
     Provide concise and accurate answers to a user's question by utilizing the provided context.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
     # Context of the agent {priority}
-    ${agentPromptData.prompt}
+    Name: ${agentPromptData.name}
+    Description: ${agentPromptData.description}
+    Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -313,7 +325,9 @@ export const agentGenerateMarkdownTableSystemPrompt = (
 ) => `
   You are an assistant that formats data into a markdown table based on the user's query.
   # Context of the agent {priority}
-  ${agentPromptData.prompt}
+  Name: ${agentPromptData.name}
+  Description: ${agentPromptData.description}
+  Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -380,7 +394,9 @@ The context provided will be formatted with specific fields for each type:
 - Relevance score
 
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -467,7 +483,9 @@ export const agentBaselinePromptJson = (
 any logic. Be formal as much as possible. 
 
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -593,7 +611,9 @@ you do not think in json but always answer only in json
 
 
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -717,7 +737,9 @@ export const agentBaselineFilesContextPromptJson = (
 4. Calendar events
 
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
@@ -816,7 +838,7 @@ If information is missing or unclear: Set "answer" to null`
 
 export const agentQueryRewritePromptJson = (
   userContext: string,
-  agentPromptData: AgentPromptData, // retrievedContext was string, now it's AgentPromptData
+  agentPromptData: AgentPromptData, 
 ) => `You are an AI assistant helping to rewrite search queries to find information in a workspace. The original search was unsuccessful in finding a complete answer.
   You have access to some initial context from the first search attempt. Use any relevant keywords, names, or terminology from this context to generate alternative search queries.
   # Context of the user talking to you
@@ -827,9 +849,11 @@ export const agentQueryRewritePromptJson = (
   - Current time and date
   - Timezone
   # Initial Context Retrieved (Agent Prompt)
-  ${agentPromptData.prompt} 
+  Name: ${agentPromptData.name}
+  Description: ${agentPromptData.description}
+  Prompt: ${agentPromptData.prompt} 
   # Agent Sources (if any):
-  ${agentPromptData.sources.length > 0 ? agentPromptData.sources.join('\\n') : 'No specific sources provided by agent.'}
+  ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
   # Guidelines for Query Rewriting:
   1. Create 3 alternative queries that:
      - Use key terms from the original query and context
@@ -867,7 +891,12 @@ export const agentSearchQueryPrompt = (userContext: string, agentPromptData: Age
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
     # Context of the agent {priority}
-    ${agentPromptData.prompt}
+    Name: ${agentPromptData.name}
+    Description: ${agentPromptData.description}
+    Prompt: ${agentPromptData.prompt}
+    
+    # Agent Sources
+    ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
     this is the context of the agent, it is very important to follow this.
 
     You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
@@ -1082,7 +1111,12 @@ export const agentSearchQueryPrompt = (userContext: string, agentPromptData: Age
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
       # Context of the agent {priority}
-    ${agentPromptData.prompt}
+    Name: ${agentPromptData.name}
+    Description: ${agentPromptData.description}
+    Prompt: ${agentPromptData.prompt}
+    
+    # Agent Sources
+    ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
     this is the context of the agent, it is very important to follow this.
     11. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     12. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
@@ -1095,7 +1129,12 @@ export const agentSearchAgentPrompt = (userContext: string, agentPromptData: Age
   The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
     # Context of the agent {priority}
-    ${agentPromptData.prompt}
+    Name: ${agentPromptData.name}
+    Description: ${agentPromptData.description}
+    Prompt: ${agentPromptData.prompt}
+    
+    # Agent Sources
+    ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
     this is the context of the agent, it is very important to follow this.
 
     Now, handle the query as follows:
@@ -1307,7 +1346,12 @@ export const agentSearchAgentPrompt = (userContext: string, agentPromptData: Age
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
       # Context of the agent {priority}
-    ${agentPromptData.prompt}
+    Name: ${agentPromptData.name}
+    Description: ${agentPromptData.description}
+    Prompt: ${agentPromptData.prompt}
+    
+    # Agent Sources
+    ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
     this is the context of the agent, it is very important to follow this.
     9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
@@ -1414,7 +1458,12 @@ Emails containing:
 - Labels and metadata
 
 # Context of the agent {priority} you must follow this
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
+
+# Agent Sources
+${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
 this is the context of the agent, it is very important to follow this.
 
 # Context of the User
@@ -1498,7 +1547,12 @@ If NO relevant emails are found in Retrieved Context or context doesn't match qu
 
 REMEMBER: 
 # Context of the agent {priority} you must follow this
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
+
+# Agent Sources
+${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
 this is the context of the agent, it is very important to follow this.
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
@@ -1523,7 +1577,12 @@ You process temporal queries for workspace data (calendar events, emails, files,
 - Event Context: App/Entity type, Name, Description, Location, URLs, Time info, Organizer, Attendees, Recurrence, Meeting links, Relevance
 
 # Context of the agent {priority}
-${agentPromptData.prompt}
+Name: ${agentPromptData.name}
+Description: ${agentPromptData.description}
+Prompt: ${agentPromptData.prompt}
+
+# Agent Sources
+${agentPromptData.sources.length > 0 ? agentPromptData.sources.map(source => `- ${typeof source === 'string' ? source : JSON.stringify(source)}`).join('\\n') : 'No specific sources provided by agent.'}
 this is the context of the agent, it is very important to follow this.
 
 # Context of the User
