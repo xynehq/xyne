@@ -3,6 +3,7 @@ import { FileText, Trash2, ChevronLeft, ChevronRight as ChevronRightArrow } from
 import { Button } from "@/components/ui/button"
 import {api} from "@/api"
 interface FileItem {
+  docId?: string      // Add ID field to FileItem interface
   title: string
   createdAt: number
   fileSize?: number
@@ -29,13 +30,6 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
       const response= await api.getAllFiles.$POST({
         body: JSON.stringify({})
       })
-    //   const response = await fetch("/api/v1/getAllFiles", {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json'
-    //     },
-    //     body: JSON.stringify({})
-    //   })
       
       if (!response.ok) {
         throw new Error('Failed to fetch files')
@@ -81,25 +75,38 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
   const endIndex = Math.min(startIndex + filesPerPage, files.length)
   const currentFiles = files.slice(startIndex, endIndex)
 
-  const handleDeleteFile = async (title: string, createdAt: number) => {
+  const handleDeleteFile = async (title: string, createdAt: number, docId?: string) => {
+    if (!docId) {
+      setError("Cannot delete file: missing document ID");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    
     try {
-      // TODO: Implement delete API endpoint
-      // await fetch(`/api/v1/files/${title}`, { method: 'DELETE' })
+      const response = await api.deleteDocument.$POST({
+        json:{docId,name:"nasim"}
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete file');
+      }
+      
+      // Update local state after successful deletion
       setFiles((prevFiles) => {
-        const updatedFiles = prevFiles.filter(
-          file => !(file.title === title && file.createdAt === createdAt)
-        )
-        const newTotalPages = Math.ceil(updatedFiles.length / filesPerPage)
+        const updatedFiles = prevFiles.filter(file => file.docId !== docId);
+        
+        const newTotalPages = Math.ceil(updatedFiles.length / filesPerPage);
         if (currentPage > newTotalPages && newTotalPages > 0) {
-          setCurrentPage(newTotalPages)
+          setCurrentPage(newTotalPages);
         } else if (updatedFiles.length === 0) {
-          setCurrentPage(1)
+          setCurrentPage(1);
         }
-        return updatedFiles
-      })
+        return updatedFiles;
+      });
     } catch (err) {
-      console.error("Error deleting file:", err)
-      // Add error handling UI feedback here
+      console.error("Error deleting file:", err);
+      setError("Failed to delete file. Please try again.");
+      setTimeout(() => setError(null), 3000);
     }
   }
 
@@ -211,7 +218,7 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeleteFile(file.title, file.createdAt)}
+                      onClick={() => handleDeleteFile(file.title, file.createdAt, file.docId)}
                       className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex-shrink-0"
                     >
                       <Trash2 className="h-4 w-4" />
