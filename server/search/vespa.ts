@@ -389,7 +389,6 @@ export const HybridDefaultProfile = (
 }
 
 
-
 export const HybridDefaultProfileForAgent = (
   hits: number,
   app: Apps | null,
@@ -400,135 +399,40 @@ export const HybridDefaultProfileForAgent = (
   notInMailLabels?: string[],
   AllowedApps: Apps[] | null = null,
 ): YqlProfile => {
-
   console.log("HybridDefaultProfile1 called with AllowedApps:", AllowedApps)
-  const newSources = []
-  const transcriptSources = []
-  const otherSources = []
   
-  // Fix: Only add transcriptSchema if explicitly allowed or if no AllowedApps specified
-  if (AllowedApps && AllowedApps.length > 0) {
-    for (const app of AllowedApps) {
-      switch (app) {
-        case Apps.GoogleWorkspace:
-          otherSources.push(userSchema)
-          break
-        case Apps.Gmail:
-          otherSources.push(mailSchema)
-          break
-        case Apps.GoogleDrive:
-          otherSources.push(fileSchema)
-          break
-        case Apps.GoogleCalendar:
-          otherSources.push(eventSchema)
-          break;
-        case Apps.Slack:
-          otherSources.push(chatUserSchema)
-          break
-      }
+  // Helper function to build timestamp conditions
+  const buildTimestampConditions = (fromField: string, toField: string) => {
+    const conditions: string[] = []
+    if (timestampRange?.from) {
+      conditions.push(`${fromField} >= ${timestampRange.from}`)
     }
-  } 
-
-  // Join all sources with commas
-  const sourcesString = [ ...otherSources].join(", ")
-
-  let hasAppOrEntity = !!(app || entity)
-  let fileTimestamp = ""
-  let mailTimestamp = ""
-  let userTimestamp = ""
-  let eventTimestamp = ""
-  let transcriptTimestamp = ""
-
-  // Commenting this out to allow searching by either "from" or "to" fields independently.
-  // if (timestampRange && !timestampRange.from && !timestampRange.to) {
-  //   throw new Error("Invalid timestamp range")
-  // }
-
-  let fileTimestampConditions: string[] = []
-  let mailTimestampConditions: string[] = []
-  let userTimestampConditions: string[] = []
-  let eventTimestampConditions: string[] = []
-  
-
-  if (timestampRange && timestampRange.from) {
-    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
-    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
-    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
-    eventTimestampConditions.push(`startTime >= ${timestampRange.from}`) // Using startTime for events
+    if (timestampRange?.to) {
+      conditions.push(`${toField} <= ${timestampRange.to}`)
+    }
+    return conditions.join(" and ")
+  }
+  // Helper function to build app/entity filter
+  const buildAppEntityFilter = () => {
+    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+  }
+  // Helper function to build exclusion condition
+  const buildExclusionCondition = () => {
+    if (!excludedIds || excludedIds.length === 0) return ""
+    return excludedIds.map((id) => `docId contains '${id}'`).join(" or ")
+  }
+  // Helper function to build mail label query
+  const buildMailLabelQuery = () => {
+    if (!notInMailLabels || notInMailLabels.length === 0) return ""
+    return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+  // App-specific YQL builders
+  const buildGoogleWorkspaceYQL = () => {
+    const userTimestamp = buildTimestampConditions("creationTime", "creationTime")
+    const appOrEntityFilter = buildAppEntityFilter()
+    const hasAppOrEntity = !!(app || entity)
     
-  }
-  if (timestampRange && timestampRange.to) {
-    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
-    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
-    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
-    eventTimestampConditions.push(`startTime <= ${timestampRange.to}`)
-    
-  }
-
-  if (timestampRange && timestampRange.from && timestampRange.to) {
-    fileTimestamp = fileTimestampConditions.join(" and ")
-    mailTimestamp = mailTimestampConditions.join(" and ")
-    userTimestamp = userTimestampConditions.join(" and ")
-    eventTimestamp = eventTimestampConditions.join(" and ")
-    
-  } else {
-    fileTimestamp = fileTimestampConditions.join("")
-    mailTimestamp = mailTimestampConditions.join("")
-    userTimestamp = userTimestampConditions.join("")
-    eventTimestamp = eventTimestampConditions.join("")
-    
-  }
-
-  let appOrEntityFilter =
-    `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
-
-  let exclusionCondition = ""
-  if (excludedIds && excludedIds.length > 0) {
-    exclusionCondition = excludedIds
-      .map((id) => `docId contains '${id}'`)
-      .join(" or ")
-  }
-
-  let mailLabelQuery = ""
-  if (notInMailLabels && notInMailLabels.length > 0) {
-    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
-  }
-
-  console.log("sourcesting", sourcesString)
-
-  // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
-  return {
-    profile: profile,
-    yql: `
-    select *
-from sources ${AllSources}, transcript
-where
-(
-  (
-    (
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
-        and permissions contains @email
-        ${mailLabelQuery}
-        ${appOrEntityFilter}
-      )
-      or
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        ${appOrEntityFilter}
-        ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
-        and permissions contains @email
-      )
-      or
+    return `
       (
         ({targetHits:${hits}} userInput(@query))
         ${timestampRange ? `and (${userTimestamp})` : ""}
@@ -544,25 +448,141 @@ where
         and owner contains @email
         ${timestampRange ? `and ${userTimestamp}` : ""}
         ${appOrEntityFilter}
+      )`
+  }
+  const buildGmailYQL = () => {
+    const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
+    const appOrEntityFilter = buildAppEntityFilter()
+    const mailLabelQuery = buildMailLabelQuery()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${mailTimestamp})` : ""}
+        and permissions contains @email
+        ${mailLabelQuery}
+        ${appOrEntityFilter}
+      )`
+  }
+  const buildGoogleDriveYQL = () => {
+    const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
+    const appOrEntityFilter = buildAppEntityFilter()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${fileTimestamp})` : ""}
+        and permissions contains @email
+        ${appOrEntityFilter}
       )
+     `
+  }
+  const buildGoogleCalendarYQL = () => {
+    const eventTimestamp = buildTimestampConditions("startTime", "startTime")
+    const appOrEntityFilter = buildAppEntityFilter()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${eventTimestamp})` : ""}
+        and permissions contains @email
+        ${appOrEntityFilter}
+      )`
+  }
+  const buildSlackYQL = () => {
+    const appOrEntityFilter = buildAppEntityFilter()
+  
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+        )
+        ${appOrEntityFilter}
+        and permissions contains @email
+      )`
+  }
+  const buildTranscriptYQL = () => {
+    const appOrEntityFilter = buildAppEntityFilter()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        and uploadedBy contains @email
+        ${timestampRange
+          ? `and (updatedAt >= ${timestampRange.from} and updatedAt <= ${timestampRange.to})`
+          : ""}
+        ${appOrEntityFilter}
+      )`
+  }
+  // Build app-specific queries and sources
+  const appQueries: string[] = []
+  const sources: string[] = []
+  if (AllowedApps && AllowedApps.length > 0) {
+    for (const allowedApp of AllowedApps) {
+      switch (allowedApp) {
+        case Apps.GoogleWorkspace:
+          appQueries.push(buildGoogleWorkspaceYQL())
+          sources.push(userSchema)
+          break
+        case Apps.Gmail:
+          appQueries.push(buildGmailYQL())
+          sources.push(mailSchema)
+          break
+        case Apps.GoogleDrive:
+          appQueries.push(buildGoogleDriveYQL())
+          sources.push(fileSchema)
+          break
+        case Apps.GoogleCalendar:
+          appQueries.push(buildGoogleCalendarYQL())
+          sources.push(eventSchema)
+          break
+        case Apps.Slack:
+          appQueries.push(buildSlackYQL())
+          sources.push(chatUserSchema)
+          break
+        case Apps.Transcript:
+          appQueries.push(buildTranscriptYQL())
+          sources.push(transcriptSchema)
+          break;
+      }
+    }
+  } 
+  // Combine all queries
+  const combinedQuery = appQueries.join("\nor\n")
+  const exclusionCondition = buildExclusionCondition()
+  const sourcesString = sources.join(", ")
+  console.log("sourcestring", sourcesString)
+  return {
+    profile: profile,
+    yql: `
+    select *
+    from sources ${sourcesString}, transcript
+    where
+    (
+      (
+        ${combinedQuery}
+      )
+      ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
     )
-    ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
-  )
-)
-or
-(
-  (
-    ({targetHits:${hits}} userInput(@query))
-    or
-    ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-  )
-  and uploadedBy contains @email
-  ${timestampRange
-    ? `and (updatedAt >= ${timestampRange.from} and updatedAt <= ${timestampRange.to})`
-    : ""}
-  ${appOrEntityFilter}
-)
-;
+    ;
     `,
   }
 }
