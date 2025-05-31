@@ -15,6 +15,7 @@ import {
   scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
+  TranscriptResponseSchema,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -40,6 +41,7 @@ export type {
   PublicUser,
   SelectPublicChat,
   PublicWorkspace,
+  SelectPublicAgent,
   // @ts-ignore
 } from "@/db/schema"
 
@@ -261,6 +263,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
+  TranscriptResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>

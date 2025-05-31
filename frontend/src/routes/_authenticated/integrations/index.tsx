@@ -9,7 +9,7 @@ function RouteComponent() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    navigate({ to: "/integrations/google", replace: true })
+    navigate({ to: "/integrations/fileupload", replace: true })
   }, [navigate])
 
   return <></>

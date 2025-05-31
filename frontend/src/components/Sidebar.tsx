@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Plug, Plus, History } from "lucide-react"
+import { Bot, Plug, Plus, History } from "lucide-react"
 import { useState } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { UserRole } from "shared/types"
@@ -68,6 +68,23 @@ export const Sidebar = ({
               <Tip side="right" info="History" />
             </Tooltip>
           </div>
+
+          {/* TODO: Add appropriate Link destination and Tooltip info for the Bot icon */}
+          <Link
+            to="/agent"
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px] ${
+              location.pathname.includes("/agent")
+                ? "bg-[#D8DFE680]"
+                : ""
+            }`}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Bot stroke="#384049" size={18} />
+              </TooltipTrigger>
+              <Tip side="right" info="agent" /> {/* Placeholder: Update this tooltip info */}
+            </Tooltip>
+          </Link>
 
           <Link
             to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}

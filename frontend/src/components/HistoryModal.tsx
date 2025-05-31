@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
+import { Trash2, MoreHorizontal, X, Pencil, Bot } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
@@ -294,17 +294,24 @@ const HistoryModal = ({
                       {item.title}
                     </span>
                   )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <MoreHorizontal
+                  <div className="flex items-center">
+                    {item.agentId && (
+                      <Bot
+                        size={16}
+                        className="mr-2 text-[#1C1D1F]"
+                      />
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <MoreHorizontal
                         size={16}
                         className={
                           "invisible group-hover:visible mr-[10px] cursor-pointer"
                         }
                       />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
                         key={"rename"}
                         className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
                         onClick={() => {
@@ -332,7 +339,8 @@ const HistoryModal = ({
                         <span className="text-red-500">Delete</span>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
-                  </DropdownMenu>
+                    </DropdownMenu>
+                  </div>
                 </li>
               ))}
             </ul>

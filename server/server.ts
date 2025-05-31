@@ -13,6 +13,8 @@ import {
   messageSchema,
   SearchApi,
   chatStopSchema,
+  getAllDocs,
+  deleteDocument,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -79,8 +81,17 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
+import {
+  CreateAgentApi,
+  ListAgentsApi,
+  UpdateAgentApi,
+  DeleteAgentApi,
+  createAgentSchema,
+  listAgentsSchema,
+  updateAgentSchema,
+} from "@/api/agent"
 import metricRegister from "@/metrics/sharedRegistry"
-
+import {handleFileUpload} from "@/api/files"
 export type Variables = JwtVariables
 
 const clientId = process.env.GOOGLE_CLIENT_ID!
@@ -167,6 +178,9 @@ export const AppRoutes = app
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
+  .post("files/upload",handleFileUpload)
+  .post("getAllFiles",getAllDocs)
+  .post("deleteDocument",deleteDocument)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",
@@ -198,6 +212,12 @@ export const AppRoutes = app
   )
   .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
   .get("/tuning/ws/:jobId", TuningWsRoute)
+  // Agent Routes
+  .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .put("/agent/:agentExternalId", zValidator("json", updateAgentSchema), UpdateAgentApi)
+  .delete("/agent/:agentExternalId", DeleteAgentApi)
+  // Admin Routes
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema

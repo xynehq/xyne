@@ -11,6 +11,8 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
+  transcriptSchema,
+
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -47,6 +49,7 @@ import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 import pLimit from "p-limit"
+import { VespaSearchResponseToSearchResult } from "./mappers"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -174,7 +177,7 @@ export const deduplicateAutocomplete = (
 
 const AllSources = [
   fileSchema,
-  userSchema,
+   userSchema,
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
@@ -377,10 +380,209 @@ export const HybridDefaultProfile = (
               and owner contains @email
               ${timestampRange ? `and ${userTimestamp}` : ""}
               ${appOrEntityFilter}
-            )
+            ) 
           )
           ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
         )
+    `,
+  }
+}
+
+
+export const HybridDefaultProfileForAgent = (
+  hits: number,
+  app: Apps | null,
+  entity: Entity | null,
+  profile: SearchModes = SearchModes.NativeRank,
+  timestampRange?: { to: number | null; from: number | null } | null,
+  excludedIds?: string[],
+  notInMailLabels?: string[],
+  AllowedApps: Apps[] | null = null,
+): YqlProfile => {
+  console.log("HybridDefaultProfile1 called with AllowedApps:", AllowedApps)
+  
+  // Helper function to build timestamp conditions
+  const buildTimestampConditions = (fromField: string, toField: string) => {
+    const conditions: string[] = []
+    if (timestampRange?.from) {
+      conditions.push(`${fromField} >= ${timestampRange.from}`)
+    }
+    if (timestampRange?.to) {
+      conditions.push(`${toField} <= ${timestampRange.to}`)
+    }
+    return conditions.join(" and ")
+  }
+  // Helper function to build app/entity filter
+  const buildAppEntityFilter = () => {
+    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+  }
+  // Helper function to build exclusion condition
+  const buildExclusionCondition = () => {
+    if (!excludedIds || excludedIds.length === 0) return ""
+    return excludedIds.map((id) => `docId contains '${id}'`).join(" or ")
+  }
+  // Helper function to build mail label query
+  const buildMailLabelQuery = () => {
+    if (!notInMailLabels || notInMailLabels.length === 0) return ""
+    return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+  // App-specific YQL builders
+  const buildGoogleWorkspaceYQL = () => {
+    const userTimestamp = buildTimestampConditions("creationTime", "creationTime")
+    const appOrEntityFilter = buildAppEntityFilter()
+    const hasAppOrEntity = !!(app || entity)
+    
+    return `
+      (
+        ({targetHits:${hits}} userInput(@query))
+        ${timestampRange ? `and (${userTimestamp})` : ""}
+        ${
+          !hasAppOrEntity
+            ? `and app contains "${Apps.GoogleWorkspace}"`
+            : `${appOrEntityFilter} and permissions contains @email`
+        }
+      )
+      or
+      (
+        ({targetHits:${hits}} userInput(@query))
+        and owner contains @email
+        ${timestampRange ? `and ${userTimestamp}` : ""}
+        ${appOrEntityFilter}
+      )`
+  }
+  const buildGmailYQL = () => {
+    const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
+    const appOrEntityFilter = buildAppEntityFilter()
+    const mailLabelQuery = buildMailLabelQuery()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${mailTimestamp})` : ""}
+        and permissions contains @email
+        ${mailLabelQuery}
+        ${appOrEntityFilter}
+      )`
+  }
+  const buildGoogleDriveYQL = () => {
+    const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
+    const appOrEntityFilter = buildAppEntityFilter()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${fileTimestamp})` : ""}
+        and permissions contains @email
+        ${appOrEntityFilter}
+      )
+     `
+  }
+  const buildGoogleCalendarYQL = () => {
+    const eventTimestamp = buildTimestampConditions("startTime", "startTime")
+    const appOrEntityFilter = buildAppEntityFilter()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${eventTimestamp})` : ""}
+        and permissions contains @email
+        ${appOrEntityFilter}
+      )`
+  }
+  const buildSlackYQL = () => {
+    const appOrEntityFilter = buildAppEntityFilter()
+  
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+        )
+        ${appOrEntityFilter}
+        and permissions contains @email
+      )`
+  }
+  const buildTranscriptYQL = () => {
+    const appOrEntityFilter = buildAppEntityFilter()
+    
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        and uploadedBy contains @email
+        ${timestampRange
+          ? `and (updatedAt >= ${timestampRange.from} and updatedAt <= ${timestampRange.to})`
+          : ""}
+        ${appOrEntityFilter}
+      )`
+  }
+  // Build app-specific queries and sources
+  const appQueries: string[] = []
+  const sources: string[] = []
+  if (AllowedApps && AllowedApps.length > 0) {
+    for (const allowedApp of AllowedApps) {
+      switch (allowedApp) {
+        case Apps.GoogleWorkspace:
+          appQueries.push(buildGoogleWorkspaceYQL())
+          sources.push(userSchema)
+          break
+        case Apps.Gmail:
+          appQueries.push(buildGmailYQL())
+          sources.push(mailSchema)
+          break
+        case Apps.GoogleDrive:
+          appQueries.push(buildGoogleDriveYQL())
+          sources.push(fileSchema)
+          break
+        case Apps.GoogleCalendar:
+          appQueries.push(buildGoogleCalendarYQL())
+          sources.push(eventSchema)
+          break
+        case Apps.Slack:
+          appQueries.push(buildSlackYQL())
+          sources.push(chatUserSchema)
+          break
+        case Apps.Transcript:
+          appQueries.push(buildTranscriptYQL())
+          sources.push(transcriptSchema)
+          break;
+      }
+    }
+  } 
+  // Combine all queries
+  const combinedQuery = appQueries.join("\nor\n")
+  const exclusionCondition = buildExclusionCondition()
+  const sourcesString = sources.join(", ")
+  console.log("sourcestring", sourcesString)
+  return {
+    profile: profile,
+    yql: `
+    select *
+    from sources ${sourcesString}, transcript
+    where
+    (
+      (
+        ${combinedQuery}
+      )
+      ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
+    )
+    ;
     `,
   }
 }
@@ -584,7 +786,7 @@ export const searchVespa = async (
   email: string,
   app: Apps | null,
   entity: Entity | null,
-  {
+    {
     alpha = 0.5,
     limit = config.page,
     offset = 0,
@@ -693,19 +895,91 @@ export const searchVespaInFiles = async (
   }
 }
 
-/**
- * Retrieves the total count of documents in the specified schema, namespace, and cluster.
- */
-const getDocumentCount = async () => {
+export const searchVespaThroughAgent = async (
+  query: string,
+  email: string,
+  apps: Apps[] | null,
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+  }: Partial<VespaQueryConfig>,
+): Promise<VespaSearchResponse> => {
+  if (!query?.trim()) {
+    throw new Error("Query cannot be empty")
+  }
+
+  if (!email?.trim()) {
+    throw new Error("Email cannot be empty")
+  }
+  return {} as VespaSearchResponse
+}
+
+export const searchVespaAgent = async (
+  query: string,
+  email: string,
+  app: Apps | null,
+  entity: Entity | null,
+  Apps: Apps[] | null,
+  {
+    alpha = 0.5,
+    limit = config.page,
+    offset = 0,
+    timestampRange = null,
+    excludedIds = [],
+    notInMailLabels = [],
+    rankProfile = SearchModes.NativeRank,
+    requestDebug = false,
+    span = null,
+    maxHits = 400,
+    recencyDecayRate = 0.02,
+  }: Partial<VespaQueryConfig>,
+): Promise<VespaSearchResponse> => {
+  // Determine the timestamp cutoff based on lastUpdated
+  // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
+  const isDebugMode = config.isDebugMode || requestDebug || false
+
+  let { yql, profile } = HybridDefaultProfileForAgent(
+    limit,
+    app,
+    entity,
+    rankProfile,
+    timestampRange,
+    excludedIds,
+    notInMailLabels,
+    Apps
+  )
+
+  const hybridDefaultPayload = {
+    yql,
+    query,
+    email,
+    "ranking.profile": profile,
+    "input.query(e)": "embed(@query)",
+    "input.query(alpha)": alpha,
+    "input.query(recency_decay_rate)": recencyDecayRate,
+    maxHits,
+    hits: limit,
+    ...(offset
+      ? {
+          offset,
+        }
+      : {}),
+    ...(app ? { app } : {}),
+    ...(entity ? { entity } : {}),
+    ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
+  }
+  span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    return await vespa.getDocumentCount(fileSchema, {
-      namespace: NAMESPACE,
-      cluster: CLUSTER,
-    })
+    return await vespa.search<VespaSearchResponse>(hybridDefaultPayload)
   } catch (error) {
-    throw new ErrorRetrievingDocuments({
+    throw new ErrorPerformingSearch({
       cause: error as Error,
-      sources: "file",
+      sources: AllSources,
     })
   }
 }
@@ -859,6 +1133,18 @@ export const ifDocumentsExist = async (
   try {
     return await vespa.ifDocumentsExist(docIds)
   } catch (error) {
+    throw error
+  }
+}
+export const ifDocumentsExistInTranscript = async (
+  docIds: string[]|string,
+  email: string
+)=>
+{
+  try{
+    return await vespa.ifDocumentsExistInTranscript(docIds, email)
+  }
+  catch(error){
     throw error
   }
 }
@@ -1215,6 +1501,7 @@ export const getItems = async (
 export const fetchAllDocumentsFromSchema = async (
   schema: VespaSchema,
   concurrency: number = 3,
+  email:string
 ): Promise<any[]> => {
   try {
     const options = {
@@ -1228,6 +1515,7 @@ export const fetchAllDocumentsFromSchema = async (
       schema,
       options,
       concurrency,
+      email,
     )
 
     Logger.info(

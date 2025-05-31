@@ -292,6 +292,7 @@ export enum Subsystem {
   Eval = "Eval",
   AI = "AI",
   Tuning = "Tuning",
+  AgentApi = "AgentApi",
 }
 
 export enum OperationStatus {

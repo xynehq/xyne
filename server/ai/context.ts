@@ -15,6 +15,8 @@ import {
   type VespaUser,
   type VespaChatMessageSearch,
   type ScoredChunk,
+  transcriptSchema,
+  type VespaTranscriptSearch,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
@@ -356,6 +358,59 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")
 \n${pc.green("vespa relevance score")}: ${relevance}`
 }
 
+const constructTranscriptContext = (
+  fields: VespaTranscriptSearch,
+  relevance: number,
+  maxSummaryChunks?: number,
+  isSelectedFiles?: boolean,
+): string => {
+  if (!maxSummaryChunks && !isSelectedFiles) {
+    maxSummaryChunks = fields.chunks_summary?.length
+  }
+
+  let chunks: ScoredChunk[] = []
+  if (fields.matchfeatures) {
+    chunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      fields.chunks_summary as string[],
+    )
+  } else {
+    chunks =
+      fields.chunks_summary?.map((chunk, idx) => ({
+        chunk: typeof chunk == "string" ? chunk : chunk.chunk,
+        index: idx,
+        score: 0,
+      })) || []
+  }
+
+  let content = ""
+  if (isSelectedFiles && fields?.matchfeatures) {
+    content = chunks
+      .slice(0, maxSummaryChunks)
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
+  } else if (isSelectedFiles) {
+    content = chunks.map((v) => v.chunk).join("\n")
+  } else {
+    content = chunks
+      .map((v) => v.chunk)
+      .slice(0, maxSummaryChunks)
+      .join("\n")
+  }
+
+  return `App: ${fields.app}
+Title: ${fields.title}
+Description: ${fields.description}
+File Name: ${fields.fileName}
+File Size: ${fields.fileSize} bytes
+Duration: ${fields.duration} seconds
+Mime Type: ${fields.mimeType}
+Uploaded By: ${fields.uploadedBy}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
+\nvespa relevance score: ${relevance}\n`
+}
+
 type AiMetadataContext = string
 export const answerMetadataContextMap = (
   searchResult: z.infer<typeof VespaSearchResultsSchema>,
@@ -446,10 +501,16 @@ export const answerContextMap = (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
-    // later can be based on app
     return constructSlackMessageContext(
       searchResult.fields,
       searchResult.relevance,
+    )
+  } else if (searchResult.fields.sddocname === transcriptSchema) {
+    return constructTranscriptContext(
+      searchResult.fields,
+      searchResult.relevance,
+      maxSummaryChunks,
+      isSelectedFiles,
     )
   } else {
     throw new Error(

@@ -69,6 +69,7 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
 } from "@/ai/prompts"
+
 import { BedrockProvider } from "@/ai/provider/bedrock"
 import { OpenAIProvider } from "@/ai/provider/openai"
 import { Ollama } from "ollama"
@@ -79,7 +80,83 @@ import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
+import { agentAnalyzeInitialResultsOrRewriteSystemPrompt, agentAnalyzeInitialResultsOrRewriteV2SystemPrompt, agentBaselinePrompt, agentBaselinePromptJson, agentBaselineReasoningPromptJson, agentEmailPromptJson, agentGenerateMarkdownTableSystemPrompt, agentOptimizedPrompt, agentQueryRewritePromptJson, agentSearchQueryPrompt, agentTemporalDirectionJsonPrompt } from "../agentPrompts"
+import { is } from "drizzle-orm"
+
 const Logger = getLogger(Subsystem.AI)
+
+// Interface for structured agent prompt data
+interface AgentPromptData {
+  name: string;
+  description: string;
+  prompt: string;
+  sources: any[]; // Corresponds to appIntegrations from the new structure or sources from old
+}
+
+// Minimal interface for type-checking parsed JSON during agent prompt parsing
+interface ParsedPromptCandidate {
+  name?: unknown;
+  description?: unknown;
+  prompt?: unknown;
+  appIntegrations?: unknown; // For new structure
+  sources?: unknown;         // For old structure
+  // id is no longer checked
+}
+
+// Helper function to parse agentPrompt string into AgentPromptData object
+function parseAgentPrompt(agentPromptString: string | undefined): AgentPromptData {
+  const defaults: AgentPromptData = { name: "", description: "", prompt: "", sources: [] };
+
+  if (!agentPromptString) {
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(agentPromptString) as ParsedPromptCandidate;
+
+    // Check for new AgentProfile structure (heuristic: has 'name', 'description', 'prompt', 'appIntegrations')
+    if (
+      typeof parsed.name === 'string' &&
+      typeof parsed.description === 'string' &&
+      typeof parsed.prompt === 'string' &&
+      Array.isArray(parsed.appIntegrations)
+    ) {
+      return {
+        name: parsed.name,
+        description: parsed.description,
+        prompt: parsed.prompt,
+        sources: parsed.appIntegrations as any[],
+      };
+    }
+
+    // Check for old simple structure { prompt: string, sources: array }
+    if (typeof parsed.prompt === 'string' && Array.isArray(parsed.sources)) {
+      return {
+        ...defaults, // Use defaults for name and description
+        prompt: parsed.prompt,
+        sources: parsed.sources,
+      };
+    }
+
+    // Parsed as JSON, but not a recognized structure. Treat original string as literal prompt.
+    Logger.warn(`Agent prompt string is valid JSON but did not match expected structures. Treating as literal prompt: '${agentPromptString}'`);
+    return { ...defaults, prompt: agentPromptString }; // sources will be default empty array
+
+  } catch (error) {
+    // Not valid JSON (or empty string which also errors). Treat as literal prompt.
+    Logger.info(`Agent prompt string is not valid JSON or is empty. Treating as literal prompt: '${agentPromptString}'`);
+    return { ...defaults, prompt: agentPromptString }; // sources will be default empty array
+  }
+}
+
+// Helper function to check if the agent prompt string indicates empty prompt and sources
+function isAgentPromptEmpty(agentPromptString: string | undefined): boolean {
+  const { prompt, sources } = parseAgentPrompt(agentPromptString);
+  // An agent prompt is considered "empty" for the purpose of system prompt selection
+  // if its core 'prompt' string is empty and it has no 'sources'.
+  // The 'name' and 'description' fields don't make it "non-empty" in this context.
+  return prompt === "" && Array.isArray(sources) && sources.length === 0;
+}
 
 const askQuestionSystemPrompt =
   "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
@@ -257,6 +334,7 @@ export const askQuestion = (
   context: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
+  console.log(`[PROVIDER_LOG] Calling LLM for askQuestion`);
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -289,6 +367,7 @@ export const analyzeQuery = async (
   context: string,
   params: ModelParams,
 ): Promise<[QueryContextRank, number]> => {
+  console.log(`[PROVIDER_LOG] Calling LLM for analyzeQuery`);
   try {
     const systemPrompt = AnalyzeUserQuerySystemPrompt
     if (!params.systemPrompt) {
@@ -333,6 +412,7 @@ export const analyzeQueryMetadata = async (
   context: string,
   params: ModelParams,
 ): Promise<[QueryContextRank | null, number]> => {
+  console.log(`[PROVIDER_LOG] Calling LLM for analyzeQueryMetadata`);
   try {
     let systemPrompt = metadataAnalysisSystemPrompt
     if (!params.systemPrompt) {
@@ -504,6 +584,7 @@ export const analyzeQueryForNamesAndEmails = async (
   userQuery: string,
   params: ModelParams,
 ): Promise<{ result: QueryAnalysisResult; cost: number }> => {
+  console.log(`[PROVIDER_LOG] Calling LLM for analyzeQueryForNamesAndEmails`);
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
@@ -541,6 +622,7 @@ export const userChat = (
   context: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
+  console.log(`[PROVIDER_LOG] Calling LLM for userChat`);
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -648,8 +730,14 @@ export const analyzeInitialResultsOrRewrite = (
   userCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  params.systemPrompt = analyzeInitialResultsOrRewriteSystemPrompt(userCtx)
-
+  console.log(`[PROVIDER_LOG] Calling LLM for analyzeInitialResultsOrRewrite`);
+  if ( !isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentAnalyzeInitialResultsOrRewriteSystemPrompt")
+    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteSystemPrompt(userCtx, parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = analyzeInitialResultsOrRewriteSystemPrompt(userCtx)
+  }
   const baseMessage: Message = {
     role: MessageRole.User as const,
     content: [
@@ -675,8 +763,14 @@ export const analyzeInitialResultsOrRewriteV2 = (
   userCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  params.systemPrompt = analyzeInitialResultsOrRewriteV2SystemPrompt(userCtx)
-
+  console.log(`[PROVIDER_LOG] Calling LLM for analyzeInitialResultsOrRewriteV2`);
+  if ( !isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentAnalyzeInitialResultsOrRewriteV2SystemPrompt")
+    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteV2SystemPrompt(userCtx, parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = analyzeInitialResultsOrRewriteV2SystemPrompt(userCtx)
+  }
   const baseMessage: Message = {
     role: MessageRole.User as const,
     content: [
@@ -749,8 +843,14 @@ export const answerOrSearch = (
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
-
-    params.systemPrompt = optimizedPrompt(userCtx)
+    console.log(`[PROVIDER_LOG] Calling LLM for answerOrSearch`);
+    if ( !isAgentPromptEmpty(params.agentPrompt)) {
+      console.log("Using agentOptimizedPrompt")
+      params.systemPrompt = agentOptimizedPrompt(userCtx, parseAgentPrompt(params.agentPrompt))
+    }
+    else {
+      params.systemPrompt = optimizedPrompt(userCtx)
+    }
     params.json = true
 
     const baseMessage: Message = {
@@ -785,7 +885,14 @@ export const listItems = (
   context: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  params.systemPrompt = generateMarkdownTableSystemPrompt(userCtx, query)
+  console.log(`[PROVIDER_LOG] Calling LLM for listItems`);
+  if ( !isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentGenerateMarkdownTableSystemPrompt")
+    params.systemPrompt = agentGenerateMarkdownTableSystemPrompt(userCtx, query,  parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = generateMarkdownTableSystemPrompt(userCtx, query)
+  }
   const baseMessage: Message = {
     role: MessageRole.User,
     content: [
@@ -814,7 +921,14 @@ export const baselineRAG = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = baselinePrompt(userCtx, retrievedCtx)
+  console.log(`[PROVIDER_LOG] Calling LLM for baselineRAG`);
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentbaselinePrompt")
+    params.systemPrompt = agentBaselinePrompt(userCtx, retrievedCtx, parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = baselinePrompt(userCtx, retrievedCtx)
+  }
   params.json = false
 
   const baseMessage = {
@@ -855,7 +969,15 @@ export const baselineRAGJson = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  console.log(`[PROVIDER_LOG] Calling LLM for baselineRAGJson`);  
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentbaselinePromptJson")
+    params.systemPrompt = agentBaselinePromptJson(userCtx,
+    retrievedCtx, parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+  }
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -904,7 +1026,7 @@ export const baselineRAGJsonStream = (
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
-
+  console
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
     params.systemPrompt = baselineFilesContextPromptJson(
@@ -917,16 +1039,29 @@ export const baselineRAGJsonStream = (
     // this is extra work because we just now set Index <number>
     // in future once the reasoning mode better supported we won't have to do this
     Logger.info("Using baselineReasoningPromptJson")
-    params.systemPrompt = baselineReasoningPromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      console.log("Using agentbaselineReasoningPromptJson")
+      params.systemPrompt = agentBaselineReasoningPromptJson(userCtx,
+      indexToCitation(retrievedCtx), parseAgentPrompt(params.agentPrompt))
+    } else {
+      params.systemPrompt = baselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else {
     Logger.info("Using baselinePromptJson")
-    params.systemPrompt = baselinePromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      console.log("Using agentbaselinePromptJson")
+      params.systemPrompt = agentBaselinePromptJson(userCtx,
+      indexToCitation(retrievedCtx), parseAgentPrompt(params.agentPrompt))
+    } else {
+      params.systemPrompt = baselinePromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   }
   params.json = true // Set to true to ensure JSON response
 
@@ -955,7 +1090,14 @@ export const temporalPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+  console.log(`[PROVIDER_LOG] Calling LLM for temporalPromptJsonStream`);
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentTemporalDirectionJsonPrompt")
+    params.systemPrompt = agentTemporalDirectionJsonPrompt(userCtx, retrievedCtx, parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+  }
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -981,7 +1123,14 @@ export const mailPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
+  console.log(`[PROVIDER_LOG] Calling LLM for mailPromptJsonStream`);
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentEmailPromptJson")
+    params.systemPrompt = agentEmailPromptJson(userCtx, retrievedCtx, parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
+  }
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1011,7 +1160,14 @@ export const queryRewriter = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = queryRewritePromptJson(userCtx, retrievedCtx)
+  console.log(`[PROVIDER_LOG] Calling LLM for queryRewriter`);
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentQueryRewritePromptJson")
+    params.systemPrompt = agentQueryRewritePromptJson(userCtx, parseAgentPrompt(params.agentPrompt))
+  }
+  else {
+    params.systemPrompt = queryRewritePromptJson(userCtx, retrievedCtx)
+  }
   params.json = true
 
   const baseMessage = {
@@ -1094,8 +1250,12 @@ export function generateSearchQueryOrAnswerFromConversation(
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
+  console.log(`[PROVIDER_LOG] Calling LLM for generateSearchQueryOrAnswerFromConversation`);
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
+  } else if (!isAgentPromptEmpty(params.agentPrompt)) {
+    console.log("Using agentSearchQueryPrompt", parseAgentPrompt(params.agentPrompt))
+    params.systemPrompt = agentSearchQueryPrompt(userContext, parseAgentPrompt(params.agentPrompt))
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }

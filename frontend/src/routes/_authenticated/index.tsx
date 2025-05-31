@@ -118,12 +118,13 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (messageToSend: string, selectedSources?: string[]) => {
+  const handleAsk = (messageToSend: string, selectedSources?: string[], agentId?: string | null) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
         reasoning?: boolean
         sources?: string
+        agentId?: string
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -133,6 +134,10 @@ const Index = () => {
 
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
+      }
+
+      if (agentId) { // Use agentId directly
+        searchParams.agentId = agentId;
       }
 
       navigate({
