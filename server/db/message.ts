@@ -1,13 +1,9 @@
 import { createId } from "@paralleldrive/cuid2"
 import {
-  messageMetadata,
   messages,
-  selectMessageMetadataSchema,
   selectMessageSchema,
   type InsertMessage,
-  type InsertMessageMetadata,
   type SelectMessage,
-  type SelectMessageMetadata,
 } from "@/db/schema"
 import { MessageRole, type TxnOrClient } from "@/types"
 import { and, asc, eq, lt } from "drizzle-orm"

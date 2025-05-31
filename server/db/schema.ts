@@ -546,19 +546,6 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
 })
 
-export const messageMetadata = pgTable("message_metadata", {
-  id: serial("id").notNull().primaryKey(),
-  chatId: text("chat_id").unique().notNull(),
-  classificationMetadata: jsonb("metadata_json").default(sql`'{}'::jsonb`),
-})
-
-export const insertMessageMetadata = createInsertSchema(messageMetadata).omit({
-  id: true,
-})
-export type InsertMessageMetadata = z.infer<typeof insertMessageMetadata>
-export const selectMessageMetadataSchema = createSelectSchema(messageMetadata)
-export type SelectMessageMetadata = z.infer<typeof selectMessageMetadataSchema>
-
 export type InsertMessage = z.infer<typeof insertMessageSchema>
 
 // Select schema for messages
