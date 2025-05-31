@@ -114,7 +114,7 @@ import {
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import config from "@/config"
 import { getConnectorByExternalId } from "@/db/connector"
-import { blockedFilesTotal, contentFileSize, extractionDuration, fileExtractionErrorsTotal, ingestionErrorsTotal, ingestionFilesGauge, totalDurationForFileExtraction, totalExtractedFiles, totalIngestedFiles, totalIngestedFilesHistogram } from "@/metrics/google/google-drive-file-metrics"
+import { blockedFilesTotal, contentFileSize, extractionDuration, fileExtractionErrorsTotal, ingestionErrorsTotal, totalDurationForFileExtraction, totalExtractedFiles, totalIngestedFiles } from "@/metrics/google/google-drive-file-metrics"
 
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
@@ -1360,25 +1360,15 @@ const insertFilesForUser = async (
       // Metrics for ingestion duration of pdfs in google drive
       const totalTimeToIngestPDF = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_PDF", mime_type:"google_pdf", email:userEmail})
       for (const doc of pdfs) {
-        const startTimer = Date.now()
-        const ingestionTimer = totalIngestedFilesHistogram.startTimer({file_type:"GOOGLE_DRIVE_PDF", mime_type:"google_pdf", status:"SUCCESS"})
         try{
-        processedFiles += 1
+                  processedFiles += 1
         await insertWithRetry(doc, fileSchema)
-        totalIngestedFiles.inc({file_id: doc.docId??"", file_name:doc.title??"", mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"},1)
+        totalIngestedFiles.inc({mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"})
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
-        ingestionFilesGauge.inc({ mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"},1)
-        ingestionTimer()
         }catch(error){
           ingestionErrorsTotal.inc({file_id:doc.docId??"", file_name: doc.title??"",file_type:"GOOGLE_DRIVE_PDF", mime_type:doc.mimeType??"google_pdf",email:doc.ownerEmail??userEmail, error_type:`ERROR_INGESTING_GOOGLE_DRIVE_PDF`, status:"FAILED"}, 1)
         }
       }
-      ingestionFilesGauge.set({
-        file_type: "GOOGLE_DRIVE_PDF",
-        mime_type: "application/pdf",
-        status: "SUCCESS",
-        email: userEmail
-      }, 0)
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
 
@@ -1419,99 +1409,35 @@ const insertFilesForUser = async (
         return v
       })
 
-
-      const groupedFiles:any = {
-        GOOGLE_DRIVE_DOC: [] as typeof allFiles,
-        GOOGLE_DRIVE_SHEET: [] as typeof allFiles,
-        GOOGLE_DRIVE_SLIDE: [] as typeof allFiles,
-        GOOGLE_DRIVE_FILE: [] as typeof allFiles,
-      };
-
+      const totalIngestionDuration = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file", email:userEmail})
       for (const doc of allFiles) {
-        const fileType =
-          doc.mimeType === DriveMime.Docs ? "GOOGLE_DRIVE_DOC" :
-          doc.mimeType === DriveMime.Sheets ? "GOOGLE_DRIVE_SHEET" :
-          doc.mimeType === DriveMime.Slides ? "GOOGLE_DRIVE_SLIDE" :
-          "GOOGLE_DRIVE_FILE";
-
-        groupedFiles[fileType].push(doc);
-      }
-
-      const processedFileTypes = new Map<string, string>();
-      const typeOrder = ["GOOGLE_DRIVE_DOC", "GOOGLE_DRIVE_SHEET", "GOOGLE_DRIVE_SLIDE", "GOOGLE_DRIVE_FILE"];
-
-      for (const fileType of typeOrder) {
-       
-        const docs = groupedFiles[fileType];
-        for (const doc of docs) {
-          const mimeType = doc.mimeType ?? "application/vnd.google-apps.file";
-          Logger.info(`Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`);
-            const ingestionTimer = totalIngestedFilesHistogram.startTimer({file_type:fileType, mime_type:mimeType, status:"SUCCESS"})
-          processedFileTypes.set(fileType, mimeType);
-
-          try {
-            await insertWithRetry(doc, fileSchema);
-
-            console.log(`Mime type:`, doc.mimeType);
-
-            totalIngestedFiles.inc({
-              file_id: doc.docId ?? "",
-              file_name: doc.title ?? "",
-              mime_type: mimeType,
-              status: "SUCCESS",
-              email: userEmail,
-              file_type: fileType,
-            });
-
-            ingestionFilesGauge.inc({
-              file_type: fileType,
-              mime_type: mimeType,
-              status: "SUCCESS",
-              email: userEmail,
-            }, 1);
-
-            if (doc.mimeType !== DriveMime.Sheets) {
-              processedFiles += 1;
-              tracker.updateUserStats(userEmail, StatType.Drive, 1);
-            }
-            ingestionTimer()
-          } catch (error) {
-            const errorMessage = getErrorMessage(error);
-            Logger.error(
-              error,
-              `Could not insert file of type ${doc.mimeType} with id ${doc.docId} for user: ${errorMessage} ${(error as Error).stack}`,
-            );
-
-            ingestionErrorsTotal.inc({
-              file_id: doc.docId ?? "",
-              file_name: doc.title ?? "",
-              file_type: fileType,
-              mime_type: mimeType,
-              email: doc.ownerEmail ?? userEmail,
-              error_type: `ERROR_INSERTING_${fileType}_file`,
-              status: "FAILED",
-            }, 1);
+        Logger.info(
+          `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
+        )
+        // determine the  file type here so we can insert in metrics data
+       const fileType = (doc.mimeType===DriveMime.Docs)?"GOOGLE_DRIVE_DOC":(doc.mimeType===DriveMime.Sheets)?"GOOGLE_DRIVE_SHEET":(doc.mimeType===DriveMime.Slides)?"GOOGLE_DRIVE_SLIDE":"GOOGLE_DRIVE_FILE";
+       try{
+          await insertWithRetry(doc, fileSchema)
+          // do not update for Sheet as we will add the actual count later
+          console.log(`Mime type: `,doc.mimeType)
+          totalIngestedFiles.inc({mime_type: doc.mimeType??"application/vnd.google-apps.file", status:"SUCCESS", email:userEmail, file_type:fileType })
+          if (doc.mimeType !== DriveMime.Sheets) {
+            processedFiles += 1
+            tracker.updateUserStats(userEmail, StatType.Drive, 1)
           }
-        }
+            }catch(error) {
+              const errorMessage = getErrorMessage(error)
+              Logger.error(
+                error,
+                `Could not insert file of type ${doc.mimeType} with id ${doc.docId} for user: ${errorMessage} ${(error as Error).stack}`,
+              )
+              ingestionErrorsTotal.inc({file_id:doc.docId??"", file_name: doc.title??"", file_type:fileType, mime_type: doc.mimeType??"application/vnd.google-apps.file", email: doc.ownerEmail??userEmail, error_type: `ERROR_INSERTING_${fileType}_file`,status:"FAILED"}, 1)
+            }
       }
+      tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
 
-      console.log("Processed file types:", Object.fromEntries(processedFileTypes));
-
-      // Reset gauge counts to 0 for each processed type
-      for (const [fileType, mimeType] of processedFileTypes.entries()) {
-        ingestionFilesGauge.set({
-          file_type: fileType,
-          mime_type: mimeType,
-          status: "SUCCESS",
-          email: userEmail,
-        }, 0);
-      }
-
-      // Sheets counted separately
-      tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count);
-
-      Logger.info(`Finished ingesting ${initialCount} files`);
-
+      Logger.info(`finished ${initialCount} files`)
+      totalIngestionDuration()
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)

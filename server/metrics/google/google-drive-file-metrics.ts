@@ -1,4 +1,4 @@
-import { Counter, Gauge, Histogram } from "prom-client"
+import { Counter, Histogram } from "prom-client"
 import metricRegister from "@/metrics/sharedRegistry";
 
 
@@ -6,7 +6,7 @@ import metricRegister from "@/metrics/sharedRegistry";
 export const totalIngestedFiles = new Counter({
   name: "google_drive_ingested_total",
   help: "Total number of ingested files",
-  labelNames: ["file_id","mime_type", "status", "file_name", "email","file_type"],
+  labelNames: ["mime_type", "status", "email","file_type"],
 })
 metricRegister.registerMetric(totalIngestedFiles) // register this metric function in the registry
 
@@ -79,18 +79,3 @@ export const totalDurationForFileExtraction = new Histogram({
   buckets: [25, 50, 75, 100, 125, 150, 175, 200],
 })
 metricRegister.registerMetric(totalDurationForFileExtraction)
-
-export const totalIngestedFilesHistogram = new Histogram({
-  name:"google_drive_ingested_total_histogram",
-  help:"Total files ingested histogram", 
-  labelNames: ["file_type", "status", "mime_type"] as const,
-  buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120] 
-})
-metricRegister.registerMetric(totalIngestedFilesHistogram)
-
-export const ingestionFilesGauge = new Gauge({
-  name: "google_drive_ingestion_total_gauge",
-  help: "Total number of ingestion errors",
-  labelNames: ["mime_type", "email", "file_type", "status"] as const,
-})
-metricRegister.registerMetric(ingestionFilesGauge)

@@ -44,40 +44,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Ingested File Count",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "mode": "thresholds"
           },
           "decimals": 0,
           "mappings": [],
@@ -102,22 +69,13 @@
               "options": {
                 "mode": "exclude",
                 "names": [
-                  "{__name__=\"google_drive_ingestion_total_gauge\", email=\"oindrila.b@xynehq.com\", file_type=\"GOOGLE_DRIVE_PDF\", instance=\"192.168.1.114:3000\", job=\"google_drive_ingestion\", mime_type=\"application/pdf\", service=\"xyne-metrics\", status=\"SUCCESS\"}"
+                  "GOOGLE_DRIVE_DOC"
                 ],
                 "prefix": "All except:",
                 "readOnly": true
               }
             },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
+            "properties": []
           }
         ]
       },
@@ -129,25 +87,118 @@
       },
       "id": 24,
       "options": {
+        "displayMode": "gradient",
         "legend": {
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P442C0F3243930FD5"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "sum by(file_type) (\n  ceil(increase(google_drive_ingested_total[$__range]))\n)",
+          "format": "time_series",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "New panel",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P442C0F3243930FD5"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 25,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "disableTextWrap": false,
           "editorMode": "code",
           "exemplar": false,
-          "expr": "google_drive_ingestion_total_gauge",
+          "expr": "sum by(account_type) (round(increase(gmail_ingested_total[$__range])))",
           "format": "time_series",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
@@ -159,7 +210,7 @@
         }
       ],
       "title": "New panel",
-      "type": "timeseries"
+      "type": "bargauge"
     },
     {
       "datasource": {
@@ -240,7 +291,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "datasource": {
@@ -344,7 +395,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "editorMode": "code",
@@ -448,7 +499,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "editorMode": "code",
@@ -552,7 +603,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "datasource": {
@@ -654,7 +705,7 @@
         "xTickLabelRotation": 0,
         "xTickLabelSpacing": 0
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "editorMode": "code",
@@ -673,7 +724,7 @@
           "id": "renameByRegex",
           "options": {
             "regex": "Value",
-            "renamePattern": "sync_job_count"
+            "renamePattern": "count:sync_job"
           }
         }
       ],
@@ -693,7 +744,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "",
+            "axisLabel": "Gmail Ingestion Count",
             "axisPlacement": "auto",
             "fillOpacity": 80,
             "gradientMode": "none",
@@ -755,7 +806,7 @@
         "xTickLabelRotation": 0,
         "xTickLabelSpacing": 0
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "disableTextWrap": false,
@@ -787,20 +838,20 @@
           "refId": "B"
         }
       ],
-      "title": "GMAIL_INGESTION",
+      "title": "Gmail Ingest",
       "transformations": [
         {
           "id": "renameByRegex",
           "options": {
             "regex": "^Value #A$",
-            "renamePattern": "GMAIL_INGESTION_COUNT"
+            "renamePattern": "count:mail_success"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "^Value #B$",
-            "renamePattern": "GMAIL_ATTACHMENT_COUNT"
+            "renamePattern": "count:mail_attachment_success"
           }
         }
       ],
@@ -976,7 +1027,7 @@
         "xTickLabelRotation": 0,
         "xTickLabelSpacing": 0
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "editorMode": "code",
@@ -989,13 +1040,13 @@
           "refId": "A"
         }
       ],
-      "title": "GOOGLE_DRIVE_INGESTION_METRIC",
+      "title": "Google Entity Ingestion",
       "transformations": [
         {
           "id": "renameByRegex",
           "options": {
             "regex": "^Value$",
-            "renamePattern": "INGEST_SUCCESS"
+            "renamePattern": "count:entity_success"
           }
         }
       ],
@@ -1169,7 +1220,7 @@
         "xTickLabelRotation": 0,
         "xTickLabelSpacing": 0
       },
-      "pluginVersion": "12.0.0",
+      "pluginVersion": "12.0.1",
       "targets": [
         {
           "editorMode": "code",
@@ -1242,7 +1293,7 @@
           "refId": "E"
         }
       ],
-      "title": "GOOGLE_DRIVE_GRANULAR_METRIC",
+      "title": "Google Drive Entity Metric",
       "transformations": [
         {
           "id": "merge",
@@ -1252,41 +1303,41 @@
           "id": "renameByRegex",
           "options": {
             "regex": "^Value #A$",
-            "renamePattern": "INGEST_SUCCESS"
+            "renamePattern": "ingest:success"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "^Value #B$",
-            "renamePattern": "INGEST_BLOCKED"
+            "renamePattern": "ingest:blocked"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "^Value #C$",
-            "renamePattern": "INGEST_FAILED"
+            "renamePattern": "ingest:failed"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "^Value #D$",
-            "renamePattern": "EXTRACT_SUCCESS"
+            "renamePattern": "extract:success"
           }
         },
         {
           "id": "renameByRegex",
           "options": {
             "regex": "^Value #E$",
-            "renamePattern": "EXTRACT_FAILED"
+            "renamePattern": "extract:failed"
           }
         },
         {
           "id": "calculateField",
           "options": {
-            "alias": "INGEST_FAILED_CALCULATED",
+            "alias": "ingest_failed:calculated",
             "mode": "reduceRow",
             "reduce": {
               "include": [
@@ -1299,7 +1350,7 @@
         {
           "id": "calculateField",
           "options": {
-            "alias": "EXTRACT_FAILED_CALCULATED",
+            "alias": "extract_failed_calculated",
             "mode": "reduceRow",
             "reduce": {
               "include": [
@@ -1314,19 +1365,19 @@
     }
   ],
   "preload": false,
-  "refresh": "1m",
+  "refresh": "5s",
   "schemaVersion": 41,
   "tags": [],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "now-5m",
+    "from": "now-15m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Xyne",
+  "title": "Xyne Metric Dashboard",
   "uid": "de25akpxochkwd",
-  "version": 1
+  "version": 10
 }
