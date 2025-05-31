@@ -967,7 +967,7 @@ export const searchQueryPrompt = (userContext: string): string => {
 
        - **JSON Structure**:
         {
-          "type": "${QueryType.GetItems}",
+          "type": "${QueryType.SearchWithFilters}",
           "filters": {
             "app": "<app>",
             "entity": "<entity>",

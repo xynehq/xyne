@@ -641,7 +641,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   let userSpecifiedCount = pageSize
   if (classification.filters.count) {
     rootSpan?.setAttribute("userSpecifiedCount", classification.filters.count)
-    userSpecifiedCount = Math.min(classification.filters.count, 50)
+    userSpecifiedCount = Math.min(classification.filters.count, config.maxUserRequestCount)
   }
   if (classification.filterQuery) {
     message = classification.filterQuery
@@ -1507,7 +1507,7 @@ async function* processResultsForMetadata(
   userRequestsReasoning?: boolean,
 ) {
   if (app === Apps.GoogleDrive) {
-    chunksCount = 50
+    chunksCount = config.maxGoogleDriveSummary
     Logger.info(`Google Drive, Chunk size: ${chunksCount}`)
     span?.setAttribute("Google Drive, chunk_size", chunksCount)
   }
@@ -1703,7 +1703,7 @@ async function* generateMetadataQueryAnswer(
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
     Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
   } else if (isGenericItemFetch && isValidAppAndEntity) {
-    const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
+    const userSpecifiedCountLimit = count ? Math.min(count, config.maxUserRequestCount) : 5
     span?.setAttribute("Search_Type", QueryType.GetItems)
     span?.setAttribute(
       "isReasoning",
@@ -2106,7 +2106,7 @@ function formatMessagesForLLM(
     // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
     // then we should not give that exact stringified message as history
     // We convert it into a AI friendly string only for giving it to LLM
-    const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []))
+    const fileIds = Array.isArray(msg?.fileIds) ? msg.fileIds : []
     if (msg.messageRole === "user" && fileIds && fileIds.length > 0) {
       const originalMsg = msg.message
       const selectedContext = isContextSelected(originalMsg)
