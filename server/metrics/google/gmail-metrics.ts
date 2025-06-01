@@ -20,7 +20,7 @@ metricRegister.registerMetric(ingestionMailErrorsTotal)
 export const totalAttachmentIngested = new Counter({
   name: "gmail_attachment_ingested_total",
   help: "Total number of ingested mail attachment",
-  labelNames: ["mail_id","mime_type", "status", "attachment_id", "email", "account_type"],
+  labelNames: ["mime_type", "status", "email", "account_type"],
 })
 metricRegister.registerMetric(totalAttachmentIngested)
 

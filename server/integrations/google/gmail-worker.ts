@@ -211,7 +211,7 @@ export const handleGmailIngestion = async (
             // Increment counters only on success
             insertedMessagesInBatch++
             insertedPdfAttachmentsInBatch += insertedPdfCount
-            totalIngestedMails.inc({mime_type:message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
+            totalIngestedMails.inc({status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
           } catch (error) {
             Logger.error(
               error,
@@ -403,7 +403,7 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
-            totalAttachmentIngested.inc({mail_id:messageId, mime_type:mimeType, attachment_id:attachmentId, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
+            totalAttachmentIngested.inc({mime_type:mimeType, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.

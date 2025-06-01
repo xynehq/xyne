@@ -1357,16 +1357,24 @@ const insertFilesForUser = async (
        // End timer for PDF file extraction duration
       pdfFileExtractionDuration()
       
+      const fileTypeTracker = new Map<string, boolean>();
       // Metrics for ingestion duration of pdfs in google drive
-      const totalTimeToIngestPDF = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_PDF", mime_type:"google_pdf", email:userEmail})
+      const fileType = "GOOGLE_DRIVE_PDF";
+      const totalTimeToIngestPDF = ingestionDuration.startTimer({file_type:fileType, mime_type:"google_pdf", email:userEmail})
       for (const doc of pdfs) {
         try{
-                  processedFiles += 1
+        processedFiles += 1
         await insertWithRetry(doc, fileSchema)
-        totalIngestedFiles.inc({mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"})
+        if(!fileTypeTracker.has(fileType)){
+        fileTypeTracker.set(fileType, true)
+        totalIngestedFiles.inc({mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:fileType},1)
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        Logger.info(`Ingested first file of type ${fileType}`)
+        }
+        totalIngestedFiles.inc({mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:fileType})
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
         }catch(error){
-          ingestionErrorsTotal.inc({file_id:doc.docId??"", file_name: doc.title??"",file_type:"GOOGLE_DRIVE_PDF", mime_type:doc.mimeType??"google_pdf",email:doc.ownerEmail??userEmail, error_type:`ERROR_INGESTING_GOOGLE_DRIVE_PDF`, status:"FAILED"}, 1)
+          ingestionErrorsTotal.inc({file_id:doc.docId??"", file_name: doc.title??"",file_type:fileType, mime_type:doc.mimeType??"google_pdf",email:doc.ownerEmail??userEmail, error_type:`ERROR_INGESTING_GOOGLE_DRIVE_PDF`, status:"FAILED"}, 1)
         }
       }
       // end of duration timer for pdf ingestion
@@ -1409,6 +1417,7 @@ const insertFilesForUser = async (
         return v
       })
 
+
       const totalIngestionDuration = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file", email:userEmail})
       for (const doc of allFiles) {
         Logger.info(
@@ -1420,7 +1429,14 @@ const insertFilesForUser = async (
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
           console.log(`Mime type: `,doc.mimeType)
-          totalIngestedFiles.inc({mime_type: doc.mimeType??"application/vnd.google-apps.file", status:"SUCCESS", email:userEmail, file_type:fileType })
+          if(!fileTypeTracker.has(fileType)) {
+            fileTypeTracker.set(fileType, true)
+            totalIngestedFiles.inc({mime_type:fileType=="GOOGLE_DRIVE_FILE"?"application/vnd.google-apps.file":doc.mimeType??"", status:"SUCCESS", email:userEmail, file_type:fileType }, 1)
+            // introducing a 3 second delay so that prometheus can scrape the initial value for each type of new file it encounters
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            Logger.info(`Ingested first file of type ${fileType}`)
+          }
+          totalIngestedFiles.inc({mime_type:fileType=="GOOGLE_DRIVE_FILE"?"application/vnd.google-apps.file":doc.mimeType??"", status:"SUCCESS", email:userEmail, file_type:fileType })
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
             tracker.updateUserStats(userEmail, StatType.Drive, 1)

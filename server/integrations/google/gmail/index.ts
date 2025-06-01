@@ -275,7 +275,7 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
-            totalAttachmentIngested.inc({mail_id:messageId, mime_type:mimeType, attachment_id:attachmentId, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
+            totalAttachmentIngested.inc({ mime_type:mimeType,  status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.

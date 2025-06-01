@@ -292,6 +292,7 @@ export enum Subsystem {
   Eval = "Eval",
   AI = "AI",
   Tuning = "Tuning",
+  Metric = "Metric"
 }
 
 export enum OperationStatus {
