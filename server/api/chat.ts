@@ -41,6 +41,7 @@ import {
   selectPublicMessagesSchema,
   type SelectChat,
   type SelectMessage,
+  messageFeedbackEnum,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
@@ -75,6 +76,7 @@ import {
 import {
   Apps,
   chatMessageSchema,
+  DriveEntity,
   entitySchema,
   eventSchema,
   fileSchema,
@@ -111,6 +113,7 @@ import {
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
 import { entityToSchemaMapper } from "@/search/mappers"
+import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -122,6 +125,7 @@ const {
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
+  maxValidLinks,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 
@@ -999,23 +1003,6 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const results = await GetDocumentsByDocIds(fileIds)
-
-  // Special case fora single Whole Spreadsheet
-  if (fileIds?.length === 1 && !results?.root?.children) {
-    const fileId = fileIds[0]
-    const result = await getDocumentOrNull(fileSchema, `${fileIds[0]}_0`)
-    if (result) {
-      //@ts-ignore
-      const metadata = JSON.parse(result?.fields?.metadata)
-      const totalSheets = metadata.totalSheets
-      const sheetIds = []
-      for (let i = 0; i < totalSheets; i++) {
-        sheetIds.push(`${fileId}_${i}`)
-      }
-      const sheetsResults = await GetDocumentsByDocIds(sheetIds)
-      results.root.children = sheetsResults.root.children
-    }
-  }
   if (!results.root.children) {
     results.root.children = []
   }
@@ -1140,26 +1127,56 @@ export const buildUserQuery = (userQuery: UserQuery) => {
     } else if (obj?.type === "pill") {
       builtQuery += `<User referred a file with title "${obj?.value?.title}" here> `
     } else if (obj?.type === "link") {
-      builtQuery += `<User added a link with url "${obj?.value}" here> `
+      builtQuery += `<User added a link with url here, this url's content is already available to you in the prompt> `
     }
   })
   return builtQuery
 }
 
-const extractFileIdsFromMessage = (message: string): string[] => {
+const extractFileIdsFromMessage = async (
+  message: string,
+): Promise<{
+  totalValidFileIdsFromLinkCount: number
+  fileIds: string[]
+}> => {
   const fileIds: string[] = []
   const jsonMessage = JSON.parse(message) as UserQuery
-  jsonMessage?.map((obj) => {
+  let validFileIdsFromLinkCount = 0
+  let totalValidFileIdsFromLinkCount = 0
+  for (const obj of jsonMessage) {
     if (obj?.type === "pill") {
       fileIds.push(obj?.value?.docId)
     } else if (obj?.type === "link") {
       const fileId = getFileIdFromLink(obj?.value)
       if (fileId) {
-        fileIds.push(fileId)
+        // Check if it's a valid Drive File Id ingested in Vespa
+        // Only works for fileSchema
+        const validFile = await getDocumentOrSpreadsheet(fileId)
+        if (validFile) {
+          totalValidFileIdsFromLinkCount++
+          if (validFileIdsFromLinkCount >= maxValidLinks) {
+            continue
+          }
+          const fields = validFile?.fields as VespaFile
+          // If any of them happens to a spreadsheet, add all its subsheet ids also here
+          if (
+            fields?.app === Apps.GoogleDrive &&
+            fields?.entity === DriveEntity.Sheets
+          ) {
+            const sheetsMetadata = JSON.parse(fields?.metadata as string)
+            const totalSheets = sheetsMetadata?.totalSheets
+            for (let i = 0; i < totalSheets; i++) {
+              fileIds.push(`${fileId}_${i}`)
+            }
+          } else {
+            fileIds.push(fileId)
+          }
+          validFileIdsFromLinkCount++
+        }
       }
     }
-  })
-  return fileIds
+  }
+  return { totalValidFileIdsFromLinkCount, fileIds }
 }
 
 const getFileIdFromLink = (link: string) => {
@@ -2200,7 +2217,15 @@ export const MessageApi = async (c: Context) => {
     rootSpan.setAttribute("message", message)
 
     const isMsgWithContext = isMessageWithContext(message)
-    const fileIds = isMsgWithContext ? extractFileIdsFromMessage(message) : []
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    const fileIds = extractedInfo?.fileIds
+    const totalValidFileIdsFromLinkCount =
+      extractedInfo?.totalValidFileIdsFromLinkCount
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -2359,6 +2384,7 @@ export const MessageApi = async (c: Context) => {
             citations = []
             citationMap = {}
             let citationValues: Record<number, string> = {}
+            let count = 0
             for await (const chunk of iterator) {
               if (stream.closed) {
                 Logger.info(
@@ -2368,6 +2394,15 @@ export const MessageApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
+                if (
+                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  count === 0
+                ) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} links as it exceeds max limit of ${maxValidLinks}. `,
+                  })
+                }
                 if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
@@ -2403,6 +2438,7 @@ export const MessageApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
             understandSpan.setAttribute(
@@ -3171,12 +3207,22 @@ export const MessageRetryApi = async (c: Context) => {
     const fileIdsFromDB = JSON.parse(
       JSON.stringify(prevUserMessage?.fileIds || []),
     )
+    let totalValidFileIdsFromLinkCount = 0
     if (
       prevUserMessage.messageRole === "user" &&
       fileIdsFromDB &&
       fileIdsFromDB.length > 0
     ) {
       fileIds = fileIdsFromDB
+      const isMsgWithContext = isMessageWithContext(prevUserMessage.message)
+      const extractedInfo = isMsgWithContext
+        ? await extractFileIdsFromMessage(prevUserMessage.message)
+        : {
+            totalValidFileIdsFromLinkCount: 0,
+            fileIds: [],
+          }
+      totalValidFileIdsFromLinkCount =
+        extractedInfo?.totalValidFileIdsFromLinkCount
     }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
@@ -3246,6 +3292,7 @@ export const MessageRetryApi = async (c: Context) => {
             reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
+            let count = 0
             let citationValues: Record<number, string> = {}
             for await (const chunk of iterator) {
               if (stream.closed) {
@@ -3256,6 +3303,15 @@ export const MessageRetryApi = async (c: Context) => {
                 break
               }
               if (chunk.text) {
+                if (
+                  totalValidFileIdsFromLinkCount > maxValidLinks &&
+                  count === 0
+                ) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} valid link/s as it exceeds max limit of ${maxValidLinks}. `,
+                  })
+                }
                 if (reasoning && chunk.reasoning) {
                   thinking += chunk.text
                   stream.writeSSE({
@@ -3291,6 +3347,7 @@ export const MessageRetryApi = async (c: Context) => {
                 })
                 citationValues[index] = item
               }
+              count++
             }
             understandSpan.setAttribute("citation_count", citations.length)
             understandSpan.setAttribute(
@@ -4010,5 +4067,49 @@ export const StopStreamingApi = async (c: Context) => {
       `[StopStreamingApi] Unexpected Error: ${errMsg} ${(error as Error).stack}`,
     )
     throw new HTTPException(500, { message: "Could not stop streaming." })
+  }
+}
+
+export const messageFeedbackSchema = z.object({
+  messageId: z.string(),
+  feedback: z.enum(messageFeedbackEnum.enumValues).nullable(), // Allows 'like', 'dislike', or null
+})
+
+export const MessageFeedbackApi = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const Logger = getLogger(Subsystem.Chat)
+
+  try {
+    //@ts-ignore - Assuming validation middleware handles this
+    const { messageId, feedback } = await c.req.valid("json")
+
+    const message = await getMessageByExternalId(db, messageId)
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+    if (message.email !== email || message.workspaceExternalId !== workspaceId) {
+      throw new HTTPException(403, { message: "Forbidden" })
+    }
+
+    await updateMessageByExternalId(db, messageId, {
+      feedback: feedback, // feedback can be 'like', 'dislike', or null
+      updatedAt: new Date(), // Update the updatedAt timestamp
+    })
+
+    Logger.info(
+      `Feedback ${feedback ? `'${feedback}'` : "removed"} for message ${messageId} by user ${email}`,
+    )
+    return c.json({ success: true, messageId, feedback })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(
+      error,
+      `Message Feedback Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not submit feedback",
+    })
   }
 }

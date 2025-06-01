@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react" // Ensure React is imported
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react" // Ensure React is imported
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -223,6 +223,17 @@ export const ChatBox = ({
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
   // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+
+  const adjustInputHeight = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto"
+      const scrollHeight = inputRef.current.scrollHeight
+      const minHeight = 52
+      const maxHeight = 320
+      const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight))
+      inputRef.current.style.height = `${newHeight}px`
+    }
+  }, [])
 
   const updateReferenceBoxPosition = (atIndex: number) => {
     const inputElement = inputRef.current
@@ -591,7 +602,9 @@ export const ChatBox = ({
 
     const mentionStartCharOffset = activeAtMentionIndex
     // The @mention text effectively goes from activeAtMentionIndex up to the current caret position.
-    const mentionEndCharOffset = getCaretCharacterOffsetWithin(input)
+    // When clicking a reference, getCaretCharacterOffsetWithin(input) might be unreliable if focus changes.
+    // Assuming the active mention always extends to the end of the current query content.
+    const mentionEndCharOffset = query.length
 
     const startPos = findBoundaryPosition(input, mentionStartCharOffset)
     const endPos = findBoundaryPosition(input, mentionEndCharOffset)
@@ -689,7 +702,9 @@ export const ChatBox = ({
     }
 
     const mentionStartCharOffset = activeAtMentionIndex
-    const mentionEndCharOffset = getCaretCharacterOffsetWithin(input)
+    // When clicking a reference, getCaretCharacterOffsetWithin(input) might be unreliable if focus changes.
+    // Assuming the active mention always extends to the end of the current query content.
+    const mentionEndCharOffset = query.length
 
     const startPos = findBoundaryPosition(input, mentionStartCharOffset)
     const endPos = findBoundaryPosition(input, mentionEndCharOffset)
@@ -883,15 +898,8 @@ export const ChatBox = ({
   }, [showReferenceBox, activeAtMentionIndex])
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto" // Reset height to allow scrollHeight to be calculated correctly
-      const scrollHeight = inputRef.current.scrollHeight
-      const minHeight = 52 // As per inline style
-      const maxHeight = 320 // As per inline style
-      const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight))
-      inputRef.current.style.height = `${newHeight}px`
-    }
-  }, [query])
+    adjustInputHeight()
+  }, [query, adjustInputHeight])
 
   return (
     <div className="relative flex flex-col w-full max-w-3xl pb-5">
@@ -1196,10 +1204,7 @@ export const ChatBox = ({
 
               const newValue = currentInput.textContent || ""
               setQuery(newValue)
-              setIsPlaceholderVisible(
-                newValue.length === 0 &&
-                  document.activeElement !== currentInput,
-              )
+              setIsPlaceholderVisible(newValue.length === 0)
 
               // The 'references' state and its update logic have been removed.
               // Pill management is now primarily through direct DOM interaction
@@ -1279,6 +1284,7 @@ export const ChatBox = ({
                   // Otherwise, the box remains open (e.g., user is typing after a valid '@').
                 }
               }
+              adjustInputHeight() 
             }}
             onKeyDown={(e) => {
               if (showReferenceBox) {
@@ -1368,9 +1374,7 @@ export const ChatBox = ({
 
               const newTextContent = input.textContent || ""
               setQuery(newTextContent)
-              setIsPlaceholderVisible(
-                newTextContent.length === 0 && document.activeElement !== input,
-              )
+              setIsPlaceholderVisible(newTextContent.length === 0)
 
               const newAtSymbolIndex =
                 textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
