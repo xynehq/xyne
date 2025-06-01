@@ -555,11 +555,6 @@ const HybridDefaultProfileAppEntityCounts = (
   notInMailLabels?: string[],
   excludedApps?: Apps[],
 ): YqlProfile => {
-  console.log(
-    "HybridDefaultProfileAppEntityCounts called with excludedApps:",
-    excludedApps,
-  )
-
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
