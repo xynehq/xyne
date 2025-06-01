@@ -2424,7 +2424,6 @@ export const driveFilesToDoc = async (
       results.push(file)
     }
   }
-  metadataFiles.inc({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file", email:userEmail}, rest.length)
   return results
 }
 
