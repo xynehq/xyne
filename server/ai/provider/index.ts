@@ -375,8 +375,8 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   try {
     text = text.trim()
     // edge case where ```json is prepended to the text
-    text = text.replace(/^```(json)?\s*/i, '');
-    text = text.trim();
+    text = text.replace(/^```(json)?\s*/i, "")
+    text = text.trim()
     // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
       text = text.replaceAll(/[\n"}:`]/g, "")
@@ -426,11 +426,13 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
         })
-        if(jsonKey && withNewLines.startsWith("{")) {
+        if (jsonKey && withNewLines.startsWith("{")) {
           const startBraceIndex = withNewLines.indexOf("{")
           const keyIndex = withNewLines.indexOf(jsonKey)
-          if(keyIndex > startBraceIndex) {
-            withNewLines = withNewLines.slice(0,startBraceIndex+1) + withNewLines.slice(keyIndex)
+          if (keyIndex > startBraceIndex) {
+            withNewLines =
+              withNewLines.slice(0, startBraceIndex + 1) +
+              withNewLines.slice(keyIndex)
           }
         }
         jsonVal = parse(withNewLines.trim())

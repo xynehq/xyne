@@ -34,6 +34,13 @@ import OAuthTab from "@/components/OAuthTab"
 import { LoaderContent } from "@/lib/common"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
+import { z } from "zod"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 
 const logger = console
 
@@ -706,23 +713,13 @@ const ServiceAccountTab = ({
 }) => {
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
-  )
+  ) as
+    | (Connectors & { id?: string; lastSyncedAt?: string | number | Date })
+    | undefined
+
   const [isIngestingMore, setIsIngestingMore] = useState(false)
 
-  if (
-    isIntegrating &&
-    googleSAConnector &&
-    googleSAConnector.status === ConnectorStatus.Connecting
-  ) {
-    return (
-      <CardHeader>
-        <CardTitle>Google Workspace</CardTitle>
-        <CardDescription>Connecting {progress}%</CardDescription>
-        <Progress value={progress} className="p-0 w-[60%]" />
-      </CardHeader>
-    )
-  }
-
+  // Case 1: No Service Account connector is configured yet, and not in the middle of initial SA setup
   if (!googleSAConnector && !isIntegrating) {
     return (
       <Card>
@@ -737,54 +734,89 @@ const ServiceAccountTab = ({
         </CardContent>
       </Card>
     )
-  } else if (googleSAConnector) {
+  }
+
+  // Case 2: A Service Account connector exists OR initial SA setup is in progress
+  if (googleSAConnector || isIntegrating) {
+    const currentStatus =
+      googleSAConnector?.status ??
+      (isIntegrating
+        ? ConnectorStatus.Connecting
+        : ConnectorStatus.NotConnected)
+    const connectorId = googleSAConnector?.id
+    const isConnected = currentStatus === ConnectorStatus.Connected
+    const isActuallyConnecting =
+      isIntegrating || currentStatus === ConnectorStatus.Connecting
+
     return (
       <Card>
         <CardHeader>
           <CardTitle>Google Workspace Service Account</CardTitle>
-          {googleSAConnector.status === ConnectorStatus.Connecting &&
-          !isIngestingMore ? (
+          {isActuallyConnecting && !isIngestingMore ? (
             <>
               <CardDescription>Connecting {progress}%</CardDescription>
               <Progress value={progress} className="p-0 w-[60%]" />
             </>
           ) : (
-            <>
-              <CardDescription>
-                Status: {googleSAConnector.status}
-              </CardDescription>
-            </>
+            <CardDescription>
+              Status: {currentStatus}
+              {googleSAConnector &&
+                googleSAConnector.lastSyncedAt &&
+                currentStatus === ConnectorStatus.Connected &&
+                ` (Last synced: ${new Date(googleSAConnector.lastSyncedAt).toLocaleString()})`}
+            </CardDescription>
           )}
         </CardHeader>
-        {googleSAConnector.status === ConnectorStatus.Connected && (
+        {isConnected && (
           <CardContent>
-            <CardTitle className="text-md mb-1">Ingest More Users</CardTitle>
-            <CardDescription className="mb-3 text-sm">
-              Add more users to service account. Enter comma-separated emails.
-            </CardDescription>
-            <IngestMoreUsersForm
-              connectorId={(googleSAConnector as any).id}
-              onSuccess={() => {
-                refetch()
-              }}
-              setIsIngestingMore={setIsIngestingMore}
-            />
-            {isIngestingMore && (
-              <div className="mt-4">
-                <CardDescription>
-                  Ingesting additional users...{" "}
-                  {progress > 0 && progress < 100 ? `${progress}%` : ""}
-                </CardDescription>
-                {progress > 0 && progress < 100 && (
-                  <Progress value={progress} className="p-0 w-[60%] mt-1" />
-                )}
-              </div>
-            )}
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="ingest-more-users">
+                <AccordionTrigger>
+                  <span className={"text-md font-semibold"}>
+                    Ingest More Users
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <CardDescription className="mb-3 text-sm">
+                    Add more users to this service account. Enter
+                    comma-separated emails.
+                  </CardDescription>
+                  {connectorId ? (
+                    <IngestMoreUsersForm
+                      connectorId={connectorId}
+                      onSuccess={() => {
+                        refetch()
+                      }}
+                      setIsIngestingMore={setIsIngestingMore}
+                    />
+                  ) : (
+                    <p className="text-sm text-destructive">
+                      Error: Connector ID is missing. Cannot ingest users.
+                    </p>
+                  )}
+                  {isIngestingMore && (
+                    <div className="mt-4">
+                      <CardDescription>
+                        Ingesting additional users...{" "}
+                        {progress > 0 && progress < 100 ? `${progress}%` : ""}
+                      </CardDescription>
+                      {progress > 0 && progress < 100 && (
+                        <Progress
+                          value={progress}
+                          className="p-0 w-[60%] mt-1"
+                        />
+                      )}
+                    </div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </CardContent>
         )}
       </Card>
     )
   }
+
   return <LoaderContent />
 }
 
@@ -873,10 +905,8 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       } else {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
       }
-      // setIsIntegratingProvider(!!data.find(v => v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth))
     } else {
       setIsIntegratingSA(false)
-      // setIsIntegratingProvider(false)
       setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
     }
   }, [data, isPending])
@@ -893,7 +923,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
 
       if (serviceAccountConnector) {
         serviceAccountSocket = wsClient.ws.$ws({
-          query: { id: serviceAccountConnector.id }, // externalId
+          query: { id: serviceAccountConnector.id },
         })
         serviceAccountSocket?.addEventListener("open", () => {
           logger.info(
@@ -903,7 +933,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
         serviceAccountSocket?.addEventListener("message", (e) => {
           const data = JSON.parse(e.data)
           const statusJson = JSON.parse(data.message)
-          setProgress(statusJson.progress ?? 0) // Could split to serviceAccountProgress
+          setProgress(statusJson.progress ?? 0)
           setUserStats(statusJson.userStats ?? {})
           setUpateStatus(data.message)
         })
@@ -917,7 +947,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
 
       if (oauthConnector) {
         oauthSocket = wsClient.ws.$ws({
-          query: { id: oauthConnector.id }, // externalId
+          query: { id: oauthConnector.id },
         })
         oauthSocket?.addEventListener("open", () => {
           logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
@@ -925,7 +955,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
         oauthSocket?.addEventListener("message", (e) => {
           const data = JSON.parse(e.data)
           const statusJson = JSON.parse(data.message)
-          setProgress(statusJson.progress ?? 0) // Could split to oauthProgress
+          setProgress(statusJson.progress ?? 0)
           setUserStats(statusJson.userStats ?? {})
           setUpateStatus(data.message)
         })
@@ -1003,8 +1033,12 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     }
   }
 
-  // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
+
+  const hasGoogleConnector = data?.some(
+    (connector: Connectors) => connector.app === Apps.GoogleDrive,
+  )
+
   return (
     <div className="flex w-full h-full">
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
@@ -1051,9 +1085,337 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               }
             />
           )}
+
+          {/* Accordion for Data Management Actions - Render if a Google Connector exists */}
+          {hasGoogleConnector && (
+            <Accordion type="single" collapsible className="w-[400px] mt-6">
+              <AccordionItem value="delete-user-data">
+                <AccordionTrigger>
+                  <span className="text-md font-semibold">
+                    Manage User Data
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <Card className="border-none shadow-none">
+                    {" "}
+                    {/* Optional: remove card styles if accordion provides enough separation */}
+                    <CardHeader className="px-0 pt-4">
+                      <CardTitle className="text-lg">
+                        Delete User Data
+                      </CardTitle>
+                      <CardDescription>
+                        Remove a user's data from specified services based on
+                        email and optional date range.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="px-0 pb-0">
+                      <DeleteUserDataForm
+                        onSuccess={() => {
+                          toast({
+                            title: "Data Deletion Processed",
+                            description:
+                              "Please check server logs for detailed status.",
+                          })
+                        }}
+                      />
+                    </CardContent>
+                  </Card>
+                </AccordionContent>
+              </AccordionItem>
+              {/* Future: Add other data management actions as AccordionItems here */}
+              {/* e.g., <AccordionItem value="anonymize-user-data"> ... </AccordionItem> */}
+            </Accordion>
+          )}
         </div>
       </div>
     </div>
+  )
+}
+
+type DeleteUserDataFormValues = {
+  emailToClear: string
+  startDate?: string
+  endDate?: string
+  // servicesToClear?: string // Will be replaced by individual booleans
+  deleteOnlyIfSoleOwnerInPermissions?: boolean
+  // New boolean fields for services
+  clearDrive?: boolean
+  clearGmail?: boolean
+  clearCalendar?: boolean
+}
+
+const submitDeleteUserDataForm = async (
+  value: DeleteUserDataFormValues,
+  navigate: UseNavigateResult<string>,
+) => {
+  const servicesToClearArray: string[] = []
+  if (value.clearDrive) servicesToClearArray.push("drive")
+  if (value.clearGmail) servicesToClearArray.push("gmail")
+  if (value.clearCalendar) servicesToClearArray.push("calendar")
+  // Potentially add other services like 'userProfile' or 'attachments' here if needed
+
+  const payload = {
+    emailToClear: value.emailToClear,
+    options: {
+      ...(value.startDate &&
+        value.startDate.trim() !== "" && { startDate: value.startDate }),
+      ...(value.endDate &&
+        value.endDate.trim() !== "" && { endDate: value.endDate }),
+      ...(servicesToClearArray.length > 0 && {
+        servicesToClear: servicesToClearArray,
+      }),
+      ...(value.deleteOnlyIfSoleOwnerInPermissions !== undefined && {
+        deleteOnlyIfSoleOwnerInPermissions:
+          value.deleteOnlyIfSoleOwnerInPermissions,
+      }),
+    },
+  }
+
+  // @ts-ignore // TODO: Fix type for api.admin.user.delete_data.$post
+  const response = await api.admin.user.delete_data.$post({ json: payload })
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to initiate data deletion: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
+const DeleteUserDataForm = ({
+  onSuccess,
+}: {
+  onSuccess: () => void
+}) => {
+  const { toast } = useToast()
+  const navigate = useNavigate()
+
+  const form = useForm<DeleteUserDataFormValues>({
+    defaultValues: {
+      emailToClear: "",
+      startDate: "",
+      endDate: "",
+      // servicesToClear: "drive,gmail,calendar", // Removed
+      deleteOnlyIfSoleOwnerInPermissions: true,
+      clearDrive: true, // Default to true
+      clearGmail: true, // Default to true
+      clearCalendar: true, // Default to true
+    },
+    onSubmit: async ({ value }) => {
+      if (!value.emailToClear || !value.emailToClear.includes("@")) {
+        toast({
+          title: "Invalid Email",
+          description: "Please enter a valid email address to clear.",
+          variant: "destructive",
+        })
+        return
+      }
+      // Check if at least one service is selected for deletion
+      if (!value.clearDrive && !value.clearGmail && !value.clearCalendar) {
+        toast({
+          title: "No Service Selected",
+          description: "Please select at least one service to clear data from.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      try {
+        if (
+          value.endDate &&
+          value.endDate.trim() !== "" &&
+          (!value.startDate || value.startDate.trim() === "")
+        ) {
+          toast({
+            title: "Invalid date range",
+            description: "If End Date is specified, Start Date is required.",
+            variant: "destructive",
+          })
+          return
+        }
+        if (
+          value.startDate &&
+          value.startDate.trim() !== "" &&
+          value.endDate &&
+          value.endDate.trim() !== "" &&
+          new Date(value.startDate) > new Date(value.endDate)
+        ) {
+          toast({
+            title: "Invalid date range",
+            description: "Start Date must not be after End Date.",
+            variant: "destructive",
+          })
+          return
+        }
+
+        await submitDeleteUserDataForm(value, navigate)
+        toast({
+          title: "User Data Deletion Initiated",
+          description:
+            "The process to delete the user's data has started. Check server logs for progress.",
+        })
+        onSuccess()
+        form.reset()
+      } catch (error) {
+        toast({
+          title: "Could Not Start Data Deletion",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: "destructive",
+        })
+      }
+    },
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        form.handleSubmit()
+      }}
+      className="grid w-full max-w-sm items-center gap-1.5 mt-4"
+    >
+      <Label htmlFor="delete-email">Email to Clear</Label>
+      <form.Field
+        name="emailToClear"
+        validators={{
+          onChange: ({ value }) =>
+            !value || !value.includes("@")
+              ? "A valid email is required"
+              : undefined,
+        }}
+        children={(field) => (
+          <>
+            <Input
+              id="delete-email"
+              type="email"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="user@example.com"
+            />
+            {field.state.meta.errors.length ? (
+              <p className="text-red-600 text-sm">
+                {field.state.meta.errors.join(", ")}
+              </p>
+            ) : null}
+          </>
+        )}
+      />
+
+      <div className="mt-4">
+        <Label>Date Range (Optional)</Label>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="delete-start-date">Start Date</Label>
+            <form.Field
+              name="startDate"
+              children={(field) => (
+                <Input
+                  id="delete-start-date"
+                  type="date"
+                  value={field.state.value ?? ""}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              )}
+            />
+          </div>
+          <div>
+            <Label htmlFor="delete-end-date">End Date</Label>
+            <form.Field
+              name="endDate"
+              children={(field) => (
+                <Input
+                  id="delete-end-date"
+                  type="date"
+                  value={field.state.value ?? ""}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              )}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Label>Services to Clear Data From</Label>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="clearDrive"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  id="clear-drive"
+                  checked={!!field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label htmlFor="clear-drive">Drive & Contacts</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="clearGmail"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  id="clear-gmail"
+                  checked={!!field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label htmlFor="clear-gmail">Gmail</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="clearCalendar"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  id="clear-calendar"
+                  checked={!!field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label htmlFor="clear-calendar">Calendar</Label>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center space-x-2 mt-4">
+        <form.Field
+          name="deleteOnlyIfSoleOwnerInPermissions"
+          children={(field) => (
+            <input
+              type="checkbox"
+              id="delete-sole-owner"
+              checked={field.state.value ?? true}
+              onChange={(e) => field.handleChange(e.target.checked)}
+              className="h-4 w-4"
+            />
+          )}
+        />
+        <Label htmlFor="delete-sole-owner">
+          Delete only if sole owner in permissions (default: true)
+        </Label>
+      </div>
+
+      <Button type="submit" disabled={form.state.isSubmitting} className="mt-4">
+        {form.state.isSubmitting ? (
+          <LoadingSpinner className="mr-2 h-4 w-4" />
+        ) : null}
+        Delete User Data
+      </Button>
+    </form>
   )
 }
 

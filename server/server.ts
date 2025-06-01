@@ -25,6 +25,7 @@ import {
   searchSchema,
   updateConnectorStatusSchema,
   serviceAccountIngestMoreSchema,
+  deleteUserDataSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -36,6 +37,7 @@ import {
   StartOAuth,
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
+  AdminDeleteUserData,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -238,6 +240,11 @@ export const AppRoutes = app
     "/oauth/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteOauthConnector,
+  )
+  .post(
+    "/user/delete_data",
+    zValidator("json", deleteUserDataSchema),
+    AdminDeleteUserData,
   )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
@@ -442,7 +449,6 @@ app.get("/metrics", async (c) => {
     return c.text("Error generating metrics", 500)
   }
 })
-
 
 init().catch((error) => {
   throw new InitialisationError({ cause: error })

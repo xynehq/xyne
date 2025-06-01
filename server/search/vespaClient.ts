@@ -605,8 +605,8 @@ class VespaClient {
   async deleteDocument(
     options: VespaConfigValues & { docId: string },
   ): Promise<void> {
-    const { docId, namespace, schema } = options
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
+    const { docId, namespace, schema } = options // Extract namespace and schema again
+    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}` // Revert to original URL construction
     try {
       const response = await this.fetchWithRetry(url, {
         method: "DELETE",

@@ -32,6 +32,7 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
+  | typeof chatAttachment
 
 // not using @ because of vite of frontend
 export enum Apps {

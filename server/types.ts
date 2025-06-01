@@ -117,6 +117,32 @@ export const serviceAccountIngestMoreSchema = z.object({
   insertCalendar: z.boolean(),
 })
 
+export const deleteUserDataSchema = z.object({
+  emailToClear: z
+    .string()
+    .email({ message: "Invalid email address to clear." }),
+  options: z
+    .object({
+      startDate: z
+        .string()
+        .regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+          message: "Start date must be in YYYY-MM-DD format or empty",
+        })
+        .optional(),
+      endDate: z
+        .string()
+        .regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+          message: "End date must be in YYYY-MM-DD format or empty",
+        })
+        .optional(),
+      servicesToClear: z.array(z.string()).optional(), // e.g., ["drive", "gmail", "calendar"]
+      deleteOnlyIfSoleOwnerInPermissions: z.boolean().optional(),
+    })
+    .optional(),
+})
+
+export type DeleteUserDataPayload = z.infer<typeof deleteUserDataSchema>
+
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
 
 // Define an enum for connection types
