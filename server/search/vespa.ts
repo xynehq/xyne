@@ -269,8 +269,12 @@ type YqlProfile = {
   yql: string
 }
 
-const handleAppsNotInYql = (app:Apps | null) => {
+const handleAppsNotInYql = (app:Apps | null,includedApp:Apps[]) => {
   Logger.error(`${app} is not supported in YQL queries yet`)
+  throw new ErrorPerformingSearch({
+    message: `${app} is not supported in YQL queries yet`,
+    sources: includedApp.join(", "),
+  })
 }
 
 // TODO: it seems the owner part is complicating things
@@ -467,7 +471,7 @@ export const HybridDefaultProfile = (
         appQueries.push(buildSlackYQL())
         break
       default:
-        handleAppsNotInYql(includedApp)
+        handleAppsNotInYql(includedApp,includedApps)
         break
     }
   }
