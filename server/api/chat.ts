@@ -1533,8 +1533,8 @@ async function* processResultsForMetadata(
   app: Apps,
   entity: any,
   chunksCount: number | undefined,
+  userRequestsReasoning: boolean,
   span?: Span,
-  userRequestsReasoning?: boolean,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -1709,8 +1709,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
@@ -1784,8 +1784,8 @@ async function* generateMetadataQueryAnswer(
       app as Apps,
       entity,
       maxSummaryCount,
-      span,
       userRequestsReasoning,
+      span,
     )
     return
   } else if (
@@ -1872,8 +1872,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
