@@ -473,12 +473,12 @@ async function* processIterator(
       if (reasoning) {
         if (thinking && !chunk.text.includes(EndThinkingToken)) {
           thinking += chunk.text
-          yield* checkAndYieldCitations(
-            thinking,
-            yieldedCitations,
-            results,
-            previousResultsLength,
-          )
+          // yield* checkAndYieldCitations(
+          //   thinking,
+          //   yieldedCitations,
+          //   results,
+          //   previousResultsLength,
+          // )
           yield { text: chunk.text, reasoning }
         } else {
           // first time
@@ -496,12 +496,12 @@ async function* processIterator(
             } else {
               thinking += token
             }
-            yield* checkAndYieldCitations(
-              thinking,
-              yieldedCitations,
-              results,
-              previousResultsLength,
-            )
+            // yield* checkAndYieldCitations(
+            //   thinking,
+            //   yieldedCitations,
+            //   results,
+            //   previousResultsLength,
+            // )
             yield { text: token, reasoning }
           }
         }
@@ -530,12 +530,12 @@ async function* processIterator(
               const newText = parsed.answer.slice(currentAnswer.length)
               yield { text: newText }
             }
-            yield* checkAndYieldCitations(
-              parsed.answer,
-              yieldedCitations,
-              results,
-              previousResultsLength,
-            )
+            // yield* checkAndYieldCitations(
+            //   parsed.answer,
+            //   yieldedCitations,
+            //   results,
+            //   previousResultsLength,
+            // )
             currentAnswer = parsed.answer
           }
         } catch (e) {

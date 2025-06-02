@@ -148,7 +148,7 @@ function AgentComponent() {
   const [editingAgent, setEditingAgent] = useState<SelectPublicAgent | null>(null);
   const [selectedChatAgentExternalId, setSelectedChatAgentExternalId] = useState<string | null>(null);
   const [initialChatAgent, setInitialChatAgent] = useState<SelectPublicAgent | null>(null);
-  const [isLoadingInitialAgent, setIsLoadingInitialAgent] = useState(false);
+  const [, setIsLoadingInitialAgent] = useState(false);
 
   const [selectedModel, setSelectedModel] = useState("Auto"); // Default model for test chat if not specified by saved agent
 
