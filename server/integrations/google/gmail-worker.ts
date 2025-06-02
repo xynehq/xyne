@@ -205,7 +205,7 @@ export const handleGmailIngestion = async (
               // Increment counters only on success
               insertedMessagesInBatch++
               insertedPdfAttachmentsInBatch += insertedPdfCount
-              totalIngestedMails.inc({status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
+              totalIngestedMails.inc({mime_type: message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
             }
           } catch (error) {
             Logger.error(
