@@ -1007,24 +1007,7 @@ async function* generateAnswerFromGivenContext(
   )
 
   let previousResultsLength = 0
-  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan)
-
-  // Special case fora single Whole Spreadsheet
-  if (fileIds?.length === 1 && !results?.root?.children) {
-    const fileId = fileIds[0]
-    const result = await getDocumentOrNull(fileSchema, `${fileIds[0]}_0`)
-    if (result) {
-      //@ts-ignore
-      const metadata = JSON.parse(result?.fields?.metadata)
-      const totalSheets = metadata.totalSheets
-      const sheetIds = []
-      for (let i = 0; i < totalSheets; i++) {
-        sheetIds.push(`${fileId}_${i}`)
-      }
-      const sheetsResults = await GetDocumentsByDocIds(sheetIds)
-      results.root.children = sheetsResults.root.children
-    }
-  }
+  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
   if (!results.root.children) {
     results.root.children = []
   }
@@ -1123,7 +1106,7 @@ async function* generateAnswerFromGivenContext(
     )
 
     const iterator = baselineRAGJsonStream(
-      input,
+      builtUserQuery,
       userCtx,
       initialContext,
       {
