@@ -1126,6 +1126,7 @@ async function* generateAnswerFromGivenContext(
     if (answer) {
       searchVespaSpan?.setAttribute("answer_found", true)
       searchVespaSpan?.end()
+      generateAnswerSpan?.end()
       return
     } else if (
       // If no answer found, exit and yield nothing related to selected context found
@@ -1137,6 +1138,7 @@ async function* generateAnswerFromGivenContext(
       }
       noAnswerSpan?.end()
       searchVespaSpan?.end()
+      generateAnswerSpan?.end()
       return
     }
     if (config.isReasoning && userRequestsReasoning) {
