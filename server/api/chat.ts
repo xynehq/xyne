@@ -70,7 +70,6 @@ import {
   getItems,
   GetDocumentsByDocIds,
   getDocumentOrNull,
-  searchVespaThroughAgent,
   searchVespaAgent,
   
 } from "@/search/vespa"

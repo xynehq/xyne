@@ -81,55 +81,74 @@ schema transcript {
   fieldset autocomplete { fields: title, fileName, uploadedBy }
   fieldset search       { fields: title, description, chunks, fileName, uploadedBy }
 
-  rank-profile base_ranking {
-
-    function matchedFieldCount() {
-      expression: matches(title) + matches(description) + matches(chunks)
-    }
-
-    function combined_bm25() {
-      expression: bm25(title) + bm25(description) + bm25(chunks)
-    }
-
-    function combined_nativeRank() {
-      expression: (nativeRank(title) + nativeRank(description) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
-    }
-  }
-
-  rank-profile default inherits base_ranking {
-
+    rank-profile initial {
+    # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e)                 tensor<bfloat16>(v[DIMS])
-      query(alpha)             double: 0.5
-      query(recency_decay_rate) double: 0.1
+      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
+      query(alpha) double  # Alpha parameter for hybrid weight
+      query(recency_decay_rate) double
     }
 
-   
+    constants {
+      THREE_MONTHS_IN_SECONDS: 7890000
+      ONE_YEAR_IN_SECONDS: 31536000
+      MAX_DOC_DECAY: 0.5
+    }
+
+    # custom normalize function
     function scale(val) {
-      expression: 2 * atan(val / 4) / 3.14159
+      expression: 2*atan(val/4)/(3.14159)
     }
 
     function document_age() {
-      expression: max( if(isNan(attribute(updatedAt)) == 1, 7890000, now() - (attribute(updatedAt) / 1000)) / 31536000, 0 )
+      # Default document age assuming to 3 months when no updatedAt timestamp is present
+      expression: max(if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS, now() - (attribute(updatedAt) / 1000)) / ONE_YEAR_IN_SECONDS, 0)
     }
 
+    # Document score decays min to 0.5
     function doc_recency() {
-      expression: max( 1 / (1 + query(recency_decay_rate) * sqrt(document_age)), 0.5 )
+        expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
     }
 
     function vector_score() {
       expression: closeness(field, chunk_embeddings)
     }
 
-    function duration_score() {
-      expression: if(attribute(duration) > 0, log10(attribute(duration) + 1), 0)
+    function combined_bm25() {
+      expression: bm25(title) + bm25(chunks)
     }
 
+    function matchedFieldCount() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matches(title) + matches(chunks)
+      }
+    }
 
-    first-phase  { expression: query(alpha) * vector_score + (1 - query(alpha)) * combined_nativeRank }
-    global-phase { 
-      expression: (query(alpha) * vector_score + (1 - query(alpha)) * combined_nativeRank) * doc_recency
-      rerank-count: 1000 
+    function combined_nativeRank() {
+      expression: (nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+    }
+
+    function chunk_scores() {
+      expression: elementwise(bm25(chunks), x, double)
+    }
+  }
+
+ 
+  rank-profile default_native inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        ) * doc_recency
+      }
+      rerank-count: 1000
     }
 
     match-features {
@@ -137,73 +156,182 @@ schema transcript {
       vector_score
       combined_nativeRank
       nativeRank(title)
-      nativeRank(description)
       nativeRank(chunks)
+      chunk_scores
       doc_recency
-      duration_score
     }
   }
 
-  # Alias so "default_native" always resolves
-  rank-profile default_native inherits default { }
+  # New rank profile designed for sorting: implements recency binning with hybrid scoring within bins.
+  rank-profile global_sorted inherits initial {
+    # No global-phase section to allow sorting by first-phase score directly.
 
-  rank-profile recent_uploads inherits base_ranking {
-
-    inputs {
-      query(e)             tensor<bfloat16>(v[DIMS])
-      query(alpha)         double: 0.5
-      query(bin_size_days) double: 1.0
+    # Query inputs specific to this rank profile
+    inputs { # query(e) and query(alpha) are inherited from 'initial'
+      query(bin_size_days_gs) double: 1.0 # Default bin size is 1 day. Send with query: ?ranking.features.query(bin_size_days_gs)=7 for weekly bins
     }
 
-    function document_age_days() {
-      expression: max(0.0, if(isNan(attribute(createdAt)) == 1, 90.0, (now() - (attribute(createdAt) / 1000)) / 86400))
+    # Constants for recency binning within global_sorted
+    constants {
+      ONE_DAY_IN_SECONDS_GS: 86400.0         # 60 * 60 * 24
+      RECENCY_BIN_MULTIPLIER_GS: 10000.0     # Must be > max value of normalized_hybrid_relevance_gs. Adjust if needed.
+      MAX_SCORE_BASE_GS: 1000000000.0      # Large base score to ensure positive scores and separation.
     }
 
-    function recency_bin_index() {
-      expression: floor(document_age_days / query(bin_size_days))
+    # Helper Functions for recency binning specific to global_sorted
+
+    # Calculate document age in days.
+    # Uses THREE_MONTHS_IN_SECONDS from 'initial' profile as default age if updatedAt is missing.
+    function document_age_days_gs() {
+      expression: max(0.0, if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS / ONE_DAY_IN_SECONDS_GS, (now() - (attribute(updatedAt) / 1000)) / ONE_DAY_IN_SECONDS_GS))
     }
 
-    function recency_bin_score() {
-      expression: 1000000000 - (recency_bin_index * 10000)
+    # Assign document to a recency bin index (0=today/newest, 1=yesterday, etc.)
+    function recency_bin_index_gs() {
+      expression: floor(document_age_days_gs() / query(bin_size_days_gs))
     }
 
-    function vector_score() {
-      expression: closeness(field, chunk_embeddings)
+    # Calculate a large score based purely on the recency bin.
+    # Newer bins (lower index) get significantly higher scores.
+    function recency_bin_score_gs() {
+      expression: MAX_SCORE_BASE_GS - (recency_bin_index_gs() * RECENCY_BIN_MULTIPLIER_GS)
     }
 
-    function hybrid_relevance_score() {
-      expression: query(alpha) * vector_score + (1 - query(alpha)) * combined_nativeRank
+    # Calculate a hybrid relevance score, combining vector and text relevance.
+    # vector_score() and combined_nativeRank are inherited from 'initial'.
+    # query(alpha) is inherited from 'initial'.
+    function hybrid_relevance_score_gs() {
+      expression: (query(alpha) * vector_score()) + ((1 - query(alpha)) * combined_nativeRank)
     }
 
-    function normalized_hybrid_relevance() {
-      expression: max(0.0, min(hybrid_relevance_score / 10.0, 9999))
+    # Calculate a normalized version of the hybrid relevance score.
+    # The divisor (e.g., 10.0) should be tuned based on typical combined_nativeRank values
+    # to ensure this score component is smaller than RECENCY_BIN_MULTIPLIER_GS.
+    function normalized_hybrid_relevance_gs() {
+      expression: max(0.0, min(hybrid_relevance_score_gs() / 10.0, RECENCY_BIN_MULTIPLIER_GS - 1.0))
     }
 
-    first-phase { expression: recency_bin_score + normalized_hybrid_relevance }
+    # --- Ranking Expression ---
+    first-phase {
+      # Final score = Huge score from recency bin + smaller normalized hybrid relevance score.
+      # This guarantees sorting by recency bin first, then by hybrid relevance within the bin.
+      expression: recency_bin_score_gs() + normalized_hybrid_relevance_gs()
+    }
+
+    match-features {
+      query(alpha)
+      vector_score
+      matchedFieldCount
+      combined_nativeRank        
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      document_age_days_gs
+      query(bin_size_days_gs)  
+      recency_bin_index_gs
+      recency_bin_score_gs
+      hybrid_relevance_score_gs 
+      normalized_hybrid_relevance_gs 
+    }
+  }
+
+  # will be use for single schema query
+  rank-profile default_bm25 inherits initial {
+
+    first-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)
+        )
+      }
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) +
+          ((1 - query(alpha)) * scale(combined_bm25))
+        )
+      }
+      rerank-count: 1000
+    }
+
+     match-features {
+      vector_score
+      bm25(chunks)
+      bm25(title)
+      scale(combined_bm25)
+      chunk_scores
+    }
+  }
+
+  # change here for ai queries accordingly
+  rank-profile default_ai inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        )
+      }
+      rerank-count: 1000
+    }
 
     match-features {
       vector_score
       combined_nativeRank
-      document_age_days
-      recency_bin_index
-      hybrid_relevance_score
-      normalized_hybrid_relevance
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
     }
   }
 
-  rank-profile by_uploader inherits base_ranking {
-    first-phase { expression: if(matches(uploadedBy), 100 + combined_bm25, combined_bm25) }
-    match-features { combined_bm25 matches(uploadedBy) }
+  rank-profile default_random inherits initial {
+    first-phase {
+        expression: random.match
+    }
+    match-features {
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
+    }
   }
-
-  rank-profile autocomplete {
-    first-phase { expression: bm25(title_fuzzy) + if(matches(uploadedBy), 50, 0) }
-    match-features { bm25(title_fuzzy) matches(uploadedBy) }
-  }
-
-  rank-profile unranked { first-phase { expression: 1 } }
 
   document-summary default {
-    summary chunks_summary { bolding: on  source: chunks }
+    summary chunks_summary {
+      bolding: on
+      source: chunks
+    }
+  }
+
+  document-summary autocomplete {
+    summary title {
+        source: title
+    }
+    summary app {
+        source: app
+    }
+    summary docId {
+        source: docId
+    }
+  }
+
+  # Autocomplete rank profile for fuzzy prefix search
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(title_fuzzy)
+    }
+    match-features {
+      bm25(title_fuzzy)
+    }
   }
 }

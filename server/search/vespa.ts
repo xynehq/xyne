@@ -561,7 +561,10 @@ export const HybridDefaultProfileForAgent = (
         case Apps.Transcript:
           appQueries.push(buildTranscriptYQL())
           sources.push(transcriptSchema)
-          break;
+          break
+        default:
+          Logger.warn(`Unsupported app: ${allowedApp}. Skipping query construction.`)
+          break
       }
     }
   } 
@@ -569,7 +572,6 @@ export const HybridDefaultProfileForAgent = (
   const combinedQuery = appQueries.join("\nor\n")
   const exclusionCondition = buildExclusionCondition()
   const sourcesString = sources.join(", ")
-  console.log("sourcestring", sourcesString)
   return {
     profile: profile,
     yql: `
@@ -893,30 +895,6 @@ export const searchVespaInFiles = async (
       sources: AllSources,
     })
   }
-}
-
-export const searchVespaThroughAgent = async (
-  query: string,
-  email: string,
-  apps: Apps[] | null,
-  {
-    alpha = 0.5,
-    limit = config.page,
-    offset = 0,
-    rankProfile = SearchModes.NativeRank,
-    requestDebug = false,
-    span = null,
-    maxHits = 400,
-  }: Partial<VespaQueryConfig>,
-): Promise<VespaSearchResponse> => {
-  if (!query?.trim()) {
-    throw new Error("Query cannot be empty")
-  }
-
-  if (!email?.trim()) {
-    throw new Error("Email cannot be empty")
-  }
-  return {} as VespaSearchResponse
 }
 
 export const searchVespaAgent = async (
