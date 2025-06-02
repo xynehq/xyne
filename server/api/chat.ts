@@ -1074,7 +1074,7 @@ async function* generateAnswerFromGivenContext(
     })
 
     const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
-    searchVespaSpan?.setAttribute("parsed_message", JSON.stringify(message))
+    searchVespaSpan?.setAttribute("parsed_message", message)
     searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
     searchVespaSpan?.setAttribute("limit", fileIds?.length)
     searchVespaSpan?.setAttribute(
@@ -2124,7 +2124,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   passedSpan?.setAttribute("email", email)
-  passedSpan?.setAttribute("message", JSON.stringify(message))
+  passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
   passedSpan?.setAttribute("fileIds_count", fileIds?.length)
