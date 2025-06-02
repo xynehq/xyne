@@ -2409,6 +2409,11 @@ export const MessageApi = async (c: Context) => {
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
 
             const understandSpan = streamSpan.startSpan("understand_message")
+            understandSpan?.setAttribute(
+              "totalValidFileIdsFromLinkCount",
+              totalValidFileIdsFromLinkCount,
+            )
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -3312,6 +3317,11 @@ export const MessageRetryApi = async (c: Context) => {
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
 
             const understandSpan = streamSpan.startSpan("understand_message")
+            understandSpan?.setAttribute(
+              "totalValidFileIdsFromLinkCount",
+              totalValidFileIdsFromLinkCount,
+            )
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
