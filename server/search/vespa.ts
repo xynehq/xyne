@@ -269,6 +269,10 @@ type YqlProfile = {
   yql: string
 }
 
+const handleAppsNotInYql = (app:Apps | null) => {
+  Logger.error(`${app} is not supported in YQL queries yet`)
+}
+
 // TODO: it seems the owner part is complicating things
 export const HybridDefaultProfile = (
   hits: number,
@@ -292,6 +296,7 @@ export const HybridDefaultProfile = (
     return conditions.join(" and ")
   }
 
+  // ToDo we have to handle this filter as we are applying multiple times app filtering
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
     return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
@@ -435,13 +440,8 @@ export const HybridDefaultProfile = (
   }
 
   // Start with all apps and filter out excluded ones
-  const allApps = [
-    Apps.GoogleWorkspace,
-    Apps.Gmail,
-    Apps.GoogleDrive,
-    Apps.GoogleCalendar,
-    Apps.Slack,
-  ]
+  const allApps = Object.values(Apps)
+
   const includedApps = allApps.filter(
     (appItem) => !excludedApps?.includes(appItem),
   )
@@ -465,6 +465,9 @@ export const HybridDefaultProfile = (
         break
       case Apps.Slack:
         appQueries.push(buildSlackYQL())
+        break
+      default:
+        handleAppsNotInYql(includedApp)
         break
     }
   }
