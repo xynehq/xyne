@@ -1357,20 +1357,12 @@ const insertFilesForUser = async (
        // End timer for PDF file extraction duration
       pdfFileExtractionDuration()
       
-      const fileTypeTracker = new Map<string, boolean>();
-      // Metrics for ingestion duration of pdfs in google drive
-      const fileType = "GOOGLE_DRIVE_PDF";
+       const fileType = "GOOGLE_DRIVE_PDF";
       const totalTimeToIngestPDF = ingestionDuration.startTimer({file_type:fileType, mime_type:"google_pdf", email:userEmail})
       for (const doc of pdfs) {
         try{
         processedFiles += 1
         await insertWithRetry(doc, fileSchema)
-        if(!fileTypeTracker.has(fileType)){
-        fileTypeTracker.set(fileType, true)
-        totalIngestedFiles.inc({mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:fileType},1)
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        Logger.info(`Ingested first file of type ${fileType}`)
-        }
         totalIngestedFiles.inc({mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:fileType})
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
         }catch(error){
@@ -1429,13 +1421,6 @@ const insertFilesForUser = async (
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
           console.log(`Mime type: `,doc.mimeType)
-          if(!fileTypeTracker.has(fileType)) {
-            fileTypeTracker.set(fileType, true)
-            totalIngestedFiles.inc({mime_type:fileType=="GOOGLE_DRIVE_FILE"?"application/vnd.google-apps.file":doc.mimeType??"", status:"SUCCESS", email:userEmail, file_type:fileType }, 1)
-            // introducing a 3 second delay so that prometheus can scrape the initial value for each type of new file it encounters
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            Logger.info(`Ingested first file of type ${fileType}`)
-          }
           totalIngestedFiles.inc({mime_type:fileType=="GOOGLE_DRIVE_FILE"?"application/vnd.google-apps.file":doc.mimeType??"", status:"SUCCESS", email:userEmail, file_type:fileType })
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
