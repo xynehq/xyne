@@ -146,6 +146,8 @@ export default {
   chatHistoryPageSize: 21,
   maxDefaultSummary: 6,
   chatPageSize: 20, // default page size for ai search
+  maxGoogleDriveSummary: 50,
+  maxUserRequestCount: 50,
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,

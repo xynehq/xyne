@@ -15,7 +15,7 @@ import {
   type Mail,
   type MailAttachment,
 } from "@/search/types"
-import { ifDocumentsExist, insert } from "@/search/vespa"
+import { ifDocumentsExist, ifMailDocumentsExist, insert } from "@/search/vespa"
 import {
   MessageTypes,
   Subsystem,
@@ -176,16 +176,8 @@ export const handleGmailIngestion = async (
       let insertedMessagesInBatch = 0 // Counter for successful messages
       let insertedPdfAttachmentsInBatch = 0 // Counter for successful PDFs in this batch
 
-      const messageIds = messageBatch.map((msg) => msg.id!)
-      const existenceMap = await ifDocumentsExist(messageIds)
-
       let batchRequests = messageBatch.map((message) =>
         limit(async () => {
-          const messageId = message.id!
-          if (existenceMap[messageId]) {
-            insertedMessagesInBatch++ // Count as "processed" since it exists
-            return
-          }
           let msgResp
           try {
             msgResp = await retryWithBackoff(
@@ -201,17 +193,20 @@ export const handleGmailIngestion = async (
               client,
             )
             // Call modified parseMail to get data and PDF count
-            const { mailData, insertedPdfCount } = await parseMail(
+            const { mailData, insertedPdfCount, exist } = await parseMail(
               msgResp.data,
               gmail,
               client,
-              email
+              email,
             )
-            await insert(mailData, mailSchema)
-            // Increment counters only on success
-            insertedMessagesInBatch++
-            insertedPdfAttachmentsInBatch += insertedPdfCount
-            totalIngestedMails.inc({status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
+
+            if (!exist) {
+              await insert(mailData, mailSchema)
+              // Increment counters only on success
+              insertedMessagesInBatch++
+              insertedPdfAttachmentsInBatch += insertedPdfCount
+              totalIngestedMails.inc({status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
+            }
           } catch (error) {
             Logger.error(
               error,
@@ -292,8 +287,8 @@ export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   client: GoogleClient,
-  userEmail: string
-): Promise<{ mailData: Mail; insertedPdfCount: number }> => {
+  userEmail: string,
+): Promise<{ mailData: Mail; insertedPdfCount: number; exist: boolean }> => {
   const messageId = email.id
   const threadId = email.threadId
   let insertedPdfCount = 0
@@ -325,8 +320,22 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-
-  // Handle timestamp from Date header if available
+  const mailId = getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  let exist = false
+  if (mailId) {
+    try {
+        const res = await ifMailDocumentsExist([mailId])
+        if (res[mailId]?.exists) {
+           exist = true
+          }
+        } catch (error) {
+          Logger.warn(
+            error,
+            `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`
+          )
+          exist = false
+        }
+      }
   const dateHeader = getHeader("Date")
   if (dateHeader) {
     const date = new Date(dateHeader)
@@ -357,7 +366,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload) {
+  if (payload && !exist) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
@@ -422,6 +431,7 @@ export const parseMail = async (
   const emailData: Mail = {
     docId: messageId,
     threadId: threadId,
+    mailId: mailId,
     subject: subject,
     chunks: chunks,
     timestamp: timestamp,
@@ -438,7 +448,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return { mailData: emailData, insertedPdfCount }
+  return { mailData: emailData, insertedPdfCount, exist }
 }
 
 const getBody = (payload: any): string => {
