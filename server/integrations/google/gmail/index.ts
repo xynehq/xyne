@@ -103,7 +103,7 @@ export const handleGmailIngestion = async (
             if (!exist) {
               await insert(mailData, mailSchema)
               
-            totalIngestedMails.inc({mime_type:message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"OAUTH_ACCOUNT"}, 1)
+            totalIngestedMails.inc({mime_type:msgResp.data.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"OAUTH_ACCOUNT"}, 1)
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {

@@ -4,14 +4,14 @@ import { Counter, Histogram, Summary } from "prom-client";
 export const appRequest = new Counter({
     name: "app_request_count",
     help: "Number of request sent to server",
-    labelNames: ["app_endpoint", "app_request_time","app_request_process_status"]
+    labelNames: ["app_endpoint","app_request_process_status"]
 })
 metricRegister.registerMetric(appRequest)
 
 export const appResponse = new Counter({
     name: "app_response_count",
     help:"Number of response sent",
-    labelNames: ["app_endpoint", "app_response_time", "app_response_status"]
+    labelNames: ["app_endpoint", "app_response_status"]
 })
 
 metricRegister.registerMetric(appResponse)
