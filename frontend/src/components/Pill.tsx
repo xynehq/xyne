@@ -38,7 +38,7 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
 
   let displayIcon: React.ReactNode = null
 
-  if (newRef.entity === "OtherContacts" && newRef.photoLink) {
+  if ((newRef.entity === "OtherContacts" || newRef.entity === "Contacts") && newRef.photoLink) {
     displayIcon = (
       <img
         src={newRef.photoLink}
