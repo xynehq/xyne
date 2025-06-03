@@ -37,8 +37,8 @@ const Index = () => {
     return storedValue ? JSON.parse(storedValue) : false
   })
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE)
-    return storedValue ? JSON.parse(storedValue) : false
+    const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
+    return storedValue ? JSON.parse(storedValue) : true
   })
 
   useEffect(() => {

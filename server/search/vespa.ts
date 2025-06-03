@@ -731,9 +731,10 @@ export const GetDocument = async (
 
 export const GetDocumentsByDocIds = async (
   docIds: string[],
+  generateAnswerSpan: Span,
 ): Promise<VespaSearchResponse> => {
   try {
-    const options = { namespace: NAMESPACE, docIds }
+    const options = { namespace: NAMESPACE, docIds, generateAnswerSpan }
     return vespa.getDocumentsByOnlyDocIds(options)
   } catch (error) {
     Logger.error(error, `Error fetching document docIds: ${docIds}`)
