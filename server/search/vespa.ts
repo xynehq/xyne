@@ -47,6 +47,9 @@ import { getTracer, type Span, type Tracer } from "@/tracer"
 import crypto from "crypto"
 import VespaClient from "@/search/vespaClient"
 import pLimit from "p-limit"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
+import { AuthType } from "@/shared/types"
+import { db } from "@/db/client"
 const vespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -178,7 +181,7 @@ const AllSources = [
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
-  // chatUserSchema,
+  chatUserSchema,
   chatMessageSchema,
 ].join(", ")
 
@@ -266,6 +269,14 @@ type YqlProfile = {
   yql: string
 }
 
+const handleAppsNotInYql = (app:Apps | null,includedApp:Apps[]) => {
+  Logger.error(`${app} is not supported in YQL queries yet`)
+  throw new ErrorPerformingSearch({
+    message: `${app} is not supported in YQL queries yet`,
+    sources: includedApp.join(", "),
+  })
+}
+
 // TODO: it seems the owner part is complicating things
 export const HybridDefaultProfile = (
   hits: number,
@@ -275,109 +286,207 @@ export const HybridDefaultProfile = (
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
   notInMailLabels?: string[],
+  excludedApps?: Apps[],
 ): YqlProfile => {
-  let hasAppOrEntity = !!(app || entity)
-  let fileTimestamp = ""
-  let mailTimestamp = ""
-  let userTimestamp = ""
-  let eventTimestamp = ""
-
-  // Commenting this out to allow searching by either "from" or "to" fields independently.
-  // if (timestampRange && !timestampRange.from && !timestampRange.to) {
-  //   throw new Error("Invalid timestamp range")
-  // }
-
-  let fileTimestampConditions: string[] = []
-  let mailTimestampConditions: string[] = []
-  let userTimestampConditions: string[] = []
-  let eventTimestampConditions: string[] = []
-
-  if (timestampRange && timestampRange.from) {
-    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
-    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
-    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
-    eventTimestampConditions.push(`startTime >= ${timestampRange.from}`) // Using startTime for events
-  }
-  if (timestampRange && timestampRange.to) {
-    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
-    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
-    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
-    eventTimestampConditions.push(`startTime <= ${timestampRange.to}`)
+  // Helper function to build timestamp conditions
+  const buildTimestampConditions = (fromField: string, toField: string) => {
+    const conditions: string[] = []
+    if (timestampRange?.from) {
+      conditions.push(`${fromField} >= ${timestampRange.from}`)
+    }
+    if (timestampRange?.to) {
+      conditions.push(`${toField} <= ${timestampRange.to}`)
+    }
+    return conditions.join(" and ")
   }
 
-  if (timestampRange && timestampRange.from && timestampRange.to) {
-    fileTimestamp = fileTimestampConditions.join(" and ")
-    mailTimestamp = mailTimestampConditions.join(" and ")
-    userTimestamp = userTimestampConditions.join(" and ")
-    eventTimestamp = eventTimestampConditions.join(" and ")
-  } else {
-    fileTimestamp = fileTimestampConditions.join("")
-    mailTimestamp = mailTimestampConditions.join("")
-    userTimestamp = userTimestampConditions.join("")
-    eventTimestamp = eventTimestampConditions.join("")
+  // ToDo we have to handle this filter as we are applying multiple times app filtering
+  // Helper function to build app/entity filter
+  const buildAppEntityFilter = () => {
+    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
   }
 
-  let appOrEntityFilter =
-    `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
-
-  let exclusionCondition = ""
-  if (excludedIds && excludedIds.length > 0) {
-    exclusionCondition = excludedIds
-      .map((id) => `docId contains '${id}'`)
-      .join(" or ")
+  // Helper function to build exclusion condition
+  const buildExclusionCondition = () => {
+    if (!excludedIds || excludedIds.length === 0) return ""
+    return excludedIds.map((id) => `docId contains '${id}'`).join(" or ")
   }
 
-  let mailLabelQuery = ""
-  if (notInMailLabels && notInMailLabels.length > 0) {
-    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  // Helper function to build mail label query
+  const buildMailLabelQuery = () => {
+    if (!notInMailLabels || notInMailLabels.length === 0) return ""
+    return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
   }
 
-  // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
+  // App-specific YQL builders
+  const buildGoogleWorkspaceYQL = () => {
+    const userTimestamp = buildTimestampConditions(
+      "creationTime",
+      "creationTime",
+    )
+    const appOrEntityFilter = buildAppEntityFilter()
+    const hasAppOrEntity = !!(app || entity)
+
+    return `
+      (
+        ({targetHits:${hits}} userInput(@query))
+        ${timestampRange ? `and (${userTimestamp})` : ""}
+        ${
+          !hasAppOrEntity
+            ? `and app contains "${Apps.GoogleWorkspace}"`
+            : `${appOrEntityFilter} and permissions contains @email`
+        }
+      )
+      or
+      (
+        ({targetHits:${hits}} userInput(@query))
+        and owner contains @email
+        ${timestampRange ? `and ${userTimestamp}` : ""}
+        ${appOrEntityFilter}
+      )`
+  }
+
+  const buildGmailYQL = () => {
+    const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
+    const appOrEntityFilter = buildAppEntityFilter()
+    const mailLabelQuery = buildMailLabelQuery()
+
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${mailTimestamp})` : ""}
+        and permissions contains @email
+        ${mailLabelQuery}
+        ${appOrEntityFilter}
+      )`
+  }
+
+  const buildGoogleDriveYQL = () => {
+    const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
+    const appOrEntityFilter = buildAppEntityFilter()
+
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${fileTimestamp})` : ""}
+        and permissions contains @email
+        ${appOrEntityFilter}
+      )`
+  }
+
+  const buildGoogleCalendarYQL = () => {
+    const eventTimestamp = buildTimestampConditions("startTime", "startTime")
+    const appOrEntityFilter = buildAppEntityFilter()
+
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${eventTimestamp})` : ""}
+        and permissions contains @email
+        ${appOrEntityFilter}
+      )`
+  }
+
+  const buildSlackYQL = () => {
+    const appOrEntityFilter = buildAppEntityFilter()
+
+    return `
+      (
+        (
+          ({targetHits:${hits}} userInput(@query))
+          or
+          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
+        )
+        ${appOrEntityFilter}
+        and permissions contains @email
+      )`
+  }
+
+  // Start with AllSources and filter out excluded app schemas
+  let newSources = AllSources
+  if (excludedApps && excludedApps.length > 0) {
+    let sourcesToExclude: string[] = []
+
+    excludedApps.forEach((excludedApp) => {
+      switch (excludedApp) {
+        case Apps.Slack:
+          sourcesToExclude.push(chatMessageSchema, chatUserSchema)
+          break
+        case Apps.Gmail:
+          sourcesToExclude.push(mailSchema, mailAttachmentSchema)
+          break
+        case Apps.GoogleDrive:
+          sourcesToExclude.push(fileSchema)
+          break
+        case Apps.GoogleCalendar:
+          sourcesToExclude.push(eventSchema)
+          break
+        case Apps.GoogleWorkspace:
+          sourcesToExclude.push(userSchema)
+          break
+      }
+    })
+    newSources = AllSources.split(", ")
+      .filter((source) => !sourcesToExclude.includes(source))
+      .join(", ")
+  }
+
+  // Start with all apps and filter out excluded ones
+  const allApps = Object.values(Apps)
+
+  const includedApps = allApps.filter(
+    (appItem) => !excludedApps?.includes(appItem),
+  )
+
+  // Build app-specific queries for included apps
+  const appQueries: string[] = []
+
+  for (const includedApp of includedApps) {
+    switch (includedApp) {
+      case Apps.GoogleWorkspace:
+        appQueries.push(buildGoogleWorkspaceYQL())
+        break
+      case Apps.Gmail:
+        appQueries.push(buildGmailYQL())
+        break
+      case Apps.GoogleDrive:
+        appQueries.push(buildGoogleDriveYQL())
+        break
+      case Apps.GoogleCalendar:
+        appQueries.push(buildGoogleCalendarYQL())
+        break
+      case Apps.Slack:
+        appQueries.push(buildSlackYQL())
+        break
+      default:
+        handleAppsNotInYql(includedApp,includedApps)
+        break
+    }
+  }
+
+  // Combine all queries
+  const combinedQuery = appQueries.join("\nor\n")
+  const exclusionCondition = buildExclusionCondition()
+
   return {
     profile: profile,
     yql: `
-    select * from sources ${AllSources}
+    select * from sources ${newSources}
         where (
           (
-            (
-              (
-                ({targetHits:${hits}}userInput(@query))
-                or
-                ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-              )
-              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
-              and permissions contains @email
-              ${mailLabelQuery}
-              ${appOrEntityFilter}
-            )
-            or
-            (
-              (
-                ({targetHits:${hits}}userInput(@query))
-                or
-                ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-              )
-              ${appOrEntityFilter}
-              ${timestampRange ? `and ((${fileTimestamp}) or (${mailTimestamp}) or (${eventTimestamp}))` : ""}
-              and permissions contains @email
-            )
-            or
-            (
-              ({targetHits:${hits}}userInput(@query))
-              ${timestampRange ? `and (${userTimestamp})` : ""}
-              ${
-                !hasAppOrEntity
-                  ? `and app contains "${Apps.GoogleWorkspace}"`
-                  : `${appOrEntityFilter} and permissions contains @email`
-              }
-            )
-            or
-            (
-              ({targetHits:${hits}}userInput(@query))
-              and owner contains @email
-              ${timestampRange ? `and ${userTimestamp}` : ""}
-              ${appOrEntityFilter}
-            )
+            ${combinedQuery}
           )
           ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
         )
@@ -451,81 +560,142 @@ const HybridDefaultProfileAppEntityCounts = (
   hits: number,
   timestampRange: { to: number; from: number } | null,
   notInMailLabels?: string[],
+  excludedApps?: Apps[],
 ): YqlProfile => {
-  let fileTimestamp = ""
-  let mailTimestamp = ""
-  let userTimestamp = ""
+  // Helper function to build timestamp conditions
+  const buildTimestampConditions = (fromField: string, toField: string) => {
+    const conditions: string[] = []
+    if (timestampRange?.from) {
+      conditions.push(`${fromField} >= ${timestampRange.from}`)
+    }
+    if (timestampRange?.to) {
+      conditions.push(`${toField} <= ${timestampRange.to}`)
+    }
+    return conditions.join(" and ")
+  }
 
+  // Helper function to build mail label query
+  const buildMailLabelQuery = () => {
+    if (!notInMailLabels || notInMailLabels.length === 0) return ""
+    return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  }
+
+  // Validate timestamp range
   if (timestampRange && !timestampRange.from && !timestampRange.to) {
     throw new Error("Invalid timestamp range")
   }
 
-  let fileTimestampConditions: string[] = []
-  let mailTimestampConditions: string[] = []
-  let userTimestampConditions: string[] = []
+  // App-specific YQL builders for counting
+  const buildFilesAndMailYQL = () => {
+    const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
+    const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
+    const mailLabelQuery = buildMailLabelQuery()
 
-  if (timestampRange && timestampRange.from) {
-    fileTimestampConditions.push(`updatedAt >= ${timestampRange.from}`)
-    mailTimestampConditions.push(`timestamp >= ${timestampRange.from}`)
-    userTimestampConditions.push(`creationTime >= ${timestampRange.from}`)
-  }
-  if (timestampRange && timestampRange.to) {
-    fileTimestampConditions.push(`updatedAt <= ${timestampRange.to}`)
-    mailTimestampConditions.push(`timestamp <= ${timestampRange.to}`)
-    userTimestampConditions.push(`creationTime <= ${timestampRange.to}`)
-  }
-
-  if (timestampRange && timestampRange.from && timestampRange.to) {
-    fileTimestamp = fileTimestampConditions.join(" and ")
-    mailTimestamp = mailTimestampConditions.join(" and ")
-    userTimestamp = userTimestampConditions.join(" and ")
-  } else {
-    fileTimestamp = fileTimestampConditions.join("")
-    mailTimestamp = mailTimestampConditions.join("")
-    userTimestamp = userTimestampConditions.join("")
+    return `
+      (
+        (
+          ({targetHits:${hits}}userInput(@query))
+          or
+          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+        )
+        ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+        and permissions contains @email
+        ${mailLabelQuery}
+      )`
   }
 
-  let mailLabelQuery = ""
-  if (notInMailLabels && notInMailLabels.length > 0) {
-    mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+  const buildTextEmbeddingsYQL = () => {
+    const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
+    const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
+
+    return `
+      (
+        (
+          ({targetHits:${hits}}userInput(@query))
+          or
+          ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
+        )
+        ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
+        and permissions contains @email
+      )`
   }
+
+  const buildGoogleWorkspaceYQL = () => {
+    const userTimestamp = buildTimestampConditions(
+      "creationTime",
+      "creationTime",
+    )
+
+    return `
+      (
+        ({targetHits:${hits}}userInput(@query))
+        ${timestampRange ? `and ${userTimestamp}` : ""}
+        and app contains "${Apps.GoogleWorkspace}"
+      )`
+  }
+
+  const buildOwnerYQL = () => {
+    const userTimestamp = buildTimestampConditions(
+      "creationTime",
+      "creationTime",
+    )
+
+    return `
+      (
+        ({targetHits:${hits}}userInput(@query))
+        and owner contains @email
+        ${timestampRange ? `and ${userTimestamp}` : ""}
+      )`
+  }
+
+  // Start with AllSources and filter out excluded app schemas
+  let newSources = AllSources
+  if (excludedApps && excludedApps.length > 0) {
+    let sourcesToExclude: string[] = []
+
+    excludedApps.forEach((excludedApp) => {
+      switch (excludedApp) {
+        case Apps.Slack:
+          sourcesToExclude.push(chatMessageSchema, chatUserSchema)
+          break
+        case Apps.Gmail:
+          sourcesToExclude.push(mailSchema, mailAttachmentSchema)
+          break
+        case Apps.GoogleDrive:
+          sourcesToExclude.push(fileSchema)
+          break
+        case Apps.GoogleCalendar:
+          sourcesToExclude.push(eventSchema)
+          break
+        case Apps.GoogleWorkspace:
+          sourcesToExclude.push(userSchema)
+          break
+      }
+    })
+
+    // Filter out excluded schemas from AllSources
+    newSources = AllSources.split(", ")
+      .filter((source) => !sourcesToExclude.includes(source))
+      .join(", ")
+  }
+
+  // Build the combined query using modular components
+  const filesAndMailQuery = buildFilesAndMailYQL()
+  const textEmbeddingsQuery = buildTextEmbeddingsYQL()
+  const googleWorkspaceQuery = buildGoogleWorkspaceYQL()
+  const ownerQuery = buildOwnerYQL()
 
   return {
     profile: SearchModes.NativeRank,
-    yql: `select * from sources ${AllSources}
+    yql: `select * from sources ${newSources}
             where (
-              (
-                (
-                  ({targetHits:${hits}}userInput(@query))
-                  or
-                  ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-                )
-                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-                and permissions contains @email
-                ${mailLabelQuery}
-              )
+              ${filesAndMailQuery}
               or
-              (
-                (
-                  ({targetHits:${hits}}userInput(@query))
-                  or
-                  ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-                )
-                ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-                and permissions contains @email
-              )
+              ${textEmbeddingsQuery}
               or
-              (
-                ({targetHits:${hits}}userInput(@query))
-                ${timestampRange ? `and ${userTimestamp}` : ""}
-                and app contains "${Apps.GoogleWorkspace}"
-              )
+              ${googleWorkspaceQuery}
               or
-              (
-                ({targetHits:${hits}}userInput(@query))
-                and owner contains @email
-                ${timestampRange ? `and ${userTimestamp}` : ""}
-              )
+              ${ownerQuery}
             )
             limit 0
             | all(
@@ -543,9 +713,28 @@ export const groupVespaSearch = async (
   limit = config.page,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
+  let excludedApps: Apps[] = []
+  try {
+    const slackSyncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.Slack,
+      AuthType.OAuth,
+      email,
+    )
+    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+      excludedApps.push(Apps.Slack)
+    }
+  } catch (error) {
+    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    // If there's an error checking sync jobs, exclude Slack to be safe
+    excludedApps.push(Apps.Slack)
+  }
+  Logger.info(`Excluded Apps: ${excludedApps.join(", ")}`)
   let { yql, profile } = HybridDefaultProfileAppEntityCounts(
     limit,
     timestampRange ?? null,
+    [], // notInMailLabels
+    excludedApps, // excludedApps as fourth parameter
   )
 
   const hybridDefaultPayload = {
@@ -602,6 +791,24 @@ export const searchVespa = async (
   // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
   const isDebugMode = config.isDebugMode || requestDebug || false
 
+  // Check if Slack sync job exists for the user
+  let excludedApps: Apps[] = []
+  try {
+    const slackSyncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.Slack,
+      AuthType.OAuth,
+      email,
+    )
+    if (!slackSyncJobs || slackSyncJobs.length === 0) {
+      excludedApps.push(Apps.Slack)
+    }
+  } catch (error) {
+    Logger.error(`Error checking Slack sync jobs: ${error}`)
+    // If there's an error checking sync jobs, exclude Slack to be safe
+    excludedApps.push(Apps.Slack)
+  }
+
   let { yql, profile } = HybridDefaultProfile(
     limit,
     app,
@@ -610,6 +817,7 @@ export const searchVespa = async (
     timestampRange,
     excludedIds,
     notInMailLabels,
+    excludedApps,
   )
 
   const hybridDefaultPayload = {
