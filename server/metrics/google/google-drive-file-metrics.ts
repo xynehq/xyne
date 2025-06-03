@@ -6,7 +6,7 @@ import metricRegister from "@/metrics/sharedRegistry";
 export const totalIngestedFiles = new Counter({
   name: "google_drive_ingested_total",
   help: "Total number of ingested files",
-  labelNames: ["file_id","mime_type", "status", "file_name", "email","file_type"],
+  labelNames: ["mime_type", "status", "email","file_type"],
 })
 metricRegister.registerMetric(totalIngestedFiles) // register this metric function in the registry
 
@@ -79,4 +79,3 @@ export const totalDurationForFileExtraction = new Histogram({
   buckets: [25, 50, 75, 100, 125, 150, 175, 200],
 })
 metricRegister.registerMetric(totalDurationForFileExtraction)
-
