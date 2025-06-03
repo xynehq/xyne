@@ -133,27 +133,42 @@ export const FiltersSchema = z.object({
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
 })
 
-export const GetItems = z.object({
-  type: z.literal(QueryType.GetItems),
-  isFollowUp: z.boolean().optional(),
-  filters: FiltersSchema,
+const TemporalClassifierSchema = z.object({
+  direction: z.union([z.literal("prev"), z.literal("next")]).nullable(),
 })
 
-export const SearchWithFilters = z.object({
-  type: z.literal(QueryType.SearchWithFilters),
-  isFollowUp: z.boolean().optional(),
-  filters: FiltersSchema,
-})
-
-export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal(QueryType.SearchWithoutFilters),
+export const GetItems = z
+  .object({
+    type: z.literal(QueryType.GetItems),
     isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
-  }),
+    filterQuery: z.string().nullable(),
+  })
+  .merge(TemporalClassifierSchema)
+
+export const SearchWithFilters = z
+  .object({
+    type: z.literal(QueryType.SearchWithFilters),
+    isFollowUp: z.boolean().optional(),
+    filters: FiltersSchema,
+    filterQuery: z.string().nullable(),
+  })
+  .merge(TemporalClassifierSchema)
+
+export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal(QueryType.SearchWithoutFilters),
+      isFollowUp: z.boolean().optional(),
+      filters: FiltersSchema,
+      filterQuery: z.string().nullable(),
+    })
+    .merge(TemporalClassifierSchema),
   SearchWithFilters,
   GetItems,
 ])
+
+export type QueryRouterLLMResponse = z.infer<typeof QueryRouterResponseSchema>
 
 export const QueryContextRank = z.object({
   canBeAnswered: z.boolean(),
