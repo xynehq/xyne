@@ -964,7 +964,7 @@ async function* generateAnswerFromGivenContext(
   userCtx: string,
   alpha: number = 0.5,
   fileIds: string[],
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
