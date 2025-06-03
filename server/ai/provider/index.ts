@@ -59,6 +59,7 @@ import {
   emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
+  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
@@ -1002,6 +1003,32 @@ export const mailPromptJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
+export const meetingPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
 interface RewrittenQueries {
   queries: string[]
 }
@@ -1050,7 +1077,7 @@ export const queryRewriter = async (
 export const temporalEventClassification = async (
   userQuery: string,
   params: ModelParams,
-): Promise<Omit<TemporalClassifier, "filter_query"> & { cost: number }> => {
+): Promise<Omit<TemporalClassifier, "filterQuery"> & { cost: number }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }

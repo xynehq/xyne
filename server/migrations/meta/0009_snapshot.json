@@ -1,6 +1,6 @@
 {
-  "id": "b929f33b-7c71-4541-a80f-1e9e3d615ba5",
-  "prevId": "50b58e78-aa9d-495f-a3dd-6fd6873e3ee0",
+  "id": "e579bb53-dfb4-4cea-af13-522ad60582bd",
+  "prevId": "934e0447-68a1-4d1e-aca4-6a284a8fa98e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -609,6 +609,20 @@
           "primaryKey": false,
           "notNull": false,
           "default": "''"
+        },
+        "queryRouterClassification": {
+          "name": "queryRouterClassification",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "feedback": {
+          "name": "feedback",
+          "type": "message_feedback",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1584,7 +1598,8 @@
         "notion",
         "google-calendar",
         "slack",
-        "mcp"
+        "mcp",
+        "github_mcp"
       ]
     },
     "public.auth_type": {
@@ -1607,6 +1622,14 @@
         "File",
         "Website",
         "Mcp"
+      ]
+    },
+    "public.message_feedback": {
+      "name": "message_feedback",
+      "schema": "public",
+      "values": [
+        "like",
+        "dislike"
       ]
     },
     "public.message_role": {

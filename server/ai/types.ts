@@ -47,9 +47,9 @@ export enum QueryCategory {
 
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
-  RetrieveInformation = "RetrieveInformation",
-  RetrieveUnspecificMetadata = "RetrieveUnspecificMetadata",
-  RetrieveMetadata = "RetrieveMetadata",
+  SearchWithoutFilters = "SearchWithoutFilters",
+  GetItems = "GetItems",
+  SearchWithFilters = "SearchWithFilters",
 }
 
 export type Cost = {
@@ -60,7 +60,7 @@ export type Cost = {
 export type TimeDirection = "next" | "prev" | null
 export interface TemporalClassifier {
   direction: TimeDirection | null
-  filter_query: string | null
+  filterQuery: string | null
 }
 
 export interface ModelParams {
@@ -135,30 +135,29 @@ export const FiltersSchema = z.object({
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
   sortDirection: z.string().optional(),
-  multipleAppAndEntity: z.boolean().optional(),
+  count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
 })
 
-export const RetrievedUnspecificMetadataSchema = z.object({
-  type: z.literal(QueryType.RetrieveUnspecificMetadata),
-  filters: FiltersSchema.extend({
-    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-  }),
+export const GetItems = z.object({
+  type: z.literal(QueryType.GetItems),
+  isFollowUp: z.boolean().optional(),
+  filters: FiltersSchema,
 })
 
-export const RetrieveMetadataSchema = z.object({
-  type: z.literal(QueryType.RetrieveMetadata),
-  filters: FiltersSchema.extend({
-    count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
-  }),
+export const SearchWithFilters = z.object({
+  type: z.literal(QueryType.SearchWithFilters),
+  isFollowUp: z.boolean().optional(),
+  filters: FiltersSchema,
 })
 
 export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
   z.object({
-    type: z.literal(QueryType.RetrieveInformation),
+    type: z.literal(QueryType.SearchWithoutFilters),
+    isFollowUp: z.boolean().optional(),
     filters: FiltersSchema,
   }),
-  RetrieveMetadataSchema,
-  RetrievedUnspecificMetadataSchema,
+  SearchWithFilters,
+  GetItems,
 ])
 
 export const QueryContextRank = z.object({

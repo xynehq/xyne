@@ -1,5 +1,5 @@
 {
-  "id": "7d5f7d11-42db-4227-9437-c2b1aaf564c3",
+  "id": "cf051273-bc3d-4626-84fc-26240f7b2064",
   "prevId": "888c7e4b-913a-467a-9df4-3db723413d04",
   "version": "7",
   "dialect": "postgresql",
@@ -608,6 +608,13 @@
           "primaryKey": false,
           "notNull": false,
           "default": "''"
+        },
+        "feedback": {
+          "name": "feedback",
+          "type": "message_feedback",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1604,6 +1611,14 @@
         "Api",
         "File",
         "Website"
+      ]
+    },
+    "public.message_feedback": {
+      "name": "message_feedback",
+      "schema": "public",
+      "values": [
+        "like",
+        "dislike"
       ]
     },
     "public.message_role": {

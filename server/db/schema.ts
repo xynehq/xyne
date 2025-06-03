@@ -21,6 +21,7 @@ import {
   ConnectorStatus,
   SyncJobStatus,
   UserRole,
+  MessageFeedback,
 } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -348,6 +349,11 @@ export const messageRoleEnum = pgEnum(
   Object.values(MessageRole) as [string, ...string[]],
 )
 
+export const messageFeedbackEnum = pgEnum(
+  "message_feedback",
+  Object.values(MessageFeedback) as [string, ...string[]],
+)
+
 export const messages = pgTable(
   "messages",
   {
@@ -378,6 +384,10 @@ export const messages = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     errorMessage: text("error_message").default(""),
+    queryRouterClassification: jsonb("queryRouterClassification")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    feedback: messageFeedbackEnum("feedback"),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),
@@ -548,6 +558,7 @@ export type SelectChat = z.infer<typeof selectChatSchema>
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
 })
+
 export type InsertMessage = z.infer<typeof insertMessageSchema>
 
 // Select schema for messages
