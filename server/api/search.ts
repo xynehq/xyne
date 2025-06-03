@@ -117,7 +117,6 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
-  stringifiedfileIds: z.string(),
   isReasoningEnabled: z
     .string()
     .optional()
