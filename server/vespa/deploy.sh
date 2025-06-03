@@ -3,11 +3,7 @@
 #!/bin/sh
 
 set -e
-
-set -o allexport
-source ../.env
-set +o allexport
-
+# This script deploys the Vespa application with the specified embedding model.
 mkdir -p models
 TOKENIZER_URL=""
 MODEL_URL=""
