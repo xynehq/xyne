@@ -42,7 +42,7 @@ export enum Apps {
 
   Gmail = "gmail",
 
-  Notion = "notion",
+  // Notion = "notion",  // Notion is not yet supported
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
