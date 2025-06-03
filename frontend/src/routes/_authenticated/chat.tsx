@@ -260,9 +260,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   const [feedbackMap, setFeedbackMap] = useState<Record<string, MessageFeedback | null>>({});
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE_KEY);
-    return storedValue ? JSON.parse(storedValue) : false;
-  });
+    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
+    return storedValue ? JSON.parse(storedValue) : true
+  })
 
   useEffect(() => {
     localStorage.setItem(

@@ -311,6 +311,7 @@ export enum Subsystem {
   Eval = "Eval",
   AI = "AI",
   Tuning = "Tuning",
+  Metric = "Metric"
 }
 
 export enum OperationStatus {
@@ -346,3 +347,25 @@ export const MCPClientStdioConfig = z.object({
   args: z.array(z.string()),
   version: z.string(),
 })
+
+// METRICS ENUMS
+export enum metricNames {
+  syncOauthAccountChanges = "google_oauth_changes",
+  syncServiceAccountChanges = "google_service_account_changes",
+  syncGoogleWorkspaceChange = "google_workspace_changes",
+  syncSlackChanges = "slack_changes",
+  checkDownloadsFolder = "check_downloads_folder"
+}
+
+export enum metricAppType {
+  google = "Google",
+  slack = "Slack"
+}
+
+export enum metricAccountType {
+  oauth = "google_oauth_account",
+  service = "google_service_account",
+  slackAdmin = "slack_admin",
+  slackUser = "slackUser",
+  admin = "admin"
+}

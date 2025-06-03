@@ -200,3 +200,5 @@ server/eval-results
 server/.venv/*
 
 *routeTree.gen*
+
+deployment/grafana/grafana-storage
