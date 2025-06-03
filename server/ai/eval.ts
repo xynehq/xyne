@@ -25,6 +25,7 @@ import {
   Models,
   type LLMProvider,
   type ModelParams,
+  type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
   type TimeDirection,
@@ -569,7 +570,7 @@ const endToEndFlow = async (
       message = parsed.queryRewrite
     }
 
-    const classification: TemporalClassifier & QueryRouterResponse = {
+    const classification: QueryRouterLLMResponse = {
       direction: parsed.temporalDirection,
       type: parsed.type as any,
       filterQuery: parsed.filterQuery,
