@@ -110,6 +110,13 @@ export const messageSchema = z.object({
   message: z.string().min(1),
   chatId: z.string().optional(),
   modelId: z.string().min(1),
+  agentic: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
   isReasoningEnabled: z
     .string()
     .optional()
@@ -122,6 +129,13 @@ export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
+  agentic: z // Add agentic field similar to messageSchema
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
   isReasoningEnabled: z
     .string()
     .optional()
@@ -176,6 +190,10 @@ export const SearchApi = async (c: Context) => {
     debug,
     // @ts-ignore
   } = c.req.valid("query")
+  if (!page) {
+    // @ts-ignore
+    page = config.page
+  }
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const timestampRange = getTimestamp(lastUpdated)
@@ -184,10 +202,11 @@ export const SearchApi = async (c: Context) => {
   const decodedQuery = decodeURIComponent(query)
   if (gc) {
     const tasks: Array<any> = [
-      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      groupVespaSearch(decodedQuery, email, page, timestampRange),
       searchVespa(decodedQuery, email, app, entity, {
         alpha: userAlpha,
         limit: page,
+        rankProfile: SearchModes.GlobalSorted,
         requestDebug: debug,
         offset,
         timestampRange,
@@ -203,6 +222,7 @@ export const SearchApi = async (c: Context) => {
     results = await searchVespa(decodedQuery, email, app, entity, {
       alpha: userAlpha,
       limit: page,
+      rankProfile: SearchModes.GlobalSorted,
       requestDebug: debug,
       offset,
       timestampRange,

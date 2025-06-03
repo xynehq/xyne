@@ -25,20 +25,33 @@ enum Tabs {
   Ask = "ask",
 }
 
+
+const REASONING_STATE = "isReasoningGlobalState"
+const AGENTIC_STATE = "agenticState"
+
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
+  const [isAgenticMode, setIsAgenticMode] = useState(() => {
+    const storedValue = localStorage.getItem(AGENTIC_STATE)
+    return storedValue ? JSON.parse(storedValue) : false
+  })
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
     return storedValue ? JSON.parse(storedValue) : true
   })
 
   useEffect(() => {
+    localStorage.setItem(REASONING_STATE, JSON.stringify(isReasoningActive))
     localStorage.setItem(
       "isReasoningGlobalState",
       JSON.stringify(isReasoningActive),
     )
   }, [isReasoningActive])
+
+  useEffect(() => {
+    localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
+  }, [isAgenticMode])
 
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
@@ -124,11 +137,16 @@ const Index = () => {
         q: string
         reasoning?: boolean
         sources?: string
+        agentic?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
       if (isReasoningActive) {
         searchParams.reasoning = true
+      }
+
+      if (isAgenticMode) {
+        searchParams.agentic = true
       }
 
       if (selectedSources && selectedSources.length > 0) {
@@ -230,6 +248,9 @@ const Index = () => {
                   query={query}
                   setQuery={setQuery}
                   handleSend={handleAsk}
+                  isStreaming={false}
+                  isAgenticMode={isAgenticMode}
+                  setIsAgenticMode={setIsAgenticMode}
                   allCitations={new Map()} // Change this line
                   isReasoningActive={isReasoningActive}
                   setIsReasoningActive={setIsReasoningActive}

@@ -415,7 +415,7 @@ export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
 ) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
-any logic. Be formal as much as possible. 
+any logic. Be formal as much as possible.
 
 You are an AI assistant with access to internal workspace data. You have access to the following types of data:
 
@@ -794,7 +794,7 @@ export const queryRewritePromptJson = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (userContext: string): string => {
   return `
-    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible.
 
     You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
@@ -1149,7 +1149,7 @@ export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
 ) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
-any logic. Be formal as much as possible. 
+any logic. Be formal as much as possible.
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:
 
@@ -1250,7 +1250,7 @@ REMEMBER:
 export const temporalDirectionJsonPrompt = (
   userContext: string,
   retrievedContext: string,
-) => `Current date: ${getDateForAI()}. 
+) => `Current date: ${getDateForAI()}.
 
 # Your Role
 You process temporal queries for workspace data (calendar events, emails, files, user profiles). Apply strict temporal logic to ensure accuracy.

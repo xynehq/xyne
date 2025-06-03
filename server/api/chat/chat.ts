@@ -1,6 +1,5 @@
 import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
-  // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
@@ -94,12 +93,15 @@ import {
   type VespaMail,
   type VespaMailAttachment,
   type VespaMailSearch,
-  type VespaSchema,
-  type VespaSearchResponse,
   type VespaSearchResult,
-  type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
+  CalendarEntity,
+  MailEntity,
+  type VespaSearchResponse,
+  type VespaSearchResults,
+  type VespaGroupType,
+  type VespaSchema, // Added import for VespaSchema
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -112,6 +114,13 @@ import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
+import VespaClient from "@/search/vespaClient"
+import { generatePlannerActionJsonStream } from "@/ai/provider"
+import type { Citation } from "@/api/chat/types"
+import { activeStreams } from "./streams"
+import { MessageApiAgenticMinimal } from "@/api/chat/agent"
+import { MessageMode } from "shared/types" // Import MessageMode
+
 import { entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 const {
@@ -128,9 +137,6 @@ const {
   maxValidLinks,
 } = config
 const Logger = getLogger(Subsystem.Chat)
-
-// Map to store active streams: Key = "chatId", Value = SSEStreamingApi instance
-const activeStreams = new Map<string, SSEStreamingApi>()
 
 // this is not always the case but unless our router detects that we need
 // these we will by default remove them
@@ -281,21 +287,6 @@ export const ChatBookmarkApi = async (c: Context) => {
       message: "Could not bookmark chat",
     })
   }
-}
-
-const MinimalCitationSchema = z.object({
-  docId: z.string(),
-  title: z.string().optional(),
-  url: z.string().optional(),
-  app: z.nativeEnum(Apps),
-  entity: entitySchema,
-})
-
-export type Citation = z.infer<typeof MinimalCitationSchema>
-
-interface CitationResponse {
-  answer?: string
-  citations?: number[]
 }
 
 export const GetChatTraceApi = async (c: Context) => {
@@ -2246,6 +2237,20 @@ export const MessageApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageApi")
 
+  // Check if we're in agentic mode
+  const isAgentic = c.req.query("agentic") === "true"
+  rootSpan.setAttribute("isAgentic", isAgentic)
+  Logger.info(
+    `MessageApi called with agentic mode: ${isAgentic ? "enabled" : "disabled"}`,
+  )
+
+  // If we're in agentic mode, call the agentic handler directly
+  if (isAgentic) {
+    // Call the Agentic handler function here
+    return MessageApiAgenticMinimal(c, rootSpan)
+  }
+
+  // Continue with regular non-agentic message processing
   let stream: any
   let chat: SelectChat
   let assistantMessageId: string | null = null
@@ -2269,6 +2274,8 @@ export const MessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
+    const currentMode = isAgentic ? MessageMode.Agentic : MessageMode.Ask
+    rootSpan.setAttribute("messageMode", currentMode)
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message)
@@ -2331,6 +2338,7 @@ export const MessageApi = async (c: Context) => {
             sources: [],
             message,
             modelId,
+            mode: currentMode, // Set mode for user message
             fileIds: fileIds,
           })
           return [chat, insertedMsg]
@@ -2359,6 +2367,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
+            mode: currentMode,
             modelId,
             fileIds,
           })
@@ -3191,13 +3200,17 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId, isReasoningEnabled }: MessageRetryReqType = body
+    const { messageId, isReasoningEnabled, agentic }: MessageRetryReqType = body
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     const email = sub
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
     rootSpan.setAttribute("messageId", messageId)
+
+    const currentMode = agentic ? MessageMode.Agentic : MessageMode.Ask
+    rootSpan.setAttribute("currentMode", currentMode)
+    rootSpan.setAttribute("isAgenticRetry", agentic)
 
     const costArr: number[] = []
     // Fetch the original message
@@ -3445,6 +3458,7 @@ export const MessageRetryApi = async (c: Context) => {
                     createdAt: new Date(
                       new Date(originalMessage.createdAt).getTime() + 1,
                     ),
+                    mode: currentMode, // Set mode
                   })
                   relevantMessageId = msg.externalId
                 })
@@ -3456,6 +3470,7 @@ export const MessageRetryApi = async (c: Context) => {
                   sources: citations,
                   thinking,
                   errorMessage: null,
+                  mode: currentMode, // Set mode
                 })
               }
             } else {
@@ -4025,7 +4040,9 @@ export const MessageRetryApi = async (c: Context) => {
           event: ChatSSEvents.Error,
           data: errFromMap,
         })
-        await addErrMessageToMessage(originalMessage, errFromMap)
+        // Add the error message to last user message
+        // await addErrMessageToMessage(lastMessage, errFromMap)
+
         await stream.writeSSE({
           data: "",
           event: ChatSSEvents.End,
@@ -4067,7 +4084,6 @@ export const MessageRetryApi = async (c: Context) => {
   }
 }
 
-// New API Endpoint to stop streaming
 export const StopStreamingApi = async (c: Context) => {
   try {
     // @ts-ignore - Assuming validation middleware handles this

@@ -14,13 +14,14 @@ import {
 } from "drizzle-orm/pg-core"
 import { encryptedText } from "./customType"
 import { Encryption } from "@/utils/encryption"
-import { ConnectorType, MessageRole, SyncConfigSchema, SyncCron } from "@/types"
+import { ConnectorType, MessageRole, SyncConfigSchema, SyncCron } from "@/types" // Added MessageMode
 import {
   Apps,
   AuthType,
   ConnectorStatus,
   SyncJobStatus,
   UserRole,
+  MessageMode,
   MessageFeedback,
 } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
@@ -28,7 +29,7 @@ import { z } from "zod"
 import { SearchModes } from "@/search/vespa"
 
 const encryptionKey = process.env.ENCRYPTION_KEY!
-if (!encryptionKey) {
+if (!encryptionKey) {z
   throw new Error("ENCRYPTION_KEY environment variable is not set.")
 }
 const serviceAccountEncryptionKey = process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY
@@ -343,6 +344,12 @@ export const messageRoleEnum = pgEnum(
   Object.values(MessageRole) as [string, ...string[]],
 )
 
+// Define the new enum for message mode using the imported MessageMode
+const messageModeField = "message_mode" // It's good practice to name the field for the pgEnum
+export const messageModePgEnum = pgEnum(
+  // Renamed to avoid conflict if MessageMode was also a pgEnum
+  messageModeField,
+  Object.values(MessageMode) as [string, ...string[]],)
 export const messageFeedbackEnum = pgEnum(
   "message_feedback",
   Object.values(MessageFeedback) as [string, ...string[]],
@@ -364,6 +371,9 @@ export const messages = pgTable(
     message: text("message").notNull(),
     messageRole: messageRoleEnum(messageRoleField).notNull(),
     thinking: text("thinking").notNull().default(""),
+    mode: messageModePgEnum(messageModeField)
+      .notNull()
+      .default(MessageMode.Ask), // Use MessageMode.Ask for default
     // model id is present in the app itself
     // <provider><modelId>
     modelId: text("modelId").notNull(),
@@ -605,3 +615,8 @@ export const insertPersonalizationSchema = createInsertSchema(
 
 export type SelectPersonalization = z.infer<typeof selectPersonalizationSchema>
 export type InsertPersonalization = z.infer<typeof insertPersonalizationSchema>
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+})
+export type InsertUser = z.infer<typeof insertUserSchema>
