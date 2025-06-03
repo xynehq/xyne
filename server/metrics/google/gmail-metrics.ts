@@ -6,7 +6,7 @@ import { Counter } from "prom-client";
 export const totalIngestedMails = new Counter({
   name: "gmail_ingested_total",
   help: "Total number of ingested mail",
-  labelNames: ["mime_type", "status", "email", "account_type"],
+  labelNames: ["mail_id","mail_title","mime_type", "status", "email", "account_type"],
 })
 metricRegister.registerMetric(totalIngestedMails) // register this metric function in the registry
 
@@ -20,7 +20,7 @@ metricRegister.registerMetric(ingestionMailErrorsTotal)
 export const totalAttachmentIngested = new Counter({
   name: "gmail_attachment_ingested_total",
   help: "Total number of ingested mail attachment",
-  labelNames: ["mime_type", "status", "email", "account_type"],
+  labelNames: ["mail_id","attachment_id","mime_type", "status", "email", "account_type"],
 })
 metricRegister.registerMetric(totalAttachmentIngested)
 
