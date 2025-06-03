@@ -16,7 +16,7 @@ import {
 import { getIcon } from "@/lib/common"
 import { getName } from "@/components/GroupFilter" // Re-added for MessageCitationList styling
 import { Apps, ChatSSEvents, SelectPublicMessage, Citation, PublicUser, SelectPublicAgent, DriveEntity } from "shared/types"
-import { ChevronDown, X as LucideX, Check, RotateCcw, PlusCircle, Copy, ArrowLeft, Edit3, Trash2 } from "lucide-react"
+import { ChevronDown, X as LucideX, Check, RotateCcw, PlusCircle, Copy, ArrowLeft, Edit3, Trash2, Search, UserPlus } from "lucide-react" // Added Search and UserPlus
 import { useState, useMemo, useEffect, useRef } from "react"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { api } from "@/api"
@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast" // Assuming useToast is the correct hook
 import { ChatBox } from "@/components/ChatBox" // Assuming ChatBox is made a common component
+import { Card, CardContent } from "@/components/ui/card" // Added Card and CardContent
+import dummyUsersData from "@/data/dummyUsers.json";
 
 type CurrentResp = {
   resp: string;
@@ -140,6 +142,12 @@ const availableIntegrationsList : IntegrationSource[] = [
   },
 ]
 
+interface User {
+  id: number
+  name: string
+  email: string
+}
+
 function AgentComponent() {
   const { agentId } = Route.useSearch();
   const navigate = useNavigate();
@@ -189,6 +197,86 @@ function AgentComponent() {
   const matches = useRouterState({ select: (s) => s.matches });
   const { user } = matches[matches.length - 1].context as { user: PublicUser };
   const { toast: showToast } = useToast();
+
+  // User search and selection states
+  const [users, setUsers] = useState<User[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1);
+
+  const searchResultsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSelectedSearchIndex(-1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    // Ensure selected item is visible in the search results container
+    if (selectedSearchIndex >= 0 && searchResultsRef.current) {
+      const container = searchResultsRef.current;
+      const selectedElement = container.children[selectedSearchIndex] as HTMLElement;
+      
+      if (selectedElement) {
+        const containerRect = container.getBoundingClientRect();
+        const elementRect = selectedElement.getBoundingClientRect();
+        
+        if (elementRect.bottom > containerRect.bottom) {
+          // Scroll down if element is below viewport
+          selectedElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        } else if (elementRect.top < containerRect.top) {
+          // Scroll up if element is above viewport
+          selectedElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }
+  }, [selectedSearchIndex]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (filteredUsers.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedSearchIndex(prev => 
+          prev >= filteredUsers.length - 1 ? 0 : prev + 1
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedSearchIndex(prev => 
+          prev <= 0 ? filteredUsers.length - 1 : prev - 1
+        );
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (selectedSearchIndex >= 0) {
+          handleSelectUser(filteredUsers[selectedSearchIndex]);
+        } else if (filteredUsers.length > 0) {
+          handleSelectUser(filteredUsers[0]);
+        }
+        break;
+    }
+  };
+
+  // Limit filtered users
+  useEffect(() => {
+    if (searchQuery.trim() === "") {
+      setFilteredUsers([]);
+      setShowSearchResults(false);
+    } else {
+      const filtered = users
+        .filter(
+          (user) =>
+            !selectedUsers.some((selected) => selected.id === user.id) &&
+            (user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              user.email.toLowerCase().includes(searchQuery.toLowerCase())),
+        );
+      setFilteredUsers(filtered);
+      setShowSearchResults(true);
+    }
+  }, [searchQuery, users, selectedUsers]);
 
   // Effect to fetch agent data if agentId is present in URL for the chatbox
   useEffect(() => {
@@ -241,6 +329,31 @@ function AgentComponent() {
     }
   }, [viewMode]);
 
+  // Load users from JSON file
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        // const response = await fetch("/src/data/dummyUsers.json");
+        // const userData = await response.json();
+        setUsers(dummyUsersData.users); 
+      } catch (error) {
+        console.error("Failed to load users:", error);
+        showToast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
+      }
+    }; 
+    loadUsers();
+  }, []);
+
+  const handleSelectUser = (user: User) => {
+    setSelectedUsers((prev) => [...prev, user]);
+    setSearchQuery("");
+    setShowSearchResults(false);
+  };
+
+  const handleRemoveUser = (userId: number) => {
+    setSelectedUsers((prev) => prev.filter((user) => user.id !== userId));
+  };
+
   const resetForm = () => {
     setAgentName("");
     setAgentDescription("");
@@ -250,6 +363,9 @@ function AgentComponent() {
     // setAllowWebSearch(false); // Removed
     // setUploadedFiles([]); // Removed
     setEditingAgent(null);
+    setSelectedUsers([]);
+    setSearchQuery("");
+    setShowSearchResults(false);
   };
 
   const handleCreateNewAgent = () => {
@@ -269,6 +385,7 @@ function AgentComponent() {
     setSelectedIntegrations(currentIntegrations);
     // setAllowWebSearch(agent.allowWebSearch || false); // Removed
     // setUploadedFiles([]);  // Removed
+    // setSelectedUsers([]); // Assuming users are not part of agent data for now, or load them if they are
     setEditingAgent(agent);
     setViewMode('create');
   };
@@ -313,6 +430,7 @@ function AgentComponent() {
       appIntegrations: enabledIntegrations,
       // allowWebSearch: allowWebSearch, // Removed
       // uploadedFileNames: uploadedFiles.map(f => f.name), // Removed
+      // users: selectedUsers.map(u => u.id) // Add this if you intend to save users with the agent
     };
 
     try {
@@ -676,7 +794,7 @@ function AgentComponent() {
     <div className="flex flex-col md:flex-row h-screen w-full bg-white">
       <Sidebar photoLink={user?.photoLink} role={user?.role} />
       <div className="flex flex-col md:flex-row flex-1 h-full md:ml-[60px]">
-        <div className={`p-4 md:p-8 bg-white overflow-y-auto h-full relative ${viewMode === 'list' ? 'w-full' : 'w-full md:w-[50%] border-r border-gray-200'}`}>
+        <div className={`p-4 md:py-4 md:px-8 bg-white overflow-y-auto h-full relative ${viewMode === 'list' ? 'w-full' : 'w-full md:w-[50%] border-r border-gray-200'}`}>
           {viewMode === 'list' ? (
             <>
               <div className="flex justify-between items-center mb-8 w-full max-w-2xl mx-auto">
@@ -731,7 +849,7 @@ function AgentComponent() {
             </>
           ) : (
             <>
-              <div className="flex items-center mb-6 w-full max-w-xl mx-auto">
+              <div className="flex items-center mb-4 w-full max-w-xl mx-auto">
                 <Button variant="ghost" size="icon" className="mr-2 text-gray-600 hover:bg-slate-100" onClick={() => { resetForm(); setViewMode('list'); }}>
                   <ArrowLeft size={20} />
                 </Button>
@@ -740,7 +858,7 @@ function AgentComponent() {
               
               {/* <input type="file" id="fileUploadInput" multiple className="hidden" onChange={(e) => onDrop(Array.from(e.target.files || []))} /> Removed */}
 
-              <div className="w-full max-w-2xl mx-auto pb-24 space-y-6">
+              <div className="w-full max-w-2xl mx-auto space-y-6">
                 <div className="w-full">
                   <Label htmlFor="agentName" className="text-sm font-medium text-gray-700">
                     Name
@@ -776,7 +894,7 @@ function AgentComponent() {
                     placeholder="e.g., You are a helpful assistant..."
                     value={agentPrompt}
                     onChange={(e) => setAgentPrompt(e.target.value)}
-                    className="mt-1 bg-white border border-gray-300 rounded-lg w-full h-40 p-3 text-base" 
+                    className="mt-1 bg-white border border-gray-300 rounded-lg w-full h-36 p-3 text-base" 
                   />
                 </div>
                 
@@ -816,8 +934,7 @@ function AgentComponent() {
                       {availableIntegrationsList.map((integration) => (
                         <DropdownMenuItem
                           key={integration.id}
-                          onSelect={(e) => e.preventDefault()} 
-                          onClick={() => toggleIntegrationSelection(integration.id)}
+                          onSelect={() => toggleIntegrationSelection(integration.id)}
                           className="flex items-center justify-between cursor-pointer text-sm py-2 px-2 hover:bg-slate-50"
                         >
                           <div className="flex items-center">
@@ -831,11 +948,110 @@ function AgentComponent() {
                   </DropdownMenu>
                   </div> 
                 </div>
+
+                {/* User Search Section */}
+                <div>
+                  <Label className="text-base font-medium text-gray-800">
+                    Agent Users {selectedUsers.length > 0 && <span className="text-sm text-gray-500 ml-1">({selectedUsers.length})</span>}
+                  </Label>
+                  <div className="mt-3">
+                    <div className="relative w-full">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Search users by name or email..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="pl-10 bg-white border border-gray-300 rounded-lg w-full"
+                      />
+                      {/* Search Results */}
+                      {showSearchResults && (
+                        <Card className="absolute z-10 mt-1 shadow-lg w-full">
+                          <CardContent className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400" 
+                            ref={searchResultsRef}
+                            style={{ 
+                              scrollbarWidth: 'thin', 
+                              WebkitOverflowScrolling: 'touch',
+                              scrollbarColor: '#D1D5DB transparent',
+                              overflowY: 'auto',
+                              display: 'block'
+                            }}
+                          >
+                            {filteredUsers.length > 0 ? (
+                              filteredUsers.map((user, index) => (
+                                <div
+                                  key={user.id}
+                                  className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 ${
+                                    index === selectedSearchIndex ? 'bg-gray-50' : ''
+                                  }`}
+                                  onClick={() => handleSelectUser(user)}
+                                >
+                                  <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
+                                    <span className="text-sm text-gray-600 truncate">{user.name}</span>
+                                    <span className="text-gray-500 flex-shrink-0">-</span>
+                                    <span className="text-gray-500 truncate">{user.email}</span>
+                                  </div>
+                                  <UserPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                </div>
+                              ))
+                            ) : (
+                              <div className="p-3 text-center text-gray-500">No users found matching "{searchQuery}"</div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Agent Users Section */}
+                <div>
+                  <Card className="mt-3">
+                    <CardContent className="p-4">
+                      <div className="space-y-1.5 h-[126px] overflow-y-auto">
+                        {selectedUsers.length > 0 ? (
+                          selectedUsers.map((user) => (
+                            <div key={user.id} className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg">
+                              <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
+                                <span className="text-sm text-gray-600 truncate">{user.name}</span>
+                                <span className="text-gray-500 flex-shrink-0">-</span>
+                                <span className="text-gray-500 truncate">{user.email}</span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveUser(user.id)}
+                                className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 h-6 w-6 p-0 flex-shrink-0"
+                              >
+                                <LucideX className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-4 text-gray-500">
+                            <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                            <p>No users added yet</p>
+                            <p className="text-sm">Search and select users to add them to this agent</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
                 {/* Files & Folders and Allow Web Search sections removed */}
+                 {/* Save Changes Button */}
+                 <div className="flex justify-end w-full mt-8 mb-4">
+                  <Button 
+                    onClick={handleSaveAgent}
+                    className="bg-slate-800 hover:bg-slate-700 text-white rounded-lg px-8 py-3 text-sm font-medium"
+                  >
+                    {editingAgent ? 'Save Changes' : 'Create Agent'}
+                  </Button>
+                </div>
               </div>
             </>
           )}
-           {viewMode !== 'list' && (
+           {/* {viewMode !== 'list' && (  // This section was removed in your provided code, re-add if needed
             <div className="absolute bottom-0 left-0 w-full p-4 md:p-8 bg-white border-t border-gray-200">
               <div className="flex justify-end w-full max-w-2xl mx-auto">
                   <Button 
@@ -846,7 +1062,7 @@ function AgentComponent() {
                   </Button>
               </div>
             </div>
-           )}
+           )} */}
         </div>
 
         {viewMode !== 'list' && (
@@ -880,9 +1096,14 @@ function AgentComponent() {
             </div>
           
             <div
-              className="flex flex-col flex-grow overflow-y-auto p-4 md:p-6 space-y-4"
+              className="flex flex-col flex-grow overflow-y-auto p-4 md:p-6 space-y-4 min-h-0 max-h-[calc(100vh-200px)] scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
               ref={messagesContainerRef}
               onScroll={handleScroll}
+              style={{ 
+                scrollbarWidth: 'thin', 
+                WebkitOverflowScrolling: 'touch',
+                scrollbarColor: '#D1D5DB transparent'
+              }}
             >
               {messages.map((message, index) => (
               <AgentChatMessage
