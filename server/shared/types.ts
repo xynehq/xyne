@@ -244,6 +244,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
   app: true,
   entity: true,
   photoLink: true,
+  docId: true,
 })
   .strip()
   .extend({

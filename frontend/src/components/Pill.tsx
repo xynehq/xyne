@@ -32,13 +32,16 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
     currentPill.addEventListener("click", handleClick)
 
     return () => {
-      currentPill.removeEventListener("click", handleClick);
-    };
-  }, [newRef.url]);
+      currentPill.removeEventListener("click", handleClick)
+    }
+  }, [newRef.url])
 
   let displayIcon: React.ReactNode = null
 
-  if ((newRef.entity === "OtherContacts" || newRef.entity === "Contacts") && newRef.photoLink) {
+  if (
+    (newRef.entity === "OtherContacts" || newRef.entity === "Contacts") &&
+    newRef.photoLink
+  ) {
     displayIcon = (
       <img
         src={newRef.photoLink}

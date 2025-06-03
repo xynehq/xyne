@@ -110,7 +110,8 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
         (el.dataset.docId || el.dataset.referenceId)
       ) {
         const entity = el.dataset.entity
-        const isContactPill = entity === "OtherContacts" || entity === "Contacts"
+        const isContactPill =
+          entity === "OtherContacts" || entity === "Contacts"
         let imgSrc: string | null = null
         const imgElement = el.querySelector("img")
         if (imgElement) {
@@ -129,7 +130,12 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
         })
       } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
         // Ensure this link is not also a reference pill that we've already processed
-        if (!(el.classList.contains("reference-pill") && (el.dataset.docId || el.dataset.referenceId))) {
+        if (
+          !(
+            el.classList.contains("reference-pill") &&
+            (el.dataset.docId || el.dataset.referenceId)
+          )
+        ) {
           parts.push({
             type: "link",
             value: el.getAttribute("href") || "",
