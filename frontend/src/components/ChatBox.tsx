@@ -618,7 +618,8 @@ export const ChatBox = ({
       const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />)
       const tempDiv = document.createElement("div")
       tempDiv.innerHTML = pillHtmlString
-      const pillElement = tempDiv.firstChild
+      // Find the actual <a> tag, as renderToStaticMarkup might prepend other tags like <link>
+      const pillElement = tempDiv.querySelector("a.reference-pill")
 
       if (pillElement) {
         const clonedPill = pillElement.cloneNode(true)
@@ -718,7 +719,8 @@ export const ChatBox = ({
       const pillHtmlString = renderToStaticMarkup(<Pill newRef={newRef} />)
       const tempDiv = document.createElement("div")
       tempDiv.innerHTML = pillHtmlString
-      const pillElement = tempDiv.firstChild
+      // Find the actual <a> tag, as renderToStaticMarkup might prepend other tags like <link>
+      const pillElement = tempDiv.querySelector("a.reference-pill")
 
       if (pillElement) {
         const clonedPill = pillElement.cloneNode(true)
@@ -1323,9 +1325,16 @@ export const ChatBox = ({
                 anchor.href &&
                 anchor.closest('[contenteditable="true"]') === inputRef.current
               ) {
-                // If it's an anchor with an href *inside our contentEditable div*,
-                // prevent default contentEditable behavior and open the link.
-                e.preventDefault()
+                // If it's an anchor with an href *inside our contentEditable div*
+                e.preventDefault() // Prevent default contentEditable behavior first
+
+                // Check if the clicked anchor is an "OtherContacts" pill
+                if (anchor.dataset.entity === "OtherContacts") {
+                  // For "OtherContacts" pills, do nothing further (link should not open)
+                  return
+                }
+                
+                // For other pills or regular links, open the link in a new tab
                 window.open(anchor.href, "_blank", "noopener,noreferrer")
                 // Stop further processing to avoid @mention box logic if a link was clicked
                 return
