@@ -452,7 +452,7 @@ async function* processIterator(
   iterator: AsyncIterableIterator<ConverseResponse>,
   results: VespaSearchResult[],
   previousResultsLength: number = 0,
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -577,7 +577,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
   classification: TemporalClassifier & QueryRouterResponse,
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   queryRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -964,7 +964,8 @@ async function* generateAnswerFromGivenContext(
   userCtx: string,
   alpha: number = 0.5,
   fileIds: string[],
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
+  passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1001,8 +1002,12 @@ async function* generateAnswerFromGivenContext(
     )
   }
 
+  const generateAnswerSpan = passedSpan?.startSpan(
+    "generateAnswerFromGivenContext",
+  )
+
   let previousResultsLength = 0
-  const results = await GetDocumentsByDocIds(fileIds)
+  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
   if (!results.root.children) {
     results.root.children = []
   }
@@ -1015,6 +1020,19 @@ async function* generateAnswerFromGivenContext(
       )
       ?.join("\n"),
   )
+
+  const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
+  initialContextSpan?.setAttribute(
+    "context_length",
+    initialContext?.length || 0,
+  )
+  initialContextSpan?.setAttribute("context", initialContext || "")
+  initialContextSpan?.setAttribute(
+    "number_of_chunks",
+    results.root?.children?.length || 0,
+  )
+  initialContextSpan?.end()
+
   Logger.info(
     `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
   )
@@ -1042,6 +1060,8 @@ async function* generateAnswerFromGivenContext(
     userRequestsReasoning,
   )
   if (answer) {
+    generateAnswerSpan?.setAttribute("answer_found", true)
+    generateAnswerSpan?.end()
     return
   } else if (!answer) {
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
@@ -1052,6 +1072,16 @@ async function* generateAnswerFromGivenContext(
       limit: fileIds?.length,
       alpha: userAlpha,
     })
+
+    const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
+    searchVespaSpan?.setAttribute("parsed_message", message)
+    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
+    searchVespaSpan?.setAttribute("limit", fileIds?.length)
+    searchVespaSpan?.setAttribute(
+      "results length",
+      results?.root?.children?.length || 0,
+    )
+
     if (!results.root.children) {
       results.root.children = []
     }
@@ -1067,6 +1097,14 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
+
+    searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
+    searchVespaSpan?.setAttribute("context", initialContext || "")
+    searchVespaSpan?.setAttribute(
+      "number_of_chunks",
+      results.root?.children?.length || 0,
+    )
+
     const iterator = baselineRAGJsonStream(
       builtUserQuery,
       userCtx,
@@ -1086,14 +1124,21 @@ async function* generateAnswerFromGivenContext(
       userRequestsReasoning,
     )
     if (answer) {
+      searchVespaSpan?.setAttribute("answer_found", true)
+      searchVespaSpan?.end()
+      generateAnswerSpan?.end()
       return
     } else if (
       // If no answer found, exit and yield nothing related to selected context found
       !answer
     ) {
+      const noAnswerSpan = searchVespaSpan?.startSpan("no_answer_response")
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
+      noAnswerSpan?.end()
+      searchVespaSpan?.end()
+      generateAnswerSpan?.end()
       return
     }
     if (config.isReasoning && userRequestsReasoning) {
@@ -1103,6 +1148,7 @@ async function* generateAnswerFromGivenContext(
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += results?.root?.children?.length || 0
   }
+  generateAnswerSpan?.end()
 }
 
 // Checks if the user has selected context
@@ -1260,7 +1306,7 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   eventRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1533,8 +1579,8 @@ async function* processResultsForMetadata(
   app: Apps,
   entity: any,
   chunksCount: number | undefined,
+  userRequestsReasoning: boolean,
   span?: Span,
-  userRequestsReasoning?: boolean,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -1581,7 +1627,7 @@ async function* generateMetadataQueryAnswer(
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
   classification: TemporalClassifier & QueryRouterResponse,
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   span?: Span,
   maxIterations = 5,
 ): AsyncIterableIterator<
@@ -1709,8 +1755,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
@@ -1784,8 +1830,8 @@ async function* generateMetadataQueryAnswer(
       app as Apps,
       entity,
       maxSummaryCount,
-      span,
       userRequestsReasoning,
+      span,
     )
     return
   } else if (
@@ -1872,8 +1918,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
@@ -1962,8 +2008,8 @@ export async function* UnderstandMessageAndAnswer(
   classification: TemporalClassifier & QueryRouterResponse,
   messages: Message[],
   alpha: number,
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2074,14 +2120,20 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   message: string,
   alpha: number,
   fileIds: string[],
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute("alpha", alpha)
+  passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
+  passedSpan?.setAttribute("fileIds_count", fileIds?.length)
+  passedSpan?.setAttribute(
+    "userRequestsReasoning",
+    userRequestsReasoning || false,
+  )
 
   return yield* generateAnswerFromGivenContext(
     message,
@@ -2090,6 +2142,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     alpha,
     fileIds,
     userRequestsReasoning,
+    passedSpan,
   )
 }
 
@@ -2356,13 +2409,13 @@ export const MessageApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-            const conversationSpan = streamSpan.startSpan("conversation_search")
-            conversationSpan.setAttribute("answer", answer)
-            conversationSpan.end()
 
-            const ragSpan = streamSpan.startSpan("rag_processing")
-
-            const understandSpan = ragSpan.startSpan("understand_message")
+            const understandSpan = streamSpan.startSpan("understand_message")
+            understandSpan?.setAttribute(
+              "totalValidFileIdsFromLinkCount",
+              totalValidFileIdsFromLinkCount,
+            )
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -2370,8 +2423,8 @@ export const MessageApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
+              understandSpan,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -2450,7 +2503,7 @@ export const MessageApi = async (c: Context) => {
               JSON.stringify(citationValues),
             )
             understandSpan.end()
-            const answerSpan = ragSpan.startSpan("process_final_answer")
+            const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
               processMessage(answer, citationMap),
@@ -2458,7 +2511,6 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
-            ragSpan.end()
 
             if (answer || wasStreamClosedPrematurely) {
               // TODO: incase user loses permission
@@ -2764,8 +2816,8 @@ export const MessageApi = async (c: Context) => {
                 classification,
                 llmFormattedMessages,
                 0.5,
-                understandSpan,
                 userRequestsReasoning,
+                understandSpan,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -3265,13 +3317,13 @@ export const MessageRetryApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-            const conversationSpan = streamSpan.startSpan("conversation_search")
-            conversationSpan.setAttribute("answer", answer)
-            conversationSpan.end()
 
-            const ragSpan = streamSpan.startSpan("rag_processing")
-
-            const understandSpan = ragSpan.startSpan("understand_message")
+            const understandSpan = streamSpan.startSpan("understand_message")
+            understandSpan?.setAttribute(
+              "totalValidFileIdsFromLinkCount",
+              totalValidFileIdsFromLinkCount,
+            )
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -3279,8 +3331,9 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
+              understandSpan,
+              
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3359,7 +3412,7 @@ export const MessageRetryApi = async (c: Context) => {
               JSON.stringify(citationValues),
             )
             understandSpan.end()
-            const answerSpan = ragSpan.startSpan("process_final_answer")
+            const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
               processMessage(answer, citationMap),
@@ -3367,7 +3420,6 @@ export const MessageRetryApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
-            ragSpan.end()
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
@@ -3709,8 +3761,8 @@ export const MessageRetryApi = async (c: Context) => {
                 classification,
                 convWithNoErrMsg,
                 0.5,
-                understandSpan,
                 userRequestsReasoning,
+                understandSpan,
               )
               // throw new Error("Hello, how are u doing?")
               stream.writeSSE({

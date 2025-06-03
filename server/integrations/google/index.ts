@@ -1600,6 +1600,7 @@ const insertFilesForUser = async (
             },
             1,
           )
+
         }
       }
       // end of duration timer for pdf ingestion
@@ -1652,11 +1653,13 @@ const insertFilesForUser = async (
         return v
       })
 
+
       const totalIngestionDuration = ingestionDuration.startTimer({
         file_type: "GOOGLE_DRIVE_FILE",
         mime_type: "application/vnd.google-apps.file",
         email: userEmail,
       })
+
       for (const doc of allFiles) {
         Logger.info(
           `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
@@ -1673,6 +1676,7 @@ const insertFilesForUser = async (
         try {
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
+
           console.log(`Mime type: `, doc.mimeType)
           totalIngestedFiles.inc({
             file_id: doc.docId ?? "",
@@ -1682,6 +1686,7 @@ const insertFilesForUser = async (
             email: userEmail,
             file_type: fileType,
           })
+
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
             tracker.updateUserStats(userEmail, StatType.Drive, 1)
@@ -2780,6 +2785,7 @@ export const driveFilesToDoc = async (
       results.push(file)
     }
   }
+
   metadataFiles.inc(
     {
       file_type: "GOOGLE_DRIVE_FILE",
@@ -2788,6 +2794,7 @@ export const driveFilesToDoc = async (
     },
     rest.length,
   )
+
   return results
 }
 

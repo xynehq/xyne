@@ -259,6 +259,7 @@ export const handleGmailIngestion = async (
               // Increment counters only on success
               insertedMessagesInBatch++
               insertedPdfAttachmentsInBatch += insertedPdfCount
+
               totalIngestedMails.inc(
                 {
                   mail_id: message.id ?? "",
@@ -270,6 +271,7 @@ export const handleGmailIngestion = async (
                 },
                 1,
               )
+
             }
           } catch (error) {
             Logger.error(
@@ -486,6 +488,7 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
+
             totalAttachmentIngested.inc(
               {
                 mail_id: messageId,

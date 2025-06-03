@@ -108,6 +108,7 @@ export const handleGmailIngestion = async (
             if (!exist) {
               await insert(mailData, mailSchema)
 
+
               totalIngestedMails.inc(
                 {
                   mail_id: message.id ?? "",
@@ -119,6 +120,7 @@ export const handleGmailIngestion = async (
                 },
                 1,
               )
+
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {
@@ -322,6 +324,7 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
+
             totalAttachmentIngested.inc(
               {
                 mail_id: messageId,
@@ -333,6 +336,7 @@ export const parseMail = async (
               },
               1,
             )
+
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
