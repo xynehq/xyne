@@ -86,6 +86,7 @@ type ParsedMessagePart =
         app?: string
         entity?: string
         pillType?: "citation" | "global"
+        imgSrc?: string | null
       }
     }
   | { type: "link"; value: string }
@@ -106,23 +107,34 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
       if (
         el.tagName.toLowerCase() === "a" &&
         el.classList.contains("reference-pill") &&
-        el.dataset.docId
+        (el.dataset.docId || el.dataset.referenceId)
       ) {
+        const entity = el.dataset.entity
+        const isContactPill = entity === "OtherContacts" || entity === "Contacts"
+        let imgSrc: string | null = null
+        const imgElement = el.querySelector("img")
+        if (imgElement) {
+          imgSrc = imgElement.getAttribute("src")
+        }
         parts.push({
           type: "pill",
           value: {
-            docId: el.dataset.docId,
-            url: el.getAttribute("href"),
+            docId: el.dataset.docId || el.dataset.referenceId!,
+            url: isContactPill ? null : el.getAttribute("href"),
             title: el.getAttribute("title"),
             app: el.dataset.app,
-            entity: el.dataset.entity,
+            entity: entity,
+            imgSrc: imgSrc,
           },
         })
       } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
-        parts.push({
-          type: "link",
-          value: el.getAttribute("href") || "",
-        })
+        // Ensure this link is not also a reference pill that we've already processed
+        if (!(el.classList.contains("reference-pill") && (el.dataset.docId || el.dataset.referenceId))) {
+          parts.push({
+            type: "link",
+            value: el.getAttribute("href") || "",
+          })
+        }
         // Do not walk children of a link we've already processed as a "link" part
       } else {
         Array.from(el.childNodes).forEach(walk)
@@ -153,7 +165,8 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           part.value &&
           typeof part.value === "object"
         ) {
-          const { docId, url, title, app, entity, pillType } = part.value
+          const { docId, url, title, app, entity, pillType, imgSrc } =
+            part.value
 
           const referenceForPill: Reference = {
             id: docId,
@@ -163,6 +176,9 @@ const jsonToHtmlMessage = (jsonString: string): string => {
             app: app,
             entity: entity,
             type: pillType || "global",
+            // Include imgSrc if available, mapping it to photoLink for the Reference type.
+            // The Pill component will need to be able to utilize this.
+            ...(imgSrc && { photoLink: imgSrc }),
           }
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
