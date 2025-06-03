@@ -166,6 +166,24 @@ export const modelDetailsMap: Record<
       },
     },
   },
+  [Models.Claude_Opus_4]: {
+    name: "Claude Opus 4",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.015,
+        pricePerThousandOutputTokens: 0.075,
+      },
+    },
+  },
+  [Models.Claude_Sonnet_4]: {
+    name: "Claude Sonnet 4",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
+      },
+    },
+  },
   [Models.Claude_3_5_Haiku]: {
     name: "Claude 3.5 Haiku",
     cost: {
@@ -253,6 +271,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Claude_3_7_Sonnet]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_Sonnet]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_Haiku]: AIProviders.AwsBedrock,
+  [Models.Claude_Opus_4]: AIProviders.AwsBedrock,
+  [Models.Claude_Sonnet_4]: AIProviders.AwsBedrock,
   [Models.Amazon_Nova_Micro]: AIProviders.AwsBedrock,
   [Models.Amazon_Nova_Lite]: AIProviders.AwsBedrock,
   [Models.Amazon_Nova_Pro]: AIProviders.AwsBedrock,

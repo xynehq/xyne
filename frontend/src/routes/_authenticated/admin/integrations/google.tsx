@@ -416,6 +416,11 @@ export const deleteOauthConnector = async (connectorId: string) => {
 type IngestMoreSAFormData = {
   connectorId: string
   emails: string
+  startDate: string
+  endDate: string
+  insertDriveAndContacts: boolean
+  insertGmail: boolean
+  insertCalendar: boolean
 }
 
 const submitIngestMoreSAForm = async (
@@ -426,6 +431,11 @@ const submitIngestMoreSAForm = async (
     json: {
       connectorId: value.connectorId,
       emailsToIngest: value.emailsList,
+      startDate: value.startDate,
+      endDate: value.endDate,
+      insertDriveAndContacts: value.insertDriveAndContacts,
+      insertGmail: value.insertGmail,
+      insertCalendar: value.insertCalendar,
     },
   })
   if (!response.ok) {
@@ -457,6 +467,11 @@ const IngestMoreUsersForm = ({
     defaultValues: {
       connectorId: connectorId,
       emails: "",
+      startDate: "",
+      endDate: "",
+      insertDriveAndContacts: true,
+      insertGmail: true,
+      insertCalendar: true,
     },
     onSubmit: async ({ value }) => {
       const emailsList = value.emails
@@ -473,7 +488,55 @@ const IngestMoreUsersForm = ({
       }
       setIsIngestingMore(true)
       try {
-        await submitIngestMoreSAForm({ ...value, emailsList }, navigate)
+        let submissionStartDate = value.startDate
+        let submissionEndDate = value.endDate
+
+        if (
+          submissionStartDate &&
+          submissionStartDate.trim() !== "" &&
+          (!submissionEndDate || submissionEndDate.trim() === "")
+        ) {
+          submissionEndDate = new Date().toISOString().split("T")[0]
+        }
+
+        // Validate that startDate is not after endDate if both are provided
+        if (
+          submissionStartDate &&
+          submissionEndDate &&
+          new Date(submissionStartDate) > new Date(submissionEndDate)
+        ) {
+          toast({
+            title: "Invalid date range",
+            description: "Start date must be before the end date.",
+            variant: "destructive",
+          })
+          setIsIngestingMore(false)
+          return
+        }
+
+        if (
+          !value.insertDriveAndContacts &&
+          !value.insertGmail &&
+          !value.insertCalendar
+        ) {
+          toast({
+            title: "No service selected",
+            description: "Please select at least one Google service to ingest.",
+            variant: "destructive",
+          })
+          setIsIngestingMore(false)
+          return
+        }
+
+        await submitIngestMoreSAForm(
+          {
+            ...value,
+            emailsList,
+            startDate: submissionStartDate,
+            endDate: submissionEndDate,
+          },
+          navigate,
+        )
         toast({
           title: "Ingestion started for additional users",
           description: "Processing is underway. See progress updates.",
@@ -532,7 +595,90 @@ const IngestMoreUsersForm = ({
           </>
         )}
       />
-      <Button type="submit" disabled={form.state.isSubmitting}>
+
+      <div className="mt-4">
+        <Label>Date Range</Label>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="start-date">Start Date</Label>
+            <form.Field
+              name="startDate"
+              children={(field) => (
+                <Input
+                  id="start-date"
+                  type="date"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              )}
+            />
+          </div>
+          <div>
+            <Label htmlFor="end-date">End Date</Label>
+            <form.Field
+              name="endDate"
+              children={(field) => (
+                <Input
+                  id="end-date"
+                  type="date"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              )}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Label>Services to Sync</Label>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertDriveAndContacts"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Drive & Contacts</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertGmail"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Gmail</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertCalendar"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Calendar</Label>
+          </div>
+        </div>
+      </div>
+
+      <Button type="submit" disabled={form.state.isSubmitting} className="mt-4">
         {form.state.isSubmitting ? (
           <LoadingSpinner className="mr-2 h-4 w-4" />
         ) : null}

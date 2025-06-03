@@ -22,13 +22,14 @@ import {
   SyncJobStatus,
   UserRole,
   MessageMode,
+  MessageFeedback,
 } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { SearchModes } from "@/search/vespa"
 
 const encryptionKey = process.env.ENCRYPTION_KEY!
-if (!encryptionKey) {
+if (!encryptionKey) {z
   throw new Error("ENCRYPTION_KEY environment variable is not set.")
 }
 const serviceAccountEncryptionKey = process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY
@@ -348,7 +349,10 @@ const messageModeField = "message_mode" // It's good practice to name the field 
 export const messageModePgEnum = pgEnum(
   // Renamed to avoid conflict if MessageMode was also a pgEnum
   messageModeField,
-  Object.values(MessageMode) as [string, ...string[]],
+  Object.values(MessageMode) as [string, ...string[]],)
+export const messageFeedbackEnum = pgEnum(
+  "message_feedback",
+  Object.values(MessageFeedback) as [string, ...string[]],
 )
 
 export const messages = pgTable(
@@ -384,6 +388,10 @@ export const messages = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     errorMessage: text("error_message").default(""),
+    queryRouterClassification: jsonb("queryRouterClassification")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    feedback: messageFeedbackEnum("feedback"),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),
@@ -554,6 +562,7 @@ export type SelectChat = z.infer<typeof selectChatSchema>
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
 })
+
 export type InsertMessage = z.infer<typeof insertMessageSchema>
 
 // Select schema for messages

@@ -234,24 +234,20 @@ schema file {
       expression: recency_bin_score_gs() + normalized_hybrid_relevance_gs()
     }
 
-    # Include relevant match features for visibility and debugging
     match-features {
-      query(alpha) # Show the alpha used for hybrid scoring
-      vector_score # Show the raw vector score component
-      # Relevance components inherited from 'initial'
+      query(alpha)
+      vector_score
       matchedFieldCount
-      combined_nativeRank         # Raw combined_nativeRank score before normalization for this profile
+      combined_nativeRank        
       nativeRank(title)
       nativeRank(chunks)
-
-      # New recency binning features
+      chunk_scores
       document_age_days_gs
-      query(bin_size_days_gs)   # Shows the actual bin size used
+      query(bin_size_days_gs)  
       recency_bin_index_gs
       recency_bin_score_gs
-      hybrid_relevance_score_gs # Raw hybrid score for this profile
-      normalized_hybrid_relevance_gs   # The hybrid relevance part after normalization for this profile
-      # doc_recency # Removed as it's superseded by the new binning logic for this profile
+      hybrid_relevance_score_gs 
+      normalized_hybrid_relevance_gs 
     }
   }
 

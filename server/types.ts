@@ -106,6 +106,15 @@ export const updateConnectorStatusSchema = z.object({
 export const serviceAccountIngestMoreSchema = z.object({
   connectorId: z.string(),
   emailsToIngest: z.array(z.string().email()),
+  startDate: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+    message: "Start date must be in YYYY-MM-DD format or empty",
+  }),
+  endDate: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+    message: "End date must be in YYYY-MM-DD format or empty",
+  }),
+  insertDriveAndContacts: z.boolean(),
+  insertGmail: z.boolean(),
+  insertCalendar: z.boolean(),
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>

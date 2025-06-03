@@ -75,9 +75,11 @@ export const isValidEntity = (entity: string): boolean => {
           .includes(normalizedEntity) ||
         Object.values(GooglePeopleEntity)
           .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(SlackEntity)
+          .map((v) => v.toLowerCase())
           .includes(normalizedEntity)
-    : // Object.values(SlackEntity).map(v => v.toLowerCase()).includes(normalizedEntity) ||
-      // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
+    : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
       false
 }
 
@@ -355,6 +357,7 @@ export const AttachmentSchema = z.object({
 export const MailSchema = z.object({
   docId: z.string(),
   threadId: z.string(),
+  mailId: z.string().optional(), // Optional for threads
   subject: z.string().default(""), // Default to empty string to avoid zod errors when subject is missing
   chunks: z.array(z.string()),
   timestamp: z.number(),

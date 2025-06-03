@@ -39,6 +39,7 @@ import {
   CalendarEntity,
   Apps,
   type VespaSchema,
+  SlackEntity,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -91,8 +92,8 @@ export const getSortedScoredChunks = (
 
   // Handle case where chunk_scores.cells object exists but is empty
   if (
-    matchfeatures.chunk_scores.cells &&
-    !Object.keys(matchfeatures.chunk_scores.cells).length
+    !matchfeatures?.chunk_scores?.cells ||
+    !Object.keys(matchfeatures?.chunk_scores?.cells).length
   ) {
     const mappedChunks = existingChunksSummary.map((v, index) => ({
       chunk: v,
@@ -397,6 +398,9 @@ export const entityToSchemaMapper = (
     ),
     ...Object.fromEntries(
       Object.values(CalendarEntity).map((e) => [e, eventSchema]),
+    ),
+    ...Object.fromEntries(
+      Object.values(SlackEntity).map((e) => [e, chatMessageSchema]),
     ),
   }
 

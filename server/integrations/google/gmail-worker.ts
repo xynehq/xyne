@@ -15,7 +15,7 @@ import {
   type Mail,
   type MailAttachment,
 } from "@/search/types"
-import { ifDocumentsExist, insert } from "@/search/vespa"
+import { ifDocumentsExist, ifMailDocumentsExist, insert } from "@/search/vespa"
 import {
   MessageTypes,
   Subsystem,
@@ -40,6 +40,7 @@ import {
   parseAttachments,
 } from "@/integrations/google/worker-utils"
 import { StatType } from "@/integrations/tracker"
+import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested, totalIngestedMails } from "@/metrics/google/gmail-metrics"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -48,6 +49,8 @@ const jwtValue = z.object({
     client_email: z.string(),
     private_key: z.string(),
   }),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 })
 const messageTypes = z.discriminatedUnion("type", [jwtValue])
 
@@ -71,10 +74,15 @@ self.onmessage = async (event: MessageEvent<MessageType>) => {
     if (event.type === "message") {
       const msg = event.data
       if (msg.type === MessageTypes.JwtParams) {
-        const { userEmail, serviceAccountKey } = msg
+        const { userEmail, serviceAccountKey, startDate, endDate } = msg
         Logger.info(`Got the jwt params: ${userEmail}`)
         const jwtClient = createJwtClient(serviceAccountKey, userEmail)
-        const historyId = await handleGmailIngestion(jwtClient, userEmail)
+        const historyId = await handleGmailIngestion(
+          jwtClient,
+          userEmail,
+          startDate,
+          endDate,
+        )
         postMessage({
           type: WorkerResponseTypes.HistoryId,
           userEmail,
@@ -94,6 +102,8 @@ self.onerror = (error: ErrorEvent) => {
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
+  startDate?: string,
+  endDate?: string,
 ): Promise<string> => {
   const batchSize = 100
   const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
@@ -118,6 +128,31 @@ export const handleGmailIngestion = async (
     throw new Error("Could not get historyId from getProfile")
   }
 
+  // Build query with date filters
+  let query = "-in:promotions"
+  const dateFilters: string[] = []
+
+  if (startDate) {
+    const startDateObj = new Date(startDate)
+    const formattedStartDate = startDateObj
+      .toISOString()
+      .split("T")[0]
+      .replace(/-/g, "/")
+    dateFilters.push(`after:${formattedStartDate}`)
+  }
+  if (endDate) {
+    const endDateObj = new Date(endDate)
+    const formattedEndDate = endDateObj
+      .toISOString()
+      .split("T")[0]
+      .replace(/-/g, "/")
+    dateFilters.push(`before:${formattedEndDate}`)
+  }
+
+  if (dateFilters.length > 0) {
+    query = `${query} ${dateFilters.join(" ")}`
+  }
+
   do {
     const resp = await retryWithBackoff(
       () =>
@@ -127,7 +162,7 @@ export const handleGmailIngestion = async (
           maxResults: batchSize,
           pageToken: nextPageToken,
           fields: "messages(id), nextPageToken",
-          q: "-in:promotions",
+          q: query,
         }),
       `Fetching Gmail messages list (pageToken: ${nextPageToken})`,
       Apps.Gmail,
@@ -141,16 +176,8 @@ export const handleGmailIngestion = async (
       let insertedMessagesInBatch = 0 // Counter for successful messages
       let insertedPdfAttachmentsInBatch = 0 // Counter for successful PDFs in this batch
 
-      const messageIds = messageBatch.map((msg) => msg.id!)
-      const existenceMap = await ifDocumentsExist(messageIds)
-
       let batchRequests = messageBatch.map((message) =>
         limit(async () => {
-          const messageId = message.id!
-          if (existenceMap[messageId]) {
-            insertedMessagesInBatch++ // Count as "processed" since it exists
-            return
-          }
           let msgResp
           try {
             msgResp = await retryWithBackoff(
@@ -166,20 +193,26 @@ export const handleGmailIngestion = async (
               client,
             )
             // Call modified parseMail to get data and PDF count
-            const { mailData, insertedPdfCount } = await parseMail(
+            const { mailData, insertedPdfCount, exist } = await parseMail(
               msgResp.data,
               gmail,
               client,
+              email,
             )
-            await insert(mailData, mailSchema)
-            // Increment counters only on success
-            insertedMessagesInBatch++
-            insertedPdfAttachmentsInBatch += insertedPdfCount
+
+            if (!exist) {
+              await insert(mailData, mailSchema)
+              // Increment counters only on success
+              insertedMessagesInBatch++
+              insertedPdfAttachmentsInBatch += insertedPdfCount
+              totalIngestedMails.inc({mail_id:message.id??"", mail_title:message.payload?.filename??"", mime_type:message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
+            }
           } catch (error) {
             Logger.error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
+            ingestionMailErrorsTotal.inc({mail_id:message.id??"",mail_title:message.payload?.filename??"",mime_type:message.payload?.mimeType??"GOOGLE_MAIL",status:"FAILED", error_type:"ERROR_IN_GMAIL_INGESTION"}, 1)
           } finally {
             // release from memory
             msgResp = null
@@ -254,7 +287,8 @@ export const parseMail = async (
   email: gmail_v1.Schema$Message,
   gmail: gmail_v1.Gmail,
   client: GoogleClient,
-): Promise<{ mailData: Mail; insertedPdfCount: number }> => {
+  userEmail: string,
+): Promise<{ mailData: Mail; insertedPdfCount: number; exist: boolean }> => {
   const messageId = email.id
   const threadId = email.threadId
   let insertedPdfCount = 0
@@ -286,8 +320,22 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-
-  // Handle timestamp from Date header if available
+  const mailId = getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  let exist = false
+  if (mailId) {
+    try {
+        const res = await ifMailDocumentsExist([mailId])
+        if (res[mailId]?.exists) {
+           exist = true
+          }
+        } catch (error) {
+          Logger.warn(
+            error,
+            `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`
+          )
+          exist = false
+        }
+      }
   const dateHeader = getHeader("Date")
   if (dateHeader) {
     const date = new Date(dateHeader)
@@ -318,7 +366,7 @@ export const parseMail = async (
 
   let attachments: Attachment[] = []
   let filenames: string[] = []
-  if (payload) {
+  if (payload && !exist) {
     const parsedParts = parseAttachments(payload)
     attachments = parsedParts.attachments
     filenames = parsedParts.filenames
@@ -364,6 +412,7 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
+            totalAttachmentIngested.inc({mail_id:messageId, mime_type:mimeType, attachment_id:attachmentId, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -372,6 +421,7 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
+             totalAttachmentError.inc({mail_id:messageId, mime_type:mimeType, attachment_id:body.attachmentId??"", status:"FAILED",email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
           }
         }
       }
@@ -381,6 +431,7 @@ export const parseMail = async (
   const emailData: Mail = {
     docId: messageId,
     threadId: threadId,
+    mailId: mailId,
     subject: subject,
     chunks: chunks,
     timestamp: timestamp,
@@ -397,7 +448,7 @@ export const parseMail = async (
     labels: labels ?? [],
   }
 
-  return { mailData: emailData, insertedPdfCount }
+  return { mailData: emailData, insertedPdfCount, exist }
 }
 
 const getBody = (payload: any): string => {

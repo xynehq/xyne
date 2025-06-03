@@ -25,17 +25,6 @@ enum Tabs {
   Ask = "ask",
 }
 
-// Define a local Reference type matching the expected structure from ChatBox
-interface LocalReference {
-  id: string
-  title: string
-  url?: string
-  docId?: string
-  app?: string
-  entity?: string
-  type: "citation" | "global"
-  photoLink?: string
-}
 
 const REASONING_STATE = "isReasoningGlobalState"
 const AGENTIC_STATE = "agenticState"
@@ -54,6 +43,10 @@ const Index = () => {
 
   useEffect(() => {
     localStorage.setItem(REASONING_STATE, JSON.stringify(isReasoningActive))
+    localStorage.setItem(
+      "isReasoningGlobalState",
+      JSON.stringify(isReasoningActive),
+    )
   }, [isReasoningActive])
 
   useEffect(() => {
@@ -138,18 +131,13 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (
-    messageToSend: string,
-    references: LocalReference[],
-    selectedSources?: string[],
-  ) => {
+  const handleAsk = (messageToSend: string, selectedSources?: string[]) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
-        agentic?: boolean
         reasoning?: boolean
-        refs?: string
         sources?: string
+        agentic?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -161,11 +149,6 @@ const Index = () => {
         searchParams.agentic = true
       }
 
-      if (references && references.length > 0) {
-        // Pass only reference IDs, stringified as JSON
-        searchParams.refs = JSON.stringify(references.map((ref) => ref.id))
-      }
-
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
       }
@@ -174,7 +157,6 @@ const Index = () => {
         to: "/chat",
         search: searchParams,
       })
-      // Log them to confirm they are received
     }
   }
 

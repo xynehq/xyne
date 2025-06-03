@@ -65,6 +65,8 @@ import {
   ChatRenameApi,
   GetChatApi,
   MessageApi,
+  MessageFeedbackApi,
+  messageFeedbackSchema,
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
@@ -79,6 +81,7 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
+import metricRegister from "@/metrics/sharedRegistry"
 
 export type Variables = JwtVariables
 
@@ -183,6 +186,11 @@ export const AppRoutes = app
     "/message/retry",
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
+  )
+  .post(
+    "/message/feedback",
+    zValidator("json", messageFeedbackSchema),
+    MessageFeedbackApi,
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
@@ -435,6 +443,18 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 export const init = async () => {
   await initQueue()
 }
+
+app.get("/metrics", async (c) => {
+  try {
+    const metrics = await metricRegister.metrics()
+    return c.text(metrics, 200, {
+      "Content-Type": metricRegister.contentType,
+    })
+  } catch (err) {
+    return c.text("Error generating metrics", 500)
+  }
+})
+
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })

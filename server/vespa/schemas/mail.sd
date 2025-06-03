@@ -11,6 +11,10 @@ schema mail {
       indexing: attribute | summary
       attribute: fast-search
     }
+    field mailId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
 
     field subject type string {
       indexing: summary | index
@@ -250,6 +254,7 @@ schema mail {
     match-features {
       query(alpha)
       vector_score
+      chunk_scores
       combined_nativeRank
       matchedFieldCount
       nativeRank(subject)

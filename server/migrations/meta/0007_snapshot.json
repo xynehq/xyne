@@ -1,6 +1,6 @@
 {
-  "id": "5a120ff7-fbf7-4b69-9465-8bd0f39c6f41",
-  "prevId": "7f590dab-50df-4ecb-8a12-a67ac5fe03e3",
+  "id": "cf051273-bc3d-4626-84fc-26240f7b2064",
+  "prevId": "888c7e4b-913a-467a-9df4-3db723413d04",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -556,14 +556,6 @@
           "notNull": true,
           "default": "''"
         },
-        "message_mode": {
-          "name": "message_mode",
-          "type": "message_mode",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'ask'"
-        },
         "modelId": {
           "name": "modelId",
           "type": "text",
@@ -616,6 +608,13 @@
           "primaryKey": false,
           "notNull": false,
           "default": "''"
+        },
+        "feedback": {
+          "name": "feedback",
+          "type": "message_feedback",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1486,12 +1485,12 @@
         "Website"
       ]
     },
-    "public.message_mode": {
-      "name": "message_mode",
+    "public.message_feedback": {
+      "name": "message_feedback",
       "schema": "public",
       "values": [
-        "ask",
-        "agentic"
+        "like",
+        "dislike"
       ]
     },
     "public.message_role": {

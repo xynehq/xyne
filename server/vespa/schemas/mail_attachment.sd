@@ -217,14 +217,13 @@ schema mail_attachment {
       vector_score
       combined_nativeRank
       matchedFieldCount
-      # Specific nativeRank fields for mail_attachment
+      chunk_scores
       nativeRank(filename)
       nativeRank(chunks)
       document_age_days
       recency_bin_index
       recency_bin_score
       hybrid_relevance_score
-      # chunk_scores # Keeping this commented as per user ignoring linting for elementwise
     }
   }
 
