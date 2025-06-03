@@ -966,7 +966,7 @@ async function* generateAnswerFromGivenContext(
   userCtx: string,
   alpha: number = 0.5,
   fileIds: string[],
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1308,7 +1308,7 @@ async function* generatePointQueryTimeExpansion(
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   eventRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1581,8 +1581,8 @@ async function* processResultsForMetadata(
   app: Apps,
   entity: any,
   chunksCount: number | undefined,
-  span?: Span,
   userRequestsReasoning?: boolean,
+  span?: Span,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -1757,8 +1757,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
@@ -1832,8 +1832,8 @@ async function* generateMetadataQueryAnswer(
       app as Apps,
       entity,
       maxSummaryCount,
-      span,
       userRequestsReasoning,
+      span,
     )
     return
   } else if (
@@ -1920,8 +1920,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
@@ -2008,8 +2008,8 @@ export async function* UnderstandMessageAndAnswer(
   classification: QueryRouterLLMResponse,
   messages: Message[],
   alpha: number,
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2120,8 +2120,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   message: string,
   alpha: number,
   fileIds: string[],
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2423,8 +2423,8 @@ export const MessageApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
+              understandSpan,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -2821,8 +2821,8 @@ export const MessageApi = async (c: Context) => {
                     message,
                     0.5,
                     parsedMessage.data.fileIds as string[],
-                    understandSpan,
                     userRequestsReasoning,
+                    understandSpan,
                   )
                 } else if (
                   parsedMessage.data.queryRouterClassification &&
@@ -2856,8 +2856,8 @@ export const MessageApi = async (c: Context) => {
                   classification,
                   llmFormattedMessages,
                   0.5,
-                  understandSpan,
                   userRequestsReasoning,
+                  understandSpan,
                 )
               }
               stream.writeSSE({
@@ -3365,8 +3365,9 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
+              understandSpan,
+              
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3794,8 +3795,8 @@ export const MessageRetryApi = async (c: Context) => {
                 classification,
                 convWithNoErrMsg,
                 0.5,
-                understandSpan,
                 userRequestsReasoning,
+                understandSpan,
               )
               // throw new Error("Hello, how are u doing?")
               stream.writeSSE({
