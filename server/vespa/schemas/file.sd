@@ -70,7 +70,7 @@ schema file {
     }
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[768])  {
     indexing: input chunks | embed | attribute | index
     attribute {
         distance-metric: angular
@@ -100,7 +100,7 @@ schema file {
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
+      query(e) tensor<bfloat16>(v[768])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
       query(recency_decay_rate) double
     }
@@ -150,7 +150,6 @@ schema file {
     }
   }
 
- 
   rank-profile default_native inherits initial {
 
     first-phase {
@@ -159,10 +158,35 @@ schema file {
 
     global-phase {
       expression {
-        (
-          (query(alpha) * vector_score) + 
-          ((1 - query(alpha)) *  combined_nativeRank)
-        ) * doc_recency
+          ((query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)) * doc_recency
+      }
+      rerank-count:1000
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
+    }
+  }
+ 
+  rank-profile norm_native_rank inherits initial {
+
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (((combined_nativeRank - 0.2) 
+            / (0.2))* (1 - query(alpha))
+            +
+            ((vector_score - 0.45) 
+            / 0.2) * query(alpha)) * doc_recency
       }
       rerank-count: 1000
     }

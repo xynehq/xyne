@@ -134,7 +134,7 @@ schema event {
         }
     }
 
-     field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
+     field chunk_embeddings type tensor<bfloat16>(v[768])  {
         indexing: (input name || "") . " " .(input description || ""). " " .((input attachmentFilenames | for_each { _ }) . " " || ""). " " .(input url || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -158,7 +158,7 @@ schema event {
 
     rank-profile initial {
         inputs {
-            query(e) tensor<bfloat16>(v[DIMS])
+            query(e) tensor<bfloat16>(v[768])
             query(alpha) double 
             query(recency_decay_rate) double
         }
@@ -226,12 +226,38 @@ schema event {
 
         global-phase {
             expression {
-              (
-                (query(alpha) * vector_score) + 
-                ((1 - query(alpha)) *  combined_nativeRank)
-              ) * doc_recency
+                ((query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)) * doc_recency
             }
-            rerank-count: 1000
+            rerank-count:1000
+        }
+
+        match-features {
+          doc_recency
+          matchedFieldCount
+          combined_nativeRank
+          vector_score
+          nativeRank(name)
+          nativeRank(description)
+          nativeRank(attachmentFilenames)
+          nativeRank(attendeesNames)
+        }
+    }
+
+    rank-profile norm_native_rank inherits initial {
+
+        first-phase {
+          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
+        }
+
+        global-phase {
+          expression {
+            (((combined_nativeRank - 0.2) 
+            / (0.2))* (1 - query(alpha))
+            +
+            ((vector_score - 0.45) 
+            / 0.2) * query(alpha)) * doc_recency
+          }
+          rerank-count: 1000
         }
 
         match-features {

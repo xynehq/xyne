@@ -139,7 +139,7 @@ schema user {
         }
     }
 
-    field chunk_embeddings type tensor<bfloat16>(v[DIMS])  {
+    field chunk_embeddings type tensor<bfloat16>(v[768])  {
         indexing: (input name || "") . " " .(input email || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -198,8 +198,13 @@ schema user {
 
     rank-profile initial {
        inputs {
-            query(e) tensor<bfloat16>(v[DIMS])
+            query(e) tensor<bfloat16>(v[768])
             query(alpha) double 
+            query(comb_native_low)   double   # new: 5th-percentile (or μ−3σ, etc.) for combinedNativeRank
+            query(comb_native_high)  double   # new: 95th-percentile (or μ+3σ, etc.) for combined_nativeRank
+            query(vec_low)    double   # new: 5th-percentile (or median−3·MAD) for vector
+            query(vec_high)   double   # new: 95th-percentile (or median+3·MAD) for vector
+
         }
 
         function scale(val) {
@@ -230,6 +235,26 @@ schema user {
         # slight boost for people
         global-phase {
             expression: 1.2 * ((query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank))
+        }
+
+        match-features {
+            matchedFieldCount
+            nativeRank(name)
+            nativeRank(email)
+            vector_score
+        }
+    }
+
+    rank-profile refined_native_rank inherits initial {
+        # slight boost for people
+        global-phase {
+            expression { 
+                1.2 * (((combined_nativeRank - query(comb_native_low)) 
+                / (query(comb_native_high) - query(comb_native_low)))* (1 - query(alpha))
+                +
+                ((vector_score - query(vec_low)) 
+                / (query(vec_high) - query(vec_low))) * query(alpha))
+            }
         }
 
         match-features {
