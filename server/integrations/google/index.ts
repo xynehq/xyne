@@ -161,14 +161,14 @@ const initializeGmailWorker = () => {
     const jobIdFromResult = result.jobId // Stats, HistoryId, Error messages from worker now contain jobId
 
     if (
-      result.type === MessageTypes.HistoryId ||
-      result.type === MessageTypes.Error
+      result.type === WorkerResponseTypes.HistoryId ||
+      result.type === WorkerResponseTypes.Error
     ) {
       const msgId = result.msgId
       const promiseHandlers = pendingRequests.get(msgId)
       if (promiseHandlers) {
         pendingRequests.delete(msgId)
-        if (result.type === MessageTypes.HistoryId) {
+        if (result.type === WorkerResponseTypes.HistoryId) {
           promiseHandlers.resolve(result.historyId)
         } else {
           // MessageTypes.Error
@@ -2887,26 +2887,37 @@ export async function getGmailCounts(
     }
 
     if (dateFilters.length > 0) {
-      baseQuery = dateFilters.join(" ")
+      baseQuery = dateFilters.join(" AND ")
     }
 
     Logger.info(
       `Gmail count query: Final query string for total: "${baseQuery}"`,
     )
+    let nextPageToken: any = null
     try {
-      const messagesResponse = await retryWithBackoff(
-        () =>
-          gmail.users.messages.list({
-            userId: "me",
-            q: baseQuery,
-            maxResults: 1, // We only need the estimate
-          }),
-        "Fetching Gmail messages count (date-filtered)",
-        Apps.Gmail,
-        0,
-        client,
-      )
-      messagesTotal = messagesResponse.data.resultSizeEstimate ?? 0
+      do {
+        const messagesResponse = await retryWithBackoff(
+          () =>
+            gmail.users.messages.list({
+              userId: "me",
+              q: baseQuery,
+              maxResults: 500,
+              pageToken: nextPageToken || undefined, // Pass the current page token
+            }),
+          "Fetching Gmail messages count (date-filtered)",
+          Apps.Gmail,
+          0,
+          client,
+        )
+
+        // Count the actual messages in this page
+        const messagesInThisPage = messagesResponse.data.messages?.length ?? 0
+        messagesTotal += messagesInThisPage
+
+        // Get the token for the next page
+        nextPageToken = messagesResponse.data.nextPageToken || null
+      } while (nextPageToken)
+
       Logger.info(
         `Gmail count query: resultSizeEstimate for total (date-filtered): ${messagesTotal}`,
       )
@@ -2920,25 +2931,29 @@ export async function getGmailCounts(
 
     const promoQuery =
       dateFilters.length > 0
-        ? `category:promotions ${dateFilters.join(" ")}`
+        ? `category:promotions AND ${dateFilters.join(" AND ")}`
         : "category:promotions"
     Logger.info(
       `Gmail count query: Promotions query string (date-filtered): "${promoQuery}"`,
     )
     try {
-      const promoMessagesResponse = await retryWithBackoff(
-        () =>
-          gmail.users.messages.list({
-            userId: "me",
-            q: promoQuery,
-            maxResults: 1,
-          }),
-        "Fetching Promotions messages count (date-filtered)",
-        Apps.Gmail,
-        0,
-        client,
-      )
-      promotionMessages = promoMessagesResponse.data.resultSizeEstimate ?? 0
+      nextPageToken = null // Reset for promotions query
+      do {
+        const promoMessagesResponse = await retryWithBackoff(
+          () =>
+            gmail.users.messages.list({
+              userId: "me",
+              q: promoQuery,
+              maxResults: 500,
+            }),
+          "Fetching Promotions messages count (date-filtered)",
+          Apps.Gmail,
+          0,
+          client,
+        )
+        promotionMessages += promoMessagesResponse.data.resultSizeEstimate ?? 0
+        nextPageToken = promoMessagesResponse.data.nextPageToken || null
+      } while (nextPageToken)
       Logger.info(
         `Gmail count query: resultSizeEstimate for promotions (date-filtered): ${promotionMessages}`,
       )

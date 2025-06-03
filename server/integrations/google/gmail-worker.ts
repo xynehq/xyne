@@ -203,7 +203,7 @@ export const handleGmailIngestion = async (
   }
 
   if (dateFilters.length > 0) {
-    query = `${query} ${dateFilters.join(" ")}`
+    query = `${query} ${dateFilters.join(" AND ")}`
   }
   Logger.info(`query: ${query}`)
 
