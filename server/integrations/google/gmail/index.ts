@@ -27,7 +27,12 @@ import {
   getGmailAttachmentChunks,
   parseAttachments,
 } from "@/integrations/google/worker-utils"
-import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested, totalIngestedMails } from "@/metrics/google/gmail-metrics"
+import {
+  ingestionMailErrorsTotal,
+  totalAttachmentError,
+  totalAttachmentIngested,
+  totalIngestedMails,
+} from "@/metrics/google/gmail-metrics"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
@@ -102,8 +107,18 @@ export const handleGmailIngestion = async (
             )
             if (!exist) {
               await insert(mailData, mailSchema)
-              
-            totalIngestedMails.inc({mail_id:message.id??"", mail_title:message.payload?.filename??"", mime_type:message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"OAUTH_ACCOUNT"}, 1)
+
+              totalIngestedMails.inc(
+                {
+                  mail_id: message.id ?? "",
+                  mail_title: message.payload?.filename ?? "",
+                  mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
+                  status: "GMAIL_INGEST_SUCCESS",
+                  email: email,
+                  account_type: "OAUTH_ACCOUNT",
+                },
+                1,
+              )
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {
@@ -111,7 +126,16 @@ export const handleGmailIngestion = async (
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc({mail_id:message.id??"",mail_title:message.payload?.filename??"",mime_type:message.payload?.mimeType??"GOOGLE_MAIL",status:"FAILED", error_type:"ERROR_IN_GMAIL_INGESTION"},1)
+            ingestionMailErrorsTotal.inc(
+              {
+                mail_id: message.id ?? "",
+                mail_title: message.payload?.filename ?? "",
+                mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
+                status: "FAILED",
+                error_type: "ERROR_IN_GMAIL_INGESTION",
+              },
+              1,
+            )
           } finally {
             // release from memory
             msgResp = null
@@ -198,22 +222,23 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-  const mailId = getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  const mailId =
+    getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let exist = false
   if (mailId) {
     try {
-        const res = await ifMailDocumentsExist([mailId])
-        if (res[mailId]?.exists) {
-           exist = true
-          }
-        } catch (error) {
-          Logger.warn(
-            error,
-            `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`
-          )
-          exist = false
-        }
+      const res = await ifMailDocumentsExist([mailId])
+      if (res[mailId]?.exists) {
+        exist = true
       }
+    } catch (error) {
+      Logger.warn(
+        error,
+        `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`,
+      )
+      exist = false
+    }
+  }
   // Handle timestamp from Date header if available
   const dateHeader = getHeader("Date")
   if (dateHeader) {
@@ -297,7 +322,17 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
-            totalAttachmentIngested.inc({mail_id:messageId, mime_type:mimeType, attachment_id:attachmentId, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
+            totalAttachmentIngested.inc(
+              {
+                mail_id: messageId,
+                mime_type: mimeType,
+                attachment_id: attachmentId,
+                status: "SUCCESS",
+                account_type: "OAUTH_ACCOUNT",
+                email: userEmail,
+              },
+              1,
+            )
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -306,7 +341,17 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-            totalAttachmentError.inc({mail_id:messageId, mime_type:mimeType, attachment_id:body.attachmentId??"", status:"FAILED",email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
+            totalAttachmentError.inc(
+              {
+                mail_id: messageId,
+                mime_type: mimeType,
+                attachment_id: body.attachmentId ?? "",
+                status: "FAILED",
+                email: userEmail,
+                error_type: "ERROR_INSERTING_ATTACHMENT",
+              },
+              1,
+            )
           }
         }
       }
