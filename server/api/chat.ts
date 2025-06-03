@@ -2810,7 +2810,8 @@ export const MessageApi = async (c: Context) => {
                   Logger.error(`Error while parsing last user message`)
                 } else if (
                   parsedMessage.success &&
-                  parsedMessage.data.fileIds // If the message contains fileIds then the follow up is must for @file
+                  Array.isArray(parsedMessage.data.fileIds) &&
+                  parsedMessage.data.fileIds.length // If the message contains fileIds then the follow up is must for @file
                 ) {
                   Logger.info(
                     `Reusing file-based classification from previous message Classification: ${JSON.stringify(parsedMessage.data.queryRouterClassification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
@@ -3367,7 +3368,6 @@ export const MessageRetryApi = async (c: Context) => {
               fileIds,
               userRequestsReasoning,
               understandSpan,
-              
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
