@@ -33,6 +33,13 @@ elif [ "$EMBEDDING_MODEL" = "bge-large-en-v1.5" ]; then
     DIMS=1024
     echo "Deploying embedding model: $EMBEDDING_MODEL"
 
+elif [ "$EMBEDDING_MODEL" = "gte-small" ]; then
+    TOKENIZER_URL="https://huggingface.co/thenlper/gte-small/resolve/main/tokenizer.json"
+    MODEL_URL="https://huggingface.co/thenlper/gte-small/resolve/main/onnx/model.onnx"
+    DIMS=384
+    echo "Deploying embedding model: $EMBEDDING_MODEL"
+
+
 elif [ "$EMBEDDING_MODEL" = "gte-base" ]; then
     TOKENIZER_URL="https://huggingface.co/thenlper/gte-base/resolve/main/tokenizer.json"
     MODEL_URL="https://huggingface.co/thenlper/gte-base/resolve/main/onnx/model.onnx"
@@ -67,7 +74,7 @@ elif [ "$EMBEDDING_MODEL" = "e5-large-v1" ]; then
 
 
 else
-    echo "Error: Unknown EMBEDDING_MODEL value '$EMBEDDING_MODEL'. Please choose one of: ['bge-small-en-v1.5', 'bge-base-en-v1.5', 'bge-large-en-v1.5', 'gte-base', 'gte-large', 'e5-small-v1', 'e5-base-v1', 'e5-large-v1']"
+    echo "Error: Unknown EMBEDDING_MODEL value '$EMBEDDING_MODEL'. Please choose one of: ['bge-small-en-v1.5', 'bge-base-en-v1.5', 'bge-large-en-v1.5', 'gte-small', 'gte-base', 'gte-large', 'e5-small-v1', 'e5-base-v1', 'e5-large-v1']"
     exit 1
 fi
 
