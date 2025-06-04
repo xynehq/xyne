@@ -534,7 +534,7 @@ const insertCalendarEvents = async (
   const cancelledEvents = events.filter((e) => e.status === "cancelled")
 
 
-  const totalDurationForEventIngestion = ingestionDuration.startTimer({file_type:"GOOGLE_CALENDAR_EVENT", mime_type:"google_calendar_events", email:userEmail})
+  const totalDurationForEventIngestion = ingestionDuration.startTimer({file_type:fileTypeEnum.google_calendar, mime_type:mimeTypeEnum.google_calendar, email:userEmail})
   // Insert confirmed events
   for (const event of confirmedEvents) {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
@@ -632,7 +632,7 @@ const insertCalendarEvents = async (
   }
 
   totalDurationForEventIngestion()
-  metadataFiles.inc({file_type:"GOOGLE_CALENDAR_EVENT", mime_type:"google_calendar_events", status:"SUCCESS", email:userEmail}, events.length)
+  metadataFiles.inc({file_type:fileTypeEnum.google_calendar, mime_type:mimeTypeEnum.google_calendar, status:statusEnum.success, email:userEmail}, events.length)
   return { events, calendarEventsToken: newSyncTokenCalendarEvents }
 }
 
@@ -2190,7 +2190,7 @@ const insertContactsToVespa = async (
   owner: string,
   tracker: Tracker,
 ): Promise<void> => {
-  const contactIngestionDuration = ingestionDuration.startTimer({file_type:"GOOGLE_CONTACT", mime_type:"google_people", email: owner})
+  const contactIngestionDuration = ingestionDuration.startTimer({file_type:fileTypeEnum.google_contact, mime_type:mimeTypeEnum.google_contact, email: owner})
   try {    
     for (const contact of contacts) {
       await insertContact(contact, GooglePeopleEntity.Contacts, owner)
@@ -2220,7 +2220,7 @@ const insertContactsToVespa = async (
     }
   }finally{
     contactIngestionDuration()
-    metadataFiles.inc({file_type:"GOOGLE_CONTACT", mime_type:"google_people", email:owner}, (contacts.length+otherContacts.length))
+    metadataFiles.inc({file_type:fileTypeEnum.google_contact, mime_type:mimeTypeEnum.google_contact, email:owner, status: statusEnum.success}, (contacts.length+otherContacts.length))
   }
   
 }

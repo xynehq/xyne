@@ -342,13 +342,15 @@ export enum metricAccountType {
 }
 
 export enum fileTypeEnum {
-  google_pdf = "GOOGLE_DRIVE_PDF",
-  google_doc = "GOOGLE_DOC",
-  google_sheets = "GOOGLE_SHEETS",
-  google_slide = "GOOGLE_SLIDE",
-  gmail = "GOOGLE_MAIL",
-  gmail_attachment = "GOOGLE_MAIL_ATTACHMENT",
-  drive_file = "GOOGLE_DRIVE_FILE"
+  google_pdf = "google_drive_pdf",
+  google_doc = "google_doc",
+  google_sheets = "google_sheets",
+  google_slide = "google_slide",
+  gmail = "google_mail",
+  gmail_attachment = "google_mail_attachment",
+  drive_file = "google_drive_file",
+  google_contact = "google_contact",
+  google_calendar = "google_calendar_event"
 }
 
 export enum mimeTypeEnum {
@@ -357,7 +359,10 @@ export enum mimeTypeEnum {
   google_doc = "google_doc",
   google_sheet = "google_sheets",
   g_mail = "gmail",
-  g_mail_attachment = "gmail_attachment"
+  g_mail_attachment = "gmail_attachment",
+  google_contact = "google_people",
+  google_calendar = "google_calendar_event"
+
 }
 
 export enum statusEnum {
