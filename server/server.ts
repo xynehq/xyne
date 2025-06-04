@@ -17,7 +17,9 @@ import {
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
+  addApiKeyMCPConnectorSchema,
   addServiceConnectionSchema,
+  addStdioMCPConnectorSchema,
   answerSchema,
   createOAuthProvider,
   deleteConnectorSchema,
@@ -28,12 +30,14 @@ import {
 } from "@/types"
 import {
   AddApiKeyConnector,
+  AddApiKeyMCPConnector,
   AddServiceConnection,
   CreateOAuthProvider,
   DeleteConnector,
   DeleteOauthConnector,
   GetConnectors,
   StartOAuth,
+  AddStdioMCPConnector,
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
 } from "@/api/admin"
@@ -68,6 +72,7 @@ import {
   MessageFeedbackApi,
   messageFeedbackSchema,
   MessageRetryApi,
+  MessageWithToolsApi,
   GetChatTraceApi,
   StopStreamingApi,
 } from "@/api/chat"
@@ -125,7 +130,9 @@ const AuthRedirect = async (c: Context, next: Next) => {
   } catch (err) {
     Logger.error(
       err,
-      `${new AuthRedirectError({ cause: err as Error })} ${(err as Error).stack}`,
+      `${new AuthRedirectError({ cause: err as Error })} ${
+        (err as Error).stack
+      }`,
     )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
@@ -183,6 +190,11 @@ export const AppRoutes = app
   // this is event streaming end point
   .get("/message/create", zValidator("query", messageSchema), MessageApi)
   .get(
+    "/message/create/mcp",
+    zValidator("query", messageSchema),
+    MessageWithToolsApi,
+  )
+  .get(
     "/message/retry",
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
@@ -229,6 +241,16 @@ export const AppRoutes = app
     "/apikey/create",
     zValidator("form", addApiKeyConnectorSchema),
     AddApiKeyConnector,
+  )
+  .post(
+    "/apikey/mcp/create",
+    zValidator("form", addApiKeyMCPConnectorSchema),
+    AddApiKeyMCPConnector,
+  )
+  .post(
+    "/stdio/mcp/create",
+    zValidator("form", addStdioMCPConnectorSchema),
+    AddStdioMCPConnector,
   )
   .get("/connectors/all", GetConnectors)
   .post(
@@ -454,11 +476,21 @@ init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
 
+const errorHandler = (error) => {
+  return new Response(`<pre>${error}\n${error.stack}</pre>`, {
+    headers: {
+      "Content-Type": "text/html",
+    },
+  })
+}
+
 const server = Bun.serve({
   fetch: app.fetch,
   port: config.port,
   websocket,
   idleTimeout: 180,
+  development: true,
+  error: errorHandler,
 })
 Logger.info(`listening on port: ${config.port}`)
 

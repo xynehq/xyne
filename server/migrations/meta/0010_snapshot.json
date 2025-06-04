@@ -1,6 +1,6 @@
 {
-  "id": "cf051273-bc3d-4626-84fc-26240f7b2064",
-  "prevId": "888c7e4b-913a-467a-9df4-3db723413d04",
+  "id": "934e0447-68a1-4d1e-aca4-6a284a8fa98e",
+  "prevId": "b929f33b-7c71-4541-a80f-1e9e3d615ba5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -484,14 +484,15 @@
             "external_id"
           ]
         },
-        "connectors_workspace_id_user_id_app_type_auth_type_unique": {
-          "name": "connectors_workspace_id_user_id_app_type_auth_type_unique",
+        "connectors_workspace_id_user_id_app_type_auth_type_name_unique": {
+          "name": "connectors_workspace_id_user_id_app_type_auth_type_name_unique",
           "nullsNotDistinct": false,
           "columns": [
             "workspace_id",
             "user_id",
             "app_type",
-            "auth_type"
+            "auth_type",
+            "name"
           ]
         }
       }
@@ -608,13 +609,6 @@
           "primaryKey": false,
           "notNull": false,
           "default": "''"
-        },
-        "feedback": {
-          "name": "feedback",
-          "type": "message_feedback",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -1589,7 +1583,9 @@
         "gmail",
         "notion",
         "google-calendar",
-        "slack"
+        "slack",
+        "mcp",
+        "github_mcp"
       ]
     },
     "public.auth_type": {
@@ -1610,15 +1606,8 @@
         "Database",
         "Api",
         "File",
-        "Website"
-      ]
-    },
-    "public.message_feedback": {
-      "name": "message_feedback",
-      "schema": "public",
-      "values": [
-        "like",
-        "dislike"
+        "Website",
+        "Mcp"
       ]
     },
     "public.message_role": {

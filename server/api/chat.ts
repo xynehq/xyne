@@ -8,8 +8,13 @@ import {
   mailPromptJsonStream,
   temporalPromptJsonStream,
   queryRewriter,
+  generateAnswerBasedOnToolOutput,
   meetingPromptJsonStream,
 } from "@/ai/provider"
+import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import {
   Models,
   QueryType,
@@ -37,12 +42,13 @@ import {
   getChatMessagesBefore,
   updateMessage,
 } from "@/db/message"
+import { syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
   selectPublicMessagesSchema,
+  messageFeedbackEnum,
   type SelectChat,
   type SelectMessage,
-  messageFeedbackEnum,
   selectMessageSchema,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
@@ -373,7 +379,11 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     return {
       docId: (fields as VespaMailAttachment).docId,
       title: (fields as VespaMailAttachment).filename || "No Filename",
-      url: `https://mail.google.com/mail/u/0/#inbox/${(fields as VespaMailAttachment).mailId}?projector=1&messagePartId=0.${(fields as VespaMailAttachment).partId}&disp=safe&zw`,
+      url: `https://mail.google.com/mail/u/0/#inbox/${
+        (fields as VespaMailAttachment).mailId
+      }?projector=1&messagePartId=0.${
+        (fields as VespaMailAttachment).partId
+      }&disp=safe&zw`,
       app: (fields as VespaMailAttachment).app,
       entity: (fields as VespaMailAttachment).entity,
     }
@@ -381,7 +391,9 @@ const searchToCitation = (result: VespaSearchResults): Citation => {
     return {
       docId: (fields as VespaChatMessage).docId,
       title: (fields as VespaChatMessage).text,
-      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${(fields as VespaChatMessage).channelId}/p${(fields as VespaChatMessage).updatedAt}`,
+      url: `https://${(fields as VespaChatMessage).domain}.slack.com/archives/${
+        (fields as VespaChatMessage).channelId
+      }/p${(fields as VespaChatMessage).updatedAt}`,
       app: (fields as VespaChatMessage).app,
       entity: (fields as VespaChatMessage).entity,
     }
@@ -917,7 +929,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       results?.root?.children?.length || 0,
     )
     Logger.info(
-      `[Main Search Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+      `[Main Search Path] Number of contextual chunks being passed: ${
+        results?.root?.children?.length || 0
+      }`,
     )
     contextSpan?.end()
 
@@ -1018,7 +1032,11 @@ async function* generateAnswerFromGivenContext(
     results?.root?.children
       ?.map(
         (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 0, true)}`,
+          `Index ${i + startIndex} \n ${answerContextMap(
+            v as z.infer<typeof VespaSearchResultsSchema>,
+            0,
+            true,
+          )}`,
       )
       ?.join("\n"),
   )
@@ -1036,7 +1054,9 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.end()
 
   Logger.info(
-    `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+    `[Selected Context Path] Number of contextual chunks being passed: ${
+      results?.root?.children?.length || 0
+    }`,
   )
 
   const selectedContext = isContextSelected(message)
@@ -1092,12 +1112,18 @@ async function* generateAnswerFromGivenContext(
       results?.root?.children
         ?.map(
           (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>, 20, true)}`,
+            `Index ${i + startIndex} \n ${answerContextMap(
+              v as z.infer<typeof VespaSearchResultsSchema>,
+              20,
+              true,
+            )}`,
         )
         ?.join("\n"),
     )
     Logger.info(
-      `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
+      `[Selected Context Path] Number of contextual chunks being passed: ${
+        results?.root?.children?.length || 0
+      }`,
     )
 
     searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
@@ -1255,7 +1281,9 @@ const getSearchRangeSummary = (
     const toDate = new Date(to)
 
     const format = (date: Date) =>
-      `${date.toLocaleString("default", { month: "long" })} ${date.getDate()}, ${date.getFullYear()} - ${formatTime(date)}`
+      `${date.toLocaleString("default", {
+        month: "long",
+      })} ${date.getDate()}, ${date.getFullYear()} - ${formatTime(date)}`
 
     const formatTime = (date: Date) => {
       const hours = date.getHours()
@@ -1278,7 +1306,9 @@ const getSearchRangeSummary = (
     // Format end date to month/year if it's far in future
     const endStr =
       Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
-        ? `${endDate.toLocaleString("default", { month: "long" })} ${endDate.getFullYear()}`
+        ? `${endDate.toLocaleString("default", {
+            month: "long",
+          })} ${endDate.getFullYear()}`
         : getRelativeTime(to)
     const result = `from today until ${endStr}`
     summarySpan?.setAttribute("result", result)
@@ -1290,7 +1320,9 @@ const getSearchRangeSummary = (
     const startDate = new Date(from)
     const startStr =
       Math.abs(now - from) > 30 * 24 * 60 * 60 * 1000
-        ? `${startDate.toLocaleString("default", { month: "long" })} ${startDate.getFullYear()}`
+        ? `${startDate.toLocaleString("default", {
+            month: "long",
+          })} ${startDate.getFullYear()}`
         : getRelativeTime(from)
     const result = `from today back to ${startStr}`
     summarySpan?.setAttribute("result", result)
@@ -1380,7 +1412,9 @@ async function* generatePointQueryTimeExpansion(
     }
 
     Logger.info(
-      `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(to)}`,
+      `Iteration ${iteration}, searching from ${new Date(from)} to ${new Date(
+        to,
+      )}`,
     )
     iterationSpan?.setAttribute("from", new Date(from).toLocaleString())
     iterationSpan?.setAttribute("to", new Date(to).toLocaleString())
@@ -2056,7 +2090,9 @@ export async function* UnderstandMessageAndAnswer(
     for await (const answer of answerIterator) {
       if (answer.text === "no documents found") {
         return yield {
-          text: `I couldn't find any ${fallbackText(classification)}. Would you like to try a different search?`,
+          text: `I couldn't find any ${fallbackText(
+            classification,
+          )}. Would you like to try a different search?`,
         }
       } else if (answer.text === "null") {
         Logger.info(
@@ -2245,6 +2281,7 @@ export const MessageApi = async (c: Context) => {
   // if the value exists then we send the error to the frontend via it
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageApi")
+  Logger.info("MessageApi..")
 
   let stream: any
   let chat: SelectChat
@@ -2295,12 +2332,15 @@ export const MessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
+      Logger.info(`MessageApi before the span.. ${chatId}`)
       const titleSpan = chatCreationSpan.startSpan("generate_title")
+      Logger.info(`MessageApi after the span.. ${titleSpan}`)
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
         modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
         stream: false,
       })
+      Logger.info(`MessageApi after the titleResp.. ${titleResp}`)
       title = titleResp.title
       const cost = titleResp.cost
       if (cost) {
@@ -2310,6 +2350,7 @@ export const MessageApi = async (c: Context) => {
       titleSpan.setAttribute("title", title)
       titleSpan.end()
 
+      Logger.info(`MessageApi before the first message.. ${titleSpan}`)
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -2370,6 +2411,7 @@ export const MessageApi = async (c: Context) => {
       chat = existingChat
       chatCreationSpan.end()
     }
+    Logger.info("starting the streaming..")
     return streamSSE(
       c,
       async (stream) => {
@@ -2453,7 +2495,9 @@ export const MessageApi = async (c: Context) => {
                 ) {
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
-                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} links as it exceeds max limit of ${maxValidLinks}. `,
+                    data: `Skipping last ${
+                      totalValidFileIdsFromLinkCount - maxValidLinks
+                    } links as it exceeds max limit of ${maxValidLinks}. `,
                   })
                 }
                 if (reasoning && chunk.reasoning) {
@@ -2831,7 +2875,9 @@ export const MessageApi = async (c: Context) => {
                     .length
                 ) {
                   Logger.info(
-                    `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                    `Reusing previous message classification for follow-up query ${JSON.stringify(
+                      lastUserMessage.queryRouterClassification,
+                    )}`,
                   )
 
                   classification = parsedMessage.data
@@ -2955,7 +3001,9 @@ export const MessageApi = async (c: Context) => {
 
               if (queryRouterClassification) {
                 Logger.info(
-                  `Updating queryRouter classification for last user message: ${JSON.stringify(queryRouterClassification)}`,
+                  `Updating queryRouter classification for last user message: ${JSON.stringify(
+                    queryRouterClassification,
+                  )}`,
                 )
 
                 await updateMessage(db, latestUserMessage.externalId, {
@@ -3086,7 +3134,9 @@ export const MessageApi = async (c: Context) => {
           })
           Logger.error(
             error,
-            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+            `Streaming Error: ${(error as Error).message} ${
+              (error as Error).stack
+            }`,
           )
           streamErrorSpan.end()
           streamSpan.end()
@@ -3155,6 +3205,7 @@ export const MessageApi = async (c: Context) => {
       },
     )
   } catch (error) {
+    Logger.info(`MessageApi Error occurred.. {error}`)
     const errorSpan = rootSpan.startSpan("handle_top_level_error")
     errorSpan.addEvent("error", {
       message: getErrorMessage(error),
@@ -3396,7 +3447,9 @@ export const MessageRetryApi = async (c: Context) => {
                 ) {
                   stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
-                    data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks} valid link/s as it exceeds max limit of ${maxValidLinks}. `,
+                    data: `Skipping last ${
+                      totalValidFileIdsFromLinkCount - maxValidLinks
+                    } valid link/s as it exceeds max limit of ${maxValidLinks}. `,
                   })
                 }
                 if (reasoning && chunk.reasoning) {
@@ -3718,7 +3771,9 @@ export const MessageRetryApi = async (c: Context) => {
                   } catch (err) {
                     Logger.error(
                       err,
-                      `Error while parsing LLM output ${(err as Error).message}`,
+                      `Error while parsing LLM output ${
+                        (err as Error).message
+                      }`,
                     )
                     continue
                   }
@@ -3775,7 +3830,9 @@ export const MessageRetryApi = async (c: Context) => {
 
                 if (lastUserMessage?.queryRouterClassification) {
                   Logger.info(
-                    `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                    `Reusing previous message classification for follow-up query ${JSON.stringify(
+                      lastUserMessage.queryRouterClassification,
+                    )}`,
                   )
 
                   classification =
@@ -4025,7 +4082,9 @@ export const MessageRetryApi = async (c: Context) => {
           })
           Logger.error(
             error,
-            `Streaming Error: ${(error as Error).message} ${(error as Error).stack}`,
+            `Streaming Error: ${(error as Error).message} ${
+              (error as Error).stack
+            }`,
           )
           streamErrorSpan.end()
           streamSpan.end()
@@ -4128,7 +4187,9 @@ export const StopStreamingApi = async (c: Context) => {
       } catch (closeError) {
         Logger.error(
           closeError,
-          `[StopStreamingApi] Error closing stream ${streamKey}: ${getErrorMessage(closeError)}`,
+          `[StopStreamingApi] Error closing stream ${streamKey}: ${getErrorMessage(
+            closeError,
+          )}`,
         )
       } finally {
         activeStreams.delete(streamKey!)
@@ -4150,9 +4211,1242 @@ export const StopStreamingApi = async (c: Context) => {
     }
     Logger.error(
       error,
-      `[StopStreamingApi] Unexpected Error: ${errMsg} ${(error as Error).stack}`,
+      `[StopStreamingApi] Unexpected Error: ${errMsg} ${
+        (error as Error).stack
+      }`,
     )
     throw new HTTPException(500, { message: "Could not stop streaming." })
+  }
+}
+
+async function* getToolContinuationIterator(
+  message: string,
+  userCtx: string,
+  toolsPrompt: string,
+  toolOutput: string,
+) {
+  const continuationIterator = generateAnswerBasedOnToolOutput(
+    message,
+    userCtx,
+    {
+      modelId: ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+      stream: true,
+      json: true,
+      reasoning: false,
+    },
+    toolsPrompt,
+    toolOutput ?? "",
+  )
+
+  let buffer = ""
+  let currentAnswer = ""
+  let parsed = { answer: "" }
+  let thinking = ""
+  let reasoning = config.isReasoning
+  let yieldedCitations = new Set<number>()
+  const ANSWER_TOKEN = '"answer":'
+
+  try {
+    for await (const chunk of continuationIterator) {
+      if (chunk.text) {
+        buffer += chunk.text
+        try {
+          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+
+          if (parsed.answer === null || parsed.answer === "}") {
+            break
+          }
+
+          if (parsed.answer && currentAnswer !== parsed.answer) {
+            if (currentAnswer === "") {
+              yield { text: parsed.answer }
+            } else {
+              const newText = parsed.answer.slice(currentAnswer.length)
+              yield { text: newText }
+            }
+            currentAnswer = parsed.answer
+          }
+        } catch (e) {
+          // JSON parsing failed — continue accumulating
+          continue
+        }
+      }
+
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+    }
+  } catch (err) {
+    console.error("Error in getToolContinuationIterator:", err)
+    yield { error: "Tool continuation failed. Please try again." }
+  }
+}
+
+// New message api with Tools
+export const MessageWithToolsApi = async (c: Context) => {
+  const tracer: Tracer = getTracer("chat")
+  const rootSpan = tracer.startSpan("MessageWithToolsApi")
+
+  let stream: any
+  let chat: SelectChat
+  let assistantMessageId: string | null = null
+  let streamKey: string | null = null
+
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    const email = sub
+    rootSpan.setAttribute("email", email)
+    rootSpan.setAttribute("workspaceId", workspaceId)
+
+    // @ts-ignore
+    const body = c.req.valid("query")
+    let {
+      message,
+      chatId,
+      modelId,
+      toolsList,
+      isReasoningEnabled,
+    }: MessageReqType = body
+    Logger.info(`getting mcp create with body: ${JSON.stringify(body)}`)
+    const userRequestsReasoning = isReasoningEnabled
+    const isMsgWithContext = isMessageWithContext(message)
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    const fileIds = extractedInfo?.fileIds
+    const totalValidFileIdsFromLinkCount =
+      extractedInfo?.totalValidFileIdsFromLinkCount
+
+    if (!message) {
+      throw new HTTPException(400, {
+        message: "Message is required",
+      })
+    }
+    message = decodeURIComponent(message)
+    rootSpan.setAttribute("message", message)
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const { user, workspace } = userAndWorkspace
+    let messages: SelectMessage[] = []
+    const costArr: number[] = []
+    const ctx = userContext(userAndWorkspace)
+    let chat: SelectChat
+
+    const chatCreationSpan = rootSpan.startSpan("chat_creation")
+
+    let title = ""
+    if (!chatId) {
+      const titleSpan = chatCreationSpan.startSpan("generate_title")
+      // let llm decide a title
+      const titleResp = await generateTitleUsingQuery(message, {
+        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        stream: false,
+      })
+      title = titleResp.title
+      const cost = titleResp.cost
+      if (cost) {
+        costArr.push(cost)
+        titleSpan.setAttribute("cost", cost)
+      }
+      titleSpan.setAttribute("title", title)
+      titleSpan.end()
+
+      let [insertedChat, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage]> => {
+          const chat = await insertChat(tx, {
+            workspaceId: workspace.id,
+            workspaceExternalId: workspace.externalId,
+            userId: user.id,
+            email: user.email,
+            title,
+            attachments: [],
+          })
+
+          const insertedMsg = await insertMessage(tx, {
+            chatId: chat.id,
+            userId: user.id,
+            chatExternalId: chat.externalId,
+            workspaceExternalId: workspace.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds: fileIds,
+          })
+          return [chat, insertedMsg]
+        },
+      )
+      Logger.info(
+        "First mesage of the conversation, successfully created the chat",
+      )
+      chat = insertedChat
+      messages.push(insertedMsg) // Add the inserted message to messages array
+      chatCreationSpan.end()
+    } else {
+      let [existingChat, allMessages, insertedMsg] = await db.transaction(
+        async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
+          // we are updating the chat and getting it's value in one call itself
+
+          let existingChat = await updateChatByExternalId(db, chatId, {})
+          let allMessages = await getChatMessages(tx, chatId)
+
+          let insertedMsg = await insertMessage(tx, {
+            chatId: existingChat.id,
+            userId: user.id,
+            workspaceExternalId: workspace.externalId,
+            chatExternalId: existingChat.externalId,
+            messageRole: MessageRole.User,
+            email: user.email,
+            sources: [],
+            message,
+            modelId,
+            fileIds,
+          })
+          return [existingChat, allMessages, insertedMsg]
+        },
+      )
+      Logger.info("Existing conversation, fetched previous messages")
+      messages = allMessages.concat(insertedMsg) // Update messages array
+      chat = existingChat
+      chatCreationSpan.end()
+    }
+    return streamSSE(
+      c,
+      async (stream) => {
+        streamKey = `${chat.externalId}` // Create the stream key
+        activeStreams.set(streamKey, stream) // Add stream to the map
+        Logger.info(`Added stream ${streamKey} to active streams map.`)
+        const streamSpan = rootSpan.startSpan("stream_response")
+        streamSpan.setAttribute("chatId", chat.externalId)
+        let wasStreamClosedPrematurely = false
+        try {
+          if (!chatId) {
+            const titleUpdateSpan = streamSpan.startSpan("send_title_update")
+            await stream.writeSSE({
+              data: title,
+              event: ChatSSEvents.ChatTitleUpdate,
+            })
+            titleUpdateSpan.end()
+          }
+
+          Logger.info("Chat stream started")
+          // we do not set the message Id as we don't have it
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+            }),
+          })
+
+          let messagesWithNoErrResponse = messages
+            .slice(0, messages.length - 1)
+            .filter((msg) => !msg?.errorMessage)
+            .map((m) => ({
+              role: m.messageRole as ConversationRole,
+              content: [{ text: m.message }],
+            }))
+
+          Logger.info(
+            "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+          )
+          const finalToolsList: Record<
+            string,
+            { tools: { name: string; schema: string }[]; client: Client }
+          > = {}
+
+          // Get if any github mcp connectors are there for the user
+          try {
+            const connector = await getConnectorByApp(
+              db,
+              user.id,
+              Apps.GITHUB_MCP,
+            )
+
+            const config = connector.config as any // TODO: add better types;
+            const client = new Client({
+              name: `connector-${connector.externalId}`,
+              version: config.version,
+            })
+            await client.connect(
+              new StdioClientTransport({
+                command: config.command,
+                args: config.args.split(" "),
+              }),
+            )
+            // Fetch all available tools from the client
+            // TODO: look in the DB. cache logic has to be discussed.
+            const response = await client.listTools()
+            const clientTools = response.tools
+
+            // Update tool definitions in the database for future use
+            await syncConnectorTools(
+              db,
+              workspace.id,
+              connector.id,
+              clientTools.map((tool) => ({
+                toolName: tool.name,
+                toolSchema: JSON.stringify(tool),
+                description: tool.description,
+              })),
+            )
+            const filteredTools = []
+            for (const tool of clientTools) {
+              filteredTools.push({
+                name: tool.name,
+                schema: JSON.stringify(tool),
+              })
+            }
+            finalToolsList[connector.externalId] = {
+              tools: filteredTools,
+              client: client,
+            }
+          } catch (error) {
+            Logger.error(`no connector found with error: ${error}`)
+            // if no github connector setup for the user. Do nothing
+          }
+
+          if (toolsList && toolsList.length > 0) {
+            for (const item of toolsList) {
+              const { connectorId, tools: toolNames } = item
+
+              // Fetch connector info and create client
+              const connector = await getConnectorByExternalId(
+                db,
+                connectorId,
+                user.id,
+              )
+              const config = connector.config as any //TODO: add better type;
+              const client = new Client({
+                name: `connector-${connectorId}`,
+                version: config.version,
+              })
+              Logger.info(
+                `invoking client initialize for url: ${new URL(config.url)} ${
+                  config.url
+                }`,
+              )
+              await client.connect(new SSEClientTransport(new URL(config.url)))
+
+              // Fetch all available tools from the client
+              // TODO: look in the DB. cache logic has to be discussed.
+              const response = await client.listTools()
+              const clientTools = response.tools
+
+              // Update tool definitions in the database for future use
+              await syncConnectorTools(
+                db,
+                workspace.id,
+                connector.id,
+                clientTools.map((tool) => ({
+                  toolName: tool.name,
+                  toolSchema: JSON.stringify(tool),
+                  description: tool.description,
+                })),
+              )
+              // Create a map for quick lookup
+              const toolSchemaMap = new Map(
+                clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
+              )
+
+              // Filter to only the requested tools, or use all tools if toolNames is empty
+              const filteredTools = []
+              if (toolNames.length === 0) {
+                // If toolNames is empty, add all tools
+                for (const [toolName, schema] of toolSchemaMap.entries()) {
+                  filteredTools.push({
+                    name: toolName,
+                    schema: schema || "",
+                  })
+                }
+              } else {
+                // Otherwise, filter to only the requested tools
+                for (const toolName of toolNames) {
+                  if (toolSchemaMap.has(toolName)) {
+                    filteredTools.push({
+                      name: toolName,
+                      schema: toolSchemaMap.get(toolName) || "",
+                    })
+                  } else {
+                    Logger.info(
+                      `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
+                    )
+                  }
+                }
+              }
+
+              finalToolsList[connectorId] = {
+                tools: filteredTools,
+                client: client,
+              }
+            }
+          }
+
+          // Build tools prompt
+          let toolsPrompt = ""
+          // TODO: make more sense to move this inside prompt such that format of output can be written together.
+          if (Object.keys(finalToolsList).length > 0) {
+            toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information. 
+AVAILABLE_TOOLS:\n\n`
+
+            // Format each client's tools
+            for (const [connectorId, { tools }] of Object.entries(
+              finalToolsList,
+            )) {
+              if (tools.length > 0) {
+                for (const tool of tools) {
+                  toolsPrompt += `${tool.schema}\n\n`
+                }
+              }
+            }
+          }
+
+          const searchOrAnswerIterator =
+            generateSearchQueryOrAnswerFromConversation(
+              message,
+              ctx,
+              {
+                modelId:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                stream: true,
+                json: true,
+                reasoning:
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: messagesWithNoErrResponse,
+              },
+              toolsPrompt,
+            )
+
+          let currentAnswer = ""
+          let answer = ""
+          let citations = []
+          let citationMap: Record<number, number> = {}
+          let queryFilters = {
+            app: "",
+            entity: "",
+            startTime: "",
+            endTime: "",
+            count: 0,
+            sortDirection: "",
+          }
+          let parsed = {
+            isFollowUp: false,
+            answer: "",
+            queryRewrite: "",
+            temporalDirection: null,
+            filterQuery: "",
+            type: "",
+            filters: queryFilters,
+          }
+          let thinking = ""
+          let reasoning =
+            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+          let buffer = ""
+          const conversationSpan = streamSpan.startSpan("conversation_search")
+          function isValidToolCall(
+            toolSelection: any,
+            jsonString: string,
+          ): boolean {
+            // Must have a tool property with a non-empty string value
+            if (
+              !toolSelection ||
+              typeof toolSelection.tool !== "string" ||
+              !toolSelection.tool.trim()
+            ) {
+              return false
+            }
+
+            // Must have arguments property
+            if (!toolSelection.hasOwnProperty("arguments")) {
+              return false
+            }
+
+            // Count opening and closing braces to ensure balance
+            let openBraces = 0
+            let closeBraces = 0
+            for (const char of jsonString) {
+              if (char === "{") openBraces++
+              if (char === "}") closeBraces++
+            }
+
+            if (openBraces !== closeBraces) {
+              return false
+            }
+
+            // Check for special keywords that might indicate incomplete JSON
+            if (
+              jsonString.includes('"tool": "') &&
+              !jsonString.includes('"arguments":')
+            ) {
+              return false
+            }
+
+            return true
+          }
+          // Define a function to handle the tool selection and invocation loop
+          async function processToolSelectionLoop(
+            initialBuffer: string,
+            initialMessages: any[],
+          ) {
+            let buffer = initialBuffer
+            let messages = [...initialMessages] // Clone to avoid modifying the original array
+            let toolCallCount = 0
+            const MAX_TOOL_CALLS = 5 // Safety limit to prevent infinite loops
+            let finalAnswer = ""
+
+            while (toolCallCount < MAX_TOOL_CALLS) {
+              try {
+                const potentialToolSelection = jsonParseLLMOutput(buffer) as any //TODO: add better types he;
+
+                // Check if the response is a tool call
+                if (
+                  (!potentialToolSelection || !potentialToolSelection.tool) &&
+                  isValidToolCall(potentialToolSelection, buffer)
+                ) {
+                  // Not a tool call, this is the final answer
+                  if (potentialToolSelection && potentialToolSelection.answer) {
+                    finalAnswer = potentialToolSelection.answer
+                  } else {
+                    finalAnswer = buffer // Use the raw buffer as the answer
+                  }
+                  break // Exit the tool loop, we have our final answer
+                }
+
+                // We have a tool call to process
+                toolCallCount++
+                // TODO: ask LLM  to return the connectorId also. so filter later need not to be through all connectors.
+                const toolName = potentialToolSelection.tool
+                const toolParams = potentialToolSelection.arguments
+
+                Logger.info(
+                  `Tool selection #${toolCallCount}: ${toolName} with params: ${JSON.stringify(
+                    toolParams,
+                  )}`,
+                )
+
+                // Find the connector ID and client that has this tool
+                let foundClient: Client | null = null
+                let connectorId: string | null = null
+
+                // Search through all connectors and their tools to find the matching tool
+                for (const [connId, { tools, client }] of Object.entries(
+                  finalToolsList,
+                )) {
+                  const matchingTool = tools.find((t) => t.name === toolName)
+                  if (matchingTool) {
+                    foundClient = client
+                    connectorId = connId
+                    break
+                  }
+                }
+                let toolOutput = null
+
+                if (!foundClient || !connectorId) {
+                  Logger.error(
+                    `Tool ${toolName} was selected but not found in available tools`,
+                  )
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: `\n\nError: Tool "${toolName}" was requested but is not available.\n\n`,
+                  })
+                } else {
+                  try {
+                    // Create a tool response span for tracing
+                    const toolInvocationSpan = streamSpan.startSpan(
+                      `tool_invocation_${toolCallCount}`,
+                    )
+                    toolInvocationSpan.setAttribute("tool_name", toolName)
+                    toolInvocationSpan.setAttribute("connector_id", connectorId)
+
+                    // Inform the user about the tool invocation
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: `\n\nInvoking tool: ${toolName}...\n`,
+                    })
+
+                    // TODO: add a logic to validate the toolParams with the schema we have.
+                    // Invoke the tool and get the result
+                    const toolResponse = await foundClient.callTool({
+                      name: toolName,
+                      arguments: toolParams,
+                    })
+                    // Add tool response metadata to the span
+                    toolInvocationSpan.setAttribute(
+                      "tool_response_status",
+                      "success",
+                    )
+                    toolInvocationSpan.end()
+
+                    // Format the tool response for display
+                    const formattedToolResponse = JSON.stringify(
+                      toolResponse,
+                      null,
+                      2,
+                    )
+
+                    // Show the tool response to the user
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: `Tool response:\n\`\`\`json\n${formattedToolResponse}\n\`\`\`\n\n`,
+                    })
+                    toolOutput = formattedToolResponse
+                  } catch (error) {
+                    const errMessage = (error as Error).message
+                    Logger.error(
+                      error,
+                      `Error invoking tool ${toolName}: ${errMessage}`,
+                    )
+
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: `\n\nError using tool "${toolName}": ${errMessage}\n\n`,
+                    })
+
+                    toolOutput = errMessage
+                  }
+                }
+
+                // Ask the model to continue the conversation with the tool results
+                stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: `Thinking...\n`,
+                })
+
+                // Reset buffer for the next iteration
+                buffer = ""
+
+                // Generate a continuation response using the updated message history
+                const continuationIterator = getToolContinuationIterator(
+                  message,
+                  ctx,
+                  toolsPrompt,
+                  toolOutput ?? "",
+                )
+
+                // Process and collect the continuation response
+                for await (const chunk of continuationIterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "Stream closed during tool continuation. Breaking.",
+                    )
+                    break
+                  }
+
+                  if (chunk.text) {
+                    buffer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                }
+                // Try to parse early to see if we have a complete response
+                try {
+                  const ANSWER_TOKEN = '"answer":'
+                  const partialResponse = jsonParseLLMOutput(
+                    buffer,
+                    ANSWER_TOKEN,
+                  )
+                  if (partialResponse && !partialResponse.tool) {
+                    // We have a complete response that's not a tool call
+                    finalAnswer = partialResponse.answer || buffer
+                  }
+                  //TODO: handle more tool calls.
+                } catch {
+                  Logger.error(`exception while getting tool output.`)
+                }
+                console.log(
+                  finalAnswer,
+                  "final answer from process tool selection",
+                )
+                // If we have a final answer after continuation, break the loop
+                if (finalAnswer) {
+                  break
+                }
+              } catch (error) {
+                // Error in the tool calling loop
+                Logger.error(
+                  error,
+                  `Error in tool calling loop: ${(error as Error).message}`,
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: `\n\nAn error occurred while processing tools: ${
+                    (error as Error).message
+                  }\n\n`,
+                })
+                break
+              }
+            }
+
+            // If we hit the max tool calls, explain to the user
+            if (toolCallCount >= MAX_TOOL_CALLS && !finalAnswer) {
+              Logger.warn(`Reached maximum tool call limit (${MAX_TOOL_CALLS})`)
+              stream.writeSSE({
+                event: ChatSSEvents.ResponseUpdate,
+                data: `\n\nReached the maximum number of sequential tool calls (${MAX_TOOL_CALLS}). Stopping to prevent an infinite loop.\n\n`,
+              })
+
+              // Generate a final response that explains we hit the limit
+              const finalResponseIterator =
+                generateSearchQueryOrAnswerFromConversation(
+                  "Please provide a final answer based on all the tool calls so far without using any more tools.",
+                  ctx,
+                  {
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .modelId,
+                    stream: true,
+                    json: false,
+                    reasoning: false,
+                    messages: messages,
+                  },
+                  "", // No tools to prevent more tool calls
+                )
+
+              // Process the final response
+              for await (const chunk of finalResponseIterator) {
+                if (stream.closed) break
+
+                if (chunk.text) {
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                  finalAnswer += chunk.text
+                }
+
+                if (chunk.cost) {
+                  costArr.push(chunk.cost)
+                }
+              }
+            }
+
+            // Return the messages and final answer
+            return {
+              finalAnswer,
+              messages,
+            }
+          }
+
+          // Process the conversation stream
+          for await (const chunk of searchOrAnswerIterator) {
+            if (stream.closed) {
+              Logger.info(
+                "[MessageWithToolsApi] Stream closed during conversation search loop. Breaking.",
+              )
+              break
+            }
+            if (chunk.text) {
+              if (reasoning) {
+                if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                } else {
+                  // first time
+                  if (!chunk.text.includes(StartThinkingToken)) {
+                    let token = chunk.text
+                    if (chunk.text.includes(EndThinkingToken)) {
+                      token = chunk.text.split(EndThinkingToken)[0]
+                      thinking += token
+                    } else {
+                      thinking += token
+                    }
+                    stream.writeSSE({
+                      event: ChatSSEvents.Reasoning,
+                      data: token,
+                    })
+                  }
+                }
+              }
+              if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                reasoning = false
+                chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+              }
+              if (!reasoning) {
+                buffer += chunk.text
+                try {
+                  // Check for tool selection in the current buffer
+                  const potentialToolSelection = jsonParseLLMOutput(
+                    buffer,
+                  ) as any // add better types;
+
+                  if (
+                    potentialToolSelection &&
+                    potentialToolSelection.tool &&
+                    isValidToolCall(potentialToolSelection, buffer)
+                  ) {
+                    // We detected a tool call, enter the tool processing loop
+                    const toolLoopSpan = streamSpan.startSpan(
+                      "tool_processing_loop",
+                    )
+
+                    try {
+                      // Start the tool processing loop
+                      const { finalAnswer, messages: updatedMessages } =
+                        await processToolSelectionLoop(
+                          buffer,
+                          messagesWithNoErrResponse,
+                        )
+
+                      // Update our messages with the result of the tool processing
+                      messagesWithNoErrResponse = updatedMessages
+
+                      // Set the answer to the final result
+                      parsed.answer = finalAnswer
+                      currentAnswer = finalAnswer
+                      // Send the final answer if it wasn't already streamed
+                      if (finalAnswer && finalAnswer !== buffer) {
+                        // stream.writeSSE({
+                        //   event: ChatSSEvents.ResponseUpdate,
+                        //   data: finalAnswer,
+                        // });
+                        console.log(finalAnswer, "this is final answer")
+                      }
+
+                      toolLoopSpan.setAttribute("tool_calls_completed", true)
+                      toolLoopSpan.end()
+                    } catch (error) {
+                      Logger.error(error, "Error in tool processing loop")
+                      toolLoopSpan.setAttribute(
+                        "error",
+                        (error as Error).message,
+                      )
+                      toolLoopSpan.end()
+                    }
+
+                    // Reset buffer after tool processing
+                    buffer = ""
+                  } else {
+                    // Try to parse as regular response with answer
+                    parsed = jsonParseLLMOutput(buffer) || {}
+                    if (parsed.answer && currentAnswer !== parsed.answer) {
+                      if (currentAnswer === "") {
+                        Logger.info(
+                          "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.Start,
+                          data: "",
+                        })
+                        // First valid answer - send the whole thing
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: parsed.answer,
+                        })
+                      } else {
+                        // Subsequent chunks - send only the new part
+                        const newText = parsed.answer.slice(
+                          currentAnswer.length,
+                        )
+                        stream.writeSSE({
+                          event: ChatSSEvents.ResponseUpdate,
+                          data: newText,
+                        })
+                      }
+                      currentAnswer = parsed.answer
+                    }
+                  }
+                } catch (err) {
+                  const errMessage = (err as Error).message
+                  Logger.error(
+                    err,
+                    `Error while parsing LLM output ${errMessage}`,
+                  )
+                  continue
+                }
+              }
+            }
+            if (chunk.cost) {
+              costArr.push(chunk.cost)
+            }
+          }
+
+          conversationSpan.setAttribute("answer_found", parsed.answer)
+          conversationSpan.setAttribute("answer", answer)
+          conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+          conversationSpan.end()
+
+          if (parsed.answer === null || parsed.answer === "") {
+            const ragSpan = streamSpan.startSpan("rag_processing")
+            if (parsed.queryRewrite) {
+              Logger.info(
+                `The query is ambigious and requires a mandatory query rewrite from the existing conversation / recent messages ${parsed.queryRewrite}`,
+              )
+              message = parsed.queryRewrite
+              Logger.info(`Rewritten query: ${message}`)
+              ragSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+            } else {
+              Logger.info(
+                "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
+              )
+            }
+            let classification: QueryRouterLLMResponse
+            const { app, count, endTime, entity, sortDirection, startTime } =
+              parsed?.filters
+            classification = {
+              direction: parsed.temporalDirection,
+              type: parsed.type,
+              filterQuery: parsed.filterQuery,
+              isFollowUp: parsed.isFollowUp,
+              filters: {
+                app: app as Apps,
+                entity: entity as Entity,
+                endTime,
+                sortDirection,
+                startTime,
+                count,
+              },
+            } as QueryRouterLLMResponse
+
+            Logger.info(
+              `Classifying the query as:, ${JSON.stringify(classification)}`,
+            )
+            const understandSpan = ragSpan.startSpan("understand_message")
+            const iterator = UnderstandMessageAndAnswer(
+              email,
+              ctx,
+              message,
+              classification,
+              messagesWithNoErrResponse,
+              0.5,
+              userRequestsReasoning,
+              understandSpan,
+            )
+            stream.writeSSE({
+              event: ChatSSEvents.Start,
+              data: "",
+            })
+
+            answer = ""
+            thinking = ""
+            reasoning = isReasoning && userRequestsReasoning
+            citations = []
+            citationMap = {}
+            let citationValues: Record<number, string> = {}
+            for await (const chunk of iterator) {
+              if (stream.closed) {
+                Logger.info(
+                  "[MessageApi] Stream closed during conversation search loop. Breaking.",
+                )
+                wasStreamClosedPrematurely = true
+                break
+              }
+              if (chunk.text) {
+                if (reasoning && chunk.reasoning) {
+                  thinking += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: chunk.text,
+                  })
+                  // reasoningSpan.end()
+                }
+                if (!chunk.reasoning) {
+                  answer += chunk.text
+                  stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk.text,
+                  })
+                }
+              }
+              if (chunk.cost) {
+                costArr.push(chunk.cost)
+              }
+              if (chunk.citation) {
+                const { index, item } = chunk.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                Logger.info(
+                  `Found citations and sending it, current count: ${citations.length}`,
+                )
+                stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+                citationValues[index] = item
+              }
+            }
+            understandSpan.setAttribute("citation_count", citations.length)
+            understandSpan.setAttribute(
+              "citation_map",
+              JSON.stringify(citationMap),
+            )
+            understandSpan.setAttribute(
+              "citation_values",
+              JSON.stringify(citationValues),
+            )
+            understandSpan.end()
+            const answerSpan = ragSpan.startSpan("process_final_answer")
+            answerSpan.setAttribute(
+              "final_answer",
+              processMessage(answer, citationMap),
+            )
+            answerSpan.setAttribute("actual_answer", answer)
+            answerSpan.setAttribute("final_answer_length", answer.length)
+            answerSpan.end()
+            ragSpan.end()
+          } else if (parsed.answer) {
+            answer = parsed.answer
+          }
+
+          if (answer || wasStreamClosedPrematurely) {
+            // Determine if a message (even partial) should be saved
+            // TODO: incase user loses permission
+            // to one of the citations what do we do?
+            // somehow hide that citation and change
+            // the answer to reflect that
+
+            const msg = await insertMessage(db, {
+              chatId: chat.id,
+              userId: user.id,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chat.externalId,
+              messageRole: MessageRole.Assistant,
+              email: user.email,
+              sources: citations,
+              message: processMessage(answer, citationMap),
+              thinking: thinking,
+              modelId:
+                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+            })
+            assistantMessageId = msg.externalId
+
+            const traceJson = tracer.serializeToJson()
+            await insertChatTrace({
+              workspaceId: workspace.id,
+              userId: user.id,
+              chatId: chat.id,
+              messageId: msg.id,
+              chatExternalId: chat.externalId,
+              email: user.email,
+              messageExternalId: msg.externalId,
+              traceJson,
+            })
+            Logger.info(
+              `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
+            )
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: assistantMessageId,
+              }),
+            })
+          } else {
+            const errorSpan = streamSpan.startSpan("handle_no_answer")
+            const allMessages = await getChatMessages(db, chat?.externalId)
+            const lastMessage = allMessages[allMessages.length - 1]
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseMetadata,
+              data: JSON.stringify({
+                chatId: chat.externalId,
+                messageId: lastMessage.externalId,
+              }),
+            })
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: "Oops, something went wrong. Please try rephrasing your question or ask something else.",
+            })
+            await addErrMessageToMessage(
+              lastMessage,
+              "Oops, something went wrong. Please try rephrasing your question or ask something else.",
+            )
+
+            const traceJson = tracer.serializeToJson()
+            await insertChatTrace({
+              workspaceId: workspace.id,
+              userId: user.id,
+              chatId: chat.id,
+              messageId: lastMessage.id,
+              chatExternalId: chat.externalId,
+              email: user.email,
+              messageExternalId: lastMessage.externalId,
+              traceJson,
+            })
+            errorSpan.end()
+          }
+
+          const endSpan = streamSpan.startSpan("send_end_event")
+          await stream.writeSSE({
+            data: "",
+            event: ChatSSEvents.End,
+          })
+          endSpan.end()
+          streamSpan.end()
+          rootSpan.end()
+        } catch (error) {
+          const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
+          streamErrorSpan.addEvent("error", {
+            message: getErrorMessage(error),
+            stack: (error as Error).stack || "",
+          })
+          const errFomMap = handleError(error)
+          const allMessages = await getChatMessages(db, chat?.externalId)
+          const lastMessage = allMessages[allMessages.length - 1]
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chat.externalId,
+              messageId: lastMessage.externalId,
+            }),
+          })
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: errFomMap,
+          })
+
+          // Add the error message to last user message
+          await addErrMessageToMessage(lastMessage, errFomMap)
+
+          await stream.writeSSE({
+            data: "",
+            event: ChatSSEvents.End,
+          })
+          Logger.error(
+            error,
+            `Streaming Error: ${(error as Error).message} ${
+              (error as Error).stack
+            }`,
+          )
+          streamErrorSpan.end()
+          streamSpan.end()
+          rootSpan.end()
+        } finally {
+          // Ensure stream is removed from the map on completion or error
+          if (streamKey && activeStreams.has(streamKey)) {
+            activeStreams.delete(streamKey)
+            Logger.info(`Removed stream ${streamKey} from active streams map.`)
+          }
+        }
+      },
+      async (err, stream) => {
+        const streamErrorSpan = rootSpan.startSpan(
+          "handle_stream_callback_error",
+        )
+        streamErrorSpan.addEvent("error", {
+          message: getErrorMessage(err),
+          stack: (err as Error).stack || "",
+        })
+        const errFromMap = handleError(err)
+        // Use the stored assistant message ID if available when handling callback error
+        const allMessages = await getChatMessages(db, chat?.externalId)
+        const lastMessage = allMessages[allMessages.length - 1]
+        const errorMsgId = assistantMessageId || lastMessage.externalId
+        const errorChatId = chat?.externalId || "unknown"
+
+        if (errorChatId !== "unknown" && errorMsgId !== "unknown") {
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: errorChatId,
+              messageId: errorMsgId,
+            }),
+          })
+          // Try to get the last message again for error reporting
+          const allMessages = await getChatMessages(db, errorChatId)
+          if (allMessages.length > 0) {
+            const lastMessage = allMessages[allMessages.length - 1]
+            await addErrMessageToMessage(lastMessage, errFromMap)
+          }
+        }
+        await stream.writeSSE({
+          event: ChatSSEvents.Error,
+          data: errFromMap,
+        })
+        await addErrMessageToMessage(lastMessage, errFromMap)
+
+        await stream.writeSSE({
+          data: "",
+          event: ChatSSEvents.End,
+        })
+        Logger.error(
+          err,
+          `Streaming Error: ${err.message} ${(err as Error).stack}`,
+        )
+        // Ensure stream is removed from the map in the error callback too
+        if (streamKey && activeStreams.has(streamKey)) {
+          activeStreams.delete(streamKey)
+          Logger.info(
+            `Removed stream ${streamKey} from active streams map in error callback.`,
+          )
+        }
+        streamErrorSpan.end()
+        rootSpan.end()
+      },
+    )
+  } catch (error) {
+    Logger.info(`MessageApi Error occurred.. {error}`)
+    const errorSpan = rootSpan.startSpan("handle_top_level_error")
+    errorSpan.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
+    const errMsg = getErrorMessage(error)
+    // TODO: add more errors like bedrock, this is only openai
+    const errFromMap = handleError(error)
+    // @ts-ignore
+    if (chat?.externalId) {
+      const allMessages = await getChatMessages(db, chat?.externalId)
+      // Add the error message to last user message
+      if (allMessages.length > 0) {
+        const lastMessage = allMessages[allMessages.length - 1]
+        // Use the stored assistant message ID if available for metadata
+        const errorMsgId = assistantMessageId || lastMessage.externalId
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+            messageId: errorMsgId,
+          }),
+        })
+        await addErrMessageToMessage(lastMessage, errFromMap)
+      }
+    }
+    if (error instanceof APIError) {
+      // quota error
+      if (error.status === 429) {
+        Logger.error(error, "You exceeded your current quota")
+        if (stream) {
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: errFromMap,
+          })
+        }
+      }
+    } else {
+      Logger.error(error, `Message Error: ${errMsg} ${(error as Error).stack}`)
+      throw new HTTPException(500, {
+        message: "Could not create message or Chat",
+      })
+    }
+    // Ensure stream is removed from the map in the top-level catch block
+    if (streamKey && activeStreams.has(streamKey)) {
+      activeStreams.delete(streamKey)
+      Logger.info(
+        `Removed stream ${streamKey} from active streams map in top-level catch.`,
+      )
+    }
+    errorSpan.end()
+    rootSpan.end()
   }
 }
 
@@ -4187,7 +5481,9 @@ export const MessageFeedbackApi = async (c: Context) => {
     })
 
     Logger.info(
-      `Feedback ${feedback ? `'${feedback}'` : "removed"} for message ${messageId} by user ${email}`,
+      `Feedback ${
+        feedback ? `'${feedback}'` : "removed"
+      } for message ${messageId} by user ${email}`,
     )
     return c.json({ success: true, messageId, feedback })
   } catch (error) {

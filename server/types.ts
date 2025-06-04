@@ -87,6 +87,23 @@ export const addApiKeyConnectorSchema = z.object({
 
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
+export const addApiKeyMCPConnectorSchema = z.object({
+  apiKey: z.string(),
+  url: z.string(),
+  name: z.string(),
+})
+
+export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
+
+export const addStdioMCPConnectorSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  name: z.string(),
+  appType: z.string(),
+})
+
+export type StdioMCPConnector = z.infer<typeof addStdioMCPConnectorSchema>
+
 export const createOAuthProvider = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
@@ -131,6 +148,8 @@ export enum ConnectorType {
   File = "File",
   // Where we can scrape and crawl
   Website = "Website",
+  // All MCP Clients
+  MCP = "Mcp",
 }
 
 export type SaaSJob = {
@@ -319,6 +338,16 @@ export const AnswerWithCitationsSchema = z.object({
   citations: z.array(z.number()),
 })
 
+export const MCPClientConfig = z.object({
+  url: z.string(),
+  version: z.string(),
+})
+
+export const MCPClientStdioConfig = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  version: z.string(),
+})
 
 // METRICS ENUMS
 export enum metricNames {

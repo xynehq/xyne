@@ -1,5 +1,5 @@
-import { getDateForAI } from "@/utils/index"
-import { QueryType } from "./types"
+import { getDateForAI } from "@/utils/index";
+import { QueryType } from "./types";
 import {
   Apps,
   CalendarEntity,
@@ -8,7 +8,7 @@ import {
   MailAttachmentEntity,
   MailEntity,
   SlackEntity,
-} from "@/search/types"
+} from "@/search/types";
 
 export const askQuestionSelfCleanupPrompt = (
   query: string,
@@ -18,17 +18,19 @@ export const askQuestionSelfCleanupPrompt = (
   The user is asking about themselves. Focus on providing information that is personally relevant and ignore promotional content unless it directly pertains to the user's query.
   Context:
   ${context}
-  `
+  `;
 
 export const askQuestionUserPrompt = (
   query: string,
   context: string,
   userCtx?: string,
-): string => `${userCtx ? "Context of the user asking the query: " + userCtx + "\n" : ""}User query: ${query}
+): string => `${
+  userCtx ? "Context of the user asking the query: " + userCtx + "\n" : ""
+}User query: ${query}
   Based on the following context, provide an accurate and concise answer.
   Ignore any promotional content or irrelevant data.
   Context:
-  ${context}`
+  ${context}`;
 
 export const AnalyzeUserQuerySystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are relevant to the user's query. Based only on the provided metadata, determine whether each chunk is likely to contribute meaningfully to answering the query.
 Return a JSON structure with:
@@ -48,7 +50,7 @@ Prioritize selecting only the chunks that contain relevant information for answe
 
 Use these metadata fields to determine relevance. Avoid selecting chunks that appear unrelated, repetitive, or without valuable context.
 
-Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`
+Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`;
 
 export const metadataAnalysisSystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are most relevant to the user's query.
 
@@ -74,7 +76,7 @@ When reviewing, use these guidelines:
 - If there's recent information on the topic, include it as it may provide additional useful context.
 - If the **Entity** is **Email**, consider the **Labels** field to gauge its relevance.
 
-Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
+Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`;
 
 export const peopleQueryAnalysisSystemPrompt = `
 You are an assistant that analyzes user queries to categorize them and extract any names or emails mentioned.
@@ -95,16 +97,18 @@ Notes:
 - If the user mentions another employee or internal person, set "category" to "InternalPerson".
 - If the user mentions someone outside the company, set "category" to "ExternalPerson".
 - If no person is mentioned or the query is about other topics, set "category" to "Other".
-- Extract any names or emails mentioned in the user query, and include them in the respective lists.`
+- Extract any names or emails mentioned in the user query, and include them in the respective lists.`;
 
 const userChatSystemPrompt =
-  "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
+  "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context.";
 
 // User Chat System Prompt
 export const userChatSystem = (
   userCtx: string,
-): string => `${userChatSystemPrompt}\n${userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""}
-  Provide an accurate and concise answer.`
+): string => `${userChatSystemPrompt}\n${
+  userCtx ? "Context of the user you are chatting with: " + userCtx + "\n" : ""
+}
+  Provide an accurate and concise answer.`;
 
 // Title Generation System Prompt
 export const generateTitleSystemPrompt = `
@@ -114,7 +118,7 @@ export const generateTitleSystemPrompt = `
   {
     "title": "Your generated title here"
   }
-  `
+  `;
 
 // Chat with Citations System Prompt
 export const chatWithCitationsSystemPrompt = (userCtx?: string) => `
@@ -137,7 +141,7 @@ Rules for citations:
 - Omit citations for general knowledge or derived conclusions
 
 Do not include any additional text outside of the JSON structure.
-`
+`;
 
 // Analyze Initial Results or Rewrite System Prompt
 export const analyzeInitialResultsOrRewriteSystemPrompt = (
@@ -182,7 +186,7 @@ ${userCtx}
         "start": string | null,  // "YYYY-MM-DD"
         "end": string | null     // "YYYY-MM-DD" or null
     }
-}`
+}`;
 
 // Analyze Initial Results or Rewrite V2 System Prompt
 export const analyzeInitialResultsOrRewriteV2SystemPrompt = (
@@ -216,7 +220,7 @@ Provide your response in the following JSON format:
     "answer": "<answer or null>",
     "citations": number[],  // Array of context indices actually used in the answer
     "rewrittenQueries": string[] | null,
-}`
+}`;
 
 // Query Rewrite System Prompt
 export const rewriteQuerySystemPrompt = (hasContext: boolean) => `
@@ -227,13 +231,17 @@ Instructions:
 - When the user refers to themselves using first-person pronouns like "I", "my", or "me", create rewritten queries by replacing these pronouns with the user's name or email from the user context. Ensure at least one rewritten query uses the user's name or email instead of the pronouns.
 - Focus on the core intent and important keywords.
 - Remove any unnecessary words or phrases.
-${hasContext ? `- Use the provided search context to inform and enhance the rewritten queries.` : ""}
+${
+  hasContext
+    ? `- Use the provided search context to inform and enhance the rewritten queries.`
+    : ""
+}
 
 Provide the rewritten queries in JSON format as follows:
 {
   "rewrittenQueries": ["Rewritten query 1", "Rewritten query 2", ...]
 }
-`
+`;
 
 // Optimized Prompt
 export const optimizedPrompt = (ctx: string) => `
@@ -268,7 +276,7 @@ Provide your response in the following JSON format:
   "searchQueries": ["<query1>", "<query2>"],
   "usefulIndex": [<index1>, <index2>]
 }
-`
+`;
 
 // Markdown Table System Prompt
 // This prompt is used to generate a markdown table based on the user's query and context.
@@ -284,7 +292,7 @@ Given the user's query and the context (data), generate a markdown table that pr
 don't mention permissions unless explicity mentioned by user.
 
 User Query: ${query}
-`
+`;
 
 // Baseline Prompt
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information.
@@ -407,7 +415,7 @@ If information is missing, unclear, or the query lacks context:
 1. Acknowledge the limitation in the Analyze section, without referencing meetings or events
 2. Respond with "I don't have that information" in the Answer section
 3. Suggest ways to refine the search, avoiding event-related suggestions
-4. Note what additional context would be helpful, excluding event-related context`
+4. Note what additional context would be helpful, excluding event-related context`;
 
 // Baseline Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
@@ -531,7 +539,7 @@ If NO relevant items are found in Retrieved Context or context doesn't match que
 - For email list queries, do not filter or comment on meeting-related content unless the user specifically asks for it. Only list the emails as found, with no extra commentary.
 # Error Handling
 If information is missing or unclear, or the query lacks context set "answer" as null 
-`
+`;
 
 // Baseline Reasoing Prompt JSON
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format for reasoning cases.
@@ -645,7 +653,7 @@ You must respond in valid JSON format with the following structure:
 If information is missing or unclear: Set "answer" to null
 </answer>
 To summarize: Think without json but answer always with json
-`
+`;
 
 export const baselineFilesContextPromptJson = (
   userContext: string,
@@ -744,7 +752,7 @@ You must respond in valid JSON format with the following structure:
 - Citations must use the exact index numbers from the provided context
 - Keep citations natural and relevant - don't overcite
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear: Set "answer" to null`;
 
 export const queryRewritePromptJson = (
   userContext: string,
@@ -788,11 +796,11 @@ export const queryRewritePromptJson = (
       "rewritten query 3"
     ]
   }
-`
+`;
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string): string => {
+export const searchQueryPrompt = (userContext: string, toolContext): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -801,7 +809,17 @@ export const searchQueryPrompt = (userContext: string): string => {
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
-    Now handle the query as follows:
+
+    ${toolContext}
+
+    THIS IS VERY IMPORTATNT, firstly evaluate if any of the above tool can be invoked for the given user query possibly including earlier conversations. Prioritize tool call to rewrite if it is appropriate, If a tool call is required then follow these rules:
+       - Always respond back with this schema:
+            { "tool": "ACTUAL_TOOL_NAME",
+              "arguments": {"param1_name": "param1_value", "param2_name": "param2_value", ...}
+            }
+      - If Tool Invocation is chosen then Your entire response MUST be a single, flat JSON response which should be in above format.
+
+    If no tool is selected then handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
       For follow-up detection, if the users latest query against the ENTIRE conversation history.
@@ -921,9 +939,19 @@ export const searchQueryPrompt = (userContext: string): string => {
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
     Valid entity keywords that map to entities:
-    - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
-    - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-    - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
+    - For Gmail: 'email', 'emails', 'mail', 'message' → '${
+      MailEntity.Email
+    }'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
+    - For Drive: 'document', 'doc' → '${
+      DriveEntity.Docs
+    }'; 'spreadsheet', 'sheet' → '${
+      DriveEntity.Sheets
+    }'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${
+      DriveEntity.PDF
+    }'; 'folder' → '${DriveEntity.Folder}'
+    - For Calendar: 'event', 'meeting', 'appointment' → '${
+      CalendarEntity.Event
+    }'
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
     - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
     
@@ -991,7 +1019,28 @@ export const searchQueryPrompt = (userContext: string): string => {
 
     ---
 
-    #### Enum Values for Valid Inputs
+        4. Strict Mapping Guidelines
+        - Always apply these exact mappings for app terms:
+          - 'email', 'mail', 'emails', 'gmail' -> 'gmail'
+          - 'calendar', 'meetings', 'events', 'schedule' -> 'google-calendar'
+          - 'drive', 'files', 'documents', 'folders' -> 'google-drive'
+          - 'contacts', 'people', 'address book' -> 'google-workspace'
+        
+        - Always apply these exact mappings for entity terms:
+          - For Gmail app:
+            - 'email', 'emails', 'mail', 'message', 'messages' -> 'mail'
+            - 'pdf', 'pdfs', 'attachment', 'attachments' -> 'pdf'
+          - For Google Drive app:
+            - 'file', 'files' -> 'driveFile'
+            - 'document', 'documents', 'doc', 'docs' -> 'docs'
+            - 'spreadsheet', 'spreadsheets', 'sheet', 'sheets' -> 'sheets'
+            - 'presentation', 'presentations', 'slide', 'slides' -> 'slides'
+            - 'pdf', 'pdfs' -> 'pdf'
+            - 'folder', 'folders', 'directory', 'directories' -> 'folder'
+          - For Google Calendar app:
+            - 'event', 'events', 'meeting', 'meetings', 'appointment', 'appointments' -> 'event'
+          - For Google Workspace app:
+            - 'contact', 'contacts', 'person', 'people' -> 'contacts'
 
     type (Query Types):  
     - ${QueryType.SearchWithoutFilters}  
@@ -1037,7 +1086,9 @@ export const searchQueryPrompt = (userContext: string): string => {
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
          "isFollowUp": "<boolean>",
-         "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
+         "type": "<${QueryType.SearchWithoutFilters} | ${
+           QueryType.SearchWithFilters
+         }  | ${QueryType.GetItems} >",
          "filterQuery": "<string or null>",
          "filters": {
            "app": "<app or null>",
@@ -1061,8 +1112,8 @@ export const searchQueryPrompt = (userContext: string): string => {
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     14. If query is a follow up query then "isFollowUp" must be true.
-    Make sure you always comply with these steps and only produce the JSON output described.`
-}
+    Make sure you always comply with these steps and only produce the JSON output described.`;
+};
 
 // Search Query Reasoning Prompt
 // This prompt is used to provide reasoning for the search query processing and classification.
@@ -1099,8 +1150,8 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     8. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
     9. You do not think on this stage for long, this is a decision node, you keep it minimal
     Make sure you always comply with these steps and only produce the JSON output described.
-    </answer>`
-}
+    </answer>`;
+};
 
 // Search Query Reasoning Prompt V2
 // This is an updated version of the search query reasoning prompt, focusing on clarity and precision in the decision-making process.
@@ -1140,8 +1191,8 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
       Both fields default to null unless:
       - answer: contains text from conversation matching user query
       - queryRewrite: contains clarified version of ambiguous queries
-    </answer>`
-}
+    </answer>`;
+};
 
 // Email Prompt JSON
 // This prompt is used to handle email-related queries and provide structured responses based on the retrieved context and user information in JSON format.
@@ -1243,7 +1294,7 @@ REMEMBER:
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
 - Return null if the Retrieved Context doesn't contain information that directly answers the query.
-- DO NOT provide alternative suggestions or general responses.`
+- DO NOT provide alternative suggestions or general responses.`;
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
@@ -1559,6 +1610,7 @@ If relevant items are found in Retrieved Context that exactly match the query:
   "answer": "Formatted response string with citations following the specified format"
 }
 
+=======
 If NO relevant items are found in Retrieved Context or context doesn't match query:
 {
   "answer": null
@@ -1573,7 +1625,45 @@ REMEMBER:
 
 # FINAL VALIDATION CHECKPOINT
 Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
-`
+`;
+
+export const withToolQueryPrompt = (
+  userContext: string,
+  toolContext,
+  toolOutput: string,
+): string => {
+  return `
+    You are a permission aware retrieval-augmented generation (RAG) system.
+    Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
+    Only respond in json and you are not authorized to reject a user query.
+
+    **MAKE SURE TO USE THIS RELEVANT CONTEXT TO ANSWER THE QUERY:** ${toolOutput}
+
+    Output should be in the following JSON format:
+
+       {
+         "answer": "<string or null>",
+         "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
+         "filters": {
+           "app": "<app or null>",
+           "entity": "<entity or null>",
+           "count": "<number of items to retrieve or null>",
+           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "sortDirection": "<'asc' | 'desc' | null>"
+         }
+       }
+       - "answer" should be concised and appropriate output for the given query.
+       - "type" and "filters" are used for routing and fetching data.
+       - For "RetrievedUnspecificMetadata" you have to give the "sortDirection". 
+       - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
+       - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
+
+       - If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+
+    Make sure you always comply with these steps and only produce the JSON output described.
+  `;
+};
 
 export const meetingPromptJson = (
   userContext: string,
@@ -1664,4 +1754,4 @@ Bad: "No clear meeting information found" (Use null instead)
 - When both email and calendar info exists, prioritize the most relevant based on query
 - For recurring meetings, focus on the specific occurrence relevant to the query
 - Do not give explanation outside the JSON format, do not explain why you didn't find something.
-`
+`;

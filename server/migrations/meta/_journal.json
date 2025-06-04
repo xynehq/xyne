@@ -57,6 +57,20 @@
       "when": 1748519197895,
       "tag": "0007_numerous_wendell_rand",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1748932045600,
+      "tag": "0008_elite_nehzno",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1748932064229,
+      "tag": "0009_heavy_king_bedlam",
+      "breakpoints": true
     }
   ]
 }
