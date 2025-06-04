@@ -129,8 +129,6 @@ export const handleGmailIngestion = async (
             )
             ingestionMailErrorsTotal.inc(
               {
-                mail_id: message.id ?? "",
-                mail_title: message.payload?.filename ?? "",
                 mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
                 status: "FAILED",
                 error_type: "ERROR_IN_GMAIL_INGESTION",
