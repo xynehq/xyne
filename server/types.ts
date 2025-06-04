@@ -293,6 +293,7 @@ export enum MessageTypes {
 export enum WorkerResponseTypes {
   Stats = "Stats",
   HistoryId = "HistoryId",
+  Error = "Error",
 }
 
 export enum Subsystem {

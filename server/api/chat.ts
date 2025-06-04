@@ -19,6 +19,7 @@ import {
   Models,
   QueryType,
   type ConverseResponse,
+  type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
   type UserQuery,
@@ -48,11 +49,12 @@ import {
   messageFeedbackEnum,
   type SelectChat,
   type SelectMessage,
-} from "@/db/schema";
-import { getUserAndWorkspaceByEmail } from "@/db/user";
-import { getLogger } from "@/logger";
-import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types";
-import { MessageRole, Subsystem } from "@/types";
+  selectMessageSchema,
+} from "@/db/schema"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { getLogger } from "@/logger"
+import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types"
+import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
   getErrorMessage,
@@ -590,7 +592,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
 ): AsyncIterableIterator<
@@ -983,7 +985,7 @@ async function* generateAnswerFromGivenContext(
   userCtx: string,
   alpha: number = 0.5,
   fileIds: string[],
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1340,13 +1342,13 @@ const getSearchRangeSummary = (
 async function* generatePointQueryTimeExpansion(
   input: string,
   messages: Message[],
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   email: string,
   userCtx: string,
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   eventRagSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -1621,8 +1623,8 @@ async function* processResultsForMetadata(
   app: Apps,
   entity: any,
   chunksCount: number | undefined,
-  span?: Span,
   userRequestsReasoning?: boolean,
+  span?: Span,
 ) {
   if (app === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary;
@@ -1668,7 +1670,7 @@ async function* generateMetadataQueryAnswer(
   userAlpha: number = 0.5,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   userRequestsReasoning?: boolean,
   span?: Span,
   maxIterations = 5,
@@ -1797,9 +1799,9 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
-      );
+        span,
+      )
 
       if (answer == null) {
         pageSpan?.setAttribute("answer", null);
@@ -1874,10 +1876,10 @@ async function* generateMetadataQueryAnswer(
       app as Apps,
       entity,
       maxSummaryCount,
-      span,
       userRequestsReasoning,
-    );
-    return;
+      span,
+    )
+    return
   } else if (
     isFilteredItemSearch &&
     isValidAppAndEntity &&
@@ -1962,9 +1964,9 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
-      );
+        span,
+      )
 
       if (answer == null) {
         iterationSpan?.setAttribute("answer", null);
@@ -1988,15 +1990,13 @@ async function* generateMetadataQueryAnswer(
   }
 }
 
-const fallbackText = (
-  classification: TemporalClassifier & QueryRouterResponse,
-): string => {
-  const { app, entity } = classification.filters;
-  const direction = classification.direction || "";
-  const { startTime, endTime } = classification.filters;
-  const from = new Date(startTime ?? "").getTime();
-  const to = new Date(endTime ?? "").getTime();
-  const timePhrase = formatTimeDuration(from, to);
+const fallbackText = (classification: QueryRouterLLMResponse): string => {
+  const { app, entity } = classification.filters
+  const direction = classification.direction || ""
+  const { startTime, endTime } = classification.filters
+  const from = new Date(startTime ?? "").getTime()
+  const to = new Date(endTime ?? "").getTime()
+  const timePhrase = formatTimeDuration(from, to)
 
   let searchDescription = "";
 
@@ -2049,11 +2049,11 @@ export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
   message: string,
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   messages: Message[],
   alpha: number,
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2166,8 +2166,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   message: string,
   alpha: number,
   fileIds: string[],
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -2341,7 +2341,6 @@ export const MessageApi = async (c: Context) => {
     const chatCreationSpan = rootSpan.startSpan("chat_creation");
 
     let title = "";
-    Logger.info(`MessageApi chat.. ${chat}`);
     if (!chatId) {
       Logger.info(`MessageApi before the span.. ${chatId}`);
       const titleSpan = chatCreationSpan.startSpan("generate_title");
@@ -2476,9 +2475,9 @@ export const MessageApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
-            );
+              understandSpan,
+            )
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
@@ -2820,7 +2819,7 @@ export const MessageApi = async (c: Context) => {
                 startTime,
                 count,
               },
-            } as TemporalClassifier & QueryRouterResponse;
+            } as QueryRouterLLMResponse
 
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing");
@@ -2844,22 +2843,57 @@ export const MessageApi = async (c: Context) => {
               ragSpan.setAttribute(
                 "isFollowUp",
                 classification.isFollowUp ?? false,
-              );
+              )
+              const understandSpan = ragSpan.startSpan("understand_message")
+
+              let iterator:
+                | AsyncIterableIterator<
+                    ConverseResponse & {
+                      citation?: { index: number; item: any }
+                    }
+                  >
+                | undefined = undefined
+
               if (messages.length < 2) {
                 classification.isFollowUp = false; // First message or not enough history to be a follow-up
               } else if (classification.isFollowUp) {
                 // If it's marked as a follow-up, try to reuse the last user message's classification
-                const lastUserMessage = messages[messages.length - 3]; // Assistant is at -2, last user is at -3
+                const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
+                const parsedMessage =
+                  selectMessageSchema.safeParse(lastUserMessage)
 
-                if (lastUserMessage?.queryRouterClassification) {
+                if (parsedMessage.error) {
+                  Logger.error(`Error while parsing last user message`)
+                } else if (
+                  parsedMessage.success &&
+                  Array.isArray(parsedMessage.data.fileIds) &&
+                  parsedMessage.data.fileIds.length // If the message contains fileIds then the follow up is must for @file
+                ) {
+                  Logger.info(
+                    `Reusing file-based classification from previous message Classification: ${JSON.stringify(parsedMessage.data.queryRouterClassification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
+                  )
+                  iterator = UnderstandMessageAndAnswerForGivenContext(
+                    email,
+                    ctx,
+                    message,
+                    0.5,
+                    parsedMessage.data.fileIds as string[],
+                    userRequestsReasoning,
+                    understandSpan,
+                  )
+                } else if (
+                  parsedMessage.data.queryRouterClassification &&
+                  Object.keys(parsedMessage.data.queryRouterClassification)
+                    .length
+                ) {
                   Logger.info(
                     `Reusing previous message classification for follow-up query ${JSON.stringify(
                       lastUserMessage.queryRouterClassification,
                     )}`,
                   );
 
-                  classification =
-                    lastUserMessage.queryRouterClassification as any;
+                  classification = parsedMessage.data
+                    .queryRouterClassification as QueryRouterLLMResponse
                 } else {
                   Logger.info(
                     "Follow-up query detected, but no classification found in previous message.",
@@ -2867,28 +2901,28 @@ export const MessageApi = async (c: Context) => {
                 }
               }
 
-              const understandSpan = ragSpan.startSpan("understand_message");
-              const iterator = UnderstandMessageAndAnswer(
-                email,
-                ctx,
-                message,
-                classification,
-                llmFormattedMessages,
-                0.5,
-                understandSpan,
-                userRequestsReasoning,
-              );
+              answer = ""
+              thinking = ""
+              reasoning = isReasoning && userRequestsReasoning
+              citations = []
+              citationMap = {}
+              let citationValues: Record<number, string> = {}
+              if (iterator === undefined) {
+                iterator = UnderstandMessageAndAnswer(
+                  email,
+                  ctx,
+                  message,
+                  classification,
+                  llmFormattedMessages,
+                  0.5,
+                  userRequestsReasoning,
+                  understandSpan,
+                )
+              }
               stream.writeSSE({
                 event: ChatSSEvents.Start,
                 data: "",
-              });
-
-              answer = "";
-              thinking = "";
-              reasoning = isReasoning && userRequestsReasoning;
-              citations = [];
-              citationMap = {};
-              let citationValues: Record<number, string> = {};
+              })
               for await (const chunk of iterator) {
                 if (stream.closed) {
                   Logger.info(
@@ -3395,9 +3429,9 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
-            );
+              understandSpan,
+            )
             stream.writeSSE({
               event: ChatSSEvents.Start,
               data: "",
@@ -3761,11 +3795,11 @@ export const MessageRetryApi = async (c: Context) => {
                 costArr.push(chunk.cost);
               }
             }
-            searchSpan.setAttribute("answer_found", parsed.answer);
-            searchSpan.setAttribute("answer", answer);
-            searchSpan.setAttribute("query_rewrite", parsed.queryRewrite);
-            searchSpan.end();
-            let classification: TemporalClassifier & QueryRouterResponse;
+            searchSpan.setAttribute("answer_found", parsed.answer)
+            searchSpan.setAttribute("answer", answer)
+            searchSpan.setAttribute("query_rewrite", parsed.queryRewrite)
+            searchSpan.end()
+            let classification: QueryRouterLLMResponse
             if (parsed.answer === null) {
               const ragSpan = streamSpan.startSpan("rag_processing");
               if (parsed.queryRewrite) {
@@ -3794,7 +3828,7 @@ export const MessageRetryApi = async (c: Context) => {
                   startTime,
                   count,
                 },
-              } as TemporalClassifier & QueryRouterResponse;
+              } as QueryRouterLLMResponse
 
               Logger.info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
@@ -3830,9 +3864,9 @@ export const MessageRetryApi = async (c: Context) => {
                 classification,
                 convWithNoErrMsg,
                 0.5,
-                understandSpan,
                 userRequestsReasoning,
-              );
+                understandSpan,
+              )
               // throw new Error("Hello, how are u doing?")
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -5363,7 +5397,7 @@ export const MessageFeedbackApi = async (c: Context) => {
       message.email !== email ||
       message.workspaceExternalId !== workspaceId
     ) {
-      throw new HTTPException(403, { message: "Forbidden" });
+      throw new HTTPException(403, { message: "Forbidden" })
     }
 
     await updateMessageByExternalId(db, messageId, {

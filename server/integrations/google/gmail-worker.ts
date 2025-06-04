@@ -1,6 +1,7 @@
 // prevents TS errors
 declare var self: Worker
 import { scopes } from "@/integrations/google/config"
+import { v4 as uuidv4 } from "uuid"
 
 import { chunkTextByParagraph } from "@/chunks"
 import { EmailParsingError } from "@/errors"
@@ -40,10 +41,19 @@ import {
   parseAttachments,
 } from "@/integrations/google/worker-utils"
 import { StatType } from "@/integrations/tracker"
-import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested, totalIngestedMails } from "@/metrics/google/gmail-metrics"
+import {
+  ingestionMailErrorsTotal,
+  totalAttachmentError,
+  totalAttachmentIngested,
+  totalIngestedMails,
+} from "@/metrics/google/gmail-metrics"
+
+import { skipMailExistCheck } from "@/integrations/google/config"
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
+  msgId: z.string(),
+  jobId: z.string(),
   userEmail: z.string(),
   serviceAccountKey: z.object({
     client_email: z.string(),
@@ -74,20 +84,47 @@ self.onmessage = async (event: MessageEvent<MessageType>) => {
     if (event.type === "message") {
       const msg = event.data
       if (msg.type === MessageTypes.JwtParams) {
-        const { userEmail, serviceAccountKey, startDate, endDate } = msg
-        Logger.info(`Got the jwt params: ${userEmail}`)
-        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
-        const historyId = await handleGmailIngestion(
-          jwtClient,
+        const {
+          msgId,
+          jobId,
           userEmail,
+          serviceAccountKey,
           startDate,
           endDate,
+        } = msg
+        Logger.info(
+          `Got the jwt params: ${userEmail} (jobId: ${jobId}, msgId: ${msgId}) (startDate: ${startDate}) (endDate: ${endDate})`,
         )
-        postMessage({
-          type: WorkerResponseTypes.HistoryId,
-          userEmail,
-          historyId,
-        })
+        const jwtClient = createJwtClient(serviceAccountKey, userEmail)
+        try {
+          const historyId = await handleGmailIngestion(
+            jwtClient,
+            userEmail,
+            jobId,
+            startDate,
+            endDate,
+          )
+          postMessage({
+            type: WorkerResponseTypes.HistoryId,
+            msgId,
+            userEmail,
+            jobId,
+            historyId,
+          })
+        } catch (error) {
+          Logger.error(
+            error,
+            `Error handling Gmail ingestion for ${userEmail} (jobId: ${jobId})`,
+          )
+          postMessage({
+            type: WorkerResponseTypes.Error,
+            msgId,
+            jobId,
+            userEmail,
+            errorMessage:
+              error instanceof Error ? error.message : "Unknown error",
+          })
+        }
       }
     }
   } catch (error) {
@@ -99,9 +136,26 @@ self.onerror = (error: ErrorEvent) => {
   Logger.error(error, `Error in Gmail worker: ${JSON.stringify(error)}`)
 }
 
+// Helper function to send stats back to main thread
+const sendStatsUpdate = (
+  userEmail: string,
+  statType: StatType,
+  count: number,
+  jobId: string,
+) => {
+  postMessage({
+    type: WorkerResponseTypes.Stats,
+    userEmail,
+    statType,
+    count,
+    jobId,
+  })
+}
+
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
+  jobId: string,
   startDate?: string,
   endDate?: string,
 ): Promise<string> => {
@@ -142,16 +196,18 @@ export const handleGmailIngestion = async (
   }
   if (endDate) {
     const endDateObj = new Date(endDate)
-    const formattedEndDate = endDateObj
+    endDateObj.setDate(endDateObj.getDate() + 1)
+    const formattedExclusiveEndDate = endDateObj
       .toISOString()
       .split("T")[0]
       .replace(/-/g, "/")
-    dateFilters.push(`before:${formattedEndDate}`)
+    dateFilters.push(`before:${formattedExclusiveEndDate}`)
   }
 
   if (dateFilters.length > 0) {
-    query = `${query} ${dateFilters.join(" ")}`
+    query = `${query} ${dateFilters.join(" AND ")}`
   }
+  Logger.info(`query: ${query}`)
 
   do {
     const resp = await retryWithBackoff(
@@ -205,14 +261,31 @@ export const handleGmailIngestion = async (
               // Increment counters only on success
               insertedMessagesInBatch++
               insertedPdfAttachmentsInBatch += insertedPdfCount
-              totalIngestedMails.inc({mime_type: message.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"SERVICE_ACCOUNT"}, 1)
+
+              totalIngestedMails.inc(
+                {
+                  mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
+                  status: "GMAIL_INGEST_SUCCESS",
+                  email: email,
+                  account_type: "SERVICE_ACCOUNT",
+                },
+                1,
+              )
+
             }
           } catch (error) {
             Logger.error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc({mail_id:message.id??"",mail_title:message.payload?.filename??"",mime_type:message.payload?.mimeType??"GOOGLE_MAIL",status:"FAILED", error_type:"ERROR_IN_GMAIL_INGESTION"}, 1)
+            ingestionMailErrorsTotal.inc(
+              {
+                mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
+                status: "FAILED",
+                error_type: "ERROR_IN_GMAIL_INGESTION",
+              },
+              1,
+            )
           } finally {
             // release from memory
             msgResp = null
@@ -224,23 +297,23 @@ export const handleGmailIngestion = async (
       totalMails += insertedMessagesInBatch // Update total based on success
 
       // Post stats based on successful operations in this batch
-      // Only post Gmail count if successful messages > 0
-      if (insertedMessagesInBatch > 0) {
-        postMessage({
-          type: WorkerResponseTypes.Stats,
-          userEmail: email,
-          count: insertedMessagesInBatch,
-          statType: StatType.Gmail,
-        })
-      }
-      // Post PDF attachment count only if > 0
+      // Always post Gmail count, even if it's zero for this batch, to confirm processing.
+      Logger.info(
+        ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Gmail}, count: ${insertedMessagesInBatch}, jobId: ${jobId}`,
+      )
+      sendStatsUpdate(email, StatType.Gmail, insertedMessagesInBatch, jobId)
+
+      // Post PDF attachment count only if > 0 (or decide to always send this too)
       if (insertedPdfAttachmentsInBatch > 0) {
-        postMessage({
-          type: WorkerResponseTypes.Stats,
-          userEmail: email,
-          count: insertedPdfAttachmentsInBatch,
-          statType: StatType.Mail_Attachments,
-        })
+        Logger.info(
+          ` Gmail Worker: About to send stats for ${email}, type: ${StatType.Mail_Attachments}, count: ${insertedPdfAttachmentsInBatch}, jobId: ${jobId}`,
+        )
+        sendStatsUpdate(
+          email,
+          StatType.Mail_Attachments,
+          insertedPdfAttachmentsInBatch,
+          jobId,
+        )
       }
 
       // clean up explicitly
@@ -320,22 +393,23 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-  const mailId = getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  const mailId =
+    getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let exist = false
   if (mailId) {
     try {
-        const res = await ifMailDocumentsExist([mailId])
-        if (res[mailId]?.exists) {
-           exist = true
-          }
-        } catch (error) {
-          Logger.warn(
-            error,
-            `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`
-          )
-          exist = false
-        }
+      const res = await ifMailDocumentsExist([mailId])
+      if (res[mailId]?.exists && !skipMailExistCheck) {
+        exist = true
       }
+    } catch (error) {
+      Logger.warn(
+        error,
+        `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`,
+      )
+      exist = false
+    }
+  }
   const dateHeader = getHeader("Date")
   if (dateHeader) {
     const date = new Date(dateHeader)
@@ -412,7 +486,16 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
-            totalAttachmentIngested.inc({mime_type:mimeType, status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
+
+            totalAttachmentIngested.inc(
+              {
+                mime_type: mimeType,
+                status: "SUCCESS",
+                account_type: "OAUTH_ACCOUNT",
+                email: userEmail,
+              },
+              1,
+            )
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -421,7 +504,15 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-             totalAttachmentError.inc({mail_id:messageId, mime_type:mimeType, attachment_id:body.attachmentId??"", status:"FAILED",email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
+            totalAttachmentError.inc(
+              {
+                mime_type: mimeType,
+                status: "FAILED",
+                email: userEmail,
+                error_type: "ERROR_INSERTING_ATTACHMENT",
+              },
+              1,
+            )
           }
         }
       }

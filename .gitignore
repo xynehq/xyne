@@ -171,6 +171,9 @@ dist
 # IntelliJ based IDEs
 .idea
 
+# Vim 
+Session.vim
+
 # Finder (MacOS) folder config
 .DS_Store
 

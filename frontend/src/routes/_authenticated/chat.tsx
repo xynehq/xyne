@@ -83,13 +83,14 @@ type ParsedMessagePart =
   | {
       type: "pill";
       value: {
-        docId: string;
-        url: string | null;
-        title: string | null;
-        app?: string;
-        entity?: string;
-        pillType?: "citation" | "global";
-      };
+        docId: string
+        url: string | null
+        title: string | null
+        app?: string
+        entity?: string
+        pillType?: "citation" | "global"
+        imgSrc?: string | null
+      }
     }
   | { type: "link"; value: string };
 
@@ -109,23 +110,40 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
       if (
         el.tagName.toLowerCase() === "a" &&
         el.classList.contains("reference-pill") &&
-        el.dataset.docId
+        (el.dataset.docId || el.dataset.referenceId)
       ) {
+        const entity = el.dataset.entity
+        const isContactPill =
+          entity === "OtherContacts" || entity === "Contacts"
+        let imgSrc: string | null = null
+        const imgElement = el.querySelector("img")
+        if (imgElement) {
+          imgSrc = imgElement.getAttribute("src")
+        }
         parts.push({
           type: "pill",
           value: {
-            docId: el.dataset.docId,
-            url: el.getAttribute("href"),
+            docId: el.dataset.docId || el.dataset.referenceId!,
+            url: isContactPill ? null : el.getAttribute("href"),
             title: el.getAttribute("title"),
             app: el.dataset.app,
-            entity: el.dataset.entity,
+            entity: entity,
+            imgSrc: imgSrc,
           },
         });
       } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
-        parts.push({
-          type: "link",
-          value: el.getAttribute("href") || "",
-        });
+        // Ensure this link is not also a reference pill that we've already processed
+        if (
+          !(
+            el.classList.contains("reference-pill") &&
+            (el.dataset.docId || el.dataset.referenceId)
+          )
+        ) {
+          parts.push({
+            type: "link",
+            value: el.getAttribute("href") || "",
+          })
+        }
         // Do not walk children of a link we've already processed as a "link" part
       } else {
         Array.from(el.childNodes).forEach(walk);
@@ -156,7 +174,8 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           part.value &&
           typeof part.value === "object"
         ) {
-          const { docId, url, title, app, entity, pillType } = part.value;
+          const { docId, url, title, app, entity, pillType, imgSrc } =
+            part.value
 
           const referenceForPill: Reference = {
             id: docId,
@@ -166,7 +185,10 @@ const jsonToHtmlMessage = (jsonString: string): string => {
             app: app,
             entity: entity,
             type: pillType || "global",
-          };
+            // Include imgSrc if available, mapping it to photoLink for the Reference type.
+            // The Pill component will need to be able to utilize this.
+            ...(imgSrc && { photoLink: imgSrc }),
+          }
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
           );
@@ -1618,17 +1640,19 @@ export const ChatMessage = ({
   };
   return (
     <div
-      className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
+      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
-        <div dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
+        <div 
+        className="break-words overflow-wrap-anywhere"
+        dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
       ) : (
         <div
-          className={`flex flex-col mt-[40px] ${citationUrls.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
         >
-          <div className="flex flex-row">
+          <div className="flex flex-row w-full">
             <img
-              className={"mr-[20px] w-[32px] self-start"}
+              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={AssistantLogo}
             />
             <div className="mt-[4px] markdown-content">
@@ -1643,6 +1667,8 @@ export const ChatMessage = ({
                       padding: 0,
                       backgroundColor: "transparent",
                       color: "#627384",
+                      maxWidth: "100%", 
+                      overflowWrap: "break-word",
                     }}
                     components={{
                       a: renderMarkdownLink,
@@ -1664,17 +1690,21 @@ export const ChatMessage = ({
                     padding: 0,
                     backgroundColor: "transparent",
                     color: "#1C1D1F",
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
                   }}
                   components={{
                     a: renderMarkdownLink,
                     table: ({ node, ...props }) => (
-                      <div className="overflow-x-auto w-[720px] my-2">
+                      <div className="overflow-x-auto max-w-full my-2">
                         <table
                           style={{
                             borderCollapse: "collapse",
                             borderStyle: "hidden",
-                            tableLayout: "fixed",
+                            tableLayout: "auto",
                             width: "100%",
+                            maxWidth: "100%",
+
                           }}
                           className="min-w-full"
                           {...props}
