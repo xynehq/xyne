@@ -48,6 +48,8 @@ import {
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
 
+import { skipMailExistCheck } from "@/integrations/google/config"
+
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
   msgId: z.string(),
@@ -401,7 +403,7 @@ export const parseMail = async (
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
-      if (res[mailId]?.exists) {
+      if (res[mailId]?.exists && !skipMailExistCheck) {
         exist = true
       }
     } catch (error) {

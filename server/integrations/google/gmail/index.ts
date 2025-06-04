@@ -33,6 +33,7 @@ import {
   totalAttachmentIngested,
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
+import { skipMailExistCheck } from "@/integrations/google/config"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
@@ -230,7 +231,7 @@ export const parseMail = async (
   if (mailId) {
     try {
       const res = await ifMailDocumentsExist([mailId])
-      if (res[mailId]?.exists) {
+      if (res[mailId]?.exists && !skipMailExistCheck) {
         exist = true
       }
     } catch (error) {

@@ -21,3 +21,4 @@ export const GmailConcurrency = 8
 export const PDFProcessingConcurrency = 8
 
 export const MAX_ATTACHMENT_PDF_SIZE = 15
+export const skipMailExistCheck = true  // We will skip the Vespa existence validation step and ingest emails directly.
