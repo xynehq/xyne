@@ -94,6 +94,10 @@
       "pages": ["changelog/overview"]
     },
     {
+      "group": "Maintenance",
+      "pages": ["maintenance/prometheus-management"]
+    },
+    {
       "group": "For Developers",
       "pages": ["contribution/contribute", "contribution/devmode"]
     }

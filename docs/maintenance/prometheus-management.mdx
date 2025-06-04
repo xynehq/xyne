@@ -1,0 +1,40 @@
+---
+title: 'Prometheus Management'
+description: 'Commands for managing and resetting the Prometheus instance in a development environment.'
+---
+
+## Resetting Prometheus Data in Development
+
+If you need to reset the Prometheus data in your local development environment, for example, to clear old metrics or start with a fresh instance for testing, you can use the following commands.
+
+## Caution: Enabling Prometheus Admin API
+
+Before proceeding with commands that interact with the Prometheus Admin API (like the deletion script mentioned below), it's crucial to understand the associated risks and prerequisites:
+
+*   **Increased Attack Surface:** Enabling the Admin API exposes powerful administrative functionalities, potentially increasing the attack surface of your Prometheus instance.
+*   **Proper Authentication:** Ensure that robust authentication and authorization mechanisms are in place to protect the Admin API from unauthorized access.
+*   **Verify Selectors Carefully:** When deleting time series data, meticulously verify the selectors. Incorrect selectors can lead to **irreversible data loss**.
+*   **Plan for Tombstone Cleanup & Compaction:** Deleting series creates tombstones. Plan for subsequent tombstone cleanup and data compaction to reclaim disk space and maintain query performance.
+
+**Commands:**
+
+1.  **Force recreate the Prometheus container:**
+    This command stops and removes the existing `prometheus` Docker container and then starts a new one based on the `deployment/docker-compose.dev.yml` configuration. The `-d` flag runs it in detached mode, and `--force-recreate` ensures it's rebuilt even if a container with the same name exists.
+
+    ```bash
+    docker-compose -f deployment/docker-compose.dev.yml up -d --force-recreate prometheus
+    ```
+
+2.  **Run the Prometheus deletion script:**
+    This script deletes Prometheus time series data matching a specific selector and can optionally trigger a tombstone cleanup. It interacts directly with the Prometheus Admin API to perform these operations.
+    
+    ```bash
+    sh server/scripts/delete-prom.sh
+    ```
+
+**When to Use:**
+*   When you need a completely clean Prometheus instance for development or testing purposes.
+*   If Prometheus is behaving unexpectedly in your development setup and you suspect data corruption or stale configurations.
+*   Before running specific integration tests that require a known, fresh state for metrics.
+
+---
