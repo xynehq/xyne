@@ -1636,17 +1636,19 @@ export const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
+      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
-        <div dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
+        <div 
+        className="break-words overflow-wrap-anywhere"
+        dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
       ) : (
         <div
-          className={`flex flex-col mt-[40px] ${citationUrls.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
         >
-          <div className="flex flex-row">
+          <div className="flex flex-row w-full">
             <img
-              className={"mr-[20px] w-[32px] self-start"}
+              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={AssistantLogo}
             />
             <div className="mt-[4px] markdown-content">
@@ -1661,6 +1663,8 @@ export const ChatMessage = ({
                       padding: 0,
                       backgroundColor: "transparent",
                       color: "#627384",
+                      maxWidth: "100%", 
+                      overflowWrap: "break-word",
                     }}
                     components={{
                       a: renderMarkdownLink,
@@ -1682,17 +1686,21 @@ export const ChatMessage = ({
                     padding: 0,
                     backgroundColor: "transparent",
                     color: "#1C1D1F",
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
                   }}
                   components={{
                     a: renderMarkdownLink,
                     table: ({ node, ...props }) => (
-                      <div className="overflow-x-auto w-[720px] my-2">
+                      <div className="overflow-x-auto max-w-full my-2">
                         <table
                           style={{
                             borderCollapse: "collapse",
                             borderStyle: "hidden",
-                            tableLayout: "fixed",
+                            tableLayout: "auto",
                             width: "100%",
+                            maxWidth: "100%",
+
                           }}
                           className="min-w-full"
                           {...props}

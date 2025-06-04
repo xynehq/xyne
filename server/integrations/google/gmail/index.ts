@@ -27,8 +27,14 @@ import {
   getGmailAttachmentChunks,
   parseAttachments,
 } from "@/integrations/google/worker-utils"
-import { ingestionMailErrorsTotal, totalAttachmentError, totalAttachmentIngested, totalIngestedMails } from "@/metrics/google/gmail-metrics"
+import {
+  ingestionMailErrorsTotal,
+  totalAttachmentError,
+  totalAttachmentIngested,
+  totalIngestedMails,
+} from "@/metrics/google/gmail-metrics"
 import { AuthType } from "@/shared/types"
+import { skipMailExistCheck } from "@/integrations/google/config"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
@@ -199,22 +205,23 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-  const mailId = getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  const mailId =
+    getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let exist = false
   if (mailId) {
     try {
-        const res = await ifMailDocumentsExist([mailId])
-        if (res[mailId]?.exists) {
-           exist = true
-          }
-        } catch (error) {
-          Logger.warn(
-            error,
-            `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`
-          )
-          exist = false
-        }
+      const res = await ifMailDocumentsExist([mailId])
+      if (res[mailId]?.exists && !skipMailExistCheck) {
+        exist = true
       }
+    } catch (error) {
+      Logger.warn(
+        error,
+        `Failed to check mail existence for mailId: ${mailId}, proceeding with insertion`,
+      )
+      exist = false
+    }
+  }
   // Handle timestamp from Date header if available
   const dateHeader = getHeader("Date")
   if (dateHeader) {
