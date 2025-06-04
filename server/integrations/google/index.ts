@@ -1433,7 +1433,7 @@ const insertFilesForUser = async (
                 error,
                 `Could not insert file of type ${doc.mimeType} with id ${doc.docId} for user: ${errorMessage} ${(error as Error).stack}`,
               )
-              ingestionErrorsTotal.inc({file_type:fileType, mime_type: doc.mimeType??"application/vnd.google-apps.file", email: doc.ownerEmail??userEmail, error_type: `ERROR_INSERTING_${fileType}_file`,status:statusEnum.failed}, 1)
+              ingestionErrorsTotal.inc({file_type:fileType, mime_type: doc.mimeType??"application/vnd.google-apps.file", email: doc.ownerEmail??userEmail, error_type: `FILE_INSERTION_ERROR`,status:statusEnum.failed}, 1)
             }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)

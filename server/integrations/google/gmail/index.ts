@@ -111,7 +111,7 @@ export const handleGmailIngestion = async (
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc({mime_type:msgResp?.data.payload?.mimeType??mimeTypeEnum.g_mail,status:statusEnum.failed, error_type:"ERROR_IN_GMAIL_INGESTION", email:email, account_type:metricAccountType.service},1)
+            ingestionMailErrorsTotal.inc({mime_type:msgResp?.data.payload?.mimeType??mimeTypeEnum.g_mail,status:statusEnum.failed, error_type:"ERROR_IN_GMAIL_INGESTION", account_type:metricAccountType.service},1)
           } finally {
             // release from memory
             msgResp = null
