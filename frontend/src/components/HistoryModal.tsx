@@ -321,7 +321,7 @@ const HistoryModal = ({
                 )}
                 {favouriteChats.map((item) => (
                   <ChatItem 
-                    key={`fav-${item.externalId}`} 
+                    key={`${item.externalId}`} 
                     item={item} 
                     existingChatId={existingChatId} 
                     isEditing={isEditing} 

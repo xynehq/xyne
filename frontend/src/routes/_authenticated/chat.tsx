@@ -281,28 +281,27 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive));
   }, [isReasoningActive])
 
-  // Effect to set chatId and initial values from loader data and route params
+  // Primary effect for data initialization and updates
   useEffect(() => {
     const currentRouteChatId = (params as any).chatId || null;
     setChatId(currentRouteChatId);
 
-    if (currentRouteChatId) { // If on a specific chat page
+    if (currentRouteChatId) {
       setMessages(data?.messages || []);
       const newChatTitle = data?.chat?.title || null;
       setChatTitle(newChatTitle);
-      if (!isEditing) { // Only update editedTitle if not currently editing
+      if (!isEditing) {
         setEditedTitle(newChatTitle);
       }
-      // Set initial bookmark from loader data.
-      // The effect listening to `currentChatFromHistory` will refine this if the cache is more up-to-date.
       setBookmark(!!data?.chat?.isBookmarked);
-    } else { // Navigated away from a specific chat or to /chat
+    } else {
       setMessages([]);
       setChatTitle(null);
       setEditedTitle(null);
       setBookmark(false);
     }
 
+    // Initialize feedback map
     if (data?.messages) {
       const initialFeedbackMap: Record<string, MessageFeedback | null> = {};
       data.messages.forEach((msg: SelectPublicMessage) => {
@@ -313,17 +312,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       setFeedbackMap(initialFeedbackMap);
     }
 
+    // Reset streaming and UI state
     if (!isStreaming && !hasHandledQueryParam.current) {
       setCurrentResp(null);
       currentRespRef.current = null;
     }
-    // inputRef.current?.focus(); // Focusing handled in other useEffect
     setShowSources(false);
     setCurrentCitations([]);
     setCurrentMessageId(null);
-
-  }, [params, data, isWithChatId]); // Dependencies: params (for chatId), data (for initial values)
-
+  }, [params, data, isWithChatId, isEditing, isStreaming]);
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -475,7 +472,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
     setChatId((params as any).chatId || null)
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
-    // This line will now correctly reflect the change after router.invalidate()
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
 
     // Populate feedbackMap from loaded messages
@@ -498,9 +494,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentCitations([])
     setCurrentMessageId(null)
   }, [
-    data?.chat?.isBookmarked, // This dependency is key
     data?.chat?.title,
-    data?.messages, // This will re-run when messages data changes
+    data?.messages,
     isWithChatId,
     params,
   ])
