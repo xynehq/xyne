@@ -1023,10 +1023,10 @@ async function* generateAnswerFromGivenContext(
 
   const generateAnswerSpan = passedSpan?.startSpan(
     "generateAnswerFromGivenContext",
-  )
+  );
 
-  let previousResultsLength = 0
-  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+  let previousResultsLength = 0;
+  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!);
   if (!results.root.children) {
     results.root.children = [];
   }
@@ -1042,19 +1042,19 @@ async function* generateAnswerFromGivenContext(
           )}`,
       )
       ?.join("\n"),
-  )
+  );
 
-  const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
+  const initialContextSpan = generateAnswerSpan?.startSpan("initialContext");
   initialContextSpan?.setAttribute(
     "context_length",
     initialContext?.length || 0,
-  )
-  initialContextSpan?.setAttribute("context", initialContext || "")
+  );
+  initialContextSpan?.setAttribute("context", initialContext || "");
   initialContextSpan?.setAttribute(
     "number_of_chunks",
     results.root?.children?.length || 0,
-  )
-  initialContextSpan?.end()
+  );
+  initialContextSpan?.end();
 
   Logger.info(
     `[Selected Context Path] Number of contextual chunks being passed: ${
@@ -1085,9 +1085,9 @@ async function* generateAnswerFromGivenContext(
     userRequestsReasoning,
   );
   if (answer) {
-    generateAnswerSpan?.setAttribute("answer_found", true)
-    generateAnswerSpan?.end()
-    return
+    generateAnswerSpan?.setAttribute("answer_found", true);
+    generateAnswerSpan?.end();
+    return;
   } else if (!answer) {
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     Logger.info(
@@ -1096,16 +1096,16 @@ async function* generateAnswerFromGivenContext(
     let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
       limit: fileIds?.length,
       alpha: userAlpha,
-    })
+    });
 
-    const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
-    searchVespaSpan?.setAttribute("parsed_message", message)
-    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
-    searchVespaSpan?.setAttribute("limit", fileIds?.length)
+    const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan");
+    searchVespaSpan?.setAttribute("parsed_message", message);
+    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery);
+    searchVespaSpan?.setAttribute("limit", fileIds?.length);
     searchVespaSpan?.setAttribute(
       "results length",
       results?.root?.children?.length || 0,
-    )
+    );
 
     if (!results.root.children) {
       results.root.children = [];
@@ -1124,15 +1124,20 @@ async function* generateAnswerFromGivenContext(
         ?.join("\n"),
     );
     Logger.info(
-      `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
-    )
+      `[Selected Context Path] Number of contextual chunks being passed: ${
+        results?.root?.children?.length || 0
+      }`,
+    );
 
-    searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
-    searchVespaSpan?.setAttribute("context", initialContext || "")
+    searchVespaSpan?.setAttribute(
+      "context_length",
+      initialContext?.length || 0,
+    );
+    searchVespaSpan?.setAttribute("context", initialContext || "");
     searchVespaSpan?.setAttribute(
       "number_of_chunks",
       results.root?.children?.length || 0,
-    )
+    );
 
     const iterator = baselineRAGJsonStream(
       builtUserQuery,
@@ -1153,22 +1158,22 @@ async function* generateAnswerFromGivenContext(
       userRequestsReasoning,
     );
     if (answer) {
-      searchVespaSpan?.setAttribute("answer_found", true)
-      searchVespaSpan?.end()
-      generateAnswerSpan?.end()
-      return
+      searchVespaSpan?.setAttribute("answer_found", true);
+      searchVespaSpan?.end();
+      generateAnswerSpan?.end();
+      return;
     } else if (
       // If no answer found, exit and yield nothing related to selected context found
       !answer
     ) {
-      const noAnswerSpan = searchVespaSpan?.startSpan("no_answer_response")
+      const noAnswerSpan = searchVespaSpan?.startSpan("no_answer_response");
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
-      }
-      noAnswerSpan?.end()
-      searchVespaSpan?.end()
-      generateAnswerSpan?.end()
-      return
+      };
+      noAnswerSpan?.end();
+      searchVespaSpan?.end();
+      generateAnswerSpan?.end();
+      return;
     }
     if (config.isReasoning && userRequestsReasoning) {
       previousResultsLength += results?.root?.children?.length || 0;
@@ -1177,7 +1182,7 @@ async function* generateAnswerFromGivenContext(
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += results?.root?.children?.length || 0;
   }
-  generateAnswerSpan?.end()
+  generateAnswerSpan?.end();
 }
 
 // Checks if the user has selected context
@@ -2166,15 +2171,15 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
-  passedSpan?.setAttribute("email", email)
-  passedSpan?.setAttribute("message", message)
-  passedSpan?.setAttribute("alpha", alpha)
-  passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
-  passedSpan?.setAttribute("fileIds_count", fileIds?.length)
+  passedSpan?.setAttribute("email", email);
+  passedSpan?.setAttribute("message", message);
+  passedSpan?.setAttribute("alpha", alpha);
+  passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds));
+  passedSpan?.setAttribute("fileIds_count", fileIds?.length);
   passedSpan?.setAttribute(
     "userRequestsReasoning",
     userRequestsReasoning || false,
-  )
+  );
 
   return yield* generateAnswerFromGivenContext(
     message,
@@ -2184,7 +2189,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     fileIds,
     userRequestsReasoning,
     passedSpan,
-  )
+  );
 }
 
 const handleError = (error: any) => {
@@ -2456,14 +2461,14 @@ export const MessageApi = async (c: Context) => {
             let thinking = "";
             let reasoning =
               userRequestsReasoning &&
-              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning;
 
-            const understandSpan = streamSpan.startSpan("understand_message")
+            const understandSpan = streamSpan.startSpan("understand_message");
             understandSpan?.setAttribute(
               "totalValidFileIdsFromLinkCount",
               totalValidFileIdsFromLinkCount,
-            )
-            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
+            );
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks);
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -2551,16 +2556,16 @@ export const MessageApi = async (c: Context) => {
             understandSpan.setAttribute(
               "citation_values",
               JSON.stringify(citationValues),
-            )
-            understandSpan.end()
-            const answerSpan = streamSpan.startSpan("process_final_answer")
+            );
+            understandSpan.end();
+            const answerSpan = streamSpan.startSpan("process_final_answer");
             answerSpan.setAttribute(
               "final_answer",
               processMessage(answer, citationMap),
-            )
-            answerSpan.setAttribute("actual_answer", answer)
-            answerSpan.setAttribute("final_answer_length", answer.length)
-            answerSpan.end()
+            );
+            answerSpan.setAttribute("actual_answer", answer);
+            answerSpan.setAttribute("final_answer_length", answer.length);
+            answerSpan.end();
 
             if (answer || wasStreamClosedPrematurely) {
               // TODO: incase user loses permission
@@ -3375,14 +3380,14 @@ export const MessageRetryApi = async (c: Context) => {
             let thinking = "";
             let reasoning =
               userRequestsReasoning &&
-              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+              ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning;
 
-            const understandSpan = streamSpan.startSpan("understand_message")
+            const understandSpan = streamSpan.startSpan("understand_message");
             understandSpan?.setAttribute(
               "totalValidFileIdsFromLinkCount",
               totalValidFileIdsFromLinkCount,
-            )
-            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
+            );
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks);
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -3470,16 +3475,16 @@ export const MessageRetryApi = async (c: Context) => {
             understandSpan.setAttribute(
               "citation_values",
               JSON.stringify(citationValues),
-            )
-            understandSpan.end()
-            const answerSpan = streamSpan.startSpan("process_final_answer")
+            );
+            understandSpan.end();
+            const answerSpan = streamSpan.startSpan("process_final_answer");
             answerSpan.setAttribute(
               "final_answer",
               processMessage(answer, citationMap),
-            )
-            answerSpan.setAttribute("actual_answer", answer)
-            answerSpan.setAttribute("final_answer_length", answer.length)
-            answerSpan.end()
+            );
+            answerSpan.setAttribute("actual_answer", answer);
+            answerSpan.setAttribute("final_answer_length", answer.length);
+            answerSpan.end();
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message");
@@ -4327,6 +4332,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         Logger.info(`Added stream ${streamKey} to active streams map.`);
         const streamSpan = rootSpan.startSpan("stream_response");
         streamSpan.setAttribute("chatId", chat.externalId);
+        let wasStreamClosedPrematurely = false;
         try {
           if (!chatId) {
             const titleUpdateSpan = streamSpan.startSpan("send_title_update");
