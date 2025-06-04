@@ -111,7 +111,7 @@ export const handleGmailIngestion = async (
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc({mime_type:message.payload?.mimeType??mimeTypeEnum.g_mail,status:statusEnum.failed, error_type:"ERROR_IN_GMAIL_INGESTION"},1)
+            ingestionMailErrorsTotal.inc({mime_type:msgResp?.data.payload?.mimeType??mimeTypeEnum.g_mail,status:statusEnum.failed, error_type:"ERROR_IN_GMAIL_INGESTION", email:email, account_type:metricAccountType.service},1)
           } finally {
             // release from memory
             msgResp = null
@@ -306,7 +306,7 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-            totalAttachmentError.inc({mime_type:mimeType, status:statusEnum.failed,email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
+            totalAttachmentError.inc({mime_type:mimeType, status:statusEnum.failed,email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT", account_type: metricAccountType.oauth}, 1)
           }
         }
       }

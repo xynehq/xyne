@@ -1411,7 +1411,7 @@ const insertFilesForUser = async (
       })
 
 
-      const totalIngestionDuration = ingestionDuration.startTimer({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file", email:userEmail})
+      const totalIngestionDuration = ingestionDuration.startTimer({file_type:fileTypeEnum.drive_file, mime_type:"application/vnd.google-apps.file", email:userEmail})
       for (const doc of allFiles) {
         Logger.info(
           `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
