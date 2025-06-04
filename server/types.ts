@@ -340,3 +340,28 @@ export enum metricAccountType {
   slackUser = "slackUser",
   admin = "admin"
 }
+
+export enum fileTypeEnum {
+  google_pdf = "GOOGLE_DRIVE_PDF",
+  google_doc = "GOOGLE_DOC",
+  google_sheets = "GOOGLE_SHEETS",
+  google_slide = "GOOGLE_SLIDE",
+  gmail = "GOOGLE_MAIL",
+  gmail_attachment = "GOOGLE_MAIL_ATTACHMENT",
+  drive_file = "GOOGLE_DRIVE_FILE"
+}
+
+export enum mimeTypeEnum {
+  google_drive_file = "google_file",
+  google_pdf = "google_pdf",
+  google_doc = "google_doc",
+  google_sheet = "google_sheets",
+  g_mail = "gmail",
+  g_mail_attachment = "gmail_attachment"
+}
+
+export enum statusEnum {
+  success = "SUCCESS",
+  failed = "FAILED",
+  blocked = "BLOCKED"
+}

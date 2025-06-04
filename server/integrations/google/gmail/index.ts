@@ -13,7 +13,7 @@ import {
   type VespaMailAttachment,
 } from "@/search/types"
 import { ifMailDocumentsExist, insert } from "@/search/vespa"
-import { Subsystem, type GoogleClient } from "@/types"
+import { metricAccountType, mimeTypeEnum, statusEnum, Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"
 import { parseEmailBody } from "./quote-parser"
 import pLimit from "p-limit"
@@ -103,7 +103,7 @@ export const handleGmailIngestion = async (
             if (!exist) {
               await insert(mailData, mailSchema)
               
-            totalIngestedMails.inc({mime_type:msgResp.data.payload?.mimeType??"GOOGLE_MAIL", status:"GMAIL_INGEST_SUCCESS", email: email, account_type:"OAUTH_ACCOUNT"}, 1)
+            totalIngestedMails.inc({mime_type:msgResp.data.payload?.mimeType??mimeTypeEnum.g_mail, status: statusEnum.success, email: email, account_type: metricAccountType.oauth}, 1)
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {
@@ -111,7 +111,7 @@ export const handleGmailIngestion = async (
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc({mime_type:message.payload?.mimeType??"GOOGLE_MAIL",status:"FAILED", error_type:"ERROR_IN_GMAIL_INGESTION"},1)
+            ingestionMailErrorsTotal.inc({mime_type:message.payload?.mimeType??mimeTypeEnum.g_mail,status:statusEnum.failed, error_type:"ERROR_IN_GMAIL_INGESTION"},1)
           } finally {
             // release from memory
             msgResp = null
@@ -297,7 +297,7 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
-            totalAttachmentIngested.inc({ mime_type:mimeType,  status:"SUCCESS", account_type:"OAUTH_ACCOUNT",email: userEmail}, 1)
+            totalAttachmentIngested.inc({ mime_type:mimeType,  status: statusEnum.success, account_type:metricAccountType.oauth,email: userEmail}, 1)
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -306,7 +306,7 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-            totalAttachmentError.inc({mime_type:mimeType, status:"FAILED",email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
+            totalAttachmentError.inc({mime_type:mimeType, status:statusEnum.failed,email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT"}, 1)
           }
         }
       }

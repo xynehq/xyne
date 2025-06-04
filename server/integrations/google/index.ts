@@ -15,7 +15,10 @@ import {
 } from "@/doc"
 import { chunkDocument } from "@/chunks"
 import {
+  fileTypeEnum,
   MessageTypes,
+  mimeTypeEnum,
+  statusEnum,
   Subsystem,
   SyncCron,
   WorkerResponseTypes,
@@ -1234,7 +1237,7 @@ const googleSlidesVespa = async (
   const total = presentationMetadata.length
   let count = 0
   for (const presentation of presentationMetadata) {
-      const endGoogleSlideExtractionDuration = extractionDuration.startTimer({mime_type:presentation.mimeType??"application/vnd.google-apps.presentation",email:userEmail, file_type:"GOOGLE_DRIVE_SLIDE"})
+      const endGoogleSlideExtractionDuration = extractionDuration.startTimer({mime_type:presentation.mimeType??"application/vnd.google-apps.presentation",email:userEmail, file_type:fileTypeEnum.google_slide})
     try {
       const presentationToBeIngested = await getPresentationToBeIngested(
         presentation,
@@ -1244,7 +1247,7 @@ const googleSlidesVespa = async (
         presentationsList.push(presentationToBeIngested)
       }
       count += 1
-      totalExtractedFiles.inc({mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", status:"SUCCESS", file_type:"GOOGLE_DRIVE_SLIDE"}, 1)
+      totalExtractedFiles.inc({mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", status:statusEnum.success, file_type:fileTypeEnum.google_slide}, 1)
       // if (count % 5 === 0) {
       //   sendWebsocketMessage(`${count} Google Slides scanned`, connectorId)
       // }
@@ -1255,7 +1258,7 @@ const googleSlidesVespa = async (
           {
             mime_type: presentation.mimeType ?? "application/vnd.google-apps.presentation",
             email: userEmail ?? "",
-            file_type: "GOOGLE_DRIVE_SLIDE",
+            file_type: fileTypeEnum.google_slide,
           },
           isNaN(sizeBytes) ? 0 : sizeBytes
         );
@@ -1266,7 +1269,7 @@ const googleSlidesVespa = async (
         `Error getting slides: ${error} ${(error as Error).stack}`,
         error,
       )
-      fileExtractionErrorsTotal.inc({mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", error_type:"PRESENTATION_EXTRACTION_FAILED_ERROR", file_type:"GOOGLE_DRIVE_SLIDE", email:userEmail})
+      fileExtractionErrorsTotal.inc({mime_type:presentation.mimeType??"application/vnd.google-apps.presentation", error_type:"PRESENTATION_EXTRACTION_FAILED_ERROR", file_type:fileTypeEnum.google_slide, email:userEmail})
       continue
     }
   }
@@ -1339,7 +1342,7 @@ const insertFilesForUser = async (
       )
 
       // Start timer for PDF file extraction duration
-      const pdfFileExtractionDuration =  totalDurationForFileExtraction.startTimer({file_type:"GOOGLE_DRIVE_PDF", mime_type:"google_pdf",email:userEmail})
+      const pdfFileExtractionDuration =  totalDurationForFileExtraction.startTimer({file_type: fileTypeEnum.google_pdf, mime_type:"google_pdf",email:userEmail})
       const pdfs = (
         await googlePDFsVespa(
           googleClient,
@@ -1355,22 +1358,22 @@ const insertFilesForUser = async (
        // End timer for PDF file extraction duration
       pdfFileExtractionDuration()
       
-       const fileType = "GOOGLE_DRIVE_PDF";
+       const fileType = fileTypeEnum.google_pdf;
       const totalTimeToIngestPDF = ingestionDuration.startTimer({file_type:fileType, mime_type:"google_pdf", email:userEmail})
       for (const doc of pdfs) {
         try{
         processedFiles += 1
         await insertWithRetry(doc, fileSchema)
-        totalIngestedFiles.inc({mime_type: doc.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:fileType})
+        totalIngestedFiles.inc({mime_type: doc.mimeType??mimeTypeEnum.google_pdf, status:statusEnum.success, email:userEmail, file_type:fileType})
         tracker.updateUserStats(userEmail, StatType.Drive, 1)
         }catch(error){
-          ingestionErrorsTotal.inc({file_type:fileType, mime_type:doc.mimeType??"google_pdf",email:doc.ownerEmail??userEmail, error_type:`ERROR_INGESTING_GOOGLE_DRIVE_PDF`, status:"FAILED"}, 1)
+          ingestionErrorsTotal.inc({file_type:fileType, mime_type:doc.mimeType??"google_pdf",email:doc.ownerEmail??userEmail, error_type:`ERROR_INGESTING_${fileTypeEnum.google_pdf}`, status: statusEnum.failed}, 1)
         }
       }
       // end of duration timer for pdf ingestion
       totalTimeToIngestPDF()
 
-      const totalDurationOfDriveFileExtraction = totalDurationForFileExtraction.startTimer({file_type:"GOOGLE_DRIVE_FILE", mime_type:"application/vnd.google-apps.file",email:userEmail})
+      const totalDurationOfDriveFileExtraction = totalDurationForFileExtraction.startTimer({file_type:fileTypeEnum.drive_file, mime_type:"application/vnd.google-apps.file",email:userEmail})
       const [documents, slides, sheetsObj]: [
         VespaFileWithDrivePermission[],
         VespaFileWithDrivePermission[],
@@ -1419,7 +1422,7 @@ const insertFilesForUser = async (
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
           console.log(`Mime type: `,doc.mimeType)
-          totalIngestedFiles.inc({mime_type:fileType=="GOOGLE_DRIVE_FILE"?"application/vnd.google-apps.file":doc.mimeType??"", status:"SUCCESS", email:userEmail, file_type:fileType })
+          totalIngestedFiles.inc({mime_type:fileType=="GOOGLE_DRIVE_FILE"?"application/vnd.google-apps.file":doc.mimeType??"", status:statusEnum.success, email:userEmail, file_type:fileType })
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
             tracker.updateUserStats(userEmail, StatType.Drive, 1)
@@ -1430,7 +1433,7 @@ const insertFilesForUser = async (
                 error,
                 `Could not insert file of type ${doc.mimeType} with id ${doc.docId} for user: ${errorMessage} ${(error as Error).stack}`,
               )
-              ingestionErrorsTotal.inc({file_type:fileType, mime_type: doc.mimeType??"application/vnd.google-apps.file", email: doc.ownerEmail??userEmail, error_type: `ERROR_INSERTING_${fileType}_file`,status:"FAILED"}, 1)
+              ingestionErrorsTotal.inc({file_type:fileType, mime_type: doc.mimeType??"application/vnd.google-apps.file", email: doc.ownerEmail??userEmail, error_type: `ERROR_INSERTING_${fileType}_file`,status:statusEnum.failed}, 1)
             }
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
@@ -1748,15 +1751,15 @@ const googleSheetsVespa = async (
   for (const spreadsheet of spreadsheetsMetadata) {
     const sheetSize = spreadsheet.size ? parseInt(spreadsheet.size) : 0
 
-    contentFileSize.observe({ mime_type: spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_type:"GOOGLE_DRIVE_SHEET", email: userEmail}, sheetSize)
+    contentFileSize.observe({ mime_type: spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", file_type: fileTypeEnum.google_sheets, email: userEmail}, sheetSize)
     try {
-      const endSheetExtractionDuration = extractionDuration.startTimer({ mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", email:userEmail,file_type:"GOOGLE_DRIVE_SHEET"})
+      const endSheetExtractionDuration = extractionDuration.startTimer({ mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", email:userEmail,file_type:fileTypeEnum.google_sheets})
       const sheetsListFromOneSpreadsheet =
         await getSheetsListFromOneSpreadsheet(sheets, client, spreadsheet)
       sheetsList.push(...sheetsListFromOneSpreadsheet)
       count += 1
       endSheetExtractionDuration()
-       totalExtractedFiles.inc({mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_SHEET"}, 1)
+       totalExtractedFiles.inc({mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", status:statusEnum.success, email:userEmail, file_type:fileTypeEnum.google_sheets}, 1)
       // if (count % 5 === 0) {
       //   sendWebsocketMessage(`${count} Google Sheets scanned`, connectorId)
       // }
@@ -1766,7 +1769,7 @@ const googleSheetsVespa = async (
         `Error getting sheet files: ${error} ${(error as Error).stack}`,
         error,
       )
-      fileExtractionErrorsTotal.inc({ error_type:"SPREADSHEET_EXTRACTION_FAILED_ERROR", mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", email:userEmail, file_type:"GOOGLE_DRIVE_SHEET"})
+      fileExtractionErrorsTotal.inc({ error_type:"SPREADSHEET_EXTRACTION_FAILED_ERROR", mime_type:spreadsheet.mimeType??"application/vnd.google-apps.spreadsheet", email:userEmail, file_type:fileTypeEnum.google_sheets})
       // throw new DownloadDocumentError({
       //   message: "Error in the catch of getting sheet files",
       //   cause: error as Error,
@@ -1876,18 +1879,18 @@ export const googlePDFsVespa = async (
         Logger.warn(
           `Ignoring ${pdf.name} as its more than ${MAX_GD_PDF_SIZE} MB`,
         )
-        blockedFilesTotal.inc({mime_type:pdf.mimeType??"google_pdf", blocked_type:"MAX_PDF_SIZE_EXCEEDED", email:userEmail, file_type:"GOOGLE_DRIVE_PDF",status:"BLOCKED" })
+        blockedFilesTotal.inc({mime_type:pdf.mimeType??"google_pdf", blocked_type:"MAX_PDF_SIZE_EXCEEDED", email:userEmail, file_type:fileTypeEnum.google_pdf,status: statusEnum.blocked })
         return null
       }
       console.log(`PDF SIZE : `,pdfSizeInMB)
-      contentFileSize.observe({mime_type:pdf.mimeType??"google_pdf", file_type:"GOOGLE_DRIVE_PDF", email:userEmail}, pdf.size?parseInt(pdf.size):0)
+      contentFileSize.observe({mime_type:pdf.mimeType??"google_pdf", file_type:fileTypeEnum.google_pdf, email:userEmail}, pdf.size?parseInt(pdf.size):0)
       const pdfFileName = `${hashPdfFilename(`${userEmail}_${pdf.id}_${pdf.name}`)}.pdf`
       const pdfPath = `${downloadDir}/${pdfFileName}`
       try {
         Logger.debug(
           `getting the data from the drive-> ${pdf.name}${pdfFileName}`,
         )
-        const endExtractionTimer = extractionDuration.startTimer({mime_type:pdf.mimeType??"google_pdf", file_type:"GOOGLE_DRIVE_PDF", email:userEmail})
+        const endExtractionTimer = extractionDuration.startTimer({mime_type:pdf.mimeType??"google_pdf", file_type:fileTypeEnum.google_pdf, email:userEmail})
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
        
         const docs: Document[] = await safeLoadPDF(pdfPath)
@@ -1910,7 +1913,7 @@ export const googlePDFsVespa = async (
         // Cleanup immediately after processing
         await deleteDocument(pdfPath)
         endExtractionTimer()
-        totalExtractedFiles.inc({mime_type:pdf.mimeType??"google_pdf", status:"SUCCESS", email:userEmail, file_type:"GOOGLE_DRIVE_PDF"}, 1)
+        totalExtractedFiles.inc({mime_type:pdf.mimeType??"google_pdf", status: statusEnum.success, email:userEmail, file_type:fileTypeEnum.google_pdf}, 1)
         return {
           title: pdf.name!,
           url: pdf.webViewLink ?? "",
@@ -1940,7 +1943,7 @@ export const googlePDFsVespa = async (
             // Logger.warn(`Could not delete PDF file ${pdfPath}: ${deleteError}`)
           }
         }
-        fileExtractionErrorsTotal.inc({ error_type:"PDF_EXTRACTION_FAILED_ERROR", mime_type:pdf.mimeType??"google_pdf", file_type:"GOOGLE_DRIVE_PDF",email:userEmail})
+        fileExtractionErrorsTotal.inc({ error_type:"PDF_EXTRACTION_FAILED_ERROR", mime_type:pdf.mimeType??mimeTypeEnum.google_pdf, file_type:fileTypeEnum.google_pdf,email:userEmail})
         // we cannot break the whole pdf pipeline for one error
         return null
       }
@@ -2303,7 +2306,7 @@ export const googleDocsVespa = async (
       Logger.info(
         `Processing Google Doc: ID: ${doc.id}, Name: ${doc.name}. Connector ID: ${connectorId}`,
       )
-      const endDownloadDuration = extractionDuration.startTimer({mime_type: doc.mimeType??"application/vnd.google-apps.document", file_type:"GOOGLE_DRIVE_DOC", email:userEmail})
+      const endDownloadDuration = extractionDuration.startTimer({mime_type: doc.mimeType??"application/vnd.google-apps.document", file_type: fileTypeEnum.google_doc, email:userEmail})
       try {
         const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
           await retryWithBackoff(
@@ -2336,10 +2339,8 @@ export const googleDocsVespa = async (
 
         const sizeInBytes = Buffer.byteLength(cleanedTextContent, "utf8")
         contentFileSize.observe({
-          file_id: doc.id ?? "",
           mime_type: doc.mimeType ?? "",
-          file_name:doc.name??"",
-          file_type:"GOOGLE_DRIVE_DOC",
+          file_type:fileTypeEnum.google_doc,
           email:userEmail
         }, sizeInBytes)
         const chunks = chunkDocument(cleanedTextContent)
@@ -2377,7 +2378,7 @@ export const googleDocsVespa = async (
         //   sendWebsocketMessage(`${count} Google Docs scanned`, connectorId)
         // }
         endDownloadDuration()
-        totalExtractedFiles.inc({mime_type:doc.mimeType??"", status:"SUCCESS", email:userEmail,file_type:"GOOGLE_DRIVE_DOC"}, 1)
+        totalExtractedFiles.inc({mime_type:doc.mimeType??"", status:statusEnum.success, email:userEmail,file_type:fileTypeEnum.google_doc}, 1)
         return result
       } catch (error) {
         const errorMessage = getErrorMessage(error)
@@ -2385,7 +2386,7 @@ export const googleDocsVespa = async (
           error,
           `Error processing Google Doc: ${errorMessage} ${(error as Error).stack}`,
         )
-        fileExtractionErrorsTotal.inc({error_type:"DOCUMENT_EXTRACTION_FAILED_ERROR", mime_type:doc.mimeType??"", file_type:"GOOGLE_DRIVE_DOC", email:userEmail})
+        fileExtractionErrorsTotal.inc({error_type:"DOCUMENT_EXTRACTION_FAILED_ERROR", mime_type:doc.mimeType??"", file_type:fileTypeEnum.google_doc, email:userEmail})
         return null
       }
     }),
