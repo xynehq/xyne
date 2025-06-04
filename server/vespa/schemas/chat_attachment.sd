@@ -79,7 +79,7 @@ schema chat_attachment {
     }
   }
 
-  field content_embeddings type tensor<bfloat16>(p{}, v[768]) {
+  field content_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
     indexing: input chunks | embed | attribute | index
     attribute {
       distance-metric: angular
@@ -92,7 +92,7 @@ schema chat_attachment {
 
   rank-profile default {
     inputs {
-      query(e) tensor<bfloat16>(v[768])
+      query(e) tensor<bfloat16>(v[DIMS])
     }
 
     function vector_score() {

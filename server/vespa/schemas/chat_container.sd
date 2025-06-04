@@ -99,7 +99,7 @@ schema chat_container {
         }
     }
 
-    field chunk_embeddings type tensor<bfloat16>(v[768]) {
+    field chunk_embeddings type tensor<bfloat16>(v[DIMS]) {
         indexing: (input name || "") . " " . (input topic || "") . " " . (input description || "") | embed | attribute | index
         attribute {
             distance-metric: angular
@@ -111,9 +111,9 @@ schema chat_container {
     }
 
     rank-profile initial {
-        inputs {            
-            query(e)  tensor<bfloat16>(v[768])
-            query(alpha)   double
+        inputs {
+            query(e) tensor<bfloat16>(v[DIMS])
+            query(alpha) double 
         }
 
         function scale(val) {
@@ -158,10 +158,13 @@ schema chat_container {
         }
 
         global-phase {
-            expression {
-                (query(alpha) * vector_score) + ((1 - query(alpha)) * combined_nativeRank)
-            }
-            rerank-count:1000
+          expression {
+            (
+              (query(alpha) * vector_score) + 
+              ((1 - query(alpha)) *  combined_nativeRank)
+            )
+          }
+          rerank-count: 1000
         }
 
         match-features {
@@ -182,11 +185,13 @@ schema chat_container {
 
         global-phase {
           expression {
-            ((combined_nativeRank - 0.2) 
-            / (0.2))* (1 - query(alpha))
-            +
-            ((vector_score - 0.45) 
-            / 0.2) * query(alpha)
+            (
+              ((combined_nativeRank) 
+                / (0.2))* (1 - query(alpha))
+                +
+                ((vector_score - 0.45) 
+                / 0.2) * query(alpha)
+            )
           }
           rerank-count: 1000
         }
