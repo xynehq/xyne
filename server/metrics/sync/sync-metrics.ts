@@ -18,15 +18,6 @@ export const syncJobSuccess = new Counter({
 
 metricRegister.registerMetric(syncJobSuccess)
 
-
-export const internalSyncJobSuccess = new Counter({
-    name:"sync_job_internal_success",
-    help:"Count of successful sync jobs inside a global sync job",
-    labelNames:["sync_job_internal_name","sync_job_entity",  "sync_job_auth_type", "sync_job_name"]
-})
-
-metricRegister.registerMetric(internalSyncJobSuccess)
-
 export const syncJobError = new Counter({
     name:"sync_job_error",
     help:"Number of failed sync jobs",
@@ -35,11 +26,3 @@ export const syncJobError = new Counter({
 
 metricRegister.registerMetric(syncJobError)
 
-
-export const internalSyncJobError = new Counter({
-    name:"sync_job_internal_error",
-    help:"Count of error sync jobs inside a global sync job",
-    labelNames:["sync_job_internal_name","sync_job_entity","sync_internal_job_error_type", "sync_job_auth_type", "sync_job_name"]
-})
-
-metricRegister.registerMetric(internalSyncJobError)

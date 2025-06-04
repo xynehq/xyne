@@ -317,13 +317,3 @@ export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
 })
-
-
-// METRICS ENUMS
-export enum metricNames {
-  syncOauthAccountChanges = "google_oauth_changes",
-  syncServiceAccountChanges = "google_service_account_changes",
-  syncGoogleWorkspaceChange = "google_workspace_changes",
-  syncSlackChanges = "slack_changes",
-  checkDownloadsFolder = "check_downloads_folder"
-}
