@@ -112,8 +112,6 @@ export const handleGmailIngestion = async (
 
               totalIngestedMails.inc(
                 {
-                  mail_id: message.id ?? "",
-                  mail_title: message.payload?.filename ?? "",
                   mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
                   status: "GMAIL_INGEST_SUCCESS",
                   email: email,
