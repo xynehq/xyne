@@ -160,7 +160,7 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
 
   if (loading) {
     return (
-      <div className="w-full max-w-4xl mx-auto flex items-center justify-center min-h-[200px]">
+      <div className="w-full flex items-center justify-center min-h-[200px]">
         <div className="text-slate-600">Loading files...</div>
       </div>
     )
@@ -168,14 +168,14 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
 
   if (error) {
     return (
-      <div className="w-full max-w-4xl mx-auto flex items-center justify-center min-h-[200px]">
+      <div className="w-full flex items-center justify-center min-h-[200px]">
         <div className="text-red-600">{error}</div>
       </div>
     )
   }
 
   return (
-    <div className={`w-full max-w-4xl mx-auto ${className}`}>
+    <div className={`w-full ${className}`}>
       <div className="w-full border rounded-lg">
         <div className="px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">

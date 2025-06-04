@@ -49,7 +49,7 @@ export const IntegrationsSidebar = ({ role }: { role: string }) => {
               </span>
             </li>
             <li
-              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/files") ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/fileupload") ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
               onClick={() => {
                 router.navigate({
                   to: "/integrations/fileupload",

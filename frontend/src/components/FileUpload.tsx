@@ -3,6 +3,7 @@ import { useState, useRef, useCallback } from "react"
 import { Upload, Folder, File, X, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import { Input } from "@/components/ui/input"
 
 interface SelectedFile {
   file: File
@@ -10,12 +11,21 @@ interface SelectedFile {
   preview?: string
 }
 
-export default function FileUpload() {
+interface FileUploadProps {
+  onDatasourceCreated?: (datasourceName: string) => void
+  initialDatasourceName?: string
+}
+
+export default function FileUpload({ onDatasourceCreated, initialDatasourceName = "" }: FileUploadProps = {}) {
   const { toast } = useToast()
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [datasourceName, setDatasourceName] = useState(initialDatasourceName)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Check if we're editing an existing datasource
+  const isEditingExisting = !!initialDatasourceName
 
   const generateId = () => Math.random().toString(36).substring(2, 9)
 
@@ -217,20 +227,19 @@ export default function FileUpload() {
     setSelectedFiles([]);
   }, []);
 
-  //  handleSubmit to extract only filenames 
+  // Modified handleSubmit to include datasource name
   const handleSubmit = useCallback(async () => {
-    if (selectedFiles.length === 0) return
-
+    if (selectedFiles.length === 0 || !datasourceName.trim()) return
+    
     setIsUploading(true)
 
     try {
       const formData = new FormData()
+      formData.append("datasourceName", datasourceName.trim())
+      formData.append("flag", isEditingExisting ? "addition" : "creation")
+      
       selectedFiles.forEach((selectedFile) => {
-        // Extract just the base filename without folder path
         const fileName = selectedFile.file.name.split('/').pop()?.split('\\').pop() || selectedFile.file.name
-        
-        // Instead of creating a new File object, just use the original file
-        // and add it to formData with the simplified filename
         formData.append("file", selectedFile.file, fileName)
       })
 
@@ -243,9 +252,14 @@ export default function FileUpload() {
         const result = await response.json()
         showToast(
           "Success",
-          result.message || `${selectedFiles.length} file(s) uploaded successfully to downloads folder`
+          result.message || `${selectedFiles.length} file(s) uploaded successfully to datasource: ${datasourceName}`
         )
         setSelectedFiles([])
+        
+        // Notify parent component that a new datasource was created
+        if (onDatasourceCreated) {
+          onDatasourceCreated(datasourceName)
+        }
       } else {
         const error = await response.json()
         showToast(
@@ -264,14 +278,34 @@ export default function FileUpload() {
     } finally {
       setIsUploading(false)
     }
-  }, [selectedFiles, showToast])
+  }, [selectedFiles, showToast, datasourceName, onDatasourceCreated])
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-6">
-      <div className="text-center mb-4">
-        <h2 className="text-xl font-semibold text-gray-700">Upload Text Files</h2>
-        <p className="text-sm text-gray-500 mt-1">Only .txt files are supported</p>
-      </div>
+    <div className="w-full">
+      {/* Remove the header text for existing datasources */}
+      {!isEditingExisting && (
+        <div className="text-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-700">Upload Text Files</h2>
+          <p className="text-sm text-gray-500 mt-1">Only .txt files are supported</p>
+        </div>
+      )}
+      
+      {/* Only show datasource input field when creating a new datasource */}
+      {!isEditingExisting && (
+        <div className="mb-4">
+          <label htmlFor="datasourceName" className="block text-sm font-medium text-gray-700 mb-1">
+            Datasource Name <span className="text-red-500">*</span>
+          </label>
+          <Input
+            id="datasourceName"
+            type="text"
+            placeholder="Enter datasource name"
+            value={datasourceName}
+            onChange={(e) => setDatasourceName(e.target.value)}
+            className="w-full"
+          />
+        </div>
+      )}
 
       <div
         className="relative transition-colors flex flex-col items-center justify-center"
@@ -282,7 +316,6 @@ export default function FileUpload() {
         <div
           className="border-2 border-dashed border-gray-200 rounded-lg p-8 w-full mx-auto h-72 min-h-72 cursor-pointer flex flex-col items-center justify-center transition-colors hover:border-gray-400 relative bg-gray-50"
           onClick={handleFileSelect}
-          style={{ width: '800px' }}
         >
           
           {selectedFiles.length > 0 && (
@@ -303,6 +336,12 @@ export default function FileUpload() {
               <div className="flex flex-col items-center justify-center h-full w-full">
                 <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-700 mb-2">Drag-drop or click here to select</h3>
+                {isEditingExisting && (
+                  <div className="text-center mt-2">
+                    <p className="text-gray-600">Upload More Text Files</p>
+                    <p className="text-sm text-gray-500">Only .txt files are supported</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="h-full w-full flex flex-col items-center justify-center">
@@ -371,8 +410,10 @@ export default function FileUpload() {
                 e.stopPropagation();
                 handleSubmit();
               }}
-              disabled={selectedFiles.length === 0 || isUploading}
-              className="flex items-center space-x-2 mr-4 bg-gray-800 hover:bg-gray-900 h-9 px-4"
+              disabled={selectedFiles.length === 0 || !datasourceName.trim() || isUploading}
+              className={`flex items-center space-x-2 mr-4 ${
+                !datasourceName.trim() ? 'bg-gray-400' : 'bg-gray-800 hover:bg-gray-900'
+              } h-9 px-4`}
             >
               {isUploading ? (
                 <>
@@ -389,7 +430,7 @@ export default function FileUpload() {
           </div>
         </div>
 
-        {/* Hidden inputs for file selection - keep these unchanged */}
+        {/* Hidden inputs for file selection */}
         <input
           ref={folderInputRef}
           type="file"
