@@ -324,9 +324,7 @@ export const parseMail = async (
 
             totalAttachmentIngested.inc(
               {
-                mail_id: messageId,
                 mime_type: mimeType,
-                attachment_id: attachmentId,
                 status: "SUCCESS",
                 account_type: "OAUTH_ACCOUNT",
                 email: userEmail,
@@ -344,9 +342,7 @@ export const parseMail = async (
             )
             totalAttachmentError.inc(
               {
-                mail_id: messageId,
                 mime_type: mimeType,
-                attachment_id: body.attachmentId ?? "",
                 status: "FAILED",
                 email: userEmail,
                 error_type: "ERROR_INSERTING_ATTACHMENT",
