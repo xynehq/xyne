@@ -1055,11 +1055,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
       // Potentially update connector status to Failed or Connected if no users is an acceptable state.
       // For now, just logging and exiting the main processing block.
       if (connector.externalId) closeWs(connector.externalId)
-      await db
-        .update(connectors)
-        .set({ status: ConnectorStatus.Connected }) // Or Failed, depending on desired outcome for zero users
-        .where(eq(connectors.id, data.connectorId))
-      return // Exit if no valid users to process
+      return
     }
 
     Logger.info(
@@ -1072,7 +1068,6 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
 
     const interval = setInterval(() => {
       if (connector?.externalId) {
-        // Ensure connector is defined
         sendWebsocketMessage(
           JSON.stringify({
             progress: tracker.getProgress(),
@@ -1095,7 +1090,7 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
           tracker.markUserComplete(
             googleUser.id || `UNKNOWN_ID_${Math.random()}`,
           )
-          return null // Skip this user, return null
+          return null
         }
 
         Logger.info(`started for ${userEmail} (jobId: ${jobId})`)
@@ -1107,8 +1102,8 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
 
         // Use more concise names for counts
         const [driveFileCount, gmailCounts] = await Promise.all([
-          countDriveFiles(userJwtClient), // Pass userJwtClient
-          getGmailCounts(userJwtClient), // Pass userJwtClient
+          countDriveFiles(userJwtClient),
+          getGmailCounts(userJwtClient),
         ])
         const mailCountExcludingPromotions =
           gmailCounts.messagesExcludingPromotions
@@ -1122,12 +1117,12 @@ export const handleGoogleServiceAccountIngestion = async (data: SaaSJob) => {
         )
 
         const { contacts, otherContacts, contactsToken, otherContactsToken } =
-          await listAllContacts(userJwtClient) // Pass userJwtClient
+          await listAllContacts(userJwtClient)
         await insertContactsToVespa(contacts, otherContacts, userEmail, tracker)
 
         const { startPageToken } = (
           await userDriveClient.changes.getStartPageToken()
-        ).data // Use userDriveClient
+        ).data
         if (!startPageToken) {
           throw new Error(
             `Could not get start page token for user ${userEmail} (jobId: ${jobId})`,
