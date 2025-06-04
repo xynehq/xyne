@@ -1417,12 +1417,12 @@ const insertFilesForUser = async (
           `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
         )
         // determine the  file type here so we can insert in metrics data
-       const fileType = (doc.mimeType===DriveMime.Docs)?"GOOGLE_DRIVE_DOC":(doc.mimeType===DriveMime.Sheets)?"GOOGLE_DRIVE_SHEET":(doc.mimeType===DriveMime.Slides)?"GOOGLE_DRIVE_SLIDE":"GOOGLE_DRIVE_FILE";
+       const fileType = (doc.mimeType===DriveMime.Docs)?fileTypeEnum.google_doc:(doc.mimeType===DriveMime.Sheets)?fileTypeEnum.google_sheets:(doc.mimeType===DriveMime.Slides)?fileTypeEnum.google_slide:fileTypeEnum.drive_file;
        try{
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
           console.log(`Mime type: `,doc.mimeType)
-          totalIngestedFiles.inc({mime_type:fileType=="GOOGLE_DRIVE_FILE"?"application/vnd.google-apps.file":doc.mimeType??"", status:statusEnum.success, email:userEmail, file_type:fileType })
+          totalIngestedFiles.inc({mime_type:fileType==fileTypeEnum.drive_file?"application/vnd.google-apps.file":doc.mimeType??"", status:statusEnum.success, email:userEmail, file_type:fileType })
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
             tracker.updateUserStats(userEmail, StatType.Drive, 1)
