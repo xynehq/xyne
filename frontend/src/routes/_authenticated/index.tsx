@@ -206,7 +206,7 @@ const Index = () => {
               </Tooltip>
             </div>
             {activeTab === "search" && (
-              <div className="w-full">
+              <div className="w-full h-72">
                 <SearchBar
                   query={query}
                   setQuery={setQuery}
@@ -219,13 +219,12 @@ const Index = () => {
                   handleAnswer={() => {}}
                   ref={autocompleteRef}
                   hasSearched={false}
-                  filter={filter}
-                  autocompleteRef={autocompleteRef}
+                  filter={filter}                
                 />
               </div>
             )}
             {activeTab === "ask" && (
-              <div className="w-full max-w-3xl">
+              <div className="w-full h-72">
                 <ChatBox
                   query={query}
                   setQuery={setQuery}
