@@ -31,7 +31,7 @@ services:
     networks:
       - xyne
     extra_hosts:
-    - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
 
   grafana:
     image: grafana/grafana

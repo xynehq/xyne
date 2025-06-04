@@ -12,6 +12,8 @@ services:
       - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
     networks:
       - xyne
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   grafana:
     image: grafana/grafana
     container_name: xyne-grafana
@@ -54,6 +56,32 @@ services:
     networks:
       - xyne
     restart: always 
+
+  loki:
+    image: grafana/loki:3.4.1
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/mnt/config/loki-config.yaml
+    command: -config.file=/mnt/config/loki-config.yaml
+    restart: unless-stopped
+    networks:
+     - xyne
+
+  promtail:
+    image: grafana/promtail:3.4.1
+    container_name: promtail
+    depends_on:
+      - loki
+    volumes:
+      - ./promtail-config.yaml:/mnt/config/promtail-config.yaml
+      - /var/log:/var/log
+    command: -config.file=/mnt/config/promtail-config.yaml
+    restart: unless-stopped
+    networks:
+     - xyne
+
 networks:
   xyne:
     driver: bridge
