@@ -1117,7 +1117,7 @@ export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
   params: ModelParams,
-  toolContext: string,
+  toolContext?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
