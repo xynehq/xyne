@@ -283,7 +283,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by(job) (insert_channel_messsage_error_count)",
+          "expr": "sum by(job) (insert_channel_message_error_count)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -345,7 +345,7 @@
         {
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(team_id) (insert_chat_messsage_count)",
+          "expr": "sum by(team_id) (insert_chat_message_count)",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "legendFormat": "__auto",
@@ -412,7 +412,7 @@
         {
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(job) (insert_channel_messsage_count)",
+          "expr": "sum by(job) (insert_channel_message_count)",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "legendFormat": "__auto",

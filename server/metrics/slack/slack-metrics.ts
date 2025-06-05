@@ -21,7 +21,7 @@ metricRegister.registerMetric(ingestedMembersTotalCount)
 
 
 export const insertChannelMessagesCount = new Counter({
-    name: "insert_channel_messsage_count",
+    name: "insert_channel_message_count",
     help:"Number of times insert chanel messages was invoked",
     labelNames: ["conversation_id", "status", "team_id"]
 })
@@ -37,7 +37,7 @@ export const insertConversationCount = new Counter({
 metricRegister.registerMetric(insertConversationCount)
 
 export const insertChatMessagesCount = new Counter({
-    name: "insert_chat_messsage_count",
+    name: "insert_chat_message_count",
     help:"Number chat messages ingested",
     labelNames: ["conversation_id", "status", "team_id"]
 })
@@ -89,7 +89,7 @@ metricRegister.registerMetric(insertConversationErrorCount)
 
 
 export const insertChannelMessagesErrorCount = new Counter({
-    name: "insert_channel_messsage_error_count",
+    name: "insert_channel_message_error_count",
     help:"Number of times insert chanel messages was invoked and had errors",
     labelNames: ["conversation_id", "status", "team_id"]
 })
