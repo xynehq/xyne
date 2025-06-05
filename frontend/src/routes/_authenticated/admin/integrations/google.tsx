@@ -34,7 +34,6 @@ import OAuthTab from "@/components/OAuthTab"
 import { LoaderContent } from "@/lib/common"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
-import { z } from "zod"
 import {
   Accordion,
   AccordionContent,
@@ -717,8 +716,6 @@ const ServiceAccountTab = ({
     | (Connectors & { id?: string; lastSyncedAt?: string | number | Date })
     | undefined
 
-  const [isIngestingMore, setIsIngestingMore] = useState(false)
-
   // Case 1: No Service Account connector is configured yet, and not in the middle of initial SA setup
   if (!googleSAConnector && !isIntegrating) {
     return (
@@ -743,8 +740,6 @@ const ServiceAccountTab = ({
       (isIntegrating
         ? ConnectorStatus.Connecting
         : ConnectorStatus.NotConnected)
-    const connectorId = googleSAConnector?.id
-    const isConnected = currentStatus === ConnectorStatus.Connected
     const isActuallyConnecting =
       isIntegrating || currentStatus === ConnectorStatus.Connecting
 
@@ -752,7 +747,7 @@ const ServiceAccountTab = ({
       <Card>
         <CardHeader>
           <CardTitle>Google Workspace Service Account</CardTitle>
-          {isActuallyConnecting && !isIngestingMore ? (
+          {isActuallyConnecting ? (
             <>
               <CardDescription>Connecting {progress}%</CardDescription>
               <Progress value={progress} className="p-0 w-[60%]" />
@@ -767,52 +762,6 @@ const ServiceAccountTab = ({
             </CardDescription>
           )}
         </CardHeader>
-        {isConnected && (
-          <CardContent>
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="ingest-more-users">
-                <AccordionTrigger>
-                  <span className={"text-md font-semibold"}>
-                    Ingest More Users
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <CardDescription className="mb-3 text-sm">
-                    Add more users to this service account. Enter
-                    comma-separated emails.
-                  </CardDescription>
-                  {connectorId ? (
-                    <IngestMoreUsersForm
-                      connectorId={connectorId}
-                      onSuccess={() => {
-                        refetch()
-                      }}
-                      setIsIngestingMore={setIsIngestingMore}
-                    />
-                  ) : (
-                    <p className="text-sm text-destructive">
-                      Error: Connector ID is missing. Cannot ingest users.
-                    </p>
-                  )}
-                  {isIngestingMore && (
-                    <div className="mt-4">
-                      <CardDescription>
-                        Ingesting additional users...{" "}
-                        {progress > 0 && progress < 100 ? `${progress}%` : ""}
-                      </CardDescription>
-                      {progress > 0 && progress < 100 && (
-                        <Progress
-                          value={progress}
-                          className="p-0 w-[60%] mt-1"
-                        />
-                      )}
-                    </div>
-                  )}
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </CardContent>
-        )}
       </Card>
     )
   }
@@ -883,6 +832,8 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
           : OAuthIntegrationStatus.Provider
         : OAuthIntegrationStatus.Provider,
     )
+  const [isIngestingMoreAdminData, setIsIngestingMoreAdminData] =
+    useState<boolean>(false)
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
@@ -1044,88 +995,173 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
       <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
       <IntegrationsSidebar role={user.role} />
       <div className="w-full h-full flex items-center justify-center">
-        <div className="flex flex-col h-full items-center justify-center">
+        <div className="flex flex-col items-center w-full max-w-[600px] p-4 h-full">
+          {/* Tab navigation */}
           <Tabs
             defaultValue="service_account"
-            className={`w-[400px] min-h-[${minHeight}px] ${Object.keys(userStats).length > 0 ? "mt-[150px]" : ""}`}
+            className="w-full flex flex-col flex-grow"
             onValueChange={setActiveTab}
           >
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-2 flex-shrink-0 max-w-[400px] mx-auto">
               <TabsTrigger value="service_account">Service Account</TabsTrigger>
               <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
             </TabsList>
-            <TabsContent value="service_account">
-              {isPending ? (
-                <LoaderContent />
-              ) : (
-                <ServiceAccountTab
-                  connectors={data}
-                  updateStatus={updateStatus}
-                  isIntegrating={isIntegratingSA}
-                  onSuccess={() => setIsIntegratingSA(true)}
-                  progress={progress}
-                  userStats={userStats}
-                  refetch={refetch}
-                />
+            
+            {/* Main content area - tab panels */}
+            <div className="flex flex-col space-y-6 w-full mt-4 overflow-y-auto">
+              {/* Tab content container - fixed width for forms */}
+              <div className="max-w-[400px] mx-auto w-full">
+                <TabsContent value="service_account">
+                  {isPending ? (
+                    <LoaderContent />
+                  ) : (
+                    <ServiceAccountTab
+                      connectors={data}
+                      updateStatus={updateStatus}
+                      isIntegrating={isIntegratingSA}
+                      onSuccess={() => setIsIntegratingSA(true)}
+                      progress={progress}
+                      userStats={userStats}
+                      refetch={refetch}
+                    />
+                  )}
+                </TabsContent>
+                
+                <TabsContent value="oauth">
+                  <OAuthTab
+                    isPending={isPending}
+                    oauthIntegrationStatus={oauthIntegrationStatus}
+                    setOAuthIntegrationStatus={setOAuthIntegrationStatus}
+                    updateStatus={updateStatus}
+                    handleDelete={handleDelete}
+                  />
+                </TabsContent>
+              </div>
+              
+              {/* OAuth user stats - full width container */}
+              {activeTab === "oauth" && 
+                showUserStats(userStats, "oauth", oauthIntegrationStatus) && (
+                  <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-8">
+                    <h3 className="text-lg font-medium mb-2">Ingested Users</h3>
+                    <UserStatsTable
+                      userStats={userStats}
+                      type={AuthType.OAuth}
+                    />
+                  </div>
               )}
-            </TabsContent>
-            <OAuthTab
-              isPending={isPending}
-              oauthIntegrationStatus={oauthIntegrationStatus}
-              setOAuthIntegrationStatus={setOAuthIntegrationStatus}
-              updateStatus={updateStatus}
-              handleDelete={handleDelete}
-            />
-          </Tabs>
-          {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (
-            <UserStatsTable
-              userStats={userStats}
-              type={
-                activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
-              }
-            />
-          )}
 
-          {/* Accordion for Data Management Actions - Render if a Google Connector exists */}
-          {hasGoogleConnector && (
-            <Accordion type="single" collapsible className="w-[400px] mt-6">
-              <AccordionItem value="delete-user-data">
-                <AccordionTrigger>
-                  <span className="text-md font-semibold">
-                    Manage User Data
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <Card className="border-none shadow-none">
-                    {" "}
-                    {/* Optional: remove card styles if accordion provides enough separation */}
-                    <CardHeader className="px-0 pt-4">
-                      <CardTitle className="text-lg">
-                        Delete User Data
-                      </CardTitle>
-                      <CardDescription>
-                        Remove a user's data from specified services based on
-                        email and optional date range.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-0 pb-0">
-                      <DeleteUserDataForm
-                        onSuccess={() => {
-                          toast({
-                            title: "Data Deletion Processed",
-                            description:
-                              "Please check server logs for detailed status.",
-                          })
-                        }}
-                      />
-                    </CardContent>
-                  </Card>
-                </AccordionContent>
-              </AccordionItem>
-              {/* Future: Add other data management actions as AccordionItems here */}
-              {/* e.g., <AccordionItem value="anonymize-user-data"> ... </AccordionItem> */}
-            </Accordion>
-          )}
+              {/* Manage Users Data section - fixed width for forms */}
+              {hasGoogleConnector && (
+                <div className="max-w-[400px] mx-auto w-full">
+                  <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="manage_user_data">
+                      <AccordionTrigger>Manage Users Data</AccordionTrigger>
+                      <AccordionContent>
+                        <Tabs defaultValue="ingest_more_user_admin">
+                          <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="ingest_more_user_admin">Ingest More Users</TabsTrigger>
+                            <TabsTrigger value="delete_users_data">Delete Users Data</TabsTrigger>
+                          </TabsList>
+                          <div className="min-h-[500px]">
+                            <TabsContent value="ingest_more_user_admin" className="h-full">
+                              <Card className="border-none shadow-none">
+                                <CardHeader className="px-0 pt-4">
+                                  <CardTitle className="text-lg">
+                                    Ingest Data for Additional Users
+                                  </CardTitle>
+                                  <CardDescription>
+                                    Add more users to the existing Google Workspace Service
+                                    Account integration. Enter comma-separated emails and
+                                    specify services/date ranges.
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="px-1 pb-0">
+                                  {(() => {
+                                    const googleSAConnector = data?.find(
+                                      (c: Connectors) =>
+                                        c.app === Apps.GoogleDrive &&
+                                        c.authType === AuthType.ServiceAccount,
+                                    )
+                                    const serviceAccountConnectorId = googleSAConnector?.id
+
+                                    if (!serviceAccountConnectorId) {
+                                      return (
+                                        <p className="text-sm text-destructive">
+                                          Google Workspace Service Account integration not
+                                          found or not configured. Please set it up first
+                                          in the 'Service Account' tab.
+                                        </p>
+                                      )
+                                    }
+                                    return (
+                                      <>
+                                        <IngestMoreUsersForm
+                                          connectorId={serviceAccountConnectorId}
+                                          onSuccess={() => {
+                                            refetch()
+                                          }}
+                                          setIsIngestingMore={setIsIngestingMoreAdminData}
+                                        />
+                                        {isIngestingMoreAdminData && (
+                                          <div className="mt-4">
+                                            <CardDescription>
+                                              Ingesting additional users...
+                                            </CardDescription>
+                                          </div>
+                                        )}
+                                        {/* Remove this UserStatsTable from inside the accordion */}
+                                      </>
+                                    )
+                                  })()}
+                                </CardContent>
+                              </Card>
+                            </TabsContent>
+                            <TabsContent value="delete_users_data" className="h-full">
+                              <Card className="border-none shadow-none">
+                                <CardHeader className="px-0 pt-4">
+                                  <CardTitle className="text-lg">
+                                    Delete User Data
+                                  </CardTitle>
+                                  <CardDescription>
+                                    Remove a user's data from specified services based on
+                                    email and optional date range.
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent className="px-1 pb-0">
+                                  <DeleteUserDataForm
+                                    onSuccess={() => {
+                                      toast({
+                                        title: "Data Deletion Processed",
+                                        description:
+                                          "Please check server logs for detailed status.",
+                                      })
+                                    }}
+                                  />
+                                </CardContent>
+                              </Card>
+                            </TabsContent>
+                          </div>
+                        </Tabs>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </div>
+              )}
+              
+              {/* Service Account user stats - full width container */}
+              {activeTab === "service_account" && 
+                isIntegratingSA && 
+                Object.values(userStats).some(stats => stats.type === AuthType.ServiceAccount) && (
+                  <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-12 pb-8">
+                    <h3 className="text-lg font-medium mb-2">Ingested Users</h3>
+                    <UserStatsTable
+                      userStats={userStats}
+                      type={AuthType.ServiceAccount}
+                    />
+                  </div>
+              )}
+            </div>
+          </Tabs>
         </div>
       </div>
     </div>
