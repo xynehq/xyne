@@ -69,14 +69,14 @@ scrape_configs:
     labels:
       job: pm2
       type: stdout
-      __path__: ~/.pm2/logs/*-out.log
+        __path__: '~/.pm2/logs/*-out.log'
 
   - targets:
       - localhost
     labels:
       job: pm2
       type: stderr
-      __path__: ~/.pm2/logs/*-error.log
+      __path__: '~/.pm2/logs/*-error.log'
 ```
 
 This configuration tells Promtail to scrape the stdout and stderr logs from PM2.
@@ -89,11 +89,15 @@ No specific Loki configuration is required, as Promtail is configured to send lo
 #### Command to run Promtail with PM2
 
 To run promtail using PM2 use the command :
-```bash 
+```bash
 pm2 start <full-path-to-installed-promtail> -- \
-  -config.file=<full-path-to-xyne>/deployment/promtail-config.yaml
+  --config.file=<full-path-to-xyne>/deployment/promtail-config.yaml
 ```
 
+Incase there's permission issues WRT docker run :
+```bash
+sudo chmod -R 777 deployment/loki
+```
 
 ### Monitoring PM2 Instances with pm2-prom-module
 

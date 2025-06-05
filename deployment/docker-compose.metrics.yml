@@ -64,7 +64,7 @@ services:
       - "3100:3100"
     volumes:
       - ./loki-config.yaml:/mnt/config/loki-config.yaml
-      - loki_data:/tmp/loki
+      - ./loki:/tmp/loki
     command: -config.file=/mnt/config/loki-config.yaml
     restart: unless-stopped
     networks:
