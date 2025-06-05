@@ -204,3 +204,4 @@ server/.venv/*
 
 
 deployment/grafana/grafana-storage
+deployment/loki/*

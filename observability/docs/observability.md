@@ -35,6 +35,70 @@ To set up **Grafana** dashboad :
     - Click on `Run Queries` to get the results.
     - Follow the same steps for the rest of the panels.
 
+## Logging
+
+### PM2 Logging with Promtail and Loki
+
+This section describes how to configure PM2 to send logs to Loki using Promtail.
+
+#### PM2 Configuration
+
+Install PM2 into your system. 
+By default, PM2 stores logs in the `~/.pm2/logs` directory.
+
+#### Promtail Configuration
+Install Promtail into your system.
+
+Promtail needs to be configured to scrape the PM2 log files. The following configuration should be added to the `promtail-config.yaml` file:
+
+```yaml
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yml
+
+clients:
+  - url: http://localhost:3100/loki/api/v1/push
+
+scrape_configs:
+- job_name: pm2-logs
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: pm2
+      type: stdout
+    __path__: '~/.pm2/logs/*-out.log'
+
+  - targets:
+      - localhost
+    labels:
+      job: pm2
+      type: stderr
+    __path__: '~/.pm2/logs/*-error.log'
+```
+
+This configuration tells Promtail to scrape the stdout and stderr logs from PM2.
+
+#### Loki Configuration
+
+No specific Loki configuration is required, as Promtail is configured to send logs to Loki at `http://localhost:3100/loki/api/v1/push`, which is the default Loki endpoint. E
+
+
+#### Command to run Promtail with PM2
+
+To run promtail using PM2 use the command :
+```bash
+pm2 start <full-path-to-installed-promtail> -- \
+  -config.file=<full-path-to-xyne>/deployment/promtail-config.yaml
+```
+
+Incase there's permission issues WRT docker run :
+```bash
+sudo chmod -R 777 deployment/loki
+```
+
 ### Monitoring PM2 Instances with pm2-prom-module
 
 To monitor your PM2 instances and view metrics in Grafana, you can use the `pm2-prom-module`.
