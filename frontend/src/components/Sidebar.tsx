@@ -27,7 +27,7 @@ export const Sidebar = ({
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
        
-      const isInteractiveElement = target.closest('button, a, [role="button"], input, .dropdown-trigger');
+      const isInteractiveElement = target.closest('button, a, [role="button"], input');
       if (isInteractiveElement) return;
       const isSidebarClick = target.closest('.sidebar-container');
       const isHistoryModalClick = target.closest('.history-modal-container');
