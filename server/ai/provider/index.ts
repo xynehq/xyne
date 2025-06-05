@@ -375,6 +375,23 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
+
+    // Handle malformed key prefix patterns before any other processing
+    if (jsonKey) {
+      const keyName = jsonKey.slice(1, -2) // Extract "answer" from '"answer":'
+      // Pattern: 'answer : ": "content"' - extract and properly escape content
+      const prefix = `${keyName} : ": "`
+      if (text.startsWith(prefix) && text.endsWith('"')) {
+        const extractedContent = text.slice(prefix.length, -1)
+        // Properly escape the content for JSON parsing
+        const escapedContent = extractedContent
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+        text = `{${jsonKey} "${escapedContent}"}`
+        return parse(text)
+      }
+    }
+
     // edge case where ```json is prepended to the text
     text = text.replace(/^```(json)?\s*/i, "")
     text = text.trim()
@@ -409,7 +426,33 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
       } else {
-        text = `{${jsonKey} "${text}"`
+        // Clean LLM prefixes step by step for better control
+        const keyName = jsonKey.slice(1, -2) // Extract "answer" from '"answer":'
+        let cleanText = text.trim()
+
+        // Handle case: 'answer : ": content"' -> '": content"'
+        if (cleanText.startsWith(`${keyName} :`)) {
+          cleanText = cleanText.substring(`${keyName} :`.length).trim()
+        }
+
+        // Handle case: '": content"' -> 'content"'
+        if (cleanText.startsWith('": ')) {
+          cleanText = cleanText.substring(3)
+        } else if (cleanText.startsWith(": ")) {
+          // Handle case: ': content' -> 'content'
+          cleanText = cleanText.substring(2)
+        }
+
+        // Remove surrounding quotes if they exist
+        if (
+          cleanText.startsWith('"') &&
+          cleanText.endsWith('"') &&
+          cleanText.length > 1
+        ) {
+          cleanText = cleanText.slice(1, -1)
+        }
+
+        text = `{${jsonKey} "${cleanText}"`
       }
     }
 
@@ -444,7 +487,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
           Input text: '{"answer": "Prasad \\""}'
           After JSON.parse: { answer: 'Prasad "' }  // Note the extra quote at the end
           After this fix: { answer: 'Prasad' }     // Extra quote removed
-          
+
           This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
       */
       if (

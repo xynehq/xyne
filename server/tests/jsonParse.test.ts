@@ -165,4 +165,24 @@ and for this one"}
     const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
     expect(result).toEqual({ answer: "The value itself is simple." })
   })
+
+  test("should handle response starting with colon and preserve markdown formatting", () => {
+    const input =
+      ': "**From:** HR Team\nSubject: Important Update\n\nHello team..."'
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({
+      answer: "**From:** HR Team\nSubject: Important Update\n\nHello team...",
+    })
+  })
+
+  test("should handle answer key with colon prefix and email content", () => {
+    const input =
+      'answer : ": "**From:** noreply@darwinbox. in [0]\\n\\ this is the edge case"'
+    const ANSWER_TOKEN = '"answer":'
+    const result = jsonParseLLMOutput(input, ANSWER_TOKEN)
+    expect(result).toEqual({
+      answer: "**From:** noreply@darwinbox. in [0]\\n\\ this is the edge case",
+    })
+  })
 })
