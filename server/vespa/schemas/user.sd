@@ -240,12 +240,12 @@ schema user {
         }
     }
 
-    rank-profile default_native inherits initial {
+    rank-profile norm_native_rank inherits initial {
         # slight boost for people
         global-phase {
             expression { 
                 1.2 * (((combined_nativeRank) 
-                / (0.2))* (1 - query(alpha))
+                / 0.2)* (1 - query(alpha))
                 +
                 ((vector_score - 0.45) 
                 / 0.2) * query(alpha)) 

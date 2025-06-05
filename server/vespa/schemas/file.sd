@@ -183,7 +183,7 @@ schema file {
     global-phase {
       expression {
         (((combined_nativeRank) 
-        / (0.2))* (1 - query(alpha))
+        / 0.2)* (1 - query(alpha))
         +
         ((vector_score - 0.45) 
         / 0.2) * query(alpha)) * doc_recency

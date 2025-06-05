@@ -209,10 +209,10 @@ schema chat_message {
       expression {
         (
           ((combined_nativeRank) 
-          / (0.2))* (1 - query(alpha))
+          / 0.2)* (1 - query(alpha))
           +
           ((vector_score - 0.45) 
-          / 0.2) * SLACK_VECTOR_DECAY * query(alpha)
+          / 0.2) * query(alpha)
         )
       }
       rerank-count: 1000

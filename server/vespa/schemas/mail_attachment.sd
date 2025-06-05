@@ -174,7 +174,7 @@ schema mail_attachment {
     global-phase {
       expression {
         0.8 * (((combined_nativeRank) 
-              / (0.2))* (1 - query(alpha))
+              / 0.2)* (1 - query(alpha))
               +
               ((vector_score - 0.45) 
               / 0.2) * query(alpha)) * doc_recency
