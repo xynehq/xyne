@@ -68,7 +68,7 @@ services:
     command: -config.file=/mnt/config/loki-config.yaml
     restart: unless-stopped
     networks:
-     - xyne
+      - xyne
 
 networks:
   xyne:
