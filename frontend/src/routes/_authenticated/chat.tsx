@@ -48,6 +48,7 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
+import { updateChatBookmarkInCache } from "@/lib/chatCacheUtils";
 
 export const THINKING_PLACEHOLDER = "Thinking";
 
@@ -218,77 +219,108 @@ const jsonToHtmlMessage = (jsonString: string): string => {
 const REASONING_STATE_KEY = "isReasoningGlobalState"
 
 export const ChatPage = ({ user, workspace }: ChatPageProps) => {
-  const params = Route.useParams()
-  const router = useRouter()
+  const params = Route.useParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
-  })
-  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
-  const isDebugMode = isGlobalDebugMode || chatParams.debug
+  });
+  const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true";
+  const isDebugMode = isGlobalDebugMode || chatParams.debug;
 
-  const isWithChatId = !!(params as any).chatId
+  const isWithChatId = !!(params as any).chatId;
   const data = useLoaderData({
     from: isWithChatId
       ? "/_authenticated/chat/$chatId"
       : "/_authenticated/chat",
-  })
-  const queryClient = useQueryClient()
+  });
   if (chatParams.q && isWithChatId) {
     router.navigate({
       to: "/chat/$chatId",
       params: { chatId: (params as any).chatId },
       search: !isGlobalDebugMode ? { debug: isDebugMode } : {},
-    })
+    });
   }
-  const hasHandledQueryParam = useRef(false)
+  const hasHandledQueryParam = useRef(false);
 
-  const [query, setQuery] = useState("")
-  const [messages, setMessages] = useState<SelectPublicMessage[]>(
-    isWithChatId ? data?.messages || [] : [],
-  )
-  const [chatId, setChatId] = useState<string | null>(
-    (params as any).chatId || null,
-  )
-  const [chatTitle, setChatTitle] = useState<string | null>(
-    isWithChatId && data ? data?.chat?.title || null : null,
-  )
-  const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null)
-  const [showRagTrace, setShowRagTrace] = useState(false) // Added state
-  const [stopMsg, setStopMsg] = useState<boolean>(false)
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
-    null,
-  ) // Added state
+  const [query, setQuery] = useState("");
+  const [messages, setMessages] = useState<SelectPublicMessage[]>([]);
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [chatTitle, setChatTitle] = useState<string | null>(null);
+  const [currentResp, setCurrentResp] = useState<CurrentResp | null>(null);
+  const [showRagTrace, setShowRagTrace] = useState(false);
+  const [stopMsg, setStopMsg] = useState<boolean>(false);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
 
-  const currentRespRef = useRef<CurrentResp | null>(null)
-  const [bookmark, setBookmark] = useState<boolean>(
-    isWithChatId ? !!data?.chat?.isBookmarked || false : false,
-  )
-  const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const [userHasScrolled, setUserHasScrolled] = useState(false)
-  const [dots, setDots] = useState("")
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [showSources, setShowSources] = useState(false)
-  const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
-  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
-  const [isEditing, setIsEditing] = useState<boolean>(false)
-  const [editedTitle, setEditedTitle] = useState<string | null>(chatTitle)
-  const titleRef = useRef<HTMLInputElement | null>(null)
+  const currentRespRef = useRef<CurrentResp | null>(null);
+  const [bookmark, setBookmark] = useState<boolean>(false); // Initialize here
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [userHasScrolled, setUserHasScrolled] = useState(false);
+  const [dots, setDots] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [showSources, setShowSources] = useState(false);
+  const [currentCitations, setCurrentCitations] = useState<Citation[]>([]);
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [editedTitle, setEditedTitle] = useState<string | null>(null); // Initialize with chatTitle later
+  const titleRef = useRef<HTMLInputElement | null>(null);
   const [allCitations, setAllCitations] = useState<Map<string, Citation>>(
     new Map(),
-  ) // State for all citations
-  const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
-  const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
+  );
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const [userStopped, setUserStopped] = useState<boolean>(false);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, MessageFeedback | null>>({});
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
-    return storedValue ? JSON.parse(storedValue) : true
-  })
+    const storedValue = localStorage.getItem(REASONING_STATE_KEY);
+    return storedValue ? JSON.parse(storedValue) : true;
+  });
 
   useEffect(() => {
-    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
+    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive));
   }, [isReasoningActive])
+
+  // Primary effect for data initialization and updates
+  useEffect(() => {
+    const currentRouteChatId = (params as any).chatId || null;
+    setChatId(currentRouteChatId);
+
+    if (currentRouteChatId) {
+      setMessages(data?.messages || []);
+      const newChatTitle = data?.chat?.title || null;
+      setChatTitle(newChatTitle);
+      if (!isEditing) {
+        setEditedTitle(newChatTitle);
+      }
+      setBookmark(!!data?.chat?.isBookmarked);
+    } else {
+      setMessages([]);
+      setChatTitle(null);
+      setEditedTitle(null);
+      setBookmark(false);
+    }
+
+    // Initialize feedback map
+    if (data?.messages) {
+      const initialFeedbackMap: Record<string, MessageFeedback | null> = {};
+      data.messages.forEach((msg: SelectPublicMessage) => {
+        if (msg.externalId && msg.feedback !== undefined) {
+          initialFeedbackMap[msg.externalId] = msg.feedback as MessageFeedback | null;
+        }
+      });
+      setFeedbackMap(initialFeedbackMap);
+    }
+
+    // Reset streaming and UI state
+    if (!isStreaming && !hasHandledQueryParam.current) {
+      setCurrentResp(null);
+      currentRespRef.current = null;
+    }
+    setShowSources(false);
+    setCurrentCitations([]);
+    setCurrentMessageId(null);
+  }, [params, data, isWithChatId, isEditing, isStreaming]);
 
   const renameChatMutation = useMutation<
     { chatId: string; title: string },
@@ -383,22 +415,38 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     queryFn: ({ pageParam = 0 }) => fetchChats({ pageParam }),
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage?.length < pageSize) {
-        return undefined
+        return undefined;
       }
-      return allPages?.length
+      return allPages?.length;
     },
     initialPageParam: 0,
-  })
+  });
+
   const currentChat = historyItems?.pages
     ?.flat()
-    .find((item) => item.externalId === chatId)
+    .find((item) => item.externalId === chatId);
 
+  // Effect to synchronize bookmark state with `currentChatFromHistory` from 'all-chats' query
   useEffect(() => {
-    if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
-      setChatTitle(currentChat.title)
-      setEditedTitle(currentChat.title)
+    if (chatId && currentChat?.isBookmarked !== undefined) {
+      // If the status from the 'all-chats' cache differs from local state, update local state.
+      if (currentChat.isBookmarked !== bookmark) {
+        setBookmark(currentChat.isBookmarked);
+      }
+    } else if (!chatId && bookmark) {
+      // If not on a chat page but bookmark is true, reset it
+      setBookmark(false);
     }
-  }, [currentChat?.title, isEditing, chatTitle])
+  }, [chatId, currentChat?.isBookmarked, bookmark]);
+
+  // Effect to synchronize chatTitle state with `currentChatFromHistory`
+  useEffect(() => {
+    if (chatId && !isEditing && currentChat?.title && currentChat.title !== chatTitle) {
+      setChatTitle(currentChat.title);
+      setEditedTitle(currentChat.title); // Also update editedTitle if not editing
+    }
+  }, [chatId, currentChat?.title, isEditing, chatTitle]);
+
 
   useEffect(() => {
     if (isStreaming) {
@@ -446,9 +494,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentCitations([])
     setCurrentMessageId(null)
   }, [
-    data?.chat?.isBookmarked,
     data?.chat?.title,
-    data?.messages, // This will re-run when messages data changes
+    data?.messages,
     isWithChatId,
     params,
   ])
@@ -1128,13 +1175,28 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   const handleBookmark = async () => {
     if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
-      })
-      setBookmark(!bookmark)
+      const newBookmarkStatus = !bookmark;
+      setBookmark(newBookmarkStatus); // Optimistic UI update
+
+      try {
+        await api.chat.bookmark.$post({
+          json: { chatId: chatId, bookmark: newBookmarkStatus },
+        });
+        queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+          ["all-chats"],
+          (oldData) => updateChatBookmarkInCache(oldData, chatId, newBookmarkStatus)
+        );
+        // router.invalidate(); // This ensures loader data is eventually consistent.
+                               // The UI update for bookmark should be fast due to cache update and useEffect.
+      } catch (error) {
+        console.error("Failed to update bookmark", error);
+        setBookmark(!newBookmarkStatus); // Revert optimistic update
+        toast({
+          title: "Error",
+          description: "Could not update bookmark status.",
+          variant: "destructive",
+        });
+      }
     }
   }
 
