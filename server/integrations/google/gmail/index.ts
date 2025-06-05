@@ -109,8 +109,16 @@ export const handleGmailIngestion = async (
             )
             if (!exist) {
               await insert(mailData, mailSchema)
-              
-            totalIngestedMails.inc({mime_type:msgResp.data.payload?.mimeType??Apps.Gmail, status: OperationStatus.Success, email: email, account_type: AuthType.OAuth}, 1)
+
+              totalIngestedMails.inc(
+                {
+                  mime_type: msgResp.data.payload?.mimeType ?? Apps.Gmail,
+                  status: OperationStatus.Success,
+                  email: email,
+                  account_type: AuthType.OAuth,
+                },
+                1,
+              )
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {
@@ -118,7 +126,15 @@ export const handleGmailIngestion = async (
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
-            ingestionMailErrorsTotal.inc({mime_type:msgResp?.data.payload?.mimeType??Apps.Gmail,status:OperationStatus.Failure, error_type:"ERROR_IN_GMAIL_INGESTION", account_type:AuthType.ServiceAccount},1)
+            ingestionMailErrorsTotal.inc(
+              {
+                mime_type: msgResp?.data.payload?.mimeType ?? Apps.Gmail,
+                status: OperationStatus.Failure,
+                error_type: "ERROR_IN_GMAIL_INGESTION",
+                account_type: AuthType.ServiceAccount,
+              },
+              1,
+            )
           } finally {
             // release from memory
             msgResp = null
@@ -305,7 +321,15 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
-            totalAttachmentIngested.inc({ mime_type:mimeType,  status: OperationStatus.Success, account_type:AuthType.OAuth,email: userEmail}, 1)
+            totalAttachmentIngested.inc(
+              {
+                mime_type: mimeType,
+                status: OperationStatus.Success,
+                account_type: AuthType.OAuth,
+                email: userEmail,
+              },
+              1,
+            )
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
@@ -314,7 +338,16 @@ export const parseMail = async (
               `Error retrieving attachment files: ${error} ${(error as Error).stack}, Skipping it`,
               error,
             )
-            totalAttachmentError.inc({mime_type:mimeType, status:OperationStatus.Failure,email:userEmail, error_type:"ERROR_INSERTING_ATTACHMENT", account_type: AuthType.OAuth}, 1)
+            totalAttachmentError.inc(
+              {
+                mime_type: mimeType,
+                status: OperationStatus.Failure,
+                email: userEmail,
+                error_type: "ERROR_INSERTING_ATTACHMENT",
+                account_type: AuthType.OAuth,
+              },
+              1,
+            )
           }
         }
       }

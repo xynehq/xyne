@@ -53,10 +53,14 @@ export const getAppSyncJobsByEmail = async (
   const jobs = await trx
     .select()
     .from(syncJobs)
-    .where(and(and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)),eq(syncJobs.email, email)))
+    .where(
+      and(
+        and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)),
+        eq(syncJobs.email, email),
+      ),
+    )
   return z.array(selectSyncJobSchema).parse(jobs)
 }
-
 
 export const updateSyncJob = async (
   trx: TxnOrClient,

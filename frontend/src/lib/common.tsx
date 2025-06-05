@@ -80,11 +80,11 @@ export const getIcon = (
       return <Paperclip className={classNameVal} fill="rgb(196, 199, 197)" />
     }
     return <img className={classNameVal} src={Gmail} />
-  // } else if (app === Apps.Notion) {
-  //   // ...existing Notion cases...
-  //   if (entity === NotionEntity.Page) {
-  //     return <img className={classNameVal} src={NotionPageSvg} />
-  //   }
+    // } else if (app === Apps.Notion) {
+    //   // ...existing Notion cases...
+    //   if (entity === NotionEntity.Page) {
+    //     return <img className={classNameVal} src={NotionPageSvg} />
+    //   }
   } else if (app === Apps.GoogleCalendar) {
     // ...existing GoogleCalendar cases...
     if (entity === CalendarEntity.Event) {

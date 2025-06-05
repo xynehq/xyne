@@ -587,7 +587,6 @@ export const ChatBox = ({
       type: "citation",
     }
 
-
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {
       setShowReferenceBox(false)
@@ -688,7 +687,6 @@ export const ChatBox = ({
       type: "global",
       photoLink: result.photoLink,
     }
-
 
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {
@@ -1286,7 +1284,7 @@ export const ChatBox = ({
                   // Otherwise, the box remains open (e.g., user is typing after a valid '@').
                 }
               }
-              adjustInputHeight() 
+              adjustInputHeight()
             }}
             onKeyDown={(e) => {
               if (showReferenceBox) {
@@ -1333,7 +1331,7 @@ export const ChatBox = ({
                   // For "OtherContacts" pills, do nothing further (link should not open)
                   return
                 }
-                
+
                 // For other pills or regular links, open the link in a new tab
                 window.open(anchor.href, "_blank", "noopener,noreferrer")
                 // Stop further processing to avoid @mention box logic if a link was clicked

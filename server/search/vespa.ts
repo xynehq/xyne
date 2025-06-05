@@ -269,7 +269,7 @@ type YqlProfile = {
   yql: string
 }
 
-const handleAppsNotInYql = (app:Apps | null,includedApp:Apps[]) => {
+const handleAppsNotInYql = (app: Apps | null, includedApp: Apps[]) => {
   Logger.error(`${app} is not supported in YQL queries yet`)
   throw new ErrorPerformingSearch({
     message: `${app} is not supported in YQL queries yet`,
@@ -471,7 +471,7 @@ export const HybridDefaultProfile = (
         appQueries.push(buildSlackYQL())
         break
       default:
-        handleAppsNotInYql(includedApp,includedApps)
+        handleAppsNotInYql(includedApp, includedApps)
         break
     }
   }
