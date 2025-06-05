@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useRef, useState } from "react"
 import { LoaderContent } from "@/lib/common"
+import { CLASS_NAMES } from "../lib/constants"
 
 export const pageSize = 21
 
@@ -243,7 +244,7 @@ const HistoryModal = ({
   }
 
   return (
-    <div className="fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] flex flex-col select-none bg-white history-modal-container">
+    <div className={`fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] flex flex-col select-none bg-white ${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`}>
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
         <p className="text-[#1C1D1F] font-medium text-[16px]">Chat History</p>
         <button

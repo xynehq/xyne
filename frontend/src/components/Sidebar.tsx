@@ -2,6 +2,7 @@ import { Link, useLocation } from "@tanstack/react-router"
 import { Plug, Plus, History } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
+import { CLASS_NAMES, SELECTORS } from "../lib/constants"
 import { UserRole } from "shared/types"
 import {
   Tooltip,
@@ -27,14 +28,14 @@ export const Sidebar = ({
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
        
-      const isInteractiveElement = target.closest('button, a, [role="button"], input');
+      const isInteractiveElement = target.closest(SELECTORS.INTERACTIVE_ELEMENT);
       if (isInteractiveElement) return;
-      const isSidebarClick = target.closest('.sidebar-container');
-      const isHistoryModalClick = target.closest('.history-modal-container');
-      const isChatInput = target.closest('[contenteditable="true"]'); 
-      const isSearchArea = target.closest('.search-container'); 
-      const isReferenceBox = target.closest('.reference-box'); 
-      const isAtMentionArea = target.closest('[data-at-mention]'); 
+      const isSidebarClick = target.closest(`.${CLASS_NAMES.SIDEBAR_CONTAINER}`);
+      const isHistoryModalClick = target.closest(`.${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`);
+      const isChatInput = target.closest(SELECTORS.CHAT_INPUT); 
+      const isSearchArea = target.closest(`.${CLASS_NAMES.SEARCH_CONTAINER}`); 
+      const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`); 
+      const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA); 
       
       if (!isSidebarClick && !isHistoryModalClick && !isChatInput && !isSearchArea && !isReferenceBox && !isAtMentionArea && showHistory) {
         setShowHistory(false);
@@ -48,7 +49,7 @@ export const Sidebar = ({
   return (
     <TooltipProvider>
       <div
-        className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col fixed ${className} z-20 select-none sidebar-container`}
+        className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col fixed ${className} z-20 select-none ${CLASS_NAMES.SIDEBAR_CONTAINER}`}
       >
         {showHistory && (
           <HistoryModal
