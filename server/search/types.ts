@@ -17,9 +17,10 @@ export const chatTeamSchema = "chat_team"
 export const chatMessageSchema = "chat_message"
 export const chatUserSchema = "chat_user"
 export const chatAttachment = "chat_attachment"
-export const transcriptSchema = "transcript"
 // previous queries
 export const userQuerySchema = "user_query"
+export const datasourceSchema = "datasource"
+export const datasourceFileSchema = "datasource_file"
 
 export type VespaSchema =
   | typeof fileSchema
@@ -32,7 +33,8 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
-  | typeof transcriptSchema
+  | typeof datasourceSchema
+  | typeof datasourceFileSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -47,7 +49,7 @@ export enum Apps {
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
-  Transcript = "transcript"
+  DataSource = "data-source",
 }
 
 export const isValidApp = (app: string): boolean => {
@@ -75,9 +77,6 @@ export const isValidEntity = (entity: string): boolean => {
           .includes(normalizedEntity) ||
         Object.values(GooglePeopleEntity)
           .map((v) => v.toLowerCase())
-          .includes(normalizedEntity) ||
-      Object.values(transcriptEntity)
-          .map((v) => v.toLowerCase())
           .includes(normalizedEntity)
     : // Object.values(SlackEntity).map(v => v.toLowerCase()).includes(normalizedEntity) ||
       // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
@@ -102,7 +101,8 @@ const Schemas = z.union([
   z.literal(chatTeamSchema),
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
-  z.literal(transcriptSchema),
+  z.literal(datasourceSchema),
+  z.literal(datasourceFileSchema),
 ])
 
 export enum MailEntity {
@@ -151,10 +151,6 @@ export enum MailAttachmentEntity {
   PDF = "pdf",
 }
 
-export enum transcriptEntity {
-  Transcript = "transcript"
-}
-
 export const isMailAttachment = (entity: Entity): boolean =>
   Object.values(MailAttachmentEntity).includes(entity as MailAttachmentEntity)
 
@@ -172,7 +168,6 @@ export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
-export const transcriptEntitySchema = z.nativeEnum(transcriptEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
@@ -184,7 +179,6 @@ export const entitySchema = z.union([
   EventEntitySchema,
   MailAttachmentEntitySchema,
   ChatEntitySchema,
-  transcriptEntitySchema,
 ])
 
 export type Entity =
@@ -195,7 +189,6 @@ export type Entity =
   | CalendarEntity
   | MailAttachmentEntity
   | SlackEntity
-  | transcriptEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -233,22 +226,6 @@ export const VespaFileSchema = z.object({
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
   metadata: Metadata,
-  createdAt: z.number(),
-  updatedAt: z.number(),
-})
-
-export const VespaTranscriptSchema = z.object({
-  docId: z.string(),
-  title: z.string(),
-  description: z.string(),
-  app: z.nativeEnum(Apps),
-  fileName: z.string(),
-  fileSize: z.number(),
-  chunks: z.array(z.string()),
-  uploadedBy: z.string(),
-  duration: z.number(),
-  mimeType: z.string(),
-  metadata: z.union([z.string(), z.record(z.any())]),
   createdAt: z.number(),
   updatedAt: z.number(),
 })
@@ -292,7 +269,6 @@ const MailAttachmentMatchFeaturesSchema = z.object({
   chunk_scores: chunkScoresSchema,
 })
 
-// Match features for chat message schema
 const ChatMessageMatchFeaturesSchema = z.object({
   vector_score: z.number().optional(),
   combined_nativeRank: z.number().optional(),
@@ -301,41 +277,81 @@ const ChatMessageMatchFeaturesSchema = z.object({
   "nativeRank(name)": z.number().optional(),
 })
 
-// Match features for transcript schema
-const TranscriptMatchFeaturesSchema = z.object({
-  "bm25(title)": z.number().optional(),
-  "bm25(chunks)": z.number().optional(),
-  "closeness(field, chunk_embeddings)": z.number().optional(),
-  chunk_scores: z.object({
-    cells: z.record(z.number()).default({})
-  }).optional()
-})
-
 export type FileMatchFeatures = z.infer<typeof FileMatchFeaturesSchema>
 export type MailMatchFeatures = z.infer<typeof MailMatchFeaturesSchema>
 export type MailAttachmentMatchFeatures = z.infer<
   typeof MailAttachmentMatchFeaturesSchema
 >
-export type TranscriptMatchFeatures = z.infer<typeof TranscriptMatchFeaturesSchema>
+
+const DataSourceFileMatchFeaturesSchema = z.object({
+  "bm25(title)": z.number().optional(),
+  "bm25(chunks)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+  chunk_scores: chunkScoresSchema.optional(),
+})
+export type DataSourceFileMatchFeatures = z.infer<
+  typeof DataSourceFileMatchFeaturesSchema
+>
 
 export const VespaMatchFeatureSchema = z.union([
   FileMatchFeaturesSchema,
   MailMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
-  TranscriptMatchFeaturesSchema,
+  DataSourceFileMatchFeaturesSchema,
 ])
 
-export const VespaTranscriptSearchSchema = VespaTranscriptSchema.extend({
-  sddocname: z.literal(transcriptSchema),
-  matchfeatures: TranscriptMatchFeaturesSchema,
-  rankfeatures: z.any().optional(),
+// Base schema for DataSource (for insertion)
+export const VespaDataSourceSchemaBase = z.object({
+  docId: z.string(),
+  name: z.string(),
+  createdBy: z.string(),
+  createdAt: z.number(), // long
+  updatedAt: z.number(), // long
 })
-  .merge(defaultVespaFieldsSchema)
-  .extend({
-    chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
-  })
+export type VespaDataSource = z.infer<typeof VespaDataSourceSchemaBase>
 
-export type VespaTranscriptSearch = z.infer<typeof VespaTranscriptSearchSchema>
+// Search schema for DataSource
+export const VespaDataSourceSearchSchema = VespaDataSourceSchemaBase.extend({
+  sddocname: z.literal(datasourceSchema),
+  matchfeatures: z.any().optional(),
+  rankfeatures: z.any().optional(),
+}).merge(defaultVespaFieldsSchema)
+export type VespaDataSourceSearch = z.infer<typeof VespaDataSourceSearchSchema>
+
+// Base schema for DataSourceFile (for insertion)
+export const VespaDataSourceFileSchemaBase = z.object({
+  docId: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+  app: z.literal(Apps.DataSource),
+  fileName: z.string().optional(),
+  fileSize: z.number().optional(), // long
+  chunks: z.array(z.string()),
+  uploadedBy: z.string(),
+  duration: z.number().optional(), // long
+  mimeType: z.string().optional(),
+  createdAt: z.number(), // long
+  updatedAt: z.number(), // long
+  dataSourceRef: z.string(), // reference to datasource docId
+  metadata: z.string().optional(), // JSON string
+})
+export type VespaDataSourceFile = z.infer<typeof VespaDataSourceFileSchemaBase>
+
+// Search schema for DataSourceFile
+export const VespaDataSourceFileSearchSchema =
+  VespaDataSourceFileSchemaBase.extend({
+    sddocname: z.literal(datasourceFileSchema),
+    matchfeatures: DataSourceFileMatchFeaturesSchema,
+    rankfeatures: z.any().optional(),
+    dataSourceName: z.string().optional(),
+  })
+    .merge(defaultVespaFieldsSchema)
+    .extend({
+      chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+    })
+export type VespaDataSourceFileSearch = z.infer<
+  typeof VespaDataSourceFileSearchSchema
+>
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({
   sddocname: z.literal(fileSchema),
@@ -660,8 +676,17 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatContainerSearchSchema,
   VespaChatUserSearchSchema,
   VespaChatMessageSearchSchema,
-  VespaTranscriptSearchSchema,
+  VespaDataSourceSearchSchema,
+  VespaDataSourceFileSearchSchema,
 ])
+
+// Get schema for DataSourceFile
+export const VespaDataSourceFileGetSchema = VespaDataSourceFileSchemaBase.merge(
+  defaultVespaFieldsSchema,
+)
+export type VespaDataSourceFileGet = z.infer<
+  typeof VespaDataSourceFileGetSchema
+>
 
 const SearchMatchFeaturesSchema = z.union([
   FileMatchFeaturesSchema,
@@ -670,7 +695,7 @@ const SearchMatchFeaturesSchema = z.union([
   EventMatchFeaturesSchema,
   MailAttachmentMatchFeaturesSchema,
   ChatMessageMatchFeaturesSchema,
-  TranscriptMatchFeaturesSchema,
+  DataSourceFileMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
@@ -684,6 +709,7 @@ export const VespaGetFieldsSchema = z.union([
   VespaUserSchema,
   VespaFileGetSchema,
   VespaMailGetSchema,
+  VespaDataSourceFileGetSchema,
 ])
 
 export const VespaSearchResultsSchema = z.object({
@@ -785,7 +811,6 @@ export type VespaEventSearch = z.infer<typeof VespaEventSearchSchema>
 export type VespaFile = z.infer<typeof VespaFileSchema>
 export type VespaUser = z.infer<typeof VespaUserSchema>
 export type VespaUserQueryHistory = z.infer<typeof VespaUserQueryHistorySchema>
-export type VespaTranscript = z.infer<typeof VespaTranscriptSchema>
 
 export type VespaFileWithDrivePermission = Omit<VespaFile, "permissions"> & {
   permissions: any[]
@@ -802,7 +827,8 @@ export type Inserts =
   | VespaChatTeam
   | VespaChatUser
   | VespaChatMessage
-  | VespaTranscript
+  | VespaDataSource
+  | VespaDataSourceFile
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
@@ -1038,24 +1064,29 @@ export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
-export const TranscriptResponseSchema = VespaTranscriptSchema.pick({
+export const DataSourceFileResponseSchema = VespaDataSourceFileGetSchema.pick({
   docId: true,
   title: true,
   description: true,
   app: true,
   fileName: true,
+  fileSize: true,
   uploadedBy: true,
   duration: true,
   mimeType: true,
-  metadata: true,
   createdAt: true,
   updatedAt: true,
+  dataSourceRef: true,
+  metadata: true,
+  relevance: true,
 })
   .strip()
   .extend({
-    type: z.literal("transcript"),
-    relevance: z.number(),
+    type: z.literal(datasourceFileSchema), // Using the schema const for the literal
     chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
-    matchfeatures: TranscriptMatchFeaturesSchema,
+    matchfeatures: DataSourceFileMatchFeaturesSchema.optional(), // or z.any().optional() if specific match features aren't always needed here
     rankfeatures: z.any().optional(),
   })
+export type DataSourceFileResponse = z.infer<
+  typeof DataSourceFileResponseSchema
+>

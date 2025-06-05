@@ -52,7 +52,7 @@ const Index = () => {
 
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
-  const { user } = matches[matches.length - 1].context
+  const { user, agentWhiteList } = matches[matches.length - 1].context
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -118,7 +118,11 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (messageToSend: string, selectedSources?: string[], agentId?: string | null) => {
+  const handleAsk = (
+    messageToSend: string,
+    selectedSources?: string[],
+    agentId?: string | null,
+  ) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
@@ -136,8 +140,9 @@ const Index = () => {
         searchParams.sources = selectedSources.join(",")
       }
 
-      if (agentId) { // Use agentId directly
-        searchParams.agentId = agentId;
+      if (agentId) {
+        // Use agentId directly
+        searchParams.agentId = agentId
       }
 
       navigate({
@@ -166,7 +171,11 @@ const Index = () => {
   return (
     <TooltipProvider>
       <div className="h-full w-full flex flex-row bg-white">
-        <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+        <Sidebar
+          photoLink={user?.photoLink ?? ""}
+          role={user?.role}
+          isAgentMode={agentWhiteList}
+        />
         <div className="flex flex-col flex-grow justify-center items-center ml-[52px]">
           <div className="flex flex-col min-h-36 w-full max-w-3xl">
             <div className="flex mb-[14px] w-full justify-start">

@@ -524,12 +524,14 @@ export type PublicWorkspace = z.infer<typeof workspacePublicSchema>
 export type PublicUserWorkspace = {
   user: PublicUser
   workspace: PublicWorkspace
+  agentWhiteList: boolean
 }
 
 // if data is not sent out, we can keep all fields
 export type InternalUserWorkspace = {
   user: SelectUser
   workspace: SelectWorkspace
+  agentWhiteList: boolean
 }
 
 export const insertChatSchema = createInsertSchema(chats, {
@@ -626,9 +628,13 @@ export const agents = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => ({
-    agentWorkspaceIdIndex: index("agent_workspace_id_index").on(table.workspaceId),
+    agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
+      table.workspaceId,
+    ),
     agentUserIdIndex: index("agent_user_id_index").on(table.userId),
-    agentExternalIdIndex: uniqueIndex("agent_external_id_unique_index").on(table.externalId),
+    agentExternalIdIndex: uniqueIndex("agent_external_id_unique_index").on(
+      table.externalId,
+    ),
   }),
 )
 

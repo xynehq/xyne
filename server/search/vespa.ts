@@ -11,8 +11,11 @@ import {
   mailAttachmentSchema,
   chatUserSchema,
   chatMessageSchema,
-  transcriptSchema,
-
+  datasourceSchema,
+  datasourceFileSchema,
+  type VespaDataSource,
+  type VespaDataSourceFile,
+  type VespaDataSourceSearch,
 } from "@/search/types"
 import type {
   VespaAutocompleteResponse,
@@ -177,12 +180,14 @@ export const deduplicateAutocomplete = (
 
 const AllSources = [
   fileSchema,
-   userSchema,
+  userSchema,
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
   // chatUserSchema,
   chatMessageSchema,
+  // Not adding datasource or datasource_file to AllSources by default,
+  // as they are for a specific app functionality.
 ].join(", ")
 
 export const autocomplete = async (
@@ -388,7 +393,6 @@ export const HybridDefaultProfile = (
   }
 }
 
-
 export const HybridDefaultProfileForAgent = (
   hits: number,
   app: Apps | null,
@@ -398,9 +402,8 @@ export const HybridDefaultProfileForAgent = (
   excludedIds?: string[],
   notInMailLabels?: string[],
   AllowedApps: Apps[] | null = null,
+  dataSourceIds: string[] = [],
 ): YqlProfile => {
-  console.log("HybridDefaultProfile1 called with AllowedApps:", AllowedApps)
-  
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
     const conditions: string[] = []
@@ -428,10 +431,13 @@ export const HybridDefaultProfileForAgent = (
   }
   // App-specific YQL builders
   const buildGoogleWorkspaceYQL = () => {
-    const userTimestamp = buildTimestampConditions("creationTime", "creationTime")
+    const userTimestamp = buildTimestampConditions(
+      "creationTime",
+      "creationTime",
+    )
     const appOrEntityFilter = buildAppEntityFilter()
     const hasAppOrEntity = !!(app || entity)
-    
+
     return `
       (
         ({targetHits:${hits}} userInput(@query))
@@ -454,7 +460,7 @@ export const HybridDefaultProfileForAgent = (
     const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
     const appOrEntityFilter = buildAppEntityFilter()
     const mailLabelQuery = buildMailLabelQuery()
-    
+
     return `
       (
         (
@@ -471,7 +477,7 @@ export const HybridDefaultProfileForAgent = (
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
-    
+
     return `
       (
         (
@@ -488,7 +494,7 @@ export const HybridDefaultProfileForAgent = (
   const buildGoogleCalendarYQL = () => {
     const eventTimestamp = buildTimestampConditions("startTime", "startTime")
     const appOrEntityFilter = buildAppEntityFilter()
-    
+
     return `
       (
         (
@@ -503,7 +509,7 @@ export const HybridDefaultProfileForAgent = (
   }
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
-  
+
     return `
       (
         (
@@ -515,66 +521,110 @@ export const HybridDefaultProfileForAgent = (
         and permissions contains @email
       )`
   }
-  const buildTranscriptYQL = () => {
+
+  const buildDataSourceFileYQL = () => {
+    // For DataSourceFile, app and entity might not be directly applicable in the same way,
+    // but keeping appOrEntityFilter for consistency if needed for other metadata.
     const appOrEntityFilter = buildAppEntityFilter()
-    
+    const dataSourceIdConditions =
+      dataSourceIds && dataSourceIds.length > 0
+        ? `(${dataSourceIds.map((id) => `dataSourceId contains '${id.trim()}'`).join(" or ")})`
+        : "false" // If no specific IDs, this part of the query should not match anything
+
+    // Permissions for datasource_file are based on 'uploadedBy' matching the user's email
+    // and the dataSourceId matching one of the allowed ones.
     return `
       (
         (
-          ({targetHits:${hits}} userInput(@query))
+          ({targetHits:${hits}}userInput(@query))
           or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
+          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
         )
-        and uploadedBy contains @email
-        ${timestampRange
-          ? `and (updatedAt >= ${timestampRange.from} and updatedAt <= ${timestampRange.to})`
-          : ""}
-        ${appOrEntityFilter}
+        and uploadedBy contains @email 
+        and ${dataSourceIdConditions}
+        ${appOrEntityFilter} 
       )`
   }
+
   // Build app-specific queries and sources
   const appQueries: string[] = []
   const sources: string[] = []
+
   if (AllowedApps && AllowedApps.length > 0) {
     for (const allowedApp of AllowedApps) {
       switch (allowedApp) {
         case Apps.GoogleWorkspace:
           appQueries.push(buildGoogleWorkspaceYQL())
-          sources.push(userSchema)
+          if (!sources.includes(userSchema)) sources.push(userSchema)
           break
         case Apps.Gmail:
           appQueries.push(buildGmailYQL())
-          sources.push(mailSchema)
+          if (!sources.includes(mailSchema)) sources.push(mailSchema)
           break
         case Apps.GoogleDrive:
           appQueries.push(buildGoogleDriveYQL())
-          sources.push(fileSchema)
+          if (!sources.includes(fileSchema)) sources.push(fileSchema)
           break
         case Apps.GoogleCalendar:
           appQueries.push(buildGoogleCalendarYQL())
-          sources.push(eventSchema)
+          if (!sources.includes(eventSchema)) sources.push(eventSchema)
           break
         case Apps.Slack:
           appQueries.push(buildSlackYQL())
-          sources.push(chatUserSchema)
+          if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
           break
-        case Apps.Transcript:
-          appQueries.push(buildTranscriptYQL())
-          sources.push(transcriptSchema)
-          break;
+        case Apps.DataSource:
+          // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
+          // The actual filtering by specific dataSourceIds happens in buildDataSourceFileYQL.
+          if (dataSourceIds && dataSourceIds.length > 0) {
+            appQueries.push(buildDataSourceFileYQL())
+            if (!sources.includes(datasourceFileSchema))
+              sources.push(datasourceFileSchema)
+          } else {
+            // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
+            // across all accessible data sources. This might be too broad or not the intended behavior.
+            // For now, if no specific IDs, we don't add a query part for generic DataSource search.
+            // This means an agent configured with "data-source" but no specific IDs won't search them
+            // unless other app types are also specified.
+            Logger.warn(
+              "Apps.DataSource specified for agent, but no specific dataSourceIds provided. Skipping generic DataSource search part.",
+            )
+          }
+          break
       }
     }
-  } 
+  } else if (dataSourceIds && dataSourceIds.length > 0) {
+    // This handles the case where AllowedApps might be empty or null,
+    // but specific dataSourceIds are provided (e.g., agent is only for specific data sources).
+    appQueries.push(buildDataSourceFileYQL())
+    if (!sources.includes(datasourceFileSchema))
+      sources.push(datasourceFileSchema)
+  }
+
   // Combine all queries
   const combinedQuery = appQueries.join("\nor\n")
   const exclusionCondition = buildExclusionCondition()
-  const sourcesString = sources.join(", ")
-  console.log("sourcestring", sourcesString)
+  const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
+
+  // If sourcesString is empty (e.g., only Apps.DataSource was specified but no dataSourceIds were provided,
+  // or no valid AllowedApps were given), then the YQL query will be invalid.
+  const fromClause = sourcesString ? `from sources ${sourcesString}` : ""
+
+  if (!combinedQuery || !fromClause) {
+    Logger.warn(
+      "HybridDefaultProfileForAgent: No valid query parts or sources for YQL, will return empty results.",
+      { combinedQuery, fromClause, AllowedApps, dataSourceIds },
+    )
+    return {
+      profile: profile,
+      yql: `select * from sources foo where false`, // Ensures valid YQL that returns nothing
+    }
+  }
   return {
     profile: profile,
     yql: `
     select *
-    from sources ${sourcesString}, transcript
+    ${fromClause} 
     where
     (
       (
@@ -779,6 +829,7 @@ type VespaQueryConfig = {
   span: Span | null
   maxHits: number
   recencyDecayRate: number
+  dataSourceIds?: string[] // Added for agent-specific data source filtering
 }
 
 export const searchVespa = async (
@@ -786,7 +837,7 @@ export const searchVespa = async (
   email: string,
   app: Apps | null,
   entity: Entity | null,
-    {
+  {
     alpha = 0.5,
     limit = config.page,
     offset = 0,
@@ -937,6 +988,7 @@ export const searchVespaAgent = async (
     span = null,
     maxHits = 400,
     recencyDecayRate = 0.02,
+    dataSourceIds = [], // Ensure dataSourceIds is destructured here
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -951,7 +1003,8 @@ export const searchVespaAgent = async (
     timestampRange,
     excludedIds,
     notInMailLabels,
-    Apps
+    Apps,
+    dataSourceIds, // Pass dataSourceIds here
   )
 
   const hybridDefaultPayload = {
@@ -1133,18 +1186,6 @@ export const ifDocumentsExist = async (
   try {
     return await vespa.ifDocumentsExist(docIds)
   } catch (error) {
-    throw error
-  }
-}
-export const ifDocumentsExistInTranscript = async (
-  docIds: string[]|string,
-  email: string
-)=>
-{
-  try{
-    return await vespa.ifDocumentsExistInTranscript(docIds, email)
-  }
-  catch(error){
     throw error
   }
 }
@@ -1498,36 +1539,165 @@ export const getItems = async (
   }
 }
 
-export const fetchAllDocumentsFromSchema = async (
-  schema: VespaSchema,
-  concurrency: number = 3,
-  email:string
-): Promise<any[]> => {
+// --- DataSource and DataSourceFile Specific Functions ---
+
+export const insertDataSource = async (
+  document: VespaDataSource,
+): Promise<void> => {
   try {
-    const options = {
-      namespace: NAMESPACE,
-      schema,
-      cluster: CLUSTER,
-    }
-
-    // Call the getAllDocumentsParallel method and return its result directly
-    const allDocuments = await vespa.getAllDocumentsParallel(
-      schema,
-      options,
-      concurrency,
-      email,
-    )
-
-    Logger.info(
-      `Fetched ${allDocuments.length} documents from schema ${schema}`,
-    )
-    return allDocuments
+    await insert(document as Inserts, datasourceSchema)
+    Logger.info(`DataSource ${document.docId} inserted successfully`)
   } catch (error) {
-    Logger.error(error, `Error fetching all documents from schema ${schema}`)
-    throw new ErrorRetrievingDocuments({
+    Logger.error(error, `Error inserting DataSource ${document.docId}`)
+    throw error
+  }
+}
+
+export const insertDataSourceFile = async (
+  document: VespaDataSourceFile,
+): Promise<void> => {
+  try {
+    await insert(document as Inserts, datasourceFileSchema)
+    Logger.info(`DataSourceFile ${document.docId} inserted successfully`)
+  } catch (error) {
+    Logger.error(error, `Error inserting DataSourceFile ${document.docId}`)
+    throw error
+  }
+}
+
+export const getDataSourceByNameAndCreator = async (
+  name: string,
+  createdByEmail: string,
+): Promise<VespaDataSourceSearch | null> => {
+  const yql = `select * from ${datasourceSchema} where name contains @name and createdBy contains @email limit 1`
+  const payload = {
+    yql,
+    name,
+    email: createdByEmail,
+    hits: 1,
+    "ranking.profile": "unranked",
+    "presentation.summary": "default",
+  }
+  try {
+    const response: VespaSearchResponse = await vespa.search(payload)
+    if (response.root.children && response.root.children.length > 0) {
+      const searchResult = response.root.children[0] as VespaSearchResult
+
+      return searchResult.fields as unknown as VespaDataSourceSearch
+    }
+    return null
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching DataSource by name "${name}" and creator "${createdByEmail}"`,
+    )
+    throw new ErrorPerformingSearch({
+      message: `Error fetching DataSource by name "${name}" and creator "${createdByEmail}"`,
       cause: error as Error,
-      sources: schema,
-      message: `Failed to fetch all documents from schema ${schema}: ${getErrorMessage(error)}`,
+      sources: datasourceSchema,
+    })
+  }
+}
+
+export const getDataSourcesByCreator = async (
+  createdByEmail: string,
+  limit: number = 100,
+): Promise<VespaSearchResponse> => {
+  const yql = `select * from ${datasourceSchema} where createdBy contains @email limit ${limit}`
+  const payload = {
+    yql,
+    email: createdByEmail,
+    hits: limit,
+    "ranking.profile": "unranked",
+    "presentation.summary": "default",
+  }
+  try {
+    return await vespa.search<VespaSearchResponse>(payload)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching DataSources for creator "${createdByEmail}"`,
+    )
+    throw new ErrorPerformingSearch({
+      message: `Error fetching DataSources for creator "${createdByEmail}"`,
+      cause: error as Error,
+      sources: datasourceSchema,
+    })
+  }
+}
+
+export const checkIfDataSourceFileExistsByNameAndId = async (
+  fileName: string,
+  dataSourceId: string,
+  uploadedBy: string,
+): Promise<boolean> => {
+  const yql = `
+    select * 
+    from sources ${datasourceFileSchema} 
+    where fileName contains @fileName and dataSourceId contains @dataSourceId and uploadedBy contains @uploadedBy 
+    limit 1
+  `
+  const payload = {
+    yql,
+    fileName,
+    dataSourceId,
+    uploadedBy,
+    hits: 1,
+    "ranking.profile": "unranked",
+  }
+  try {
+    Logger.debug(
+      { payload },
+      "Checking if datasource file exists by name and ID",
+    )
+    const response: VespaSearchResponse = await vespa.search(payload)
+    return response.root.children && response.root.children.length > 0
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error checking if file "${fileName}" exists for DataSource ID "${dataSourceId}" and user "${uploadedBy}"`,
+    )
+
+    throw new ErrorPerformingSearch({
+      message: `Error checking if file "${fileName}" exists for DataSource ID "${dataSourceId}" and user "${uploadedBy}"`,
+      cause: error as Error,
+      sources: datasourceFileSchema,
+    })
+  }
+}
+
+export const getDataSourceFilesByName = async (
+  dataSourceName: string,
+  userEmail: string,
+  limit: number = 400, // Changed default limit to 400
+): Promise<VespaSearchResponse> => {
+  const yql = `
+    select * 
+    from sources ${datasourceFileSchema} 
+    where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
+    order by createdAt desc 
+    limit ${limit}
+  `
+  const payload = {
+    yql,
+    dataSourceName,
+    userEmail,
+    hits: limit,
+    "ranking.profile": "unranked",
+    "presentation.summary": "default",
+  }
+  try {
+    Logger.debug({ payload }, "Fetching files for datasource by name and user")
+    return await vespa.search<VespaSearchResponse>(payload)
+  } catch (error) {
+    Logger.error(
+      error,
+      `Error fetching files for DataSource "${dataSourceName}" and user "${userEmail}"`,
+    )
+    throw new ErrorPerformingSearch({
+      message: `Error fetching files for DataSource "${dataSourceName}" and user "${userEmail}"`,
+      cause: error as Error,
+      sources: datasourceFileSchema,
     })
   }
 }

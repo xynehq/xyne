@@ -72,11 +72,11 @@ import {
   getDocumentOrNull,
   searchVespaThroughAgent,
   searchVespaAgent,
-  
 } from "@/search/vespa"
 import {
   Apps,
   chatMessageSchema,
+  datasourceFileSchema,
   DriveEntity,
   entitySchema,
   eventSchema,
@@ -86,7 +86,6 @@ import {
   isValidEntity,
   mailAttachmentSchema,
   mailSchema,
-  transcriptSchema,
   userSchema,
   type VespaChatMessage,
   type VespaEvent,
@@ -434,8 +433,9 @@ const checkAndYieldCitations = function* (
     if (!yieldedCitations.has(citationIndex)) {
       const item = results[citationIndex - baseIndex]
       if (item) {
-        // TODO: fix this properly, empty citations(i:e for transcriptSchema ) making streaming broke
-        if(item.fields.sddocname === transcriptSchema){
+        // TODO: fix this properly, empty citations making streaming broke
+        if (item.fields.sddocname === datasourceFileSchema) {
+          // Removed transcriptSchema check
           continue
         }
         yield {
@@ -604,33 +604,84 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   rootSpan?.setAttribute("pageSize", pageSize)
   rootSpan?.setAttribute("maxPageNumber", maxPageNumber)
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
-  let agentApps:any=[]
-  let agentPromptData: { appIntegrations?: string[] } = {};
+  let agentAppEnums: Apps[] = []
+  let agentSpecificDataSourceIds: string[] = []
+  if (agentPrompt) {
+    let agentPromptData: { appIntegrations?: string[] } = {}
     try {
-      agentPromptData = JSON.parse(agentPrompt!);
+      agentPromptData = JSON.parse(agentPrompt)
     } catch (error) {
-      Logger.warn("Failed to parse agentPrompt JSON");
+      Logger.warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
     }
 
-    // Convert appIntegrations to Apps enum values
-   agentApps = agentPromptData.appIntegrations?.map((integration: string): Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack | null => {
-      switch(integration.toLowerCase()) {
-        case 'googledrive':
-          return Apps.GoogleDrive;
-        case 'transcripts':
-          return Apps.Transcript;
-        case 'googlesheets':
-          return Apps.GoogleDrive;
-        case 'gmail':
-          return Apps.Gmail;
-        case 'googlecalendar':
-          return Apps.GoogleCalendar;
-        case 'slack':
-          return Apps.Slack;
-        default:
-          return null;
+    if (
+      agentPromptData.appIntegrations &&
+      Array.isArray(agentPromptData.appIntegrations)
+    ) {
+      for (const integration of agentPromptData.appIntegrations) {
+        if (typeof integration === "string") {
+          const lowerIntegration = integration.toLowerCase()
+          if (
+            lowerIntegration.startsWith("ds-") ||
+            lowerIntegration.startsWith("ds_")
+          ) {
+            // ds- is the prefix for datasource externalId
+            agentSpecificDataSourceIds.push(integration)
+            if (!agentAppEnums.includes(Apps.DataSource)) {
+              agentAppEnums.push(Apps.DataSource)
+            }
+          } else {
+            // Handle generic app names
+            switch (lowerIntegration) {
+              case Apps.GoogleDrive.toLowerCase():
+              case "googledrive":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.DataSource.toLowerCase(): // 'data-source'
+                if (!agentAppEnums.includes(Apps.DataSource))
+                  agentAppEnums.push(Apps.DataSource)
+                break
+              case "googlesheets":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.Gmail.toLowerCase():
+              case "gmail":
+                if (!agentAppEnums.includes(Apps.Gmail))
+                  agentAppEnums.push(Apps.Gmail)
+                break
+              case Apps.GoogleCalendar.toLowerCase():
+              case "googlecalendar":
+                if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                  agentAppEnums.push(Apps.GoogleCalendar)
+                break
+              case Apps.Slack.toLowerCase():
+              case "slack":
+                if (!agentAppEnums.includes(Apps.Slack))
+                  agentAppEnums.push(Apps.Slack)
+                break
+              default:
+                Logger.warn(
+                  `Unknown integration type in agent prompt: ${integration}`,
+                )
+                break
+            }
+          }
+        } else {
+          Logger.warn(
+            `Invalid integration item in agent prompt (not a string): ${integration}`,
+          )
+        }
       }
-    }).filter((app): app is Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack => app !== null);
+      agentAppEnums = [...new Set(agentAppEnums)]
+    } else {
+      Logger.warn(
+        "agentPromptData.appIntegrations is not an array or is missing",
+        { agentPromptData },
+      )
+    }
+  }
 
   const message = input
 
@@ -672,25 +723,32 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
   }
-  let searchResults;
+  let searchResults
   if (!agentPrompt) {
     searchResults = await searchVespa(message, email, null, null, {
       limit: pageSize,
       alpha: userAlpha,
       timestampRange,
       span: initialSearchSpan,
-    });
+    })
   } else {
-    
-    searchResults = await searchVespaAgent(message, email,null,null,agentApps, {
-      limit: pageSize,
-      alpha: userAlpha,
-      timestampRange,
-      span: initialSearchSpan,
-    });
+    searchResults = await searchVespaAgent(
+      message,
+      email,
+      null,
+      null,
+      agentAppEnums,
+      {
+        limit: pageSize,
+        alpha: userAlpha,
+        timestampRange,
+        span: initialSearchSpan,
+        dataSourceIds: agentSpecificDataSourceIds,
+      },
+    )
   }
 
-  const latestResults = searchResults.root.children;
+  const latestResults = searchResults.root.children
   initialSearchSpan?.setAttribute("result_count", latestResults?.length || 0)
   initialSearchSpan?.setAttribute(
     "result_ids",
@@ -716,22 +774,28 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // get the first page of results
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
-      let results;
-      if(!agentPrompt){
-      results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        span: vespaSearchSpan,
-      })
-    }
-    else{
-    results = await searchVespaAgent(message, email,null,null,agentApps, {
-      limit: pageSize,
-      alpha: userAlpha,
-      span: vespaSearchSpan,
-    })
-
-    }
+      let results
+      if (!agentPrompt) {
+        results = await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          alpha: userAlpha,
+          span: vespaSearchSpan,
+        })
+      } else {
+        results = await searchVespaAgent(
+          message,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            alpha: userAlpha,
+            span: vespaSearchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
       vespaSearchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -769,23 +833,32 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         querySpan?.setAttribute("query_text", query)
 
         const latestSearchSpan = querySpan?.startSpan("latest_results_search")
-        const latestResults: VespaSearchResult[] = (
-          await (!agentPrompt
-            ? searchVespa(query, email, null, null, {
-                limit: pageSize,
-                alpha: userAlpha,
-                timestampRange,
-                span: latestSearchSpan,
-              })
-            : (async () => {
-                return searchVespaAgent(query, email, null, null,agentApps, {
+        const latestResults: VespaSearchResult[] =
+          (
+            await (!agentPrompt
+              ? searchVespa(query, email, null, null, {
                   limit: pageSize,
                   alpha: userAlpha,
                   timestampRange,
                   span: latestSearchSpan,
-                });
-              })())
-        ).root.children || [];
+                })
+              : (async () => {
+                  return searchVespaAgent(
+                    query,
+                    email,
+                    null,
+                    null,
+                    agentAppEnums,
+                    {
+                      limit: pageSize,
+                      alpha: userAlpha,
+                      timestampRange,
+                      span: latestSearchSpan,
+                      dataSourceIds: agentSpecificDataSourceIds,
+                    },
+                  )
+                })())
+          ).root.children || []
         latestSearchSpan?.setAttribute(
           "result_count",
           latestResults?.length || 0,
@@ -807,26 +880,32 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         //     ?.map((v: VespaSearchResult) => (v.fields as any).docId)
         //     ?.filter((v) => !!v),
         // })
-      let results;
-      if(!agentPrompt){
-      results = await searchVespa(query, email, null, null, {
-        limit: pageSize,
-        alpha: userAlpha,
-        excludedIds: latestResults
-            ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-            ?.filter((v) => !!v),
-      })
-    }
-    else{
-    results = await searchVespaAgent(query, email, null, null,agentApps, {
-      limit: pageSize,
-      alpha: userAlpha,
-      excludedIds: latestResults
-          ?.map((v: VespaSearchResult) => (v.fields as any).docId)
-          ?.filter((v) => !!v),
-    })
-
-    }
+        let results
+        if (!agentPrompt) {
+          results = await searchVespa(query, email, null, null, {
+            limit: pageSize,
+            alpha: userAlpha,
+            excludedIds: latestResults
+              ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+              ?.filter((v) => !!v),
+          })
+        } else {
+          results = await searchVespaAgent(
+            query,
+            email,
+            null,
+            null,
+            agentAppEnums,
+            {
+              limit: pageSize,
+              alpha: userAlpha,
+              excludedIds: latestResults
+                ?.map((v: VespaSearchResult) => (v.fields as any).docId)
+                ?.filter((v) => !!v),
+              dataSourceIds: agentSpecificDataSourceIds,
+            },
+          )
+        }
 
         const totalResultsSpan = querySpan?.startSpan("total_results")
         const totalResults = (results?.root?.children || []).concat(
@@ -899,25 +978,31 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const searchSpan = pageSearchSpan?.startSpan(
         "vespa_search_with_excluded_ids",
       )
-      if(!agentPrompt){
-      results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
-        alpha: userAlpha,
-        excludedIds: latestIds,
-        span: searchSpan,
-      })
-    }
-    else{
-    results =  await searchVespaAgent(message, email, null, null, agentApps,{
-      limit: pageSize,
-      offset: pageNumber * pageSize,
-      alpha: userAlpha,
-      excludedIds: latestIds,
-      span: searchSpan,
-    })
-
-    }
+      if (!agentPrompt) {
+        results = await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          offset: pageNumber * pageSize,
+          alpha: userAlpha,
+          excludedIds: latestIds,
+          span: searchSpan,
+        })
+      } else {
+        results = await searchVespaAgent(
+          message,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha: userAlpha,
+            excludedIds: latestIds,
+            span: searchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
       searchSpan?.setAttribute(
         "result_count",
         results?.root?.children?.length || 0,
@@ -939,23 +1024,29 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
     } else {
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
-      if(!agentPrompt){
-      results = await searchVespa(message, email, null, null, {
-        limit: pageSize,
-        offset: pageNumber * pageSize,
-        alpha: userAlpha,
-        span: searchSpan,
-      })
-    }
-    else{
-    results = await searchVespaAgent(message, email, null, null, agentApps,{
-      limit: pageSize,
-      offset: pageNumber * pageSize,
-      alpha: userAlpha,
-      span: searchSpan,
-    })
-
-    }
+      if (!agentPrompt) {
+        results = await searchVespa(message, email, null, null, {
+          limit: pageSize,
+          offset: pageNumber * pageSize,
+          alpha: userAlpha,
+          span: searchSpan,
+        })
+      } else {
+        results = await searchVespaAgent(
+          message,
+          email,
+          null,
+          null,
+          agentAppEnums,
+          {
+            limit: pageSize,
+            offset: pageNumber * pageSize,
+            alpha: userAlpha,
+            span: searchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
+      }
 
       searchSpan?.setAttribute(
         "result_count",
@@ -1362,35 +1453,83 @@ async function* generatePointQueryTimeExpansion(
   rootSpan?.setAttribute("maxSummaryCount", maxSummaryCount || "none")
   rootSpan?.setAttribute("direction", classification.direction || "unknown")
 
-  let agentApps:any=[]
-  let agentPromptData: { appIntegrations?: string[] } = {};
+  let agentAppEnums: Apps[] = []
+  let agentSpecificDataSourceIds: string[] = []
+  if (agentPrompt) {
+    let agentPromptData: { appIntegrations?: string[] } = {}
     try {
-      agentPromptData = JSON.parse(agentPrompt!);
+      agentPromptData = JSON.parse(agentPrompt)
     } catch (error) {
-      Logger.warn("Failed to parse agentPrompt JSON");
+      Logger.warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
     }
 
-    // Convert appIntegrations to Apps enum values
-   agentApps = agentPromptData.appIntegrations?.map((integration: string): Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack | null => {
-      switch(integration.toLowerCase()) {
-        case 'googledrive':
-          return Apps.GoogleDrive;
-        case 'transcripts':
-          return Apps.Transcript;
-        case 'googlesheets':
-          return Apps.GoogleDrive;
-        case 'gmail':
-          return Apps.Gmail;
-        case 'googlecalendar':
-          return Apps.GoogleCalendar;
-        case 'slack':
-          return Apps.Slack;
-        default:
-          return null;
+    if (
+      agentPromptData.appIntegrations &&
+      Array.isArray(agentPromptData.appIntegrations)
+    ) {
+      for (const integration of agentPromptData.appIntegrations) {
+        if (typeof integration === "string") {
+          const lowerIntegration = integration.toLowerCase()
+          if (
+            lowerIntegration.startsWith("ds-") ||
+            lowerIntegration.startsWith("ds_")
+          ) {
+            agentSpecificDataSourceIds.push(integration)
+            if (!agentAppEnums.includes(Apps.DataSource)) {
+              agentAppEnums.push(Apps.DataSource)
+            }
+          } else {
+            switch (lowerIntegration) {
+              case Apps.GoogleDrive.toLowerCase():
+              case "googledrive":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.DataSource.toLowerCase():
+                if (!agentAppEnums.includes(Apps.DataSource))
+                  agentAppEnums.push(Apps.DataSource)
+                break
+              case "googlesheets":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.Gmail.toLowerCase():
+              case "gmail":
+                if (!agentAppEnums.includes(Apps.Gmail))
+                  agentAppEnums.push(Apps.Gmail)
+                break
+              case Apps.GoogleCalendar.toLowerCase():
+              case "googlecalendar":
+                if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                  agentAppEnums.push(Apps.GoogleCalendar)
+                break
+              case Apps.Slack.toLowerCase():
+              case "slack":
+                if (!agentAppEnums.includes(Apps.Slack))
+                  agentAppEnums.push(Apps.Slack)
+                break
+              default:
+                Logger.warn(
+                  `Unknown integration type in agent prompt: ${integration}`,
+                )
+                break
+            }
+          }
+        } else {
+          Logger.warn(
+            `Invalid integration item in agent prompt (not a string): ${integration}`,
+          )
+        }
       }
-    }).filter((app): app is Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack => app !== null);
+      agentAppEnums = [...new Set(agentAppEnums)]
+    } else {
+      Logger.warn(
+        "agentPromptData.appIntegrations is not an array or is missing",
+        { agentPromptData },
+      )
+    }
+  }
 
-  
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
   const direction = classification.direction as string
 
@@ -1470,12 +1609,12 @@ async function* generatePointQueryTimeExpansion(
           full: false,
           nodes: 0,
           results: 0,
-          resultsFull: 0
+          resultsFull: 0,
         },
-        children: []
+        children: [],
       },
-      trace: undefined
-    };
+      trace: undefined,
+    }
     let eventResults: VespaSearchResponse = {
       root: {
         id: "",
@@ -1486,14 +1625,14 @@ async function* generatePointQueryTimeExpansion(
           full: false,
           nodes: 0,
           results: 0,
-          resultsFull: 0
+          resultsFull: 0,
         },
-        children: []
+        children: [],
       },
-      trace: undefined
-    };
-    if(!agentPrompt){
-      [results, eventResults] = await Promise.all([
+      trace: undefined,
+    }
+    if (!agentPrompt) {
+      ;[results, eventResults] = await Promise.all([
         searchVespa(message, email, Apps.GoogleCalendar, null, {
           limit: pageSize,
           alpha: userAlpha,
@@ -1510,28 +1649,40 @@ async function* generatePointQueryTimeExpansion(
       ])
     }
 
-    // Handle agent prompt if present
     if (agentPrompt) {
-      if (agentApps) {
+      if (agentAppEnums.length > 0 || agentSpecificDataSourceIds.length > 0) {
         const [agentResults, agentEventResults] = await Promise.all([
-          searchVespaAgent(message, email, Apps.GoogleCalendar, null,agentApps, {
-          limit: pageSize,
-          alpha: userAlpha,
-          timestampRange: { from, to },
-          span: calenderSearchSpan,
-        }),
-        searchVespaAgent(message, email, null, null,agentApps,{
-          limit: pageSize,
-          alpha: userAlpha,
-          timestampRange: { to, from },
-          notInMailLabels: ["CATEGORY_PROMOTIONS"],
-          span: emailSearchSpan,
-        }),
-        ]);
-        
-        // Merge results with agent results
-        results.root.children = [...(results.root.children || []), ...(agentResults.root.children || [])];
-        eventResults.root.children = [...(eventResults.root.children || []), ...(agentEventResults.root.children || [])];
+          searchVespaAgent(
+            message,
+            email,
+            Apps.GoogleCalendar,
+            null,
+            agentAppEnums,
+            {
+              limit: pageSize,
+              alpha: userAlpha,
+              timestampRange: { from, to },
+              span: calenderSearchSpan,
+              dataSourceIds: agentSpecificDataSourceIds,
+            },
+          ),
+          searchVespaAgent(message, email, null, null, agentAppEnums, {
+            limit: pageSize,
+            alpha: userAlpha,
+            timestampRange: { to, from },
+            notInMailLabels: ["CATEGORY_PROMOTIONS"],
+            span: emailSearchSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
+          }),
+        ])
+        results.root.children = [
+          ...(results.root.children || []),
+          ...(agentResults.root.children || []),
+        ]
+        eventResults.root.children = [
+          ...(eventResults.root.children || []),
+          ...(agentEventResults.root.children || []),
+        ]
       }
     }
 
@@ -1622,9 +1773,9 @@ async function* generatePointQueryTimeExpansion(
     )
     contextSpan?.end()
 
-  // Stream LLM response
-  const ragSpan = iterationSpan?.startSpan("temporal_prompt_stream") // Corrected span name for clarity
-  const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
+    // Stream LLM response
+    const ragSpan = iterationSpan?.startSpan("temporal_prompt_stream") // Corrected span name for clarity
+    const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
@@ -1775,34 +1926,83 @@ async function* generateMetadataQueryAnswer(
   const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
-    let agentApps:any=[]
-    let agentPromptData: { appIntegrations?: string[] } = {};
-      try {
-        agentPromptData = JSON.parse(agentPrompt!);
-      } catch (error) {
-        Logger.warn("Failed to parse agentPrompt JSON");
-      }
-  
-      // Convert appIntegrations to Apps enum values
-     agentApps = agentPromptData.appIntegrations?.map((integration: string): Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack | null => {
-        switch(integration.toLowerCase()) {
-          case 'googledrive':
-            return Apps.GoogleDrive;
-          case 'transcripts':
-            return Apps.Transcript;
-          case 'googlesheets':
-            return Apps.GoogleDrive;
-          case 'gmail':
-            return Apps.Gmail;
-          case 'googlecalendar':
-            return Apps.GoogleCalendar;
-          case 'slack':
-            return Apps.Slack;
-          default:
-            return null;
+  let agentAppEnums: Apps[] = []
+  let agentSpecificDataSourceIds: string[] = []
+  if (agentPrompt) {
+    let agentPromptData: { appIntegrations?: string[] } = {}
+    try {
+      agentPromptData = JSON.parse(agentPrompt)
+    } catch (error) {
+      Logger.warn("Failed to parse agentPrompt JSON", { error, agentPrompt })
+    }
+
+    if (
+      agentPromptData.appIntegrations &&
+      Array.isArray(agentPromptData.appIntegrations)
+    ) {
+      for (const integration of agentPromptData.appIntegrations) {
+        if (typeof integration === "string") {
+          const lowerIntegration = integration.toLowerCase()
+          if (
+            lowerIntegration.startsWith("ds-") ||
+            lowerIntegration.startsWith("ds_")
+          ) {
+            agentSpecificDataSourceIds.push(integration)
+            if (!agentAppEnums.includes(Apps.DataSource)) {
+              agentAppEnums.push(Apps.DataSource)
+            }
+          } else {
+            switch (lowerIntegration) {
+              case Apps.GoogleDrive.toLowerCase():
+              case "googledrive":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.DataSource.toLowerCase():
+                if (!agentAppEnums.includes(Apps.DataSource))
+                  agentAppEnums.push(Apps.DataSource)
+                break
+              case "googlesheets":
+                if (!agentAppEnums.includes(Apps.GoogleDrive))
+                  agentAppEnums.push(Apps.GoogleDrive)
+                break
+              case Apps.Gmail.toLowerCase():
+              case "gmail":
+                if (!agentAppEnums.includes(Apps.Gmail))
+                  agentAppEnums.push(Apps.Gmail)
+                break
+              case Apps.GoogleCalendar.toLowerCase():
+              case "googlecalendar":
+                if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                  agentAppEnums.push(Apps.GoogleCalendar)
+                break
+              case Apps.Slack.toLowerCase():
+              case "slack":
+                if (!agentAppEnums.includes(Apps.Slack))
+                  agentAppEnums.push(Apps.Slack)
+                break
+              default:
+                Logger.warn(
+                  `Unknown integration type in agent prompt: ${integration}`,
+                )
+                break
+            }
+          }
+        } else {
+          Logger.warn(
+            `Invalid integration item in agent prompt (not a string): ${integration}`,
+          )
         }
-      }).filter((app): app is Apps.GoogleDrive | Apps.Transcript | Apps.Gmail | Apps.GoogleCalendar | Apps.Slack => app !== null);
-  
+      }
+      agentAppEnums = [...new Set(agentAppEnums)]
+    } else {
+      Logger.warn(
+        "agentPromptData.appIntegrations is not an array or is missing",
+        { agentPromptData },
+      )
+    }
+  }
+
   // Process timestamp
   const from = startTime ? new Date(startTime).getTime() : null
   const to = endTime ? new Date(endTime).getTime() : null
@@ -1867,8 +2067,8 @@ async function* generateMetadataQueryAnswer(
       Logger.info(
         `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
-      
-      let searchResults;
+
+      let searchResults
       if (!agentPrompt) {
         searchResults = await searchVespa(
           classification.filter_query,
@@ -1880,23 +2080,24 @@ async function* generateMetadataQueryAnswer(
             offset: pageSize * iteration,
             span: pageSpan,
           },
-        );
+        )
       } else {
         searchResults = await searchVespaAgent(
           classification.filter_query,
           email,
           app as Apps,
           entity as any,
-          agentApps,
+          agentAppEnums,
           {
             ...searchOps,
             offset: pageSize * iteration,
             span: pageSpan,
+            dataSourceIds: agentSpecificDataSourceIds,
           },
-        );
+        )
       }
-      
-      items = searchResults.root.children || [];
+
+      items = searchResults.root.children || []
 
       Logger.info(
         `iteration-${iteration} retrieved documents length - ${items.length}`,
@@ -1967,20 +2168,19 @@ async function* generateMetadataQueryAnswer(
     span?.setAttribute("modelId", defaultBestModel)
     Logger.info(`Search Type : ${QueryType.RetrieveUnspecificMetadata}`)
 
-    let searchResults;
-   
-      searchResults = await getItems({
-        email,
-        schema,
-        app,
-        entity,
-        timestampRange,
-        limit: userSpecifiedCountLimit,
-        asc: sortDirection === "asc",
-      });
-      
+    let searchResults
 
-    items = searchResults.root.children || [];
+    searchResults = await getItems({
+      email,
+      schema,
+      app,
+      entity,
+      timestampRange,
+      limit: userSpecifiedCountLimit,
+      asc: sortDirection === "asc",
+    })
+
+    items = searchResults.root.children || []
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
@@ -2048,20 +2248,34 @@ async function* generateMetadataQueryAnswer(
       const iterationSpan = span?.startSpan(`metadata_iteration_${iteration}`)
       Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
 
-      let searchResults;
+      let searchResults
       if (!agentPrompt) {
-        searchResults = await searchVespa(query, email, app as Apps, entity as any, {
-          ...searchOptions,
-          offset: pageSize * iteration,
-        });
+        searchResults = await searchVespa(
+          query,
+          email,
+          app as Apps,
+          entity as any,
+          {
+            ...searchOptions,
+            offset: pageSize * iteration,
+          },
+        )
       } else {
-        searchResults = await searchVespaAgent(query, email, app as Apps, entity as any,agentApps, {
-          ...searchOptions,
-          offset: pageSize * iteration,
-        });
+        searchResults = await searchVespaAgent(
+          query,
+          email,
+          app as Apps,
+          entity as any,
+          agentAppEnums,
+          {
+            ...searchOptions,
+            offset: pageSize * iteration,
+            dataSourceIds: agentSpecificDataSourceIds,
+          },
+        )
       }
 
-      items = searchResults.root.children || [];
+      items = searchResults.root.children || []
 
       Logger.info(`Rank Profile : ${rankProfile}`)
 
@@ -2372,7 +2586,6 @@ const isMessageWithContext = (message: string) => {
 export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
-  console.log("AgentMessageApi called")
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApi")
 
@@ -2396,8 +2609,7 @@ export const AgentMessageApi = async (c: Context) => {
       isReasoningEnabled,
       agentId,
     }: MessageReqType = body
-    // const agentPrompt = agentId && isCuid(agentId) ? agentId : ""; 
-    console.log("AgentMessageApi body:", agentId)
+    // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId, // This workspaceId is the externalId from JWT
@@ -2405,18 +2617,16 @@ export const AgentMessageApi = async (c: Context) => {
     )
     const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
 
-    let agentPromptForLLM: string | undefined = undefined;
-    let agentForDb: SelectAgent | null = null;
+    let agentPromptForLLM: string | undefined = undefined
+    let agentForDb: SelectAgent | null = null
     if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query
-      agentForDb = await getAgentByExternalId(db, agentId, workspace.id);
+      agentForDb = await getAgentByExternalId(db, agentId, workspace.id)
       if (agentForDb) {
-        agentPromptForLLM = JSON.stringify(agentForDb);
+        agentPromptForLLM = JSON.stringify(agentForDb)
       }
     }
-    const agentIdToStore = agentForDb ? agentForDb.externalId : null;
-    console.log("AgentMessageApi agentForDb (stringified for LLM):", agentPromptForLLM);
-    
+    const agentIdToStore = agentForDb ? agentForDb.externalId : null
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {
       throw new HTTPException(400, {
@@ -2578,7 +2788,6 @@ export const AgentMessageApi = async (c: Context) => {
               fileIds,
               understandSpan,
               userRequestsReasoning,
-              
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3301,10 +3510,10 @@ export const MessageApi = async (c: Context) => {
       isReasoningEnabled,
       agentId,
     }: MessageReqType = body
-    const agentPrompt = agentId && isCuid(agentId) ? agentId : ""; 
+    const agentPrompt = agentId && isCuid(agentId) ? agentId : ""
 
-    if(agentPrompt) {
-      return AgentMessageApi(c);
+    if (agentPrompt) {
+      return AgentMessageApi(c)
     }
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {

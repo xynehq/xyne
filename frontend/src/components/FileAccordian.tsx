@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react"
-import { FileText, Trash2, ChevronLeft, ChevronRight as ChevronRightArrow } from "lucide-react"
+import {
+  FileText,
+  ChevronLeft,
+  ChevronRight as ChevronRightArrow,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {api} from "@/api"
+import { api } from "@/api"
 interface FileItem {
-  docId?: string      // Add ID field to FileItem interface
+  docId?: string
   title: string
   createdAt: number
   fileSize?: number
@@ -27,18 +31,16 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
   const fetchFiles = async () => {
     try {
       setLoading(true)
-      const response= await api.getAllFiles.$POST({
-        body: JSON.stringify({})
+      const response = await api.getAllFiles.$POST({
+        body: JSON.stringify({}),
       })
-      
+
       if (!response.ok) {
-        throw new Error('Failed to fetch files')
+        throw new Error("Failed to fetch files")
       }
-      
+
       const data = await response.json()
-      console.log("Fetched files:", data)
-      
-      // Extract documents array from the response
+
       const documents = data?.documents || []
       setFiles(documents)
       setError(null)
@@ -51,21 +53,21 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
   }
 
   const formatFileSize = (bytes?: number): string => {
-    if (!bytes) return 'Unknown size'
-    if (bytes === 0) return '0 Bytes'
+    if (!bytes) return "Unknown size"
+    if (bytes === 0) return "0 Bytes"
     const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const sizes = ["Bytes", "KB", "MB", "GB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     })
   }
 
@@ -74,41 +76,6 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
   const startIndex = (currentPage - 1) * filesPerPage
   const endIndex = Math.min(startIndex + filesPerPage, files.length)
   const currentFiles = files.slice(startIndex, endIndex)
-
-  const handleDeleteFile = async (title: string, createdAt: number, docId?: string) => {
-    if (!docId) {
-      setError("Cannot delete file: missing document ID");
-      setTimeout(() => setError(null), 3000);
-      return;
-    }
-    
-    try {
-      const response = await api.deleteDocument.$POST({
-        json:{docId,name:"nasim"}
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete file');
-      }
-      
-      // Update local state after successful deletion
-      setFiles((prevFiles) => {
-        const updatedFiles = prevFiles.filter(file => file.docId !== docId);
-        
-        const newTotalPages = Math.ceil(updatedFiles.length / filesPerPage);
-        if (currentPage > newTotalPages && newTotalPages > 0) {
-          setCurrentPage(newTotalPages);
-        } else if (updatedFiles.length === 0) {
-          setCurrentPage(1);
-        }
-        return updatedFiles;
-      });
-    } catch (err) {
-      console.error("Error deleting file:", err);
-      setError("Failed to delete file. Please try again.");
-      setTimeout(() => setError(null), 3000);
-    }
-  }
 
   const handleNextPage = () => {
     if (currentPage < totalPages) {
@@ -130,7 +97,7 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
         <span className="text-sm text-slate-600 mr-2">
           Page {currentPage} of {totalPages}
         </span>
-        
+
         {currentPage > 1 && (
           <Button
             variant="outline"
@@ -142,7 +109,7 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
             <span>Previous</span>
           </Button>
         )}
-        
+
         {currentPage < totalPages && (
           <Button
             variant="outline"
@@ -180,9 +147,11 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
         <div className="px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <FileText className="h-5 w-5 text-slate-600" />
-            <span className="text-lg font-medium">Uploaded Files ({files.length})</span>
+            <span className="text-lg font-medium">
+              Uploaded Files ({files.length})
+            </span>
           </div>
-          
+
           {files.length > 0 && (
             <div className="flex items-center gap-4">
               <span className="text-sm text-slate-600">
@@ -192,11 +161,13 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
             </div>
           )}
         </div>
-        
+
         <div className="px-6 pb-6">
           {files.length === 0 ? (
             <div className="min-h-[680px] flex items-center justify-center">
-              <div className="text-center text-slate-500">No files uploaded yet</div>
+              <div className="text-center text-slate-500">
+                No files uploaded yet
+              </div>
             </div>
           ) : (
             <div className="min-h-[680px]">
@@ -209,20 +180,15 @@ export default function FileAccordion({ className = "" }: FileAccordionProps) {
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <FileText className="h-5 w-5 text-slate-600 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900 truncate">{file.title}</p>
+                        <p className="text-sm font-medium text-slate-900 truncate">
+                          {file.title}
+                        </p>
                         <p className="text-xs text-slate-500">
-                          {formatFileSize(file.fileSize)} • {formatDate(file.createdAt)}
+                          {formatFileSize(file.fileSize)} •{" "}
+                          {formatDate(file.createdAt)}
                         </p>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteFile(file.title, file.createdAt, file.docId)}
-                      className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex-shrink-0"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 ))}
               </div>

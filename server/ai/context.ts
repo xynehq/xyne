@@ -15,8 +15,9 @@ import {
   type VespaUser,
   type VespaChatMessageSearch,
   type ScoredChunk,
-  transcriptSchema,
-  type VespaTranscriptSearch,
+  // Corrected import name for datasourceFileSchema
+  datasourceFileSchema,
+  type VespaDataSourceFileSearch,
 } from "@/search/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
@@ -358,28 +359,24 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")
 \n${pc.green("vespa relevance score")}: ${relevance}`
 }
 
-const constructTranscriptContext = (
-  fields: VespaTranscriptSearch,
+const constructDataSourceFileContext = (
+  fields: VespaDataSourceFileSearch,
   relevance: number,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
-  if (!maxSummaryChunks && !isSelectedFiles) {
-    maxSummaryChunks = fields.chunks_summary?.length
-  }
-
   let chunks: ScoredChunk[] = []
-  if (fields.matchfeatures) {
-    chunks = getSortedScoredChunks(
-      fields.matchfeatures,
-      fields.chunks_summary as string[],
+  if (fields.matchfeatures && fields.chunks_summary) {
+    const summaryStrings = fields.chunks_summary.map((c) =>
+      typeof c === "string" ? c : c.chunk,
     )
-  } else {
+    chunks = getSortedScoredChunks(fields.matchfeatures, summaryStrings)
+  } else if (fields.chunks_summary) {
     chunks =
       fields.chunks_summary?.map((chunk, idx) => ({
         chunk: typeof chunk == "string" ? chunk : chunk.chunk,
         index: idx,
-        score: 0,
+        score: typeof chunk === "string" ? 0 : chunk.score,
       })) || []
   }
 
@@ -391,7 +388,10 @@ const constructTranscriptContext = (
       .map((v) => v.chunk)
       .join("\n")
   } else if (isSelectedFiles) {
-    content = chunks.map((v) => v.chunk).join("\n")
+    content = chunks
+      .sort((a, b) => a.index - b.index)
+      .map((v) => v.chunk)
+      .join("\n")
   } else {
     content = chunks
       .map((v) => v.chunk)
@@ -399,15 +399,13 @@ const constructTranscriptContext = (
       .join("\n")
   }
 
-  return `App: ${fields.app}
-Title: ${fields.title}
-Description: ${fields.description}
-File Name: ${fields.fileName}
-File Size: ${fields.fileSize} bytes
-Duration: ${fields.duration} seconds
-Mime Type: ${fields.mimeType}
-Uploaded By: ${fields.uploadedBy}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
+  return `Title: ${fields.title || fields.fileName || "N/A"}
+App: ${fields.app || "N/A"}
+${fields.dataSourceName ? `Data Source Name: ${fields.dataSourceName}` : ""}
+Mime Type: ${fields.mimeType || "N/A"}
+${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
+${content ? `Content: ${content}` : ""}
 \nvespa relevance score: ${relevance}\n`
 }
 
@@ -505,9 +503,9 @@ export const answerContextMap = (
       searchResult.fields,
       searchResult.relevance,
     )
-  } else if (searchResult.fields.sddocname === transcriptSchema) {
-    return constructTranscriptContext(
-      searchResult.fields,
+  } else if (searchResult.fields.sddocname === datasourceFileSchema) {
+    return constructDataSourceFileContext(
+      searchResult.fields as VespaDataSourceFileSearch,
       searchResult.relevance,
       maxSummaryChunks,
       isSelectedFiles,
@@ -595,12 +593,12 @@ export const userContext = ({
   const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
   const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
   return `My Name is ${user.name}
-Email: ${user.email}
-Company: ${workspace.name}
-Company domain: ${workspace.domain}
-Current Time: ${currentTime}
-Today is: ${currentDate}
-Timezone: IST`
+    Email: ${user.email}
+    Company: ${workspace.name}
+    Company domain: ${workspace.domain}
+    Current Time: ${currentTime}
+    Today is: ${currentDate}
+    Timezone: IST`
 }
 
 /**

@@ -15,14 +15,15 @@ export const Sidebar = ({
   className = "",
   photoLink = "",
   role = "",
+  isAgentMode = false,
 }: {
   className?: string
   photoLink?: string
   role?: string
+  isAgentMode?: boolean
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
-  const AgentMode = import.meta.env.VITE_AgentMode === "true"
   return (
     <TooltipProvider>
       <div
@@ -70,20 +71,19 @@ export const Sidebar = ({
           </div>
 
           {/* TODO: Add appropriate Link destination and Tooltip info for the Bot icon */}
-          {AgentMode && (
+          {isAgentMode && (
             <Link
               to="/agent"
               className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px] ${
-                location.pathname.includes("/agent")
-                  ? "bg-[#D8DFE680]"
-                  : ""
+                location.pathname.includes("/agent") ? "bg-[#D8DFE680]" : ""
               }`}
             >
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Bot stroke="#384049" size={18} />
                 </TooltipTrigger>
-                <Tip side="right" info="agent" /> {/* Placeholder: Update this tooltip info */}
+                <Tip side="right" info="agent" />{" "}
+                {/* Placeholder: Update this tooltip info */}
               </Tooltip>
             </Link>
           )}

@@ -48,7 +48,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
 
-export const THINKING_PLACEHOLDER = "Thinking";
+export const THINKING_PLACEHOLDER = "Thinking"
 
 type CurrentResp = {
   resp: string
@@ -74,6 +74,7 @@ type CurrentResp = {
 interface ChatPageProps {
   user: PublicUser
   workspace: PublicWorkspace
+  agentWhiteList: boolean
 }
 
 // Define the structure for parsed message parts, including app, entity, and pillType for pills
@@ -194,7 +195,11 @@ const jsonToHtmlMessage = (jsonString: string): string => {
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"
 
-export const ChatPage = ({ user, workspace }: ChatPageProps) => {
+export const ChatPage = ({
+  user,
+  workspace,
+  agentWhiteList,
+}: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
@@ -454,7 +459,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         replace: true,
       })
     }
-  }, [chatParams.q, chatParams.reasoning, chatParams.sources, chatParams.agentId, router])
+  }, [
+    chatParams.q,
+    chatParams.reasoning,
+    chatParams.sources,
+    chatParams.agentId,
+    router,
+  ])
 
   const handleSend = async (
     messageToSend: string,
@@ -520,10 +531,10 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
-    const agentIdToUse = agentIdFromChatBox || chatParams.agentId;
+    const agentIdToUse = agentIdFromChatBox || chatParams.agentId
     console.log("Using agentId:", agentIdToUse)
     if (agentIdToUse) {
-      url.searchParams.append("agentId", agentIdToUse);
+      url.searchParams.append("agentId", agentIdToUse)
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
@@ -1109,7 +1120,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   if (data?.error) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
-        <Sidebar />
+        <Sidebar isAgentMode={agentWhiteList} />
         <div className="ml-[120px]">Error: Could not get data</div>
       </div>
     )
@@ -1164,7 +1175,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   return (
     <div className="h-full w-full flex flex-row bg-white">
-      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <Sidebar
+        photoLink={user?.photoLink ?? ""}
+        role={user?.role}
+        isAgentMode={agentWhiteList}
+      />
       <div className="h-full w-full flex flex-col relative">
         <div
           className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
@@ -1220,7 +1235,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 return (
                   <Fragment key={message.externalId ?? index}>
                     <ChatMessage
-                      key={index}
+                      key={
+                        message.externalId
+                          ? `${message.externalId}-msg`
+                          : `msg-${index}`
+                      }
                       message={message.message}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
@@ -1252,6 +1271,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     />
                     {userMessageWithErr && (
                       <ChatMessage
+                        key={
+                          message.externalId
+                            ? `${message.externalId}-err`
+                            : `err-${index}`
+                        }
                         message={message.errorMessage}
                         thinking={message.thinking}
                         isUser={false}
@@ -1598,7 +1622,7 @@ export const ChatMessage = ({
                   />
                 </div>
               )}
-              {((message === "") && (!responseDone || isRetrying)) ? (
+              {message === "" && (!responseDone || isRetrying) ? (
                 <div className="flex-grow">
                   {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
@@ -1780,8 +1804,15 @@ export const Route = createFileRoute("/_authenticated/chat")({
   },
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <ChatPage user={user} workspace={workspace} />
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <ChatPage
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
   },
   errorComponent: errorComponent,
 })

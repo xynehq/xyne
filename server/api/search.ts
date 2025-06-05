@@ -14,9 +14,6 @@ import {
   UpdateDocument,
   updateUserQueryHistory,
   SearchModes,
-  fetchAllDocumentsFromSchema,
-  DeleteDocument,
-  ifDocumentsExistInTranscript,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -386,83 +383,4 @@ export const AnswerApi = async (c: Context) => {
       Logger.error("SSE stream aborted")
     })
   })
-}
-
-
-export const getAllDocs = async (c: Context)=>{
-  try{
-    const { sub } = c.get(JwtPayloadKey)
-    const email = sub
-    let res= []
-    try{
-      res= await fetchAllDocumentsFromSchema("transcript",3,email)
-    }
-    catch{
-      Logger.info("failed to fetch from transcript schema")
-    }
-    return c.json({
-      message: "Documents fetched successfully",
-      documents: res,
-    }, 200)
-    }
-  catch(error){
-    return c.json({
-      message: "Error fetching documents",
-      error: getErrorMessage(error),
-    }, 500)
-    }
-}
-
-export const deleteDocument = async (c: Context) => {
-  try {
-    const {sub} = c.get(JwtPayloadKey)
-    const email = sub
-    let bodyRaw;
-    try {
-      bodyRaw = await c.req.json();
-      // Logger.info(`Raw request body: ${JSON.stringify(bodyRaw)}`);
-    } catch (e) {
-      Logger.info(`Failed to parse raw json: ${getErrorMessage(e)}`);
-    }
-    
-    let docId;
-    docId = bodyRaw?.docId;
-    
-    if (!docId) {
-      Logger.error('Document ID is missing from request')
-      return c.json({
-        message: "Document ID is required",
-      }, 400)
-    }
-    
-
-    const existanceMap = await ifDocumentsExistInTranscript(docId, email)
-    console.log("Existance Map:", existanceMap)
-    if (existanceMap[docId]?.exists) {
-      try {
-        const res = await DeleteDocument(docId, "transcript")
-        return c.json({
-          message: "Document deleted successfully",
-          docId
-        }, 200)
-      } catch (error) {
-        Logger.error(`Error while deleting document: ${getErrorMessage(error)}`)
-        return c.json({
-          message: "Error deleting document",
-          error: getErrorMessage(error),
-        }, 500)
-      }
-    } else {
-      Logger.info(`Document does not exist or user does not have permission: ${docId}`)
-      return c.json({
-        message: "Document does not exist or you do not have permission to delete it",
-      }, 404)
-    }
-  } catch (error) {
-    Logger.error(`Unhandled error in deleteDocument: ${getErrorMessage(error)}`)
-    return c.json({
-      message: "Error processing delete document request",
-      error: getErrorMessage(error),
-    }, 500)
-  }
 }

@@ -30,8 +30,6 @@ import {
   type VespaAutocompleteChatUser,
   chatUserSchema,
   type VespaChatMessageSearch,
-  type VespaTranscriptSearch,
-  transcriptSchema,
   chatMessageSchema,
   ChatMessageResponseSchema,
   DriveEntity,
@@ -41,7 +39,6 @@ import {
   CalendarEntity,
   Apps,
   type VespaSchema,
-  TranscriptResponseSchema,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -124,7 +121,7 @@ export const VespaSearchResponseToSearchResult = (
   const searchHits = children.filter(
     (child: any) => !child.id?.startsWith("trace:"),
   )
-  
+
   return {
     count: root.fields?.totalCount ?? 0,
     results: searchHits
@@ -233,20 +230,7 @@ export const VespaSearchResponseToSearchResult = (
               fields.teamId = ""
             }
             return ChatMessageResponseSchema.parse(fields)
-          }
-          else if (
-            (child.fields as VespaTranscriptSearch).sddocname ===
-            transcriptSchema
-          ) {
-            const fields = child.fields as VespaTranscriptSearch & {
-              type?: string
-            }
-            fields.type = transcriptSchema
-            fields.relevance = child.relevance
-            
-            return TranscriptResponseSchema.parse(fields)
-          }
-          else {
+          } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
             )

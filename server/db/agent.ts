@@ -7,7 +7,7 @@ import {
   type SelectAgent,
   type SelectPublicAgent,
 } from "./schema"
-export type { SelectAgent }; // Re-export SelectAgent
+export type { SelectAgent } // Re-export SelectAgent
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"
@@ -27,7 +27,10 @@ export const insertAgent = async (
     workspaceId,
   }
   const validatedAgentData = insertAgentSchema.parse(agentWithIds)
-  const agentArr = await trx.insert(agents).values(validatedAgentData).returning()
+  const agentArr = await trx
+    .insert(agents)
+    .values(validatedAgentData)
+    .returning()
   if (!agentArr || !agentArr.length) {
     throw new Error('Error in insert of agent "returning"')
   }
@@ -82,7 +85,9 @@ export const updateAgentByExternalId = async (
   trx: TxnOrClient,
   agentExternalId: string,
   workspaceId: number,
-  agentData: Partial<Omit<InsertAgent, "externalId" | "userId" | "workspaceId">>,
+  agentData: Partial<
+    Omit<InsertAgent, "externalId" | "userId" | "workspaceId">
+  >,
 ): Promise<SelectAgent | null> => {
   const updateData = { ...agentData, updatedAt: new Date() }
   // Validate partial update data - Drizzle Zod doesn't directly support partial insert schemas for updates

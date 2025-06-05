@@ -80,45 +80,59 @@ import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
-import { agentAnalyzeInitialResultsOrRewriteSystemPrompt, agentAnalyzeInitialResultsOrRewriteV2SystemPrompt, agentBaselinePrompt, agentBaselinePromptJson, agentBaselineReasoningPromptJson, agentEmailPromptJson, agentGenerateMarkdownTableSystemPrompt, agentOptimizedPrompt, agentQueryRewritePromptJson, agentSearchQueryPrompt, agentTemporalDirectionJsonPrompt } from "../agentPrompts"
+import {
+  agentAnalyzeInitialResultsOrRewriteSystemPrompt,
+  agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
+  agentBaselinePrompt,
+  agentBaselinePromptJson,
+  agentBaselineReasoningPromptJson,
+  agentEmailPromptJson,
+  agentGenerateMarkdownTableSystemPrompt,
+  agentOptimizedPrompt,
+  agentQueryRewritePromptJson,
+  agentSearchQueryPrompt,
+  agentTemporalDirectionJsonPrompt,
+} from "../agentPrompts"
 import { is } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.AI)
 
-// Interface for structured agent prompt data
 interface AgentPromptData {
-  name: string;
-  description: string;
-  prompt: string;
-  sources: any[]; // Corresponds to appIntegrations from the new structure or sources from old
+  name: string
+  description: string
+  prompt: string
+  sources: any[]
 }
 
-// Minimal interface for type-checking parsed JSON during agent prompt parsing
 interface ParsedPromptCandidate {
-  name?: unknown;
-  description?: unknown;
-  prompt?: unknown;
-  appIntegrations?: unknown; // For new structure
-  sources?: unknown;         // For old structure
-  // id is no longer checked
+  name?: unknown
+  description?: unknown
+  prompt?: unknown
+  appIntegrations?: unknown
+  sources?: unknown
 }
 
-// Helper function to parse agentPrompt string into AgentPromptData object
-function parseAgentPrompt(agentPromptString: string | undefined): AgentPromptData {
-  const defaults: AgentPromptData = { name: "", description: "", prompt: "", sources: [] };
+function parseAgentPrompt(
+  agentPromptString: string | undefined,
+): AgentPromptData {
+  const defaults: AgentPromptData = {
+    name: "",
+    description: "",
+    prompt: "",
+    sources: [],
+  }
 
   if (!agentPromptString) {
-    return defaults;
+    return defaults
   }
 
   try {
-    const parsed = JSON.parse(agentPromptString) as ParsedPromptCandidate;
+    const parsed = JSON.parse(agentPromptString) as ParsedPromptCandidate
 
-    // Check for new AgentProfile structure (heuristic: has 'name', 'description', 'prompt', 'appIntegrations')
     if (
-      typeof parsed.name === 'string' &&
-      typeof parsed.description === 'string' &&
-      typeof parsed.prompt === 'string' &&
+      typeof parsed.name === "string" &&
+      typeof parsed.description === "string" &&
+      typeof parsed.prompt === "string" &&
       Array.isArray(parsed.appIntegrations)
     ) {
       return {
@@ -126,44 +140,38 @@ function parseAgentPrompt(agentPromptString: string | undefined): AgentPromptDat
         description: parsed.description,
         prompt: parsed.prompt,
         sources: parsed.appIntegrations as any[],
-      };
+      }
     }
 
-    // Check for old simple structure { prompt: string, sources: array }
-    if (typeof parsed.prompt === 'string' && Array.isArray(parsed.sources)) {
+    if (typeof parsed.prompt === "string" && Array.isArray(parsed.sources)) {
       return {
-        ...defaults, // Use defaults for name and description
+        ...defaults,
         prompt: parsed.prompt,
         sources: parsed.sources,
-      };
+      }
     }
 
-    // Parsed as JSON, but not a recognized structure. Treat original string as literal prompt.
-    Logger.warn(`Agent prompt string is valid JSON but did not match expected structures. Treating as literal prompt: '${agentPromptString}'`);
-    return { ...defaults, prompt: agentPromptString }; // sources will be default empty array
-
+    Logger.warn(
+      `Agent prompt string is valid JSON but did not match expected structures. Treating as literal prompt: '${agentPromptString}'`,
+    )
+    return { ...defaults, prompt: agentPromptString }
   } catch (error) {
-    // Not valid JSON (or empty string which also errors). Treat as literal prompt.
-    Logger.info(`Agent prompt string is not valid JSON or is empty. Treating as literal prompt: '${agentPromptString}'`);
-    return { ...defaults, prompt: agentPromptString }; // sources will be default empty array
+    Logger.info(
+      `Agent prompt string is not valid JSON or is empty. Treating as literal prompt: '${agentPromptString}'`,
+    )
+    return { ...defaults, prompt: agentPromptString }
   }
 }
 
-// Helper function to check if the agent prompt string indicates empty prompt and sources
 function isAgentPromptEmpty(agentPromptString: string | undefined): boolean {
-  const { prompt, sources } = parseAgentPrompt(agentPromptString);
-  // An agent prompt is considered "empty" for the purpose of system prompt selection
-  // if its core 'prompt' string is empty and it has no 'sources'.
-  // The 'name' and 'description' fields don't make it "non-empty" in this context.
-  return prompt === "" && Array.isArray(sources) && sources.length === 0;
+  const { prompt, sources } = parseAgentPrompt(agentPromptString)
+  return prompt === "" && Array.isArray(sources) && sources.length === 0
 }
 
 const askQuestionSystemPrompt =
   "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."
 
 type TokenCount = number
-// this will be a few tokens less than the output of bedrock
-// the gap should be around 50 tokens
 export const askQuestionInputTokenCount = (
   query: string,
   context: string,
@@ -254,7 +262,6 @@ const initializeProviders = (): void => {
     )
   }
   providersInitialized = true
-  // THIS IS WHERE :  this is where the creation of the provides goes using api key
 }
 
 const getProviders = (): {
@@ -334,7 +341,6 @@ export const askQuestion = (
   context: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for askQuestion`);
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -357,7 +363,7 @@ export const askQuestion = (
       params,
     )
   } catch (error) {
-    console.error("Error asking question:", error)
+    Logger.error(error, "Error asking question")
     throw error
   }
 }
@@ -367,7 +373,6 @@ export const analyzeQuery = async (
   context: string,
   params: ModelParams,
 ): Promise<[QueryContextRank, number]> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for analyzeQuery`);
   try {
     const systemPrompt = AnalyzeUserQuerySystemPrompt
     if (!params.systemPrompt) {
@@ -402,7 +407,7 @@ export const analyzeQuery = async (
 
     return [QueryContextRank.parse(structuredResponse), cost!]
   } catch (error) {
-    console.error("Error analyzing query:", error)
+    Logger.error(error, "Error analyzing query")
     throw error
   }
 }
@@ -412,7 +417,6 @@ export const analyzeQueryMetadata = async (
   context: string,
   params: ModelParams,
 ): Promise<[QueryContextRank | null, number]> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for analyzeQueryMetadata`);
   try {
     let systemPrompt = metadataAnalysisSystemPrompt
     if (!params.systemPrompt) {
@@ -444,7 +448,7 @@ export const analyzeQueryMetadata = async (
 
     return [QueryContextRank.parse(structuredResponse), cost!]
   } catch (error) {
-    console.error("Error analyzing query:", error)
+    Logger.error(error, "Error analyzing query metadata")
     throw error
   }
 }
@@ -454,14 +458,11 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
   let jsonVal
   try {
     text = text.trim()
-    // edge case where ```json is prepended to the text
     text = text.replace(/^```(json)?\s*/i, "")
     text = text.trim()
-    // edge case "null\n} or ": "null\n}
     if (text.indexOf("{") === -1 && nullCloseBraceRegex.test(text)) {
       text = text.replaceAll(/[\n"}:`]/g, "")
     }
-    // If the trimmed text does not start with '{' but contains jsonKey, wrap it in braces
     if (jsonKey && !text.startsWith("{") && text.includes(jsonKey)) {
       text = `{${text}`
     }
@@ -469,21 +470,17 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     const endBrace = text.lastIndexOf("}")
 
     if (startBrace !== -1 || endBrace !== -1) {
-      // there is no json
       if (startBrace !== -1) {
         if (startBrace !== 0) {
           text = text.substring(startBrace)
         }
       }
       if (endBrace !== -1) {
-        // Only add the closing brace if it's not already there
         if (endBrace !== text.length - 1) {
           text = text.substring(0, endBrace + 1)
         }
       }
     }
-    // we only want to do this if enough text has accumulated
-    // we don't want to do case where just `json` comes and we wrap it as answer
     if (startBrace === -1 && jsonKey && text.trim() !== "json") {
       if (text.trim() === "answer null" && jsonKey) {
         text = `{${jsonKey} null}`
@@ -497,11 +494,7 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
     }
     try {
       jsonVal = parse(text.trim())
-      // If the object is empty but contains content, we explicitly add newline and carriage return characters (\\n).
-      // This is necessary because the parsing library fails to handle multi-line strings properly,
-      // returning an empty object when newlines are present in the content.
       if (Object.keys(jsonVal).length === 0 && text.length > 2) {
-        // Replace newlines with \n in content between quotes
         let withNewLines = text.replace(/: "(.*?)"/gs, (match, content) => {
           const escaped = content.replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           return `: "${escaped}"`
@@ -518,14 +511,6 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         jsonVal = parse(withNewLines.trim())
       }
 
-      /* Edge case: If the last two characters are \\", Json.parse replaces \\ with ". We need to remove the last " from the value.
-          Example:
-          Input text: '{"answer": "Prasad \\""}'
-          After JSON.parse: { answer: 'Prasad "' }  // Note the extra quote at the end
-          After this fix: { answer: 'Prasad' }     // Extra quote removed
-          
-          This happens because: The original string has an escaped quote: \\".JSON.parse converts \\ to \ and " to ", resulting in an extra quote.
-      */
       if (
         jsonKey &&
         text.slice(-2) === `\\"` &&
@@ -539,7 +524,6 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
         )
       }
 
-      // edge case "null\n}
       if (jsonKey) {
         const key = jsonKey.slice(0, -1).replaceAll('"', "")
         if (jsonVal[key].trim() === "null") {
@@ -548,7 +532,6 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       }
       return jsonVal
     } catch {
-      // If first parse failed, continue to code block cleanup
       throw new Error("Initial parse failed")
     }
   } catch (e) {
@@ -584,7 +567,6 @@ export const analyzeQueryForNamesAndEmails = async (
   userQuery: string,
   params: ModelParams,
 ): Promise<{ result: QueryAnalysisResult; cost: number }> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for analyzeQueryForNamesAndEmails`);
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
@@ -622,7 +604,6 @@ export const userChat = (
   context: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for userChat`);
   try {
     if (!params.modelId) {
       params.modelId = defaultBestModel
@@ -640,6 +621,7 @@ export const userChat = (
       params,
     )
   } catch (error) {
+    Logger.error(error, "Error in userChat")
     throw error
   }
 }
@@ -687,7 +669,7 @@ export const generateTitleUsingQuery = async (
     const errMessage = getErrorMessage(error)
     Logger.error(
       error,
-      `Error asking question: ${errMessage} ${(error as Error).stack}`,
+      `Error generating title: ${errMessage} ${(error as Error).stack}`,
     )
     throw error
   }
@@ -701,7 +683,7 @@ export const askQuestionWithCitations = (
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
     params.systemPrompt = chatWithCitationsSystemPrompt(userContext)
-    params.json = true // Ensure that the provider returns JSON
+    params.json = true
     const baseMessage: Message = {
       role: MessageRole.User as const,
       content: [
@@ -720,6 +702,7 @@ ${context}`,
 
     return getProviderByModel(params.modelId).converseStream(messages, params)
   } catch (error) {
+    Logger.error(error, "Error in askQuestionWithCitations")
     throw error
   }
 }
@@ -730,12 +713,12 @@ export const analyzeInitialResultsOrRewrite = (
   userCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for analyzeInitialResultsOrRewrite`);
-  if ( !isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentAnalyzeInitialResultsOrRewriteSystemPrompt")
-    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteSystemPrompt(userCtx, parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteSystemPrompt(
+      userCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = analyzeInitialResultsOrRewriteSystemPrompt(userCtx)
   }
   const baseMessage: Message = {
@@ -763,12 +746,12 @@ export const analyzeInitialResultsOrRewriteV2 = (
   userCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for analyzeInitialResultsOrRewriteV2`);
-  if ( !isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentAnalyzeInitialResultsOrRewriteV2SystemPrompt")
-    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteV2SystemPrompt(userCtx, parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentAnalyzeInitialResultsOrRewriteV2SystemPrompt(
+      userCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = analyzeInitialResultsOrRewriteV2SystemPrompt(userCtx)
   }
   const baseMessage: Message = {
@@ -843,12 +826,12 @@ export const answerOrSearch = (
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
-    console.log(`[PROVIDER_LOG] Calling LLM for answerOrSearch`);
-    if ( !isAgentPromptEmpty(params.agentPrompt)) {
-      console.log("Using agentOptimizedPrompt")
-      params.systemPrompt = agentOptimizedPrompt(userCtx, parseAgentPrompt(params.agentPrompt))
-    }
-    else {
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentOptimizedPrompt(
+        userCtx,
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
       params.systemPrompt = optimizedPrompt(userCtx)
     }
     params.json = true
@@ -868,15 +851,14 @@ export const answerOrSearch = (
 
     return getProviderByModel(params.modelId).converseStream(messages, params)
   } catch (error) {
+    Logger.error(error, "Error in answerOrSearch")
     throw error
   }
 }
 
-// Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
   ListItems = "ListItems",
-  // RetrieveMetadata = "RetrieveMetadata",
 }
 
 export const listItems = (
@@ -885,12 +867,13 @@ export const listItems = (
   context: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
-  console.log(`[PROVIDER_LOG] Calling LLM for listItems`);
-  if ( !isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentGenerateMarkdownTableSystemPrompt")
-    params.systemPrompt = agentGenerateMarkdownTableSystemPrompt(userCtx, query,  parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+  if (!isAgentPromptEmpty(params.agentPrompt)) {
+    params.systemPrompt = agentGenerateMarkdownTableSystemPrompt(
+      userCtx,
+      query,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = generateMarkdownTableSystemPrompt(userCtx, query)
   }
   const baseMessage: Message = {
@@ -921,12 +904,13 @@ export const baselineRAG = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  console.log(`[PROVIDER_LOG] Calling LLM for baselineRAG`);
   if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentbaselinePrompt")
-    params.systemPrompt = agentBaselinePrompt(userCtx, retrievedCtx, parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+    params.systemPrompt = agentBaselinePrompt(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = baselinePrompt(userCtx, retrievedCtx)
   }
   params.json = false
@@ -969,16 +953,16 @@ export const baselineRAGJson = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  console.log(`[PROVIDER_LOG] Calling LLM for baselineRAGJson`);  
   if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentbaselinePromptJson")
-    params.systemPrompt = agentBaselinePromptJson(userCtx,
-    retrievedCtx, parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+    params.systemPrompt = agentBaselinePromptJson(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
   }
-  params.json = true // Set to true to ensure JSON response
+  params.json = true
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
@@ -1026,7 +1010,7 @@ export const baselineRAGJsonStream = (
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
-  console
+
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
     params.systemPrompt = baselineFilesContextPromptJson(
@@ -1034,15 +1018,13 @@ export const baselineRAGJsonStream = (
       indexToCitation(retrievedCtx),
     )
   } else if (defaultReasoning) {
-    // TODO: replace with reasoning specific prompt
-    // clean retrieved context and turn Index <number> to just [<number>]
-    // this is extra work because we just now set Index <number>
-    // in future once the reasoning mode better supported we won't have to do this
     Logger.info("Using baselineReasoningPromptJson")
     if (!isAgentPromptEmpty(params.agentPrompt)) {
-      console.log("Using agentbaselineReasoningPromptJson")
-      params.systemPrompt = agentBaselineReasoningPromptJson(userCtx,
-      indexToCitation(retrievedCtx), parseAgentPrompt(params.agentPrompt))
+      params.systemPrompt = agentBaselineReasoningPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
     } else {
       params.systemPrompt = baselineReasoningPromptJson(
         userCtx,
@@ -1051,11 +1033,13 @@ export const baselineRAGJsonStream = (
     }
   } else {
     Logger.info("Using baselinePromptJson")
-    
+
     if (!isAgentPromptEmpty(params.agentPrompt)) {
-      console.log("Using agentbaselinePromptJson")
-      params.systemPrompt = agentBaselinePromptJson(userCtx,
-      indexToCitation(retrievedCtx), parseAgentPrompt(params.agentPrompt))
+      params.systemPrompt = agentBaselinePromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
     } else {
       params.systemPrompt = baselinePromptJson(
         userCtx,
@@ -1063,7 +1047,7 @@ export const baselineRAGJsonStream = (
       )
     }
   }
-  params.json = true // Set to true to ensure JSON response
+  params.json = true
 
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1090,15 +1074,16 @@ export const temporalPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  console.log(`[PROVIDER_LOG] Calling LLM for temporalPromptJsonStream`);
   if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentTemporalDirectionJsonPrompt")
-    params.systemPrompt = agentTemporalDirectionJsonPrompt(userCtx, retrievedCtx, parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+    params.systemPrompt = agentTemporalDirectionJsonPrompt(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
   }
-  params.json = true // Set to true to ensure JSON response
+  params.json = true
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
@@ -1123,15 +1108,16 @@ export const mailPromptJsonStream = (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  console.log(`[PROVIDER_LOG] Calling LLM for mailPromptJsonStream`);
   if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentEmailPromptJson")
-    params.systemPrompt = agentEmailPromptJson(userCtx, retrievedCtx, parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+    params.systemPrompt = agentEmailPromptJson(
+      userCtx,
+      retrievedCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
   }
-  params.json = true // Set to true to ensure JSON response
+  params.json = true
   const baseMessage = {
     role: ConversationRole.USER,
     content: [
@@ -1160,12 +1146,12 @@ export const queryRewriter = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  console.log(`[PROVIDER_LOG] Calling LLM for queryRewriter`);
   if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentQueryRewritePromptJson")
-    params.systemPrompt = agentQueryRewritePromptJson(userCtx, parseAgentPrompt(params.agentPrompt))
-  }
-  else {
+    params.systemPrompt = agentQueryRewritePromptJson(
+      userCtx,
+      parseAgentPrompt(params.agentPrompt),
+    )
+  } else {
     params.systemPrompt = queryRewritePromptJson(userCtx, retrievedCtx)
   }
   params.json = true
@@ -1206,7 +1192,6 @@ export const temporalEventClassification = async (
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  // params.systemPrompt = temporalEventClassifier(userQuery)
   params.json = true
 
   const baseMessage = {
@@ -1243,19 +1228,20 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> {
-  //Promise<{ searchQuery: string, answer: string} & { cost: number }> {
   params.json = true
   let defaultReasoning = isReasoning
 
   if (params.reasoning !== undefined) {
     defaultReasoning = params.reasoning
   }
-  console.log(`[PROVIDER_LOG] Calling LLM for generateSearchQueryOrAnswerFromConversation`);
+
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
   } else if (!isAgentPromptEmpty(params.agentPrompt)) {
-    console.log("Using agentSearchQueryPrompt", parseAgentPrompt(params.agentPrompt))
-    params.systemPrompt = agentSearchQueryPrompt(userContext, parseAgentPrompt(params.agentPrompt))
+    params.systemPrompt = agentSearchQueryPrompt(
+      userContext,
+      parseAgentPrompt(params.agentPrompt),
+    )
   } else {
     params.systemPrompt = searchQueryPrompt(userContext)
   }

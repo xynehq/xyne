@@ -132,19 +132,19 @@ class VespaClient {
     const response = await this.search<VespaSearchResponse>(searchPayload)
     return (response.root?.children || []).map((doc) => {
       // Use optional chaining and nullish coalescing to safely extract fields
-      const { matchfeatures, ...fieldsWithoutMatch } = doc.fields as any;
-      return fieldsWithoutMatch;
-    });
+      const { matchfeatures, ...fieldsWithoutMatch } = doc.fields as any
+      return fieldsWithoutMatch
+    })
   }
 
   async getAllDocumentsParallel(
     schema: VespaSchema,
     options: VespaConfigValues,
     concurrency: number = 3,
-    email:string,
+    email: string,
   ): Promise<any[]> {
     // First get document count
-    const countResponse = await this.getDocumentCount(schema, options,email)
+    const countResponse = await this.getDocumentCount(schema, options, email)
     const totalCount = countResponse?.root?.fields?.totalCount || 0
 
     if (totalCount === 0) return []
@@ -155,7 +155,7 @@ class VespaClient {
 
     for (let offset = 0; offset < totalCount; offset += batchSize) {
       tasks.push(() =>
-        this.fetchDocumentBatch(schema, options, batchSize, offset,email),
+        this.fetchDocumentBatch(schema, options, batchSize, offset, email),
       )
     }
 
@@ -364,11 +364,15 @@ class VespaClient {
     }
   }
 
-  async getDocumentCount(schema: VespaSchema, options: VespaConfigValues,email:string) {
+  async getDocumentCount(
+    schema: VespaSchema,
+    options: VespaConfigValues,
+    email: string,
+  ) {
     try {
       // Encode the YQL query to ensure it's URL-safe
       const yql = encodeURIComponent(
-        `select * from sources ${schema} where uploadedBy contains '${email}'`
+        `select * from sources ${schema} where uploadedBy contains '${email}'`,
       )
       // Construct the search URL with necessary query parameters
       const url = `${this.vespaEndpoint}/search/?yql=${yql}&hits=0&cluster=${options.cluster}`
@@ -793,73 +797,6 @@ class VespaClient {
       throw error
     }
   }
-
-async ifDocumentsExistInTranscript(
-    docId: string | string[], // Accept both single string and array
-    email: string
-  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
-    // Normalize docId to array for consistent processing
-    const docIds = Array.isArray(docId) ? docId : [docId];
-    
-    // Construct the YQL query with proper quoting
-    const yqlIds = docIds.map(id => `"${id}"`).join(', ');
-    const yqlQuery = `select docId, uploadedBy, updatedAt from sources transcript where docId in (${yqlIds}) and uploadedBy contains "${email}"`;
-    const url = `${this.vespaEndpoint}/search/`;
-  
-    try {
-      const payload = {
-        yql: yqlQuery,
-        hits: docIds.length, // Set hits to match number of documents we're checking
-        maxHits: Math.max(docIds.length, 10), // Ensure maxHits >= hits
-      };
-  
-      const response = await this.fetchWithRetry(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-  
-      if (!response.ok) {
-        const errorText = await response.text(); // Get actual error text
-        throw new Error(
-          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
-        );
-      }
-  
-      const result = await response.json();
-  
-      // Extract found documents with their docId and updatedAt
-      const foundDocs =
-        result.root?.children?.map((hit: any) => ({
-          docId: hit.fields.docId as string,
-          updatedAt: hit.fields.updatedAt as number | undefined,
-        })) || [];
-  
-      // Build the result map
-      const existenceMap = docIds.reduce(
-        (acc, id) => {
-          const foundDoc = foundDocs.find(
-            (doc: { docId: string }) => doc.docId === id,
-          );
-          acc[id] = {
-            exists: !!foundDoc,
-            updatedAt: foundDoc?.updatedAt ?? null,
-          };
-          return acc;
-        },
-        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
-      );
-  
-      return existenceMap;
-    } catch (error) {
-      const errMessage = getErrorMessage(error);
-      Logger.error(error, `Error checking documents existence: ${errMessage}`);
-      throw error;
-    }
-  }
-
 
   async ifMailDocumentsExist(
     mailIds: string[],
