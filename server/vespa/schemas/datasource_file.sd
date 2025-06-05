@@ -321,7 +321,6 @@ schema datasource_file {
     summary dataSourceName {}
     summary createdBy {}
     summary dataSourceId {}
-    summary fileSize {} 
   }
 
   document-summary autocomplete {
