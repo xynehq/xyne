@@ -49,7 +49,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
 
-export const THINKING_PLACEHOLDER = "Thinking";
+export const THINKING_PLACEHOLDER = "Thinking"
 
 type CurrentResp = {
   resp: string
@@ -1672,7 +1672,7 @@ export const ChatMessage = ({
                   />
                 </div>
               )}
-              {((message === "") && (!responseDone || isRetrying)) ? (
+              {message === "" && (!responseDone || isRetrying) ? (
                 <div className="flex-grow">
                   {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
