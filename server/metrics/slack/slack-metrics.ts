@@ -14,7 +14,7 @@ metricRegister.registerMetric(ingestedTeamTotalCount)
 export const ingestedMembersTotalCount = new Counter({
     name:"ingested_member_total_count",
     help:"Total Number of members ingested in slack",
-    labelNames: ["team_id", "status","is_enterprise_user","is_admin", "is_primary_owner"]
+    labelNames: ["team_id", "status"]
 })
 
 metricRegister.registerMetric(ingestedMembersTotalCount)
@@ -73,7 +73,7 @@ metricRegister.registerMetric(ingestedTeamErrorTotalCount)
 export const ingestedMembersErrorTotalCount = new Counter({
     name:"ingested_member_error_total_count",
     help:"Total Number of members ingested in slack errors",
-    labelNames: ["team_id", "status","is_enterprise_user","is_admin", "is_primary_owner"]
+    labelNames: ["team_id", "status",]
 })
 
 metricRegister.registerMetric(ingestedMembersErrorTotalCount)
