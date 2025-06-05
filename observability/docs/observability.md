@@ -69,14 +69,14 @@ scrape_configs:
     labels:
       job: pm2
       type: stdout
-        __path__: '~/.pm2/logs/*-out.log'
+    __path__: '~/.pm2/logs/*-out.log'
 
   - targets:
       - localhost
     labels:
       job: pm2
       type: stderr
-      __path__: '~/.pm2/logs/*-error.log'
+    __path__: '~/.pm2/logs/*-error.log'
 ```
 
 This configuration tells Promtail to scrape the stdout and stderr logs from PM2.
