@@ -86,7 +86,7 @@ This configuration tells Promtail to scrape the stdout and stderr logs from PM2.
 No specific Loki configuration is required, as Promtail is configured to send logs to Loki at `http://localhost:3100/loki/api/v1/push`, which is the default Loki endpoint. E
 
 
-#### Command to run Promtail Using prometheus
+#### Command to run Promtail with PM2
 
 To run promtail using PM2 use the command :
 ```bash 
