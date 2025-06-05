@@ -65,7 +65,7 @@ services:
     volumes:
       - ./loki-config.yaml:/mnt/config/loki-config.yaml
       - ./loki:/tmp/loki
-    command: -config.file=/mnt/config/loki-config.yaml
+    command: --config.file=/mnt/config/loki-config.yaml
     restart: unless-stopped
     networks:
       - xyne

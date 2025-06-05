@@ -91,7 +91,7 @@ No specific Loki configuration is required, as Promtail is configured to send lo
 To run promtail using PM2 use the command :
 ```bash
 pm2 start <full-path-to-installed-promtail> -- \
-  --config.file=<full-path-to-xyne>/deployment/promtail-config.yaml
+  -config.file=<full-path-to-xyne>/deployment/promtail-config.yaml
 ```
 
 Incase there's permission issues WRT docker run :
