@@ -1,6 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router"
 import { Plug, Plus, History } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { UserRole } from "shared/types"
 import {
@@ -23,10 +23,32 @@ export const Sidebar = ({
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+       
+      const isInteractiveElement = target.closest('button, a, [role="button"], input, .dropdown-trigger');
+      if (isInteractiveElement) return;
+      const isSidebarClick = target.closest('.sidebar-container');
+      const isHistoryModalClick = target.closest('.history-modal-container');
+      const isChatInput = target.closest('[contenteditable="true"]'); 
+      const isSearchArea = target.closest('.search-container'); 
+      const isReferenceBox = target.closest('.reference-box'); 
+      const isAtMentionArea = target.closest('[data-at-mention]'); 
+      
+      if (!isSidebarClick && !isHistoryModalClick && !isChatInput && !isSearchArea && !isReferenceBox && !isAtMentionArea && showHistory) {
+        setShowHistory(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showHistory]);
+
   return (
     <TooltipProvider>
       <div
-        className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col fixed ${className} z-20 select-none`}
+        className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col fixed ${className} z-20 select-none sidebar-container`}
       >
         {showHistory && (
           <HistoryModal

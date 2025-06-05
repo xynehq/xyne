@@ -908,7 +908,7 @@ export const ChatBox = ({
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
-          className="absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          className="absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col reference-box"
           style={{
             left: activeAtMentionIndex !== -1 ? `${referenceBoxLeft}px` : "0px",
           }}
@@ -1085,7 +1085,7 @@ export const ChatBox = ({
           </div>
         </div>
       )}
-      <div className="flex flex-col w-full border rounded-[20px] bg-white">
+      <div className="flex flex-col w-full border rounded-[20px] bg-white search-container">
         <div className="relative flex items-center">
           {isPlaceholderVisible && (
             <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] pointer-events-none">
@@ -1095,6 +1095,7 @@ export const ChatBox = ({
           <div
             ref={inputRef}
             contentEditable
+            data-at-mention="true"
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
