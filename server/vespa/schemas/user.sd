@@ -240,6 +240,26 @@ schema user {
         }
     }
 
+    rank-profile norm_native_rank inherits initial {
+        # slight boost for people
+        global-phase {
+            expression { 
+                1.2 * (((combined_nativeRank) 
+                / 0.2)* (1 - query(alpha))
+                +
+                ((vector_score - 0.45) 
+                / 0.2) * query(alpha)) 
+            }
+        }
+
+        match-features {
+            matchedFieldCount
+            nativeRank(name)
+            nativeRank(email)
+            vector_score
+        }
+    }
+
     # New rank profile designed for sorting: implements recency binning with hybrid scoring within bins.
     rank-profile global_sorted inherits initial {
         # Query inputs allowing control over recency parameters

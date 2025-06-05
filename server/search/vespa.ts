@@ -257,7 +257,7 @@ export const autocomplete = async (
 }
 
 export enum SearchModes {
-  NativeRank = "default_native",
+  NativeRank = "norm_native_rank",
   BM25 = "default_bm25",
   AI = "default_ai",
   Random = "default_random",
