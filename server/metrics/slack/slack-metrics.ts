@@ -47,7 +47,7 @@ metricRegister.registerMetric(insertChatMessagesCount)
 
 export const insertConversationDuration = new Histogram({
     name: "conversation_insertion_duration",
-    help:"Time taken to insert a converstion",
+    help:"Time taken to insert a conversation",
     labelNames: ["conversation_id", "status", "team_id"]
 })
 
