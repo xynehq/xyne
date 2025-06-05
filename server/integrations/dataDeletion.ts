@@ -22,12 +22,12 @@ const serviceSchemaMapping: Record<
   string,
   { schema: VespaSchema; timestampField?: string }
 > = {
-  drive: { schema: fileSchema, timestampField: "updatedAt" }, // Assuming 'updatedAt' or 'createdAt'
-  gmail: { schema: mailSchema, timestampField: "receivedTimestamp" }, // Replace with actual timestamp field
-  calendar: { schema: eventSchema, timestampField: "startTime" }, // Replace with actual timestamp field
-  attachments: { schema: mailAttachmentSchema, timestampField: "createdAt" }, // Replace with actual timestamp field
+  drive: { schema: fileSchema, timestampField: "updatedAt" }, 
+  gmail: { schema: mailSchema, timestampField: "timestamp" },
+  calendar: { schema: eventSchema, timestampField: "startTime" }, 
+  attachments: { schema: mailAttachmentSchema, timestampField: "timestamp" }, 
   // 'user' data might be handled differently (e.g., direct deletion without date range)
-  userProfile: { schema: userSchema, timestampField: "updatedAt" }, // Or 'createdAt'
+  userProfile: { schema: userSchema, timestampField: "creationTime" }, 
 }
 
 async function getVespaDocumentCount(yqlQuery: string): Promise<number> {
@@ -366,7 +366,7 @@ export async function clearUserDataInVespa(
     string,
     { permissionsUpdated: number; directlyDeleted: number }
   > = {}
-  const fullNamespace = "my_content" // Assuming this is your primary namespace
+  const fullNamespace = "my_content" 
 
   for (const serviceName of servicesToClear) {
     const serviceConfig = serviceSchemaMapping[serviceName]
@@ -400,10 +400,6 @@ export async function clearUserDataInVespa(
     } else if (timestampField && endDateMs) {
       dateFilterYql = ` AND ${timestampField} <= ${endDateMs}`
     }
-
-    // --- Logic adapted from clearVespaDataByUser ---
-    // This needs to be adjusted based on the actual fields in each schema (owner, creator, permissions etc.)
-    // And how you want to define "ownership" or "relevance" for deletion for each service.
 
     if (bareSchemaName === userSchema) {
       // User schema is typically a direct delete by email, date range might not apply or applies to a different field
