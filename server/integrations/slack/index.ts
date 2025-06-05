@@ -350,7 +350,11 @@ export async function insertChannelMessages(
             memberMap.get(message.user!)?.name!,
             memberMap.get(message.user!)?.profile?.image_192!,
           )
-          insertChatMessagesCount.inc({conversation_id: channelId,status:OperationStatus.Success, team_id: message.team})
+          try{
+             insertChatMessagesCount.inc({conversation_id: channelId,status:OperationStatus.Success, team_id: message.team})
+          }catch(error) {
+            Logger.info(`Error inserting chat message`)
+          }
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
           subtypes.add(message.subtype)
@@ -431,7 +435,11 @@ export async function insertChannelMessages(
                 memberMap.get(reply.user!)?.name!,
                 memberMap.get(reply.user!)?.profile?.image_192!,
               )
-              insertChatMessagesCount.inc({conversation_id: channelId,status:OperationStatus.Success, team_id: reply.team})
+               try{
+             insertChatMessagesCount.inc({conversation_id: channelId,status:OperationStatus.Success, team_id: message.team})
+                }catch(error) {
+                  Logger.info(`Error inserting chat message`)
+                }
               tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
             } else {
               subtypes.add(reply.subtype)
@@ -796,10 +804,11 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         }
         try{
         await insertMember(member)
-        ingestedMembersTotalCount.inc({team_id:team.id, status: OperationStatus.Success, is_enterprise_user: member.enterprise_user?'true':'false', is_admin: member.is_admin?'true':'false', is_primary_owner:member.is_primary_owner?'true':'false'})
+        ingestedMembersTotalCount.inc({team_id:team.id, status: OperationStatus.Success})
         tracker.updateUserStats(data.email, StatType.Slack_User, 1)
         }catch(error) {
-          ingestedMembersErrorTotalCount.inc({team_id:team.id, status: OperationStatus.Failure, is_enterprise_user: member.enterprise_user?'true':'false', is_admin: member.is_admin?'true':'false', is_primary_owner:member.is_primary_owner?'true':'false'})
+           Logger.error(`Error inserting member ${member.id}: ${error}`)
+          ingestedMembersErrorTotalCount.inc({team_id:team.id, status: OperationStatus.Failure})
         }
        }
 
