@@ -399,14 +399,14 @@ const constructDataSourceFileContext = (
       .join("\n")
   }
 
-  return `Title: ${fields.title || fields.fileName || "N/A"}
-App: ${fields.app || "N/A"}
-${fields.dataSourceName ? `Data Source Name: ${fields.dataSourceName}` : ""}
-Mime Type: ${fields.mimeType || "N/A"}
-${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
-${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
-${content ? `Content: ${content}` : ""}
-\nvespa relevance score: ${relevance}\n`
+  return `Title: ${fields.fileName || "N/A"}
+  App: ${fields.app || "N/A"}
+  ${fields.dataSourceName ? `Data Source Name: ${fields.dataSourceName}` : ""}
+  Mime Type: ${fields.mimeType || "N/A"}
+  ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
+  ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
+  ${content ? `Content: ${content}` : ""}
+  \nvespa relevance score: ${relevance}\n`
 }
 
 type AiMetadataContext = string

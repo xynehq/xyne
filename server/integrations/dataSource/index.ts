@@ -27,7 +27,6 @@ const processDataSourceFileContent = (
 
   return {
     docId: `${fileId}`,
-    title: fileName,
     description: description || `File: ${fileName} for DataSource`,
     app: Apps.DataSource,
     fileName: fileName,

@@ -5,11 +5,6 @@ schema datasource_file {
       indexing: attribute | summary
     }
 
-    field title type string {
-      indexing: index | summary | attribute
-      index { enable-bm25 }
-    }
-
     field description type string {
       indexing: index | summary | attribute
       index { enable-bm25 }
@@ -22,8 +17,9 @@ schema datasource_file {
     }
 
     field fileName type string {
-      indexing: attribute | summary
+      indexing: attribute | summary | index
       attribute: fast-search
+      index { enable-bm25 }
     }
 
     field fileSize type long {
@@ -76,17 +72,17 @@ schema datasource_file {
     attribute { distance-metric: angular }
   }
 
-  # Fuzzy title
-  field title_fuzzy type string {
-    indexing: input title | index
+  # Fuzzy fileName
+  field fileName_fuzzy type string {
+    indexing: input fileName | index
     index { enable-bm25 }
     match { gram gram-size: 3 }
   }
 
 
-  fieldset default      { fields: title, description, chunks, uploadedBy, fileName }
-  fieldset autocomplete { fields: title, fileName, uploadedBy }
-  fieldset search       { fields: title, description, chunks, fileName, uploadedBy }
+  fieldset default      { fields:  description, chunks, uploadedBy, fileName }
+  fieldset autocomplete { fields:  fileName, uploadedBy }
+  fieldset search       { fields:  description, chunks, fileName, uploadedBy }
 
     rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
@@ -122,18 +118,18 @@ schema datasource_file {
     }
 
     function combined_bm25() {
-      expression: bm25(title) + bm25(chunks)
+      expression: bm25(fileName) + bm25(chunks)
     }
 
     function matchedFieldCount() {
       expression {
         # The `matches` returns 1 if the field contains a match, otherwise 0
-        matches(title) + matches(chunks)
+        matches(fileName) + matches(chunks)
       }
     }
 
     function combined_nativeRank() {
-      expression: (nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      expression: (nativeRank(fileName) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     function chunk_scores() {
@@ -162,7 +158,7 @@ schema datasource_file {
       matchedFieldCount
       vector_score
       combined_nativeRank
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
       doc_recency
@@ -230,7 +226,7 @@ schema datasource_file {
       vector_score
       matchedFieldCount
       combined_nativeRank        
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
       document_age_days_gs
@@ -266,7 +262,7 @@ schema datasource_file {
      match-features {
       vector_score
       bm25(chunks)
-      bm25(title)
+      bm25(fileName)
       scale(combined_bm25)
       chunk_scores
     }
@@ -292,7 +288,7 @@ schema datasource_file {
     match-features {
       vector_score
       combined_nativeRank
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
       doc_recency
@@ -306,7 +302,7 @@ schema datasource_file {
     match-features {
       vector_score
       combined_nativeRank
-      nativeRank(title)
+      nativeRank(fileName)
       nativeRank(chunks)
       chunk_scores
       doc_recency
@@ -324,8 +320,8 @@ schema datasource_file {
   }
 
   document-summary autocomplete {
-    summary title {
-        source: title
+    summary fileName {
+        source: fileName
     }
     summary app {
         source: app
@@ -338,10 +334,10 @@ schema datasource_file {
   # Autocomplete rank profile for fuzzy prefix search
   rank-profile autocomplete {
     first-phase {
-      expression: bm25(title_fuzzy)
+      expression: bm25(fileName_fuzzy)
     }
     match-features {
-      bm25(title_fuzzy)
+      bm25(fileName_fuzzy)
     }
   }
 }

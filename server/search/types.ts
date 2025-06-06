@@ -286,7 +286,7 @@ export type MailAttachmentMatchFeatures = z.infer<
 >
 
 const DataSourceFileMatchFeaturesSchema = z.object({
-  "bm25(title)": z.number().optional(),
+  "bm25(fileName)": z.number().optional(),
   "bm25(chunks)": z.number().optional(),
   "closeness(field, chunk_embeddings)": z.number().optional(),
   chunk_scores: chunkScoresSchema.optional(),
@@ -323,7 +323,6 @@ export type VespaDataSourceSearch = z.infer<typeof VespaDataSourceSearchSchema>
 // Base schema for DataSourceFile (for insertion)
 export const VespaDataSourceFileSchemaBase = z.object({
   docId: z.string(),
-  title: z.string(),
   description: z.string().optional(),
   app: z.literal(Apps.DataSource),
   fileName: z.string().optional(),
@@ -1068,7 +1067,6 @@ export const ChatMessageResponseSchema = VespaChatMessageGetSchema.pick({
 
 export const DataSourceFileResponseSchema = VespaDataSourceFileGetSchema.pick({
   docId: true,
-  title: true,
   description: true,
   app: true,
   fileName: true,
