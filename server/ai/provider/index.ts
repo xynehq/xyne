@@ -59,6 +59,7 @@ import {
   emailPromptJson,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
+  meetingPromptJson,
   metadataAnalysisSystemPrompt,
   optimizedPrompt,
   peopleQueryAnalysisSystemPrompt,
@@ -772,31 +773,6 @@ export const answerOrSearch = (
   }
 }
 
-// removing one op from prompt so we can figure out how to integrate this
-// otherwise it conflicts with our current search system if we start
-// talking about a single item
-
-// 3. **RetrieveMetadata**:
-//    - The user wants to retrieve metadata or details about a specific document, email, or item.
-//    - Example Queries:
-//      - "When was the file 'Budget.xlsx' last modified?"
-//      - "Who owns the document titled 'Meeting Notes'?"
-//    - **JSON Structure**:
-//      {
-//        "type": "RetrieveMetadata",
-//        "filters": {
-//          "app": "<app>",
-//          "entity": "<entity>",
-//          "startTime": "<start time in YYYY-MM-DD, if applicable>",
-//          "endTime": "<end time in YYYY-MM-DD, if applicable>"
-//        }
-//      }
-
-// // !this is under validation heading! not a prompt
-
-//  - Ensure 'app' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-//  - Ensure 'entity' is only present in 'ListItems' and 'RetrieveMetadata' and is one of the enum values.
-
 // Enums for Query Types, Apps, and Entities
 export enum QueryType {
   RetrieveInformation = "RetrieveInformation",
@@ -931,6 +907,7 @@ export const baselineRAGJsonStream = (
   }
 
   if (specificFiles) {
+    Logger.info("Using baselineFilesContextPromptJson")
     params.systemPrompt = baselineFilesContextPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
@@ -940,11 +917,13 @@ export const baselineRAGJsonStream = (
     // clean retrieved context and turn Index <number> to just [<number>]
     // this is extra work because we just now set Index <number>
     // in future once the reasoning mode better supported we won't have to do this
+    Logger.info("Using baselineReasoningPromptJson")
     params.systemPrompt = baselineReasoningPromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
     )
   } else {
+    Logger.info("Using baselinePromptJson")
     params.systemPrompt = baselinePromptJson(
       userCtx,
       indexToCitation(retrievedCtx),
@@ -1020,6 +999,32 @@ export const mailPromptJsonStream = (
   return getProviderByModel(params.modelId).converseStream(messages, params)
 }
 
+export const meetingPromptJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.json = true // Set to true to ensure JSON response
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+  params.messages = []
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
 interface RewrittenQueries {
   queries: string[]
 }
@@ -1068,7 +1073,7 @@ export const queryRewriter = async (
 export const temporalEventClassification = async (
   userQuery: string,
   params: ModelParams,
-): Promise<Omit<TemporalClassifier, "filter_query"> & { cost: number }> => {
+): Promise<Omit<TemporalClassifier, "filterQuery"> & { cost: number }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }

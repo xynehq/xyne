@@ -135,6 +135,10 @@ schema chat_message {
       query(alpha) double
     }
 
+    constants {
+      SLACK_VECTOR_DECAY: 0.8
+    }
+
     function vector_score() {
       expression: closeness(field, text_embeddings)
     }
@@ -178,7 +182,7 @@ schema chat_message {
     global-phase {
       expression {
         (
-          (query(alpha) * vector_score) + 
+          (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + 
           ((1 - query(alpha)) *  combined_nativeRank)
         )
       }
@@ -205,7 +209,7 @@ schema chat_message {
     global-phase {
       expression {
         (
-          (query(alpha) * vector_score) + 
+          (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + 
           ((1 - query(alpha)) * scale(combined_bm25))
         )
       }
@@ -225,7 +229,7 @@ schema chat_message {
   rank-profile default_ai inherits initial {
     
     first-phase {
-      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+      expression: (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + ((1 - query(alpha)) *  combined_nativeRank)
     }
 
     global-phase {
@@ -263,21 +267,61 @@ schema chat_message {
     }
   }
 
- rank-profile unranked inherits default {
-    # Simple constant expression - returns same score for all documents
+    rank-profile global_sorted inherits initial {
+    constants {
+      THREE_MONTHS_IN_SECONDS: 7890000
+      ONE_YEAR_IN_SECONDS: 31536000
+      MAX_DOC_DECAY: 0.5
+    }
+
+    inputs { 
+      query(bin_size_days_gs) double: 1.0 
+    }
+
+    constants {
+      ONE_DAY_IN_SECONDS_GS: 86400.0         
+      RECENCY_BIN_MULTIPLIER_GS: 10000.0     
+      MAX_SCORE_BASE_GS: 1000000000.0      
+    }
+
+    function document_age_days_gs() {
+      expression: max(0.0, if(isNan(attribute(updatedAt)) == 1, THREE_MONTHS_IN_SECONDS / ONE_DAY_IN_SECONDS_GS, (now() - (attribute(updatedAt) / 1000)) / ONE_DAY_IN_SECONDS_GS))
+    }
+
+    function recency_bin_index_gs() {
+      expression: floor(document_age_days_gs() / query(bin_size_days_gs))
+    }
+
+    function recency_bin_score_gs() {
+      expression: MAX_SCORE_BASE_GS - (recency_bin_index_gs() * RECENCY_BIN_MULTIPLIER_GS)
+    }
+
+    function hybrid_relevance_score_gs() {
+      expression: (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + ((1 - query(alpha)) * combined_nativeRank)
+    }
+
+    function normalized_hybrid_relevance_gs() {
+      expression: max(0.0, min(hybrid_relevance_score_gs() / 10.0, RECENCY_BIN_MULTIPLIER_GS - 1.0))
+    }
+
     first-phase {
-      expression: 0
+      expression: recency_bin_score_gs() + normalized_hybrid_relevance_gs()
     }
-    # Skip second phase ranking completely
-    second-phase {
-      expression: 0
+
+    match-features {
+      query(alpha)
+      vector_score
+      matchedFieldCount
+      combined_nativeRank        
+      nativeRank(text)
+      nativeRank(username)
+      document_age_days_gs
+      query(bin_size_days_gs)  
+      recency_bin_index_gs
+      recency_bin_score_gs
+      hybrid_relevance_score_gs 
+      normalized_hybrid_relevance_gs 
     }
-    # Skip global phase
-    global-phase {
-      expression: 0
-    }
-    # No need to calculate features for unranked results
-    match-features {}
   }
 
   document-summary default {

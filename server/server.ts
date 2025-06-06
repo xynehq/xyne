@@ -67,6 +67,8 @@ import {
   ChatRenameApi,
   GetChatApi,
   MessageApi,
+  MessageFeedbackApi,
+  messageFeedbackSchema,
   MessageRetryApi,
   GetChatTraceApi,
   StopStreamingApi,
@@ -186,6 +188,11 @@ export const AppRoutes = app
     "/message/retry",
     zValidator("query", messageRetrySchema),
     MessageRetryApi,
+  )
+  .post(
+    "/message/feedback",
+    zValidator("json", messageFeedbackSchema),
+    MessageFeedbackApi,
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)

@@ -146,11 +146,14 @@ export default {
   chatHistoryPageSize: 21,
   maxDefaultSummary: 6,
   chatPageSize: 20, // default page size for ai search
+  maxGoogleDriveSummary: 50,
+  maxUserRequestCount: 50,
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
+  maxValidLinks: 15,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
   VESPA_NAMESPACE,
 }

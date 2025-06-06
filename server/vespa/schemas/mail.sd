@@ -11,6 +11,10 @@ schema mail {
       indexing: attribute | summary
       attribute: fast-search
     }
+    field mailId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
 
     field subject type string {
       indexing: summary | index

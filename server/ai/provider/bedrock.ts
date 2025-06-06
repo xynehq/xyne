@@ -68,13 +68,13 @@ export class BedrockProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-
-    // Configure reasoning parameters only if reasoning is enabled AND using Claude 3.7
-    const isClaude37 = modelParams.modelId === Models.Claude_3_7_Sonnet
+    const reasoningModel =
+      modelParams.modelId === Models.Claude_Sonnet_4 ||
+      modelParams.modelId === Models.Claude_3_7_Sonnet
     const isThinkingEnabled = params.reasoning
 
     const reasoningConfig =
-      isThinkingEnabled && isClaude37
+      isThinkingEnabled && reasoningModel
         ? {
             thinking: {
               type: "enabled",
@@ -83,11 +83,9 @@ export class BedrockProvider extends BaseProvider {
           }
         : undefined
 
-    // When using thinking mode with Claude 3.7 Sonnet, temperature must be 1 and top_p must be unset
     const temperature =
-      isThinkingEnabled && isClaude37 ? 1 : modelParams.temperature || 0.6
+      isThinkingEnabled && reasoningModel ? 1 : modelParams.temperature || 0.6
 
-    // Create the inferenceConfig based on whether thinking is enabled
     const inferenceConfig = isThinkingEnabled
       ? {
           maxTokens: modelParams.maxTokens || 2500,
@@ -102,51 +100,46 @@ export class BedrockProvider extends BaseProvider {
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
-      system: [
-        {
-          text: modelParams.systemPrompt!,
-        },
-      ],
+      system: [{ text: modelParams.systemPrompt! }],
       messages: messages,
       inferenceConfig,
     })
 
     let modelId = modelParams.modelId!
     let costYielded = false
+    let startedReasoning = false
+    let reasoningComplete = false
+
     try {
       const response = await this.client.send(command)
-
-      // Process reasoning/thinking content if enabled for Claude 3.7
-      let startedReasoning = false
-      if (isThinkingEnabled && response.stream) {
-        for await (const chunk of response.stream) {
-          if (chunk.contentBlockStop) {
-            yield {
-              text: EndThinkingToken,
-            }
-            break
-          }
-
-          const reasoning =
-            chunk.contentBlockDelta?.delta?.reasoningContent?.text || ""
-          if (reasoning) {
-            if (!startedReasoning) {
-              yield {
-                text: `${StartThinkingToken}${reasoning}`,
-              }
-              startedReasoning = true
-            } else {
-              yield {
-                text: reasoning,
-              }
-            }
-          }
-        }
-      }
-
-      // Process regular content stream
+      // we are handling the reasoning and normal text in the same iteration
+      // using two different iteration for reasoning and normal text we are lossing some data of normal text
       if (response.stream) {
         for await (const chunk of response.stream) {
+          // Handle reasoning content
+          const reasoning =
+            chunk.contentBlockDelta?.delta?.reasoningContent?.text || ""
+          if (reasoning && isThinkingEnabled && !reasoningComplete) {
+            if (!startedReasoning) {
+              yield { text: `${StartThinkingToken}${reasoning}` }
+              startedReasoning = true
+            } else {
+              yield { text: reasoning }
+            }
+          }
+
+          // Handle reasoning completion
+          if (
+            chunk.contentBlockStop &&
+            startedReasoning &&
+            !reasoningComplete
+          ) {
+            yield { text: EndThinkingToken }
+            reasoningComplete = true
+            continue
+          }
+
+          // Handle regular content
           const text = chunk.contentBlockDelta?.delta?.text || ""
           const metadata = chunk.metadata
 
@@ -165,9 +158,8 @@ export class BedrockProvider extends BaseProvider {
                     )
                   : undefined,
             }
-          }
-          // Handle cost separately if we haven't yielded it yet
-          else if (metadata?.usage && !costYielded) {
+            if (metadata?.usage) costYielded = true
+          } else if (metadata?.usage && !costYielded) {
             costYielded = true
             yield {
               text: "",
