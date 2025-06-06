@@ -2246,18 +2246,24 @@ async function* generateMetadataQueryAnswer(
     Logger.info(`Search Type : ${QueryType.GetItems}`)
 
     let searchResults
+    items = []
+    if(agentPrompt){
+      if(agentAppEnums.find(x => x==app)){
+        searchResults = await getItems({
+          email,
+          schema,
+          app: app ?? null,
+          entity: entity ?? null,
+          timestampRange,
+          limit: userSpecifiedCountLimit,
+          asc: sortDirection === "asc",
+        })
+        items = searchResults!.root.children || []
+      }
+    }
+    
 
-    searchResults = await getItems({
-      email,
-      schema,
-      app: app ?? null,
-      entity: entity ?? null,
-      timestampRange,
-      limit: userSpecifiedCountLimit,
-      asc: sortDirection === "asc",
-    })
-
-    items = searchResults.root.children || []
+    
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
