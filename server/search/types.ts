@@ -33,6 +33,7 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
+  | typeof chatAttachment
   | typeof datasourceSchema
   | typeof datasourceFileSchema
 

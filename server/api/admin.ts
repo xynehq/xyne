@@ -36,6 +36,11 @@ import {
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
 import { ServiceAccountIngestMoreUsers } from "@/integrations/google"
+import {
+  clearUserDataInVespa,
+  type ClearUserDataOptions,
+} from "@/integrations/dataDeletion"
+import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 
@@ -531,6 +536,57 @@ export const ServiceAccountIngestMoreUsersApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
       message: `Failed to ingest more users: ${getErrorMessage(error)}`,
+    })
+  }
+}
+
+// New API Endpoint for User Data Deletion
+export const AdminDeleteUserData = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey) // Get email (sub) of the admin performing the action
+  const adminUserRes = await getUserByEmail(db, sub)
+  if (!adminUserRes || !adminUserRes.length) {
+    Logger.error(
+      { adminEmail: sub },
+      "Admin user not found for data deletion action.",
+    )
+    throw new NoUserFound({
+      message: `Admin user with email ${sub} not found.`,
+    })
+  }
+  // Potentially add more authorization checks here to ensure only permitted admins can delete data.
+
+  // @ts-ignore Use the new schema for validation
+  const deletionRequest: DeleteUserDataPayload = c.req.valid("json")
+
+  const { emailToClear, options } = deletionRequest
+
+  // emailToClear is already validated by the Zod schema
+  // No need for: if (!emailToClear || typeof emailToClear !== 'string') { ... }
+
+  Logger.info(
+    { adminEmail: sub, targetEmail: emailToClear, options },
+    "Admin initiated user data deletion.",
+  )
+
+  try {
+    const deletionResults = await clearUserDataInVespa(emailToClear, options)
+    Logger.info(
+      { adminEmail: sub, targetEmail: emailToClear, results: deletionResults },
+      "User data deletion process completed.",
+    )
+    return c.json({
+      success: true,
+      message: `Data deletion process initiated for user ${emailToClear}. Check server logs for details.`,
+      results: deletionResults,
+    })
+  } catch (error) {
+    const errorMessage = getErrorMessage(error)
+    Logger.error(
+      error,
+      `Failed to clear user data for ${emailToClear}: ${errorMessage}`,
+    )
+    throw new HTTPException(500, {
+      message: `Failed to clear user data for ${emailToClear}: ${errorMessage}`,
     })
   }
 }

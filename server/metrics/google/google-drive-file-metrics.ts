@@ -44,6 +44,7 @@ metricRegister.registerMetric(extractionDuration)
 export const contentFileSize = new Histogram({
   name: "google_drive_content_file_size_bytes",
   help: "Size of content-extracted files in bytes",
+
   labelNames: ["mime_type", "email", "file_type"] as const,
   buckets: [
     10 * 1024, // 10KB

@@ -131,6 +131,7 @@ import {
 } from "@/metrics/google/google-drive-file-metrics"
 import { v4 as uuidv4 } from "uuid"
 
+
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -1461,6 +1462,7 @@ const googleSlidesVespa = async (
         error,
       )
       fileExtractionErrorsTotal.inc({
+
         mime_type:
           presentation.mimeType ?? "application/vnd.google-apps.presentation",
         error_type: "PRESENTATION_EXTRACTION_FAILED_ERROR",
@@ -1663,6 +1665,7 @@ const insertFilesForUser = async (
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
 
+
           console.log(`Mime type: `, doc.mimeType)
           totalIngestedFiles.inc({
             mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
@@ -1670,7 +1673,6 @@ const insertFilesForUser = async (
             email: userEmail,
             file_type: fileType,
           })
-
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
             tracker.updateUserStats(userEmail, StatType.Drive, 1)
@@ -2172,6 +2174,7 @@ export const googlePDFsVespa = async (
         })
         return null
       }
+
       console.log(`PDF SIZE : `, pdfSizeInMB)
       contentFileSize.observe(
         {
@@ -2320,7 +2323,7 @@ type ContactsResponse = {
 }
 
 // get both contacts and other contacts and return the sync tokens
-const listAllContacts = async (
+export const listAllContacts = async (
   client: GoogleClient,
 ): Promise<ContactsResponse> => {
   const peopleService = google.people({ version: "v1", auth: client })
@@ -2741,7 +2744,6 @@ export const driveFilesToDoc = async (
       results.push(file)
     }
   }
-
   metadataFiles.inc(
     {
       file_type: "GOOGLE_DRIVE_FILE",
