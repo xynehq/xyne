@@ -26,15 +26,15 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       TanStackRouterVite({
-      routeFileIgnorePattern: '\\.test\\.(ts|tsx|js|jsx)$',
-    }),
-    react({
-      jsxRuntime: 'automatic'
-    }),
-    svgr()
-  ],
+        routeFileIgnorePattern: "\\.test\\.(ts|tsx|js|jsx)$",
+      }),
+      react({
+        jsxRuntime: "automatic",
+      }),
+      svgr(),
+    ],
     optimizeDeps: {
-      exclude: ['zod'],
+      exclude: ["zod"],
     },
     resolve: {
       alias: {
@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => {
           "../server/search/types",
         ),
         shared: path.resolve(import.meta.dirname, "../server/shared"),
-        'react': path.resolve(import.meta.dirname, './node_modules/react'),
+        react: path.resolve(import.meta.dirname, "./node_modules/react"),
       },
     },
     server: {
@@ -63,10 +63,10 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       globals: true,
-      environment: 'jsdom',
-      setupFiles: './src/Tests.ts',
+      environment: "jsdom",
+      setupFiles: "./src/Tests.ts",
       deps: {
-        inline: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
+        inline: ["react", "react/jsx-runtime", "react/jsx-dev-runtime"],
       },
     },
   }

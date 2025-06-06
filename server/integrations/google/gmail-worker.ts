@@ -19,6 +19,7 @@ import {
 import { ifDocumentsExist, ifMailDocumentsExist, insert } from "@/search/vespa"
 import {
   MessageTypes,
+  OperationStatus,
   Subsystem,
   WorkerResponseTypes,
   type GoogleClient,
@@ -47,6 +48,7 @@ import {
   totalAttachmentIngested,
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
+import { AuthType } from "@/shared/types"
 
 import { skipMailExistCheck } from "@/integrations/google/config"
 
@@ -261,17 +263,15 @@ export const handleGmailIngestion = async (
               // Increment counters only on success
               insertedMessagesInBatch++
               insertedPdfAttachmentsInBatch += insertedPdfCount
-
               totalIngestedMails.inc(
                 {
-                  mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
-                  status: "GMAIL_INGEST_SUCCESS",
+                  mime_type: msgResp.data.payload?.mimeType ?? Apps.Gmail,
+                  status: OperationStatus.Success,
                   email: email,
-                  account_type: "SERVICE_ACCOUNT",
+                  account_type: AuthType.ServiceAccount,
                 },
                 1,
               )
-
             }
           } catch (error) {
             Logger.error(
@@ -280,9 +280,10 @@ export const handleGmailIngestion = async (
             )
             ingestionMailErrorsTotal.inc(
               {
-                mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
-                status: "FAILED",
+                mime_type: msgResp?.data.payload?.mimeType ?? Apps.Gmail,
+                status: OperationStatus.Failure,
                 error_type: "ERROR_IN_GMAIL_INGESTION",
+                account_type: AuthType.ServiceAccount,
               },
               1,
             )
@@ -486,12 +487,11 @@ export const parseMail = async (
 
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
-
             totalAttachmentIngested.inc(
               {
                 mime_type: mimeType,
-                status: "SUCCESS",
-                account_type: "OAUTH_ACCOUNT",
+                status: OperationStatus.Success,
+                account_type: AuthType.ServiceAccount,
                 email: userEmail,
               },
               1,
@@ -507,9 +507,10 @@ export const parseMail = async (
             totalAttachmentError.inc(
               {
                 mime_type: mimeType,
-                status: "FAILED",
+                status: OperationStatus.Failure,
                 email: userEmail,
                 error_type: "ERROR_INSERTING_ATTACHMENT",
+                account_type: AuthType.ServiceAccount,
               },
               1,
             )

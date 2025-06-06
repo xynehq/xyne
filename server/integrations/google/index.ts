@@ -16,6 +16,7 @@ import {
 import { chunkDocument } from "@/chunks"
 import {
   MessageTypes,
+  OperationStatus,
   Subsystem,
   SyncCron,
   WorkerResponseTypes,
@@ -55,7 +56,12 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import { getAppSyncJobs, getAppSyncJobsByEmail, insertSyncJob, updateSyncJob } from "@/db/syncJob"
+import {
+  getAppSyncJobs,
+  getAppSyncJobsByEmail,
+  insertSyncJob,
+  updateSyncJob,
+} from "@/db/syncJob"
 import { GaxiosError, type GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
 import { getErrorMessage, retryWithBackoff } from "@/utils"
@@ -636,8 +642,8 @@ const insertCalendarEvents = async (
   const cancelledEvents = events.filter((e) => e.status === "cancelled")
 
   const totalDurationForEventIngestion = ingestionDuration.startTimer({
-    file_type: "GOOGLE_CALENDAR_EVENT",
-    mime_type: "google_calendar_events",
+    file_type: CalendarEntity.Event,
+    mime_type: CalendarEntity.Event,
     email: userEmail,
   })
   // Insert confirmed events
@@ -739,9 +745,9 @@ const insertCalendarEvents = async (
   totalDurationForEventIngestion()
   metadataFiles.inc(
     {
-      file_type: "GOOGLE_CALENDAR_EVENT",
-      mime_type: "google_calendar_events",
-      status: "SUCCESS",
+      file_type: CalendarEntity.Event,
+      mime_type: CalendarEntity.Event,
+      status: OperationStatus.Success,
       email: userEmail,
     },
     events.length,
@@ -1414,7 +1420,7 @@ const googleSlidesVespa = async (
       mime_type:
         presentation.mimeType ?? "application/vnd.google-apps.presentation",
       email: userEmail,
-      file_type: "GOOGLE_DRIVE_SLIDE",
+      file_type: DriveEntity.Slides,
     })
     try {
       const presentationToBeIngested = await getPresentationToBeIngested(
@@ -1429,8 +1435,8 @@ const googleSlidesVespa = async (
         {
           mime_type:
             presentation.mimeType ?? "application/vnd.google-apps.presentation",
-          status: "SUCCESS",
-          file_type: "GOOGLE_DRIVE_SLIDE",
+          status: OperationStatus.Success,
+          file_type: DriveEntity.Slides,
         },
         1,
       )
@@ -1445,7 +1451,7 @@ const googleSlidesVespa = async (
           mime_type:
             presentation.mimeType ?? "application/vnd.google-apps.presentation",
           email: userEmail ?? "",
-          file_type: "GOOGLE_DRIVE_SLIDE",
+          file_type: DriveEntity.Slides,
         },
         isNaN(sizeBytes) ? 0 : sizeBytes,
       )
@@ -1459,7 +1465,7 @@ const googleSlidesVespa = async (
         mime_type:
           presentation.mimeType ?? "application/vnd.google-apps.presentation",
         error_type: "PRESENTATION_EXTRACTION_FAILED_ERROR",
-        file_type: "GOOGLE_DRIVE_SLIDE",
+        file_type: DriveEntity.Slides,
         email: userEmail,
       })
       continue
@@ -1536,7 +1542,7 @@ const insertFilesForUser = async (
       // Start timer for PDF file extraction duration
       const pdfFileExtractionDuration =
         totalDurationForFileExtraction.startTimer({
-          file_type: "GOOGLE_DRIVE_PDF",
+          file_type: DriveEntity.PDF,
           mime_type: "google_pdf",
           email: userEmail,
         })
@@ -1555,9 +1561,9 @@ const insertFilesForUser = async (
       // End timer for PDF file extraction duration
       pdfFileExtractionDuration()
 
-      // Metrics for ingestion duration of pdfs in google drive
+      const fileType = DriveEntity.PDF
       const totalTimeToIngestPDF = ingestionDuration.startTimer({
-        file_type: "GOOGLE_DRIVE_PDF",
+        file_type: fileType,
         mime_type: "google_pdf",
         email: userEmail,
       })
@@ -1566,24 +1572,23 @@ const insertFilesForUser = async (
           processedFiles += 1
           await insertWithRetry(doc, fileSchema)
           totalIngestedFiles.inc({
-            mime_type: doc.mimeType ?? "google_pdf",
-            status: "SUCCESS",
+            mime_type: doc.mimeType ?? DriveEntity.PDF,
+            status: OperationStatus.Success,
             email: userEmail,
-            file_type: "GOOGLE_DRIVE_PDF",
+            file_type: fileType,
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
         } catch (error) {
           ingestionErrorsTotal.inc(
             {
-              file_type: "GOOGLE_DRIVE_PDF",
+              file_type: fileType,
               mime_type: doc.mimeType ?? "google_pdf",
               email: doc.ownerEmail ?? userEmail,
-              error_type: `ERROR_INGESTING_GOOGLE_DRIVE_PDF`,
-              status: "FAILED",
+              error_type: `ERROR_INGESTING_${DriveEntity.PDF}`,
+              status: OperationStatus.Failure,
             },
             1,
           )
-
         }
       }
       // end of duration timer for pdf ingestion
@@ -1591,7 +1596,7 @@ const insertFilesForUser = async (
 
       const totalDurationOfDriveFileExtraction =
         totalDurationForFileExtraction.startTimer({
-          file_type: "GOOGLE_DRIVE_FILE",
+          file_type: DriveEntity.Misc,
           mime_type: "application/vnd.google-apps.file",
           email: userEmail,
         })
@@ -1636,13 +1641,11 @@ const insertFilesForUser = async (
         return v
       })
 
-
       const totalIngestionDuration = ingestionDuration.startTimer({
-        file_type: "GOOGLE_DRIVE_FILE",
+        file_type: DriveEntity.Misc,
         mime_type: "application/vnd.google-apps.file",
         email: userEmail,
       })
-
       for (const doc of allFiles) {
         Logger.info(
           `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
@@ -1650,24 +1653,25 @@ const insertFilesForUser = async (
         // determine the  file type here so we can insert in metrics data
         const fileType =
           doc.mimeType === DriveMime.Docs
-            ? "GOOGLE_DRIVE_DOC"
+            ? DriveEntity.Docs
             : doc.mimeType === DriveMime.Sheets
-              ? "GOOGLE_DRIVE_SHEET"
+              ? DriveEntity.Sheets
               : doc.mimeType === DriveMime.Slides
-                ? "GOOGLE_DRIVE_SLIDE"
-                : "GOOGLE_DRIVE_FILE"
+                ? DriveEntity.Slides
+                : DriveEntity.Misc
         try {
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
-
           console.log(`Mime type: `, doc.mimeType)
           totalIngestedFiles.inc({
-            mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
-            status: "SUCCESS",
+            mime_type:
+              fileType == DriveEntity.Misc
+                ? "application/vnd.google-apps.file"
+                : (doc.mimeType ?? ""),
+            status: OperationStatus.Success,
             email: userEmail,
             file_type: fileType,
           })
-
           if (doc.mimeType !== DriveMime.Sheets) {
             processedFiles += 1
             tracker.updateUserStats(userEmail, StatType.Drive, 1)
@@ -1683,8 +1687,8 @@ const insertFilesForUser = async (
               file_type: fileType,
               mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
               email: doc.ownerEmail ?? userEmail,
-              error_type: `ERROR_INSERTING_${fileType}_file`,
-              status: "FAILED",
+              error_type: `FILE_INSERTION_ERROR`,
+              status: OperationStatus.Failure,
             },
             1,
           )
@@ -2008,7 +2012,7 @@ const googleSheetsVespa = async (
       {
         mime_type:
           spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
-        file_type: "GOOGLE_DRIVE_SHEET",
+        file_type: DriveEntity.Sheets,
         email: userEmail,
       },
       sheetSize,
@@ -2018,7 +2022,7 @@ const googleSheetsVespa = async (
         mime_type:
           spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
         email: userEmail,
-        file_type: "GOOGLE_DRIVE_SHEET",
+        file_type: DriveEntity.Sheets,
       })
       const sheetsListFromOneSpreadsheet =
         await getSheetsListFromOneSpreadsheet(sheets, client, spreadsheet)
@@ -2029,9 +2033,9 @@ const googleSheetsVespa = async (
         {
           mime_type:
             spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
-          status: "SUCCESS",
+          status: OperationStatus.Success,
           email: userEmail,
-          file_type: "GOOGLE_DRIVE_SHEET",
+          file_type: DriveEntity.Sheets,
         },
         1,
       )
@@ -2049,7 +2053,7 @@ const googleSheetsVespa = async (
         mime_type:
           spreadsheet.mimeType ?? "application/vnd.google-apps.spreadsheet",
         email: userEmail,
-        file_type: "GOOGLE_DRIVE_SHEET",
+        file_type: DriveEntity.Sheets,
       })
       // throw new DownloadDocumentError({
       //   message: "Error in the catch of getting sheet files",
@@ -2164,8 +2168,8 @@ export const googlePDFsVespa = async (
           mime_type: pdf.mimeType ?? "google_pdf",
           blocked_type: "MAX_PDF_SIZE_EXCEEDED",
           email: userEmail,
-          file_type: "GOOGLE_DRIVE_PDF",
-          status: "BLOCKED",
+          file_type: DriveEntity.PDF,
+          status: OperationStatus.Cancelled,
         })
         return null
       }
@@ -2173,7 +2177,7 @@ export const googlePDFsVespa = async (
       contentFileSize.observe(
         {
           mime_type: pdf.mimeType ?? "google_pdf",
-          file_type: "GOOGLE_DRIVE_PDF",
+          file_type: DriveEntity.PDF,
           email: userEmail,
         },
         pdf.size ? parseInt(pdf.size) : 0,
@@ -2186,7 +2190,7 @@ export const googlePDFsVespa = async (
         )
         const endExtractionTimer = extractionDuration.startTimer({
           mime_type: pdf.mimeType ?? "google_pdf",
-          file_type: "GOOGLE_DRIVE_PDF",
+          file_type: DriveEntity.PDF,
           email: userEmail,
         })
         await downloadPDF(drive, pdf.id!, pdfFileName, client)
@@ -2214,9 +2218,9 @@ export const googlePDFsVespa = async (
         totalExtractedFiles.inc(
           {
             mime_type: pdf.mimeType ?? "google_pdf",
-            status: "SUCCESS",
+            status: OperationStatus.Success,
             email: userEmail,
-            file_type: "GOOGLE_DRIVE_PDF",
+            file_type: DriveEntity.PDF,
           },
           1,
         )
@@ -2251,8 +2255,8 @@ export const googlePDFsVespa = async (
         }
         fileExtractionErrorsTotal.inc({
           error_type: "PDF_EXTRACTION_FAILED_ERROR",
-          mime_type: pdf.mimeType ?? "google_pdf",
-          file_type: "GOOGLE_DRIVE_PDF",
+          mime_type: pdf.mimeType ?? DriveEntity.PDF,
+          file_type: DriveEntity.PDF,
           email: userEmail,
         })
         // we cannot break the whole pdf pipeline for one error
@@ -2502,8 +2506,8 @@ const insertContactsToVespa = async (
   tracker: Tracker,
 ): Promise<void> => {
   const contactIngestionDuration = ingestionDuration.startTimer({
-    file_type: "GOOGLE_CONTACT",
-    mime_type: "google_people",
+    file_type: GooglePeopleEntity.Contacts,
+    mime_type: GooglePeopleEntity.Contacts,
     email: owner,
   })
   try {
@@ -2536,7 +2540,12 @@ const insertContactsToVespa = async (
   } finally {
     contactIngestionDuration()
     metadataFiles.inc(
-      { file_type: "GOOGLE_CONTACT", mime_type: "google_people", email: owner },
+      {
+        file_type: GooglePeopleEntity.Contacts,
+        mime_type: GooglePeopleEntity.Contacts,
+        email: owner,
+        status: OperationStatus.Success,
+      },
       contacts.length + otherContacts.length,
     )
   }
@@ -2618,7 +2627,7 @@ export const googleDocsVespa = async (
       )
       const endDownloadDuration = extractionDuration.startTimer({
         mime_type: doc.mimeType ?? "application/vnd.google-apps.document",
-        file_type: "GOOGLE_DRIVE_DOC",
+        file_type: DriveEntity.Docs,
         email: userEmail,
       })
       try {
@@ -2655,7 +2664,7 @@ export const googleDocsVespa = async (
         contentFileSize.observe(
           {
             mime_type: doc.mimeType ?? "",
-            file_type: "GOOGLE_DRIVE_DOC",
+            file_type: DriveEntity.Docs,
             email: userEmail,
           },
           sizeInBytes,
@@ -2698,9 +2707,9 @@ export const googleDocsVespa = async (
         totalExtractedFiles.inc(
           {
             mime_type: doc.mimeType ?? "",
-            status: "SUCCESS",
+            status: OperationStatus.Success,
             email: userEmail,
-            file_type: "GOOGLE_DRIVE_DOC",
+            file_type: DriveEntity.Docs,
           },
           1,
         )
@@ -2714,7 +2723,7 @@ export const googleDocsVespa = async (
         fileExtractionErrorsTotal.inc({
           error_type: "DOCUMENT_EXTRACTION_FAILED_ERROR",
           mime_type: doc.mimeType ?? "",
-          file_type: "GOOGLE_DRIVE_DOC",
+          file_type: DriveEntity.Docs,
           email: userEmail,
         })
         return null
@@ -2738,16 +2747,6 @@ export const driveFilesToDoc = async (
       results.push(file)
     }
   }
-
-  metadataFiles.inc(
-    {
-      file_type: "GOOGLE_DRIVE_FILE",
-      mime_type: "application/vnd.google-apps.file",
-      email: userEmail,
-    },
-    rest.length,
-  )
-
   return results
 }
 
@@ -3332,23 +3331,27 @@ export const ServiceAccountIngestMoreUsers = async (
 
     await db.transaction(async (trx) => {
       for (const meta of ingestionMetadataList) {
-
         // using email we will check that does the service account sync job for this
         // user alredy exist or not
         const apps = [
-          { name: 'Drive', app: Apps.GoogleDrive },
-          { name: 'Gmail', app: Apps.Gmail },
-          { name: 'Calendar', app: Apps.GoogleCalendar }
-        ];
-        
-        const jobExists: Record<string, boolean> = {};
+          { name: "Drive", app: Apps.GoogleDrive },
+          { name: "Gmail", app: Apps.Gmail },
+          { name: "Calendar", app: Apps.GoogleCalendar },
+        ]
+
+        const jobExists: Record<string, boolean> = {}
         for (const { name, app } of apps) {
-          const jobs = await getAppSyncJobsByEmail(db, app, AuthType.ServiceAccount, meta.email);
-          jobExists[`${name}JobExist`] = jobs && jobs.length > 0;
+          const jobs = await getAppSyncJobsByEmail(
+            db,
+            app,
+            AuthType.ServiceAccount,
+            meta.email,
+          )
+          jobExists[`${name}JobExist`] = jobs && jobs.length > 0
         }
 
-
-        if (!jobExists.DriveJobExist &&
+        if (
+          !jobExists.DriveJobExist &&
           insertDriveAndContacts &&
           (meta.driveToken || meta.contactsToken || meta.otherContactsToken)
         ) {
@@ -3389,7 +3392,11 @@ export const ServiceAccountIngestMoreUsers = async (
           })
         }
 
-        if (!jobExists.CalendarJobExist  && insertCalendar && meta.calendarEventsToken) {
+        if (
+          !jobExists.CalendarJobExist &&
+          insertCalendar &&
+          meta.calendarEventsToken
+        ) {
           await insertSyncJob(trx, {
             workspaceId: connector!.workspaceId,
             workspaceExternalId: connector!.workspaceExternalId,

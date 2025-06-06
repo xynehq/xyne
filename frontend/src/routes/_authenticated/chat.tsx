@@ -8,7 +8,16 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown, ThumbsUp, ThumbsDown } from "lucide-react"
+import {
+  Bookmark,
+  Copy,
+  Ellipsis,
+  Pencil,
+  X,
+  ChevronDown,
+  ThumbsUp,
+  ThumbsDown,
+} from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
 import {
   ChatSSEvents,
@@ -49,7 +58,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
 
-export const THINKING_PLACEHOLDER = "Thinking";
+export const THINKING_PLACEHOLDER = "Thinking"
 
 type CurrentResp = {
   resp: string
@@ -279,7 +288,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   ) // State for all citations
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
-  const [feedbackMap, setFeedbackMap] = useState<Record<string, MessageFeedback | null>>({});
+  const [feedbackMap, setFeedbackMap] = useState<
+    Record<string, MessageFeedback | null>
+  >({})
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
@@ -428,13 +439,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     // Populate feedbackMap from loaded messages
     if (data?.messages) {
-      const initialFeedbackMap: Record<string, MessageFeedback | null> = {};
+      const initialFeedbackMap: Record<string, MessageFeedback | null> = {}
       data.messages.forEach((msg: SelectPublicMessage) => {
-        if (msg.externalId && msg.feedback !== undefined) { // msg.feedback can be null
-          initialFeedbackMap[msg.externalId] = msg.feedback as MessageFeedback | null;
+        if (msg.externalId && msg.feedback !== undefined) {
+          // msg.feedback can be null
+          initialFeedbackMap[msg.externalId] =
+            msg.feedback as MessageFeedback | null
         }
-      });
-      setFeedbackMap(initialFeedbackMap);
+      })
+      setFeedbackMap(initialFeedbackMap)
     }
 
     if (!isStreaming && !hasHandledQueryParam.current) {
@@ -741,38 +754,49 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setQuery("")
   }
 
-  const handleFeedback = async (messageId: string, feedback: MessageFeedback) => {
-    if (!messageId) return;
+  const handleFeedback = async (
+    messageId: string,
+    feedback: MessageFeedback,
+  ) => {
+    if (!messageId) return
 
-    setFeedbackMap(prev => {
-      const currentFeedback = prev[messageId];
+    setFeedbackMap((prev) => {
+      const currentFeedback = prev[messageId]
       return {
         ...prev,
         [messageId]: currentFeedback === feedback ? null : feedback, // Toggle if same, else set new
-      };
-    });
+      }
+    })
 
     try {
-      const currentFeedbackInState = feedbackMap[messageId];
-      const newFeedbackStatus = currentFeedbackInState === feedback ? null : feedback;
+      const currentFeedbackInState = feedbackMap[messageId]
+      const newFeedbackStatus =
+        currentFeedbackInState === feedback ? null : feedback
 
-      await api.message.feedback.$post({ json: { messageId, feedback: newFeedbackStatus } });
-      toast({ title: "Success", description: "Feedback submitted." });
+      await api.message.feedback.$post({
+        json: { messageId, feedback: newFeedbackStatus },
+      })
+      toast({ title: "Success", description: "Feedback submitted." })
     } catch (error) {
-      console.error("Failed to submit feedback", error);
-      setFeedbackMap(prev => {
+      console.error("Failed to submit feedback", error)
+      setFeedbackMap((prev) => {
         // Get the current state after optimistic update
-        const currentState = prev[messageId];
-        const originalFeedback = currentState === null ? feedback : (currentState === feedback ? feedbackMap[messageId] : null);
-        return { ...prev, [messageId]: originalFeedback };
-      });
+        const currentState = prev[messageId]
+        const originalFeedback =
+          currentState === null
+            ? feedback
+            : currentState === feedback
+              ? feedbackMap[messageId]
+              : null
+        return { ...prev, [messageId]: originalFeedback }
+      })
       toast({
         title: "Error",
         description: "Could not submit feedback.",
         variant: "destructive",
-      });
+      })
     }
-  };
+  }
 
   const handleStop = async () => {
     setUserStopped(true) // Indicate intentional stop before closing
@@ -1342,7 +1366,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         isStreaming={isStreaming}
                         isDebugMode={isDebugMode}
                         onShowRagTrace={handleShowRagTrace}
-                        feedbackStatus={feedbackMap[message.externalId!] || null}
+                        feedbackStatus={
+                          feedbackMap[message.externalId!] || null
+                        }
                         onFeedback={handleFeedback}
                       />
                     )}
@@ -1381,7 +1407,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   isDebugMode={isDebugMode}
                   onShowRagTrace={handleShowRagTrace}
                   // Feedback not applicable for streaming response, but props are needed
-                  feedbackStatus={null} 
+                  feedbackStatus={null}
                   onFeedback={handleFeedback}
                 />
               )}
@@ -1610,8 +1636,8 @@ export const ChatMessage = ({
   isStreaming?: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
-  feedbackStatus?: MessageFeedback | null;
-  onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
+  feedbackStatus?: MessageFeedback | null
+  onFeedback?: (messageId: string, feedback: MessageFeedback) => void
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1639,9 +1665,10 @@ export const ChatMessage = ({
       className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
-        <div 
-        className="break-words overflow-wrap-anywhere"
-        dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
+        <div
+          className="break-words overflow-wrap-anywhere"
+          dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
+        />
       ) : (
         <div
           className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
@@ -1663,7 +1690,7 @@ export const ChatMessage = ({
                       padding: 0,
                       backgroundColor: "transparent",
                       color: "#627384",
-                      maxWidth: "100%", 
+                      maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
                     components={{
@@ -1672,7 +1699,7 @@ export const ChatMessage = ({
                   />
                 </div>
               )}
-              {((message === "") && (!responseDone || isRetrying)) ? (
+              {message === "" && (!responseDone || isRetrying) ? (
                 <div className="flex-grow">
                   {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
@@ -1700,7 +1727,6 @@ export const ChatMessage = ({
                             tableLayout: "auto",
                             width: "100%",
                             maxWidth: "100%",
-
                           }}
                           className="min-w-full"
                           {...props}
@@ -1782,24 +1808,38 @@ export const ChatMessage = ({
                 <img
                   className={`ml-[18px] ${isStreaming || !messageId ? "opacity-50" : "cursor-pointer"}`}
                   src={Retry}
-                  onClick={() => messageId && !isStreaming && handleRetry(messageId)}
+                  onClick={() =>
+                    messageId && !isStreaming && handleRetry(messageId)
+                  }
                   title="Retry"
                 />
                 {messageId && onFeedback && (
                   <>
                     <ThumbsUp
                       size={16}
-                      stroke={feedbackStatus === MessageFeedback.Like ? "#10B981" : "#B2C3D4"}
+                      stroke={
+                        feedbackStatus === MessageFeedback.Like
+                          ? "#10B981"
+                          : "#B2C3D4"
+                      }
                       fill="none"
                       className="ml-[18px] cursor-pointer"
-                      onClick={() => onFeedback(messageId, MessageFeedback.Like)}
+                      onClick={() =>
+                        onFeedback(messageId, MessageFeedback.Like)
+                      }
                     />
                     <ThumbsDown
                       size={16}
-                      stroke={feedbackStatus === MessageFeedback.Dislike ? "#EF4444" : "#B2C3D4"}
+                      stroke={
+                        feedbackStatus === MessageFeedback.Dislike
+                          ? "#EF4444"
+                          : "#B2C3D4"
+                      }
                       fill="none"
                       className="ml-[10px] cursor-pointer"
-                      onClick={() => onFeedback(messageId, MessageFeedback.Dislike)}
+                      onClick={() =>
+                        onFeedback(messageId, MessageFeedback.Dislike)
+                      }
                     />
                   </>
                 )}
