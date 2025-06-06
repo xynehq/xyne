@@ -244,6 +244,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
   app: true,
   entity: true,
   photoLink: true,
+  docId: true,
 })
   .strip()
   .extend({
@@ -310,4 +311,9 @@ export enum UserRole {
   TeamLeader = "TeamLeader", // manage Users
   Admin = "Admin", // Service account related changes
   SuperAdmin = "SuperAdmin", // Admin level changes
+}
+
+export enum MessageFeedback {
+  Like = "like",
+  Dislike = "dislike",
 }

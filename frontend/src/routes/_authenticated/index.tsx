@@ -19,7 +19,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
-import { Reference } from "@/types"
 
 enum Tabs {
   Search = "search",
@@ -31,7 +30,7 @@ const Index = () => {
   const [query, setQuery] = useState("")
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
-    return storedValue ? JSON.parse(storedValue) : false
+    return storedValue ? JSON.parse(storedValue) : true
   })
 
   useEffect(() => {
@@ -119,27 +118,17 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (
-    messageToSend: string,
-    references: Reference[],
-    selectedSources?: string[],
-  ) => {
+  const handleAsk = (messageToSend: string, selectedSources?: string[]) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
         reasoning?: boolean
-        refs?: string
         sources?: string
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
       if (isReasoningActive) {
         searchParams.reasoning = true
-      }
-
-      if (references && references.length > 0) {
-        // Pass only reference IDs, stringified as JSON
-        searchParams.refs = JSON.stringify(references.map((ref) => ref.id))
       }
 
       if (selectedSources && selectedSources.length > 0) {
@@ -150,7 +139,6 @@ const Index = () => {
         to: "/chat",
         search: searchParams,
       })
-      // Log them to confirm they are received
     }
   }
 
@@ -218,7 +206,7 @@ const Index = () => {
               </Tooltip>
             </div>
             {activeTab === "search" && (
-              <div className="w-full">
+              <div className="w-full h-72">
                 <SearchBar
                   query={query}
                   setQuery={setQuery}
@@ -231,13 +219,12 @@ const Index = () => {
                   handleAnswer={() => {}}
                   ref={autocompleteRef}
                   hasSearched={false}
-                  filter={filter}
-                  autocompleteRef={autocompleteRef}
+                  filter={filter}                
                 />
               </div>
             )}
             {activeTab === "ask" && (
-              <div className="w-full max-w-3xl">
+              <div className="w-full h-72">
                 <ChatBox
                   query={query}
                   setQuery={setQuery}

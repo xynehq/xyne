@@ -429,9 +429,9 @@ class VespaClient {
   }
 
   async getDocumentsByOnlyDocIds(
-    options: VespaConfigValues & { docIds: string[] },
+    options: VespaConfigValues & { docIds: string[]; generateAnswerSpan: Span },
   ): Promise<VespaSearchResponse> {
-    const { docIds } = options
+    const { docIds, generateAnswerSpan } = options
     const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
     const yqlQuery = `select * from sources * where (${yqlIds})`
     const url = `${this.vespaEndpoint}/search/`
@@ -442,6 +442,8 @@ class VespaClient {
         hits: docIds?.length,
         maxHits: docIds?.length,
       }
+
+      generateAnswerSpan.setAttribute("vespaPayload", JSON.stringify(payload))
 
       const response = await this.fetchWithRetry(url, {
         method: "POST",
@@ -770,6 +772,69 @@ class VespaClient {
         (acc, id) => {
           const foundDoc = foundDocs.find(
             (doc: { docId: string }) => doc.docId === id,
+          )
+          acc[id] = {
+            exists: !!foundDoc,
+            updatedAt: foundDoc?.updatedAt ?? null, // null if not found or no updatedAt
+          }
+          return acc
+        },
+        {} as Record<string, { exists: boolean; updatedAt: number | null }>,
+      )
+
+      return existenceMap
+    } catch (error) {
+      const errMessage = getErrorMessage(error)
+      Logger.error(error, `Error checking documents existence:  ${errMessage}`)
+      throw error
+    }
+  }
+
+  async ifMailDocumentsExist(
+    mailIds: string[],
+  ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
+    // Construct the YQL query
+    const yqlIds = mailIds.map((id) => `"${id}"`).join(", ")
+    const yqlQuery = `select mailId, updatedAt from sources mail where mailId in (${yqlIds})`
+    const url = `${this.vespaEndpoint}/search/`
+
+    try {
+      const payload = {
+        yql: yqlQuery,
+        hits: mailIds.length,
+        maxHits: mailIds.length + 1,
+      }
+
+      const response = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const result = await response.json()
+
+      // Extract found documents with their mailId and updatedAt
+      const foundDocs =
+        result.root?.children?.map((hit: any) => ({
+          mailId: hit.fields.mailId as string,
+          updatedAt: hit.fields.updatedAt as number | undefined, // undefined if not present
+        })) || []
+
+      // Build the result map using original mailIds as keys
+      const existenceMap = mailIds.reduce(
+        (acc, id) => {
+          const cleanedId = id.replace(/<(.*?)>/, "$1")
+          const foundDoc = foundDocs.find(
+            (doc: { mailId: string }) => doc.mailId === cleanedId,
           )
           acc[id] = {
             exists: !!foundDoc,

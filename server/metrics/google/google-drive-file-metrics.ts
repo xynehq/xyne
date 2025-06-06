@@ -5,14 +5,7 @@ import metricRegister from "@/metrics/sharedRegistry"
 export const totalIngestedFiles = new Counter({
   name: "google_drive_ingested_total",
   help: "Total number of ingested files",
-  labelNames: [
-    "file_id",
-    "mime_type",
-    "status",
-    "file_name",
-    "email",
-    "file_type",
-  ],
+  labelNames: ["mime_type", "status", "email","file_type"],
 })
 metricRegister.registerMetric(totalIngestedFiles) // register this metric function in the registry
 
@@ -20,15 +13,7 @@ metricRegister.registerMetric(totalIngestedFiles) // register this metric functi
 export const ingestionErrorsTotal = new Counter({
   name: "google_drive_ingestion_errors_total",
   help: "Total number of ingestion errors",
-  labelNames: [
-    "file_id",
-    "error_type",
-    "mime_type",
-    "file_name",
-    "email",
-    "file_type",
-    "status",
-  ] as const,
+  labelNames: ["error_type", "mime_type", "email", "file_type", "status"] as const,
 })
 metricRegister.registerMetric(ingestionErrorsTotal)
 
@@ -36,15 +21,7 @@ metricRegister.registerMetric(ingestionErrorsTotal)
 export const blockedFilesTotal = new Counter({
   name: "google_drive_blocked_files_total",
   help: "Number of files blocked during ingestion",
-  labelNames: [
-    "file_name",
-    "email",
-    "file_id",
-    "mime_type",
-    "blocked_type",
-    "file_type",
-    "status",
-  ],
+  labelNames: ["email", "mime_type", "blocked_type", "file_type", "status"],
 })
 metricRegister.registerMetric(blockedFilesTotal)
 
@@ -52,13 +29,7 @@ metricRegister.registerMetric(blockedFilesTotal)
 export const extractionDuration = new Histogram({
   name: "google_drive_content_extraction_duration_seconds",
   help: "Duration of contents extracted per file",
-  labelNames: [
-    "file_id",
-    "file_name",
-    "mime_type",
-    "email",
-    "file_type",
-  ] as const,
+  labelNames: ["mime_type", "email","file_type"] as const,
   buckets: [0.5, 1, 2, 5, 10, 30, 60, 120],
 })
 metricRegister.registerMetric(extractionDuration)
@@ -67,25 +38,20 @@ metricRegister.registerMetric(extractionDuration)
 export const contentFileSize = new Histogram({
   name: "google_drive_content_file_size_bytes",
   help: "Size of content-extracted files in bytes",
-  labelNames: [
-    "file_id",
-    "file_name",
-    "mime_type",
-    "email",
-    "file_type",
-  ] as const,
-  buckets: [
-    10 * 1024, // 10KB
-    100 * 1024, // 100KB
-    1 * 1024 * 1024, // 1MB
-    5 * 1024 * 1024, // 5MB
-    10 * 1024 * 1024, // 10MB
-    50 * 1024 * 1024, // 50MB
-    100 * 1024 * 1024, // 100MB
-    200 * 1024 * 1024, // 200MB
-    500 * 1024 * 1024, // 500MB
-    1024 * 1024 * 1024, // 1GB
-  ],
+
+  labelNames: ["mime_type", "email", "file_type"] as const,
+   buckets: [
+      10 * 1024,          // 10KB
+      100 * 1024,         // 100KB
+      1 * 1024 * 1024,    // 1MB
+      5 * 1024 * 1024,    // 5MB
+      10 * 1024 * 1024,   // 10MB
+      50 * 1024 * 1024,   // 50MB
+      100 * 1024 * 1024,  // 100MB
+      200 * 1024 * 1024,  // 200MB
+      500 * 1024 * 1024,  // 500MB
+      1024 * 1024 * 1024, // 1GB
+    ]
 })
 metricRegister.registerMetric(contentFileSize)
 
@@ -93,14 +59,7 @@ metricRegister.registerMetric(contentFileSize)
 export const fileExtractionErrorsTotal = new Counter({
   name: "google_drive_file_extraction_errors_total",
   help: "Total number of extraction errors",
-  labelNames: [
-    "file_id",
-    "file_name",
-    "error_type",
-    "mime_type",
-    "email",
-    "file_type",
-  ] as const,
+  labelNames: ["error_type", "mime_type", "email","file_type"] as const,
 })
 metricRegister.registerMetric(fileExtractionErrorsTotal)
 
@@ -108,14 +67,7 @@ metricRegister.registerMetric(fileExtractionErrorsTotal)
 export const totalExtractedFiles = new Counter({
   name: "google_drive_files_extracted_total",
   help: "Total number of extracted files",
-  labelNames: [
-    "file_id",
-    "mime_type",
-    "status",
-    "file_name",
-    "email",
-    "file_type",
-  ],
+  labelNames: ["mime_type", "status", "email", "file_type"],
 })
 metricRegister.registerMetric(totalExtractedFiles)
 

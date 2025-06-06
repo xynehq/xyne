@@ -8,12 +8,13 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown } from "lucide-react"
+import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown, ThumbsUp, ThumbsDown } from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
 import {
   ChatSSEvents,
   SelectPublicMessage,
   Citation,
+  MessageFeedback,
   // Apps,
   // DriveEntity,
 } from "shared/types"
@@ -47,6 +48,8 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
+
+export const THINKING_PLACEHOLDER = "Thinking";
 
 type CurrentResp = {
   resp: string
@@ -86,8 +89,10 @@ type ParsedMessagePart =
         app?: string
         entity?: string
         pillType?: "citation" | "global"
+        imgSrc?: string | null
       }
     }
+  | { type: "link"; value: string }
 
 // Helper function to parse HTML message input
 const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
@@ -105,18 +110,41 @@ const parseMessageInput = (htmlString: string): Array<ParsedMessagePart> => {
       if (
         el.tagName.toLowerCase() === "a" &&
         el.classList.contains("reference-pill") &&
-        el.dataset.docId
+        (el.dataset.docId || el.dataset.referenceId)
       ) {
+        const entity = el.dataset.entity
+        const isContactPill =
+          entity === "OtherContacts" || entity === "Contacts"
+        let imgSrc: string | null = null
+        const imgElement = el.querySelector("img")
+        if (imgElement) {
+          imgSrc = imgElement.getAttribute("src")
+        }
         parts.push({
           type: "pill",
           value: {
-            docId: el.dataset.docId,
-            url: el.getAttribute("href"),
+            docId: el.dataset.docId || el.dataset.referenceId!,
+            url: isContactPill ? null : el.getAttribute("href"),
             title: el.getAttribute("title"),
             app: el.dataset.app,
-            entity: el.dataset.entity,
+            entity: entity,
+            imgSrc: imgSrc,
           },
         })
+      } else if (el.tagName.toLowerCase() === "a" && el.getAttribute("href")) {
+        // Ensure this link is not also a reference pill that we've already processed
+        if (
+          !(
+            el.classList.contains("reference-pill") &&
+            (el.dataset.docId || el.dataset.referenceId)
+          )
+        ) {
+          parts.push({
+            type: "link",
+            value: el.getAttribute("href") || "",
+          })
+        }
+        // Do not walk children of a link we've already processed as a "link" part
       } else {
         Array.from(el.childNodes).forEach(walk)
       }
@@ -146,7 +174,8 @@ const jsonToHtmlMessage = (jsonString: string): string => {
           part.value &&
           typeof part.value === "object"
         ) {
-          const { docId, url, title, app, entity, pillType } = part.value
+          const { docId, url, title, app, entity, pillType, imgSrc } =
+            part.value
 
           const referenceForPill: Reference = {
             id: docId,
@@ -156,12 +185,27 @@ const jsonToHtmlMessage = (jsonString: string): string => {
             app: app,
             entity: entity,
             type: pillType || "global",
+            // Include imgSrc if available, mapping it to photoLink for the Reference type.
+            // The Pill component will need to be able to utilize this.
+            ...(imgSrc && { photoLink: imgSrc }),
           }
           htmlPart = renderToStaticMarkup(
             React.createElement(Pill, { newRef: referenceForPill }),
           )
+        } else if (part.type === "link" && typeof part.value === "string") {
+          const url = part.value
+          // Create a simple anchor tag string for links
+          // Ensure it has similar styling to how it's created in ChatBox
+          // The text of the link will be the URL itself
+          htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline hover:text-blue-800 cursor-pointer">${url}</a>`
         }
-        htmlPart += " "
+        // Add a space only if the part is not the last one, or if the next part is text.
+        // This avoids trailing spaces or double spaces between elements.
+        if (htmlPart.length > 0 && index < parts.length - 1) {
+          // Add space if current part is not empty and it's not the last part.
+          // More sophisticated logic might be needed if consecutive non-text elements occur.
+          htmlPart += " "
+        }
         return htmlPart
       })
       .join("")
@@ -235,10 +279,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   ) // State for all citations
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, MessageFeedback | null>>({});
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
-    return storedValue ? JSON.parse(storedValue) : false
+    return storedValue ? JSON.parse(storedValue) : true
   })
 
   useEffect(() => {
@@ -380,6 +425,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setChatId((params as any).chatId || null)
     setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
+
+    // Populate feedbackMap from loaded messages
+    if (data?.messages) {
+      const initialFeedbackMap: Record<string, MessageFeedback | null> = {};
+      data.messages.forEach((msg: SelectPublicMessage) => {
+        if (msg.externalId && msg.feedback !== undefined) { // msg.feedback can be null
+          initialFeedbackMap[msg.externalId] = msg.feedback as MessageFeedback | null;
+        }
+      });
+      setFeedbackMap(initialFeedbackMap);
+    }
+
     if (!isStreaming && !hasHandledQueryParam.current) {
       setCurrentResp(null)
       currentRespRef.current = null
@@ -391,7 +448,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
-    data?.messages,
+    data?.messages, // This will re-run when messages data changes
     isWithChatId,
     params,
   ])
@@ -399,33 +456,6 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   useEffect(() => {
     if (chatParams.q && !hasHandledQueryParam.current) {
       const messageToSend = decodeURIComponent(chatParams.q)
-
-      let refIdArray: string[] = []
-      // Process chatParams.refs safely
-      const _refs = chatParams.refs as string | string[] | undefined
-
-      if (Array.isArray(_refs)) {
-        refIdArray = _refs.filter((ref) => typeof ref === "string")
-      } else if (typeof _refs === "string") {
-        try {
-          const parsedRefs = JSON.parse(_refs)
-          if (
-            Array.isArray(parsedRefs) &&
-            parsedRefs.every((item) => typeof item === "string")
-          ) {
-            refIdArray = parsedRefs
-          }
-        } catch (e) {
-          console.error("Failed to parse chatParams.refs:", _refs, e)
-        }
-      }
-
-      const referencesForHandleSend: Reference[] = refIdArray.map((refId) => ({
-        id: refId,
-        title: `Document: ${refId}`,
-        docId: refId,
-        type: "global",
-      }))
 
       let sourcesArray: string[] = []
       // Process chatParams.sources safely
@@ -445,7 +475,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         setIsReasoningActive(chatParams.reasoning)
       }
 
-      handleSend(messageToSend, referencesForHandleSend, sourcesArray)
+      // Call handleSend without referencesForHandleSend, as it's no longer a parameter
+      handleSend(messageToSend, sourcesArray)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -453,24 +484,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           ...prev,
           q: undefined,
           reasoning: undefined,
-          refs: undefined,
           sources: undefined,
         }),
         replace: true,
       })
     }
-  }, [
-    chatParams.q,
-    chatParams.reasoning,
-    chatParams.refs,
-    chatParams.sources,
-    router,
-  ])
+  }, [chatParams.q, chatParams.reasoning, chatParams.sources, router])
 
   const handleSend = async (
     messageToSend: string,
-    // isReasoningEnabled?: boolean, // Removed: handleSend will use isReasoningActive state
-    addedReferences: Reference[] = [],
     selectedSources: string[] = [],
   ) => {
     if (!messageToSend || isStreaming) return
@@ -489,20 +511,29 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setCurrentResp({ resp: "", thinking: "" })
     currentRespRef.current = { resp: "", sources: [], thinking: "" }
 
-    const fileIds = addedReferences
-      .filter((ref) => ref.docId)
-      .map((ref) => ref.docId!)
-
     // const appEntities = selectedSources
     //   .map((sourceId) => sourceIdToAppEntityMap[sourceId])
     //   .filter((item) => item !== undefined)
 
+    // Always parse the message input to a structured format
+    const parsedMessageParts = parseMessageInput(messageToSend)
+
+    // Determine if the message contains any pills or links
+    const hasRichContent = parsedMessageParts.some(
+      (part) => part.type === "pill" || part.type === "link",
+    )
+
     let finalMessagePayload: string
-    if (addedReferences.length === 0) {
-      finalMessagePayload = messageToSend
-    } else {
-      const parsedMessageParts = parseMessageInput(messageToSend)
+    if (hasRichContent) {
       finalMessagePayload = JSON.stringify(parsedMessageParts)
+    } else {
+      // If only text parts, send the original plain text message
+      // We extract the text content from parsedMessageParts to ensure it's just the text
+      // and not potentially an empty array string if messageToSend was empty.
+      finalMessagePayload = parsedMessageParts
+        .filter((part) => part.type === "text")
+        .map((part) => part.value)
+        .join("")
     }
 
     const url = new URL(`/api/v1/message/create`, window.location.origin)
@@ -510,8 +541,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
       url.searchParams.append("chatId", chatId)
     }
     url.searchParams.append("modelId", "gpt-4o-mini")
-    url.searchParams.append("message", encodeURIComponent(finalMessagePayload))
-    url.searchParams.append("stringifiedfileIds", JSON.stringify(fileIds))
+    url.searchParams.append("message", finalMessagePayload)
 
     // if (appEntities.length > 0) {
     //   url.searchParams.append(
@@ -710,6 +740,39 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     setQuery("")
   }
+
+  const handleFeedback = async (messageId: string, feedback: MessageFeedback) => {
+    if (!messageId) return;
+
+    setFeedbackMap(prev => {
+      const currentFeedback = prev[messageId];
+      return {
+        ...prev,
+        [messageId]: currentFeedback === feedback ? null : feedback, // Toggle if same, else set new
+      };
+    });
+
+    try {
+      const currentFeedbackInState = feedbackMap[messageId];
+      const newFeedbackStatus = currentFeedbackInState === feedback ? null : feedback;
+
+      await api.message.feedback.$post({ json: { messageId, feedback: newFeedbackStatus } });
+      toast({ title: "Success", description: "Feedback submitted." });
+    } catch (error) {
+      console.error("Failed to submit feedback", error);
+      setFeedbackMap(prev => {
+        // Get the current state after optimistic update
+        const currentState = prev[messageId];
+        const originalFeedback = currentState === null ? feedback : (currentState === feedback ? feedbackMap[messageId] : null);
+        return { ...prev, [messageId]: originalFeedback };
+      });
+      toast({
+        title: "Error",
+        description: "Could not submit feedback.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleStop = async () => {
     setUserStopped(true) // Indicate intentional stop before closing
@@ -1226,6 +1289,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       messageId={message.externalId}
                       handleRetry={handleRetry}
                       citationMap={message.citationMap}
+                      isRetrying={message.isRetrying}
                       dots={message.isRetrying ? dots : ""}
                       onToggleSources={() => {
                         if (
@@ -1245,6 +1309,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                       isStreaming={isStreaming}
                       isDebugMode={isDebugMode}
                       onShowRagTrace={handleShowRagTrace}
+                      feedbackStatus={feedbackMap[message.externalId!] || null}
+                      onFeedback={handleFeedback}
                     />
                     {userMessageWithErr && (
                       <ChatMessage
@@ -1256,6 +1322,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         messageId={message.externalId}
                         handleRetry={handleRetry}
                         citationMap={message.citationMap}
+                        isRetrying={message.isRetrying}
                         dots={message.isRetrying ? dots : ""}
                         onToggleSources={() => {
                           if (
@@ -1275,6 +1342,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         isStreaming={isStreaming}
                         isDebugMode={isDebugMode}
                         onShowRagTrace={handleShowRagTrace}
+                        feedbackStatus={feedbackMap[message.externalId!] || null}
+                        onFeedback={handleFeedback}
                       />
                     )}
                   </Fragment>
@@ -1311,6 +1380,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   isStreaming={isStreaming}
                   isDebugMode={isDebugMode}
                   onShowRagTrace={handleShowRagTrace}
+                  // Feedback not applicable for streaming response, but props are needed
+                  feedbackStatus={null} 
+                  onFeedback={handleFeedback}
                 />
               )}
               <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
@@ -1504,7 +1576,7 @@ const renderMarkdownLink = ({
   <a {...linkProps} target="_blank" rel="noopener noreferrer" />
 )
 
-const ChatMessage = ({
+export const ChatMessage = ({
   message,
   thinking,
   isUser,
@@ -1520,6 +1592,8 @@ const ChatMessage = ({
   isStreaming = false,
   isDebugMode,
   onShowRagTrace,
+  feedbackStatus,
+  onFeedback,
 }: {
   message: string
   thinking: string
@@ -1536,6 +1610,8 @@ const ChatMessage = ({
   isStreaming?: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
+  feedbackStatus?: MessageFeedback | null;
+  onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1560,17 +1636,19 @@ const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px]" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start"}`}
+      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
-        <div dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
+        <div 
+        className="break-words overflow-wrap-anywhere"
+        dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
       ) : (
         <div
-          className={`flex flex-col mt-[40px] ${citationUrls.length ? "mb-[35px]" : ""}`}
+          className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
         >
-          <div className="flex flex-row">
+          <div className="flex flex-row w-full">
             <img
-              className={"mr-[20px] w-[32px] self-start"}
+              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
               src={AssistantLogo}
             />
             <div className="mt-[4px] markdown-content">
@@ -1585,6 +1663,8 @@ const ChatMessage = ({
                       padding: 0,
                       backgroundColor: "transparent",
                       color: "#627384",
+                      maxWidth: "100%", 
+                      overflowWrap: "break-word",
                     }}
                     components={{
                       a: renderMarkdownLink,
@@ -1592,11 +1672,11 @@ const ChatMessage = ({
                   />
                 </div>
               )}
-              {message === "" ? (
+              {((message === "") && (!responseDone || isRetrying)) ? (
                 <div className="flex-grow">
-                  {isRetrying ? `Retrying${dots}` : `Thinking${dots}`}
+                  {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
-              ) : (
+              ) : message !== "" ? (
                 <MarkdownPreview
                   source={processMessage(message)}
                   wrapperElement={{
@@ -1606,17 +1686,21 @@ const ChatMessage = ({
                     padding: 0,
                     backgroundColor: "transparent",
                     color: "#1C1D1F",
+                    maxWidth: "100%",
+                    overflowWrap: "break-word",
                   }}
                   components={{
                     a: renderMarkdownLink,
                     table: ({ node, ...props }) => (
-                      <div className="overflow-x-auto w-[720px] my-2">
+                      <div className="overflow-x-auto max-w-full my-2">
                         <table
                           style={{
                             borderCollapse: "collapse",
                             borderStyle: "hidden",
-                            tableLayout: "fixed",
+                            tableLayout: "auto",
                             width: "100%",
+                            maxWidth: "100%",
+
                           }}
                           className="min-w-full"
                           {...props}
@@ -1671,7 +1755,7 @@ const ChatMessage = ({
                     ),
                   }}
                 />
-              )}
+              ) : null}
             </div>
           </div>
           {responseDone && !isRetrying && (
@@ -1696,10 +1780,29 @@ const ChatMessage = ({
                   }
                 />
                 <img
-                  className={`ml-[18px] ${isStreaming ? "opacity-50" : "cursor-pointer"}`}
+                  className={`ml-[18px] ${isStreaming || !messageId ? "opacity-50" : "cursor-pointer"}`}
                   src={Retry}
-                  onClick={() => handleRetry(messageId!)}
+                  onClick={() => messageId && !isStreaming && handleRetry(messageId)}
+                  title="Retry"
                 />
+                {messageId && onFeedback && (
+                  <>
+                    <ThumbsUp
+                      size={16}
+                      stroke={feedbackStatus === MessageFeedback.Like ? "#10B981" : "#B2C3D4"}
+                      fill="none"
+                      className="ml-[18px] cursor-pointer"
+                      onClick={() => onFeedback(messageId, MessageFeedback.Like)}
+                    />
+                    <ThumbsDown
+                      size={16}
+                      stroke={feedbackStatus === MessageFeedback.Dislike ? "#EF4444" : "#B2C3D4"}
+                      fill="none"
+                      className="ml-[10px] cursor-pointer"
+                      onClick={() => onFeedback(messageId, MessageFeedback.Dislike)}
+                    />
+                  </>
+                )}
                 {!!citationUrls.length && (
                   <div className="ml-auto flex">
                     <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
