@@ -526,6 +526,7 @@ export const cleanColoredContext = (text: string): string => {
 }
 
 const cleanVespaHighlights = (text: string): string => {
+  if(!text) return ""
   const hiTagPattern = /<\/?hi>/g
   return text.replace(hiTagPattern, "").trim()
 }
