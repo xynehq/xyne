@@ -307,6 +307,7 @@ const HistoryModal = ({
                     <DropdownMenuContent>
                       <DropdownMenuItem
                         key={"rename"}
+                        role="button"
                         className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
                         onClick={() => {
                           setEditedTitle(item.title) // Set the current title for editing
@@ -324,6 +325,7 @@ const HistoryModal = ({
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         key={"delete"}
+                        role="button"
                         className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
                         onClick={() => {
                           mutation.mutate(item?.externalId)
