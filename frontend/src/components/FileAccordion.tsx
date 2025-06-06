@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { api } from "@/api"
 interface FileItem {
   docId?: string
-  title: string
+  fileName: string
   createdAt: number
   fileSize?: number
 }
@@ -193,14 +193,14 @@ export default function FileAccordion({
               <div className="space-y-2">
                 {currentFiles.map((file) => (
                   <div
-                    key={`${file.title}-${file.createdAt}`}
+                    key={`${file.fileName}-${file.createdAt}`}
                     className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border hover:bg-slate-100 transition-colors"
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <FileText className="h-5 w-5 text-slate-600 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-900 truncate">
-                          {file.title}
+                          {file.fileName}
                         </p>
                         <p className="text-xs text-slate-500">
                           {formatFileSize(file.fileSize)} •{" "}
