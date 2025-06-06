@@ -42,10 +42,43 @@ export enum Apps {
 
   Gmail = "gmail",
 
-  Notion = "notion",
+  // Notion = "notion",  // Notion is not yet supported
   GoogleCalendar = "google-calendar",
 
   Slack = "slack",
+}
+
+export const isValidApp = (app: string): boolean => {
+  return app
+    ? Object.values(Apps)
+        .map((v) => v.toLowerCase())
+        .includes(app.toLowerCase() as Apps)
+    : false
+}
+
+export const isValidEntity = (entity: string): boolean => {
+  const normalizedEntity = entity?.toLowerCase()
+  return normalizedEntity
+    ? Object.values(DriveEntity)
+        .map((v) => v.toLowerCase())
+        .includes(normalizedEntity) ||
+        Object.values(MailEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(CalendarEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(MailAttachmentEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(GooglePeopleEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(SlackEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity)
+    : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
+      false
 }
 
 export enum GooglePeopleEntity {
@@ -314,6 +347,7 @@ export const AttachmentSchema = z.object({
 export const MailSchema = z.object({
   docId: z.string(),
   threadId: z.string(),
+  mailId: z.string().optional(), // Optional for threads
   subject: z.string().default(""), // Default to empty string to avoid zod errors when subject is missing
   chunks: z.array(z.string()),
   timestamp: z.number(),
@@ -497,6 +531,12 @@ export const VespaChatUserSchema = z.object({
   updatedAt: z.number(),
 })
 
+export const VespaChatUserGetSchema = z.object({
+  id: z.string(),
+  pathId: z.string(),
+  fields: VespaChatUserSchema,
+})
+export type ChatUserCore = z.infer<typeof VespaChatUserGetSchema>
 export const VespaChatUserSearchSchema = VespaChatUserSchema.extend({
   sddocname: z.literal(chatUserSchema),
 }).merge(defaultVespaFieldsSchema)
@@ -518,6 +558,7 @@ export const VespaChatContainerSchema = z.object({
 
   createdAt: z.number(),
   updatedAt: z.number(),
+  lastSyncedAt: z.number(),
 
   topic: z.string(),
   description: z.string(),
@@ -557,7 +598,7 @@ export const VespaChatTeamGetSchema = VespaChatTeamSchema.extend({
 
 export type VespaChatTeam = z.infer<typeof VespaChatTeamSchema>
 export type VespaChatTeamGet = z.infer<typeof VespaChatTeamGetSchema>
-
+export type VespaChatUserType = z.infer<typeof VespaChatUserSchema>
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,

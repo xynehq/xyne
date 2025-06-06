@@ -21,6 +21,7 @@ import {
   UpdateDocument,
   UpdateDocumentPermissions,
   UpdateEventCancelledInstances,
+  insertWithRetry,
 } from "@/search/vespa"
 import { db } from "@/db/client"
 import {
@@ -84,7 +85,7 @@ type ChangeStats = {
   summary: string
 }
 
-const getDocumentOrSpreadsheet = async (docId: string) => {
+export const getDocumentOrSpreadsheet = async (docId: string) => {
   try {
     const doc = await getDocumentOrNull(fileSchema, docId)
     if (!doc) {
@@ -217,7 +218,7 @@ const deleteWholeSpreadsheet = async (
   }
 }
 
-const handleGoogleDriveChange = async (
+export const handleGoogleDriveChange = async (
   change: drive_v3.Schema$Change,
   client: GoogleClient,
   email: string,
@@ -351,14 +352,14 @@ const handleGoogleDriveChange = async (
                 },
               )
               for (const data of allData) {
-                insertDocument(data)
+                await insertWithRetry(data, fileSchema)
               }
             } else {
               vespaData.permissions = toPermissionsList(
                 vespaData.permissions,
                 email,
               )
-              insertDocument(vespaData)
+              await insertWithRetry(vespaData, fileSchema)
             }
           }
         } catch (err) {
@@ -397,7 +398,7 @@ const contactKeys = [
   "userDefined",
 ]
 
-const getDriveChanges = async (
+export const getDriveChanges = async (
   driveClient: drive_v3.Drive,
   config: GoogleChangeToken,
   oauth2Client: GoogleClient,
@@ -890,7 +891,7 @@ const insertEventIntoVespa = async (event: calendar_v3.Schema$Event) => {
       defaultStartTime: isDefaultStartTime,
     }
 
-    await insert(eventToBeIngested, eventSchema)
+    await insertWithRetry(eventToBeIngested, eventSchema)
   } catch (e) {
     Logger.error(
       e,
@@ -1166,12 +1167,17 @@ const handleGmailChanges = async (
                   client,
                 )
 
-                await insert(
-                  await parseMail(msgResp.data, gmail, userEmail, client!),
-                  mailSchema,
+                const { mailData, exist } = await parseMail(
+                  msgResp.data,
+                  gmail,
+                  userEmail,
+                  client!,
                 )
-                stats.added += 1
-                changesExist = true
+                if (!exist) {
+                  await insert(mailData, mailSchema)
+                  stats.added += 1
+                  changesExist = true
+                }
               } catch (error) {
                 // Handle errors if the message no longer exists
                 Logger.error(

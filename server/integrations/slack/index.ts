@@ -23,7 +23,7 @@ import {
   UpdateDocument,
   UpdateDocumentPermissions,
 } from "@/search/vespa"
-import { Subsystem, SyncCron, type SaaSOAuthJob } from "@/types"
+import { OperationStatus, Subsystem, SyncCron, type SaaSOAuthJob } from "@/types"
 import {
   retryPolicies,
   WebClient,
@@ -49,6 +49,8 @@ import pLimit from "p-limit"
 import { IngestionState } from "../ingestionState"
 import { insertSyncJob } from "@/db/syncJob"
 import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
+import { time } from "console"
+import { ingestedMembersErrorTotalCount, ingestedMembersTotalCount, ingestedTeamErrorTotalCount, ingestedTeamTotalCount, insertChannelMessageDuration, insertChannelMessagesCount, insertChannelMessagesErrorCount, insertChatMessagesCount, insertConversationCount, insertConversationDuration, insertConversationErrorCount } from "@/metrics/slack/slack-metrics"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 
@@ -121,6 +123,7 @@ const safeConversationReplies = async (
   channelId: string,
   threadTs: string,
   cursor: string | undefined,
+  timestamp: string = "0",
 ): Promise<ConversationsRepliesResponse> => {
   return retryOnFatal(
     () =>
@@ -129,6 +132,7 @@ const safeConversationReplies = async (
         ts: threadTs,
         limit: 999,
         cursor,
+        oldest: timestamp,
       }),
     3,
     1000,
@@ -137,16 +141,23 @@ const safeConversationReplies = async (
 /**
  * Fetches all messages in a thread (given the parent message's thread_ts)
  */
-async function fetchThreadMessages(
+export async function fetchThreadMessages(
   client: WebClient,
   channelId: string,
   threadTs: string,
+  timestamp: string = "0",
 ): Promise<SlackMessage[]> {
   let threadMessages: SlackMessage[] = []
   let cursor: string | undefined = undefined
   do {
     const response: ConversationsRepliesResponse =
-      await safeConversationReplies(client, channelId, threadTs, cursor)
+      await safeConversationReplies(
+        client,
+        channelId,
+        threadTs,
+        cursor,
+        timestamp,
+      )
     if (!response.ok) {
       throw new Error(
         `Error fetching thread replies for ${threadTs}: ${response.error}`,
@@ -176,14 +187,15 @@ function replaceMentionsIfPresent(message: string, memberMap: any): string {
   })
 }
 
-const safeGetTeamInfo = async (client: WebClient): Promise<Team> => {
+export const safeGetTeamInfo = async (client: WebClient): Promise<Team> => {
   return retryOnFatal(() => getTeamInfo(client), 3, 1000)
 }
 
-const safeConversationHistory = async (
+export const safeConversationHistory = async (
   client: WebClient,
   channelId: string,
   cursor: string | undefined,
+  timestamp: string = "0",
 ): Promise<ConversationsHistoryResponse> => {
   return retryOnFatal(
     () =>
@@ -191,6 +203,7 @@ const safeConversationHistory = async (
         channel: channelId,
         limit: 999,
         cursor,
+        oldest: timestamp,
       }),
     3,
     1000,
@@ -199,7 +212,7 @@ const safeConversationHistory = async (
 
 // instead of parsing ourselves we are relying on slack to provide us the
 // user id's
-function extractUserIdsFromBlocks(message: SlackMessage): string[] {
+export function extractUserIdsFromBlocks(message: SlackMessage): string[] {
   if (!message.blocks) return []
   const userIds: string[] = []
   for (const block of message.blocks) {
@@ -220,18 +233,47 @@ function extractUserIdsFromBlocks(message: SlackMessage): string[] {
   }
   return userIds
 }
+export function formatSlackSpecialMentions(
+  text: string | undefined,
+  channelMap: Map<string, string>,
+  currentChannelId: string,
+): string {
+  if (!text) return ""
 
+  let formattedText = text
+
+  // Get current channel name
+  const currentChannelName = channelMap.get(currentChannelId) || "this"
+
+  // Replace special mentions with more descriptive text
+  formattedText = formattedText.replace(/<!channel>/gi, `@channel`)
+
+  formattedText = formattedText.replace(/<!here>/gi, `@here`)
+
+  // Handle channel mentions with empty display name: <#C12345|>
+  formattedText = formattedText.replace(
+    /<#([A-Z0-9]+)\|>/g,
+    (match, channelId) => {
+      const channelName = channelMap.get(channelId)
+      return channelName ? `#${channelName}` : `#unknown-channel`
+    },
+  )
+
+  return formattedText
+}
 /**
  * Fetches all messages from a channel.
  * For each message that is a thread parent, it also fetches the thread replies.
  */
-async function insertChannelMessages(
+export async function insertChannelMessages(
   email: string,
   client: WebClient,
   channelId: string,
   abortController: AbortController,
   memberMap: Map<string, User>,
   tracker: Tracker,
+  timestamp: string = "0",
+  channelMap: Map<string, string>,
 ): Promise<void> {
   let cursor: string | undefined = undefined
 
@@ -240,7 +282,7 @@ async function insertChannelMessages(
   const subtypes = new Set()
   do {
     const response: ConversationsHistoryResponse =
-      await safeConversationHistory(client, channelId, cursor)
+      await safeConversationHistory(client, channelId, cursor, timestamp)
 
     if (!response.ok) {
       throw new Error(
@@ -274,12 +316,15 @@ async function insertChannelMessages(
             )
           }
         }
+        text = formatSlackSpecialMentions(text, channelMap, channelId)
         message.text = text
         // Add the top-level message
         if (
           message.type === "message" &&
           !message.subtype &&
-          message.user
+          message.user &&
+          message.client_msg_id &&
+          message.text != ""
           // memberMap[message.user]
         ) {
           // a deleted user's message could be there
@@ -295,10 +340,9 @@ async function insertChannelMessages(
           }
           message.mentions = mentions
           message.team = await getTeam(client, message)
-          if (message.text == "") {
-            message.text = "NA"
-          }
-          insertChatMessage(
+
+          // case to avoid bot messages
+          await insertChatMessage(
             client,
             message,
             channelId,
@@ -306,6 +350,11 @@ async function insertChannelMessages(
             memberMap.get(message.user!)?.name!,
             memberMap.get(message.user!)?.profile?.image_192!,
           )
+          try{
+             insertChatMessagesCount.inc({conversation_id: channelId,status:OperationStatus.Success, team_id: message.team})
+          }catch(error) {
+            Logger.info(`Error inserting chat message`)
+          }
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
           subtypes.add(message.subtype)
@@ -337,7 +386,9 @@ async function insertChannelMessages(
             if (
               reply.type === "message" &&
               !reply.subtype &&
-              reply.user
+              reply.user &&
+              reply.client_msg_id &&
+              reply.text != ""
               // memberMap[reply.user]
             ) {
               const mentions = extractUserIdsFromBlocks(reply)
@@ -360,6 +411,7 @@ async function insertChannelMessages(
                   )
                 }
               }
+              text = formatSlackSpecialMentions(text, channelMap, channelId)
               if (!memberMap.get(reply.user)) {
                 memberMap.set(
                   reply.user,
@@ -372,11 +424,10 @@ async function insertChannelMessages(
               }
               reply.mentions = mentions
               reply.text = text
-              if (reply.text == "") {
-                reply.text = "NA"
-              } //case when text is empty
+
               reply.team = await getTeam(client, reply)
-              insertChatMessage(
+
+              await insertChatMessage(
                 client,
                 reply,
                 channelId,
@@ -384,6 +435,11 @@ async function insertChannelMessages(
                 memberMap.get(reply.user!)?.name!,
                 memberMap.get(reply.user!)?.profile?.image_192!,
               )
+               try{
+             insertChatMessagesCount.inc({conversation_id: channelId,status:OperationStatus.Success, team_id: message.team})
+                }catch(error) {
+                  Logger.info(`Error inserting chat message`)
+                }
               tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
             } else {
               subtypes.add(reply.subtype)
@@ -442,7 +498,7 @@ const joinChannel = async (
   }
 }
 
-const insertConversation = async (
+export const insertConversation = async (
   conversation: Channel & { permissions: string[] },
 ): Promise<void> => {
   const vespaChatContainer: VespaChatContainer = {
@@ -458,6 +514,7 @@ const insertConversation = async (
     isMpim: conversation.is_mpim ?? false,
     createdAt: conversation.created ?? new Date().getTime(),
     updatedAt: conversation.updated ?? conversation.created!,
+    lastSyncedAt: new Date().getTime(),
     topic: conversation.topic?.value ?? "",
     description: conversation.purpose?.value!,
     permissions: conversation.permissions,
@@ -486,6 +543,7 @@ const insertConversations = async (
         isMpim: (conversation as Channel).is_mpim!,
         createdAt: (conversation as Channel).created!,
         updatedAt: (conversation as Channel).created!,
+        lastSyncedAt: new Date().getTime(),
         topic: (conversation as Channel).topic?.value!,
         description: (conversation as Channel).purpose?.value!,
         permissions: [],
@@ -496,7 +554,7 @@ const insertConversations = async (
   }
 }
 
-async function getConversationUsers(
+export async function getConversationUsers(
   userId: string,
   client: WebClient,
   conversation: Channel,
@@ -536,7 +594,7 @@ async function getConversationUsers(
   }
 }
 
-const getTeam = async (
+export const getTeam = async (
   client: WebClient,
   message: SlackMessage & { mentions?: string[] },
 ) => {
@@ -559,7 +617,7 @@ const getTeam = async (
   return message.team
 }
 
-const insertChatMessage = async (
+export const insertChatMessage = async (
   client: WebClient,
   message: SlackMessage & { mentions?: string[] },
   channelId: string,
@@ -567,7 +625,9 @@ const insertChatMessage = async (
   username: string,
   image: string,
 ) => {
-  const editedTimestamp = message.edited ? parseFloat(message?.edited?.ts!) : 0
+  const editedTimestamp = message.edited
+    ? parseFloat(message?.edited?.ts!)
+    : message.ts!
 
   return insertWithRetry(
     {
@@ -602,7 +662,7 @@ const insertChatMessage = async (
   )
 }
 
-const insertTeam = async (team: Team, own: boolean) => {
+export const insertTeam = async (team: Team, own: boolean) => {
   return insertWithRetry(
     {
       docId: team.id!,
@@ -621,7 +681,7 @@ const insertTeam = async (team: Team, own: boolean) => {
   )
 }
 
-const insertMember = async (member: Member) => {
+export const insertMember = async (member: Member) => {
   return insertWithRetry(
     {
       docId: member.id!,
@@ -656,6 +716,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
     })
     const tracker = new Tracker(Apps.Slack, AuthType.OAuth)
     const team = await safeGetTeamInfo(client)
+    const channelMap = new Map<string, string>()
     const interval = setInterval(() => {
       sendWebsocketMessage(
         JSON.stringify({
@@ -666,7 +727,13 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         connector?.externalId,
       )
     }, 4000)
-    await insertTeam(team, true)
+    try {
+      await insertTeam(team, true)
+      ingestedTeamTotalCount.inc({email_domain: team.email_domain, enterprise_id: team.enterprise_id, domain: team.domain, status: OperationStatus.Success})
+    }catch(error){
+      Logger.info(`Error inserting team`)
+      ingestedTeamErrorTotalCount.inc({email_domain: team.email_domain, enterprise_id: team.enterprise_id, domain: team.domain, status: OperationStatus.Failure})
+    }
     const conversations = (
       (await getAllConversations(client, true, new AbortController())) || []
     ).filter((conversation) => {
@@ -679,6 +746,9 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
           conversation.is_member)
       )
     })
+    for (const conv of conversations) {
+      if (conv.id && conv.name) channelMap.set(conv.id!, conv.name!)
+    }
     // only insert conversations that are not yet inserted already
     const existenceMap = await ifDocumentsExistInSchema(
       chatContainerSchema,
@@ -724,11 +794,23 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
             team: member.team_id!,
           })
           teamMap.set(teamResp.team?.id!, teamResp.team!)
+          try {
           await insertTeam(teamResp.team!, false)
+          ingestedTeamTotalCount.inc({email_domain: teamResp.team!.email_domain, enterprise_id: teamResp.team!.enterprise_id, domain: teamResp.team!.domain, status:OperationStatus.Success})
+          }catch(error) {
+            Logger.info(`Error inserting member`)
+            ingestedTeamErrorTotalCount.inc({email_domain: teamResp.team!.email_domain, enterprise_id: teamResp.team!.enterprise_id, domain: teamResp.team!.domain, status:OperationStatus.Failure})
+          }
         }
+        try{
         await insertMember(member)
+        ingestedMembersTotalCount.inc({team_id:team.id, status: OperationStatus.Success})
         tracker.updateUserStats(data.email, StatType.Slack_User, 1)
-      }
+        }catch(error) {
+           Logger.error(`Error inserting member ${member.id}: ${error}`)
+          ingestedMembersErrorTotalCount.inc({team_id:team.id, status: OperationStatus.Failure})
+        }
+       }
 
       let permissions: string[] = memberIds
         .map((m: string) => {
@@ -744,18 +826,37 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         ...conversation,
         permissions,
       }
-      await insertChannelMessages(
+
+      const channelMessageInsertionDuration = insertChannelMessageDuration.startTimer({conversation_id:conversation.id, team_id:team.id, status:OperationStatus.Success})
+      try {
+         await insertChannelMessages(
         data.email,
         client,
         conversation.id!,
         abortController,
         memberMap,
         tracker,
+        "0",
+        channelMap,
       )
+       channelMessageInsertionDuration()
+      insertChannelMessagesCount.inc({conversation_id: conversation.id??"", team_id: team.id??"", status:OperationStatus.Success})
       tracker.updateUserStats(data.email, StatType.Slack_Conversation, 1)
+      }catch(error) {
+        Logger.error('Error inserting Channel Messages')
+        insertChannelMessagesErrorCount.inc({conversation_id: conversation.id??"", team_id: team.id??"", status:OperationStatus.Failure})
+      }
+      try{
+      const conversationInsertionDuration = insertConversationDuration.startTimer({conversation_id:conversation.id, team_id:team.id, status:OperationStatus.Success})
       await insertConversation(conversationWithPermission)
+      conversationInsertionDuration()
+      insertConversationCount.inc({conversation_id:conversationWithPermission.id??"", team_id: conversationWithPermission.context_team_id??"", status:OperationStatus.Success})
       conversationIndex++
       tracker.setCurrent(conversationIndex)
+      }catch(error) {
+        Logger.error(`Error inserting Conversation`)
+        insertConversationErrorCount.inc({conversation_id:conversationWithPermission.id??"", team_id: conversationWithPermission.context_team_id??"", status:OperationStatus.Failure})
+      }
     }
     setTimeout(() => {
       clearInterval(interval)

@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button"
-import { RotateCcw } from "lucide-react"
 import {
   createFileRoute,
   redirect,
@@ -30,18 +29,11 @@ import { OAuthModal } from "@/oauth"
 import { Sidebar } from "@/components/Sidebar"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Progress } from "@/components/ui/progress"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { errorComponent } from "@/components/error"
 import OAuthTab from "@/components/OAuthTab"
 import { LoaderContent } from "@/lib/common"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
+import { UserStatsTable } from "@/components/ui/userStatsTable"
 
 const logger = console
 
@@ -53,7 +45,8 @@ const submitServiceAccountForm = async (
     form: {
       "service-key": value.file,
       app: Apps.GoogleDrive,
-      email: value.email, // Pass email along with the file
+      email: value.email,
+      whitelistedEmails: value.whitelistedEmails,
     },
   })
   if (!response.ok) {
@@ -126,6 +119,7 @@ const updateOAuthForm = async (
 type ServiceAccountFormData = {
   email: string
   file: any
+  whitelistedEmails?: string
 }
 
 type OAuthFormData = {
@@ -279,6 +273,7 @@ export const ServiceAccountForm = ({
     defaultValues: {
       email: "",
       file: null,
+      whitelistedEmails: "",
     },
     onSubmit: async ({ value }) => {
       if (!value.file) {
@@ -336,6 +331,22 @@ export const ServiceAccountForm = ({
                 {field.state.meta.errors.join(", ")}
               </p>
             ) : null}
+          </>
+        )}
+      />
+
+      <Label htmlFor="whitelisted-emails">Whitelisted Emails (Optional)</Label>
+      <form.Field
+        name="whitelistedEmails"
+        children={(field) => (
+          <>
+            <Input
+              id="whitelisted-emails"
+              type="text"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="user1@example.com,user2@example.com"
+            />
           </>
         )}
       />
@@ -425,64 +436,300 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
-const UserStatsTable = ({
-  userStats,
-  type,
+export const deleteOauthConnector = async (connectorId: string) => {
+  const res = await api.admin.oauth.connector.delete.$delete({
+    form: { connectorId },
+  })
+  if (!res.ok) {
+    let errorText = res.statusText
+    try {
+      errorText = await res.text()
+    } catch (e) {}
+    throw new Error(`Failed to delete connector (${res.status}): ${errorText}`)
+  }
+
+  try {
+    return await res.json()
+  } catch (e) {
+    console.error("Failed to parse JSON response even though status was OK:", e)
+    throw new Error(
+      "Received an invalid response from the server after deletion.",
+    )
+  }
+}
+
+type IngestMoreSAFormData = {
+  connectorId: string
+  emails: string
+  startDate: string
+  endDate: string
+  insertDriveAndContacts: boolean
+  insertGmail: boolean
+  insertCalendar: boolean
+}
+
+const submitIngestMoreSAForm = async (
+  value: IngestMoreSAFormData & { emailsList: string[] },
+  navigate: UseNavigateResult<string>,
+) => {
+  const response = await api.admin.google.service_account.ingest_more.$post({
+    json: {
+      connectorId: value.connectorId,
+      emailsToIngest: value.emailsList,
+      startDate: value.startDate,
+      endDate: value.endDate,
+      insertDriveAndContacts: value.insertDriveAndContacts,
+      insertGmail: value.insertGmail,
+      insertCalendar: value.insertCalendar,
+    },
+  })
+  if (!response.ok) {
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to ingest more users: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
+const IngestMoreUsersForm = ({
+  connectorId,
+  onSuccess,
+  setIsIngestingMore,
 }: {
-  userStats: { [email: string]: any }
-  type: AuthType
+  connectorId: string
+  onSuccess: () => void
+  setIsIngestingMore: (isIngesting: boolean) => void
 }) => {
-  return (
-    <Table
-      className={
-        "ml-[20px] max-h-[400px]" + type === AuthType.OAuth
-          ? "ml-[10px] mt-[10px]"
-          : ""
+  const { toast } = useToast()
+  const navigate = useNavigate()
+
+  const form = useForm<IngestMoreSAFormData>({
+    defaultValues: {
+      connectorId: connectorId,
+      emails: "",
+      startDate: "",
+      endDate: "",
+      insertDriveAndContacts: true,
+      insertGmail: true,
+      insertCalendar: true,
+    },
+    onSubmit: async ({ value }) => {
+      const emailsList = value.emails
+        .split(",")
+        .map((e) => e.trim())
+        .filter((e) => e)
+      if (emailsList.length === 0) {
+        toast({
+          title: "No emails provided",
+          description: "Please enter at least one email address.",
+          variant: "destructive",
+        })
+        return
       }
+      setIsIngestingMore(true)
+      try {
+        let submissionStartDate = value.startDate
+        let submissionEndDate = value.endDate
+
+        if (
+          submissionStartDate &&
+          submissionStartDate.trim() !== "" &&
+          (!submissionEndDate || submissionEndDate.trim() === "")
+        ) {
+          submissionEndDate = new Date().toISOString().split("T")[0]
+        }
+
+        // Validate that startDate is not after endDate if both are provided
+        if (
+          submissionStartDate &&
+          submissionEndDate &&
+          new Date(submissionStartDate) > new Date(submissionEndDate)
+        ) {
+          toast({
+            title: "Invalid date range",
+            description: "Start date must be before the end date.",
+            variant: "destructive",
+          })
+          setIsIngestingMore(false)
+          return
+        }
+
+        if (
+          !value.insertDriveAndContacts &&
+          !value.insertGmail &&
+          !value.insertCalendar
+        ) {
+          toast({
+            title: "No service selected",
+            description: "Please select at least one Google service to ingest.",
+            variant: "destructive",
+          })
+          setIsIngestingMore(false)
+          return
+        }
+
+        await submitIngestMoreSAForm(
+          {
+            ...value,
+            emailsList,
+            startDate: submissionStartDate,
+            endDate: submissionEndDate,
+          },
+          navigate,
+        )
+        toast({
+          title: "Ingestion started for additional users",
+          description: "Processing is underway. See progress updates.",
+        })
+        onSuccess()
+        form.reset()
+      } catch (error) {
+        toast({
+          title: "Could not start ingestion for additional users",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: "destructive",
+        })
+      } finally {
+        setIsIngestingMore(false)
+      }
+    },
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        form.handleSubmit()
+      }}
+      className="grid w-full max-w-sm items-center gap-1.5 mt-4"
     >
-      <TableHeader>
-        <TableRow>
-          {type !== AuthType.OAuth && <TableHead>Email</TableHead>}
-          <TableHead>Gmail</TableHead>
-          <TableHead>Drive</TableHead>
-          <TableHead>Contacts</TableHead>
-          <TableHead>Events</TableHead>
-          <TableHead>Attachments</TableHead>
-          <TableHead>%</TableHead>
-          <TableHead>Est (minutes)</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {Object.entries(userStats).map(([email, stats]) => {
-          const totalCount: number = stats.totalDrive + stats.totalMail
-          const percentage: number = parseFloat(
-            (
-              ((stats.gmailCount + stats.driveCount) * 100) /
-              totalCount
-            ).toFixed(2),
-          )
-          const elapsed = (new Date().getTime() - stats.startedAt) / (60 * 1000)
-          const eta =
-            percentage !== 0 ? (elapsed * 100) / percentage - elapsed : 0
-          return (
-            <TableRow key={email}>
-              {type !== AuthType.OAuth && (
-                <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
-                  {email}
-                </TableCell>
+      <Label htmlFor="ingest-more-emails">
+        Whitelisted Emails (comma-separated)
+      </Label>
+      <form.Field
+        name="emails"
+        validators={{
+          onChange: ({ value }) =>
+            !value ||
+            value
+              .split(",")
+              .map((e) => e.trim())
+              .filter((e) => e).length === 0
+              ? "At least one email is required"
+              : undefined,
+        }}
+        children={(field) => (
+          <>
+            <Input
+              id="ingest-more-emails"
+              type="text"
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              placeholder="user1@example.com,user2@example.com"
+            />
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <p className="text-red-600 text-sm">
+                {field.state.meta.errors.join(", ")}
+              </p>
+            ) : null}
+          </>
+        )}
+      />
+
+      <div className="mt-4">
+        <Label>Date Range</Label>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="start-date">Start Date</Label>
+            <form.Field
+              name="startDate"
+              children={(field) => (
+                <Input
+                  id="start-date"
+                  type="date"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
               )}
-              <TableCell>{stats.gmailCount}</TableCell>
-              <TableCell>{stats.driveCount}</TableCell>
-              <TableCell>{stats.contactsCount}</TableCell>
-              <TableCell>{stats.eventsCount}</TableCell>
-              <TableCell>{stats.mailAttachmentCount}</TableCell>
-              <TableCell>{percentage}</TableCell>
-              <TableCell>{eta.toFixed(0)}</TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
+            />
+          </div>
+          <div>
+            <Label htmlFor="end-date">End Date</Label>
+            <form.Field
+              name="endDate"
+              children={(field) => (
+                <Input
+                  id="end-date"
+                  type="date"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                />
+              )}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Label>Services to Sync</Label>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertDriveAndContacts"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Drive & Contacts</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertGmail"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Gmail</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <form.Field
+              name="insertCalendar"
+              children={(field) => (
+                <input
+                  type="checkbox"
+                  checked={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.checked)}
+                  className="h-4 w-4"
+                />
+              )}
+            />
+            <Label>Calendar</Label>
+          </div>
+        </div>
+      </div>
+
+      <Button type="submit" disabled={form.state.isSubmitting} className="mt-4">
+        {form.state.isSubmitting ? (
+          <LoadingSpinner className="mr-2 h-4 w-4" />
+        ) : null}
+        Ingest More Users
+      </Button>
+    </form>
   )
 }
 
@@ -492,6 +739,7 @@ const ServiceAccountTab = ({
   isIntegrating,
   progress,
   refetch,
+  userStats,
 }: {
   connectors: Connectors[]
   updateStatus: string
@@ -504,7 +752,23 @@ const ServiceAccountTab = ({
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
   )
-  if (!isIntegrating && !googleSAConnector) {
+  const [isIngestingMore, setIsIngestingMore] = useState(false)
+
+  if (
+    isIntegrating &&
+    googleSAConnector &&
+    googleSAConnector.status === ConnectorStatus.Connecting
+  ) {
+    return (
+      <CardHeader>
+        <CardTitle>Google Workspace</CardTitle>
+        <CardDescription>Connecting {progress}%</CardDescription>
+        <Progress value={progress} className="p-0 w-[60%]" />
+      </CardHeader>
+    )
+  }
+
+  if (!googleSAConnector && !isIntegrating) {
     return (
       <Card>
         <CardHeader>
@@ -520,32 +784,70 @@ const ServiceAccountTab = ({
     )
   } else if (googleSAConnector) {
     return (
-      <CardHeader>
-        <CardTitle>Google Workspace</CardTitle>
-        {googleSAConnector.status === ConnectorStatus.Connecting ? (
-          <>
-            <CardDescription>Connecting {progress}%</CardDescription>
-            <Progress value={progress} className="p-0 w-[60%]" />
-          </>
-        ) : (
-          <>
-            <CardDescription>
-              Status: {googleSAConnector.status}
+      <Card>
+        <CardHeader>
+          <CardTitle>Google Workspace Service Account</CardTitle>
+          {googleSAConnector.status === ConnectorStatus.Connecting &&
+          !isIngestingMore ? (
+            <>
+              <CardDescription>Connecting {progress}%</CardDescription>
+              <Progress value={progress} className="p-0 w-[60%]" />
+            </>
+          ) : (
+            <>
+              <CardDescription>
+                Status: {googleSAConnector.status}
+              </CardDescription>
+            </>
+          )}
+        </CardHeader>
+        {googleSAConnector.status === ConnectorStatus.Connected && (
+          <CardContent>
+            <CardTitle className="text-md mb-1">Ingest More Users</CardTitle>
+            <CardDescription className="mb-3 text-sm">
+              Add more users to service account. Enter comma-separated emails.
             </CardDescription>
-          </>
+            <IngestMoreUsersForm
+              connectorId={(googleSAConnector as any).id}
+              onSuccess={() => {
+                refetch()
+              }}
+              setIsIngestingMore={setIsIngestingMore}
+            />
+            {isIngestingMore && (
+              <div className="mt-4">
+                <CardDescription>
+                  Ingesting additional users...{" "}
+                  {progress > 0 && progress < 100 ? `${progress}%` : ""}
+                </CardDescription>
+                {progress > 0 && progress < 100 && (
+                  <Progress value={progress} className="p-0 w-[60%] mt-1" />
+                )}
+              </div>
+            )}
+          </CardContent>
         )}
-
-        <button
-          className="flex justify-end w-full"
-          onClick={() => {
-            // restart the ingestion of that connector
-          }}
-        >
-          <RotateCcw stroke={"hsl(220 8.9% 46.1%)"} size={18} />
-        </button>
-      </CardHeader>
+      </Card>
     )
   }
+  return <LoaderContent />
+}
+
+export const showUserStats = (
+  userStats: { [email: string]: any },
+  activeTab: string,
+  oauthIntegrationStatus: OAuthIntegrationStatus,
+) => {
+  if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
+    return false
+  if (!Object.keys(userStats).length) return false
+  if (activeTab !== "service_account" && activeTab !== "oauth") return false
+
+  const currentAuthType =
+    activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
+  return Object.values(userStats).some(
+    (stats) => stats.type === currentAuthType,
+  )
 }
 
 export interface AdminPageProps {
@@ -698,16 +1000,53 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
     activeTab: string,
     oauthIntegrationStatus: OAuthIntegrationStatus,
   ) => {
-    if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected)
-      return false
     if (!Object.keys(userStats).length) return false
     if (activeTab !== "service_account" && activeTab !== "oauth") return false
     const currentAuthType =
       activeTab === "oauth" ? AuthType.OAuth : AuthType.ServiceAccount
-    return Object.values(userStats).some(
-      (stats) => stats.type === currentAuthType,
+
+    if (currentAuthType === AuthType.OAuth) {
+      return (
+        oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting &&
+        Object.values(userStats).some((stats) => stats.type === currentAuthType)
+      )
+    }
+
+    return (
+      isIntegratingSA &&
+      Object.values(userStats).some((stats) => stats.type === currentAuthType)
     )
   }
+
+  const handleDelete = async () => {
+    const googleOAuthConnector = data?.find(
+      (c: Connectors) =>
+        c.app === Apps.GoogleDrive && c.authType === AuthType.OAuth,
+    )
+    if (!googleOAuthConnector) {
+      toast({
+        title: "Deletion Failed",
+        description: "Google OAuth connector not found.",
+        variant: "destructive",
+      })
+      return
+    }
+    try {
+      await deleteOauthConnector(googleOAuthConnector.id)
+      toast({
+        title: "Connector Deleted",
+        description: "Google OAuth connector has been removed",
+      })
+      setOAuthIntegrationStatus(OAuthIntegrationStatus.Provider)
+    } catch (error) {
+      toast({
+        title: "Deletion Failed",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      })
+    }
+  }
+
   // if (isPending) return <LoaderContent />
   if (error) return "An error has occurred: " + error.message
   return (
@@ -745,6 +1084,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
+              handleDelete={handleDelete}
               connectorId={
                 data?.find(
                   (v) =>

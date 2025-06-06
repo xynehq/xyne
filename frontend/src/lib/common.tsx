@@ -1,9 +1,9 @@
-import { Folder, Users, Paperclip } from "lucide-react"
-import DocsSvg from "@/assets/docs.svg"
+import { Folder, Users, Paperclip, FileText, CalendarDays } from "lucide-react" // Added FileText, CalendarDays
+import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
 import DriveSvg from "@/assets/drive.svg"
-import NotionPageSvg from "@/assets/notionPage.svg"
+// import NotionPageSvg from "@/assets/notionPage.svg"
 import Gmail from "@/assets/gmail.svg"
 import Docx from "@/assets/docx.svg"
 import Pdf from "@/assets/pdf.svg"
@@ -16,15 +16,19 @@ import {
   Apps,
   DriveEntity,
   GooglePeopleEntity,
-  NotionEntity,
+  // NotionEntity,
   CalendarEntity,
   isMailAttachment,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
 
+// Define placeholder entities if they don't exist in shared/types
+const PdfEntity = { Default: "pdf_default" } as const
+const EventEntity = { Default: "event_default" } as const
+
 export const getIcon = (
-  app: Apps,
-  entity: Entity,
+  app: Apps | string, // Allow string for generic types like 'pdf', 'event'
+  entity: Entity | string, // Allow string for generic types
   size?: { w: number; h: number; mr: number; ml?: number },
 ) => {
   let classNameVal = ""
@@ -37,6 +41,7 @@ export const getIcon = (
     classNameVal = "h-[12px] w-[12px] mr-[10px]"
   }
   if (app === Apps.GoogleDrive) {
+    // ...existing GoogleDrive cases...
     if (entity === DriveEntity.Docs) {
       return <img className={classNameVal} src={DocsSvg} />
     } else if (entity === DriveEntity.Sheets) {
@@ -70,22 +75,34 @@ export const getIcon = (
   } else if (app === Apps.GoogleWorkspace) {
     return <Users size={12} className="mr-[10px]" />
   } else if (app === Apps.Gmail) {
-    if (isMailAttachment(entity)) {
+    // ...existing Gmail cases...
+    if (isMailAttachment(entity as Entity)) {
       return <Paperclip className={classNameVal} fill="rgb(196, 199, 197)" />
     }
     return <img className={classNameVal} src={Gmail} />
-  } else if (app === Apps.Notion) {
-    if (entity === NotionEntity.Page) {
-      return <img className={classNameVal} src={NotionPageSvg} />
-    }
+  // } else if (app === Apps.Notion) {
+  //   // ...existing Notion cases...
+  //   if (entity === NotionEntity.Page) {
+  //     return <img className={classNameVal} src={NotionPageSvg} />
+  //   }
   } else if (app === Apps.GoogleCalendar) {
+    // ...existing GoogleCalendar cases...
     if (entity === CalendarEntity.Event) {
       return <img className={classNameVal} src={GoogleCalendarSvg} />
     }
   } else if (app === Apps.Slack) {
+    // ...existing Slack cases...
     return <img className={classNameVal} src={SlackSvg} />
+  } else if (app === "pdf" || entity === PdfEntity.Default) {
+    // Added generic PDF
+    return <img className={classNameVal} src={Pdf} />
+  } else if (app === "event" || entity === EventEntity.Default) {
+    // Added generic Event
+    return <CalendarDays size={12} className={classNameVal} />
   } else {
-    throw new Error(`Invalid app ${app} and entity ${entity}`)
+    // Fallback or handle unknown app/entity
+    console.warn(`Invalid app ${app} and entity ${entity}`)
+    return <FileText size={12} className={classNameVal} /> // Generic fallback icon
   }
 }
 

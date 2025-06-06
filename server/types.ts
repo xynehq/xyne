@@ -4,7 +4,6 @@ import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
-import { connect } from "bun"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -66,12 +65,15 @@ export const oauthStartQuerySchema = z.object({
   app: z.nativeEnum(Apps),
 })
 
+export type SlackConfig = z.infer<typeof UpdatedAtValSchema>
+
 export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
   "service-key": z.any(),
   app: z.nativeEnum(Apps),
-  email: z.string(),
+  email: z.string().email(),
+  whitelistedEmails: z.string().optional(),
 })
 
 export type ServiceAccountConnection = z.infer<
@@ -107,6 +109,20 @@ export const deleteConnectorSchema = z.object({
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
   status: z.nativeEnum(ConnectorStatus),
+})
+
+export const serviceAccountIngestMoreSchema = z.object({
+  connectorId: z.string(),
+  emailsToIngest: z.array(z.string().email()),
+  startDate: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+    message: "Start date must be in YYYY-MM-DD format or empty",
+  }),
+  endDate: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}$/, {
+    message: "End date must be in YYYY-MM-DD format or empty",
+  }),
+  insertDriveAndContacts: z.boolean(),
+  insertGmail: z.boolean(),
+  insertCalendar: z.boolean(),
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
@@ -267,6 +283,7 @@ export enum MessageTypes {
 export enum WorkerResponseTypes {
   Stats = "Stats",
   HistoryId = "HistoryId",
+  Error = "Error",
 }
 
 export enum Subsystem {
@@ -284,6 +301,8 @@ export enum Subsystem {
   Queue = "Queue",
   Eval = "Eval",
   AI = "AI",
+  Tuning = "Tuning",
+  Metric = "Metric"
 }
 
 export enum OperationStatus {
@@ -308,3 +327,26 @@ export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
 })
+
+
+// METRICS ENUMS
+export enum metricNames {
+  syncOauthAccountChanges = "google_oauth_changes",
+  syncServiceAccountChanges = "google_service_account_changes",
+  syncGoogleWorkspaceChange = "google_workspace_changes",
+  syncSlackChanges = "slack_changes",
+  checkDownloadsFolder = "check_downloads_folder"
+}
+
+export enum metricAppType {
+  google = "Google",
+  slack = "Slack"
+}
+
+export enum metricAccountType {
+  oauth = "google_oauth_account",
+  service = "google_service_account",
+  slackAdmin = "slack_admin",
+  slackUser = "slackUser",
+  admin = "admin"
+}

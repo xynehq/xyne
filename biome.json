@@ -14,7 +14,9 @@
       "./server/eval/.venv",
       "./server/.venv",
       "./migrations",
-      "./server/eval-results"
+      "./server/eval-results",
+      "./server/eval-data",
+      "./server/tuning-data"
     ]
   },
   "formatter": {

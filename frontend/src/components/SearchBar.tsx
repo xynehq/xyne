@@ -20,11 +20,13 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
       filter,
       onLastUpdated,
       hasSearched,
+      setActiveQuery,
     },
     autocompleteRef,
   ) => {
     const inputRef = useRef<HTMLInputElement | null>(null)
     const navigate = useNavigate({ from: "/search" })
+    const trimmedQuery = query.trim()
 
     useEffect(() => {
       if (inputRef.current) {
@@ -33,6 +35,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
     }, [])
 
     const navigateToSearch = () => {
+      if (hasSearched) setActiveQuery(query) // Update activeQuery
       navigate({
         to: "/search",
         search: {
@@ -74,17 +77,21 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                   onChange={(e) => {
                     setQuery(e.target.value)
                     setAutocompleteQuery(e.target.value)
-                    setOffset(0)
                   }}
                   className={`text-[#1C1D1F] flex-grow text-[15px] focus-visible:ring-0 placeholder-[#BDC6D8] font-[450] leading-[24px] focus:outline-none ${
                     hasSearched ? "bg-[#F0F4F7]" : ""
                   }`}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      navigateToSearch()
-                      setFilter({}) // Use empty object instead of null
-                      // we only want to look for answer if at least
-                      // 3 words are there in the query
+                      if (trimmedQuery) {
+                        setOffset(0)
+                        navigateToSearch()
+                        setFilter((prevFilter: { lastUpdated?: string }) => ({
+                          lastUpdated: prevFilter.lastUpdated || "anytime",
+                        }))
+                        // we only want to look for answer if at least
+                        // 3 words are there in the query
+                      }
                       if (query.split(" ").length > 2) {
                         // handleAnswer()
                       }
@@ -94,8 +101,10 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                 {!hasSearched ? (
                   <button
                     onClick={() => {
-                      handleSearch()
-                      navigateToSearch()
+                      if (trimmedQuery) {
+                        handleSearch()
+                        navigateToSearch()
+                      }
                     }}
                     className="flex mr-2 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-[20px] w-[32px] h-[32px] items-center justify-center"
                   >

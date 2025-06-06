@@ -36,7 +36,6 @@ import { SearchBar } from "@/components/SearchBar"
 import { Button } from "@/components/ui/button"
 import { z } from "zod"
 import {
-  ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
   MessageSquareShare,
@@ -44,6 +43,7 @@ import {
 import { LastUpdated } from "@/components/SearchFilter"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { errorComponent } from "@/components/error"
+import { LoaderContent } from "@/lib/common"
 
 const logger = console
 
@@ -81,14 +81,13 @@ export const Search = ({ user, workspace }: IndexProps) => {
     from: "/_authenticated/search",
   })
   const navigate = useNavigate({ from: "/search" })
-  // TODO: debug the react warning
-  // Cannot update a component (`MatchesInner`)
   if (!search.query) {
     navigate({
       to: "/",
     })
   }
-
+  // TODO: debug the react warning
+  // Cannot update a component (`MatchesInner`)
   const QueryTyped = useRouterState({
     select: (s) => s.location.state.isQueryTyped,
   })
@@ -96,6 +95,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
   const [query, setQuery] = useState(decodeURIComponent(search.query || "")) // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
+  const [activeQuery, setActiveQuery] = useState(
+    decodeURIComponent(search.query || ""),
+  ) // For confirmed searches
   const [groups, setGroups] = useState<Groups | null>(null)
   const [filter, setFilter] = useState<Filter>({
     lastUpdated: (search.lastUpdated as LastUpdated) || "anytime",
@@ -110,6 +112,23 @@ export const Search = ({ user, workspace }: IndexProps) => {
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
+
+  const totalCount = searchMeta?.totalCount || 0
+  const filterPageSize =
+    filter.app && filter.entity
+      ? groups
+        ? groups[filter.app][filter.entity]
+        : totalCount
+      : totalCount
+
+  // Added for infinite scroll functionality
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleNext = () => {
+    const newOffset = offset + page
+    setOffset(newOffset)
+  }
 
   // for autocomplete
   const debounceTimeout = useRef<number | null>(null) // Debounce timer
@@ -137,6 +156,37 @@ export const Search = ({ user, workspace }: IndexProps) => {
       document.removeEventListener("mousedown", handleClickOutside)
     }
   }, [autocompleteRef])
+
+  // Intersection observer for infinite scroll
+  useEffect(() => {
+    if (!bottomRef.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries
+        if (
+          entry.isIntersecting &&
+          results.length > 0 &&
+          filterPageSize > page &&
+          results.length < filterPageSize &&
+          !isLoading
+        ) {
+          // Load more results when bottom is visible
+          setIsLoading(true)
+          handleNext()
+        }
+      },
+      { threshold: 0.5 }, // Trigger when 10% of the element is visible
+    )
+
+    observer.observe(bottomRef.current)
+
+    return () => {
+      if (bottomRef.current) {
+        observer.unobserve(bottomRef.current)
+      }
+    }
+  }, [results, filterPageSize, page, isLoading, handleNext])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -187,7 +237,12 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   useEffect(() => {
     handleSearch()
-  }, [filter, offset])
+  }, [offset])
+
+  useEffect(() => {
+    setOffset(0)
+    handleSearch()
+  }, [filter])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
@@ -236,7 +291,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
   }
 
   const handleSearch = async (newOffset = offset) => {
-    if (!query) return
+    if (!activeQuery) return
     setAutocompleteResults([])
     try {
       // TODO: figure out when lastUpdated changes and only
@@ -245,7 +300,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
       let params: any = {
         page: page,
         offset: newOffset,
-        query: encodeURIComponent(query),
+        query: encodeURIComponent(activeQuery),
         groupCount,
         lastUpdated: filter.lastUpdated || "anytime",
         isQueryTyped: QueryTyped,
@@ -270,7 +325,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
         to: "/search",
         search: (prev) => ({
           ...prev,
-          query: encodeURIComponent(query),
+          query: encodeURIComponent(activeQuery),
           page,
           offset: newOffset,
           app: params.app,
@@ -328,6 +383,9 @@ export const Search = ({ user, workspace }: IndexProps) => {
           setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
+
+        // Reset loading state after results are received
+        setIsLoading(false)
       } else {
         const errorText = await response.text()
         if (!response.ok) {
@@ -344,12 +402,8 @@ export const Search = ({ user, workspace }: IndexProps) => {
     } catch (error) {
       logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
+      setIsLoading(false) // Reset loading state on error
     }
-  }
-
-  const handleNext = () => {
-    const newOffset = offset + page
-    setOffset(newOffset)
   }
 
   const handleFilterChange = (appEntity: Filter) => {
@@ -381,14 +435,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
       setOffset(0)
     }
   }
-  const totalCount = searchMeta?.totalCount || 0
   // if filter is selected we should keep it's count to prevent showing button for pagination
-  const filterPageSize =
-    filter.app && filter.entity
-      ? groups
-        ? groups[filter.app][filter.entity]
-        : totalCount
-      : totalCount
 
   return (
     <div className="h-full w-full flex">
@@ -407,6 +454,7 @@ export const Search = ({ user, workspace }: IndexProps) => {
           handleSearch={handleSearch}
           hasSearched={true}
           handleAnswer={handleAnswer}
+          setActiveQuery={setActiveQuery}
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
             setFilter(updatedFilter)
@@ -499,21 +547,16 @@ export const Search = ({ user, workspace }: IndexProps) => {
               </div>
             )}
 
-            {results.length > 0 &&
-              filterPageSize > page &&
-              results.length < filterPageSize && (
-                <button
-                  className="flex flex-row text-[#464B53] mr-[60px] items-center justify-center pb-[17px] mt-[auto] mb-[16px] pt-[17px] border-[1px] border-[#DDE3F0] rounded-[40px]"
-                  onClick={handleNext}
-                >
-                  <ChevronDown
-                    className="mr-[7px]"
-                    size={18}
-                    stroke="#464B53"
-                  />
-                  <span>More Results</span>
-                </button>
-              )}
+            {/* Infinite scroll loading indicator and bottom reference */}
+            {results.length > 0 && (
+              <div ref={bottomRef} className="py-4 flex justify-center">
+                {isLoading &&
+                filterPageSize > page &&
+                results.length < filterPageSize ? (
+                  <LoaderContent />
+                ) : null}
+              </div>
+            )}
           </div>
           {groups && (
             <GroupFilter

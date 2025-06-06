@@ -44,7 +44,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
-  defaultBestModel = Models.Claude_3_7_Sonnet
+  defaultBestModel = Models.Claude_Sonnet_4
 } else if (process.env["OPENAI_API_KEY"]) {
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
@@ -105,15 +105,6 @@ if (
   fastModelReasoning = true
 }
 
-let serviceAccountWhitelistedEmails: string[] = []
-if (process.env["SERVICE_ACCOUNT_WHITELISTED_EMAILS"]) {
-  serviceAccountWhitelistedEmails = process.env[
-    "SERVICE_ACCOUNT_WHITELISTED_EMAILS"
-  ]
-    .split(",")
-    .map((v) => v.trim())
-}
-
 if (!slackHost) {
   slackHost = host
 }
@@ -154,12 +145,14 @@ export default {
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 6,
-  chatPageSize: 15, // default page size for ai search
+  chatPageSize: 20, // default page size for ai search
+  maxGoogleDriveSummary: 50,
+  maxUserRequestCount: 50,
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,
-  serviceAccountWhitelistedEmails,
+  maxValidLinks: 15,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
 }

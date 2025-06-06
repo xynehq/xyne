@@ -3,6 +3,7 @@ import { Subsystem } from "@/types"
 import type { MiddlewareHandler, Context, Next } from "hono"
 import { getPath } from "hono/utils/url"
 import { v4 as uuidv4 } from "uuid"
+import { appRequest, appResponse, requestResponseLatency } from "@/metrics/app/app-metrics"
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
@@ -45,6 +46,13 @@ export const getLogger = (loggerType: Subsystem) => {
             },
           },
         }),
+    mixin(_mergeObject, _level) {
+      const stack = new Error().stack?.split("\n")
+      const caller = stack?.[4]?.trim() // This skips internal logger frames
+      return isProduction && caller && !caller.includes("unknown")
+        ? { caller }
+        : {}
+    },
   })
 }
 
@@ -95,8 +103,26 @@ export const LogMiddleware = (loggerType: Subsystem): MiddlewareHandler => {
     })
 
     const start = Date.now()
+
+    appRequest.inc({
+      app_endpoint: getPath(c.req.raw),
+      app_request_process_status: "received"
+    }, 1)
     await next()
 
+    const duration = (Date.now() - start)/1000
+    
+    const end = new Date().toISOString()
+    appResponse.inc({
+      app_endpoint: c.req.routePath,
+      app_response_status: String(c.res.status),
+    })
+   
+    requestResponseLatency.observe({
+      app_endpoint: c.req.routePath,
+      app_response_status: String(c.res.status),
+    }, duration)
     logRequest(logger, c, c_reqId, start, c.res.status)
+
   }
 }
