@@ -80,7 +80,7 @@ export async function handleSingleFileUploadToDataSource(
     throw new Error("Valid file object is required for DataSource processing.")
   }
 
-  log.info(
+  log.debug(
     `Processing file for DataSource: "${dataSourceName}", operation: ${flag}, file: "${file.name}", user: ${user.email}`,
   )
 
@@ -103,26 +103,27 @@ export async function handleSingleFileUploadToDataSource(
       )
       if (existingDataSource) {
         log.warn(
-          `Attempt to create DataSource that already exists: "${dataSourceName}" for user ${user.email}`,
+          `Data source named "${dataSourceName}" already exists for user ${user.email}. Proceeding to add file to this existing data source.`,
         )
-        throw new Error(`Data source named "${dataSourceName}" already exists.`)
+        dataSourceVespaId = existingDataSource.docId
+      } else {
+        log.debug(
+          `Creating new DataSource "${dataSourceName}" for user ${user.email}`,
+        )
+        dataSourceVespaId = `ds-${createId()}`
+        const newDataSourceDoc: VespaDataSource = {
+          docId: dataSourceVespaId,
+          name: dataSourceName,
+          createdBy: user.email,
+          createdAt: now, // 'now' is defined before this block in the original code
+          updatedAt: now, // 'now' is defined before this block in the original code
+        }
+        await insertDataSource(newDataSourceDoc)
+        log.debug(
+          `New DataSource "${dataSourceName}" created with ID: ${dataSourceVespaId}`,
+        )
       }
-      log.info(
-        `Creating new DataSource "${dataSourceName}" for user ${user.email}`,
-      )
-      dataSourceVespaId = `ds-${createId()}`
-      const newDataSourceDoc: VespaDataSource = {
-        docId: dataSourceVespaId,
-        name: dataSourceName,
-        createdBy: user.email,
-        createdAt: now,
-        updatedAt: now,
-      }
-      await insertDataSource(newDataSourceDoc)
-      log.info(
-        `New DataSource "${dataSourceName}" created with ID: ${dataSourceVespaId}`,
-      )
-    } else {
+    } else { // flag === "addition"
       existingDataSource = await getDataSourceByNameAndCreator(
         dataSourceName,
         user.email,
@@ -135,7 +136,7 @@ export async function handleSingleFileUploadToDataSource(
           `Data source named "${dataSourceName}" not found for adding files.`,
         )
       }
-      log.info(
+      log.debug(
         `Adding file to existing DataSource "${dataSourceName}": ${existingDataSource.docId} for user ${user.email}`,
       )
       dataSourceVespaId = existingDataSource.docId
