@@ -394,7 +394,7 @@ export default function FileUpload({
               setDatasourceName(newName)
               if (
                 !isEditingExisting &&
-                existingDataSourceNames.includes(newName.trim())
+                existingDataSourceNames.some(existingName => existingName.toLowerCase() === newName.trim().toLowerCase())
               ) {
                 setDatasourceNameError(
                   "Datasource name already exists. Please choose a different name.",
