@@ -1,5 +1,14 @@
 import { getDateForAI } from "@/utils/index"
-
+import { QueryType } from "./types"
+import {
+  Apps,
+  CalendarEntity,
+  DriveEntity,
+  GooglePeopleEntity,
+  MailAttachmentEntity,
+  MailEntity,
+  SlackEntity,
+} from "@/search/types"
 // Interface for structured agent prompt data
 interface AgentPromptData {
   name: string
@@ -900,7 +909,7 @@ export const agentSearchQueryPrompt = (
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
-    # Context of the agent {priority}
+    # Context of the agent {make this more priority}
     Name: ${agentPromptData.name}
     Description: ${agentPromptData.description}
     Prompt: ${agentPromptData.prompt}
@@ -996,112 +1005,141 @@ export const agentSearchQueryPrompt = (
       - "show me all files" → filter_query: null (no specific content)
 
     9. Now our task is to classify the user's query into one of the following categories:  
-    a. RetrieveInformation  
-    b. RetrieveMetadata  
-    c. RetrieveUnspecificMetadata
+      a. ${QueryType.SearchWithoutFilters}
+      b. ${QueryType.SearchWithFilters}  
+      c. ${QueryType.GetItems}
 
     ### CLASSIFICATION RULES - FIXED AND SOLID
     
     **STEP 1: STRICT APP/ENTITY DETECTION**
     
     Valid app keywords that map to apps:
-    - 'email', 'mail', 'emails', 'gmail' → 'gmail'
-    - 'calendar', 'meetings', 'events', 'schedule' → 'google-calendar'  
-    - 'drive', 'files', 'documents', 'folders' → 'google-drive'
-    - 'contacts', 'people', 'address book' → 'google-workspace'
-    
-    Valid entity keywords that map to entities:
-    - For Gmail: 'email', 'emails', 'mail', 'message' → 'mail'; 'pdf', 'attachment' → 'pdf'
-    - For Drive: 'file', 'files' → 'driveFile'; 'document', 'doc' → 'docs'; 'spreadsheet', 'sheet' → 'sheets'; 'presentation', 'slide' → 'slides'; 'pdf' → 'pdf'; 'folder' → 'folder'
-    - For Calendar: 'event', 'meeting', 'appointment' → 'event'
-    - For Workspace: 'contact', 'person' → 'contacts'
-    
-    **CRITICAL:** A query ONLY has valid app/entity if it contains the EXACT keywords listed above. Words like "uber", "receipts", "orders", "budget", etc. are NOT valid app/entity terms - they are content keywords.
-    
-    **STEP 2: DETECT MULTIPLE APP/ENTITY REFERENCES**
-    
-    Set "multipleAppAndEntity" to true ONLY if the query contains keywords from multiple different apps/services from the valid lists above.
-    Examples:
-    - "email and calendar" → multipleAppAndEntity: true (contains both gmail and calendar keywords)
-    - "files and emails" → multipleAppAndEntity: true (contains both drive and gmail keywords)
-    - "recent uber receipts" → multipleAppAndEntity: false (no valid app/entity keywords)
-    - "budget documents" → multipleAppAndEntity: false (no valid app/entity keywords)
-    
-    **STEP 3: APPLY FIXED CLASSIFICATION LOGIC**
-    
-    1. **RetrieveInformation** - Use when:
-       - Multiple valid apps/entities are detected (multipleAppAndEntity is true), OR
-       - NO valid app/entity keywords are detected at all
-       - Examples: 
-         - "I want to check my email and events" (multiple apps)
-         - "recent uber receipts" (no valid app/entity keywords)
-         - "what did John say?" (no valid app/entity keywords)
-         - "budget reports" (no valid app/entity keywords)
-       - Set: app = null, entity = null
-    
-    2. **RetrieveMetadata** - Use when:
-       - Exactly ONE valid app/entity is detected, AND filter_query is NOT null
-       - Examples: 
-         - "emails about marketing project" (has 'emails' = gmail + filter_query)
-         - "budget spreadsheets in drive" (has 'drive' + filter_query)
-         - "meetings with John" (has 'meetings' = calendar + filter_query)
-       - Set: app and entity to detected values
-    
-    3. **RetrieveUnspecificMetadata** - Use when:
-       - Exactly ONE valid app/entity is detected, AND filter_query IS null
-       - Examples: 
-         - "recent emails" (has 'emails' = gmail but no specific content)
-         - "previous 5 meetings" (has 'meetings' = calendar but no specific content)
-         - "latest files in drive" (has 'drive' but no specific content)
-       - Set: app and entity to detected values
+    - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
+    - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
+    - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
+    - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
+    - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
+    - 'data sources', 'sources' → '${Apps.DataSource}'
 
-    **VALIDATION EXAMPLES:**
-    - "recent uber receipts" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
-    - "zomato orders" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
-    - "budget documents" → No valid app/entity keywords → RetrieveInformation (app: null, entity: null)
-    - "recent emails" → Has 'emails' (gmail) but no filter_query → RetrieveUnspecificMetadata
-    - "emails about uber" → Has 'emails' (gmail) and filter_query → RetrieveMetadata
-    - "files and emails" → Multiple valid apps → RetrieveInformation
+    Valid entity keywords that map to entities:
+    - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
+    - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
+    - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
+    - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
+    - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
+    
+    **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
+    ### Query Types:
+    1. **${QueryType.SearchWithoutFilters}**:
+      - The user is referring multiple <app> or <entity>
+      - The user wants to search or look up contextual information.
+      - These are open-ended queries where only time filters might apply.
+      - user is asking for a sort of summary or discussion, it could be to summarize emails or files
+      - Example Queries:
+        - "What is the company's leave policy?"
+        - "Explain the project plan from last quarter."
+        - "What was my disucssion with Jesse"
+        - **JSON Structure**:
+        {
+          "type": "${QueryType.SearchWithoutFilters}",
+          "filters": {
+            "count": "<number of items to list>" or null,
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "sortDirection": <boolean> or null
+          }
+        }
+
+    2. **${QueryType.GetItems}**:
+      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
+      - This can be only classified when <app> and <entity> present
+      - Example Queries:
+        - "Show me all emails from last week."
+        - "List all Google Docs modified in October."
+        - **JSON Structure**:
+        {
+          "type": "${QueryType.GetItems}",
+          "filters": {
+            "app": "<app>",
+            "entity": "<entity>",
+            "sortDirection": <boolean if applicable otherwise null>
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+          }
+        }
+
+    3. **${QueryType.SearchWithFilters}**:
+      - The is referring single <app> or <entity> and also have specify some keywords
+      - Exactly ONE valid app/entity is detected, AND filterQuery is NOT null
+      - Examples Queries: 
+        - "emails about marketing project" (has 'emails' = gmail + filterQuery)
+        - "budget spreadsheets in drive" (has 'drive' + filterQuery)
+
+       - **JSON Structure**:
+        {
+          "type": "${QueryType.SearchWithFilters}",
+          "filters": {
+            "app": "<app>",
+            "entity": "<entity>",
+            "count": "<number of items to list>",
+            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
+            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
+            "sortDirection": <boolean or null>,
+            "filterQuery": "<extracted keywords>"
+          }
+        }
+
+    ---
 
     #### Enum Values for Valid Inputs
 
     type (Query Types):  
-    - RetrieveInformation  
-    - RetrieveMetadata  
-    - RetrieveUnspecificMetadata
+    - ${QueryType.SearchWithoutFilters}  
+    - ${QueryType.GetItems}    
+    - ${QueryType.SearchWithFilters}  
 
     app (Valid Apps):  
-    - google-drive  
-    - gmail  
-    - google-calendar  
-    - google-workspace
+    - ${Apps.GoogleDrive} 
+    - ${Apps.Gmail}  
+    - ${Apps.GoogleCalendar} 
+    - ${Apps.GoogleWorkspace}
 
     entity (Valid Entities):  
-    For Gmail:  
-    - mail  
-    - pdf (for attachments)  
+    For ${Apps.Gmail}:  
+    - ${MailEntity.Email}  
+    - ${MailAttachmentEntity.PDF} (for attachments)  
 
     For Drive:  
-    - driveFile  
-    - docs  
-    - sheets  
-    - slides  
-    - pdf  
-    - folder  
+    - ${DriveEntity.WordDocument}  
+    - ${DriveEntity.Docs}  
+    - ${DriveEntity.Sheets}  
+    - ${DriveEntity.Slides}  
+    - ${DriveEntity.PDF}  
+    - ${DriveEntity.Folder}  
 
     For Calendar:  
-    - event
+    - ${CalendarEntity.Event}
 
     For Google-Workspace:
-     - contacts
+     - ${GooglePeopleEntity.Contacts} or 
+     - ${GooglePeopleEntity.OtherContacts}
 
-    10. Output JSON in the following structure:
+    10. **IMPORTANT - TEMPORAL DIRECTION RULES:**
+        - "temporalDirection" should ONLY be set for calendar-related queries (meetings, events, appointments, schedule)
+        - For Gmail queries (emails, mail), always set "temporalDirection" to null
+        - For Google Drive queries (files, documents), always set "temporalDirection" to null  
+        - For Google Workspace queries (contacts), always set "temporalDirection" to null
+        - Only set "temporalDirection" to "next" or "prev" when the query is specifically about calendar events/meetings
+
+    11. Output JSON in the following structure:
        {
          "answer": "<string or null>",
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
-         "type": "<RetrieveInformation | RetrieveMetadata | RetrieveUnspecificMetadata>",
-         "filter_query": "<string or null>",
+         "isFollowUp": "<boolean>",
+         "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
+         "filterQuery": "<string or null>",
          "filters": {
            "app": "<app or null>",
            "entity": "<entity or null>",
@@ -1109,29 +1147,27 @@ export const agentSearchQueryPrompt = (
            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
-           "multipleAppAndEntity": "<boolean>"
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
-       - "temporalDirection" should be "next" if the query asks about upcoming events or emails, and "prev" if it refers to past ones. Use null if the query is unrelated to time, or if the valid apps is not  google-calendar or gmail.
-       - "filter_query" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
+       - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
+       - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
+       - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
-      # Context of the agent {priority}
-    Name: ${agentPromptData.name}
-    Description: ${agentPromptData.description}
-    Prompt: ${agentPromptData.prompt}
-    
-    # Agent Sources
-    ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
-    this is the context of the agent, it is very important to follow this.
-    11. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
-    12. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
-    Make sure you always comply with these steps and only produce the JSON output described.`
+
+    12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
+    13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
+    14. If query is a follow up query then "isFollowUp" must be true.
+    Make sure you always comply with these steps and only produce the JSON output described.
+
+`
 }
+
+
 
 export const agentSearchAgentPrompt = (
   userContext: string,
