@@ -3,8 +3,12 @@ import { UserRole } from "shared/types"
 import SlackSvg from "@/assets/slack.svg"
 import GoogleSvg from "@/assets/google-logo.svg"
 import { useLocation, useRouter } from "@tanstack/react-router"
+import { Upload } from "lucide-react"
 
-export const IntegrationsSidebar = ({ role }: { role: string }) => {
+export const IntegrationsSidebar = ({
+  role,
+  isAgentMode,
+}: { role: string; isAgentMode: boolean }) => {
   const router = useRouter()
   const location = useLocation()
   return (
@@ -47,6 +51,21 @@ export const IntegrationsSidebar = ({ role }: { role: string }) => {
                 Slack
               </span>
             </li>
+            {isAgentMode && (
+              <li
+                className={`group flex justify-between items-center ${location.pathname.includes("/integrations/fileupload") ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+                onClick={() => {
+                  router.navigate({
+                    to: "/integrations/fileupload",
+                  })
+                }}
+              >
+                <Upload className="w-4 h-4 ml-[8px]" />
+                <span className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
+                  File Upload
+                </span>
+              </li>
+            )}
           </ul>
         </div>
       </div>

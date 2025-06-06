@@ -40,6 +40,7 @@ export type {
   PublicUser,
   SelectPublicChat,
   PublicWorkspace,
+  SelectPublicAgent,
   // @ts-ignore
 } from "@/db/schema"
 

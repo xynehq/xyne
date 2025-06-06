@@ -55,7 +55,12 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import { getAppSyncJobs, getAppSyncJobsByEmail, insertSyncJob, updateSyncJob } from "@/db/syncJob"
+import {
+  getAppSyncJobs,
+  getAppSyncJobsByEmail,
+  insertSyncJob,
+  updateSyncJob,
+} from "@/db/syncJob"
 import { GaxiosError, type GaxiosResponse } from "gaxios"
 import { insertSyncHistory } from "@/db/syncHistory"
 import { getErrorMessage, retryWithBackoff } from "@/utils"
@@ -1583,7 +1588,6 @@ const insertFilesForUser = async (
             },
             1,
           )
-
         }
       }
       // end of duration timer for pdf ingestion
@@ -1635,7 +1639,6 @@ const insertFilesForUser = async (
         v.permissions = toPermissionsList(v.permissions, userEmail)
         return v
       })
-
 
       const totalIngestionDuration = ingestionDuration.startTimer({
         file_type: "GOOGLE_DRIVE_FILE",
@@ -3332,23 +3335,27 @@ export const ServiceAccountIngestMoreUsers = async (
 
     await db.transaction(async (trx) => {
       for (const meta of ingestionMetadataList) {
-
         // using email we will check that does the service account sync job for this
         // user alredy exist or not
         const apps = [
-          { name: 'Drive', app: Apps.GoogleDrive },
-          { name: 'Gmail', app: Apps.Gmail },
-          { name: 'Calendar', app: Apps.GoogleCalendar }
-        ];
-        
-        const jobExists: Record<string, boolean> = {};
+          { name: "Drive", app: Apps.GoogleDrive },
+          { name: "Gmail", app: Apps.Gmail },
+          { name: "Calendar", app: Apps.GoogleCalendar },
+        ]
+
+        const jobExists: Record<string, boolean> = {}
         for (const { name, app } of apps) {
-          const jobs = await getAppSyncJobsByEmail(db, app, AuthType.ServiceAccount, meta.email);
-          jobExists[`${name}JobExist`] = jobs && jobs.length > 0;
+          const jobs = await getAppSyncJobsByEmail(
+            db,
+            app,
+            AuthType.ServiceAccount,
+            meta.email,
+          )
+          jobExists[`${name}JobExist`] = jobs && jobs.length > 0
         }
 
-
-        if (!jobExists.DriveJobExist &&
+        if (
+          !jobExists.DriveJobExist &&
           insertDriveAndContacts &&
           (meta.driveToken || meta.contactsToken || meta.otherContactsToken)
         ) {
@@ -3389,7 +3396,11 @@ export const ServiceAccountIngestMoreUsers = async (
           })
         }
 
-        if (!jobExists.CalendarJobExist  && insertCalendar && meta.calendarEventsToken) {
+        if (
+          !jobExists.CalendarJobExist &&
+          insertCalendar &&
+          meta.calendarEventsToken
+        ) {
           await insertSyncJob(trx, {
             workspaceId: connector!.workspaceId,
             workspaceExternalId: connector!.workspaceExternalId,

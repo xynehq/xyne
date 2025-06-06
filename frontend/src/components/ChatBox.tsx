@@ -12,9 +12,10 @@ import {
   Search,
   RotateCcw,
   Atom,
+  Bot, // Import Bot icon
 } from "lucide-react"
 import Attach from "@/assets/attach.svg?react"
-import { Citation, Apps } from "shared/types"
+import { Citation, Apps, SelectPublicAgent } from "shared/types" // Add SelectPublicAgent
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,10 +68,15 @@ interface SearchResult {
 interface ChatBoxProps {
   query: string
   setQuery: (query: string) => void
-  handleSend: (messageToSend: string, selectedSources?: string[]) => void
+  handleSend: (
+    messageToSend: string,
+    selectedSources?: string[],
+    agentId?: string | null,
+  ) => void // Expects agentId string
   isStreaming?: boolean
   handleStop?: () => void
-  chatId?: string | null
+  chatId?: string | null // Current chat ID
+  agentIdFromChatData?: string | null // New prop for agentId from chat data
   allCitations: Map<string, Citation>
   isReasoningActive: boolean
   setIsReasoningActive: (
@@ -191,8 +197,9 @@ export const ChatBox = ({
   allCitations,
   handleStop,
   chatId,
-  isReasoningActive, // Use prop
-  setIsReasoningActive, // Use prop
+  agentIdFromChatData, // Destructure new prop
+  isReasoningActive,
+  setIsReasoningActive,
 }: ChatBoxProps) => {
   const inputRef = useRef<HTMLDivElement | null>(null)
   const referenceBoxRef = useRef<HTMLDivElement | null>(null)
@@ -223,7 +230,60 @@ export const ChatBox = ({
   const [referenceBoxLeft, setReferenceBoxLeft] = useState(0)
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true)
   const [showSourcesButton, _] = useState(false) // Added this line
-  // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+  const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
+  const [displayAgentName, setDisplayAgentName] = useState<string | null>(null)
+
+  // Effect to initialize and update persistedAgentId
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    const agentIdFromUrl = searchParams.get("agentId")
+
+    if (agentIdFromUrl) {
+      setPersistedAgentId(agentIdFromUrl)
+    } else if (agentIdFromChatData) {
+      setPersistedAgentId(agentIdFromChatData)
+    } else {
+      setPersistedAgentId(null)
+    }
+    // This effect should run when chatId changes (indicating a new chat context),
+    // when agentIdFromChatData changes (new chat data loaded),
+    // or when the component initially loads.
+  }, [chatId, agentIdFromChatData])
+
+  // Effect to fetch agent details for display when persistedAgentId is set
+  useEffect(() => {
+    const fetchAgentDetails = async () => {
+      if (persistedAgentId) {
+        try {
+          const response = await api.agents.$get() // Fetch all agents
+          if (response.ok) {
+            const allAgents = (await response.json()) as SelectPublicAgent[]
+            const currentAgent = allAgents.find(
+              (agent) => agent.externalId === persistedAgentId,
+            )
+            if (currentAgent) {
+              setDisplayAgentName(currentAgent.name)
+            } else {
+              console.error(
+                `Agent with ID ${persistedAgentId} not found for display.`,
+              )
+              setDisplayAgentName(null)
+            }
+          } else {
+            console.error("Failed to load agents for display.")
+            setDisplayAgentName(null)
+          }
+        } catch (error) {
+          console.error("Error fetching agent details for display:", error)
+          setDisplayAgentName(null)
+        }
+      } else {
+        setDisplayAgentName(null) // Clear display name if no persistedAgentId
+      }
+    }
+
+    fetchAgentDetails()
+  }, [persistedAgentId]) // Depend on persistedAgentId
 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -240,7 +300,7 @@ export const ChatBox = ({
     const inputElement = inputRef.current
     if (!inputElement || atIndex < 0) {
       const parentRect = inputElement
-        ?.closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`) 
+        ?.closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`)
         ?.getBoundingClientRect()
       const inputRect = inputElement?.getBoundingClientRect()
       if (parentRect && inputRect) {
@@ -278,7 +338,7 @@ export const ChatBox = ({
       range.setEnd(targetNode!, targetOffsetInNode + 1)
       const rect = range.getBoundingClientRect()
       const parentRect = inputElement
-        .closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`) 
+        .closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`)
         ?.getBoundingClientRect()
 
       if (parentRect) {
@@ -290,7 +350,7 @@ export const ChatBox = ({
     } else {
       const inputRect = inputElement.getBoundingClientRect()
       const parentRect = inputElement
-        .closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`) 
+        .closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`)
         ?.getBoundingClientRect()
       if (parentRect) {
         setReferenceBoxLeft(inputRect.left - parentRect.left)
@@ -588,7 +648,6 @@ export const ChatBox = ({
       type: "citation",
     }
 
-
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {
       setShowReferenceBox(false)
@@ -620,7 +679,9 @@ export const ChatBox = ({
       const tempDiv = document.createElement("div")
       tempDiv.innerHTML = pillHtmlString
       // Find the actual <a> tag, as renderToStaticMarkup might prepend other tags like <link>
-      const pillElement = tempDiv.querySelector(`a.${CLASS_NAMES.REFERENCE_PILL}`)
+      const pillElement = tempDiv.querySelector(
+        `a.${CLASS_NAMES.REFERENCE_PILL}`,
+      )
 
       if (pillElement) {
         const clonedPill = pillElement.cloneNode(true)
@@ -689,7 +750,6 @@ export const ChatBox = ({
       type: "global",
       photoLink: result.photoLink,
     }
-
 
     const input = inputRef.current
     if (!input || activeAtMentionIndex === -1) {
@@ -826,7 +886,9 @@ export const ChatBox = ({
         !referenceBoxRef.current.contains(target) &&
         inputRef.current &&
         !inputRef.current.contains(target) &&
-        !(event.target as HTMLElement).closest(`.${CLASS_NAMES.REFERENCE_TRIGGER}`)
+        !(event.target as HTMLElement).closest(
+          `.${CLASS_NAMES.REFERENCE_TRIGGER}`,
+        )
       ) {
         setShowReferenceBox(false)
         setActiveAtMentionIndex(-1)
@@ -851,9 +913,11 @@ export const ChatBox = ({
 
     // The `references` array is no longer passed to handleSend.
     // Pills and links are part of htmlMessage.
+    // Use the persistedAgentId from state when calling handleSend
     handleSend(
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
+      persistedAgentId,
     )
     // setReferences([]) // This state and its setter are removed.
 
@@ -1086,7 +1150,9 @@ export const ChatBox = ({
           </div>
         </div>
       )}
-      <div className={`flex flex-col w-full border rounded-[20px] bg-white ${CLASS_NAMES.SEARCH_CONTAINER}`}>
+      <div
+        className={`flex flex-col w-full border rounded-[20px] bg-white ${CLASS_NAMES.SEARCH_CONTAINER}`}
+      >
         <div className="relative flex items-center">
           {isPlaceholderVisible && (
             <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] pointer-events-none">
@@ -1288,7 +1354,7 @@ export const ChatBox = ({
                   // Otherwise, the box remains open (e.g., user is typing after a valid '@').
                 }
               }
-              adjustInputHeight() 
+              adjustInputHeight()
             }}
             onKeyDown={(e) => {
               if (showReferenceBox) {
@@ -1335,7 +1401,7 @@ export const ChatBox = ({
                   // For "OtherContacts" pills, do nothing further (link should not open)
                   return
                 }
-                
+
                 // For other pills or regular links, open the link in a new tab
                 window.open(anchor.href, "_blank", "noopener,noreferrer")
                 // Stop further processing to avoid @mention box logic if a link was clicked
@@ -1512,20 +1578,26 @@ export const ChatBox = ({
             </DropdownMenu>
           )}
           {/* Closing tag for the conditional render */}
-          <button
-            onClick={() => setIsReasoningActive(!isReasoningActive)} // Call prop setter
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-              // Changed text-xs to text-[11px]
-              isReasoningActive ? "text-green-600" : "text-[#464D53]" // Use prop for styling
-            }`}
-          >
-            <Atom
-              size={16}
-              className={isReasoningActive ? "text-green-600" : ""}
-            />{" "}
-            {/* Use prop for styling */}
-            <span>Reasoning</span>
-          </button>
+          <div className="flex items-center">
+            <button
+              onClick={() => setIsReasoningActive(!isReasoningActive)}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
+                isReasoningActive ? "text-green-600" : "text-[#464D53]"
+              }`}
+            >
+              <Atom
+                size={16}
+                className={isReasoningActive ? "text-green-600" : ""}
+              />
+              <span>Reasoning</span>
+            </button>
+            {displayAgentName && (
+              <div className="flex items-center text-xs text-[#464D53] ml-2 px-1 py-0.5 cursor-default">
+                <Bot size={16} className="mr-1 text-[#464D53]" />
+                <span className="font-medium">{displayAgentName}</span>
+              </div>
+            )}
+          </div>
           {isStreaming && chatId ? (
             <button
               onClick={handleStop}

@@ -155,4 +155,5 @@ export default {
   JobExpiryHours: 23,
   maxValidLinks: 15,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
+  agentWhiteList: (process.env.AGENT_WHITELIST || "").split(",").map(email => email.trim()).filter(email => email.length > 0),
 }

@@ -293,7 +293,8 @@ export enum Subsystem {
   Eval = "Eval",
   AI = "AI",
   Tuning = "Tuning",
-  Metric = "Metric"
+  AgentApi = "AgentApi",
+  Metric = "Metric",
 }
 
 export enum OperationStatus {
@@ -319,19 +320,18 @@ export const AnswerWithCitationsSchema = z.object({
   citations: z.array(z.number()),
 })
 
-
 // METRICS ENUMS
 export enum metricNames {
   syncOauthAccountChanges = "google_oauth_changes",
   syncServiceAccountChanges = "google_service_account_changes",
   syncGoogleWorkspaceChange = "google_workspace_changes",
   syncSlackChanges = "slack_changes",
-  checkDownloadsFolder = "check_downloads_folder"
+  checkDownloadsFolder = "check_downloads_folder",
 }
 
 export enum metricAppType {
   google = "Google",
-  slack = "Slack"
+  slack = "Slack",
 }
 
 export enum metricAccountType {
@@ -339,5 +339,5 @@ export enum metricAccountType {
   service = "google_service_account",
   slackAdmin = "slack_admin",
   slackUser = "slackUser",
-  admin = "admin"
+  admin = "admin",
 }

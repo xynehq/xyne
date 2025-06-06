@@ -478,14 +478,14 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
         // For vespaPayload that is not YQL, we'll use ReactJson if it's an object
         try {
           const potentialJson = JSON.parse(attributeValue)
-          if (typeof potentialJson === 'object' && potentialJson !== null) {
+          if (typeof potentialJson === "object" && potentialJson !== null) {
             displayValue = potentialJson
             isJson = true
           } else {
             displayValue = JSON.stringify(potentialJson, null, 2)
           }
         } catch (e) {
-           displayValue = String(attributeValue)
+          displayValue = String(attributeValue)
         }
       }
     } catch (e) {
@@ -493,13 +493,13 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
       displayValue = String(attributeValue)
     }
   } else if (typeof attributeValue === "object" && attributeValue !== null) {
-    displayValue = attributeValue 
+    displayValue = attributeValue
     isJson = true
   } else if (typeof attributeValue === "string") {
     try {
       const parsed = JSON.parse(attributeValue)
       // Ensure it's an actual object or array, not just a stringified primitive
-      if (typeof parsed === 'object' && parsed !== null) {
+      if (typeof parsed === "object" && parsed !== null) {
         displayValue = parsed
         isJson = true
       } else {
@@ -512,26 +512,27 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
     displayValue = String(attributeValue)
   }
 
-
   // Handle copy to clipboard
   const handleCopy = async () => {
     let textToCopy = ""
     if (isJson) {
       textToCopy = JSON.stringify(displayValue, null, 2)
-    } else if (attributeKey === "vespaPayload" && typeof attributeValue === "string") {
-        // Special handling for vespaPayload if it was formatted as YQL
-        try {
-            const parsed = JSON.parse(attributeValue)
-            if (parsed.yql) {
-                textToCopy = formatYqlQuery(parsed.yql)
-            } else {
-                textToCopy = JSON.stringify(parsed, null, 2)
-            }
-        } catch (e) {
-            textToCopy = String(attributeValue)
+    } else if (
+      attributeKey === "vespaPayload" &&
+      typeof attributeValue === "string"
+    ) {
+      // Special handling for vespaPayload if it was formatted as YQL
+      try {
+        const parsed = JSON.parse(attributeValue)
+        if (parsed.yql) {
+          textToCopy = formatYqlQuery(parsed.yql)
+        } else {
+          textToCopy = JSON.stringify(parsed, null, 2)
         }
-    }
-    else {
+      } catch (e) {
+        textToCopy = String(attributeValue)
+      }
+    } else {
       textToCopy = String(attributeValue)
     }
 
@@ -599,7 +600,7 @@ const AttributeModal: React.FC<AttributeModalProps> = ({
                 displayDataTypes={false}
                 name={false}
                 enableClipboard={false}
-                style={{ backgroundColor: darkMode ? '#1f2937' : '#ffffff' }}
+                style={{ backgroundColor: darkMode ? "#1f2937" : "#ffffff" }}
               />
             </div>
           ) : isUrl ? (
@@ -1657,7 +1658,11 @@ export function RagTraceVirtualization({
             displayDataTypes={false}
             name={false}
             enableClipboard={false} // Using custom copy button
-            style={{ backgroundColor: darkMode ? 'rgb(31 41 55 / 1)' : 'rgb(249 250 251 / 1)' }} // Match tab background
+            style={{
+              backgroundColor: darkMode
+                ? "rgb(31 41 55 / 1)"
+                : "rgb(249 250 251 / 1)",
+            }} // Match tab background
           />
         </div>
       </div>

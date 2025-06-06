@@ -58,6 +58,7 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
+import { ListDataSourcesApi, ListDataSourceFilesApi } from "@/api/dataSource"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -81,7 +82,24 @@ import {
   tuneDatasetSchema,
   DeleteDatasetHandler,
 } from "@/api/tuning"
+import {
+  CreateAgentApi,
+  ListAgentsApi,
+  UpdateAgentApi,
+  DeleteAgentApi,
+  createAgentSchema,
+  listAgentsSchema,
+  updateAgentSchema,
+} from "@/api/agent"
 import metricRegister from "@/metrics/sharedRegistry"
+import { handleFileUpload } from "@/api/files"
+import { z } from "zod" // Ensure z is imported if not already at the top for schemas
+
+// Define Zod schema for delete datasource file query parameters
+const deleteDataSourceFileQuerySchema = z.object({
+  dataSourceName: z.string().min(1),
+  fileName: z.string().min(1),
+})
 
 export type Variables = JwtVariables
 
@@ -169,6 +187,7 @@ export const AppRoutes = app
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
+  .post("files/upload", handleFileUpload)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/bookmark",
@@ -194,6 +213,8 @@ export const AppRoutes = app
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
   .get("/me", GetUserWorkspaceInfo)
+  .get("/datasources", ListDataSourcesApi)
+  .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post("/tuning/evaluate", EvaluateHandler)
@@ -205,6 +226,16 @@ export const AppRoutes = app
   )
   .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
   .get("/tuning/ws/:jobId", TuningWsRoute)
+  // Agent Routes
+  .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
+  .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
+  .put(
+    "/agent/:agentExternalId",
+    zValidator("json", updateAgentSchema),
+    UpdateAgentApi,
+  )
+  .delete("/agent/:agentExternalId", DeleteAgentApi)
+  // Admin Routes
   .basePath("/admin")
   // TODO: debug
   // for some reason the validation schema

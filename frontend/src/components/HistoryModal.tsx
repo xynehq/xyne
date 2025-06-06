@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { Trash2, MoreHorizontal, X, Pencil } from "lucide-react"
+import { Trash2, MoreHorizontal, X, Pencil, Bot } from "lucide-react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import {
   DropdownMenu,
@@ -244,7 +244,9 @@ const HistoryModal = ({
   }
 
   return (
-    <div className={`fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] flex flex-col select-none bg-white ${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`}>
+    <div
+      className={`fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] flex flex-col select-none bg-white ${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`}
+    >
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
         <p className="text-[#1C1D1F] font-medium text-[16px]">Chat History</p>
         <button
@@ -295,47 +297,52 @@ const HistoryModal = ({
                       {item.title}
                     </span>
                   )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <MoreHorizontal
-                        size={16}
-                        className={
-                          "invisible group-hover:visible mr-[10px] cursor-pointer"
-                        }
-                      />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem
-                        key={"rename"}
-                        role="button"
-                        className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                        onClick={() => {
-                          setEditedTitle(item.title) // Set the current title for editing
-                          setEditedChatId(item.externalId) // Track the chat being edited
-                          setIsEditing(true)
-                          setTimeout(() => {
-                            if (titleRef.current) {
-                              titleRef.current.focus()
-                            }
-                          }, 0)
-                        }}
-                      >
-                        <Pencil size={16} />
-                        <span>Rename</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        key={"delete"}
-                        role="button"
-                        className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                        onClick={() => {
-                          mutation.mutate(item?.externalId)
-                        }}
-                      >
-                        <Trash2 size={16} className="text-red-500" />
-                        <span className="text-red-500">Delete</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="flex items-center">
+                    {item.agentId && (
+                      <Bot size={16} className="mr-2 text-[#1C1D1F]" />
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <MoreHorizontal
+                          size={16}
+                          className={
+                            "invisible group-hover:visible mr-[10px] cursor-pointer"
+                          }
+                        />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          key={"rename"}
+                          role="button"
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          onClick={() => {
+                            setEditedTitle(item.title) // Set the current title for editing
+                            setEditedChatId(item.externalId) // Track the chat being edited
+                            setIsEditing(true)
+                            setTimeout(() => {
+                              if (titleRef.current) {
+                                titleRef.current.focus()
+                              }
+                            }, 0)
+                          }}
+                        >
+                          <Pencil size={16} />
+                          <span>Rename</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          key={"delete"}
+                          role="button"
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          onClick={() => {
+                            mutation.mutate(item?.externalId)
+                          }}
+                        >
+                          <Trash2 size={16} className="text-red-500" />
+                          <span className="text-red-500">Delete</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </li>
               ))}
             </ul>

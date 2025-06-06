@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Plug, Plus, History } from "lucide-react"
+import { Bot, Plug, Plus, History } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
@@ -16,35 +16,47 @@ export const Sidebar = ({
   className = "",
   photoLink = "",
   role = "",
+  isAgentMode = false,
 }: {
   className?: string
   photoLink?: string
   role?: string
+  isAgentMode?: boolean
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-       
-      const isInteractiveElement = target.closest(SELECTORS.INTERACTIVE_ELEMENT);
-      if (isInteractiveElement) return;
-      const isSidebarClick = target.closest(`.${CLASS_NAMES.SIDEBAR_CONTAINER}`);
-      const isHistoryModalClick = target.closest(`.${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`);
-      const isChatInput = target.closest(SELECTORS.CHAT_INPUT); 
-      const isSearchArea = target.closest(`.${CLASS_NAMES.SEARCH_CONTAINER}`); 
-      const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`); 
-      const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA); 
-      
-      if (!isSidebarClick && !isHistoryModalClick && !isChatInput && !isSearchArea && !isReferenceBox && !isAtMentionArea && showHistory) {
-        setShowHistory(false);
-      }
-    };
+      const target = event.target as HTMLElement
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showHistory]);
+      const isInteractiveElement = target.closest(SELECTORS.INTERACTIVE_ELEMENT)
+      if (isInteractiveElement) return
+      const isSidebarClick = target.closest(`.${CLASS_NAMES.SIDEBAR_CONTAINER}`)
+      const isHistoryModalClick = target.closest(
+        `.${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`,
+      )
+      const isChatInput = target.closest(SELECTORS.CHAT_INPUT)
+      const isSearchArea = target.closest(`.${CLASS_NAMES.SEARCH_CONTAINER}`)
+      const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`)
+      const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA)
+
+      if (
+        !isSidebarClick &&
+        !isHistoryModalClick &&
+        !isChatInput &&
+        !isSearchArea &&
+        !isReferenceBox &&
+        !isAtMentionArea &&
+        showHistory
+      ) {
+        setShowHistory(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [showHistory])
 
   return (
     <TooltipProvider>
@@ -91,6 +103,24 @@ export const Sidebar = ({
               <Tip side="right" info="History" />
             </Tooltip>
           </div>
+
+          {/* TODO: Add appropriate Link destination and Tooltip info for the Bot icon */}
+          {isAgentMode && (
+            <Link
+              to="/agent"
+              className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] rounded-md mt-[10px] ${
+                location.pathname.includes("/agent") ? "bg-[#D8DFE680]" : ""
+              }`}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Bot stroke="#384049" size={18} />
+                </TooltipTrigger>
+                <Tip side="right" info="agent" />{" "}
+                {/* Placeholder: Update this tooltip info */}
+              </Tooltip>
+            </Link>
+          )}
 
           <Link
             to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}

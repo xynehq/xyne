@@ -1,0 +1,43 @@
+schema datasource {
+  document datasource {
+    field docId type string {
+      indexing: attribute | summary
+    }
+    field name type string {
+      indexing: summary | attribute
+      attribute: fast-search
+    }
+    
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    
+    field createdBy type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+  }
+
+  fieldset default {
+    fields: name, createdBy
+  }
+
+  document-summary default {
+    # name is implicitly included in summary because 'field name' has 'indexing: summary'
+    # createdAt is implicitly included in summary because 'field createdAt' has 'indexing: summary'
+    # createdBy is implicitly included in summary because 'field createdBy' has 'indexing: summary'
+    # docId is implicitly available in summary because 'field docId' has 'indexing: summary'
+  }
+
+  rank-profile default_profile {
+    first-phase {
+      expression: nativeRank(name)
+    }
+  }
+}

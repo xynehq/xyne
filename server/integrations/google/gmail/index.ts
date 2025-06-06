@@ -109,7 +109,6 @@ export const handleGmailIngestion = async (
             if (!exist) {
               await insert(mailData, mailSchema)
 
-
               totalIngestedMails.inc(
                 {
                   mime_type: message.payload?.mimeType ?? "GOOGLE_MAIL",
@@ -331,7 +330,6 @@ export const parseMail = async (
               },
               1,
             )
-
           } catch (error) {
             // not throwing error; avoid disrupting the flow if retrieving an attachment fails,
             // log the error and proceed.
