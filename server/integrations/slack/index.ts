@@ -23,7 +23,12 @@ import {
   UpdateDocument,
   UpdateDocumentPermissions,
 } from "@/search/vespa"
-import { Subsystem, SyncCron, type SaaSOAuthJob } from "@/types"
+import {
+  OperationStatus,
+  Subsystem,
+  SyncCron,
+  type SaaSOAuthJob,
+} from "@/types"
 import {
   retryPolicies,
   WebClient,
@@ -50,6 +55,19 @@ import { IngestionState } from "../ingestionState"
 import { insertSyncJob } from "@/db/syncJob"
 import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
 import { time } from "console"
+import {
+  ingestedMembersErrorTotalCount,
+  ingestedMembersTotalCount,
+  ingestedTeamErrorTotalCount,
+  ingestedTeamTotalCount,
+  insertChannelMessageDuration,
+  insertChannelMessagesCount,
+  insertChannelMessagesErrorCount,
+  insertChatMessagesCount,
+  insertConversationCount,
+  insertConversationDuration,
+  insertConversationErrorCount,
+} from "@/metrics/slack/slack-metrics"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 
@@ -349,7 +367,15 @@ export async function insertChannelMessages(
             memberMap.get(message.user!)?.name!,
             memberMap.get(message.user!)?.profile?.image_192!,
           )
-
+          try {
+            insertChatMessagesCount.inc({
+              conversation_id: channelId,
+              status: OperationStatus.Success,
+              team_id: message.team,
+            })
+          } catch (error) {
+            Logger.info(`Error inserting chat message`)
+          }
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
           subtypes.add(message.subtype)
@@ -430,7 +456,15 @@ export async function insertChannelMessages(
                 memberMap.get(reply.user!)?.name!,
                 memberMap.get(reply.user!)?.profile?.image_192!,
               )
-
+              try {
+                insertChatMessagesCount.inc({
+                  conversation_id: channelId,
+                  status: OperationStatus.Success,
+                  team_id: message.team,
+                })
+              } catch (error) {
+                Logger.info(`Error inserting chat message`)
+              }
               tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
             } else {
               subtypes.add(reply.subtype)
@@ -718,7 +752,23 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         connector?.externalId,
       )
     }, 4000)
-    await insertTeam(team, true)
+    try {
+      await insertTeam(team, true)
+      ingestedTeamTotalCount.inc({
+        email_domain: team.email_domain,
+        enterprise_id: team.enterprise_id,
+        domain: team.domain,
+        status: OperationStatus.Success,
+      })
+    } catch (error) {
+      Logger.info(`Error inserting team`)
+      ingestedTeamErrorTotalCount.inc({
+        email_domain: team.email_domain,
+        enterprise_id: team.enterprise_id,
+        domain: team.domain,
+        status: OperationStatus.Failure,
+      })
+    }
     const conversations = (
       (await getAllConversations(client, true, new AbortController())) || []
     ).filter((conversation) => {
@@ -779,10 +829,38 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
             team: member.team_id!,
           })
           teamMap.set(teamResp.team?.id!, teamResp.team!)
-          await insertTeam(teamResp.team!, false)
+          try {
+            await insertTeam(teamResp.team!, false)
+            ingestedTeamTotalCount.inc({
+              email_domain: teamResp.team!.email_domain,
+              enterprise_id: teamResp.team!.enterprise_id,
+              domain: teamResp.team!.domain,
+              status: OperationStatus.Success,
+            })
+          } catch (error) {
+            Logger.info(`Error inserting member`)
+            ingestedTeamErrorTotalCount.inc({
+              email_domain: teamResp.team!.email_domain,
+              enterprise_id: teamResp.team!.enterprise_id,
+              domain: teamResp.team!.domain,
+              status: OperationStatus.Failure,
+            })
+          }
         }
-        await insertMember(member)
-        tracker.updateUserStats(data.email, StatType.Slack_User, 1)
+        try {
+          await insertMember(member)
+          ingestedMembersTotalCount.inc({
+            team_id: team.id,
+            status: OperationStatus.Success,
+          })
+          tracker.updateUserStats(data.email, StatType.Slack_User, 1)
+        } catch (error) {
+          Logger.error(`Error inserting member ${member.id}: ${error}`)
+          ingestedMembersErrorTotalCount.inc({
+            team_id: team.id,
+            status: OperationStatus.Failure,
+          })
+        }
       }
 
       let permissions: string[] = memberIds
@@ -799,20 +877,63 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
         ...conversation,
         permissions,
       }
-      await insertChannelMessages(
-        data.email,
-        client,
-        conversation.id!,
-        abortController,
-        memberMap,
-        tracker,
-        "0",
-        channelMap,
-      )
-      tracker.updateUserStats(data.email, StatType.Slack_Conversation, 1)
-      await insertConversation(conversationWithPermission)
-      conversationIndex++
-      tracker.setCurrent(conversationIndex)
+
+      const channelMessageInsertionDuration =
+        insertChannelMessageDuration.startTimer({
+          conversation_id: conversation.id,
+          team_id: team.id,
+          status: OperationStatus.Success,
+        })
+      try {
+        await insertChannelMessages(
+          data.email,
+          client,
+          conversation.id!,
+          abortController,
+          memberMap,
+          tracker,
+          "0",
+          channelMap,
+        )
+        channelMessageInsertionDuration()
+        insertChannelMessagesCount.inc({
+          conversation_id: conversation.id ?? "",
+          team_id: team.id ?? "",
+          status: OperationStatus.Success,
+        })
+        tracker.updateUserStats(data.email, StatType.Slack_Conversation, 1)
+      } catch (error) {
+        Logger.error("Error inserting Channel Messages")
+        insertChannelMessagesErrorCount.inc({
+          conversation_id: conversation.id ?? "",
+          team_id: team.id ?? "",
+          status: OperationStatus.Failure,
+        })
+      }
+      try {
+        const conversationInsertionDuration =
+          insertConversationDuration.startTimer({
+            conversation_id: conversation.id,
+            team_id: team.id,
+            status: OperationStatus.Success,
+          })
+        await insertConversation(conversationWithPermission)
+        conversationInsertionDuration()
+        insertConversationCount.inc({
+          conversation_id: conversationWithPermission.id ?? "",
+          team_id: conversationWithPermission.context_team_id ?? "",
+          status: OperationStatus.Success,
+        })
+        conversationIndex++
+        tracker.setCurrent(conversationIndex)
+      } catch (error) {
+        Logger.error(`Error inserting Conversation`)
+        insertConversationErrorCount.inc({
+          conversation_id: conversationWithPermission.id ?? "",
+          team_id: conversationWithPermission.context_team_id ?? "",
+          status: OperationStatus.Failure,
+        })
+      }
     }
     setTimeout(() => {
       clearInterval(interval)

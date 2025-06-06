@@ -24,7 +24,6 @@ import {
   ChatSSEvents,
   SelectPublicMessage,
   Citation,
-  PublicUser,
   SelectPublicAgent,
   DriveEntity,
 } from "shared/types"

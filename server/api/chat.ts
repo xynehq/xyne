@@ -8,11 +8,13 @@ import {
   mailPromptJsonStream,
   temporalPromptJsonStream,
   queryRewriter,
+  meetingPromptJsonStream,
 } from "@/ai/provider"
 import {
   Models,
   QueryType,
   type ConverseResponse,
+  type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
   type UserQuery,
@@ -40,6 +42,8 @@ import {
   selectPublicMessagesSchema,
   type SelectChat,
   type SelectMessage,
+  messageFeedbackEnum,
+  selectMessageSchema,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
@@ -87,6 +91,7 @@ import {
   mailAttachmentSchema,
   mailSchema,
   userSchema,
+  type Entity,
   type VespaChatMessage,
   type VespaEvent,
   type VespaEventSearch,
@@ -156,7 +161,7 @@ const ragPipelineConfig = {
     reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerOrSearch]: {
-    modelId: defaultFastModel, //defaultBestModel,
+    modelId: defaultBestModel, //defaultBestModel,
     reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerWithList]: {
@@ -584,7 +589,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   pageSize: number = 10,
   maxPageNumber: number = 3,
   maxSummaryCount: number | undefined,
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
   agentPrompt?: string,
@@ -683,7 +688,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     }
   }
 
-  const message = input
+  let message = input
 
   let userAlpha = alpha
   try {
@@ -719,9 +724,36 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   const initialSearchSpan = rootSpan?.startSpan("latestResults_search")
 
   const monthInMs = 30 * 24 * 60 * 60 * 1000
-  const timestampRange = {
+  let timestampRange = {
     from: new Date().getTime() - 4 * monthInMs,
     to: new Date().getTime(),
+  }
+  const { startTime, endTime } = classification.filters
+
+  if (startTime && endTime) {
+    const fromMs = new Date(startTime).getTime()
+    const toMs = new Date(endTime).getTime()
+    if (!isNaN(fromMs) && !isNaN(toMs) && fromMs <= toMs) {
+      timestampRange.from = fromMs
+      timestampRange.to = toMs
+    } else {
+      rootSpan?.setAttribute(
+        "invalidTimestampRange",
+        JSON.stringify({ startTime, endTime }),
+      )
+    }
+  }
+
+  let userSpecifiedCount = pageSize
+  if (classification.filters.count) {
+    rootSpan?.setAttribute("userSpecifiedCount", classification.filters.count)
+    userSpecifiedCount = Math.min(
+      classification.filters.count,
+      config.maxUserRequestCount,
+    )
+  }
+  if (classification.filterQuery) {
+    message = classification.filterQuery
   }
   let searchResults
   if (!agentPrompt) {
@@ -1140,8 +1172,9 @@ async function* generateAnswerFromGivenContext(
   userCtx: string,
   alpha: number = 0.5,
   fileIds: string[],
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   agentPrompt?: string,
+  passedSpan?: Span,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
@@ -1178,8 +1211,12 @@ async function* generateAnswerFromGivenContext(
     )
   }
 
+  const generateAnswerSpan = passedSpan?.startSpan(
+    "generateAnswerFromGivenContext",
+  )
+
   let previousResultsLength = 0
-  const results = await GetDocumentsByDocIds(fileIds)
+  const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
   if (!results.root.children) {
     results.root.children = []
   }
@@ -1192,6 +1229,19 @@ async function* generateAnswerFromGivenContext(
       )
       ?.join("\n"),
   )
+
+  const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
+  initialContextSpan?.setAttribute(
+    "context_length",
+    initialContext?.length || 0,
+  )
+  initialContextSpan?.setAttribute("context", initialContext || "")
+  initialContextSpan?.setAttribute(
+    "number_of_chunks",
+    results.root?.children?.length || 0,
+  )
+  initialContextSpan?.end()
+
   Logger.info(
     `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
   )
@@ -1220,6 +1270,8 @@ async function* generateAnswerFromGivenContext(
     userRequestsReasoning,
   )
   if (answer) {
+    generateAnswerSpan?.setAttribute("answer_found", true)
+    generateAnswerSpan?.end()
     return
   } else if (!answer) {
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
@@ -1230,6 +1282,16 @@ async function* generateAnswerFromGivenContext(
       limit: fileIds?.length,
       alpha: userAlpha,
     })
+
+    const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
+    searchVespaSpan?.setAttribute("parsed_message", message)
+    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
+    searchVespaSpan?.setAttribute("limit", fileIds?.length)
+    searchVespaSpan?.setAttribute(
+      "results length",
+      results?.root?.children?.length || 0,
+    )
+
     if (!results.root.children) {
       results.root.children = []
     }
@@ -1245,6 +1307,14 @@ async function* generateAnswerFromGivenContext(
     Logger.info(
       `[Selected Context Path] Number of contextual chunks being passed: ${results?.root?.children?.length || 0}`,
     )
+
+    searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
+    searchVespaSpan?.setAttribute("context", initialContext || "")
+    searchVespaSpan?.setAttribute(
+      "number_of_chunks",
+      results.root?.children?.length || 0,
+    )
+
     const iterator = baselineRAGJsonStream(
       builtUserQuery,
       userCtx,
@@ -1264,14 +1334,21 @@ async function* generateAnswerFromGivenContext(
       userRequestsReasoning,
     )
     if (answer) {
+      searchVespaSpan?.setAttribute("answer_found", true)
+      searchVespaSpan?.end()
+      generateAnswerSpan?.end()
       return
     } else if (
       // If no answer found, exit and yield nothing related to selected context found
       !answer
     ) {
+      const noAnswerSpan = searchVespaSpan?.startSpan("no_answer_response")
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
+      noAnswerSpan?.end()
+      searchVespaSpan?.end()
+      generateAnswerSpan?.end()
       return
     }
     if (config.isReasoning && userRequestsReasoning) {
@@ -1281,6 +1358,7 @@ async function* generateAnswerFromGivenContext(
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += results?.root?.children?.length || 0
   }
+  generateAnswerSpan?.end()
 }
 
 // Checks if the user has selected context
@@ -1432,13 +1510,13 @@ const getSearchRangeSummary = (
 async function* generatePointQueryTimeExpansion(
   input: string,
   messages: Message[],
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   email: string,
   userCtx: string,
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-  userRequestsReasoning?: boolean,
+  userRequestsReasoning: boolean,
   eventRagSpan?: Span,
   agentPrompt?: string,
 ): AsyncIterableIterator<
@@ -1774,8 +1852,9 @@ async function* generatePointQueryTimeExpansion(
     contextSpan?.end()
 
     // Stream LLM response
-    const ragSpan = iterationSpan?.startSpan("temporal_prompt_stream") // Corrected span name for clarity
-    const iterator = temporalPromptJsonStream(input, userCtx, initialContext, {
+    const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
+    Logger.info("Using meetingPromptJsonStream")
+    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
@@ -1861,11 +1940,11 @@ async function* processResultsForMetadata(
   app: Apps,
   entity: any,
   chunksCount: number | undefined,
-  span?: Span,
   userRequestsReasoning?: boolean,
+  span?: Span,
 ) {
   if (app === Apps.GoogleDrive) {
-    chunksCount = 100
+    chunksCount = config.maxGoogleDriveSummary
     Logger.info(`Google Drive, Chunk size: ${chunksCount}`)
     span?.setAttribute("Google Drive, chunk_size", chunksCount)
   }
@@ -1908,7 +1987,7 @@ async function* generateMetadataQueryAnswer(
   userAlpha: number = 0.5,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   userRequestsReasoning?: boolean,
   span?: Span,
   agentPrompt?: string,
@@ -1918,12 +1997,11 @@ async function* generateMetadataQueryAnswer(
 > {
   const { app, entity, startTime, endTime, sortDirection } =
     classification.filters
-  const count =
-    "count" in classification.filters ? classification.filters.count : undefined
+  const count = classification.filters.count
   const direction = classification.direction as string
-  const isUnspecificMetadataRetrieval =
-    classification.type === QueryType.RetrieveUnspecificMetadata
-  const isMetadataRetrieval = classification.type === QueryType.RetrieveMetadata
+  const isGenericItemFetch = classification.type === QueryType.GetItems
+  const isFilteredItemSearch =
+    classification.type === QueryType.SearchWithFilters
   const isValidAppAndEntity =
     isValidApp(app as Apps) && isValidEntity(entity as any)
   let agentAppEnums: Apps[] = []
@@ -2039,7 +2117,7 @@ async function* generateMetadataQueryAnswer(
   // Determine search strategy based on conditions
   if (
     !isValidAppAndEntity &&
-    classification.filter_query &&
+    classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
     span?.setAttribute(
@@ -2051,9 +2129,6 @@ async function* generateMetadataQueryAnswer(
       "User requested recent metadata retrieval without specifying app or entity",
     )
 
-    Logger.info(
-      `Multiple App Entity - ${classification.filters.multipleAppAndEntity}`,
-    )
     const searchOps = {
       limit: pageSize,
       alpha: userAlpha,
@@ -2063,15 +2138,15 @@ async function* generateMetadataQueryAnswer(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const pageSpan = span?.startSpan(`metadata_iteration_${iteration}`)
+      const pageSpan = span?.startSpan(`search_iteration_${iteration}`)
       Logger.info(
-        `Retrieve Metadata Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
+        `Search Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
 
       let searchResults
       if (!agentPrompt) {
         searchResults = await searchVespa(
-          classification.filter_query,
+          classification.filterQuery,
           email,
           app as Apps,
           entity as any,
@@ -2083,7 +2158,7 @@ async function* generateMetadataQueryAnswer(
         )
       } else {
         searchResults = await searchVespaAgent(
-          classification.filter_query,
+          classification.filterQuery,
           email,
           app as Apps,
           entity as any,
@@ -2135,8 +2210,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
@@ -2158,15 +2233,17 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
     Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
-  } else if (isUnspecificMetadataRetrieval && isValidAppAndEntity) {
-    const userSpecifiedCountLimit = count ? Math.min(count, 50) : 5
-    span?.setAttribute("metadata_type", QueryType.RetrieveUnspecificMetadata)
+  } else if (isGenericItemFetch && isValidAppAndEntity) {
+    const userSpecifiedCountLimit = count
+      ? Math.min(count, config.maxUserRequestCount)
+      : 5
+    span?.setAttribute("Search_Type", QueryType.GetItems)
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
     )
     span?.setAttribute("modelId", defaultBestModel)
-    Logger.info(`Search Type : ${QueryType.RetrieveUnspecificMetadata}`)
+    Logger.info(`Search Type : ${QueryType.GetItems}`)
 
     let searchResults
 
@@ -2192,9 +2269,7 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute("context", buildContext(items, 20))
     span?.end()
-    Logger.info(
-      `Retrieved Documents : ${QueryType.RetrieveUnspecificMetadata} - ${items.length}`,
-    )
+    Logger.info(`Retrieved Documents : ${QueryType.GetItems} - ${items.length}`)
     // Early return if no documents found
     if (!items.length) {
       span?.end()
@@ -2211,26 +2286,26 @@ async function* generateMetadataQueryAnswer(
       app as Apps,
       entity,
       maxSummaryCount,
-      span,
       userRequestsReasoning,
+      span,
     )
     return
   } else if (
-    isMetadataRetrieval &&
+    isFilteredItemSearch &&
     isValidAppAndEntity &&
-    classification.filter_query
+    classification.filterQuery
   ) {
     // Specific metadata retrieval
-    span?.setAttribute("metadata_type", QueryType.RetrieveMetadata)
+    span?.setAttribute("Search_Type", QueryType.SearchWithFilters)
     span?.setAttribute(
       "isReasoning",
       userRequestsReasoning && config.isReasoning ? true : false,
     )
     span?.setAttribute("modelId", defaultBestModel)
-    Logger.info(`Search Type : ${QueryType.RetrieveMetadata}`)
+    Logger.info(`Search Type : ${QueryType.SearchWithFilters}`)
 
-    const { filter_query } = classification
-    const query = filter_query
+    const { filterQuery } = classification
+    const query = filterQuery
     const rankProfile =
       sortDirection === "desc"
         ? SearchModes.GlobalSorted
@@ -2245,8 +2320,10 @@ async function* generateMetadataQueryAnswer(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const iterationSpan = span?.startSpan(`metadata_iteration_${iteration}`)
-      Logger.info(`Retrieve Metadata Iteration - ${iteration} : ${rankProfile}`)
+      const iterationSpan = span?.startSpan(`search_iteration_${iteration}`)
+      Logger.info(
+        `Search ${QueryType.SearchWithFilters} Iteration - ${iteration} : ${rankProfile}`,
+      )
 
       let searchResults
       if (!agentPrompt) {
@@ -2296,7 +2373,7 @@ async function* generateMetadataQueryAnswer(
       iterationSpan?.end()
 
       Logger.info(
-        `Number of documents for ${QueryType.RetrieveMetadata} = ${items.length}`,
+        `Number of documents for ${QueryType.SearchWithFilters} = ${items.length}`,
       )
       if (!items.length) {
         Logger.info(
@@ -2318,8 +2395,8 @@ async function* generateMetadataQueryAnswer(
         app as Apps,
         entity,
         undefined,
-        span,
         userRequestsReasoning,
+        span,
       )
 
       if (answer == null) {
@@ -2344,9 +2421,7 @@ async function* generateMetadataQueryAnswer(
   }
 }
 
-const fallbackText = (
-  classification: TemporalClassifier & QueryRouterResponse,
-): string => {
+const fallbackText = (classification: QueryRouterLLMResponse): string => {
   const { app, entity } = classification.filters
   const direction = classification.direction || ""
   const { startTime, endTime } = classification.filters
@@ -2405,11 +2480,11 @@ export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
   message: string,
-  classification: TemporalClassifier & QueryRouterResponse,
+  classification: QueryRouterLLMResponse,
   messages: Message[],
   alpha: number,
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
   agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
@@ -2422,16 +2497,14 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
+  const isGenericItemFetch = classification.type === QueryType.GetItems
+  const isFilteredItemSearch =
+    classification.type === QueryType.SearchWithFilters
+  const isFilteredSearchSortedByRecency =
+    classification.filterQuery &&
+    classification.filters.sortDirection === "desc"
 
-  const isUnspecificMetadataRetrieval =
-    classification.type == QueryType.RetrieveUnspecificMetadata
-  const isMetadataRetrieval = classification.type == QueryType.RetrieveMetadata
-
-  if (
-    isMetadataRetrieval ||
-    isUnspecificMetadataRetrieval ||
-    classification.filters.multipleAppAndEntity === false
-  ) {
+  if (isGenericItemFetch || isFilteredItemSearch) {
     Logger.info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
@@ -2441,10 +2514,7 @@ export async function* UnderstandMessageAndAnswer(
       JSON.stringify(classification),
     )
 
-    const count =
-      isMetadataRetrieval || isUnspecificMetadataRetrieval
-        ? classification.filters.count || chatPageSize
-        : chatPageSize
+    const count = classification.filters.count || chatPageSize
     const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
@@ -2480,7 +2550,10 @@ export async function* UnderstandMessageAndAnswer(
     if (hasYieldedAnswer) return
   }
 
-  if (classification.direction !== null) {
+  if (
+    classification.direction !== null &&
+    classification.filters.app === Apps.GoogleCalendar
+  ) {
     // user is talking about an event
     Logger.info(`Direction : ${classification.direction}`)
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
@@ -2526,14 +2599,21 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   message: string,
   alpha: number,
   fileIds: string[],
+  userRequestsReasoning: boolean,
   passedSpan?: Span,
-  userRequestsReasoning?: boolean,
+  agentPrompt?: string,
 ): AsyncIterableIterator<
   ConverseResponse & { citation?: { index: number; item: any } }
 > {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute("alpha", alpha)
+  passedSpan?.setAttribute("fileIds", JSON.stringify(fileIds))
+  passedSpan?.setAttribute("fileIds_count", fileIds?.length)
+  passedSpan?.setAttribute(
+    "userRequestsReasoning",
+    userRequestsReasoning || false,
+  )
 
   return yield* generateAnswerFromGivenContext(
     message,
@@ -2542,6 +2622,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     alpha,
     fileIds,
     userRequestsReasoning,
+    agentPrompt,
+    passedSpan,
   )
 }
 
@@ -2786,8 +2868,9 @@ export const AgentMessageApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
+              understandSpan,
+              agentPromptForLLM,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3140,7 +3223,7 @@ export const AgentMessageApi = async (c: Context) => {
               const classification: TemporalClassifier & QueryRouterResponse = {
                 direction: parsed.temporalDirection,
                 type: parsed.type as QueryType,
-                filter_query: parsed.filter_query,
+                filterQuery: parsed.filter_query,
                 filters: {
                   ...parsed.filters,
                   app: parsed.filters.app as Apps,
@@ -3159,8 +3242,8 @@ export const AgentMessageApi = async (c: Context) => {
                 classification,
                 messagesWithNoErrResponse,
                 0.5,
-                understandSpan,
                 userRequestsReasoning,
+                understandSpan,
                 agentPromptForLLM,
               )
               stream.writeSSE({
@@ -3484,6 +3567,62 @@ export const AgentMessageApi = async (c: Context) => {
   }
 }
 
+function formatMessagesForLLM(
+  msgs: SelectMessage[],
+): { role: ConversationRole; content: { text: string }[] }[] {
+  return msgs.map((msg) => {
+    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
+    // then we should not give that exact stringified message as history
+    // We convert it into a AI friendly string only for giving it to LLM
+    const fileIds = Array.isArray(msg?.fileIds) ? msg.fileIds : []
+    if (msg.messageRole === "user" && fileIds && fileIds.length > 0) {
+      const originalMsg = msg.message
+      const selectedContext = isContextSelected(originalMsg)
+      msg.message = selectedContext
+        ? buildUserQuery(selectedContext)
+        : originalMsg
+    }
+    return {
+      role: msg.messageRole as ConversationRole,
+      content: [{ text: msg.message }],
+    }
+  })
+}
+
+function buildTopicConversationThread(
+  messages: SelectMessage[],
+  currentMessageIndex: number,
+) {
+  const conversationThread = []
+  let index = currentMessageIndex
+
+  while (index >= 0) {
+    const message = messages[index]
+
+    if (
+      message.messageRole === MessageRole.User &&
+      message.queryRouterClassification
+    ) {
+      const classification =
+        typeof message.queryRouterClassification === "string"
+          ? JSON.parse(message.queryRouterClassification)
+          : message.queryRouterClassification
+
+      // If this message is NOT a follow-up, it means we've hit a topic boundary
+      if (!classification.isFollowUp) {
+        // Include this message as it's the start of the current topic thread
+        conversationThread.unshift(message)
+        break
+      }
+    }
+
+    conversationThread.unshift(message)
+    index--
+  }
+
+  return conversationThread
+}
+
 export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
@@ -3665,13 +3804,13 @@ export const MessageApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-            const conversationSpan = streamSpan.startSpan("conversation_search")
-            conversationSpan.setAttribute("answer", answer)
-            conversationSpan.end()
 
-            const ragSpan = streamSpan.startSpan("rag_processing")
-
-            const understandSpan = ragSpan.startSpan("understand_message")
+            const understandSpan = streamSpan.startSpan("understand_message")
+            understandSpan?.setAttribute(
+              "totalValidFileIdsFromLinkCount",
+              totalValidFileIdsFromLinkCount,
+            )
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -3679,8 +3818,8 @@ export const MessageApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
+              understandSpan,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -3759,7 +3898,7 @@ export const MessageApi = async (c: Context) => {
               JSON.stringify(citationValues),
             )
             understandSpan.end()
-            const answerSpan = ragSpan.startSpan("process_final_answer")
+            const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
               processMessage(answer, citationMap),
@@ -3767,7 +3906,6 @@ export const MessageApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
-            ragSpan.end()
 
             if (answer || wasStreamClosedPrematurely) {
               // TODO: incase user loses permission
@@ -3853,38 +3991,26 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const messagesWithNoErrResponse = messages
+            const filteredMessages = messages
               .slice(0, messages.length - 1)
               .filter((msg) => !msg?.errorMessage)
               .filter(
                 (msg) =>
                   !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              ) // filter out assistant messages with no content
-              .map((msg) => {
-                // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
-                // then we should not give that exact stringified message as history
-                // We convert it into a AI friendly string only for giving it to LLM
-                const fileIds = JSON.parse(JSON.stringify(msg?.fileIds || []))
-                if (
-                  msg.messageRole === "user" &&
-                  fileIds &&
-                  fileIds.length > 0
-                ) {
-                  const originalMsg = msg.message
-                  const selectedContext = isContextSelected(originalMsg)
-                  msg.message = selectedContext
-                    ? buildUserQuery(selectedContext)
-                    : originalMsg
-                }
-                return {
-                  role: msg.messageRole as ConversationRole,
-                  content: [{ text: msg.message }],
-                }
-              })
+              )
 
             Logger.info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
+
+            const topicConversationThread = buildTopicConversationThread(
+              filteredMessages,
+              filteredMessages.length - 1,
+            )
+            const llmFormattedMessages: Message[] = formatMessagesForLLM(
+              topicConversationThread,
+            )
+
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(message, ctx, {
                 modelId:
@@ -3894,7 +4020,7 @@ export const MessageApi = async (c: Context) => {
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: messagesWithNoErrResponse,
+                messages: llmFormattedMessages,
                 agentPrompt: agentPrompt,
               })
 
@@ -3915,10 +4041,11 @@ export const MessageApi = async (c: Context) => {
               sortDirection: "",
             }
             let parsed = {
+              isFollowUp: false,
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
-              filter_query: "",
+              filterQuery: "",
               type: "",
               filters: queryFilters,
             }
@@ -4011,10 +4138,28 @@ export const MessageApi = async (c: Context) => {
               }
             }
 
+            console.log(buffer, "buffer")
             conversationSpan.setAttribute("answer_found", parsed.answer)
             conversationSpan.setAttribute("answer", answer)
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             conversationSpan.end()
+            let classification
+            const { app, count, endTime, entity, sortDirection, startTime } =
+              parsed?.filters
+            classification = {
+              direction: parsed.temporalDirection,
+              type: parsed.type,
+              filterQuery: parsed.filterQuery,
+              isFollowUp: parsed.isFollowUp,
+              filters: {
+                app: app as Apps,
+                entity: entity as Entity,
+                endTime,
+                sortDirection,
+                startTime,
+                count,
+              },
+            } as QueryRouterLLMResponse
 
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
@@ -4030,36 +4175,69 @@ export const MessageApi = async (c: Context) => {
                   "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const classification: TemporalClassifier & QueryRouterResponse = {
-                direction: parsed.temporalDirection,
-                type: parsed.type as QueryType,
-                filter_query: parsed.filter_query,
-                filters: {
-                  ...parsed.filters,
-                  app: parsed.filters.app as Apps,
-                  entity: parsed.filters.entity as any,
-                },
-              }
 
               Logger.info(
                 `Classifying the query as:, ${JSON.stringify(classification)}`,
               )
-              const understandSpan = ragSpan.startSpan("understand_message")
-              const iterator = UnderstandMessageAndAnswer(
-                email,
-                ctx,
-                message,
-                classification,
-                messagesWithNoErrResponse,
-                0.5,
-                understandSpan,
-                userRequestsReasoning,
-                agentPrompt,
+
+              ragSpan.setAttribute(
+                "isFollowUp",
+                classification.isFollowUp ?? false,
               )
-              stream.writeSSE({
-                event: ChatSSEvents.Start,
-                data: "",
-              })
+              const understandSpan = ragSpan.startSpan("understand_message")
+
+              let iterator:
+                | AsyncIterableIterator<
+                    ConverseResponse & {
+                      citation?: { index: number; item: any }
+                    }
+                  >
+                | undefined = undefined
+
+              if (messages.length < 2) {
+                classification.isFollowUp = false // First message or not enough history to be a follow-up
+              } else if (classification.isFollowUp) {
+                // If it's marked as a follow-up, try to reuse the last user message's classification
+                const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
+                const parsedMessage =
+                  selectMessageSchema.safeParse(lastUserMessage)
+
+                if (parsedMessage.error) {
+                  Logger.error(`Error while parsing last user message`)
+                } else if (
+                  parsedMessage.success &&
+                  Array.isArray(parsedMessage.data.fileIds) &&
+                  parsedMessage.data.fileIds.length // If the message contains fileIds then the follow up is must for @file
+                ) {
+                  Logger.info(
+                    `Reusing file-based classification from previous message Classification: ${JSON.stringify(parsedMessage.data.queryRouterClassification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
+                  )
+                  iterator = UnderstandMessageAndAnswerForGivenContext(
+                    email,
+                    ctx,
+                    message,
+                    0.5,
+                    parsedMessage.data.fileIds as string[],
+                    userRequestsReasoning,
+                    understandSpan,
+                  )
+                } else if (
+                  parsedMessage.data.queryRouterClassification &&
+                  Object.keys(parsedMessage.data.queryRouterClassification)
+                    .length > 2
+                ) {
+                  Logger.info(
+                    `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                  )
+
+                  classification = parsedMessage.data
+                    .queryRouterClassification as QueryRouterLLMResponse
+                } else {
+                  Logger.info(
+                    "Follow-up query detected, but no classification found in previous message.",
+                  )
+                }
+              }
 
               answer = ""
               thinking = ""
@@ -4067,6 +4245,22 @@ export const MessageApi = async (c: Context) => {
               citations = []
               citationMap = {}
               let citationValues: Record<number, string> = {}
+              if (iterator === undefined) {
+                iterator = UnderstandMessageAndAnswer(
+                  email,
+                  ctx,
+                  message,
+                  classification,
+                  llmFormattedMessages,
+                  0.5,
+                  userRequestsReasoning,
+                  understandSpan,
+                )
+              }
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
               for await (const chunk of iterator) {
                 if (stream.closed) {
                   Logger.info(
@@ -4135,19 +4329,54 @@ export const MessageApi = async (c: Context) => {
               answer = parsed.answer
             }
 
+            const latestUserMessage = messages[messages.length - 1]
+            if (latestUserMessage && answer) {
+              const isFollowUp = parsed?.isFollowUp
+              const lastMessageIndex = messages.length - 1
+              const referenceIndex = lastMessageIndex - 2
+
+              const previousClassification = messages[referenceIndex]
+                ?.queryRouterClassification as Record<string, any> | undefined
+
+              let queryRouterClassification: Record<string, any> | undefined
+
+              if (isFollowUp && previousClassification) {
+                queryRouterClassification = {
+                  ...previousClassification,
+                  isFollowUp,
+                }
+              } else if (Object.keys(classification).length > 2) {
+                queryRouterClassification = classification
+              }
+
+              if (queryRouterClassification) {
+                Logger.info(
+                  `Updating queryRouter classification for last user message: ${JSON.stringify(queryRouterClassification)}`,
+                )
+
+                await updateMessage(db, latestUserMessage.externalId, {
+                  queryRouterClassification,
+                })
+              } else {
+                Logger.warn(
+                  "queryRouterClassification is undefined, skipping update.",
+                )
+              }
+            }
+
             if (answer || wasStreamClosedPrematurely) {
               // Determine if a message (even partial) should be saved
               // TODO: incase user loses permission
               // to one of the citations what do we do?
               // somehow hide that citation and change
               // the answer to reflect that
-
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
                 workspaceExternalId: workspace.externalId,
                 chatExternalId: chat.externalId,
                 messageRole: MessageRole.Assistant,
+                queryRouterClassification: JSON.stringify(classification),
                 email: user.email,
                 sources: citations,
                 message: processMessage(answer, citationMap),
@@ -4519,13 +4748,13 @@ export const MessageRetryApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-            const conversationSpan = streamSpan.startSpan("conversation_search")
-            conversationSpan.setAttribute("answer", answer)
-            conversationSpan.end()
 
-            const ragSpan = streamSpan.startSpan("rag_processing")
-
-            const understandSpan = ragSpan.startSpan("understand_message")
+            const understandSpan = streamSpan.startSpan("understand_message")
+            understandSpan?.setAttribute(
+              "totalValidFileIdsFromLinkCount",
+              totalValidFileIdsFromLinkCount,
+            )
+            understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
 
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
@@ -4533,8 +4762,8 @@ export const MessageRetryApi = async (c: Context) => {
               message,
               0.5,
               fileIds,
-              understandSpan,
               userRequestsReasoning,
+              understandSpan,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -4613,7 +4842,7 @@ export const MessageRetryApi = async (c: Context) => {
               JSON.stringify(citationValues),
             )
             understandSpan.end()
-            const answerSpan = ragSpan.startSpan("process_final_answer")
+            const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
               processMessage(answer, citationMap),
@@ -4621,7 +4850,6 @@ export const MessageRetryApi = async (c: Context) => {
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
             answerSpan.end()
-            ragSpan.end()
 
             // Database Update Logic
             const insertSpan = streamSpan.startSpan("insert_assistant_message")
@@ -4744,69 +4972,37 @@ export const MessageRetryApi = async (c: Context) => {
               traceJson,
             )
           } else {
-            const convWithNoErrMsg = isUserMessage
-              ? conversation
-                  .filter((con) => !con?.errorMessage)
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  ) // filter out assistant messages with no content
-                  .map((m) => {
-                    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
-                    // then we should not give that exact stringified message as history
-                    // We convert it into a AI friendly string only for giving it to LLM
-                    const fileIds = JSON.parse(JSON.stringify(m?.fileIds || []))
-                    if (
-                      m.messageRole === "user" &&
-                      fileIds &&
-                      fileIds.length > 0
-                    ) {
-                      const originalMsg = m.message
-                      const selectedContext = isContextSelected(originalMsg)
-                      m.message = selectedContext
-                        ? buildUserQuery(selectedContext)
-                        : originalMsg
-                    }
-                    return {
-                      role: m.messageRole as ConversationRole,
-                      content: [{ text: m.message }],
-                    }
-                  })
-              : conversation
-                  .slice(0, conversation.length - 1)
-                  .filter((con) => !con?.errorMessage)
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  )
-                  .map((m) => {
-                    // If any message from the messagesWithNoErrResponse is a user message, has fileIds and its message is JSON parsable
-                    // then we should not give that exact stringified message as history
-                    // We convert it into a AI friendly string only for giving it to LLM
-                    const fileIds = JSON.parse(JSON.stringify(m?.fileIds || []))
-                    if (
-                      m.messageRole === "user" &&
-                      fileIds &&
-                      fileIds.length > 0
-                    ) {
-                      const originalMsg = m.message
-                      const selectedContext = isContextSelected(originalMsg)
-                      m.message = selectedContext
-                        ? buildUserQuery(selectedContext)
-                        : originalMsg
-                    }
-                    return {
-                      role: m.messageRole as ConversationRole,
-                      content: [{ text: m.message }],
-                    }
-                  })
+            const topicConversationThread = buildTopicConversationThread(
+              conversation,
+              conversation.length - 1,
+            )
 
+            const convWithNoErrMsg = isUserMessage
+              ? formatMessagesForLLM(
+                  topicConversationThread
+                    .filter((con) => !con?.errorMessage)
+                    .filter(
+                      (msg) =>
+                        !(
+                          (
+                            msg.messageRole === MessageRole.Assistant &&
+                            !msg.message
+                          ) // filter out assistant messages with no content
+                        ),
+                    ),
+                )
+              : formatMessagesForLLM(
+                  topicConversationThread
+                    .slice(0, topicConversationThread.length - 1)
+                    .filter((con) => !con?.errorMessage)
+                    .filter(
+                      (msg) =>
+                        !(
+                          msg.messageRole === MessageRole.Assistant &&
+                          !msg.message
+                        ),
+                    ),
+                )
             Logger.info(
               "retry: Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
@@ -4820,7 +5016,7 @@ export const MessageRetryApi = async (c: Context) => {
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: convWithNoErrMsg,
+                messages: formatMessagesForLLM(topicConversationThread),
               })
             let currentAnswer = ""
             let answer = ""
@@ -4835,10 +5031,11 @@ export const MessageRetryApi = async (c: Context) => {
               sortDirection: "",
             }
             let parsed = {
+              isFollowUp: false,
               answer: "",
               queryRewrite: "",
               temporalDirection: null,
-              filter_query: "",
+              filterQuery: "",
               type: "",
               filters: queryFilters,
             }
@@ -4931,7 +5128,7 @@ export const MessageRetryApi = async (c: Context) => {
             searchSpan.setAttribute("answer", answer)
             searchSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             searchSpan.end()
-
+            let classification: QueryRouterLLMResponse
             if (parsed.answer === null) {
               const ragSpan = streamSpan.startSpan("rag_processing")
               if (parsed.queryRewrite) {
@@ -4945,16 +5142,47 @@ export const MessageRetryApi = async (c: Context) => {
                   "retry: There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                 )
               }
-              const classification: TemporalClassifier & QueryRouterResponse = {
+              const { app, count, endTime, entity, sortDirection, startTime } =
+                parsed?.filters
+              classification = {
                 direction: parsed.temporalDirection,
-                type: parsed.type as QueryType,
-                filter_query: parsed.filter_query,
+                type: parsed.type,
+                filterQuery: parsed.filterQuery,
+                isFollowUp: parsed.isFollowUp,
                 filters: {
-                  ...parsed.filters,
-                  app: parsed.filters.app as Apps,
-                  entity: parsed.filters.entity as any,
+                  app: app as Apps,
+                  entity: entity as Entity,
+                  endTime,
+                  sortDirection,
+                  startTime,
+                  count,
                 },
+              } as QueryRouterLLMResponse
+
+              Logger.info(
+                `Classifying the query as:, ${JSON.stringify(classification)}`,
+              )
+
+              if (conversation.length < 2) {
+                classification.isFollowUp = false // First message or not enough history to be a follow-up
+              } else if (classification.isFollowUp) {
+                // If it's marked as a follow-up, try to reuse the last user message's classification
+                const lastUserMessage = conversation[conversation.length - 3] // Assistant is at -2, last user is at -3
+
+                if (lastUserMessage?.queryRouterClassification) {
+                  Logger.info(
+                    `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
+                  )
+
+                  classification =
+                    lastUserMessage.queryRouterClassification as any
+                } else {
+                  Logger.info(
+                    "Follow-up query detected, but no classification found in previous message.",
+                  )
+                }
               }
+
               const understandSpan = ragSpan.startSpan("understand_message")
               const iterator = UnderstandMessageAndAnswer(
                 email,
@@ -4963,8 +5191,8 @@ export const MessageRetryApi = async (c: Context) => {
                 classification,
                 convWithNoErrMsg,
                 0.5,
-                understandSpan,
                 userRequestsReasoning,
+                understandSpan,
               )
               // throw new Error("Hello, how are u doing?")
               stream.writeSSE({
@@ -5062,6 +5290,7 @@ export const MessageRetryApi = async (c: Context) => {
                     email: user.email,
                     sources: citations,
                     message: processMessage(answer, citationMap),
+                    queryRouterClassification: JSON.stringify(classification),
                     thinking,
                     modelId:
                       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
@@ -5096,6 +5325,7 @@ export const MessageRetryApi = async (c: Context) => {
                       email: user.email,
                       sources: citations,
                       message: processMessage(answer, citationMap),
+                      queryRouterClassification: JSON.stringify(classification),
                       thinking,
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
@@ -5319,5 +5549,52 @@ export const StopStreamingApi = async (c: Context) => {
       `[StopStreamingApi] Unexpected Error: ${errMsg} ${(error as Error).stack}`,
     )
     throw new HTTPException(500, { message: "Could not stop streaming." })
+  }
+}
+
+export const messageFeedbackSchema = z.object({
+  messageId: z.string(),
+  feedback: z.enum(messageFeedbackEnum.enumValues).nullable(), // Allows 'like', 'dislike', or null
+})
+
+export const MessageFeedbackApi = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const Logger = getLogger(Subsystem.Chat)
+
+  try {
+    //@ts-ignore - Assuming validation middleware handles this
+    const { messageId, feedback } = await c.req.valid("json")
+
+    const message = await getMessageByExternalId(db, messageId)
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+    if (
+      message.email !== email ||
+      message.workspaceExternalId !== workspaceId
+    ) {
+      throw new HTTPException(403, { message: "Forbidden" })
+    }
+
+    await updateMessageByExternalId(db, messageId, {
+      feedback: feedback, // feedback can be 'like', 'dislike', or null
+      updatedAt: new Date(), // Update the updatedAt timestamp
+    })
+
+    Logger.info(
+      `Feedback ${feedback ? `'${feedback}'` : "removed"} for message ${messageId} by user ${email}`,
+    )
+    return c.json({ success: true, messageId, feedback })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    Logger.error(
+      error,
+      `Message Feedback Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not submit feedback",
+    })
   }
 }

@@ -5,7 +5,7 @@ import metricRegister from "@/metrics/sharedRegistry.ts"
 export const metadataFiles = new Counter({
   name: "google_entity_metadata",
   help: "Metadata_for_other_entities",
-  labelNames: ["file_type","mime_type", "status", "email"],
+  labelNames: ["file_type", "mime_type", "status", "email"],
 })
 metricRegister.registerMetric(metadataFiles)
 

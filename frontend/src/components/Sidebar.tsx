@@ -1,7 +1,8 @@
 import { Link, useLocation } from "@tanstack/react-router"
 import { Bot, Plug, Plus, History } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
+import { CLASS_NAMES, SELECTORS } from "../lib/constants"
 import { UserRole } from "shared/types"
 import {
   Tooltip,
@@ -24,10 +25,43 @@ export const Sidebar = ({
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+
+      const isInteractiveElement = target.closest(SELECTORS.INTERACTIVE_ELEMENT)
+      if (isInteractiveElement) return
+      const isSidebarClick = target.closest(`.${CLASS_NAMES.SIDEBAR_CONTAINER}`)
+      const isHistoryModalClick = target.closest(
+        `.${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`,
+      )
+      const isChatInput = target.closest(SELECTORS.CHAT_INPUT)
+      const isSearchArea = target.closest(`.${CLASS_NAMES.SEARCH_CONTAINER}`)
+      const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`)
+      const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA)
+
+      if (
+        !isSidebarClick &&
+        !isHistoryModalClick &&
+        !isChatInput &&
+        !isSearchArea &&
+        !isReferenceBox &&
+        !isAtMentionArea &&
+        showHistory
+      ) {
+        setShowHistory(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [showHistory])
+
   return (
     <TooltipProvider>
       <div
-        className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col fixed ${className} z-20 select-none`}
+        className={`bg-white h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] flex flex-col fixed ${className} z-20 select-none ${CLASS_NAMES.SIDEBAR_CONTAINER}`}
       >
         {showHistory && (
           <HistoryModal

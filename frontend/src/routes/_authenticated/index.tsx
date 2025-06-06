@@ -30,7 +30,7 @@ const Index = () => {
   const [query, setQuery] = useState("")
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
-    return storedValue ? JSON.parse(storedValue) : false
+    return storedValue ? JSON.parse(storedValue) : true
   })
 
   useEffect(() => {
@@ -220,7 +220,7 @@ const Index = () => {
               </Tooltip>
             </div>
             {activeTab === "search" && (
-              <div className="w-full">
+              <div className="w-full h-72">
                 <SearchBar
                   query={query}
                   setQuery={setQuery}
@@ -234,12 +234,11 @@ const Index = () => {
                   ref={autocompleteRef}
                   hasSearched={false}
                   filter={filter}
-                  autocompleteRef={autocompleteRef}
                 />
               </div>
             )}
             {activeTab === "ask" && (
-              <div className="w-full max-w-3xl">
+              <div className="w-full h-72">
                 <ChatBox
                   query={query}
                   setQuery={setQuery}

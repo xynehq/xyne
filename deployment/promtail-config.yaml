@@ -1,0 +1,25 @@
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yml
+
+clients:
+  - url: http://localhost:3100/loki/api/v1/push
+
+scrape_configs:
+- job_name: pm2-logs
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: pm2
+      type: stdout
+    __path__: '~/.pm2/logs/*-out.log'
+
+  - targets:
+      - localhost
+    labels:
+      job: pm2
+      type: stderr
+    __path__: '~/.pm2/logs/*-error.log'

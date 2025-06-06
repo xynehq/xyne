@@ -28,9 +28,9 @@ function FileUploadIntegration() {
   const [activeDataSource, setActiveDataSource] = useState<string | null>(null)
   const [showNewDataSource, setShowNewDataSource] = useState(true)
   const [isUploadMoreOpen, setIsUploadMoreOpen] = useState(true)
-  const [dataSourceFiles, setDataSourceFiles] = useState<any[]>([])
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false)
-  const [filesError, setFilesError] = useState<string | null>(null)
+  const [, setDataSourceFiles] = useState<any[]>([])
+  const [, setIsLoadingFiles] = useState(false)
+  const [, setFilesError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   const refreshFilesForActiveDataSource = () => {

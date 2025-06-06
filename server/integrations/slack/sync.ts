@@ -65,7 +65,6 @@ import {
   insertUser,
   ifDocumentsExist,
   ifDocumentsExistInSchema,
-  fetchAllDocumentsFromSchema,
   ifDocumentsExistInChatContainer,
   GetDocument,
 } from "@/search/vespa"

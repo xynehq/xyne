@@ -26,7 +26,6 @@ const DOWNLOADS_DIR_DATASOURCE = join(
   "downloads",
   "datasources_temp_for_processing",
 )
-
 ;(async () => {
   try {
     await mkdir(DOWNLOADS_DIR_DATASOURCE, { recursive: true })

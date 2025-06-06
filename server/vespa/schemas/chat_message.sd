@@ -135,6 +135,10 @@ schema chat_message {
       query(alpha) double
     }
 
+    constants {
+      SLACK_VECTOR_DECAY: 0.8
+    }
+
     function vector_score() {
       expression: closeness(field, text_embeddings)
     }
@@ -178,7 +182,7 @@ schema chat_message {
     global-phase {
       expression {
         (
-          (query(alpha) * vector_score) + 
+          (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + 
           ((1 - query(alpha)) *  combined_nativeRank)
         )
       }
@@ -205,7 +209,7 @@ schema chat_message {
     global-phase {
       expression {
         (
-          (query(alpha) * vector_score) + 
+          (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + 
           ((1 - query(alpha)) * scale(combined_bm25))
         )
       }
@@ -225,7 +229,7 @@ schema chat_message {
   rank-profile default_ai inherits initial {
     
     first-phase {
-      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+      expression: (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + ((1 - query(alpha)) *  combined_nativeRank)
     }
 
     global-phase {
@@ -293,7 +297,7 @@ schema chat_message {
     }
 
     function hybrid_relevance_score_gs() {
-      expression: (query(alpha) * vector_score()) + ((1 - query(alpha)) * combined_nativeRank)
+      expression: (query(alpha) * (SLACK_VECTOR_DECAY * vector_score)) + ((1 - query(alpha)) * combined_nativeRank)
     }
 
     function normalized_hybrid_relevance_gs() {
@@ -318,23 +322,6 @@ schema chat_message {
       hybrid_relevance_score_gs 
       normalized_hybrid_relevance_gs 
     }
-  }
-
- rank-profile unranked inherits default {
-    # Simple constant expression - returns same score for all documents
-    first-phase {
-      expression: 0
-    }
-    # Skip second phase ranking completely
-    second-phase {
-      expression: 0
-    }
-    # Skip global phase
-    global-phase {
-      expression: 0
-    }
-    # No need to calculate features for unranked results
-    match-features {}
   }
 
   document-summary default {

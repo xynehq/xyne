@@ -21,6 +21,7 @@ import {
   ConnectorStatus,
   SyncJobStatus,
   UserRole,
+  MessageFeedback,
 } from "@/shared/types"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -343,6 +344,11 @@ export const messageRoleEnum = pgEnum(
   Object.values(MessageRole) as [string, ...string[]],
 )
 
+export const messageFeedbackEnum = pgEnum(
+  "message_feedback",
+  Object.values(MessageFeedback) as [string, ...string[]],
+)
+
 export const messages = pgTable(
   "messages",
   {
@@ -373,6 +379,10 @@ export const messages = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     errorMessage: text("error_message").default(""),
+    queryRouterClassification: jsonb("queryRouterClassification")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    feedback: messageFeedbackEnum("feedback"),
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),
@@ -524,14 +534,13 @@ export type PublicWorkspace = z.infer<typeof workspacePublicSchema>
 export type PublicUserWorkspace = {
   user: PublicUser
   workspace: PublicWorkspace
-  agentWhiteList: boolean
+  agentWhiteList?: boolean
 }
 
 // if data is not sent out, we can keep all fields
 export type InternalUserWorkspace = {
   user: SelectUser
   workspace: SelectWorkspace
-  agentWhiteList: boolean
 }
 
 export const insertChatSchema = createInsertSchema(chats, {
@@ -547,6 +556,7 @@ export type SelectChat = z.infer<typeof selectChatSchema>
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
 })
+
 export type InsertMessage = z.infer<typeof insertMessageSchema>
 
 // Select schema for messages

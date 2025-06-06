@@ -3,7 +3,7 @@ import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
 import DriveSvg from "@/assets/drive.svg"
-import NotionPageSvg from "@/assets/notionPage.svg"
+// import NotionPageSvg from "@/assets/notionPage.svg"
 import Gmail from "@/assets/gmail.svg"
 import Docx from "@/assets/docx.svg"
 import Pdf from "@/assets/pdf.svg"
@@ -16,7 +16,7 @@ import {
   Apps,
   DriveEntity,
   GooglePeopleEntity,
-  NotionEntity,
+  // NotionEntity,
   CalendarEntity,
   isMailAttachment,
 } from "shared/types"
@@ -80,11 +80,11 @@ export const getIcon = (
       return <Paperclip className={classNameVal} fill="rgb(196, 199, 197)" />
     }
     return <img className={classNameVal} src={Gmail} />
-  } else if (app === Apps.Notion) {
-    // ...existing Notion cases...
-    if (entity === NotionEntity.Page) {
-      return <img className={classNameVal} src={NotionPageSvg} />
-    }
+    // } else if (app === Apps.Notion) {
+    //   // ...existing Notion cases...
+    //   if (entity === NotionEntity.Page) {
+    //     return <img className={classNameVal} src={NotionPageSvg} />
+    //   }
   } else if (app === Apps.GoogleCalendar) {
     // ...existing GoogleCalendar cases...
     if (entity === CalendarEntity.Event) {
