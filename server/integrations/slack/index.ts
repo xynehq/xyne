@@ -374,7 +374,7 @@ export async function insertChannelMessages(
               team_id: message.team,
             })
           } catch (error) {
-            Logger.info(`Error inserting chat message`)
+            Logger.error(error, `Error inserting chat message`)
           }
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
@@ -463,7 +463,7 @@ export async function insertChannelMessages(
                   team_id: message.team,
                 })
               } catch (error) {
-                Logger.info(`Error inserting chat message`)
+                Logger.error(error, `Error inserting chat message`)
               }
               tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
             } else {
@@ -838,7 +838,7 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
               status: OperationStatus.Success,
             })
           } catch (error) {
-            Logger.info(`Error inserting member`)
+            Logger.error(error, `Error inserting member`)
             ingestedTeamErrorTotalCount.inc({
               email_domain: teamResp.team!.email_domain,
               enterprise_id: teamResp.team!.enterprise_id,
