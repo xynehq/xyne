@@ -67,6 +67,7 @@ import {
   rewriteQuerySystemPrompt,
   searchQueryPrompt,
   searchQueryReasoningPrompt,
+  SearchQueryToolContextPrompt,
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
@@ -1113,6 +1114,34 @@ export const temporalEventClassification = async (
   }
 }
 
+export function generateToolSelectionOutput(
+  userQuery: string,
+  userContext: string,
+  toolContext: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> {
+  params.json = true
+
+  let defaultReasoning = isReasoning
+
+  params.systemPrompt = SearchQueryToolContextPrompt(userContext, toolContext)
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `user query: "${userQuery}"`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+
+  return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
@@ -1129,8 +1158,13 @@ export function generateSearchQueryOrAnswerFromConversation(
   if (defaultReasoning) {
     params.systemPrompt = searchQueryReasoningPrompt(userContext)
     params.systemPrompt += toolContext
+  } else if (toolContext) {
+    params.systemPrompt = searchQueryPrompt(userContext)
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext, toolContext)
+    params.systemPrompt = SearchQueryToolContextPrompt(
+      userContext,
+      toolContext ?? "",
+    )
   }
 
   const baseMessage = {

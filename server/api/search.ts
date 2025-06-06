@@ -113,7 +113,7 @@ export const messageSchema = z.object({
   toolsList: z
     .array(
       z.object({
-        connectorId: z.number().nonnegative(),
+        connectorId: z.string(),
         tools: z.array(z.string()),
       }),
     )
