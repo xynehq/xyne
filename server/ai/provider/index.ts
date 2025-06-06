@@ -134,7 +134,7 @@ const initializeProviders = (): void => {
       ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
     if (aiProviderBaseUrl) {
-      Logger.info(`Found base_url and OpenAI key, using base_url for LLM`)
+      Logger.info(`Found provider_base_url and OpenAI key, using provider_base_url for LLM`)
     }
 
     openaiProvider = new OpenAIProvider(openAIClient)
@@ -154,7 +154,7 @@ const initializeProviders = (): void => {
       ...(aiProviderBaseUrl ? { baseURL: aiProviderBaseUrl } : {}),
     })
     if (aiProviderBaseUrl) {
-      Logger.info(`Found base_url and together key, using base_url for LLM`)
+      Logger.info(`Found provider_base_url and together key, using provider_base_url for LLM`)
     }
 
     togetherProvider = new TogetherProvider(together)
@@ -174,7 +174,7 @@ const initializeProviders = (): void => {
 
   if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
     Logger.warn(
-      `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
+      `Not using provider_base_url: provider_base_url is defined, but neither OpenAI nor Together API key was provided.`,
     )
   }
   providersInitialized = true
