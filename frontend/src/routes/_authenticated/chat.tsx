@@ -287,6 +287,18 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   })
 
   useEffect(() => {
+    return () => {
+      if (isStreaming && eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+        setIsStreaming(false)
+        setCurrentResp(null)
+        currentRespRef.current = null
+      }
+    }
+  }, [router.state.location.pathname])
+
+  useEffect(() => {
     localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
   }, [isReasoningActive])
 
@@ -491,12 +503,14 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     }
   }, [chatParams.q, chatParams.reasoning, chatParams.sources, router])
 
+  const locationKeyRef = useRef<string | null>(null);
   const handleSend = async (
     messageToSend: string,
     selectedSources: string[] = [],
   ) => {
     if (!messageToSend || isStreaming) return
 
+    locationKeyRef.current = router.state.location.pathname;
     // Reset userHasScrolled to false when a new message is sent.
     // This ensures that the view will scroll down automatically as the new message streams in,
     // unless the user manually scrolls up during the streaming.
@@ -606,7 +620,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         // Use ref
         const { chatId, messageId } = JSON.parse(event.data)
         setChatId(chatId)
-        if (chatId) {
+        if (chatId && router.state.location.pathname === locationKeyRef.current) {
           setTimeout(() => {
             router.navigate({
               to: "/chat/$chatId",
