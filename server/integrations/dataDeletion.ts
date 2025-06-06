@@ -10,6 +10,7 @@ import {
 } from "@/search/types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import config from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataDeletion",
@@ -22,12 +23,12 @@ const serviceSchemaMapping: Record<
   string,
   { schema: VespaSchema; timestampField?: string }
 > = {
-  drive: { schema: fileSchema, timestampField: "updatedAt" }, 
+  drive: { schema: fileSchema, timestampField: "updatedAt" },
   gmail: { schema: mailSchema, timestampField: "timestamp" },
-  calendar: { schema: eventSchema, timestampField: "startTime" }, 
-  attachments: { schema: mailAttachmentSchema, timestampField: "timestamp" }, 
+  calendar: { schema: eventSchema, timestampField: "startTime" },
+  attachments: { schema: mailAttachmentSchema, timestampField: "timestamp" },
   // 'user' data might be handled differently (e.g., direct deletion without date range)
-  userProfile: { schema: userSchema, timestampField: "creationTime" }, 
+  userProfile: { schema: userSchema, timestampField: "creationTime" },
 }
 
 async function getVespaDocumentCount(yqlQuery: string): Promise<number> {
@@ -366,7 +367,7 @@ export async function clearUserDataInVespa(
     string,
     { permissionsUpdated: number; directlyDeleted: number }
   > = {}
-  const fullNamespace = "my_content" 
+  const fullNamespace = config.VESPA_NAMESPACE || "my_content"
 
   for (const serviceName of servicesToClear) {
     const serviceConfig = serviceSchemaMapping[serviceName]
@@ -417,16 +418,6 @@ export async function clearUserDataInVespa(
     ) {
       // Schemas with a 'permissions' array
       permissionProcessingQuery = `select docId, permissions from ${fullSchemaName} where permissions contains "${emailToClear}"${dateFilterYql}`
-
-      // Optional: Direct deletion for documents explicitly owned by the user, if applicable and distinct from permissions
-      // Example for mailSchema if it has an 'owner' field:
-      if (bareSchemaName === mailSchema) {
-        // yqlQueryForDirectDelete = `select * from ${fullSchemaName} where owner contains "${emailToClear}"${dateFilterYql}`; // Ensure 'owner' field exists and dateFilter uses correct timestamp for mail
-      }
-      if (bareSchemaName === eventSchema) {
-        // Example for event schema specific fields
-        // yqlQueryForDirectDelete = `select * from ${fullSchemaName} where (creator.email contains "${emailToClear}" OR organizer.email contains "${emailToClear}" OR attendees.email contains "${emailToClear}")${dateFilterYql}`;
-      }
     }
     // Add other schema-specific logic here if needed
 

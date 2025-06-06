@@ -34,7 +34,7 @@ let aiProviderBaseUrl = ""
 let isReasoning = false
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
-
+let VESPA_NAMESPACE = "my_content"
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -152,4 +152,5 @@ export default {
   EndThinkingToken,
   JobExpiryHours: 23,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
+  VESPA_NAMESPACE,
 }

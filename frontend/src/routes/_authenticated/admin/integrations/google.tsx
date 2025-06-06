@@ -1006,7 +1006,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
               <TabsTrigger value="service_account">Service Account</TabsTrigger>
               <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
             </TabsList>
-            
+
             {/* Main content area - tab panels */}
             <div className="flex flex-col space-y-6 w-full mt-4 overflow-y-auto">
               {/* Tab content container - fixed width for forms */}
@@ -1026,7 +1026,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                     />
                   )}
                 </TabsContent>
-                
+
                 <TabsContent value="oauth">
                   <OAuthTab
                     isPending={isPending}
@@ -1037,9 +1037,9 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                   />
                 </TabsContent>
               </div>
-              
+
               {/* OAuth user stats - full width container */}
-              {activeTab === "oauth" && 
+              {activeTab === "oauth" &&
                 showUserStats(userStats, "oauth", oauthIntegrationStatus) && (
                   <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-8">
                     <h3 className="text-lg font-medium mb-2">Ingested Users</h3>
@@ -1048,7 +1048,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                       type={AuthType.OAuth}
                     />
                   </div>
-              )}
+                )}
 
               {/* Manage Users Data section - fixed width for forms */}
               {hasGoogleConnector && (
@@ -1059,20 +1059,28 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                       <AccordionContent>
                         <Tabs defaultValue="ingest_more_user_admin">
                           <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="ingest_more_user_admin">Ingest More Users</TabsTrigger>
-                            <TabsTrigger value="delete_users_data">Delete Users Data</TabsTrigger>
+                            <TabsTrigger value="ingest_more_user_admin">
+                              Ingest More Users
+                            </TabsTrigger>
+                            <TabsTrigger value="delete_users_data">
+                              Delete Users Data
+                            </TabsTrigger>
                           </TabsList>
                           <div className="min-h-[500px]">
-                            <TabsContent value="ingest_more_user_admin" className="h-full">
+                            <TabsContent
+                              value="ingest_more_user_admin"
+                              className="h-full"
+                            >
                               <Card className="border-none shadow-none">
                                 <CardHeader className="px-0 pt-4">
                                   <CardTitle className="text-lg">
                                     Ingest Data for Additional Users
                                   </CardTitle>
                                   <CardDescription>
-                                    Add more users to the existing Google Workspace Service
-                                    Account integration. Enter comma-separated emails and
-                                    specify services/date ranges.
+                                    Add more users to the existing Google
+                                    Workspace Service Account integration. Enter
+                                    comma-separated emails and specify
+                                    services/date ranges.
                                   </CardDescription>
                                 </CardHeader>
                                 <CardContent className="px-1 pb-0">
@@ -1082,25 +1090,31 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                                         c.app === Apps.GoogleDrive &&
                                         c.authType === AuthType.ServiceAccount,
                                     )
-                                    const serviceAccountConnectorId = googleSAConnector?.id
+                                    const serviceAccountConnectorId =
+                                      googleSAConnector?.id
 
                                     if (!serviceAccountConnectorId) {
                                       return (
                                         <p className="text-sm text-destructive">
-                                          Google Workspace Service Account integration not
-                                          found or not configured. Please set it up first
-                                          in the 'Service Account' tab.
+                                          Google Workspace Service Account
+                                          integration not found or not
+                                          configured. Please set it up first in
+                                          the 'Service Account' tab.
                                         </p>
                                       )
                                     }
                                     return (
                                       <>
                                         <IngestMoreUsersForm
-                                          connectorId={serviceAccountConnectorId}
+                                          connectorId={
+                                            serviceAccountConnectorId
+                                          }
                                           onSuccess={() => {
                                             refetch()
                                           }}
-                                          setIsIngestingMore={setIsIngestingMoreAdminData}
+                                          setIsIngestingMore={
+                                            setIsIngestingMoreAdminData
+                                          }
                                         />
                                         {isIngestingMoreAdminData && (
                                           <div className="mt-4">
@@ -1116,15 +1130,18 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                                 </CardContent>
                               </Card>
                             </TabsContent>
-                            <TabsContent value="delete_users_data" className="h-full">
+                            <TabsContent
+                              value="delete_users_data"
+                              className="h-full"
+                            >
                               <Card className="border-none shadow-none">
                                 <CardHeader className="px-0 pt-4">
                                   <CardTitle className="text-lg">
                                     Delete User Data
                                   </CardTitle>
                                   <CardDescription>
-                                    Remove a user's data from specified services based on
-                                    email and optional date range.
+                                    Remove a user's data from specified services
+                                    based on email and optional date range.
                                   </CardDescription>
                                 </CardHeader>
                                 <CardContent className="px-1 pb-0">
@@ -1147,11 +1164,13 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                   </Accordion>
                 </div>
               )}
-              
+
               {/* Service Account user stats - full width container */}
-              {activeTab === "service_account" && 
-                isIntegratingSA && 
-                Object.values(userStats).some(stats => stats.type === AuthType.ServiceAccount) && (
+              {activeTab === "service_account" &&
+                isIntegratingSA &&
+                Object.values(userStats).some(
+                  (stats) => stats.type === AuthType.ServiceAccount,
+                ) && (
                   <div className="w-full max-w-[600px] mx-auto overflow-x-auto mb-12 pb-8">
                     <h3 className="text-lg font-medium mb-2">Ingested Users</h3>
                     <UserStatsTable
@@ -1159,7 +1178,7 @@ const AdminLayout = ({ user, workspace }: AdminPageProps) => {
                       type={AuthType.ServiceAccount}
                     />
                   </div>
-              )}
+                )}
             </div>
           </Tabs>
         </div>

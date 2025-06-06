@@ -74,15 +74,12 @@ async function getVespaDocumentCount(yqlQuery: string): Promise<number> {
 
 // Helper function to search and delete documents based on a query
 async function deleteDocumentsByQuery(
-  targetNamespace: string, // Added parameter for namespace
-  targetCluster: string, // Added parameter for cluster
+  targetNamespace: string,
+  targetCluster: string,
   schemaName: VespaSchema, // This is the bare schema name, e.g., "mail"
   yqlQuery: string,
   userId: string, // userId is used for logging/context, not directly in query
 ): Promise<void> {
-  console.log(
-    `Searching for documents in namespace '${targetNamespace}', schema '${schemaName}' for user '${userId}' with query: ${yqlQuery}`,
-  )
   const BATCH_SIZE = 100 // Process documents in batches
   let offset = 0
   let hasMore = true
@@ -533,9 +530,9 @@ async function clearVespaDataByUser(email: string): Promise<void> {
 }
 
 async function testFileDocumentOperations(): Promise<void> {
-  const docIdToTest = "1J5EMku5K5ICvHTFL1pGjEvKvpAq5sTQo0eiK2iy-GaI" // Macbook Setup Instructions Kandji
-  const userToRemove = "sahebjot.singh.003@juspay.in"
-  const schemaName: VespaSchema = "file"
+  const docIdToTest = "" // Id of the doc to remove
+  const userToRemove = ""
+  const schemaName: VespaSchema = "file" // Schema from which the document has to be removed
 
   console.log(
     `---> Starting testFileDocumentOperations for docId: ${docIdToTest}, user: ${userToRemove} <---`,
@@ -647,13 +644,12 @@ async function testFileDocumentOperations(): Promise<void> {
     console.log("---> Finished testFileDocumentOperations <---")
   }
 }
-
 // Main execution
 ;(async () => {
   try {
     // await testFileDocumentOperations(); // Comment this out
 
-    const userEmailToClear = "sahebjot.singh.003@juspay.in"
+    const userEmailToClear = ""
     await clearVespaDataByUser(userEmailToClear) // Ensure this is active
   } catch (error: any) {
     console.error("Error in main execution:", error)
