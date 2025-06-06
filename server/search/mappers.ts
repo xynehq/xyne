@@ -40,6 +40,8 @@ import {
   Apps,
   type VespaSchema,
   SlackEntity,
+  datasourceSchema,
+  datasourceFileSchema,
 } from "@/search/types"
 import {
   AutocompleteChatUserSchema,
@@ -369,6 +371,9 @@ export const entityToSchemaMapper = (
   entityName?: string,
   app?: string,
 ): VespaSchema | null => {
+  if(app === Apps.DataSource){
+    return datasourceFileSchema
+  }
   const entitySchemaMap: Record<string, VespaSchema> = {
     ...Object.fromEntries(
       Object.values(DriveEntity).map((e) => [e, fileSchema]),

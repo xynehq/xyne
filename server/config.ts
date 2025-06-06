@@ -156,4 +156,5 @@ export default {
   maxValidLinks: 15,
   isDebugMode: process.env.XYNE_DEBUG_MODE === "true",
   VESPA_NAMESPACE,
+  agentWhiteList: (process.env.AGENT_WHITELIST || "").split(",").map(email => email.trim()).filter(email => email.length > 0),
 }

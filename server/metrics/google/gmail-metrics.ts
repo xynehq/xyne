@@ -12,7 +12,13 @@ metricRegister.registerMetric(totalIngestedMails) // register this metric functi
 export const ingestionMailErrorsTotal = new Counter({
   name: "gmail_ingestion_errors_total",
   help: "Total number of gmail ingestion errors",
-  labelNames: ["mime_type", "status", "email", "account_type", "error_type",] as const,
+  labelNames: [
+    "mime_type",
+    "status",
+    "email",
+    "account_type",
+    "error_type",
+  ] as const,
 })
 metricRegister.registerMetric(ingestionMailErrorsTotal)
 

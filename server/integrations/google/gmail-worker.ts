@@ -274,7 +274,6 @@ export const handleGmailIngestion = async (
                 },
                 1,
               )
-
             }
 
           } catch (error) {

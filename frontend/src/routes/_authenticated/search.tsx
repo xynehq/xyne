@@ -74,9 +74,10 @@ type SearchMeta = {
 interface IndexProps {
   user: PublicUser
   workspace: PublicWorkspace
+  agentWhiteList: boolean
 }
 
-export const Search = ({ user, workspace }: IndexProps) => {
+export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
@@ -439,7 +440,11 @@ export const Search = ({ user, workspace }: IndexProps) => {
 
   return (
     <div className="h-full w-full flex">
-      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <Sidebar
+        photoLink={user?.photoLink ?? ""}
+        role={user?.role}
+        isAgentMode={agentWhiteList}
+      />
       <div className={`flex flex-col flex-grow h-full "ml-[52px]"`}>
         <SearchBar
           ref={autocompleteRef}
@@ -593,8 +598,15 @@ export const Route = createFileRoute("/_authenticated/search")({
   // component: Index,
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <Search user={user} workspace={workspace} />
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <Search
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
   },
   validateSearch: (search) => searchParams.parse(search),
   errorComponent: errorComponent,

@@ -8,7 +8,16 @@ import {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router"
-import { Bookmark, Copy, Ellipsis, Pencil, X, ChevronDown, ThumbsUp, ThumbsDown } from "lucide-react"
+import {
+  Bookmark,
+  Copy,
+  Ellipsis,
+  Pencil,
+  X,
+  ChevronDown,
+  ThumbsUp,
+  ThumbsDown,
+} from "lucide-react"
 import { useEffect, useRef, useState, Fragment } from "react"
 import {
   ChatSSEvents,
@@ -49,7 +58,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Pill } from "@/components/Pill"
 import { Reference } from "@/types"
 
-export const THINKING_PLACEHOLDER = "Thinking";
+export const THINKING_PLACEHOLDER = "Thinking"
 
 type CurrentResp = {
   resp: string
@@ -75,6 +84,7 @@ type CurrentResp = {
 interface ChatPageProps {
   user: PublicUser
   workspace: PublicWorkspace
+  agentWhiteList: boolean
 }
 
 // Define the structure for parsed message parts, including app, entity, and pillType for pills
@@ -217,7 +227,11 @@ const jsonToHtmlMessage = (jsonString: string): string => {
 
 const REASONING_STATE_KEY = "isReasoningGlobalState"
 
-export const ChatPage = ({ user, workspace }: ChatPageProps) => {
+export const ChatPage = ({
+  user,
+  workspace,
+  agentWhiteList,
+}: ChatPageProps) => {
   const params = Route.useParams()
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
@@ -279,7 +293,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   ) // State for all citations
   const eventSourceRef = useRef<EventSource | null>(null) // Added ref for EventSource
   const [userStopped, setUserStopped] = useState<boolean>(false) // Add state for user stop
-  const [feedbackMap, setFeedbackMap] = useState<Record<string, MessageFeedback | null>>({});
+  const [feedbackMap, setFeedbackMap] = useState<
+    Record<string, MessageFeedback | null>
+  >({})
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
@@ -428,13 +444,15 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
     // Populate feedbackMap from loaded messages
     if (data?.messages) {
-      const initialFeedbackMap: Record<string, MessageFeedback | null> = {};
+      const initialFeedbackMap: Record<string, MessageFeedback | null> = {}
       data.messages.forEach((msg: SelectPublicMessage) => {
-        if (msg.externalId && msg.feedback !== undefined) { // msg.feedback can be null
-          initialFeedbackMap[msg.externalId] = msg.feedback as MessageFeedback | null;
+        if (msg.externalId && msg.feedback !== undefined) {
+          // msg.feedback can be null
+          initialFeedbackMap[msg.externalId] =
+            msg.feedback as MessageFeedback | null
         }
-      });
-      setFeedbackMap(initialFeedbackMap);
+      })
+      setFeedbackMap(initialFeedbackMap)
     }
 
     if (!isStreaming && !hasHandledQueryParam.current) {
@@ -475,8 +493,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         setIsReasoningActive(chatParams.reasoning)
       }
 
-      // Call handleSend without referencesForHandleSend, as it's no longer a parameter
-      handleSend(messageToSend, sourcesArray)
+      // Call handleSend, passing agentId from chatParams if available
+      handleSend(messageToSend, sourcesArray, chatParams.agentId)
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -485,15 +503,23 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           q: undefined,
           reasoning: undefined,
           sources: undefined,
+          agentId: undefined, // Clear agentId from URL after processing
         }),
         replace: true,
       })
     }
-  }, [chatParams.q, chatParams.reasoning, chatParams.sources, router])
+  }, [
+    chatParams.q,
+    chatParams.reasoning,
+    chatParams.sources,
+    chatParams.agentId,
+    router,
+  ])
 
   const handleSend = async (
     messageToSend: string,
     selectedSources: string[] = [],
+    agentIdFromChatBox?: string | null, // Added agentIdFromChatBox
   ) => {
     if (!messageToSend || isStreaming) return
 
@@ -551,6 +577,13 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     // }
     if (isReasoningActive) {
       url.searchParams.append("isReasoningEnabled", "true")
+    }
+
+    // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
+    const agentIdToUse = agentIdFromChatBox || chatParams.agentId
+    console.log("Using agentId:", agentIdToUse)
+    if (agentIdToUse) {
+      url.searchParams.append("agentId", agentIdToUse)
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
@@ -741,38 +774,49 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     setQuery("")
   }
 
-  const handleFeedback = async (messageId: string, feedback: MessageFeedback) => {
-    if (!messageId) return;
+  const handleFeedback = async (
+    messageId: string,
+    feedback: MessageFeedback,
+  ) => {
+    if (!messageId) return
 
-    setFeedbackMap(prev => {
-      const currentFeedback = prev[messageId];
+    setFeedbackMap((prev) => {
+      const currentFeedback = prev[messageId]
       return {
         ...prev,
         [messageId]: currentFeedback === feedback ? null : feedback, // Toggle if same, else set new
-      };
-    });
+      }
+    })
 
     try {
-      const currentFeedbackInState = feedbackMap[messageId];
-      const newFeedbackStatus = currentFeedbackInState === feedback ? null : feedback;
+      const currentFeedbackInState = feedbackMap[messageId]
+      const newFeedbackStatus =
+        currentFeedbackInState === feedback ? null : feedback
 
-      await api.message.feedback.$post({ json: { messageId, feedback: newFeedbackStatus } });
-      toast({ title: "Success", description: "Feedback submitted." });
+      await api.message.feedback.$post({
+        json: { messageId, feedback: newFeedbackStatus },
+      })
+      toast({ title: "Success", description: "Feedback submitted." })
     } catch (error) {
-      console.error("Failed to submit feedback", error);
-      setFeedbackMap(prev => {
+      console.error("Failed to submit feedback", error)
+      setFeedbackMap((prev) => {
         // Get the current state after optimistic update
-        const currentState = prev[messageId];
-        const originalFeedback = currentState === null ? feedback : (currentState === feedback ? feedbackMap[messageId] : null);
-        return { ...prev, [messageId]: originalFeedback };
-      });
+        const currentState = prev[messageId]
+        const originalFeedback =
+          currentState === null
+            ? feedback
+            : currentState === feedback
+              ? feedbackMap[messageId]
+              : null
+        return { ...prev, [messageId]: originalFeedback }
+      })
       toast({
         title: "Error",
         description: "Could not submit feedback.",
         variant: "destructive",
-      });
+      })
     }
-  };
+  }
 
   const handleStop = async () => {
     setUserStopped(true) // Indicate intentional stop before closing
@@ -1169,7 +1213,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
   if (data?.error) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
-        <Sidebar />
+        <Sidebar isAgentMode={agentWhiteList} />
         <div className="ml-[120px]">Error: Could not get data</div>
       </div>
     )
@@ -1224,7 +1268,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
 
   return (
     <div className="h-full w-full flex flex-row bg-white">
-      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <Sidebar
+        photoLink={user?.photoLink ?? ""}
+        role={user?.role}
+        isAgentMode={agentWhiteList}
+      />
       <div className="h-full w-full flex flex-col relative">
         <div
           className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
@@ -1280,7 +1328,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                 return (
                   <Fragment key={message.externalId ?? index}>
                     <ChatMessage
-                      key={index}
+                      key={
+                        message.externalId
+                          ? `${message.externalId}-msg`
+                          : `msg-${index}`
+                      }
                       message={message.message}
                       isUser={message.messageRole === "user"}
                       responseDone={true}
@@ -1314,6 +1366,11 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                     />
                     {userMessageWithErr && (
                       <ChatMessage
+                        key={
+                          message.externalId
+                            ? `${message.externalId}-err`
+                            : `err-${index}`
+                        }
                         message={message.errorMessage}
                         thinking={message.thinking}
                         isUser={false}
@@ -1342,7 +1399,9 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                         isStreaming={isStreaming}
                         isDebugMode={isDebugMode}
                         onShowRagTrace={handleShowRagTrace}
-                        feedbackStatus={feedbackMap[message.externalId!] || null}
+                        feedbackStatus={
+                          feedbackMap[message.externalId!] || null
+                        }
                         onFeedback={handleFeedback}
                       />
                     )}
@@ -1381,7 +1440,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
                   isDebugMode={isDebugMode}
                   onShowRagTrace={handleShowRagTrace}
                   // Feedback not applicable for streaming response, but props are needed
-                  feedbackStatus={null} 
+                  feedbackStatus={null}
                   onFeedback={handleFeedback}
                 />
               )}
@@ -1407,6 +1466,7 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
               isStreaming={isStreaming}
               allCitations={allCitations}
               chatId={chatId}
+              agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
               isReasoningActive={isReasoningActive}
               setIsReasoningActive={setIsReasoningActive}
             />
@@ -1610,8 +1670,8 @@ export const ChatMessage = ({
   isStreaming?: boolean
   isDebugMode: boolean
   onShowRagTrace: (messageId: string) => void
-  feedbackStatus?: MessageFeedback | null;
-  onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
+  feedbackStatus?: MessageFeedback | null
+  onFeedback?: (messageId: string, feedback: MessageFeedback) => void
 }) => {
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
@@ -1639,9 +1699,10 @@ export const ChatMessage = ({
       className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
-        <div 
-        className="break-words overflow-wrap-anywhere"
-        dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }} />
+        <div
+          className="break-words overflow-wrap-anywhere"
+          dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
+        />
       ) : (
         <div
           className={`flex flex-col mt-[40px] w-full ${citationUrls.length ? "mb-[35px]" : ""}`}
@@ -1663,7 +1724,7 @@ export const ChatMessage = ({
                       padding: 0,
                       backgroundColor: "transparent",
                       color: "#627384",
-                      maxWidth: "100%", 
+                      maxWidth: "100%",
                       overflowWrap: "break-word",
                     }}
                     components={{
@@ -1672,7 +1733,7 @@ export const ChatMessage = ({
                   />
                 </div>
               )}
-              {((message === "") && (!responseDone || isRetrying)) ? (
+              {message === "" && (!responseDone || isRetrying) ? (
                 <div className="flex-grow">
                   {`${THINKING_PLACEHOLDER}${dots}`}
                 </div>
@@ -1700,7 +1761,6 @@ export const ChatMessage = ({
                             tableLayout: "auto",
                             width: "100%",
                             maxWidth: "100%",
-
                           }}
                           className="min-w-full"
                           {...props}
@@ -1782,24 +1842,38 @@ export const ChatMessage = ({
                 <img
                   className={`ml-[18px] ${isStreaming || !messageId ? "opacity-50" : "cursor-pointer"}`}
                   src={Retry}
-                  onClick={() => messageId && !isStreaming && handleRetry(messageId)}
+                  onClick={() =>
+                    messageId && !isStreaming && handleRetry(messageId)
+                  }
                   title="Retry"
                 />
                 {messageId && onFeedback && (
                   <>
                     <ThumbsUp
                       size={16}
-                      stroke={feedbackStatus === MessageFeedback.Like ? "#10B981" : "#B2C3D4"}
+                      stroke={
+                        feedbackStatus === MessageFeedback.Like
+                          ? "#10B981"
+                          : "#B2C3D4"
+                      }
                       fill="none"
                       className="ml-[18px] cursor-pointer"
-                      onClick={() => onFeedback(messageId, MessageFeedback.Like)}
+                      onClick={() =>
+                        onFeedback(messageId, MessageFeedback.Like)
+                      }
                     />
                     <ThumbsDown
                       size={16}
-                      stroke={feedbackStatus === MessageFeedback.Dislike ? "#EF4444" : "#B2C3D4"}
+                      stroke={
+                        feedbackStatus === MessageFeedback.Dislike
+                          ? "#EF4444"
+                          : "#B2C3D4"
+                      }
                       fill="none"
                       className="ml-[10px] cursor-pointer"
-                      onClick={() => onFeedback(messageId, MessageFeedback.Dislike)}
+                      onClick={() =>
+                        onFeedback(messageId, MessageFeedback.Dislike)
+                      }
                     />
                   </>
                 )}
@@ -1863,6 +1937,7 @@ const chatParams = z.object({
     .string()
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
+  agentId: z.string().optional(), // Added agentId to Zod schema
 })
 
 type XyneChat = z.infer<typeof chatParams>
@@ -1876,8 +1951,15 @@ export const Route = createFileRoute("/_authenticated/chat")({
   },
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
-    const { user, workspace } = matches[matches.length - 1].context
-    return <ChatPage user={user} workspace={workspace} />
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <ChatPage
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
   },
   errorComponent: errorComponent,
 })
