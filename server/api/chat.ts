@@ -2002,8 +2002,8 @@ async function* generateMetadataQueryAnswer(
   const isGenericItemFetch = classification.type === QueryType.GetItems
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
-  const isValidAppAndEntity =
-    isValidApp(app as Apps) && isValidEntity(entity as any)
+  const isValidAppOrEntity =
+    isValidApp(app as Apps) || isValidEntity(entity as any)
   let agentAppEnums: Apps[] = []
   let agentSpecificDataSourceIds: string[] = []
   if (agentPrompt) {
@@ -2116,7 +2116,7 @@ async function* generateMetadataQueryAnswer(
 
   // Determine search strategy based on conditions
   if (
-    !isValidAppAndEntity &&
+    !isValidAppOrEntity &&
     classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
@@ -2148,8 +2148,8 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespa(
           classification.filterQuery,
           email,
-          app as Apps,
-          entity as any,
+          app ?? null,
+          entity ?? null,
           {
             ...searchOps,
             offset: pageSize * iteration,
@@ -2160,8 +2160,8 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespaAgent(
           classification.filterQuery,
           email,
-          app as Apps,
-          entity as any,
+          app ?? null,
+          entity ?? null,
           agentAppEnums,
           {
             ...searchOps,
@@ -2233,7 +2233,7 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute("rank_profile", SearchModes.GlobalSorted)
     Logger.info(`Rank Profile : ${SearchModes.GlobalSorted}`)
-  } else if (isGenericItemFetch && isValidAppAndEntity) {
+  } else if (isGenericItemFetch && isValidAppOrEntity) {
     const userSpecifiedCountLimit = count
       ? Math.min(count, config.maxUserRequestCount)
       : 5
@@ -2250,8 +2250,8 @@ async function* generateMetadataQueryAnswer(
     searchResults = await getItems({
       email,
       schema,
-      app,
-      entity,
+      app: app ?? null,
+      entity: entity ?? null,
       timestampRange,
       limit: userSpecifiedCountLimit,
       asc: sortDirection === "asc",
@@ -2292,7 +2292,7 @@ async function* generateMetadataQueryAnswer(
     return
   } else if (
     isFilteredItemSearch &&
-    isValidAppAndEntity &&
+    isValidAppOrEntity &&
     classification.filterQuery
   ) {
     // Specific metadata retrieval
@@ -2330,8 +2330,8 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespa(
           query,
           email,
-          app as Apps,
-          entity as any,
+          app ?? null,
+          entity ?? null,
           {
             ...searchOptions,
             offset: pageSize * iteration,
@@ -2341,8 +2341,8 @@ async function* generateMetadataQueryAnswer(
         searchResults = await searchVespaAgent(
           query,
           email,
-          app as Apps,
-          entity as any,
+          app ?? null,
+          entity ?? null,
           agentAppEnums,
           {
             ...searchOptions,
