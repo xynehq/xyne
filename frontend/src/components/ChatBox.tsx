@@ -30,6 +30,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { getIcon } from "@/lib/common"
+import { CLASS_NAMES, SELECTORS } from "../lib/constants"
 import { DriveEntity } from "shared/types"
 import { api } from "@/api"
 import { Input } from "@/components/ui/input"
@@ -239,7 +240,7 @@ export const ChatBox = ({
     const inputElement = inputRef.current
     if (!inputElement || atIndex < 0) {
       const parentRect = inputElement
-        ?.closest(".relative.flex.flex-col")
+        ?.closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`) 
         ?.getBoundingClientRect()
       const inputRect = inputElement?.getBoundingClientRect()
       if (parentRect && inputRect) {
@@ -277,7 +278,7 @@ export const ChatBox = ({
       range.setEnd(targetNode!, targetOffsetInNode + 1)
       const rect = range.getBoundingClientRect()
       const parentRect = inputElement
-        .closest(".relative.flex.flex-col")
+        .closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`) 
         ?.getBoundingClientRect()
 
       if (parentRect) {
@@ -289,7 +290,7 @@ export const ChatBox = ({
     } else {
       const inputRect = inputElement.getBoundingClientRect()
       const parentRect = inputElement
-        .closest(".relative.flex.flex-col")
+        .closest(`.${CLASS_NAMES.SEARCH_CONTAINER} > .relative.flex.flex-col`) 
         ?.getBoundingClientRect()
       if (parentRect) {
         setReferenceBoxLeft(inputRect.left - parentRect.left)
@@ -618,7 +619,7 @@ export const ChatBox = ({
       const tempDiv = document.createElement("div")
       tempDiv.innerHTML = pillHtmlString
       // Find the actual <a> tag, as renderToStaticMarkup might prepend other tags like <link>
-      const pillElement = tempDiv.querySelector("a.reference-pill")
+      const pillElement = tempDiv.querySelector(`a.${CLASS_NAMES.REFERENCE_PILL}`)
 
       if (pillElement) {
         const clonedPill = pillElement.cloneNode(true)
@@ -823,7 +824,7 @@ export const ChatBox = ({
         !referenceBoxRef.current.contains(target) &&
         inputRef.current &&
         !inputRef.current.contains(target) &&
-        !(event.target as HTMLElement).closest(".reference-trigger")
+        !(event.target as HTMLElement).closest(`.${CLASS_NAMES.REFERENCE_TRIGGER}`)
       ) {
         setShowReferenceBox(false)
         setActiveAtMentionIndex(-1)
@@ -906,7 +907,7 @@ export const ChatBox = ({
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
-          className="absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col"
+          className={`absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col ${CLASS_NAMES.REFERENCE_BOX}`}
           style={{
             left: activeAtMentionIndex !== -1 ? `${referenceBoxLeft}px` : "0px",
           }}
@@ -1083,7 +1084,7 @@ export const ChatBox = ({
           </div>
         </div>
       )}
-      <div className="flex flex-col w-full border rounded-[20px] bg-white">
+      <div className={`flex flex-col w-full border rounded-[20px] bg-white ${CLASS_NAMES.SEARCH_CONTAINER}`}>
         <div className="relative flex items-center">
           {isPlaceholderVisible && (
             <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] pointer-events-none">
@@ -1093,6 +1094,7 @@ export const ChatBox = ({
           <div
             ref={inputRef}
             contentEditable
+            data-at-mention // Using the attribute directly as per SELECTORS.AT_MENTION_AREA
             className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
@@ -1321,7 +1323,7 @@ export const ChatBox = ({
               if (
                 anchor &&
                 anchor.href &&
-                anchor.closest('[contenteditable="true"]') === inputRef.current
+                anchor.closest(SELECTORS.CHAT_INPUT) === inputRef.current
               ) {
                 // If it's an anchor with an href *inside our contentEditable div*
                 e.preventDefault() // Prevent default contentEditable behavior first
@@ -1360,7 +1362,7 @@ export const ChatBox = ({
           <Globe size={16} className="text-[#464D53] cursor-pointer" />
           <AtSign
             size={16}
-            className="text-[#464D53] cursor-pointer reference-trigger"
+            className={`text-[#464D53] cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
             onClick={() => {
               const input = inputRef.current
               if (!input) return

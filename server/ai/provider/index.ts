@@ -463,12 +463,13 @@ export const jsonParseLLMOutput = (text: string, jsonKey?: string): any => {
       // edge case "null\n}
       if (jsonKey) {
         const key = jsonKey.slice(0, -1).replaceAll('"', "")
-        if (jsonVal[key].trim() === "null") {
+        if (jsonVal[key]?.trim() === "null") {
           jsonVal = { [key]: null }
         }
       }
       return jsonVal
-    } catch {
+    } catch(err) {
+      Logger.error(`Initial parse failed - ${JSON.stringify(err)}`)
       // If first parse failed, continue to code block cleanup
       throw new Error("Initial parse failed")
     }

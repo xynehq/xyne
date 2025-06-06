@@ -2828,7 +2828,7 @@ export const MessageApi = async (c: Context) => {
                 } else if (
                   parsedMessage.data.queryRouterClassification &&
                   Object.keys(parsedMessage.data.queryRouterClassification)
-                    .length
+                    .length > 2
                 ) {
                   Logger.info(
                     `Reusing previous message classification for follow-up query ${JSON.stringify(lastUserMessage.queryRouterClassification)}`,
@@ -2949,7 +2949,7 @@ export const MessageApi = async (c: Context) => {
                   ...previousClassification,
                   isFollowUp,
                 }
-              } else if (classification) {
+              } else if (Object.keys(classification).length > 2) {
                 queryRouterClassification = classification
               }
 
