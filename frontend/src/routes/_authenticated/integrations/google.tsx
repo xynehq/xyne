@@ -159,12 +159,20 @@ const UserLayout = ({ user, workspace }: AdminPageProps) => {
             <TabsList className="grid w-full grid-cols-1">
               <TabsTrigger value="oauth">Google OAuth</TabsTrigger>
             </TabsList>
+
             <OAuthTab
               isPending={isPending}
               oauthIntegrationStatus={oauthIntegrationStatus}
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               updateStatus={updateStatus}
               handleDelete={handleDelete}
+              connectorId={
+                data?.find(
+                  (v) =>
+                    v.app === Apps.GoogleDrive && v.authType === AuthType.OAuth,
+                )?.id
+              }
+              refetch={refetch}
             />
           </Tabs>
           {showUserStats(userStats, activeTab, oauthIntegrationStatus) && (

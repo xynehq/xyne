@@ -25,6 +25,7 @@ import {
   searchSchema,
   updateConnectorStatusSchema,
   serviceAccountIngestMoreSchema,
+  updateOAuthProvider,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -36,6 +37,7 @@ import {
   StartOAuth,
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
+  UpdateOAuthProvider,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -246,6 +248,11 @@ export const AppRoutes = app
     zValidator("form", deleteConnectorSchema),
     DeleteOauthConnector,
   )
+  .put(
+    "/oauth/update",
+    zValidator("form", updateOAuthProvider),
+    UpdateOAuthProvider,
+  )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -254,7 +261,6 @@ app.get(
   zValidator("query", oauthStartQuerySchema),
   StartOAuth,
 )
-
 const generateToken = async (
   email: string,
   role: string,

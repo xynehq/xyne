@@ -17,11 +17,16 @@ import {
   type SaaSJob,
   type ServiceAccountConnection,
   Subsystem,
+  type UpdateOAuthProviderForm,
 } from "@/types"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
 import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
-import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
+import {
+  createOAuthProvider,
+  getOAuthProvider,
+  updateOauthProvider,
+} from "@/db/oauthProvider"
 const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
 import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
@@ -179,6 +184,55 @@ export const CreateOAuthProvider = async (c: Context) => {
       message: "Connection and Provider created",
     })
   })
+}
+
+export const UpdateOAuthProvider = async (c: Context) => {
+  const payload = c.get(JwtPayloadKey)
+  const { sub } = payload
+  const email = sub
+
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: UpdateOAuthProviderForm = c.req.valid("form")
+  const { connectorId } = form
+  const connector = await getConnectorByExternalId(connectorId, user.id)
+  if (!connector) {
+    Logger.error({ connectorId, userId: user.id }, "Connector not found")
+    throw new HTTPException(404, { message: "Connector not found" })
+  }
+  try {
+    const updatedProvider = await updateOauthProvider(
+      db,
+      user.id,
+      connector.id,
+      form,
+    )
+
+    Logger.info(
+      `Successfully updated OAuth provider for connectorId: ${connector.id}`,
+      { subsystem: Subsystem.Api },
+    )
+    return c.json({
+      success: true,
+      message: "Provider updated",
+    })
+  } catch (error) {
+    Logger.error(
+      error,
+      `Failed to update OAuth provider for connectorId ${connector.id}`,
+      { subsystem: Subsystem.Api },
+    )
+    if (error instanceof Error && error.message.includes("not found")) {
+      throw new HTTPException(404, { message: error.message })
+    }
+    throw new HTTPException(500, {
+      message: "Failed to update OAuth provider",
+    })
+  }
 }
 
 export const AddServiceConnection = async (c: Context) => {
