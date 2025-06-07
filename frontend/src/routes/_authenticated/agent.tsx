@@ -214,7 +214,7 @@ function AgentComponent() {
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalTitle, setConfirmModalTitle] = useState("")
   const [confirmModalMessage, setConfirmModalMessage] = useState("")
-  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null)
+  const [confirmAction, setConfirmAction] = useState<(() => Promise<void>) | null>(null)
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
