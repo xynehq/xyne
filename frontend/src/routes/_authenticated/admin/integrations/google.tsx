@@ -1000,11 +1000,11 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       />
       <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
       <div className="w-full h-full flex items-center justify-center">
-        <div className="flex flex-col items-center w-full max-w-[600px] p-4 h-full">
+        <div className="flex flex-col items-center justify-center w-full max-w-[600px] p-4 h-full">
           {/* Tab navigation */}
           <Tabs
             defaultValue="service_account"
-            className="w-full flex flex-col flex-grow"
+            className="w-full flex flex-col"
             onValueChange={setActiveTab}
           >
             <TabsList className="grid w-full grid-cols-2 flex-shrink-0 max-w-[400px] mx-auto">
@@ -1013,7 +1013,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
             </TabsList>
 
             {/* Main content area - tab panels */}
-            <div className="flex flex-col space-y-6 w-full mt-4 overflow-y-auto">
+            <div className="flex flex-col space-y-6 w-full mt-4 overflow-y-auto max-h-[75vh]">
               {/* Tab content container - fixed width for forms */}
               <div className="max-w-[400px] mx-auto w-full">
                 <TabsContent value="service_account">
@@ -1056,7 +1056,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                 )}
 
               {/* Manage Users Data section - fixed width for forms */}
-              {hasGoogleConnector && (
+              {activeTab === "service_account" && hasGoogleConnector && (
                 <div className="max-w-[400px] mx-auto w-full">
                   <Accordion type="single" collapsible className="w-full">
                     <AccordionItem value="manage_user_data">
