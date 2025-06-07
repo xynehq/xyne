@@ -50,6 +50,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
 import { ChatBox } from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
+import { ConfirmModal } from "@/components/ui/confirmModal"
 
 type CurrentResp = {
   resp: string
@@ -209,6 +210,11 @@ function AgentComponent() {
   const [allCitations, _] = useState<Map<string, Citation>>(new Map())
   const eventSourceRef = useRef<EventSource | null>(null)
   const [userStopped, setUserStopped] = useState<boolean>(false)
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [confirmModalTitle, setConfirmModalTitle] = useState("")
+  const [confirmModalMessage, setConfirmModalMessage] = useState("")
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null)
 
   const [isReasoningActive, setIsReasoningActive] = useState(() => {
     const storedValue = localStorage.getItem(REASONING_STATE_KEY)
@@ -471,48 +477,48 @@ function AgentComponent() {
   }, [editingAgent, viewMode, allAvailableIntegrations])
 
   const handleDeleteAgent = async (agentExternalId: string) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this agent? This action cannot be undone.",
-      )
-    ) {
-      return
-    }
-    try {
-      const response = await api.agent[":agentExternalId"].$delete({
-        param: { agentExternalId },
-      })
-      if (response.ok) {
-        showToast({
-          title: "Success",
-          description: "Agent deleted successfully.",
+    setConfirmModalTitle("Delete Agent")
+    setConfirmModalMessage(
+      "Are you sure you want to delete this agent? This action cannot be undone.",
+    )
+    setConfirmAction(() => async () => {
+      try {
+        const response = await api.agent[":agentExternalId"].$delete({
+          param: { agentExternalId },
         })
-        setAgents((prevAgents) =>
-          prevAgents.filter((agent) => agent.externalId !== agentExternalId),
-        )
-      } else {
-        let errorDetail = response.statusText
-        try {
-          const errorData = await response.json()
-          errorDetail =
-            errorData.message || errorData.detail || response.statusText
-        } catch (e) {
-          console.error("Failed to parse error response as JSON", e)
+        if (response.ok) {
+          showToast({
+            title: "Success",
+            description: "Agent deleted successfully.",
+          })
+          setAgents((prevAgents) =>
+            prevAgents.filter((agent) => agent.externalId !== agentExternalId),
+          )
+        } else {
+          let errorDetail = response.statusText
+          try {
+            const errorData = await response.json()
+            errorDetail =
+              errorData.message || errorData.detail || response.statusText
+          } catch (e) {
+            console.error("Failed to parse error response as JSON", e)
+          }
+          showToast({
+            title: "Error",
+            description: `Failed to delete agent: ${errorDetail}`,
+            variant: "destructive",
+          })
         }
+      } catch (error) {
         showToast({
           title: "Error",
-          description: `Failed to delete agent: ${errorDetail}`,
+          description: "An error occurred while deleting the agent.",
           variant: "destructive",
         })
+        console.error("Delete agent error:", error)
       }
-    } catch (error) {
-      showToast({
-        title: "Error",
-        description: "An error occurred while deleting the agent.",
-        variant: "destructive",
-      })
-      console.error("Delete agent error:", error)
-    }
+    })
+    setShowConfirmModal(true)
   }
 
   const handleSaveAgent = async () => {
@@ -917,6 +923,19 @@ function AgentComponent() {
         photoLink={user?.photoLink}
         role={user?.role}
         isAgentMode={agentWhiteList}
+      />
+      <ConfirmModal
+        showModal={showConfirmModal}
+        setShowModal={(val) =>
+          setShowConfirmModal(val.open ?? showConfirmModal)
+        }
+        modalTitle={confirmModalTitle}
+        modalMessage={confirmModalMessage}
+        onConfirm={() => {
+          if (confirmAction) {
+            confirmAction()
+          }
+        }}
       />
       <div className="flex flex-col md:flex-row flex-1 h-full md:ml-[60px]">
         <div
