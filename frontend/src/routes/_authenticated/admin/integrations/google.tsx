@@ -835,6 +835,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     )
   const [isIngestingMoreAdminData, setIsIngestingMoreAdminData] =
     useState<boolean>(false)
+  const [isManageUserDataOpen, setIsManageUserDataOpen] = useState(false)
 
   useEffect(() => {
     if (!isPending && data && data.length > 0) {
@@ -999,13 +1000,30 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
         isAgentMode={agentWhiteList}
       />
       <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
-      <div className="w-full h-full flex items-center justify-center">
-        <div className="flex flex-col items-center justify-center w-full max-w-[600px] p-4 h-full">
+      <div
+        className={cn(
+          "w-full h-full flex justify-center",
+          activeTab === "service_account" && isManageUserDataOpen
+            ? "items-start"
+            : "items-center",
+        )}
+      >
+        <div
+          className={cn(
+            "flex flex-col items-center w-full max-w-[600px] p-4",
+            activeTab === "service_account" && isManageUserDataOpen
+              ? "justify-start"
+              : "justify-center h-full",
+          )}
+        >
           {/* Tab navigation */}
           <Tabs
             defaultValue="service_account"
             className="w-full flex flex-col"
-            onValueChange={setActiveTab}
+            onValueChange={(newTab) => {
+              setActiveTab(newTab)
+              setIsManageUserDataOpen(false) // Reset when tab changes
+            }}
           >
             <TabsList className="grid w-full grid-cols-2 flex-shrink-0 max-w-[400px] mx-auto">
               <TabsTrigger value="service_account">Service Account</TabsTrigger>
@@ -1013,7 +1031,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
             </TabsList>
 
             {/* Main content area - tab panels */}
-            <div className="flex flex-col space-y-6 w-full mt-4 overflow-y-auto max-h-[75vh]">
+            <div className="flex flex-col space-y-6 w-full mt-4">
               {/* Tab content container - fixed width for forms */}
               <div className="max-w-[400px] mx-auto w-full">
                 <TabsContent value="service_account">
@@ -1058,7 +1076,14 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
               {/* Manage Users Data section - fixed width for forms */}
               {activeTab === "service_account" && hasGoogleConnector && (
                 <div className="max-w-[400px] mx-auto w-full">
-                  <Accordion type="single" collapsible className="w-full">
+                  <Accordion
+                    type="single"
+                    collapsible
+                    className="w-full"
+                    onValueChange={(value) => {
+                      setIsManageUserDataOpen(value === "manage_user_data")
+                    }}
+                  >
                     <AccordionItem value="manage_user_data">
                       <AccordionTrigger>Manage Users Data</AccordionTrigger>
                       <AccordionContent>
@@ -1071,7 +1096,6 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                               Delete Users Data
                             </TabsTrigger>
                           </TabsList>
-                          <div className="min-h-[500px]">
                             <TabsContent
                               value="ingest_more_user_admin"
                               className="h-full"
@@ -1162,7 +1186,6 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                                 </CardContent>
                               </Card>
                             </TabsContent>
-                          </div>
                         </Tabs>
                       </AccordionContent>
                     </AccordionItem>
