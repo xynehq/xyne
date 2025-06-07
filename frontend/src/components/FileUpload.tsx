@@ -1,6 +1,6 @@
 import type React from "react"
 import { useState, useRef, useCallback } from "react"
-import { Upload, Folder, File, X, Trash2 } from "lucide-react"
+import { Upload, Folder, File, X, Trash2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Input } from "@/components/ui/input"
@@ -15,17 +15,22 @@ interface FileUploadProps {
   onDatasourceCreated?: (datasourceName: string) => void
   initialDatasourceName?: string
   onUploadCompleted?: () => void // New prop to signal upload process finished
+  existingDataSourceNames?: string[] // New prop for existing names
 }
 
 export default function FileUpload({
   onDatasourceCreated,
   initialDatasourceName = "",
   onUploadCompleted,
+  existingDataSourceNames = [], // Default to empty array
 }: FileUploadProps = {}) {
   const { toast } = useToast()
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [datasourceName, setDatasourceName] = useState(initialDatasourceName)
+  const [datasourceNameError, setDatasourceNameError] = useState<string | null>(
+    null,
+  )
   const folderInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -384,9 +389,25 @@ export default function FileUpload({
             type="text"
             placeholder="Enter datasource name"
             value={datasourceName}
-            onChange={(e) => setDatasourceName(e.target.value)}
-            className="w-full"
+            onChange={(e) => {
+              const newName = e.target.value
+              setDatasourceName(newName)
+              if (
+                !isEditingExisting &&
+                existingDataSourceNames.some(existingName => existingName.toLowerCase() === newName.trim().toLowerCase())
+              ) {
+                setDatasourceNameError(
+                  "Datasource name already exists. Please choose a different name.",
+                )
+              } else {
+                setDatasourceNameError(null)
+              }
+            }}
+            className={`w-full ${datasourceNameError ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}`}
           />
+          {datasourceNameError && !isEditingExisting && (
+            <p className="mt-1 text-xs text-red-600">{datasourceNameError}</p>
+          )}
         </div>
       )}
 
@@ -503,17 +524,18 @@ export default function FileUpload({
               disabled={
                 selectedFiles.length === 0 ||
                 !datasourceName.trim() ||
-                isUploading
+                isUploading ||
+                !!datasourceNameError // Disable if there's a name error
               }
               className={`flex items-center space-x-2 mr-4 ${
-                !datasourceName.trim()
-                  ? "bg-gray-400"
+                !datasourceName.trim() || !!datasourceNameError // Also consider name error for styling
+                  ? "bg-gray-400 cursor-not-allowed"
                   : "bg-gray-800 hover:bg-gray-900"
               } h-9 px-4`}
             >
               {isUploading ? (
                 <>
-                  <span className="animate-spin mr-1">⟳</span>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   <span>Uploading...</span>
                 </>
               ) : (

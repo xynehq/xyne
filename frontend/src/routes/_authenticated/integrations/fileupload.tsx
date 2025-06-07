@@ -157,7 +157,10 @@ function FileUploadIntegration() {
         <div className="flex-1 overflow-y-auto">
           <div className="w-full max-w-4xl mx-auto p-6 pt-8">
             {showNewDataSource ? (
-              <FileUpload onDatasourceCreated={handleDatasourceCreated} />
+              <FileUpload
+                onDatasourceCreated={handleDatasourceCreated}
+                existingDataSourceNames={dataSources}
+              />
             ) : activeDataSource ? (
               <div>
                 <div className="mb-6 text-center">
