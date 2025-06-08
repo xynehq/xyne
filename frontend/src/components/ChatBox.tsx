@@ -1287,6 +1287,8 @@ export const ChatBox = ({
               let shouldTriggerBox = false
               let newActiveMentionIndex = -1
 
+              // only allow @mention functionality if no agent is selected
+              if(!persistedAgentId){
               // Check if the character right before the cursor is an '@' and if it's validly placed
               const atCharIndex = cursorPosition - 1
               if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
@@ -1300,6 +1302,7 @@ export const ChatBox = ({
                   newActiveMentionIndex = atCharIndex
                 }
               }
+            }
 
               if (shouldTriggerBox) {
                 // A validly placed '@' is at the cursor. Open or keep the box open for this '@'.
@@ -1428,6 +1431,7 @@ export const ChatBox = ({
         <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
           <Attach className="text-[#464D53] cursor-pointer" />
           <Globe size={16} className="text-[#464D53] cursor-pointer" />
+          {!persistedAgentId && (
           <AtSign
             size={16}
             className={`text-[#464D53] cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
@@ -1471,6 +1475,7 @@ export const ChatBox = ({
               input.focus()
             }}
           />
+          )}
           {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
             <DropdownMenu
               open={isSourceMenuOpen}
