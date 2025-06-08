@@ -131,7 +131,6 @@ import {
 } from "@/metrics/google/google-drive-file-metrics"
 import { v4 as uuidv4 } from "uuid"
 
-
 const htmlToText = require("html-to-text")
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -1462,7 +1461,6 @@ const googleSlidesVespa = async (
         error,
       )
       fileExtractionErrorsTotal.inc({
-
         mime_type:
           presentation.mimeType ?? "application/vnd.google-apps.presentation",
         error_type: "PRESENTATION_EXTRACTION_FAILED_ERROR",
@@ -1664,7 +1662,6 @@ const insertFilesForUser = async (
         try {
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
-
 
           console.log(`Mime type: `, doc.mimeType)
           totalIngestedFiles.inc({
