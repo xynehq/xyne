@@ -6,7 +6,7 @@ import {
   type InsertAgent,
   type SelectAgent,
   type SelectPublicAgent,
-} from "./schema"
+} from "@/db/schema"
 export type { SelectAgent } // Re-export SelectAgent
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
