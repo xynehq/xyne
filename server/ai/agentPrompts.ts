@@ -907,12 +907,10 @@ export const agentSearchQueryPrompt = (
   agentPromptData: AgentPromptData,
 ): string => {
   return `
+    You are an AI router and classifier for an Enterprise Search and AI Agent.
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
-    # Context of the agent {make this more priority}
-    Name: ${agentPromptData.name}
-    Description: ${agentPromptData.description}
-    Prompt: ${agentPromptData.prompt}
+    Agent System Prompt: ${agentPromptData.prompt}
     
     # Agent Sources
     ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
@@ -936,7 +934,8 @@ export const agentSearchQueryPrompt = (
        - "Hello"
        - "Hey"
        - what is the time in Japan
-       If the query is conversational, respond naturally and appropriately. 
+       Do not do conversational if it violates the rules of the agent system prompt, i.e if requirements are the for how to talk to user.
+       If the query is conversational, respond naturally and appropriately.
     3. If the user's query is about the conversation itself (e.g., "What did I just now ask?", "What was my previous question?", "Could you summarize the conversation so far?", "Which topic did we discuss first?", etc.), use the conversation history to answer if possible.
     4. Determine if the query is about tracking down a calendar event or email interaction that either last occurred or will next occur.
       - If asking about an upcoming calendar event or meeting (e.g., "next meeting", "scheduled meetings"), set "temporalDirection" to "next".
@@ -1150,6 +1149,7 @@ export const agentSearchQueryPrompt = (
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
+       - keep the answer empty if it violates the rules of the agent system prompt. Let the actual LLM Agent respond to it.
        - "queryRewrite" should contain the fully resolved query only if there was ambiguity or lack of context. Otherwise, "queryRewrite" must be null.
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
@@ -1166,8 +1166,6 @@ export const agentSearchQueryPrompt = (
 
 `
 }
-
-
 
 export const agentSearchAgentPrompt = (
   userContext: string,
