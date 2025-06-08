@@ -12,6 +12,12 @@ import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"
 import { and, desc, eq, isNull } from "drizzle-orm"
+import { UserAgentRole } from "@/shared/types"
+import {
+  grantUserAgentPermission,
+  getUserAccessibleAgents,
+  checkUserAgentAccessByExternalId,
+} from "@/db/userAgentPermission"
 
 export const insertAgent = async (
   trx: TxnOrClient,
@@ -27,14 +33,32 @@ export const insertAgent = async (
     workspaceId,
   }
   const validatedAgentData = insertAgentSchema.parse(agentWithIds)
-  const agentArr = await trx
-    .insert(agents)
-    .values(validatedAgentData)
-    .returning()
-  if (!agentArr || !agentArr.length) {
-    throw new Error('Error in insert of agent "returning"')
-  }
-  return selectAgentSchema.parse(agentArr[0])
+
+  // Use transaction to ensure both agent and permission are created atomically
+  const result = await trx.transaction(async (tx) => {
+    // Insert the agent
+    const agentArr = await tx
+      .insert(agents)
+      .values(validatedAgentData)
+      .returning()
+
+    if (!agentArr || !agentArr.length) {
+      throw new Error('Error in insert of agent "returning"')
+    }
+
+    const newAgent = selectAgentSchema.parse(agentArr[0])
+
+    // Grant owner permission to the creator
+    await grantUserAgentPermission(tx, {
+      userId,
+      agentId: newAgent.id,
+      role: UserAgentRole.Owner,
+    })
+
+    return newAgent
+  })
+
+  return result
 }
 
 export const getAgentByExternalId = async (
@@ -58,6 +82,34 @@ export const getAgentByExternalId = async (
   return selectAgentSchema.parse(agentArr[0])
 }
 
+/**
+ * Get agent by external ID with permission check
+ */
+export const getAgentByExternalIdWithPermissionCheck = async (
+  trx: TxnOrClient,
+  agentExternalId: string,
+  workspaceId: number,
+  userId: number,
+): Promise<SelectAgent | null> => {
+  // First check if user has permission
+  const permission = await checkUserAgentAccessByExternalId(
+    trx,
+    userId,
+    agentExternalId,
+    workspaceId,
+  )
+
+  if (!permission) {
+    return null // User doesn't have access
+  }
+
+  // If user has permission, get the agent
+  return getAgentByExternalId(trx, agentExternalId, workspaceId)
+}
+
+/**
+ * @deprecated Use getUserAccessibleAgents instead for permission-based access
+ */
 export const getAgentsByUserId = async (
   trx: TxnOrClient,
   userId: number,
@@ -65,20 +117,21 @@ export const getAgentsByUserId = async (
   limit: number = 50,
   offset: number = 0,
 ): Promise<SelectPublicAgent[]> => {
-  const agentsArr = await trx
-    .select()
-    .from(agents)
-    .where(
-      and(
-        eq(agents.userId, userId),
-        eq(agents.workspaceId, workspaceId),
-        isNull(agents.deletedAt),
-      ),
-    )
-    .orderBy(desc(agents.updatedAt))
-    .limit(limit)
-    .offset(offset)
-  return z.array(selectPublicAgentSchema).parse(agentsArr)
+  // Redirect to permission-based function
+  return getUserAccessibleAgents(trx, userId, workspaceId, limit, offset)
+}
+
+/**
+ * Get all agents accessible to a user (owned + shared) - preferred method
+ */
+export const getAgentsAccessibleToUser = async (
+  trx: TxnOrClient,
+  userId: number,
+  workspaceId: number,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<SelectPublicAgent[]> => {
+  return getUserAccessibleAgents(trx, userId, workspaceId, limit, offset)
 }
 
 export const updateAgentByExternalId = async (
@@ -112,6 +165,37 @@ export const updateAgentByExternalId = async (
   return selectAgentSchema.parse(agentArr[0])
 }
 
+/**
+ * Update agent with permission check
+ */
+export const updateAgentByExternalIdWithPermissionCheck = async (
+  trx: TxnOrClient,
+  agentExternalId: string,
+  workspaceId: number,
+  userId: number,
+  agentData: Partial<
+    Omit<InsertAgent, "externalId" | "userId" | "workspaceId">
+  >,
+): Promise<SelectAgent | null> => {
+  // Check if user has permission (owner or editor)
+  const permission = await checkUserAgentAccessByExternalId(
+    trx,
+    userId,
+    agentExternalId,
+    workspaceId,
+  )
+
+  if (
+    !permission ||
+    (permission.role !== UserAgentRole.Owner &&
+      permission.role !== UserAgentRole.Editor)
+  ) {
+    return null // User doesn't have edit permission
+  }
+
+  return updateAgentByExternalId(trx, agentExternalId, workspaceId, agentData)
+}
+
 export const deleteAgentByExternalId = async (
   trx: TxnOrClient,
   agentExternalId: string,
@@ -132,4 +216,28 @@ export const deleteAgentByExternalId = async (
     return null
   }
   return selectAgentSchema.parse(agentArr[0])
+}
+
+/**
+ * Delete agent with permission check (only owners can delete)
+ */
+export const deleteAgentByExternalIdWithPermissionCheck = async (
+  trx: TxnOrClient,
+  agentExternalId: string,
+  workspaceId: number,
+  userId: number,
+): Promise<SelectAgent | null> => {
+  // Check if user has owner permission
+  const permission = await checkUserAgentAccessByExternalId(
+    trx,
+    userId,
+    agentExternalId,
+    workspaceId,
+  )
+
+  if (!permission || permission.role !== UserAgentRole.Owner) {
+    return null // Only owners can delete agents
+  }
+
+  return deleteAgentByExternalId(trx, agentExternalId, workspaceId)
 }

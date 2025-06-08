@@ -399,7 +399,26 @@ function AgentComponent() {
 
   useEffect(() => {
     const loadUsers = async () => {
-      setUsers([])
+      try {
+        const response = await api.workspace.users.$get()
+        if (response.ok) {
+          const data = await response.json()
+          setUsers(data as User[])
+        } else {
+          showToast({
+            title: "Error",
+            description: "Failed to fetch workspace users.",
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        showToast({
+          title: "Error",
+          description: "An error occurred while fetching workspace users.",
+          variant: "destructive",
+        })
+        console.error("Fetch workspace users error:", error)
+      }
     }
     loadUsers()
   }, [showToast])
@@ -467,8 +486,32 @@ function AgentComponent() {
           editingAgent.appIntegrations?.includes(int.id) || false
       })
       setSelectedIntegrations(currentIntegrations)
+
+      // Load existing user permissions
+      const loadAgentPermissions = async () => {
+        try {
+          const response = await api.agent[":agentExternalId"].permissions.$get(
+            {
+              param: { agentExternalId: editingAgent.externalId },
+            },
+          )
+          if (response.ok) {
+            const data = await response.json()
+            const existingUsers = users.filter((user) =>
+              data.userEmails.includes(user.email),
+            )
+            setSelectedUsers(existingUsers)
+          }
+        } catch (error) {
+          console.error("Failed to load agent permissions:", error)
+        }
+      }
+
+      if (users.length > 0) {
+        loadAgentPermissions()
+      }
     }
-  }, [editingAgent, viewMode, allAvailableIntegrations])
+  }, [editingAgent, viewMode, allAvailableIntegrations, users])
 
   const handleDeleteAgent = async (agentExternalId: string) => {
     if (
@@ -526,6 +569,7 @@ function AgentComponent() {
       prompt: agentPrompt,
       model: selectedModel,
       appIntegrations: enabledIntegrations,
+      userEmails: selectedUsers.map((user) => user.email),
     }
 
     try {

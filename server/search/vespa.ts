@@ -1679,7 +1679,7 @@ export const getItems = async (
   }
 
   // Permissions or owner condition based on schema
-  if(schema === datasourceFileSchema){
+  if (schema === datasourceFileSchema) {
     // Temporal fix for datasoure selection
   } else if (schema !== userSchema) {
     conditions.push(`permissions contains @email`)

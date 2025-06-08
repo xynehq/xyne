@@ -120,7 +120,10 @@ import {
 import { entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import { isCuid } from "@paralleldrive/cuid2"
-import { getAgentByExternalId, type SelectAgent } from "@/db/agent"
+import {
+  getAgentByExternalIdWithPermissionCheck,
+  type SelectAgent,
+} from "@/db/agent"
 
 const {
   JwtPayloadKey,
@@ -2705,11 +2708,19 @@ export const AgentMessageApi = async (c: Context) => {
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
     if (agentId && isCuid(agentId)) {
-      // Use the numeric workspace.id for the database query
-      agentForDb = await getAgentByExternalId(db, agentId, workspace.id)
-      if (agentForDb) {
-        agentPromptForLLM = JSON.stringify(agentForDb)
+      // Use the numeric workspace.id for the database query with permission check
+      agentForDb = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        agentId,
+        workspace.id,
+        user.id,
+      )
+      if (!agentForDb) {
+        throw new HTTPException(403, {
+          message: "Access denied: You don't have permission to use this agent",
+        })
       }
+      agentPromptForLLM = JSON.stringify(agentForDb)
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     const userRequestsReasoning = isReasoningEnabled
