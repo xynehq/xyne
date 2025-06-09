@@ -32,7 +32,7 @@ const cleanDocs = (text: string): string => {
   return cleanedText
 }
 
-const parseHighlight = (text: string): ReactNode[] => {
+export const parseHighlight = (text: string): ReactNode[] => {
   // Split the text on <hi> and </hi>, including the tags in the result
   const parts: string[] = text.split(/(<hi>|<\/hi>)/)
 
