@@ -1273,9 +1273,9 @@ export const ChatPage = ({
         role={user?.role}
         isAgentMode={agentWhiteList}
       />
-      <div className="h-full w-full flex flex-col relative">
+      <div className="h-full w-full flex flex-col relative min-h-0">
         <div
-          className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center z-10 transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex w-full fixed bg-white h-[48px] border-b-[1px] justify-center z-10 transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
@@ -1312,13 +1312,12 @@ export const ChatPage = ({
 
         {/* Scrollable Messages Area */}
         <div
-          className={`flex-grow w-full overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
-          style={{ paddingTop: "48px" }} 
+          className={`flex-grow w-full overflow-y-auto items-center transition-all duration-250 pt-[48px] ${showSources ? "pr-[18%]" : ""}`}
           ref={messagesContainerRef}
           onScroll={handleScroll}
         >
           <div className="w-full flex flex-col items-center"> 
-            <div className="flex flex-col w-full max-w-3xl flex-grow pb-4">
+            <div className="flex flex-col w-full max-w-3xl flex-grow pb-20">
               {messages.map((message, index) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
@@ -1703,7 +1702,7 @@ export const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] max-w-full mt-3 ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
+      className={`rounded-[16px] max-w-full ${isUser ? "mt-2 bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
         <div
@@ -1825,19 +1824,23 @@ export const ChatMessage = ({
               ) : null}
             </div>
           </div>
-          {responseDone && !isRetrying && (
-            <div className="flex flex-col">
+          {/* Container for actions and citations. It always takes up some space. */}
+          {/* Its content visibility is controlled by responseDone && !isRetrying. */}
+          {/* min-h-14 (56px) is an estimate for icon row + empty citation list's top margin */}
+          <div className={`flex flex-col min-h-14`}> {/* Approx 56px */}
+            {(responseDone && !isRetrying) && (
+              <>
               {isDebugMode && messageId && (
                 <button
                   className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
                   onClick={() => onShowRagTrace(messageId)}
                 >
                   View RAG Trace #{messageId.slice(-6)}
-                </button>
-              )}
-              <div className="flex ml-[52px] mt-[12px] items-center">
-                <Copy
-                  size={16}
+        </button>
+      )}
+      <div className="flex ml-[52px] mt-[12px] items-center">
+        <Copy
+          size={16}
                   stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
                   className={`cursor-pointer`}
                   onMouseDown={() => setIsCopied(true)}
@@ -1909,8 +1912,9 @@ export const ChatMessage = ({
                   onToggleSources={onToggleSources}
                 />
               </div>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
