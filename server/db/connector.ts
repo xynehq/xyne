@@ -9,10 +9,10 @@ import {
   type SelectConnector,
   type SelectOAuthProvider,
 } from "./schema"
-import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
+import type { OAuthCredentials, TxnOrClient } from "@/types" // ConnectorType removed
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types" // ConnectorType added
 import { Google } from "arctic"
 import config from "@/config"
 import { getLogger } from "@/logger"

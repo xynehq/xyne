@@ -27,6 +27,23 @@ export {
   isMailAttachment,
 } from "search/types"
 export type { Entity } from "search/types"
+
+// Define an enum for connection types - MOVED HERE FROM server/types.ts
+export enum ConnectorType {
+  // Google, Notion, Github
+  SaaS = "SaaS",
+  // DuckDB, Postgres, MySQL
+  Database = "Database",
+  // Weather api?
+  API = "Api",
+  // Manually uploaded data like pdf
+  File = "File",
+  // Where we can scrape and crawl
+  Website = "Website",
+  // All MCP Clients
+  MCP = "Mcp",
+}
+
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"

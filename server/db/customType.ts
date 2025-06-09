@@ -16,10 +16,13 @@ export const encryptedText = (encryption: Encryption) => {
      * @returns The decrypted plain text.
      */
     fromDriver(value: unknown): string | null {
-      if (!value) {
-        return value as null
+      // Return the encrypted value as is from the database.
+      // Decryption should be handled explicitly by the application when needed.
+      if (typeof value === 'string') {
+        return value;
       }
-      return encryption.decrypt(value as string)
+      // If value is null or not a string, return it as is (or handle as appropriate)
+      return value as string | null;
     },
     /**
      * Transforms the value before storing it in the database.

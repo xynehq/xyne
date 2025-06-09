@@ -14,10 +14,11 @@ import {
 } from "drizzle-orm/pg-core"
 import { encryptedText } from "./customType"
 import { Encryption } from "@/utils/encryption"
-import { ConnectorType, MessageRole, SyncConfigSchema, SyncCron } from "@/types"
+import { MessageRole, SyncConfigSchema, SyncCron } from "@/types"
 import {
   Apps,
   AuthType,
+  ConnectorType, // Moved ConnectorType import here
   ConnectorStatus,
   SyncJobStatus,
   UserRole,
@@ -623,9 +624,11 @@ export const tools = pgTable(
     connectorId: integer("connector_id")
       .notNull()
       .references(() => connectors.id),
+    externalId: text("external_id").unique(),
     toolName: text("tool_name").notNull(),
     toolSchema: text("tool_schema").notNull(), // Store the entire schema as a string
     description: text("description"),
+    enabled: boolean("enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),

@@ -26,6 +26,7 @@ import {
   oauthStartQuerySchema,
   searchSchema,
   updateConnectorStatusSchema,
+  updateToolsStatusSchema, // Added for tool status updates
   serviceAccountIngestMoreSchema,
 } from "@/types"
 import {
@@ -40,6 +41,8 @@ import {
   AddStdioMCPConnector,
   UpdateConnectorStatus,
   ServiceAccountIngestMoreUsersApi,
+  GetConnectorTools, // Added GetConnectorTools
+  UpdateToolsStatusApi, // Added for tool status updates
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -253,6 +256,7 @@ export const AppRoutes = app
     AddStdioMCPConnector,
   )
   .get("/connectors/all", GetConnectors)
+  .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
   .post(
     "/connector/update_status",
     zValidator("form", updateConnectorStatusSchema),
@@ -267,6 +271,11 @@ export const AppRoutes = app
     "/oauth/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteOauthConnector,
+  )
+  .post( // Added route for updating tool statuses
+    "/tools/update_status",
+    zValidator("json", updateToolsStatusSchema),
+    UpdateToolsStatusApi,
   )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
@@ -476,7 +485,7 @@ init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
 
-const errorHandler = (error) => {
+const errorHandler = (error: Error) => { // Added Error type
   return new Response(`<pre>${error}\n${error.stack}</pre>`, {
     headers: {
       "Content-Type": "text/html",

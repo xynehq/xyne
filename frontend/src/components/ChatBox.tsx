@@ -18,9 +18,11 @@ import {
   Search,
   RotateCcw,
   Atom,
+  PlugZap, // Added for new dropdown
+  PlusCircle, // For MCP connector tools
 } from "lucide-react";
 import Attach from "@/assets/attach.svg?react";
-import { Citation, Apps } from "shared/types";
+import { Citation, Apps, ConnectorType, AuthType, ConnectorStatus } from "shared/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,7 +74,7 @@ interface SearchResult {
 interface ChatBoxProps {
   query: string;
   setQuery: (query: string) => void;
-  handleSend: (messageToSend: string, selectedSources?: string[]) => void;
+  handleSend: (messageToSend: string, selectedSources?: string[], toolExternalIds?: string[]) => void;
   isStreaming?: boolean;
   handleStop?: () => void;
   chatId?: string | null;
@@ -199,6 +201,34 @@ export const ChatBox = ({
   isReasoningActive, // Use prop
   setIsReasoningActive, // Use prop
 }: ChatBoxProps) => {
+
+  // Interface for fetched tools
+  interface FetchedTool {
+    id: number;
+    workspaceId: number;
+    connectorId: number;
+    toolName: string;
+    toolSchema: string; // Assuming schema is a JSON string
+    description: string | null;
+    enabled: boolean; // Added enabled field
+    createdAt: string;
+    updatedAt: string;
+    externalId: string; // This is the externalId from the backend
+  }
+
+  // Interface for fetched connectors
+  interface FetchedConnector {
+    id: string; // externalId from backend
+    app: Apps | string;
+    authType: AuthType | string;
+    type: ConnectorType | string;
+    status: ConnectorStatus | string;
+    createdAt: string; // Assuming ISO string date
+    config: Record<string, any>;
+    connectorId: number; // internal DB id
+    displayName?: string; // For UI
+  }
+
   const inputRef = useRef<HTMLDivElement | null>(null);
   const referenceBoxRef = useRef<HTMLDivElement | null>(null);
   const referenceItemsRef = useRef<
@@ -228,7 +258,133 @@ export const ChatBox = ({
   const [referenceBoxLeft, setReferenceBoxLeft] = useState(0);
   const [isPlaceholderVisible, setIsPlaceholderVisible] = useState(true);
   const [showSourcesButton, _] = useState(false); // Added this line
+  const [allConnectors, setAllConnectors] = useState<FetchedConnector[]>([]);
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
+  const [isConnectorsMenuOpen, setIsConnectorsMenuOpen] = useState(false);
+  const [connectorTools, setConnectorTools] = useState<FetchedTool[]>([]);
+  const [isLoadingTools, setIsLoadingTools] = useState(false);
+  const [isToolSelectionModalOpen, setIsToolSelectionModalOpen] = useState(false);
+  const [toolSearchTerm, setToolSearchTerm] = useState("");
+  const connectorsDropdownTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const toolModalRef = useRef<HTMLDivElement | null>(null); // Ref for the tool modal itself
+  const [toolModalPosition, setToolModalPosition] = useState<{ top: number; left: number } | null>(null);
+  
+  // localStorage keys for tool selection persistence
+  const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools";
+
+  // Helper functions for localStorage operations
+  const loadToolSelectionsFromStorage = (): Record<string, Set<string>> => {
+    try {
+      const stored = localStorage.getItem(SELECTED_CONNECTOR_TOOLS_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Convert arrays back to Sets
+        const result: Record<string, Set<string>> = {};
+        for (const [connectorId, toolNames] of Object.entries(parsed)) {
+          if (Array.isArray(toolNames)) {
+            result[connectorId] = new Set(toolNames as string[]);
+          }
+        }
+        return result;
+      }
+    } catch (error) {
+      console.warn("Failed to load tool selections from localStorage:", error);
+    }
+    return {};
+  };
+
+  const saveToolSelectionsToStorage = (selections: Record<string, Set<string>>) => {
+    try {
+      // Convert Sets to arrays for JSON serialization
+      const serializable: Record<string, string[]> = {};
+      for (const [connectorId, toolNames] of Object.entries(selections)) {
+        serializable[connectorId] = Array.from(toolNames);
+      }
+      localStorage.setItem(SELECTED_CONNECTOR_TOOLS_KEY, JSON.stringify(serializable));
+    } catch (error) {
+      console.warn("Failed to save tool selections to localStorage:", error);
+    }
+  };
+
+  // Initialize selectedConnectorTools with data from localStorage
+  const [selectedConnectorTools, setSelectedConnectorTools] = useState<Record<string, Set<string>>>(
+    loadToolSelectionsFromStorage
+  );
+
+  // Persist tool selections to localStorage whenever they change
+  useEffect(() => {
+    saveToolSelectionsToStorage(selectedConnectorTools);
+  }, [selectedConnectorTools]);
+
   // Local state for isReasoningActive and its localStorage effect are removed. Props will be used.
+
+  useEffect(() => {
+    // Effect to adjust tool modal position based on its height
+    if (isToolSelectionModalOpen && toolModalRef.current && connectorsDropdownTriggerRef.current) {
+      const modalHeight = toolModalRef.current.offsetHeight;
+      
+      const triggerRect = connectorsDropdownTriggerRef.current.getBoundingClientRect();
+      const chatBoxContainer = (inputRef.current?.closest('.relative.flex.flex-col.w-full') as HTMLElement | null);
+      const connectorDropdownWidth = 288; // Based on w-72 class (18rem * 16px/rem)
+      const gap = 8; // 8px gap
+
+      let newLeftCalculation: number;
+      let topReferenceForModalBottom: number;
+
+      if (chatBoxContainer) {
+        const containerRect = chatBoxContainer.getBoundingClientRect();
+        newLeftCalculation = (triggerRect.left - containerRect.left) + connectorDropdownWidth + gap;
+        topReferenceForModalBottom = triggerRect.top - containerRect.top;
+      } else {
+        // Fallback if chatBoxContainer is not found (less likely but good for robustness)
+        newLeftCalculation = triggerRect.left + connectorDropdownWidth + gap;
+        topReferenceForModalBottom = triggerRect.top;
+      }
+      
+      const newModalTop = topReferenceForModalBottom - modalHeight;
+
+      setToolModalPosition(currentPosition => {
+        // Check if the position actually needs updating to prevent infinite loops
+        if (currentPosition && currentPosition.top === newModalTop && currentPosition.left === newLeftCalculation) {
+          return currentPosition;
+        }
+        return { top: newModalTop, left: newLeftCalculation };
+      });
+    }
+  }, [
+    isToolSelectionModalOpen, 
+    isLoadingTools, 
+    connectorTools, 
+    toolSearchTerm, 
+    // Intentionally not including toolModalPosition here to avoid loops,
+    // as this effect is responsible for calculating the definitive position.
+    // It re-runs when factors affecting modal height change.
+  ]);
+
+  useEffect(() => {
+    const fetchConnectors = async () => {
+      try {
+        const response = await api.admin.connectors.all.$get(undefined, { credentials: "include" });
+        const data = await response.json();
+
+        if (Array.isArray(data)) {
+          const processedConnectors = data.map((conn: any) => ({
+            ...conn,
+            displayName: conn.config?.name || conn.app || conn.id,
+          }));
+          setAllConnectors(processedConnectors);
+        } else {
+          console.error("Fetched connectors data is not an array:", data);
+          setAllConnectors([]);
+        }
+      } catch (error) {
+        console.error("Error fetching connectors:", error);
+        setAllConnectors([]);
+      }
+    };
+
+    fetchConnectors();
+  }, []);
 
   const adjustInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -849,16 +1005,27 @@ export const ChatBox = ({
       .map(([id]) => id);
 
     let htmlMessage = inputRef.current?.innerHTML || "";
-
     htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "");
     htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "");
     htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "");
 
-    // The `references` array is no longer passed to handleSend.
-    // Pills and links are part of htmlMessage.
+    let toolIdsToSend: string[] | undefined = undefined;
+    if (selectedConnectorId) {
+      const connector = allConnectors.find(c => c.id === selectedConnectorId);
+      if (connector && connector.type === ConnectorType.MCP) {
+        const selectedToolNamesSet = selectedConnectorTools[connector.id]; // connector.id is the externalId string for the connector
+        if (selectedToolNamesSet && selectedToolNamesSet.size > 0) {
+          toolIdsToSend = connectorTools
+            .filter(tool => selectedToolNamesSet.has(tool.toolName))
+            .map(tool => tool.externalId.toString()); // Assuming FetchedTool.id is the externalId and needs to be a string
+        }
+      }
+    }
+    console.log("Sending message with tools:", toolIdsToSend);
     handleSend(
       htmlMessage,
       activeSourceIds.length > 0 ? activeSourceIds : undefined,
+      toolIdsToSend
     );
     // setReferences([]) // This state and its setter are removed.
 
@@ -1409,6 +1576,278 @@ export const ChatBox = ({
               input.focus();
             }}
           />
+
+          {/* Dropdown for All Connectors */}
+          <DropdownMenu
+            open={isConnectorsMenuOpen}
+            onOpenChange={setIsConnectorsMenuOpen}
+          >
+            <DropdownMenuTrigger asChild>
+              <button ref={connectorsDropdownTriggerRef} className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-sm text-gray-700 cursor-pointer">
+                {selectedConnectorId && allConnectors.find(c => c.id === selectedConnectorId)
+                  ? getIcon(
+                      allConnectors.find(c => c.id === selectedConnectorId)!.app,
+                      allConnectors.find(c => c.id === selectedConnectorId)!.type,
+                      { w: 14, h: 14, mr: 0 }
+                    )
+                  : <PlugZap size={14} className="text-[#464D53]" />
+                }
+                <span>
+                  {selectedConnectorId
+                    ? allConnectors.find(c => c.id === selectedConnectorId)?.displayName || "Connector"
+                    : "Connectors"}
+                </span>
+                <ChevronDown size={16} className="ml-1 text-gray-500" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="w-72 relative rounded-xl" // Increased width
+              align="start"
+              side="top"
+            >
+              <DropdownMenuLabel className="p-2">Select a Connector</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {allConnectors.length > 0 ? (
+                allConnectors.filter(c => c.type === ConnectorType.MCP).map((connector) => {
+                  const isMCP = connector.type === ConnectorType.MCP;
+
+                  return (
+                    <DropdownMenuItem
+                      key={connector.id}
+                      onSelect={(e) => e.preventDefault()} // Prevent closing on item click if it has a sub-menu
+                      className="p-0" // Remove padding for full-width item
+                    >
+                        <div className="flex items-center justify-between w-full px-2 py-1.5 cursor-pointer hover:bg-accent"
+                          onClick={() => {
+                            const isCurrentlySelected = selectedConnectorId === connector.id;
+
+                            if (isCurrentlySelected) {
+                              // If clicking the already selected connector, deselect it
+                              setSelectedConnectorId(null);
+                              setConnectorTools([]); // Clear any tools
+                              // Optionally, close the tool selection modal if it's open for this connector
+                              if (isToolSelectionModalOpen && selectedConnectorId === connector.id) {
+                                setIsToolSelectionModalOpen(false);
+                              }
+                              // Keep the main dropdown open or close it based on desired UX for deselection.
+                              // For now, let's assume it stays open.
+                            } else {
+                              // Clicking a new connector to select it
+                              setSelectedConnectorId(connector.id);
+                              if (!isMCP) {
+                                // For non-MCP connectors, preserve existing selections or initialize empty
+                                setConnectorTools([]); 
+                                // Don't override existing selections, they should be preserved from localStorage
+                                if (!selectedConnectorTools[connector.id]) {
+                                  setSelectedConnectorTools(prev => ({ ...prev, [connector.id]: new Set() }));
+                                }
+                                setIsConnectorsMenuOpen(false); // Close the dropdown
+                              } else {
+                                // For MCP connectors, clear tools from any previously selected MCP.
+                                setConnectorTools([]); 
+                                // Tool fetching for this MCP connector is handled by PlusCircle click.
+                                // Dropdown stays open.
+                              }
+                            }
+                          }}
+                        >
+                          <div className="flex items-center gap-2 flex-grow">
+                            {getIcon(connector.app, connector.type, { w: 14, h: 14, mr: 0 })}
+                            <span className="truncate">{connector.displayName}</span>
+                          </div>
+
+                          {/* Icons container - aligned to the right */}
+                          <div className="flex items-center ml-auto">
+                            {selectedConnectorId === connector.id && (
+                              <Check className={`h-4 w-4 text-green-500 flex-shrink-0 ${isMCP ? 'mr-1.5' : ''}`} />
+                            )}
+                            {isMCP && (
+                              <PlusCircle
+                                size={18}
+                                className="text-blue-500 cursor-pointer flex-shrink-0" // Margin is handled by Check or lack thereof
+                                onClick={async (e) => {
+                                  e.stopPropagation(); // IMPORTANT: Prevent main item click handler
+                                  
+                                  // Ensure this connector is marked as active if not already
+                                  if(selectedConnectorId !== connector.id) {
+                                    setSelectedConnectorId(connector.id); 
+                                    setConnectorTools([]); // Clear tools if switching to this MCP
+                                  } else if (!connectorTools.length && selectedConnectorId === connector.id) {
+                                    // If it's already selected but tools aren't loaded (e.g. re-opening modal)
+                                    // proceed to load them.
+                                  }
+
+
+                                  if (connectorsDropdownTriggerRef.current) {
+                                    const rect = connectorsDropdownTriggerRef.current.getBoundingClientRect();
+                                    const chatBoxContainer = (inputRef.current?.closest('.relative.flex.flex-col.w-full') as HTMLElement | null);
+                                    const connectorDropdownWidth = 288; // w-72
+                                    const gap = 8;
+                                    
+                                    let preliminaryLeftCalc: number;
+                                    let preliminaryTopReference: number;
+
+                                    if (chatBoxContainer) {
+                                      const containerRect = chatBoxContainer.getBoundingClientRect();
+                                      preliminaryLeftCalc = (rect.left - containerRect.left) + connectorDropdownWidth + gap;
+                                      preliminaryTopReference = rect.top - containerRect.top;
+                                    } else {
+                                      preliminaryLeftCalc = rect.left + connectorDropdownWidth + gap;
+                                      preliminaryTopReference = rect.top;
+                                    }
+                                    setToolModalPosition({ top: preliminaryTopReference, left: preliminaryLeftCalc });
+                                  }
+                                  
+                                  setIsLoadingTools(true);
+                                  setToolSearchTerm(""); 
+                                  try {
+                                    const response: Response = await api.admin.connector[connector.id].tools.$get(undefined, { credentials: "include" });
+                                    const toolsData: FetchedTool[] | any = await response.json();
+                                    if (Array.isArray(toolsData)) {
+                                      const enabledTools = toolsData.filter(tool => tool.enabled);
+                                      setConnectorTools(enabledTools);
+                                      
+                                      // Check if we have existing selections from localStorage for this connector
+                                      const existingSelections = selectedConnectorTools[connector.id];
+                                      
+                                      if (existingSelections && existingSelections.size > 0) {
+                                        // Use existing selections from localStorage, but only for enabled tools
+                                        const enabledToolNames = new Set(enabledTools.map(t => t.toolName));
+                                        const validSelections = new Set(
+                                          Array.from(existingSelections).filter(toolName => enabledToolNames.has(toolName))
+                                        );
+                                        
+                                        setSelectedConnectorTools(prev => ({
+                                          ...prev,
+                                          [connector.id]: validSelections
+                                        }));
+                                      } else {
+                                        // No existing selections, default to all enabled tools being selected
+                                        const initiallySelectedEnabledTools = new Set(
+                                          enabledTools.map(t => t.toolName)
+                                        );
+                                        setSelectedConnectorTools(prev => ({
+                                          ...prev,
+                                          [connector.id]: initiallySelectedEnabledTools
+                                        }));
+                                      }
+                                    } else {
+                                      setConnectorTools([]);
+                                      // Ensure no selections if tools aren't loaded correctly or if data is not an array
+                                      setSelectedConnectorTools(prev => ({
+                                        ...prev,
+                                        [connector.id]: new Set() 
+                                      }));
+                                    }
+                                  } catch (error) {
+                                    console.error(`Error fetching tools for ${connector.id}:`, error);
+                                    setConnectorTools([]);
+                                    // Clear selections for this connector on error
+                                    setSelectedConnectorTools(prev => ({
+                                      ...prev,
+                                      [connector.id]: new Set()
+                                    }));
+                                  } finally {
+                                    setIsLoadingTools(false);
+                                    setIsToolSelectionModalOpen(true);
+                                    // Main dropdown (isConnectorsMenuOpen) should remain open
+                                  }
+                                }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </DropdownMenuItem>
+                    );
+                  })
+              ) : (
+                <DropdownMenuItem disabled className="text-center text-gray-500">
+                  No connectors available
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Tool Selection Modal / Popover */}
+          {isToolSelectionModalOpen && selectedConnectorId && toolModalPosition && allConnectors.find(c => c.id === selectedConnectorId)?.type === ConnectorType.MCP && (
+            <div
+              ref={toolModalRef} 
+              className="absolute bg-white rounded-lg shadow-xl p-4 z-50 border border-gray-200"
+              style={{ 
+                top: `${toolModalPosition.top}px`, 
+                left: `${toolModalPosition.left}px`,
+                width: '280px', // Smaller width
+                maxHeight: '300px', // Max height for scroll
+              }}
+              onClick={(e) => e.stopPropagation()} // Prevent clicks inside from closing it if it's part of a larger clickable area
+            >
+              <div className="flex flex-col h-full">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-md font-semibold">
+                    Tools for {allConnectors.find(c => c.id === selectedConnectorId)?.displayName}
+                  </h3>
+                  <button onClick={() => setIsToolSelectionModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <Input
+                  type="text"
+                  placeholder="Search tools..."
+                  value={toolSearchTerm}
+                  onChange={(e) => setToolSearchTerm(e.target.value)}
+                  className="mb-2 text-sm"
+                />
+                {isLoadingTools ? (
+                  <p className="text-sm text-gray-500 text-center py-4">Loading tools...</p>
+                ) : (
+                  <div className="overflow-y-auto" style={{ maxHeight: '180px' }}> {/* Explicit max-height for scrolling */}
+                    {connectorTools.filter(tool => tool.toolName.toLowerCase().includes(toolSearchTerm.toLowerCase())).length > 0 ? (
+                      connectorTools
+                        .filter(tool => tool.toolName.toLowerCase().includes(toolSearchTerm.toLowerCase()))
+                        .map((tool) => (
+                          <div
+                            key={tool.id}
+                            className="flex items-center justify-between py-1.5 hover:bg-gray-50 rounded px-1 cursor-pointer"
+                            onClick={() => {
+                              setSelectedConnectorTools(prev => {
+                                const newSelected = new Set(prev[selectedConnectorId!] || []);
+                                if (newSelected.has(tool.toolName)) {
+                                  newSelected.delete(tool.toolName);
+                                } else {
+                                  newSelected.add(tool.toolName);
+                                }
+                                return { ...prev, [selectedConnectorId!]: newSelected };
+                              });
+                            }}
+                          >
+                            <span className="text-sm flex-grow mr-2 truncate" title={tool.description || tool.toolName}>
+                              {tool.toolName}
+                            </span>
+                            <div className="h-4 w-4 flex items-center justify-center">
+                              {(selectedConnectorTools[selectedConnectorId!] || new Set()).has(tool.toolName) && (
+                                <Check className="h-4 w-4 text-green-500" />
+                              )}
+                            </div>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="text-sm text-gray-500 text-center py-4">No tools found{toolSearchTerm ? ` for "${toolSearchTerm}"` : ''}.</p>
+                    )}
+                  </div>
+                )}
+                {/* "Done" button can be removed if selection is immediate, or kept for explicit confirmation */}
+                {/* <button
+                  onClick={() => setIsToolSelectionModalOpen(false)}
+                  className="mt-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1.5 px-3 rounded text-sm self-end"
+                >
+                  Done
+                </button> */}
+              </div>
+            </div>
+          )}
+
           {showSourcesButton && ( // Added this condition because currently it's backend is not ready therefore we are not showing it
             <DropdownMenu
               open={isSourceMenuOpen}

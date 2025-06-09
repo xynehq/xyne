@@ -60,7 +60,7 @@ export const IntegrationsSidebar = ({ role }: { role: string }) => {
             >
               <img width={16} src={SlackSvg} className="ml-[8px]" />
               <span className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
-                MCP Client
+                Github
               </span>
             </li>
           </ul>

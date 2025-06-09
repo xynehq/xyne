@@ -2,10 +2,12 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
+import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { syncConnectorTools, deleteToolsByConnectorId } from "@/db/tool"
+import { syncConnectorTools, deleteToolsByConnectorId, getToolsByConnectorId as dbGetToolsByConnectorId, tools as toolsTable } from "@/db/tool" // Added dbGetToolsByConnectorId and toolsTable
+import { eq, and, inArray, sql } from "drizzle-orm"
 import {
   deleteConnector,
   getConnectorByExternalId,
@@ -15,18 +17,20 @@ import {
   deleteOauthConnector,
 } from "@/db/connector"
 import {
-  ConnectorType,
   type OAuthProvider,
   type OAuthStartQuery,
   type SaaSJob,
   type ServiceAccountConnection,
   type ApiKeyMCPConnector,
   type StdioMCPConnector,
+  MCPClientStdioConfig,
   Subsystem,
+  updateToolsStatusSchema, // Added for tool status updates
 } from "@/types"
+import { z } from "zod";
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
-import { Apps, AuthType, ConnectorStatus } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
 import { createOAuthProvider, getOAuthProvider } from "@/db/oauthProvider"
 const { JwtPayloadKey, slackHost } = config
 import { generateCodeVerifier, generateState, Google, Slack } from "arctic"
@@ -56,6 +60,38 @@ export const GetConnectors = async (c: Context) => {
   const connectors = await getConnectors(workspaceId, user.id)
   return c.json(connectors)
 }
+
+export const GetConnectorTools = async (c: Context) => {
+  const { workspaceId, sub } = c.get(JwtPayloadKey)
+  const connectorExternalId = c.req.param("connectorId")
+
+  if (!connectorExternalId) {
+    throw new HTTPException(400, { message: "Connector ID is required" })
+  }
+
+  const users: SelectUser[] = await getUserByEmail(db, sub)
+  if (users.length === 0) {
+    Logger.error({ sub }, "No user found for sub in GetConnectorTools")
+    throw new NoUserFound({})
+  }
+  const user = users[0]
+
+  // Fetch the connector by its externalId to get the internal numeric id
+  const connector = await getConnectorByExternalId(db, connectorExternalId, user.id)
+  if (!connector) {
+    throw new HTTPException(404, { message: `Connector with ID ${connectorExternalId} not found.` })
+  }
+
+  // Ensure the connector is an MCP type before fetching tools
+  if (connector.type !== ConnectorType.MCP) {
+    // Return empty array or specific message if not an MCP connector
+    return c.json([])
+  }
+
+  const tools = await dbGetToolsByConnectorId(db, user.workspaceId, connector.id)
+  return c.json(tools)
+}
+
 
 const getAuthorizationUrl = async (
   c: Context,
@@ -399,7 +435,7 @@ export const DeleteConnector = async (c: Context) => {
       "Connector not found for deletion",
     )
     throw new HTTPException(404, {
-      message: `Connector not found: ${connectorExternalId}`,
+      message: `Connector not found: ${connectorId}`,
     })
   }
 
@@ -410,8 +446,8 @@ export const DeleteConnector = async (c: Context) => {
       await deleteToolsByConnectorId(db, user.workspaceId, connector.id)
       console.log(`Deleted MCP tools for connector ${connectorId}`)
     } catch (error) {
-      console.error(`Error deleting MCP tools: ${error.message}`)
-      throw new Error(`Failed to delete MCP tools: ${error.message}`)
+      console.error(`Error deleting MCP tools: ${getErrorMessage(error)}`)
+      throw new Error(`Failed to delete MCP tools: ${getErrorMessage(error)}`)
     }
   }
 
@@ -657,6 +693,76 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
   }
 }
 
+export const UpdateToolsStatusApi = async (c: Context) => {
+  const { workspaceId: workspaceExternalId, sub } = c.get(JwtPayloadKey) // Renamed to workspaceExternalId for clarity
+  const users: SelectUser[] = await getUserByEmail(db, sub)
+  if (users.length === 0) {
+    Logger.error({ sub }, "No user found for sub in UpdateToolsStatusApi")
+    throw new NoUserFound({})
+  }
+  const user = users[0]
+
+  const retrievedWorkspace = await getWorkspaceByExternalId(db, workspaceExternalId)
+  if (!retrievedWorkspace) {
+    Logger.error({ workspaceExternalId }, "Workspace not found for external ID in UpdateToolsStatusApi")
+    throw new HTTPException(404, { message: "Workspace not found." })
+  }
+  const internalWorkspaceId = retrievedWorkspace.id // This is the integer ID
+  // @ts-ignore - Assuming validation middleware handles this
+  const payload = c.req.valid("json") as z.infer<
+    typeof updateToolsStatusSchema
+  >
+
+  if (!payload.tools || payload.tools.length === 0) {
+    return c.json({ success: true, message: "No tools to update." })
+  }
+
+  const toolUpdates = payload.tools.map(async (toolUpdate) => {
+    try {
+      const result = await db
+        .update(toolsTable)
+        .set({
+          enabled: toolUpdate.enabled,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(toolsTable.id, toolUpdate.toolId),
+            eq(toolsTable.workspaceId, internalWorkspaceId), // Use internal integer workspaceId
+          ),
+        )
+        .returning({ updatedId: toolsTable.id })
+
+      if (result.length === 0) {
+        Logger.warn(
+          `Tool with id ${toolUpdate.toolId} not found in workspace ${internalWorkspaceId} (external: ${workspaceExternalId}) or no change needed.`,
+        )
+        // Optionally, you could collect these and report them back
+      }
+      // Ensure success is true only if result.length > 0
+      return { toolId: toolUpdate.toolId, success: result.length > 0 } 
+    } catch (error) {
+      Logger.error(
+        error,
+        `Failed to update tool ${
+          toolUpdate.toolId
+        } in workspace ${internalWorkspaceId} (external: ${workspaceExternalId}): ${getErrorMessage(error)}`,
+      )
+      return { toolId: toolUpdate.toolId, success: false, error: getErrorMessage(error) }
+    }
+  })
+
+  const results = await Promise.all(toolUpdates)
+  const failedUpdates = results.filter(r => !r.success);
+
+  if (failedUpdates.length > 0) {
+    Logger.error({ failedUpdates }, "Some tools failed to update.")
+    return c.json({ success: false, message: "Some tools failed to update.", failedUpdates }, 500)
+  }
+
+  return c.json({ success: true, message: "Tools updated successfully." })
+}
+
 export const AddStdioMCPConnector = async (c: Context) => {
   Logger.info("StdioMCPConnector")
   const { sub, workspaceId } = c.get(JwtPayloadKey)
@@ -669,7 +775,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
   // @ts-ignore
   const form: StdioMCPConnector = c.req.valid("form")
   const command = form.command
-  const args = form.args.join(" ")
+  // const args = form.args.join(" ") // Changed: No longer joining args here
   const name = form.name
   let app
   let status = ConnectorStatus.NotConnected
@@ -693,25 +799,25 @@ export const AddStdioMCPConnector = async (c: Context) => {
       ConnectorType.MCP,
       AuthType.Custom,
       app,
-      { command: command, args: args, version: "0.1.0" },
+      { command: command, args: form.args, version: "0.1.0" }, // Changed: Pass form.args (string[])
       null,
       null,
       null,
       null,
     )
     try {
-      const config = connector.config as MCPClientStdioConfig
+      const config = connector.config as z.infer<typeof MCPClientStdioConfig> // Changed: Use z.infer for type assertion
       const client = new Client({
         name: `connector-${connector.externalId}`,
         version: config.version,
       })
       Logger.info(
-        `invoking stdio to ${config.command} with args: ${config.args}`,
+        `invoking stdio to ${config.command} with args: ${config.args.join(" ")}`, // Logging joined args for readability if needed
       )
       await client.connect(
         new StdioClientTransport({
           command: config.command,
-          args: config.args.split(" "),
+          args: config.args, // Changed: Pass config.args (string[]) directly
         }),
       )
       status = ConnectorStatus.Connected

@@ -120,6 +120,15 @@ export const updateConnectorStatusSchema = z.object({
   status: z.nativeEnum(ConnectorStatus),
 })
 
+export const updateToolStatusSchema = z.object({
+  toolId: z.coerce.number(), // Try coercing to number
+  enabled: z.boolean(),
+})
+
+export const updateToolsStatusSchema = z.object({
+  tools: z.array(updateToolStatusSchema),
+})
+
 export const serviceAccountIngestMoreSchema = z.object({
   connectorId: z.string(),
   emailsToIngest: z.array(z.string().email()),
@@ -135,22 +144,6 @@ export const serviceAccountIngestMoreSchema = z.object({
 })
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
-
-// Define an enum for connection types
-export enum ConnectorType {
-  // Google, Notion, Github
-  SaaS = "SaaS",
-  // DuckDB, Postgres, MySQL
-  Database = "Database",
-  // Weather api?
-  API = "Api",
-  // Manually uploaded data like pdf
-  File = "File",
-  // Where we can scrape and crawl
-  Website = "Website",
-  // All MCP Clients
-  MCP = "Mcp",
-}
 
 export type SaaSJob = {
   connectorId: number

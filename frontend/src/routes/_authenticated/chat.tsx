@@ -478,8 +478,8 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
         setIsReasoningActive(chatParams.reasoning);
       }
 
-      // Call handleSend without referencesForHandleSend, as it's no longer a parameter
-      handleSend(messageToSend, sourcesArray);
+      // Call handleSend with toolExternalIds from chatParams if available
+      handleSend(messageToSend, sourcesArray, chatParams.toolExternalIds);
       hasHandledQueryParam.current = true;
       router.navigate({
         to: "/chat",
@@ -488,15 +488,17 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
           q: undefined,
           reasoning: undefined,
           sources: undefined,
+          toolExternalIds: undefined, // Clear toolExternalIds from URL after processing
         }),
         replace: true,
       });
     }
-  }, [chatParams.q, chatParams.reasoning, chatParams.sources, router]);
+  }, [chatParams.q, chatParams.reasoning, chatParams.sources, chatParams.toolExternalIds, router]);
 
   const handleSend = async (
     messageToSend: string,
     selectedSources: string[] = [],
+    toolExternalIds?: string[],
   ) => {
     if (!messageToSend || isStreaming) return;
 
@@ -554,6 +556,12 @@ export const ChatPage = ({ user, workspace }: ChatPageProps) => {
     // }
     if (isReasoningActive) {
       url.searchParams.append("isReasoningEnabled", "true");
+    }
+    console.log("toolExternalIds", toolExternalIds);
+    if (toolExternalIds && toolExternalIds.length > 0) {
+      toolExternalIds.forEach(toolId => {
+        url.searchParams.append("toolExternalIds", toolId);
+      });
     }
 
     eventSourceRef.current = new EventSource(url.toString(), {
@@ -1867,6 +1875,10 @@ const chatParams = z.object({
     .string()
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
+  toolExternalIds: z
+    .string()
+    .optional()
+    .transform((val) => (val ? val.split(",").map(id => id.trim()).filter(id => id.length > 0) : undefined)),
 });
 
 type XyneChat = z.infer<typeof chatParams>;

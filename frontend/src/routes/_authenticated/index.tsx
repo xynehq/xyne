@@ -118,12 +118,13 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (messageToSend: string, selectedSources?: string[]) => {
+  const handleAsk = (messageToSend: string, selectedSources?: string[], toolExternalIds?: string[]) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
         reasoning?: boolean
         sources?: string
+        toolExternalIds?: string // Changed from connectorId to toolExternalIds, will be a comma-separated string
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -133,6 +134,10 @@ const Index = () => {
 
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
+      }
+
+      if (toolExternalIds && toolExternalIds.length > 0) {
+        searchParams.toolExternalIds = toolExternalIds.join(',');
       }
 
       navigate({

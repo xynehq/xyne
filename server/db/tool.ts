@@ -5,6 +5,7 @@ import {
   type InsertTool,
   type SelectTool,
 } from "./schema"
+export { tools } // Re-export the 'tools' table schema object
 import { createId } from "@paralleldrive/cuid2"
 import { and, eq } from "drizzle-orm"
 import { z } from "zod"
@@ -19,7 +20,8 @@ export const insertTool = async (
   trx: TxnOrClient,
   tool: Omit<InsertTool, "id">,
 ): Promise<SelectTool> => {
-  const toolArr = await trx.insert(tools).values(tool).returning()
+  const toolWithExternalId = { ...tool, externalId: createId() }
+  const toolArr = await trx.insert(tools).values(toolWithExternalId).returning()
 
   if (!toolArr || !toolArr.length) {
     throw new Error('Error in insert of tool "returning"')
@@ -56,7 +58,7 @@ export const getWorkspaceTools = async (
 export const getToolsByConnectorId = async (
   trx: TxnOrClient,
   workspaceId: number,
-  connectorId: integer,
+  connectorId: number,
 ): Promise<SelectTool[]> => {
   const toolRecords = await trx
     .select()
@@ -95,7 +97,7 @@ export const getToolsByName = async (
 export const getToolByConnectorIdAndToolName = async (
   trx: TxnOrClient,
   workspaceId: number,
-  connectorId: integer,
+  connectorId: number,
   toolName: string,
 ): Promise<SelectTool | null> => {
   const toolRecords = await trx
@@ -164,7 +166,7 @@ export const deleteToolById = async (
 export const deleteToolsByConnectorId = async (
   trx: TxnOrClient,
   workspaceId: number,
-  connectorId: integer,
+  connectorId: number,
 ): Promise<number> => {
   const result = await trx
     .delete(tools)
@@ -185,7 +187,7 @@ export const deleteToolsByConnectorId = async (
 export const toolExists = async (
   trx: TxnOrClient,
   workspaceId: number,
-  connectorId: integer,
+  connectorId: number,
   toolName: string,
 ): Promise<boolean> => {
   const result = await trx
@@ -209,7 +211,7 @@ export const upsertTool = async (
   trx: TxnOrClient,
   tool: Omit<InsertTool, "id">,
 ): Promise<SelectTool> => {
-  const { workspaceId, connectorId, toolName } = tool
+  const { workspaceId, connectorId, toolName, externalId } = tool
 
   const existingTool = await getToolByConnectorIdAndToolName(
     trx,
@@ -226,7 +228,7 @@ export const upsertTool = async (
     })
   } else {
     // Create new tool
-    return insertTool(trx, tool)
+    return insertTool(trx, { ...tool, externalId: externalId || createId() })
   }
 }
 
@@ -237,7 +239,7 @@ export const upsertTool = async (
 export const getConnectorToolSchemasAsString = async (
   trx: TxnOrClient,
   workspaceId: number,
-  connectorId: integer,
+  connectorId: number,
 ): Promise<string> => {
   const clientTools = await getToolsByConnectorId(trx, workspaceId, connectorId)
 
@@ -324,6 +326,7 @@ export const syncConnectorTools = async (
       upsertTool(trx, {
         workspaceId,
         connectorId,
+        externalId: createId(), // Add this line
         toolName: tool.toolName,
         toolSchema: tool.toolSchema,
         description: tool.description || null,

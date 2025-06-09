@@ -26,6 +26,18 @@ export const getWorkspaceByDomain = async (domain: string) => {
     .limit(1)
 }
 
+export const getWorkspaceByExternalId = async (trx: TxnOrClient, externalId: string) => {
+  const res = await trx
+    .select()
+    .from(workspaces)
+    .where(eq(workspaces.externalId, externalId))
+    .limit(1)
+  if (res.length) {
+    return res[0]
+  }
+  return null // Or throw an error if a workspace must always be found
+}
+
 export const getWorkspaceById = async (trx: TxnOrClient, id: number) => {
   const res = await db
     .select()
