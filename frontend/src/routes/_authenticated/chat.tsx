@@ -1510,7 +1510,7 @@ const MessageCitationList = ({
             >
               <div className="flex pl-[12px] pt-[10px] pr-[12px]">
                 <div className="flex flex-col w-full">
-                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
+                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all">
                     {citation.title ? parseHighlight(citation.title) : ""}
                   </p>
                   <div className="flex flex-col mt-[9px]">
@@ -1578,7 +1578,7 @@ const CitationList = ({ citations }: { citations: Citation[] }) => {
                 {index + 1}
               </a>
               <div className="flex flex-col mr-[12px]">
-                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium">
+                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all">
                   {citation.title ? parseHighlight(citation.title) : ""}
                 </span>
                 <div className="flex items-center pb-[12px] mt-[8px]">
