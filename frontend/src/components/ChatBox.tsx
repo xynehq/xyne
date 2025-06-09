@@ -973,14 +973,14 @@ export const ChatBox = ({
       {showReferenceBox && (
         <div
           ref={referenceBoxRef}
-          className={`absolute bottom-[calc(80%+8px)] bg-white rounded-md w-[400px] z-10 border border-gray-200 rounded-xl flex flex-col ${CLASS_NAMES.REFERENCE_BOX}`}
+          className={`absolute bottom-[calc(80%+8px)] bg-white dark:bg-[#1E1E1E] rounded-md w-[400px] max-w-full z-10 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col ${CLASS_NAMES.REFERENCE_BOX}`}
           style={{
             left: activeAtMentionIndex !== -1 ? `${referenceBoxLeft}px` : "0px",
           }}
         >
           {activeAtMentionIndex === -1 && (
-            <div className="p-2 border-b border-gray-200 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <div className="p-2 border-b border-gray-200 dark:border-gray-700 relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
               <Input
                 ref={referenceSearchInputRef}
                 type="text"
@@ -1007,8 +1007,8 @@ export const ChatBox = ({
                         <div
                           key={citation.url}
                           ref={(el) => (referenceItemsRef.current[index] = el)}
-                          className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
-                            index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
+                          className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
+                            index === selectedRefIndex ? "bg-[#EDF2F7] dark:bg-slate-700" : ""
                           }`}
                           onClick={() => handleAddReference(citation)}
                           onMouseEnter={() => setSelectedRefIndex(index)}
@@ -1021,13 +1021,13 @@ export const ChatBox = ({
                                 mr: 0,
                               })
                             ) : (
-                              <Link size={16} className="text-gray-400" />
+                              <Link size={16} className="text-gray-400 dark:text-gray-500" />
                             )}
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                               {citation.title || citation.name}
                             </p>
                           </div>
-                          <p className="text-xs text-gray-500 truncate ml-6">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
                             {citation.url}
                           </p>
                         </div>
@@ -1035,11 +1035,11 @@ export const ChatBox = ({
                     })}
                   </>
                 ) : derivedReferenceSearch.length > 0 ? (
-                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                     No citations found for "{derivedReferenceSearch}".
                   </p>
                 ) : (
-                  <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                     Start typing to search citations from this chat.
                   </p>
                 )}
@@ -1050,14 +1050,14 @@ export const ChatBox = ({
                 {isGlobalLoading &&
                   globalResults.length === 0 &&
                   !globalError && (
-                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                       {currentSearchTerm
                         ? `Searching for "${currentSearchTerm}"...`
                         : "Searching..."}
                     </p>
                   )}
                 {globalError && (
-                  <p className="text-sm text-red-500 px-2 py-1 text-center">
+                  <p className="text-sm text-red-500 dark:text-red-400 px-2 py-1 text-center">
                     {globalError}
                   </p>
                 )}
@@ -1066,7 +1066,7 @@ export const ChatBox = ({
                   globalResults.length === 0 &&
                   currentSearchTerm &&
                   currentSearchTerm.length > 0 && (
-                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                       No results found for "{currentSearchTerm}".
                     </p>
                   )}
@@ -1074,7 +1074,7 @@ export const ChatBox = ({
                   !globalError &&
                   globalResults.length === 0 &&
                   (!currentSearchTerm || currentSearchTerm.length === 0) && (
-                    <p className="text-sm text-gray-500 px-2 py-1 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
                       Type to search for documents, messages, and more.
                     </p>
                   )}
@@ -1088,14 +1088,14 @@ export const ChatBox = ({
                       (result.type === "user" && result.email) ||
                       "Untitled"
                     return (
-                      <div
-                        key={result.docId || result.email || index}
-                        ref={(el) => (referenceItemsRef.current[index] = el)}
-                        className={`p-2 cursor-pointer hover:bg-[#EDF2F7] rounded-md ${
-                          index === selectedRefIndex ? "bg-[#EDF2F7]" : ""
-                        }`}
-                        onClick={() => handleSelectGlobalResult(result)}
-                        onMouseEnter={() => setSelectedRefIndex(index)}
+                        <div
+                          key={result.docId || result.email || index}
+                          ref={(el) => (referenceItemsRef.current[index] = el)}
+                          className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
+                            index === selectedRefIndex ? "bg-[#EDF2F7] dark:bg-slate-700" : ""
+                          }`}
+                          onClick={() => handleSelectGlobalResult(result)}
+                          onMouseEnter={() => setSelectedRefIndex(index)}
                       >
                         <div className="flex items-center gap-2">
                           {result.type === "user" && result.photoLink ? (
@@ -1111,12 +1111,12 @@ export const ChatBox = ({
                               mr: 0,
                             })
                           )}
-                          <p className="text-sm font-medium text-gray-900 truncate">
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                             {displayTitle}
                           </p>
                         </div>
                         {result.type !== "user" && (
-                          <p className="text-xs text-gray-500 truncate ml-6">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate ml-6">
                             {result.from ? `From: ${result.from} | ` : ""}
                             {formatTimestamp(
                               result.timestamp || result.updatedAt,
@@ -1134,7 +1134,7 @@ export const ChatBox = ({
                         (referenceItemsRef.current[globalResults.length] = el)
                       }
                       onClick={handleLoadMore}
-                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 bg-gray-50 hover:bg-[#EDF2F7] rounded-md border border-gray-200 ${selectedRefIndex === globalResults.length ? "bg-[#EDF2F7] ring-1 ring-blue-300" : ""}`}
+                      className={`mt-1 w-full px-3 py-1.5 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-800 hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md border border-gray-200 dark:border-slate-600 ${selectedRefIndex === globalResults.length ? "bg-[#EDF2F7] dark:bg-slate-700 ring-1 ring-blue-300 dark:ring-blue-600" : ""}`}
                       disabled={isGlobalLoading}
                       onMouseEnter={() =>
                         setSelectedRefIndex(globalResults.length)
@@ -1151,11 +1151,11 @@ export const ChatBox = ({
         </div>
       )}
       <div
-        className={`flex flex-col w-full border rounded-[20px] bg-white ${CLASS_NAMES.SEARCH_CONTAINER}`}
+        className={`flex flex-col w-full border dark:border-gray-700 rounded-[20px] bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.SEARCH_CONTAINER}`}
       >
         <div className="relative flex items-center">
           {isPlaceholderVisible && (
-            <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] pointer-events-none">
+            <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
               Ask anything across apps...
             </div>
           )}
@@ -1163,7 +1163,7 @@ export const ChatBox = ({
             ref={inputRef}
             contentEditable
             data-at-mention // Using the attribute directly as per SELECTORS.AT_MENTION_AREA
-            className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] placeholder-[#ACBCCC] pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
+            className="flex-grow resize-none bg-transparent outline-none text-[15px] font-[450] leading-[24px] text-[#1C1D1F] dark:text-[#F1F3F4] placeholder-[#ACBCCC] dark:placeholder-gray-500 pl-[16px] pt-[14px] pb-[14px] pr-[16px] overflow-y-auto"
             onPaste={(e: React.ClipboardEvent<HTMLDivElement>) => {
               e.preventDefault()
               const pastedText = e.clipboardData?.getData("text/plain")
@@ -1217,7 +1217,7 @@ export const ChatBox = ({
                           anchor.target = "_blank"
                           anchor.rel = "noopener noreferrer"
                           anchor.className =
-                            "text-blue-600 underline hover:text-blue-800 cursor-pointer"
+                            "text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer"
                           nodeToInsert = anchor
                           isLinkNode = true
                         } else {
@@ -1426,11 +1426,11 @@ export const ChatBox = ({
           />
         </div>
         <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-          <Attach className="text-[#464D53] cursor-pointer" />
-          <Globe size={16} className="text-[#464D53] cursor-pointer" />
+          <Attach className="text-[#464D53] dark:text-gray-400 cursor-pointer" />
+          <Globe size={16} className="text-[#464D53] dark:text-gray-400 cursor-pointer" />
           <AtSign
             size={16}
-            className={`text-[#464D53] cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+            className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
             onClick={() => {
               const input = inputRef.current
               if (!input) return
@@ -1477,10 +1477,10 @@ export const ChatBox = ({
               onOpenChange={setIsSourceMenuOpen}
             >
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#EDF2F7] hover:bg-gray-200 text-sm text-gray-700 cursor-pointer">
+                <button className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#EDF2F7] dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                   {selectedSourcesCount === 0 ? (
                     <>
-                      <Layers size={14} className="text-[#464D53]" />
+                      <Layers size={14} className="text-[#464D53] dark:text-gray-400" />
                       <span>Sources</span>
                     </>
                   ) : (
@@ -1500,7 +1500,7 @@ export const ChatBox = ({
                       </span>
                     </>
                   )}
-                  <ChevronDown size={16} className="ml-1 text-gray-500" />
+                  <ChevronDown size={16} className="ml-1 text-gray-500 dark:text-gray-400" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -1518,7 +1518,7 @@ export const ChatBox = ({
                         <TooltipTrigger asChild>
                           <button
                             onClick={handleClearAllSources}
-                            className="p-1 rounded-full hover:bg-[#EDF2F7] text-gray-500 hover:text-gray-700"
+                            className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                             aria-label="Clear all selected sources"
                           >
                             <RotateCcw size={16} />
@@ -1526,7 +1526,7 @@ export const ChatBox = ({
                         </TooltipTrigger>
                         <TooltipContent
                           side="bottom"
-                          className="bg-black text-white text-xs rounded-sm"
+                          className="bg-black text-white text-xs rounded-sm" /* Uses CSS vars */
                         >
                           <p>Clear all</p>
                         </TooltipContent>
@@ -1562,14 +1562,14 @@ export const ChatBox = ({
                         })}
                         <span>{source.name}</span>
                       </div>
-                      <div
-                        className={`ml-auto h-5 w-5 border rounded flex items-center justify-center ${
-                          isChecked
-                            ? "bg-green-500 border-green-500"
-                            : "border-gray-400"
-                        }`}
-                      >
-                        {isChecked && <Check className="h-4 w-4 text-white" />}
+                        <div
+                          className={`ml-auto h-5 w-5 border rounded flex items-center justify-center ${
+                            isChecked
+                              ? "bg-green-500 border-green-500"
+                              : "border-gray-400 dark:border-gray-500"
+                          }`}
+                        >
+                          {isChecked && <Check className="h-4 w-4 text-white" />}
                       </div>
                     </DropdownMenuItem>
                   )
@@ -1582,19 +1582,27 @@ export const ChatBox = ({
             <button
               onClick={() => setIsReasoningActive(!isReasoningActive)}
               className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-                isReasoningActive ? "text-green-600" : "text-[#464D53]"
+                isReasoningActive
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-[#464D53] dark:text-gray-400"
               }`}
             >
               <Atom
                 size={16}
-                className={isReasoningActive ? "text-green-600" : ""}
+                className={
+                  isReasoningActive
+                    ? "text-green-600 dark:text-green-400"
+                    : "dark:text-gray-400"
+                }
               />
-              <span>Reasoning</span>
+              <span className={isReasoningActive ? "" : "dark:text-gray-300"}>
+                Reasoning
+              </span>
             </button>
             {displayAgentName && (
-              <div className="flex items-center text-xs text-[#464D53] ml-2 px-1 py-0.5 cursor-default">
-                <Bot size={16} className="mr-1 text-[#464D53]" />
-                <span className="font-medium">{displayAgentName}</span>
+              <div className="flex items-center text-xs text-[#464D53] dark:text-gray-400 ml-2 px-1 py-0.5 cursor-default">
+                <Bot size={16} className="mr-1 text-[#464D53] dark:text-gray-400" />
+                <span className="font-medium dark:text-gray-300">{displayAgentName}</span>
               </div>
             )}
           </div>
@@ -1602,18 +1610,18 @@ export const ChatBox = ({
             <button
               onClick={handleStop}
               style={{ marginLeft: "auto" }}
-              className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center"
+              className="flex mr-6 bg-[#464B53] dark:bg-gray-700 text-white dark:text-gray-200 hover:bg-[#5a5f66] dark:hover:bg-gray-600 rounded-full w-[32px] h-[32px] items-center justify-center"
             >
-              <Square className="text-white" size={16} />
+              <Square className="text-white dark:text-gray-200" size={16} />
             </button>
           ) : (
             <button
               disabled={isStreaming}
               onClick={() => handleSendMessage()}
               style={{ marginLeft: "auto" }}
-              className="flex mr-6 bg-[#464B53] text-white hover:bg-[#5a5f66] rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
+              className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
             >
-              <ArrowRight className="text-white" size={16} />
+              <ArrowRight className="text-white dark:text-slate-200" size={16} />
             </button>
           )}
         </div>
