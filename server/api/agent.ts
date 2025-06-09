@@ -8,6 +8,7 @@ import {
   updateAgentByExternalId,
   getAgentByExternalId,
   deleteAgentByExternalId,
+  getAllAgents,
 } from "@/db/agent"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
@@ -245,10 +246,8 @@ export const ListAgentsApi = async (c: Context) => {
       return c.json({ message: "User or workspace not found" }, 404)
     }
 
-    const agents = await getAgentsByUserId(
+    const agents = await getAllAgents(
       db,
-      userAndWorkspace.user.id,
-      userAndWorkspace.workspace.id,
       limit,
       offset,
     )
