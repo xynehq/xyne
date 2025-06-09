@@ -35,12 +35,13 @@ import {
 } from "@/metrics/google/gmail-metrics"
 
 import { skipMailExistCheck } from "@/integrations/google/config"
-
+import type { Logger } from "pino"
 
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
   tracker: Tracker,
+  logger: Logger,
 ): Promise<string> => {
   const batchSize = 100
   const fetchImpl = batchFetchImplementation({ maxBatchSize: batchSize })
@@ -125,7 +126,7 @@ export const handleGmailIngestion = async (
               tracker.updateUserStats(email, StatType.Gmail, 1)
             }
           } catch (error) {
-            Logger.error(
+            logger.error(
               error,
               `Failed to process message ${message.id}: ${(error as Error).message}`,
             )
@@ -324,7 +325,6 @@ export const parseMail = async (
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
 
-
             totalAttachmentIngested.inc(
               {
                 mime_type: mimeType,
@@ -344,7 +344,6 @@ export const parseMail = async (
             )
             totalAttachmentError.inc(
               {
-
                 mime_type: mimeType,
                 status: "FAILED",
                 email: userEmail,
