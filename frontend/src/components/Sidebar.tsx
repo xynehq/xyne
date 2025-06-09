@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Bot, Plug, Plus, History } from "lucide-react"
+import { Bot, Plug, Plus, History, LogOut, ExternalLink } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
@@ -11,6 +11,12 @@ import {
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
 import Logo from "@/assets/logo.svg"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 
 export const Sidebar = ({
   className = "",
@@ -139,13 +145,39 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
         </div>
-
-        <a
-          href="https://xynehq.com"
-          className="mt-auto mb-4 flex justify-center"
-        >
-          <img src={Logo} alt="Logo" />
-        </a>
+        <div className="mt-auto mb-4 flex justify-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <img src={Logo} alt="Logo" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="ml-2">
+              <DropdownMenuItem
+                key={"xyne"}
+                role="button"
+                className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                onClick={() => {
+                  window.open(
+                    "https://xynehq.com",
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }}
+              >
+                <ExternalLink size={16} />
+                <span>Visit Xyne</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                key={"logout"}
+                role="button"
+                className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                onClick={() => {}}
+              >
+                <LogOut size={16} className="text-red-500" />
+                <span className="text-red-500">Logout</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </TooltipProvider>
   )
