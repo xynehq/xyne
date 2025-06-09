@@ -305,7 +305,7 @@ export enum Subsystem {
   Eval = "Eval",
   AI = "AI",
   Tuning = "Tuning",
-  Metric = "Metric"
+  Metric = "Metric",
 }
 
 export enum OperationStatus {
@@ -348,12 +348,12 @@ export enum metricNames {
   syncServiceAccountChanges = "google_service_account_changes",
   syncGoogleWorkspaceChange = "google_workspace_changes",
   syncSlackChanges = "slack_changes",
-  checkDownloadsFolder = "check_downloads_folder"
+  checkDownloadsFolder = "check_downloads_folder",
 }
 
 export enum metricAppType {
   google = "Google",
-  slack = "Slack"
+  slack = "Slack",
 }
 
 export enum metricAccountType {
@@ -361,5 +361,5 @@ export enum metricAccountType {
   service = "google_service_account",
   slackAdmin = "slack_admin",
   slackUser = "slackUser",
-  admin = "admin"
+  admin = "admin",
 }

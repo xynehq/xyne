@@ -25,6 +25,21 @@ import { getDateForAI } from "@/utils/index"
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
+
+export const constructToolContext = (tool_schema: string) => {
+  console.log("tool_schema", tool_schema)
+  const tool = JSON.parse(tool_schema);
+  const toolSchema = JSON.parse(tool.tool_schema)
+  const toolSchemaContext = Object.entries(toolSchema).map(
+    ([key, value]) => `- ${key}: ${value}`
+  );
+  console.log("toolSchemaContext", toolSchemaContext)
+  return `Tool Schema:
+  ToolName: ${tool.tool_name} \n
+  Description: ${tool.description} \n
+   ${toolSchemaContext.join('\n')}`;
+};
+
 // Function for handling file context
 const constructFileContext = (
   fields: VespaFileSearch,

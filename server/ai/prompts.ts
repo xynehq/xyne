@@ -799,7 +799,10 @@ export const queryRewritePromptJson = (
 `
 
 // Search Query tool context prompt, use for MCP tools
-export const SearchQueryToolContextPrompt = (userContext: string, toolContext: string): string => {
+export const SearchQueryToolContextPrompt = (
+  userContext: string,
+  toolContext: string,
+): string => {
   return `
     The current date is: ${getDateForAI()}.
     
@@ -1636,7 +1639,6 @@ export const withToolQueryPrompt = (
   toolContext: string,
   toolOutput: string,
 ): string => {
-  console.log(toolOutput,"tool output")
   return `
     You are a permission aware retrieval-augmented generation (RAG) system.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.

@@ -1,4 +1,4 @@
-import { answerContextMap, cleanContext, userContext } from "@/ai/context"
+import { answerContextMap, cleanContext, constructToolContext, userContext } from "@/ai/context"
 import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
@@ -43,7 +43,7 @@ import {
   getChatMessagesBefore,
   updateMessage,
 } from "@/db/message"
-import { syncConnectorTools } from "@/db/tool"
+import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
   selectPublicMessagesSchema,
@@ -51,6 +51,8 @@ import {
   type SelectChat,
   type SelectMessage,
   selectMessageSchema,
+  selectToolSchema,
+  type SelectTool,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
@@ -4247,35 +4249,35 @@ async function* getToolContinuationIterator(
   let yieldedCitations = new Set<number>()
   const ANSWER_TOKEN = '"answer":'
 
-    for await (const chunk of continuationIterator) {
-      if (chunk.text) {
-        buffer += chunk.text
-        try {
-          parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
+  for await (const chunk of continuationIterator) {
+    if (chunk.text) {
+      buffer += chunk.text
+      try {
+        parsed = jsonParseLLMOutput(buffer, ANSWER_TOKEN)
 
-          if (parsed.answer === null || parsed.answer === "}") {
-            break
-          }
-
-          if (parsed.answer && currentAnswer !== parsed.answer) {
-            if (currentAnswer === "") {
-              yield { text: parsed.answer }
-            } else {
-              const newText = parsed.answer.slice(currentAnswer.length)
-              yield { text: newText }
-            }
-            currentAnswer = parsed.answer
-          }
-        } catch (e) {
-          // JSON parsing failed — continue accumulating
-          continue
+        if (parsed.answer === null || parsed.answer === "}") {
+          break
         }
-      }
 
-      if (chunk.cost) {
-        yield { cost: chunk.cost }
+        if (parsed.answer && currentAnswer !== parsed.answer) {
+          if (currentAnswer === "") {
+            yield { text: parsed.answer }
+          } else {
+            const newText = parsed.answer.slice(currentAnswer.length)
+            yield { text: newText }
+          }
+          currentAnswer = parsed.answer
+        }
+      } catch (e) {
+        // JSON parsing failed — continue accumulating
+        continue
       }
     }
+
+    if (chunk.cost) {
+      yield { cost: chunk.cost }
+    }
+  }
 }
 
 function isValidToolCall(toolSelection: any, jsonString: string): boolean {
@@ -4338,7 +4340,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       message,
       chatId,
       modelId,
-      toolsList,
+      toolExternalIds,
       isReasoningEnabled,
     }: MessageReqType = body
     Logger.info(`getting mcp create with body: ${JSON.stringify(body)}`)
@@ -4493,136 +4495,69 @@ export const MessageWithToolsApi = async (c: Context) => {
           )
           const finalToolsList: Record<
             string,
-            { tools: { name: string; schema: string }[]; client: Client }
+            {
+              tools: SelectTool[]
+              client: Client
+            }
           > = {}
 
-          // Get if any github mcp connectors are there for the user
-          try {
+          // once we start getting toolsList will remove the above code
+          if (toolExternalIds && toolExternalIds.length > 0) {
+            // Fetch connector info and create client
             const connector = await getConnectorByApp(
               db,
               user.id,
               Apps.GITHUB_MCP,
             )
-
-            console.log(connector, "connector")
-            const config = connector.config as any // TODO: add better types;
+            
+            const config = connector.config as any
             const client = new Client({
-              name: `connector-${connector.externalId}`,
+              name: `connector-${connector.id}`,
               version: config.version,
             })
             await client.connect(
               new StdioClientTransport({
                 command: config.command,
-                args: config.args.split(" "),
+                args: config.args,
               }),
             )
+
             // Fetch all available tools from the client
             // TODO: look in the DB. cache logic has to be discussed.
-            const response = await client.listTools()
-            const clientTools = response.tools
 
-            // Update tool definitions in the database for future use
-            await syncConnectorTools(
+            const tools = await getToolsByConnectorId(
               db,
               workspace.id,
               connector.id,
-              clientTools.map((tool) => ({
-                toolName: tool.name,
-                toolSchema: JSON.stringify(tool),
-                description: tool.description,
-              })),
             )
-            const filteredTools = []
-            for (const tool of clientTools) {
-              filteredTools.push({
-                name: tool.name,
-                schema: JSON.stringify(tool),
+
+            // Filter to only the requested tools, or use all tools if toolNames is empty
+            const filteredTools = tools
+              .filter((tool) => {
+                const isIncluded = toolExternalIds.includes(tool.externalId!)
+                if (!isIncluded) {
+                  Logger.info(
+                    `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+                  )
+                }
+                return isIncluded
               })
-            }
-            finalToolsList[connector.externalId] = {
+
+            finalToolsList[connector.id] = {
               tools: filteredTools,
               client: client,
             }
-          } catch (error) {
-            Logger.error(`no connector found with error: ${error}`)
-            // if no github connector setup for the user. Do nothing
-          }
-
-          // once we start getting toolsList will remove the above code
-          if (toolsList && toolsList.length > 0) {
-            for (const item of toolsList) {
-              const { connectorId, tools: toolNames } = item
-
-              // Fetch connector info and create client
-              const connector = await getConnectorByExternalId(
-                db,
-                connectorId,
-                user.id,
-              )
-              const config = connector.config as any //TODO: add better type;
-              const client = new Client({
-                name: `connector-${connectorId}`,
-                version: config.version,
-              })
-              Logger.info(
-                `invoking client initialize for url: ${new URL(config.url)} ${
-                  config.url
-                }`,
-              )
-              await client.connect(new SSEClientTransport(new URL(config.url)))
-
-              // Fetch all available tools from the client
-              // TODO: look in the DB. cache logic has to be discussed.
-              const response = await client.listTools()
-              const clientTools = response.tools
-
-              // Update tool definitions in the database for future use
-              await syncConnectorTools(
-                db,
-                workspace.id,
-                connector.id,
-                clientTools.map((tool) => ({
-                  toolName: tool.name,
-                  toolSchema: JSON.stringify(tool),
-                  description: tool.description,
-                })),
-              )
-              // Create a map for quick lookup
-              const toolSchemaMap = new Map(
-                clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
-              )
-
-              // Filter to only the requested tools, or use all tools if toolNames is empty
-              const filteredTools = []
-              if (toolNames.length === 0) {
-                // If toolNames is empty, add all tools
-                for (const [toolName, schema] of toolSchemaMap.entries()) {
-                  filteredTools.push({
-                    name: toolName,
-                    schema: schema || "",
-                  })
-                }
-              } else {
-                // Otherwise, filter to only the requested tools
-                for (const toolName of toolNames) {
-                  if (toolSchemaMap.has(toolName)) {
-                    filteredTools.push({
-                      name: toolName,
-                      schema: toolSchemaMap.get(toolName) || "",
-                    })
-                  } else {
-                    Logger.info(
-                      `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
-                    )
-                  }
-                }
-              }
-
-              finalToolsList[connectorId] = {
-                tools: filteredTools,
-                client: client,
-              }
-            }
+            // Update tool definitions in the database for future use
+            // await syncConnectorTools(
+            //   db,
+            //   workspace.id,
+            //   connector.id,
+            //   filteredTools.map((tool) => ({
+            //     toolName: tool.tool_name,
+            //     toolSchema: JSON.stringify(tool),
+            //     description: tool.description ?? "",
+            //   })),
+            // )
           }
 
           // Build tools prompt
@@ -4638,7 +4573,10 @@ AVAILABLE_TOOLS:\n\n`
             )) {
               if (tools.length > 0) {
                 for (const tool of tools) {
-                  toolsPrompt += `${tool.schema}\n\n`
+                  if(selectToolSchema.safeParse(tool).success){
+                    // console.log(constructToolContext(selectToolSchema.safeParse(tool).data?.toolSchema!), "toolContext")
+                    toolsPrompt += `${constructToolContext(selectToolSchema.safeParse(tool).data?.toolSchema!)}\n\n`
+                  }
                 }
               }
             }
@@ -4774,11 +4712,22 @@ AVAILABLE_TOOLS:\n\n`
             for (const [connId, { tools, client }] of Object.entries(
               finalToolsList,
             )) {
-              const matchingTool = tools.find((t) => t.name === toolName)
-              if (matchingTool) {
-                foundClient = client
-                connectorId = connId
-                break
+              // Find the first tool that matches the toolName
+              for (const tool of tools) {
+                const parsedTool = selectToolSchema.safeParse(tool);
+                if (!parsedTool.success) {
+                  continue;
+                }
+
+                const { data } = parsedTool;
+                if (data?.toolName === toolName) {
+                  foundClient = client;
+                  connectorId = connId;
+                  break; // Exit the inner loop once a match is found
+                }
+              }
+              if (foundClient) {
+                break; // Exit the outer loop once a match is found
               }
             }
 
