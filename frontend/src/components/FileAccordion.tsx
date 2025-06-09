@@ -106,7 +106,7 @@ export default function FileAccordion({
 
     return (
       <div className="flex items-center gap-2">
-        <span className="text-sm text-slate-600 mr-2">
+        <span className="text-sm text-slate-600 dark:text-slate-400 mr-2">
           Page {currentPage} of {totalPages}
         </span>
 
@@ -140,7 +140,7 @@ export default function FileAccordion({
   if (loading) {
     return (
       <div className="w-full max-w-4xl mx-auto flex items-center justify-center min-h-[200px]">
-        <div className="text-slate-600">Loading files...</div>
+        <div className="text-slate-600 dark:text-slate-400">Loading files...</div>
       </div>
     )
   }
@@ -148,18 +148,18 @@ export default function FileAccordion({
   if (error) {
     return (
       <div className="w-full max-w-4xl mx-auto flex items-center justify-center min-h-[200px]">
-        <div className="text-red-600">{error}</div>
+        <div className="text-red-600 dark:text-red-400">{error}</div>
       </div>
     )
   }
 
   return (
     <div className={`w-full max-w-4xl mx-auto ${className}`}>
-      <div className="w-full border rounded-lg">
+      <div className="w-full border dark:border-gray-700 rounded-lg">
         <div className="px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <FileText className="h-5 w-5 text-slate-600" />
-            <span className="text-lg font-medium">
+            <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+            <span className="text-lg font-medium dark:text-gray-100">
               Files in {activeDataSourceName || "Selected Datasource"} (
               {files.length})
             </span>
@@ -167,7 +167,7 @@ export default function FileAccordion({
 
           {files.length > 0 && (
             <div className="flex items-center gap-4">
-              <span className="text-sm text-slate-600">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
                 Records {startIndex + 1}-{endIndex} of {files.length}
               </span>
               {renderPagination()}
@@ -178,13 +178,13 @@ export default function FileAccordion({
         <div className="px-6 pb-6">
           {!activeDataSourceName ? (
             <div className="min-h-[680px] flex items-center justify-center">
-              <div className="text-center text-slate-500">
+              <div className="text-center text-slate-500 dark:text-slate-400">
                 Please select a data source to view files.
               </div>
             </div>
           ) : files.length === 0 && !loading ? (
             <div className="min-h-[680px] flex items-center justify-center">
-              <div className="text-center text-slate-500">
+              <div className="text-center text-slate-500 dark:text-slate-400">
                 No files found in this datasource.
               </div>
             </div>
@@ -194,15 +194,15 @@ export default function FileAccordion({
                 {currentFiles.map((file) => (
                   <div
                     key={`${file.fileName}-${file.createdAt}`}
-                    className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border hover:bg-slate-100 transition-colors"
+                    className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <FileText className="h-5 w-5 text-slate-600 flex-shrink-0" />
+                      <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900 truncate">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                           {file.fileName}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
                           {formatFileSize(file.fileSize)} •{" "}
                           {formatDate(file.createdAt)}
                         </p>

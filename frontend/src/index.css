@@ -56,10 +56,10 @@ html {
   }
 
   .dark {
-    --background: 224 71.4% 4.1%;
-    --foreground: 210 20% 98%;
-    --card: 224 71.4% 4.1%;
-    --card-foreground: 210 20% 98%;
+    --background: 220 0% 11.8%; /* Equivalent to #1E1E1E */
+    --foreground: 216 17% 95%; /* Equivalent to #F1F3F4 */
+    --card: 220 0% 11.8%; /* Assuming card background should also match */
+    --card-foreground: 216 17% 95%; /* Equivalent to #F1F3F4 */
     --popover: 224 71.4% 4.1%;
     --popover-foreground: 210 20% 98%;
     --primary: 210 20% 98%;

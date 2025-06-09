@@ -2261,6 +2261,18 @@ async function* generateMetadataQueryAnswer(
         items = searchResults!.root.children || []
       }
     }
+    else{
+      searchResults = await getItems({
+        email,
+        schema,
+        app: app ?? null,
+        entity: entity ?? null,
+        timestampRange,
+        limit: userSpecifiedCountLimit,
+        asc: sortDirection === "asc",
+      })
+      items = searchResults!.root.children || []
+    }
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(

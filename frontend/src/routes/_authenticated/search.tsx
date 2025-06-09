@@ -54,7 +54,7 @@ export function SearchInfo({ info }: { info: string }) {
         <TooltipTrigger asChild>
           <Button
             variant="outline"
-            className="p-0 m-0 rounded-full h-[20px] w-[20px] text-xs text-gray-500"
+            className="p-0 m-0 rounded-full h-[20px] w-[20px] text-xs text-gray-500 dark:text-gray-400"
           >
             i
           </Button>
@@ -439,7 +439,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   // if filter is selected we should keep it's count to prevent showing button for pagination
 
   return (
-    <div className="h-full w-full flex">
+    <div className="h-full w-full flex dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
@@ -467,7 +467,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         />
 
         <div className="flex flex-row ml-[186px] h-full">
-          <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5]">
+          <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5] dark:border-gray-700">
             {answer && answer.length > 0 && (
               <div className="flex mt-[24px]">
                 <img
@@ -482,28 +482,31 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
                   >
                     <MarkdownPreview
                       source={answer}
+                      wrapperElement={{
+                        "data-color-mode": document.documentElement.classList.contains('dark') ? "dark" : "light",
+                      }}
                       style={{
                         padding: 0,
-                        backgroundColor: "#ffffff",
-                        color: "#464B53",
+                        backgroundColor: document.documentElement.classList.contains('dark') ? "#1F2937" : "#ffffff", // bg-slate-800 for dark
+                        color: document.documentElement.classList.contains('dark') ? "#E5E7EB" : "#464B53", // text-gray-200 for dark
                       }}
                     />
                     {/* Gradient overlay when not expanded */}
                     {!isExpanded && (
-                      <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
+                      <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white dark:from-slate-800 to-transparent pointer-events-none"></div>
                     )}
                   </div>
 
                   {/* Toggle Buttons */}
                   <div className="flex flex-row mt-2">
                     <button
-                      className="pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] rounded-full flex items-center bg-[#F0F4F7]"
+                      className="pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] dark:text-gray-300 rounded-full flex items-center bg-[#F0F4F7] dark:bg-slate-700"
                       onClick={() => setIsExpanded(!isExpanded)}
                     >
                       {!isExpanded ? (
-                        <ChevronsUpDown size={16} stroke="#707F9F" />
+                        <ChevronsUpDown size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
                       ) : (
-                        <ChevronsDownUp size={16} stroke="#707F9F" />
+                        <ChevronsDownUp size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
                       )}
                       {isExpanded ? (
                         <span className="ml-2">Show less</span>
@@ -512,12 +515,12 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
                       )}
                     </button>
                     <button
-                      className="ml-3 pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] rounded-full flex items-center bg-[#F0F4F7]"
+                      className="ml-3 pl-5 pr-5 pb-2 pt-2 text-[16px] text-[#707F9F] dark:text-gray-300 rounded-full flex items-center bg-[#F0F4F7] dark:bg-slate-700"
                       onClick={() => {
                         // Your code here
                       }}
                     >
-                      <MessageSquareShare size={16} stroke="#707F9F" />
+                      <MessageSquareShare size={16} stroke="#707F9F" className="dark:stroke-gray-300"/>
                       <span className="ml-3">Turn into Chat</span>
                     </button>
                   </div>
@@ -527,10 +530,10 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
             {/* Top-level Trace Info Display */}
             {showDebugInfo && traceData && (
               <details className="mt-4 mb-4 text-xs">
-                <summary className="text-gray-500 cursor-pointer">
+                <summary className="text-gray-500 dark:text-gray-400 cursor-pointer">
                   Vespa Trace
                 </summary>
-                <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96">
+                <pre className="text-xs bg-gray-100 dark:bg-slate-800 dark:text-gray-300 p-2 rounded overflow-auto max-h-96">
                   {" "}
                   {/* Increased max-height */}
                   {JSON.stringify(traceData, null, 2)}
