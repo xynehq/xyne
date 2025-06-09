@@ -27,7 +27,6 @@ import {
   // Apps,
   // DriveEntity,
 } from "shared/types"
-import AssistantLogo from "@/assets/assistant-logo.svg"
 import logo from "@/assets/logo.svg"
 import Expand from "@/assets/expand.svg"
 import Retry from "@/assets/retry.svg"
