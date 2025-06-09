@@ -245,15 +245,15 @@ const HistoryModal = ({
 
   return (
     <div
-      className={`fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] flex flex-col select-none bg-white ${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`}
+      className={`fixed left-[52px] top-0 min-w-[200px] w-1/6 max-w-[300px] h-full border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col select-none bg-white dark:bg-[#1E1E1E] ${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`}
     >
       <div className="flex justify-between items-center ml-[18px] mt-[14px]">
-        <p className="text-[#1C1D1F] font-medium text-[16px]">Chat History</p>
+        <p className="text-[#1C1D1F] dark:text-gray-100 font-medium text-[16px]">Chat History</p>
         <button
           onClick={onClose}
-          className="flex items-center justify-center bg-[#F0F5F7] rounded-full w-[24px] h-[24px] mr-[14px] border-[0.5px] border-[#D7E0E9]"
+          className="flex items-center justify-center bg-[#F0F5F7] dark:bg-slate-700 rounded-full w-[24px] h-[24px] mr-[14px] border-[0.5px] border-[#D7E0E9] dark:border-gray-700"
         >
-          <X stroke="#4A4F59" size={14} />
+          <X stroke="#4A4F59" className="dark:stroke-gray-300" size={14} />
         </button>
       </div>
       <div
@@ -262,7 +262,7 @@ const HistoryModal = ({
         onScroll={handleScroll}
       >
         {error ? (
-          <p className="text-center">Something went wrong...</p>
+          <p className="text-center dark:text-gray-300">Something went wrong...</p>
         ) : !chats.length && (isPending || isFetching) ? (
           <LoaderContent />
         ) : (
@@ -271,12 +271,12 @@ const HistoryModal = ({
               {chats.map((item, index) => (
                 <li
                   key={index}
-                  className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2]" : ""} hover:bg-[#EBEFF2] rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+                  className={`group flex justify-between items-center ${item.externalId === existingChatId ? "bg-[#EBEFF2] dark:bg-slate-700" : ""} hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
                 >
                   {isEditing && editedChatId === item.externalId ? (
                     <input
                       ref={titleRef}
-                      className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                      className="text-[14px] dark:text-gray-100 dark:bg-transparent pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px] outline-none"
                       type="text"
                       value={editedTitle}
                       onChange={(e) => handleInput(e)}
@@ -286,7 +286,7 @@ const HistoryModal = ({
                     />
                   ) : (
                     <span
-                      className="text-[14px] pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
+                      className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
                       onClick={() => {
                         router.navigate({
                           to: "/chat/$chatId",
@@ -299,7 +299,7 @@ const HistoryModal = ({
                   )}
                   <div className="flex items-center">
                     {item.agentId && (
-                      <Bot size={16} className="mr-2 text-[#1C1D1F]" />
+                      <Bot size={16} className="mr-2 text-[#1C1D1F] dark:text-gray-300" />
                     )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -314,7 +314,7 @@ const HistoryModal = ({
                         <DropdownMenuItem
                           key={"rename"}
                           role="button"
-                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] dark:hover:bg-slate-600 items-center"
                           onClick={() => {
                             setEditedTitle(item.title) // Set the current title for editing
                             setEditedChatId(item.externalId) // Track the chat being edited
@@ -332,13 +332,13 @@ const HistoryModal = ({
                         <DropdownMenuItem
                           key={"delete"}
                           role="button"
-                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
+                          className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] dark:hover:bg-slate-600 items-center"
                           onClick={() => {
                             mutation.mutate(item?.externalId)
                           }}
                         >
-                          <Trash2 size={16} className="text-red-500" />
-                          <span className="text-red-500">Delete</span>
+                          <Trash2 size={16} className="text-red-500 dark:text-red-400" />
+                          <span className="text-red-500 dark:text-red-400">Delete</span>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

@@ -1,3 +1,4 @@
+
 import { createFileRoute, useRouterState } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
 import { useForm } from "@tanstack/react-form"
@@ -220,9 +221,11 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
               onChange={(e) => field.handleChange(e.target.value)}
               placeholder="Enter your Client Id"
             />
-            {field.state.meta.isTouched && field.state.meta.errors.length
-              ? null
-              : null}
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <p className="text-red-600 dark:text-red-400 text-sm">
+                {field.state.meta.errors.join(", ")}
+              </p>
+            ) : null}
           </>
         )}
       />
@@ -242,9 +245,11 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
               onChange={(e) => field.handleChange(e.target.value)}
               placeholder="Enter your Client secret"
             />
-            {field.state.meta.isTouched && field.state.meta.errors.length
-              ? null
-              : null}
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <p className="text-red-600 dark:text-red-400 text-sm">
+                {field.state.meta.errors.join(", ")}
+              </p>
+            ) : null}
           </>
         )}
       />
@@ -263,9 +268,11 @@ export const SlackOAuthForm = ({ onSuccess }: { onSuccess: () => void }) => {
               onChange={(e) => field.handleChange(e.target.value)}
               placeholder="Enter your scopes"
             />
-            {field.state.meta.isTouched && field.state.meta.errors.length
-              ? null
-              : null}
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <p className="text-red-600 dark:text-red-400 text-sm">
+                {field.state.meta.errors.join(", ")}
+              </p>
+            ) : null}
           </>
         )}
       />
@@ -321,9 +328,11 @@ export const SlackBotTokenForm = ({ onSuccess }: { onSuccess: () => void }) => {
               onChange={(e) => field.handleChange(e.target.value)}
               placeholder="Enter your Slack Bot Token"
             />
-            {field.state.meta.isTouched && field.state.meta.errors.length
-              ? null
-              : null}
+            {field.state.meta.isTouched && field.state.meta.errors.length ? (
+              <p className="text-red-600 dark:text-red-400 text-sm">
+                {field.state.meta.errors.join(", ")}
+              </p>
+            ) : null}
           </>
         )}
       />
@@ -437,7 +446,7 @@ const SlackOAuthTab = ({
               OAuthIntegrationStatus.OAuthConnecting ||
             oauthIntegrationStatus === OAuthIntegrationStatus.OAuthPaused ? (
             <div className="flex flex-col items-center gap-4">
-              <p>Connecting to Slack...</p>
+              <p className="dark:text-gray-300">Connecting to Slack...</p>
               <div className="flex items-center gap-2"></div>
               <div className="flex">
                 <Square
@@ -468,7 +477,7 @@ const SlackOAuthTab = ({
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4">
-              <p className="text-green-600 font-medium">
+              <p className="text-green-600 dark:text-green-400 font-medium">
                 Slack OAuth Connected
               </p>
               <Button variant="outline" onClick={() => refetch()}>
@@ -630,7 +639,7 @@ export const Slack = ({
           {Object.entries(userStats).map(([email, stats]) => (
             <TableRow key={email}>
               {type !== AuthType.OAuth && (
-                <TableCell className={`${stats.done ? "text-lime-600" : ""}`}>
+                <TableCell className={`${stats.done ? "text-lime-600 dark:text-lime-400" : ""}`}>
                   {email}
                 </TableCell>
               )}
@@ -649,7 +658,7 @@ export const Slack = ({
   }
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
@@ -707,7 +716,7 @@ export const Slack = ({
 
           {Object.keys(slackUserStats).length > 0 && (
             <div className="mt-4 w-full">
-              <p className="mb-2">
+              <p className="mb-2 dark:text-gray-300">
                 Slack Integration Progress: {slackProgress}%
               </p>
               <Progress value={slackProgress} className="w-[60%] mb-4" />

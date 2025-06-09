@@ -2247,8 +2247,8 @@ async function* generateMetadataQueryAnswer(
 
     let searchResults
     items = []
-    if(agentPrompt){
-      if(agentAppEnums.find(x => x==app)){
+    if (agentPrompt) {
+      if (agentAppEnums.find((x) => x == app)) {
         searchResults = await getItems({
           email,
           schema,
@@ -2261,9 +2261,18 @@ async function* generateMetadataQueryAnswer(
         items = searchResults!.root.children || []
       }
     }
-    
-
-    
+    else{
+      searchResults = await getItems({
+        email,
+        schema,
+        app: app ?? null,
+        entity: entity ?? null,
+        timestampRange,
+        limit: userSpecifiedCountLimit,
+        asc: sortDirection === "asc",
+      })
+      items = searchResults!.root.children || []
+    }
 
     span?.setAttribute(`retrieved documents length`, items.length)
     span?.setAttribute(
@@ -3231,9 +3240,9 @@ export const AgentMessageApi = async (c: Context) => {
                 type: parsed.type as QueryType,
                 filterQuery: parsed.filter_query,
                 filters: {
-                  ...parsed.filters,
-                  app: parsed.filters.app as Apps,
-                  entity: parsed.filters.entity as any,
+                  ...parsed?.filters,
+                  app: parsed.filters?.app as Apps,
+                  entity: parsed.filters?.entity as any,
                 },
               }
 

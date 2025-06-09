@@ -10,7 +10,7 @@ import {
   type SelectChat,
   type SelectMessage,
   type SelectPublicChat,
-} from "./schema"
+} from "@/db/schema"
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"

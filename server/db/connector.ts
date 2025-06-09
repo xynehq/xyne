@@ -8,7 +8,7 @@ import {
   type IngestionStateUnion,
   type SelectConnector,
   type SelectOAuthProvider,
-} from "./schema"
+} from "@/db/schema"
 import type { ConnectorType, OAuthCredentials, TxnOrClient } from "@/types"
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
@@ -27,7 +27,7 @@ import {
 import { IsGoogleApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import { getErrorMessage } from "@/utils"
-import { syncJobs, syncHistory } from "./schema"
+import { syncJobs, syncHistory } from "@/db/schema"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (

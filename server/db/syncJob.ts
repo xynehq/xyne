@@ -4,7 +4,7 @@ import {
   syncJobs,
   type InsertSyncJob,
   type SelectSyncJob,
-} from "./schema"
+} from "@/db/schema"
 import { createId } from "@paralleldrive/cuid2"
 import { Apps, AuthType } from "@/shared/types"
 import { and, eq } from "drizzle-orm"

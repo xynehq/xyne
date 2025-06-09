@@ -6,7 +6,7 @@ import {
   type InsertAgent,
   type SelectAgent,
   type SelectPublicAgent,
-} from "./schema"
+} from "@/db/schema"
 export type { SelectAgent } // Re-export SelectAgent
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
@@ -48,7 +48,6 @@ export const getAgentByExternalId = async (
     .where(
       and(
         eq(agents.externalId, agentExternalId),
-        eq(agents.workspaceId, workspaceId),
         isNull(agents.deletedAt),
       ),
     )
@@ -72,6 +71,28 @@ export const getAgentsByUserId = async (
       and(
         eq(agents.userId, userId),
         eq(agents.workspaceId, workspaceId),
+        isNull(agents.deletedAt),
+      ),
+    )
+    .orderBy(desc(agents.updatedAt))
+    .limit(limit)
+    .offset(offset)
+  return z.array(selectPublicAgentSchema).parse(agentsArr)
+}
+
+// to list all the agent which are there is respective of who has created it
+export const getAllAgents = async (
+  trx: TxnOrClient,
+  // userId: number,
+  // workspaceId: number,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<SelectPublicAgent[]> => {
+  const agentsArr = await trx
+    .select()
+    .from(agents)
+    .where(
+      and(
         isNull(agents.deletedAt),
       ),
     )

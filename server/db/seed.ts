@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2"
 import { db } from "./client"
-import { users, workspaces } from "./schema"
+import { users, workspaces } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "./user"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
