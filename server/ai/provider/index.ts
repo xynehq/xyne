@@ -896,6 +896,8 @@ export const baselineRAGJsonStream = (
   params: ModelParams,
   specificFiles?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
+
+  console.log("Using baselineRAGJsonStream")
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }

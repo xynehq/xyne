@@ -693,6 +693,7 @@ export const MessageApiAgenticMinimal = async (
         span?: Span,
       ) => {
         const execSpan = span?.startSpan("execute_metadata_retrieval_tool")
+        console.log("[metadata_retrieval] Input Parameters:", JSON.stringify(params, null, 2));
         execSpan?.setAttribute("item_type", params.item_type)
         if (params.app) execSpan?.setAttribute("app_param_original", params.app)
         if (params.entity) execSpan?.setAttribute("entity_param", params.entity)
@@ -724,6 +725,7 @@ export const MessageApiAgenticMinimal = async (
             else {
               const errorMsg = `Error: Invalid app '${params.app}' specified. Valid apps are 'gmail', 'googlecalendar', 'googledrive', or omit to infer from item_type.`
               execSpan?.setAttribute("error", errorMsg)
+              console.error("[metadata_retrieval] Invalid app parameter:", errorMsg);
               return { result: errorMsg, error: "Invalid app" }
             }
             execSpan?.setAttribute(
@@ -779,8 +781,10 @@ export const MessageApiAgenticMinimal = async (
             default:
               const unknownItemMsg = `Error: Unknown item_type '${params.item_type}'`
               execSpan?.setAttribute("error", unknownItemMsg)
+              console.error("[metadata_retrieval] Unknown item_type:", unknownItemMsg);
               return { result: unknownItemMsg, error: `Unknown item_type` }
           }
+          console.log(`[metadata_retrieval] Derived from item_type '${params.item_type}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`);
 
           // Initialize finalEntity with the entity derived from item_type (often null for documents)
           let finalEntity: Entity | null = entity
@@ -886,6 +890,8 @@ export const MessageApiAgenticMinimal = async (
               // finalEntity remains as initially set (e.g., null if item_type was 'document')
             }
           }
+          console.log(`[metadata_retrieval] Final determined values before Vespa call: appToUse='${appToUse ? appToUse.toString() : "null"}', schema='${schema.toString()}', finalEntity='${finalEntity ? finalEntity.toString() : "null"}'`);
+
 
           execSpan?.setAttribute("derived_schema", schema.toString())
           if (entity)
@@ -917,6 +923,8 @@ export const MessageApiAgenticMinimal = async (
             : undefined
           if (orderByString)
             execSpan?.setAttribute("orderBy_constructed", orderByString)
+          console.log(`[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`);
+
 
           // --- Vespa Call ---
           let searchResults: VespaSearchResponse | null = null
@@ -933,8 +941,12 @@ export const MessageApiAgenticMinimal = async (
             span: execSpan,
           }
 
+          console.log("[metadata_retrieval] Common Vespa searchOptions:", JSON.stringify({limit: searchOptionsVespa.limit, offset: searchOptionsVespa.offset, excludedIds: searchOptionsVespa.excludedIds}, null, 2));
+
           if (params.filter_query) {
             const searchQuery = params.filter_query
+            console.log(`[metadata_retrieval] Using searchVespa with filter_query: '${searchQuery}'`);
+
             if (params.order_direction) {
               execSpan?.setAttribute(
                 "vespa_call_type",
@@ -1154,7 +1166,7 @@ export const MessageApiAgenticMinimal = async (
         })
       }
 
-      let maxIterations = 5
+      let maxIterations = 10 // Increasing the iteration number make the LLM to go more deep dive for the iteration part.
       let iteration = 0
       let currentQuery = message
       let gatheredFragments: MinimalAgentFragment[] = []
@@ -1185,6 +1197,8 @@ export const MessageApiAgenticMinimal = async (
       }
 
       // --- NEW Helper Function: Validate Single Result Quality ---
+
+      // It checks if the user is looking for a specific item (like an email, receipt, etc.). baselineRAGJsonStream is called for this one.
       const validateSingleResultQuality = async (
         userQuery: string,
         resultFragment: MinimalAgentFragment,
@@ -1237,6 +1251,7 @@ export const MessageApiAgenticMinimal = async (
 
           validationResponse = validationResponse.trim().toUpperCase()
           funcSpan?.setAttribute("llmResponse", validationResponse)
+          console.log("Output from the baseline prompt json stream", validationResponse);
 
           const isGoodMatch = validationResponse === "GOOD_MATCH"
           funcSpan?.setAttribute("isGoodMatch", isGoodMatch)
@@ -1268,6 +1283,7 @@ export const MessageApiAgenticMinimal = async (
           iterSpan.setAttribute("iteration", iteration)
 
           // --- Planning and Tool Execution ---
+          // Planner phase : Getting the next tool to use based on the current query and gathered fragments.
           const planSpan = iterSpan.startSpan("agent_planning_and_execution")
           let currentToolSelection: { tool: string; parameters: any } | null =
             null
@@ -1396,6 +1412,7 @@ export const MessageApiAgenticMinimal = async (
 
   Respond ONLY with the JSON for the chosen action.
   `
+            //console.log("Constructed Planning Prompt for LLM (agent.ts):", planningPrompt); // User requested console.log
             // ** Fix End **
 
             // Tool Selection LLM Call - Use the new dedicated function
@@ -1452,7 +1469,7 @@ export const MessageApiAgenticMinimal = async (
                 /* handle cost if needed */
               }
             }
-
+            console.log("Choosen tool selection:", parsedToolSelection);
             // Final check after stream ends
             if (!parsedToolSelection) {
               try {
@@ -1494,9 +1511,10 @@ export const MessageApiAgenticMinimal = async (
             if (parsedToolSelection?.tool === "SYNTHESIZE_ANSWER") {
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.LogMessage,
-                message:
+              message:
                   "LLM determined enough information is available. Proceeding to synthesis.",
               })
+              console.log("LLM decided to synthesize the answer directly."),
               shouldSynthesize = true // Force synthesis for the check after this block
             } else if (
               !parsedToolSelection ||
@@ -1649,6 +1667,8 @@ export const MessageApiAgenticMinimal = async (
               })
               toolResult = await selectedTool.execute(parameters, planSpan)
 
+              //console.log("Tool Execution Result (agent.ts):", JSON.stringify(toolResult, null, 2));
+
               // Process Tool Result
               const itemsFoundCount = toolResult.contexts?.length || 0
               await logAndStreamReasoning({
@@ -1716,154 +1736,278 @@ export const MessageApiAgenticMinimal = async (
 
           // --- Synthesis Check ---
           const toolSuccessAttr = planSpan.attributes?.["tool_success"]
-          const newFragmentsCountAttr =
-            planSpan.attributes?.["new_fragments_count"]
-          // Removed incorrect redeclaration: let excludedIds: string[] = [];
+          const newFragmentsCountAttr = planSpan.attributes?.["new_fragments_count"]
+          // // Removed incorrect redeclaration: let excludedIds: string[] = [];
 
-          if (shouldSynthesize) {
-            // Check if LLM already decided to synthesize (e.g. SYNTHESIZE_ANSWER tool)
-            consecutiveValidationFailures = 0 // Reset if LLM explicitly chose to synthesize
-          } else if (
-            currentToolSelection?.tool === "get_user_info" &&
-            toolSuccessAttr === true &&
-            toolResult?.contexts?.length === 1
-          ) {
-            // If get_user_info was called and succeeded, bypass validation and synthesize
-            shouldSynthesize = true
-            await logAndStreamReasoning({
-              type: AgentReasoningStepType.LogMessage,
-              message:
-                "User info retrieved via get_user_info tool. Proceeding directly to synthesis.",
-            })
-            consecutiveValidationFailures = 0 // Reset validation failures as this path is intentional
-          } else if (
-            // Existing logic for other tools that return a single fragment
-            toolSuccessAttr === true &&
-            newFragmentsCountAttr === 1 &&
-            toolResult?.contexts?.length === 1
-          ) {
-            // --- Validate the single result (for tools other than get_user_info) ---
-            const singleFragment = toolResult.contexts[0]
-            await logAndStreamReasoning({
-              type: AgentReasoningStepType.LogMessage,
-              message: `Tool returned a single item: "${singleFragment.source.title || "Untitled"}". Validating relevance...`,
-            })
-            const validationSpan = iterSpan.startSpan("validate_single_result")
-            const isGoodMatch = await validateSingleResultQuality(
-              currentQuery,
-              singleFragment,
-              validationSpan,
-            )
-            validationSpan.end()
+          // if (shouldSynthesize) {
+          //   // Check if LLM already decided to synthesize (e.g. SYNTHESIZE_ANSWER tool)
+          //   consecutiveValidationFailures = 0 // Reset if LLM explicitly chose to synthesize
+          // } else if (
+          //   currentToolSelection?.tool === "get_user_info" &&
+          //   toolSuccessAttr === true &&
+          //   toolResult?.contexts?.length === 1
+          // ) {
+          //   // If get_user_info was called and succeeded, bypass validation and synthesize
+          //   shouldSynthesize = true
+          //   await logAndStreamReasoning({
+          //     type: AgentReasoningStepType.LogMessage,
+          //     message:
+          //       "User info retrieved via get_user_info tool. Proceeding directly to synthesis.",
+          //   })
+          //   consecutiveValidationFailures = 0 // Reset validation failures as this path is intentional
+          // } else if (
+          //   // Existing logic for other tools that return a single fragment
+          //   toolSuccessAttr === true &&
+          //   newFragmentsCountAttr === 1 &&
+          //   toolResult?.contexts?.length === 1
+          // ) {
+          //   // --- Validate the single result (for tools other than get_user_info) ---
+          //   const singleFragment = toolResult.contexts[0]
+          //   await logAndStreamReasoning({
+          //     type: AgentReasoningStepType.LogMessage,
+          //     message: `Tool returned a single item: "${singleFragment.source.title || "Untitled"}". Validating relevance...`,
+          //   })
+          //   const validationSpan = iterSpan.startSpan("validate_single_result")
+          //   const isGoodMatch = await validateSingleResultQuality(
+          //     currentQuery,
+          //     singleFragment,
+          //     validationSpan,
+          //   )
+          //   validationSpan.end()
 
-            if (isGoodMatch) {
-              shouldSynthesize = true
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.LogMessage,
-                message:
-                  "Single result validation passed. Synthesizing answer.",
-              })
-              consecutiveValidationFailures = 0 // Reset counter on success
-            } else {
-              shouldSynthesize = false // Do not synthesize
-              consecutiveValidationFailures++ // Increment failure counter
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.ValidationError,
-                details: `Single result validation failed (POOR_MATCH #${consecutiveValidationFailures}). Will continue searching.`,
-              })
-              // Add the failed item's ID to excludedIds for future searches
-              // Ensure docId exists and is not already in excludedIds before pushing
-              if (
-                singleFragment.source.docId &&
-                !excludedIds.includes(singleFragment.source.docId)
-              ) {
-                excludedIds.push(singleFragment.source.docId)
-                planSpan.setAttribute(
-                  "excluded_after_validation",
-                  singleFragment.source.docId,
-                ) // Log exclusion
-              }
-              // Remove the bad fragment from gatheredFragments so it's not used later if synthesis happens anyway
-              gatheredFragments = gatheredFragments.filter(
-                (f) => f.id !== singleFragment.id,
-              )
-              allCitedFragments = allCitedFragments.filter(
-                (c) => c.docId !== singleFragment.source.docId,
-              )
-            }
-            // --- End Validation ---
-          } else if (
-            toolSuccessAttr === true &&
-            toolResult?.contexts &&
-            toolResult.contexts.length > 1
-          ) {
-            // Check if the number of items found matches the requested limit
-            const requestedLimit = currentToolSelection?.parameters?.limit
+          //   if (isGoodMatch) {
+          //     shouldSynthesize = true
+          //     await logAndStreamReasoning({
+          //       type: AgentReasoningStepType.LogMessage,
+          //       message:
+          //         "Single result validation passed. Synthesizing answer.",
+          //     })
+          //     consecutiveValidationFailures = 0 // Reset counter on success
+          //   } else {
+          //     shouldSynthesize = false // Do not synthesize
+          //     consecutiveValidationFailures++ // Increment failure counter
+          //     await logAndStreamReasoning({
+          //       type: AgentReasoningStepType.ValidationError,
+          //       details: `Single result validation failed (POOR_MATCH #${consecutiveValidationFailures}). Will continue searching.`,
+          //     })
+          //     // Add the failed item's ID to excludedIds for future searches
+          //     // Ensure docId exists and is not already in excludedIds before pushing
+          //     if (
+          //       singleFragment.source.docId &&
+          //       !excludedIds.includes(singleFragment.source.docId)
+          //     ) {
+          //       excludedIds.push(singleFragment.source.docId)
+          //       planSpan.setAttribute(
+          //         "excluded_after_validation",
+          //         singleFragment.source.docId,
+          //       ) // Log exclusion
+          //     }
+          //     // Remove the bad fragment from gatheredFragments so it's not used later if synthesis happens anyway
+          //     gatheredFragments = gatheredFragments.filter(
+          //       (f) => f.id !== singleFragment.id,
+          //     )
+          //     allCitedFragments = allCitedFragments.filter(
+          //       (c) => c.docId !== singleFragment.source.docId,
+          //     )
+          //   }
+          //   // --- End Validation ---
+          // } else if (
+          //   toolSuccessAttr === true &&
+          //   toolResult?.contexts &&
+          //   toolResult.contexts.length > 1
+          // ) {
+          //   // Check if the number of items found matches the requested limit
+          //   const requestedLimit = currentToolSelection?.parameters?.limit
 
+          //   if (
+          //     currentToolSelection?.tool === "metadata_retrieval" &&
+          //     requestedLimit &&
+          //     typeof requestedLimit === "number" &&
+          //     requestedLimit > 1
+          //   ) {
+          //     // Check if we found exactly the requested number of items or close to it
+          //     const foundCount = toolResult.contexts.length
+          //     if (foundCount >= requestedLimit) {
+          //       shouldSynthesize = true
+          //       await logAndStreamReasoning({
+          //         type: AgentReasoningStepType.LogMessage,
+          //         message: `Found ${foundCount} items, which satisfies the requested count of ${requestedLimit}. Synthesizing answer.`,
+          //       })
+          //       consecutiveValidationFailures = 0
+          //     } else if (
+          //       iteration > 1 &&
+          //       gatheredFragments.length >= requestedLimit
+          //     ) {
+          //       // If we have enough items after multiple iterations
+          //       shouldSynthesize = true
+          //       await logAndStreamReasoning({
+          //         type: AgentReasoningStepType.LogMessage,
+          //         message: `Found total of ${gatheredFragments.length} items across searches, which satisfies the requested count of ${requestedLimit}. Synthesizing answer.`,
+          //       })
+          //       consecutiveValidationFailures = 0
+          //     }
+          //   } else if (
+          //     currentToolSelection?.tool === "metadata_retrieval" && // TODO: use AgentToolName
+          //     iteration > 1
+          //   ) {
+          //     // If this is a repeated metadata_retrieval call and we found multiple items, synthesize
+          //     // to avoid repeating the same search over and over
+          //     shouldSynthesize = true
+          //     await logAndStreamReasoning({
+          //       type: AgentReasoningStepType.LogMessage,
+          //       message: `Multiple search results found and we've completed multiple iterations. Synthesizing answer.`,
+          //     })
+          //     consecutiveValidationFailures = 0
+          //   }
+          // } else if (
+          //   iteration === maxIterations &&
+          //   gatheredFragments.length > 0
+          // ) {
+          //   // Synthesize on last iteration if we have *any* fragments
+          //   shouldSynthesize = true
+          //   await logAndStreamReasoning({
+          //     type: AgentReasoningStepType.LogMessage,
+          //     message: "Max iterations reached. Attempting synthesis.",
+          //   })
+          //   consecutiveValidationFailures = 0 // Reset counter if synthesizing
+          // } else {
+          //   // If tool ran successfully but didn't return 1 fragment, or if tool failed, reset counter
+          //   consecutiveValidationFailures = 0
+          // }
+
+          if (!shouldSynthesize) { // Only evaluate these if planner didn't already say to synthesize
             if (
-              currentToolSelection?.tool === "metadata_retrieval" &&
-              requestedLimit &&
-              typeof requestedLimit === "number" &&
-              requestedLimit > 1
+              currentToolSelection?.tool === "get_user_info" &&
+              toolSuccessAttr === true &&
+              toolResult?.contexts?.length === 1
             ) {
-              // Check if we found exactly the requested number of items or close to it
-              const foundCount = toolResult.contexts.length
-              if (foundCount >= requestedLimit) {
-                shouldSynthesize = true
+              console.log("[DEBUG] Synthesis Check: get_user_info success");
+              shouldSynthesize = true;
+              // Remove this line - it's internal reasoning:
+              // await logAndStreamReasoning({ type: AgentReasoningStepType.LogMessage, message: "User info retrieved, will synthesize."});
+              consecutiveValidationFailures = 0;
+            } else if (
+              toolSuccessAttr === true &&
+              newFragmentsCountAttr === 1 &&
+              toolResult?.contexts?.length === 1
+            ) {
+              const singleFragment = toolResult.contexts[0];
+              // This one might be okay to keep if you want users to see validation happening:
+              // await logAndStreamReasoning({ type: AgentReasoningStepType.LogMessage, message: `Validating single item: "${singleFragment.source.title || "Untitled"}"`});
+              console.log(`[DEBUG] Validating single item: "${singleFragment.source.title || "Untitled"}"`);
+              
+              const validationSpan = iterSpan.startSpan("validate_single_result");
+              const isGoodMatch = await validateSingleResultQuality( currentQuery, singleFragment, validationSpan );
+              validationSpan.end();
+          
+              if (isGoodMatch) {
+                console.log("[DEBUG] Synthesis Check: Single item validated GOOD");
+                shouldSynthesize = true;
+                // Remove this internal message:
+                // await logAndStreamReasoning({ type: AgentReasoningStepType.LogMessage, message: "Single item validation passed, will synthesize."});
+                consecutiveValidationFailures = 0;
+              } else {
+                console.log("[DEBUG] Synthesis Check: Single item validated POOR_MATCH");
+                shouldSynthesize = false;
+                consecutiveValidationFailures++;
+                
+                // This validation error might be worth keeping for user visibility:
                 await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `Found ${foundCount} items, which satisfies the requested count of ${requestedLimit}. Synthesizing answer.`,
-                })
-                consecutiveValidationFailures = 0
-              } else if (
-                iteration > 1 &&
-                gatheredFragments.length >= requestedLimit
-              ) {
-                // If we have enough items after multiple iterations
-                shouldSynthesize = true
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `Found total of ${gatheredFragments.length} items across searches, which satisfies the requested count of ${requestedLimit}. Synthesizing answer.`,
-                })
-                consecutiveValidationFailures = 0
+                  type: AgentReasoningStepType.ValidationError,
+                  details: `Single result validation failed (POOR_MATCH #${consecutiveValidationFailures}). Will continue searching.`,
+                });
+                
+                if (singleFragment.source.docId && !excludedIds.includes(singleFragment.source.docId)) {
+                  excludedIds.push(singleFragment.source.docId);
+                  planSpan.setAttribute("excluded_after_validation", singleFragment.source.docId);
+                }
+                gatheredFragments = gatheredFragments.filter(f => f.id !== singleFragment.id);
+                allCitedFragments = allCitedFragments.filter(c => c.docId !== singleFragment.source.docId);
               }
             } else if (
-              currentToolSelection?.tool === "metadata_retrieval" && // TODO: use AgentToolName
-              iteration > 1
+              toolSuccessAttr === true &&
+              toolResult?.contexts &&
+              toolResult.contexts.length > 1
             ) {
-              // If this is a repeated metadata_retrieval call and we found multiple items, synthesize
-              // to avoid repeating the same search over and over
-              shouldSynthesize = true
+              const requestedLimit = currentToolSelection?.parameters?.limit;
+              if (currentToolSelection?.tool === "metadata_retrieval" && requestedLimit && typeof requestedLimit === "number" && requestedLimit > 1) {
+                const foundCount = toolResult.contexts.length;
+                if (foundCount >= requestedLimit) {
+                  console.log(`[DEBUG] Synthesis Check: metadata_retrieval found ${foundCount}/${requestedLimit} items`);
+                  shouldSynthesize = true;
+                  // Remove internal message:
+                  // await logAndStreamReasoning({ type: AgentReasoningStepType.LogMessage, message: `Found enough items via metadata_retrieval, will synthesize.`});
+                  consecutiveValidationFailures = 0;
+                } else if (iteration > 1 && gatheredFragments.length >= requestedLimit) {
+                  console.log(`[DEBUG] Synthesis Check: metadata_retrieval (iter > 1) gathered enough fragments`);
+                  shouldSynthesize = true;
+                  // Remove internal message:
+                  // await logAndStreamReasoning({ type: AgentReasoningStepType.LogMessage, message: `Gathered enough items over iterations, will synthesize.`});
+                  consecutiveValidationFailures = 0;
+                }
+              } else if (currentToolSelection?.tool === "metadata_retrieval" && iteration > 1 ) {
+                console.log(`[DEBUG] Synthesis Check: metadata_retrieval (iter > 1) multiple items found`);
+                shouldSynthesize = true;
+                // Remove internal message:
+                // await logAndStreamReasoning({ type: AgentReasoningStepType.LogMessage, message: `Multiple metadata_retrieval results over iterations, will synthesize.`});
+                consecutiveValidationFailures = 0;
+              }
+            }
+          }
+
+          // Max iteration override: If it's the last chance and we have fragments,
+          // AND previous logic for this iteration didn't decide to synthesize, consider it.
+          if (iteration === maxIterations && gatheredFragments.length > 0) {
+            if (!shouldSynthesize) { // If not already set to true by above conditions for THIS iteration
+              console.log(
+                `[DEBUG] MAX ITERATION (${iteration}) OVERRIDE. gatheredFragments.length = ${gatheredFragments.length}. Forcing synthesis.`,
+              );
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.LogMessage,
-                message: `Multiple search results found and we've completed multiple iterations. Synthesizing answer.`,
-              })
-              consecutiveValidationFailures = 0
+                message: "Max iterations reached. Attempting synthesis as a last resort with existing fragments.",
+              });
+              shouldSynthesize = true; // Force it
+            } else {
+              // Log that we are at max iterations and were already planning to synthesize
+              console.log(
+                `[DEBUG] MAX ITERATION (${iteration}) and shouldSynthesize already TRUE. gatheredFragments.length = ${gatheredFragments.length}.`,
+              );
             }
-          } else if (
-            iteration === maxIterations &&
-            gatheredFragments.length > 0
-          ) {
-            // Synthesize on last iteration if we have *any* fragments
-            shouldSynthesize = true
-            await logAndStreamReasoning({
-              type: AgentReasoningStepType.LogMessage,
-              message: "Max iterations reached. Attempting synthesis.",
-            })
-            consecutiveValidationFailures = 0 // Reset counter if synthesizing
-          } else {
-            // If tool ran successfully but didn't return 1 fragment, or if tool failed, reset counter
-            consecutiveValidationFailures = 0
+            // In either case of max iteration synthesis, reset counter
+            consecutiveValidationFailures = 0; 
+          }
+          
+          // If, after all above, we are still not synthesizing, reset consecutiveValidationFailures
+          // (unless it was just incremented by a POOR_MATCH, which is handled inside that block)
+          // This mainly covers cases where a tool ran, found nothing or multiple items not meeting other criteria,
+          // and it's not max iterations.
+          if (!shouldSynthesize) {
+             // Check if it was a POOR_MATCH that just happened. If so, consecutiveValidationFailures was already incremented.
+             // This simple reset is a catch-all. More nuanced reset could be done inside each non-synthesizing path.
+             // For now, if not synthesizing, and it wasn't a POOR_MATCH that just incremented it, reset.
+             // The POOR_MATCH path handles its own increment.
+             // This primarily resets if a tool runs, finds 0 items, or multiple items that don't trigger synthesis.
+             // This needs to be careful not to undo a `consecutiveValidationFailures++` from a POOR_MATCH.
+             // A simpler approach: the POOR_MATCH increments; other non-synthesizing paths (like tool returns 0) can reset here.
+             // If planSpan.attributes?.["new_fragments_count"] === 0 and toolSuccessAttr === true, that's a good time to reset.
+             if (!(toolSuccessAttr === true && newFragmentsCountAttr === 1 /* and validation failed - implied if shouldSynthesize is false */)) {
+                // This means it wasn't a single item validation failure path
+                consecutiveValidationFailures = 0;
+             }
           }
 
           if (shouldSynthesize) {
+            console.log(
+              `Synthesis triggered after ${iteration} iterations with ${gatheredFragments.length} fragments.`,)
             const synthSpan = iterSpan.startSpan("agent_synthesis")
             try {
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.Synthesis,
                 details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
               })
-              await stream.writeSSE({ event: ChatSSEvents.Start, data: "" })
+
+              //console.log("Fragments before Synthesis (agent.ts):", JSON.stringify(gatheredFragments, null, 2));
+              // await stream.writeSSE({ event: ChatSSEvents.Start, data: "" })
 
               // Ensure context string is properly escaped for inclusion in the prompt template literal
               // ** Enhanced Synthesis Prompt **
@@ -1906,23 +2050,28 @@ export const MessageApiAgenticMinimal = async (
 
               // Define the system prompt instructing the LLM on its task and output format
               const synthesisSystemPrompt = `You are a helpful AI assistant.
-  User Query: "${currentQuery}"
+User Query: "${currentQuery}"
 
-  Instruction: ${specificInstruction}
-  - Answer concisely and directly based *only* on the context.
-  - If the context does not contain the answer, state that you couldn't find the information in the provided sources.
-  - **Cite every piece of information** you use from the context using the format [index], where 'index' corresponds to the number in the context fragment list (e.g., [1], [2]).
-  - Combine information from multiple sources if necessary.
-  - Do not add any information not present in the context.
-  - Respond with ONLY a JSON object containing a single key "answer" with the final synthesized response as its value.
+Instruction: ${specificInstruction}
+- Analyze the provided "Context Fragments" to answer the "User Query".
+- Your response MUST be a JSON object with two keys: "answer" (string) and "synthesisState" (string).
+- The "answer" key should contain your synthesized response.
+- The "synthesisState" key must be one of the following values:
+    - "complete": If you are confident that the "Context Fragments" provide a full and comprehensive answer to the "User Query".
+    - "partial_information": If the "Context Fragments" provide some relevant information but do not fully answer the "User Query", or if you have to make significant inferences.
+    - "information_not_found": If the "Context Fragments" do not contain the necessary information to answer the "User Query".
+- Base your "answer" *only* on the provided "Context Fragments".
+- If "synthesisState" is "information_not_found", the "answer" should be a statement like "The provided context does not contain sufficient information to answer this query." or a similar neutral statement.
+- **Cite every piece of information** you use from the context in your "answer" using the format [index] (e.g., [1], [2]).
+- Do not add any information not present in the "Context Fragments" unless explicitly stating it's not found.
 
-  Context Fragments:
-  ${synthesisContext}
+Context Fragments:
+${synthesisContext}
   ` // Ensure backticks are correctly handled
 
               // Define the user query for the LLM, reinforcing the JSON format requirement
               // Use currentQuery here as well
-              const synthesisUserQuery = `Generate the response for the query "${currentQuery}" using *only* the provided context fragments and citing sources. Format the output as JSON: {"answer": "Your synthesized answer here"}`
+              const synthesisUserQuery = `Generate the response for the query "${currentQuery}" using *only* the provided context fragments and citing sources. Format the output as a JSON object: {"answer": "Your synthesized answer here", "synthesisState": "complete" | "partial_information" | "information_not_found"}`
 
               // Synthesis LLM Call - explicitly requesting JSON output
               const llmIterator = baselineRAGJsonStream(
@@ -1939,54 +2088,83 @@ export const MessageApiAgenticMinimal = async (
 
               // --- Updated Streaming Logic ---
               finalCitationMap = {} // Reset citation map
-              let synthesisBuffer = ""
-              let currentSynthesizedAnswer = "" // Stores the clean answer text extracted so far
-              let parsedSynthesizedOutput = { answer: "" } // Stores the latest parsed object
-              const SYNTHESIS_ANSWER_TOKEN = '"answer":' // Token to help parsing
-
+              let synthesisBuffer = "";
+              let currentSynthesizedAnswer = ""; // Buffer the answer text, but don't stream yet
+              let parsedSynthesizedOutput: {
+                answer: string;
+                synthesisState: "complete" | "partial_information" | "information_not_found";
+              } = { answer: "", synthesisState: "information_not_found" }; // Default state
+              
               for await (const chunk of llmIterator) {
                 if (chunk.text) {
-                  synthesisBuffer += chunk.text
+                  synthesisBuffer += chunk.text;
                   try {
-                    // Attempt incremental parsing, looking for the answer token
-                    parsedSynthesizedOutput = jsonParseLLMOutput(
-                      synthesisBuffer,
-                      SYNTHESIS_ANSWER_TOKEN,
-                    ) || { answer: "" }
-
-                    // Check if we have a new, valid answer string
+                    // Attempt incremental parsing of the entire JSON object
+                    const tempParsed = jsonParseLLMOutput(synthesisBuffer);
                     if (
-                      parsedSynthesizedOutput.answer &&
-                      currentSynthesizedAnswer !==
-                        parsedSynthesizedOutput.answer
+                      tempParsed &&
+                      typeof tempParsed.answer === "string" &&
+                      typeof tempParsed.synthesisState === "string"
                     ) {
-                      const newText = parsedSynthesizedOutput.answer.slice(
-                        currentSynthesizedAnswer.length,
-                      )
-                      if (newText) {
-                        // Only stream if there's actually new text
-                        await stream.writeSSE({
-                          event: ChatSSEvents.ResponseUpdate,
-                          data: newText,
-                        })
-                      }
-                      currentSynthesizedAnswer = parsedSynthesizedOutput.answer // Update the complete answer text
+                      parsedSynthesizedOutput = tempParsed as {
+                        answer: string;
+                        synthesisState: "complete" | "partial_information" | "information_not_found";
+                      };
+                      currentSynthesizedAnswer = parsedSynthesizedOutput.answer; // Update buffer, but don't stream yet
                     }
                   } catch (parseErr) {
-                    // Ignore partial JSON errors while streaming
                     if (!(parseErr instanceof SyntaxError)) {
-                      Logger.debug(
-                        "Non-syntax error during incremental synthesis parse",
-                        { error: parseErr, buffer: synthesisBuffer },
-                      )
+                      Logger.debug("Non-syntax error during incremental synthesis parse", {
+                        error: parseErr,
+                        buffer: synthesisBuffer,
+                      });
                     }
                     // Continue accumulating chunks
                   }
-                } // end if(chunk.text)
-                // TODO: Handle cost if necessary
-              } // End for await loop
-
+                }
+              }
+              console.log("Synthesis LLM raw Output for agent.ts:", synthesisBuffer);
               // --- Final Answer Processing ---
+              try {
+                // Attempt to parse the ENTIRE accumulated buffer one last time
+                const finalParsed = jsonParseLLMOutput(synthesisBuffer);
+              
+                // SCENARIO 1: Perfect JSON with both 'answer' and 'synthesisState'
+                if (
+                  finalParsed &&
+                  typeof finalParsed.answer === "string" &&
+                  (finalParsed.synthesisState === "complete" ||
+                    finalParsed.synthesisState === "partial_information" ||
+                    finalParsed.synthesisState === "information_not_found")
+                ) {
+                  parsedSynthesizedOutput = finalParsed;
+                // SCENARIO 2: JSON has 'answer' but MISSING 'synthesisState'
+                } else if (finalParsed && typeof finalParsed.answer === "string" && !finalParsed.synthesisState) {
+                  Logger.warn("Synthesis output missing 'synthesisState', defaulting to partial.", {
+                    finalBuffer: synthesisBuffer,
+                  });
+                  parsedSynthesizedOutput = { answer: finalParsed.answer, synthesisState: "partial_information" };
+                // SCENARIO 3: JSON is malformed or doesn't have the expected structure
+                } else {
+                  Logger.warn("Final LLM response for synthesis was not the expected JSON structure.", {
+                    finalBuffer: synthesisBuffer,
+                  });
+                  parsedSynthesizedOutput = {
+                    answer: currentSynthesizedAnswer || "Failed to fully parse synthesis output.",
+                    synthesisState: "information_not_found",
+                  };
+                }
+              } catch (finalParseErr) {
+                Logger.error(finalParseErr, "Error during final parsing of synthesis output.", {
+                  finalBuffer: synthesisBuffer,
+                });
+                parsedSynthesizedOutput = {
+                  answer: currentSynthesizedAnswer || "Error parsing synthesis output.",
+                  synthesisState: "information_not_found",
+                };
+              }
+
+
               // Use the incrementally built answer text
               let actualAnswerText = currentSynthesizedAnswer
 
@@ -2015,43 +2193,63 @@ export const MessageApiAgenticMinimal = async (
                 }
               }
 
-              // Check if answer is valid (use the extracted text)
-              if (
-                actualAnswerText &&
-                !/couldn't find|don't know|not provided/i.test(actualAnswerText)
-              ) {
-                finalAnswer = actualAnswerText // Assign the *extracted* text
+              if (parsedSynthesizedOutput.synthesisState === "complete") {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.Synthesis,
+                  details: `Synthesizing complete answer from ${gatheredFragments.length} fragments...`,
+                });
+                console.log("Synthesis complete with answer:", actualAnswerText);
+                finalAnswer = actualAnswerText;
+              
+                if (actualAnswerText) {
+                  await stream.writeSSE({ event: ChatSSEvents.Start, data: "" });
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: actualAnswerText,
+                  });
+                }
+              
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message: "Synthesis successful.",
-                })
-                synthSpan.setAttribute("success", true)
-                synthSpan.setAttribute("answer_length", finalAnswer.length)
-                synthSpan.setAttribute(
-                  "citations_found",
-                  Object.keys(finalCitationMap).length,
-                )
+                  message: "Synthesis successful: LLM indicated a complete answer.",
+                });
+                synthSpan.setAttribute("success", true);
+              } else if (parsedSynthesizedOutput.synthesisState === "partial_information") {
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Synthesis returned partial information. Answer: "${actualAnswerText}". Attempting to gather more data.`,
+                });
+                console.log("Synthesis partial with answer:", actualAnswerText);
+                // Do NOT set finalAnswer, allowing the loop to continue
+                synthSpan.setAttribute("success", false);
+                synthSpan.setAttribute("reason", "Partial information, continuing search");
               } else {
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
-                  message:
-                    "Synthesis did not produce a definitive answer from the context.",
-                })
-                synthSpan.setAttribute("success", false)
-                synthSpan.setAttribute("reason", "Answer not found in context")
-                // If synthesis failed after metadata success, maybe we should error out?
+                  message: `Synthesis failed: No relevant information found. Answer: "${actualAnswerText}". Attempting to gather more data.`,
+                });
+                console.log("Synthesis information not found with answer:", actualAnswerText);
+                // Do NOT set finalAnswer, allowing the loop to continue
+                synthSpan.setAttribute("success", false);
+                synthSpan.setAttribute("reason", "Information not found, continuing search");
+              
                 if (toolSuccessAttr === true && newFragmentsCountAttr === 1) {
-                  // Only error out if the *single validated* result failed synthesis
-                  finalAnswer = "" // Clear any potentially bad answer
-                  loopError =
-                    "Relevant item found, but failed to synthesize a good answer from it."
+                  loopError = `Relevant item was found and validated, but the LLM could not synthesize an answer from it, stating information not found. LLM Output: "${actualAnswerText}"`;
+                  console.log("Critical loop error set:", loopError);
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.LogMessage,
                     message: loopError,
-                  })
+                  });
                 }
               }
-            } catch (synthErr) {
+              
+              if (actualAnswerText) { 
+                 synthSpan.setAttribute("llm_answer_text_length", actualAnswerText.length); 
+                 synthSpan.setAttribute("citations_found_in_llm_text", Object.keys(finalCitationMap).length);
+              }
+            }             
+                        
+            catch (synthErr) {
               const errMsg = getErrorMessage(synthErr)
               synthSpan.setAttribute("error", errMsg)
               Logger.error(synthErr, `Error during agent synthesis: ${errMsg}`)
@@ -2073,11 +2271,13 @@ export const MessageApiAgenticMinimal = async (
           }
         } // End while loop
 
+        console.log(`[DEBUG] Post-Loop: finalAnswer='${finalAnswer}', loopError='${loopError}', gatheredFragments.length=${gatheredFragments.length}`); // <-- ADD THIS
         // Handle loop completion without definitive answer
+        // When we reach to the maximum number of iterations and still don't have a final answer.
         if (!finalAnswer && !loopError) {
           loopError =
             gatheredFragments.length > 0
-              ? "Could not synthesize a conclusive answer from the gathered information."
+              ? "Could not synthesize a conclusive answer from the gathered information. I had the gathered fragments, but the synthesis failed."
               : "Failed to find any relevant information after multiple attempts."
           await logAndStreamReasoning({
             type: AgentReasoningStepType.LogMessage,

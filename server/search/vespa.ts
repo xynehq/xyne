@@ -436,6 +436,9 @@ export const HybridDefaultProfile = (
         case Apps.GoogleWorkspace:
           sourcesToExclude.push(userSchema)
           break
+          case Apps.Xyne: // If Xyne has associated schemas to exclude, add them here. Otherwise, this case might not be needed in *this* switch.
+          // Example: sourcesToExclude.push(someXyneSchema);
+          break
       }
     })
     newSources = AllSources.split(", ")
@@ -469,6 +472,10 @@ export const HybridDefaultProfile = (
         break
       case Apps.Slack:
         appQueries.push(buildSlackYQL())
+        break
+      case Apps.Xyne:
+        // Xyne does not contribute a specific YQL part in this combined OR query.
+        // This means it won't add filtering specific to Xyne in the (A or B or C) part.
         break
       default:
         handleAppsNotInYql(includedApp,includedApps)
