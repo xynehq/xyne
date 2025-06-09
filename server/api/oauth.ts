@@ -137,13 +137,16 @@ export const OAuthCallback = async (c: Context) => {
     } else if (app === Apps.Slack) {
       const abortController = new AbortController()
       globalAbortControllers.set(`${connector.id}`, abortController)
-      handleSlackIngestion({
-        connectorId: connector.id,
-        app,
-        externalId: connector.externalId,
-        authType: connector.authType as AuthType,
-        email: sub,
-      })
+      // we are avoiding this , we will stop the flow here
+      // either we will provide the button to start it
+      // else we will merge it with the channelthing
+      // handleSlackIngestion({
+      //   connectorId: connector.id,
+      //   app,
+      //   externalId: connector.externalId,
+      //   authType: connector.authType as AuthType,
+      //   email: sub,
+      // })
     } else {
       const SaasJobPayload: SaaSOAuthJob = {
         connectorId: connector.id,

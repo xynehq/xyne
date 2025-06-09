@@ -9,6 +9,7 @@ import {
   insertConnector,
   updateConnector,
   deleteOauthConnector,
+  getConnector,
 } from "@/db/connector"
 import {
   ConnectorType,
@@ -36,6 +37,8 @@ import {
 import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
 import { ServiceAccountIngestMoreUsers } from "@/integrations/google"
+import { handleSlackChannelIngestion } from "@/integrations/slack/channelIngest"
+import { handleSlackIngestion } from "@/integrations/slack"
 import {
   clearUserDataInVespa,
   type ClearUserDataOptions,
@@ -53,6 +56,7 @@ export const GetConnectors = async (c: Context) => {
   }
   const user = users[0]
   const connectors = await getConnectors(workspaceId, user.id)
+  console.log(connectors)
   return c.json(connectors)
 }
 
@@ -587,6 +591,87 @@ export const AdminDeleteUserData = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: `Failed to clear user data for ${emailToClear}: ${errorMessage}`,
+    })
+  }
+}
+
+export const StartSlackIngestionApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  // @ts-ignore - Assuming payload is validated by zValidator
+  const payload = c.req.valid("json") as { connectorId: string }
+
+  try {
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      Logger.error({ sub }, "No user found for sub in StartSlackIngestionApi")
+      throw new NoUserFound({})
+    }
+    const [user] = userRes
+
+    const connector = await getConnector(db, parseInt(payload.connectorId))
+    if (!connector) {
+      throw new HTTPException(404, { message: "Connector not found" })
+    }
+
+    // Call the main Slack ingestion function
+    handleSlackIngestion({
+      connectorId: connector.id,
+      app: connector.app as Apps,
+      externalId: connector.externalId,
+      authType: connector.authType as AuthType,
+      email: sub,
+    }).catch((error) => {
+      Logger.error(
+        error,
+        `Background Slack ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+      )
+    })
+
+    return c.json({
+      success: true,
+      message: "Regular Slack ingestion started.",
+    })
+  } catch (error: any) {
+    Logger.error(
+      error,
+      `Error starting regular Slack ingestion: ${getErrorMessage(error)}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: `Failed to start regular Slack ingestion: ${getErrorMessage(error)}`,
+    })
+  }
+}
+
+export const IngestMoreChannelApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  console.log(sub)
+  // @ts-ignore
+  const payload = c.req.valid("json") as {
+    connectorId: string
+    channelsToIngest: string[]
+    startDate: string
+    endDate: string
+  }
+
+  try {
+    const email = sub
+    const resp = await handleSlackChannelIngestion(
+      parseInt(payload.connectorId),
+      payload.channelsToIngest,
+      payload.startDate,
+      payload.endDate,
+      email,
+    )
+    return c.json({
+      success: true,
+      message: "Successfully ingested the channels",
+    })
+  } catch (error) {
+    Logger.info(error)
+    return c.json({
+      success: false,
+      message: error,
     })
   }
 }
