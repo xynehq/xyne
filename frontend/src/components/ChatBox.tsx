@@ -1005,7 +1005,7 @@ export const ChatBox = ({
                       const citationEntity = (citation as any).entity
                       return (
                         <div
-                          key={citation.url}
+                          key={citation?.docId}
                           ref={(el) => (referenceItemsRef.current[index] = el)}
                           className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
                             index === selectedRefIndex ? "bg-[#EDF2F7] dark:bg-slate-700" : ""

@@ -369,9 +369,9 @@ export const ChatPage = ({
           if (
             citation.url &&
             citation.title &&
-            !newCitations.has(citation.url)
+            !newCitations?.has(citation?.docId)
           ) {
-            newCitations.set(citation.url, citation)
+            newCitations.set(citation?.docId, citation)
             changed = true
           }
         })
