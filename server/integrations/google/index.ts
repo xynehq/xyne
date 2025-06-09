@@ -1572,6 +1572,7 @@ const insertFilesForUser = async (
         mime_type: "google_pdf",
         email: userEmail,
       })
+      let pdfInserted = 0;
       for (const doc of pdfs) {
         try {
           processedFiles += 1
@@ -1583,6 +1584,7 @@ const insertFilesForUser = async (
             file_type: "GOOGLE_DRIVE_PDF",
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
+          logger.info(`Inserted ${pdfInserted} PDFs`)
         } catch (error) {
           ingestionErrorsTotal.inc(
             {
@@ -1653,9 +1655,6 @@ const insertFilesForUser = async (
       })
 
       for (const doc of allFiles) {
-        logger.info(
-          `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType} for user ${userEmail}`,
-        )
         // determine the  file type here so we can insert in metrics data
         const fileType =
           doc.mimeType === DriveMime.Docs
@@ -1665,11 +1664,15 @@ const insertFilesForUser = async (
               : doc.mimeType === DriveMime.Slides
                 ? "GOOGLE_DRIVE_SLIDE"
                 : "GOOGLE_DRIVE_FILE"
-        try {
+        
+        logger.info(
+          `Processing file: ID: ${doc.docId}, Name: ${doc.title}, MimeType: ${doc.mimeType}, FileType: ${fileType} for user ${userEmail}`,
+        )
+       try {
           await insertWithRetry(doc, fileSchema)
           // do not update for Sheet as we will add the actual count later
 
-          console.log(`Mime type: `, doc.mimeType)
+          logger.info(`Mime type: `, doc.mimeType)
           totalIngestedFiles.inc({
             mime_type: doc.mimeType ?? "application/vnd.google-apps.file",
             status: "SUCCESS",
@@ -1700,12 +1703,12 @@ const insertFilesForUser = async (
       }
       tracker.updateUserStats(userEmail, StatType.Drive, sheetsObj.count)
 
-      Logger.info(`finished ${initialCount} files`)
+      logger.info(`finished ${initialCount} files`)
       totalIngestionDuration()
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error)
-    Logger.error(
+    logger.error(
       error,
       `Could not insert files for user: ${errorMessage} ${(error as Error).stack}`,
     )
