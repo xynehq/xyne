@@ -1584,6 +1584,7 @@ const insertFilesForUser = async (
             file_type: "GOOGLE_DRIVE_PDF",
           })
           tracker.updateUserStats(userEmail, StatType.Drive, 1)
+          pdfInserted++;
           logger.info(`Inserted ${pdfInserted} PDFs`)
         } catch (error) {
           ingestionErrorsTotal.inc(
