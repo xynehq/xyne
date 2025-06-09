@@ -954,7 +954,7 @@ function AgentComponent() {
                   <PlusCircle size={18} className="mr-2" /> Create Agent
                 </Button>
               </div>
-              <div className="w-full max-w-2xl mx-auto">
+              <div className="w-full max-w-3xl mx-auto">
                 {agents.length === 0 ? (
                   <div className="text-center py-10 text-gray-500">
                     <p className="text-lg mb-2">No agents created yet.</p>

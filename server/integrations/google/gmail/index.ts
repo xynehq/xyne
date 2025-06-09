@@ -36,7 +36,6 @@ import {
 
 import { skipMailExistCheck } from "@/integrations/google/config"
 
-
 export const handleGmailIngestion = async (
   client: GoogleClient,
   email: string,
@@ -324,7 +323,6 @@ export const parseMail = async (
             await insert(attachmentDoc, mailAttachmentSchema)
             tracker?.updateUserStats(userEmail, StatType.Mail_Attachments, 1)
 
-
             totalAttachmentIngested.inc(
               {
                 mime_type: mimeType,
@@ -344,7 +342,6 @@ export const parseMail = async (
             )
             totalAttachmentError.inc(
               {
-
                 mime_type: mimeType,
                 status: "FAILED",
                 email: userEmail,

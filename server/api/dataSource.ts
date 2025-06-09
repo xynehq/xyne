@@ -123,7 +123,8 @@ export async function handleSingleFileUploadToDataSource(
           `New DataSource "${dataSourceName}" created with ID: ${dataSourceVespaId}`,
         )
       }
-    } else { // flag === "addition"
+    } else {
+      // flag === "addition"
       existingDataSource = await getDataSourceByNameAndCreator(
         dataSourceName,
         user.email,

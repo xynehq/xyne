@@ -48,9 +48,7 @@ import {
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
 
-
 import { skipMailExistCheck } from "@/integrations/google/config"
-
 
 const jwtValue = z.object({
   type: z.literal(MessageTypes.JwtParams),
@@ -258,7 +256,6 @@ export const handleGmailIngestion = async (
               email,
             )
 
-
             if (!exist) {
               await insert(mailData, mailSchema)
               // Increment counters only on success
@@ -275,7 +272,6 @@ export const handleGmailIngestion = async (
                 1,
               )
             }
-
           } catch (error) {
             Logger.error(
               error,
@@ -365,7 +361,6 @@ export const parseMail = async (
   client: GoogleClient,
   userEmail: string,
 ): Promise<{ mailData: Mail; insertedPdfCount: number; exist: boolean }> => {
-
   const messageId = email.id
   const threadId = email.threadId
   let insertedPdfCount = 0
@@ -491,7 +486,6 @@ export const parseMail = async (
             await insert(attachmentDoc, mailAttachmentSchema)
             insertedPdfCount++
 
-
             totalAttachmentIngested.inc(
               {
                 mime_type: mimeType,
@@ -511,7 +505,6 @@ export const parseMail = async (
             )
             totalAttachmentError.inc(
               {
-
                 mime_type: mimeType,
                 status: "FAILED",
                 email: userEmail,
