@@ -1275,7 +1275,7 @@ export const ChatPage = ({
       />
       <div className="h-full w-full flex flex-col relative">
         <div
-          className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center  transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex w-full fixed bg-white h-[48px] border-b-[1px] border-[#E6EBF5] justify-center z-10 transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full`}>
             {isEditing ? (
@@ -1310,15 +1310,15 @@ export const ChatPage = ({
           </div>
         </div>
 
-        {/* The onScroll event handler is attached to this div because it's the scrollable container for messages. */}
-        {/* This ensures that scroll events are captured correctly to manage the auto-scroll behavior. */}
+        {/* Scrollable Messages Area */}
         <div
-          className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex-grow w-full overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          style={{ paddingTop: "48px" }} 
           ref={messagesContainerRef}
           onScroll={handleScroll}
         >
-          <div className={`w-full h-full flex flex-col items-center`}>
-            <div className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]">
+          <div className="w-full flex flex-col items-center"> 
+            <div className="flex flex-col w-full max-w-3xl flex-grow pb-4">
               {messages.map((message, index) => {
                 const isSourcesVisible =
                   showSources && currentMessageId === message.externalId
@@ -1444,34 +1444,42 @@ export const ChatPage = ({
                   onFeedback={handleFeedback}
                 />
               )}
-              <div className="absolute bottom-0 left-0 w-full h-[80px] bg-white"></div>
             </div>
-            {showRagTrace && chatId && selectedMessageId && (
-              <div className="fixed inset-0 z-50 bg-white overflow-auto">
-                <RagTraceVirtualization
-                  chatId={chatId}
-                  messageId={selectedMessageId}
-                  onClose={() => {
-                    setShowRagTrace(false)
-                    setSelectedMessageId(null)
-                  }}
-                />
-              </div>
-            )}
-            <ChatBox
-              query={query}
-              setQuery={setQuery}
-              handleSend={handleSend} // handleSend function is passed here
-              handleStop={handleStop}
-              isStreaming={isStreaming}
-              allCitations={allCitations}
+          </div>
+        </div>
+
+        {/* ChatBox Area (Sticky Bottom) */}
+        <div
+          className={`w-full flex justify-center bg-white border-[#E6EBF5] transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+        >
+          <ChatBox
+            query={query}
+            setQuery={setQuery}
+            handleSend={handleSend} // handleSend function is passed here
+            handleStop={handleStop}
+            isStreaming={isStreaming}
+            allCitations={allCitations}
+            chatId={chatId}
+            agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
+            isReasoningActive={isReasoningActive}
+            setIsReasoningActive={setIsReasoningActive}
+          />
+        </div>
+
+        {/* RAG Trace Modal (should be high z-index) */}
+        {showRagTrace && chatId && selectedMessageId && (
+          <div className="fixed inset-0 z-50 bg-white overflow-auto">
+            <RagTraceVirtualization
               chatId={chatId}
-              agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
-              isReasoningActive={isReasoningActive}
-              setIsReasoningActive={setIsReasoningActive}
+              messageId={selectedMessageId}
+              onClose={() => {
+                setShowRagTrace(false)
+                setSelectedMessageId(null)
+              }}
             />
           </div>
-          <Sources
+        )}
+        <Sources
             showSources={showSources}
             citations={currentCitations}
             closeSources={() => {
@@ -1482,7 +1490,6 @@ export const ChatPage = ({
           />
         </div>
       </div>
-    </div>
   )
 }
 
@@ -1696,7 +1703,7 @@ export const ChatMessage = ({
   }
   return (
     <div
-      className={`rounded-[16px] max-w-full ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
+      className={`rounded-[16px] max-w-full mt-3 ${isUser ? "bg-[#F0F2F4] text-[#1C1D1F] text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words" : "text-[#1C1D1F] text-[15px] leading-[25px] self-start w-full"}`}
     >
       {isUser ? (
         <div
