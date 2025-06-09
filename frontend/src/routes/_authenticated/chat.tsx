@@ -1814,6 +1814,34 @@ export const ChatMessage = ({
                     h6: ({ node, ...props }) => (
                       <h1 style={{ fontSize: "0.68em" }} {...props} />
                     ),
+                    ul: ({ node, ...props }) => (
+                      <ul
+                        style={{
+                          listStyleType: "disc",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    ol: ({ node, ...props }) => (
+                      <ol
+                        style={{
+                          listStyleType: "decimal",
+                          paddingLeft: "1.5rem",
+                          marginBottom: "1rem",
+                        }}
+                        {...props}
+                      />
+                    ),
+                    li: ({ node, ...props }) => (
+                      <li
+                        style={{
+                          marginBottom: "0.25rem",
+                        }}
+                        {...props}
+                      />
+                    ),
                   }}
                 />
               ) : null}
